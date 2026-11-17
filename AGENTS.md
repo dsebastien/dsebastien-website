@@ -4,10 +4,10 @@ The website of the author's public notes (notes.dsebastien.net, a digital garden
 
 The main site and the store of the author are out of scope (ADR 0001).
 
-- Current plan: `documentation/plans/spec-v2.md` (written from the interview, reviewed, waiting for the approval of the author), read together with `documentation/plans/decisions.md` (the answers of the author) and the decision records in `documentation/adr/`. `documentation/plans/spec-v1.md` is the older draft that it replaces.
+- Current plan: `documentation/plans/spec-v2.md` (approved by the author on 2026-11-17; it is adjusted as the build and the tests teach us), read together with `documentation/plans/decisions.md` (the answers of the author) and the decision records in `documentation/adr/`. `documentation/plans/spec-v1.md` is the older draft that it replaces.
 - Ideas that are not part of the plan: `documentation/plans/ideas-backlog.md`.
 - Measured facts about the existing sites: `documentation/research/`.
-- No application code exists yet. Do not scaffold apps or packages before the spec is approved.
+- No application code exists yet. The spec is approved. Code starts with the prototypes that decide (section 21 of the spec), each on a `prototype/<name>` branch, then with the tickets.
 
 ## Privacy: this repository is public
 
