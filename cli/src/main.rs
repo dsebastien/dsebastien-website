@@ -10,6 +10,7 @@ mod order;
 mod plan;
 
 use std::error::Error;
+use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -41,15 +42,29 @@ fn plan(vault: &Path) -> Result<String, Box<dyn Error>> {
     Ok(canonical::to_canonical_json(&plan)?)
 }
 
+/// Writes the output of a command to the standard output.
+///
+/// A reader that closed the pipe has what it wanted (`plan | head`): that is
+/// not an error. Every other failure of the write is one, for example a full
+/// disk behind a redirection.
+fn write_output(output: &str) -> io::Result<()> {
+    let mut stdout = io::stdout().lock();
+    match stdout
+        .write_all(output.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Err(error) if error.kind() == ErrorKind::BrokenPipe => Ok(()),
+        result => result,
+    }
+}
+
 fn main() -> ExitCode {
     let result = match Arguments::parse().command {
         Command::Plan { vault } => plan(&vault),
     };
-    match result {
-        Ok(output) => {
-            print!("{output}");
-            ExitCode::SUCCESS
-        }
+    let written = result.and_then(|output| Ok(write_output(&output)?));
+    match written {
+        Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
