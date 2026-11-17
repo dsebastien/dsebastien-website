@@ -1,0 +1,21 @@
+telemetry = false
+
+[console]
+depth = 2
+
+[install]
+auto = "auto"
+exact = true
+optional = true
+# Only install package versions published at least 3 days ago
+minimumReleaseAge = 259200
+# bun-types is the transitive payload of @types/bun: exclude both or installs
+# deadlock when a fresh Bun ships.
+minimumReleaseAgeExcludes = ["@types/bun", "bun-types", "typescript"]
+
+[test]
+coverage = false
+onlyFailures = true
+
+[test.reporter]
+dots = true

@@ -1,0 +1,57 @@
+{
+    "compilerOptions": {
+        "baseUrl": ".",
+        "lib": ["DOM", "DOM.Iterable", "ESNext"],
+        // Pin the ambient type roots. Without this, TypeScript auto-scans
+        // top-level node_modules/@types only. @types/node arrives transitively
+        // (via @types/bun -> bun-types) and can end up nested, at which point
+        // every node:* import silently types as `error`. With this line, a
+        // missing package is a hard TS2688 at build.
+        "types": ["bun", "node"],
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleDetection": "force",
+        // Bundler mode
+        "moduleResolution": "bundler",
+        "allowJs": false,
+        "allowImportingTsExtensions": true,
+        "verbatimModuleSyntax": true,
+        "esModuleInterop": true,
+        "isolatedModules": true,
+        "resolveJsonModule": true,
+        "checkJs": false,
+        "forceConsistentCasingInFileNames": true,
+
+        // Maximum strictness
+        "strict": true,
+        "alwaysStrict": true,
+        "strictBindCallApply": true,
+        "strictFunctionTypes": true,
+        "strictNullChecks": true,
+        "strictPropertyInitialization": true,
+        "useUnknownInCatchVariables": true,
+        "exactOptionalPropertyTypes": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitAny": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "noImplicitThis": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noUncheckedSideEffectImports": true,
+        "allowUnreachableCode": false,
+        "allowUnusedLabels": false,
+        "skipLibCheck": true,
+
+        // Output
+        "declaration": false,
+        "declarationMap": false,
+        "noEmit": true,
+        "noEmitOnError": true,
+        "sourceMap": true
+    },
+    "include": ["src/**/*", "scripts/**/*", "packages/**/*", "apps/**/*", "*.config.ts"],
+    "exclude": ["node_modules", "dist", ".astro", ".content", ".cache"]
+}

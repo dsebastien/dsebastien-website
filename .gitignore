@@ -1,0 +1,43 @@
+# Editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.iml
+.idea
+*.sw?
+*~
+
+# Dependencies
+node_modules
+
+# Build output
+dist/
+out/
+build/
+.astro/
+*.map
+
+# Exported content. The export step writes public notes and attachments here.
+# Content never enters this repository: it is public, the vault is private.
+.content/
+.cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Code coverage
+coverage/
+*.lcov
+
+# Logs
+logs/
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.fuse_hidden*
+.nfs*
