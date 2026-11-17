@@ -123,6 +123,13 @@ Not asked yet (the research was still running):
 4. The license of the note content.
 5. The remaining decisions of the publishing tool study (its section 19).
 
+Findings of the exploration of the existing sites that need a decision (`documentation/research/2026-11-17-existing-sites-inspiration.md`):
+
+1. **Canonical direction per note type**. Decision D24 says that articles and newsletters point their canonical URL to the main site. On the main site today, news posts name the notes URL as their canonical URL, and articles name themselves. So the rule must be set per note type: news notes are canonical on the notes site, articles on the main site.
+2. **`Ctrl+G`** is "find next" in browsers. Proposed guards: not inside a field, no extra modifier key, and the site leaves the key to the browser after a `Ctrl+F` on that page.
+3. **Link cards**: one card per URL of a `LINK:` block, or one card per block as the Ghost Publish plugin does today. And for a wikilink whose target is not live: plain text, or nothing.
+4. **Link cards and images**: show a preview image of the other site, stored locally, or only an icon and text.
+
 Facts from the private analyses that shape these questions (numbers stay private):
 
 1. The author does not hold back changed notes, but does hold back new notes. Nothing publishes without the author today.
