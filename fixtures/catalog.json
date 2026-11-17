@@ -12,13 +12,13 @@
         },
         {
             "id": "attachment-in-deny-list-folder",
-            "covers": "A note that can be published embeds an attachment of a deny list folder.",
+            "covers": "A note that can be published embeds an attachment of a deny list folder, next to an attachment that can be published.",
             "files": ["10 Garden/Tool shed tour.md", "90 Locked Shed/Attachments/shed-key.png"]
         },
         {
             "id": "attachment",
-            "covers": "A note embeds an attachment that can be published.",
-            "files": ["10 Garden/Tool shed tour.md", "Attachments/garden-plan.png"]
+            "covers": "A note whose only embed is an attachment that can be published.",
+            "files": ["10 Garden/Garden plan.md", "Attachments/garden-plan.png"]
         },
         {
             "id": "deny-list-folder",
@@ -61,27 +61,33 @@
         },
         {
             "id": "rename-with-link-cascade",
-            "covers": "A note that a test renames, and the notes that link to it: by name, with a label, to a heading, as an embed, with the full path, as a Markdown link, in a property and in a frozen list.",
+            "covers": "A note that a test renames, and the notes that link to it: by name, with a label, to a heading, as an embed, with the full path, as a Markdown link, in a property, in a frozen list and in a LINK block.",
             "files": [
                 "10 Garden/Rain barrel.md",
                 "10 Garden/Drip irrigation.md",
                 "10 Garden/Compost basics.md",
-                "10 Garden/Garden index.md"
+                "10 Garden/Garden index.md",
+                "40 Writing/Reading list.md"
             ]
         },
         {
             "id": "folder-rename",
-            "covers": "A folder that a test renames, with its folder note, and links that name the folder.",
+            "covers": "A folder that a test renames, with its folder note, and links that name the folder, from a note inside it and from a note outside it.",
             "files": [
                 "10 Garden/Herb bed/Herb bed.md",
                 "10 Garden/Herb bed/Thyme.md",
-                "10 Garden/Herb bed/Mint.md"
+                "10 Garden/Herb bed/Mint.md",
+                "10 Garden/Compost basics.md"
             ]
         },
         {
             "id": "duplicate-name",
-            "covers": "Two notes with the same file name in two folders, and links to them by name alone and by path.",
-            "files": ["10 Garden/Herb bed/Mint.md", "20 Library/20.02 Recipes/Mint.md"]
+            "covers": "Two notes with the same file name in two folders, and a note that links to one by name alone and to the other by path.",
+            "files": [
+                "10 Garden/Herb bed/Mint.md",
+                "20 Library/20.02 Recipes/Mint.md",
+                "10 Garden/Herb bed/Thyme.md"
+            ]
         },
         {
             "id": "alias-of-two-notes",
@@ -158,8 +164,12 @@
         },
         {
             "id": "link-blocks",
-            "covers": "Every form of a LINK block: the two keywords, one line or a list, with or without a colon, a URL, a Markdown link or a link to a note, a list of more than five lines, targets that are not published, blocks where nothing can show, and lines that are not LINK lines.",
-            "files": ["40 Writing/Reading list.md"]
+            "covers": "Every form of a LINK block (CARD-01 to CARD-08): the two keywords, one line or a list, with or without a colon, a URL, a Markdown link or a link to a note, a list of more than five lines, a target that is not published, blocks where nothing can show, and lines that are not LINK lines (code, comments, saved rows of a frozen query). The second file is a target on the deny list, and the third is a target that is not published.",
+            "files": [
+                "40 Writing/Reading list.md",
+                "90 Locked Shed/Greenhouse alarm code.md",
+                "10 Garden/Winter plan (draft).md"
+            ]
         },
         {
             "id": "main-site-with-url",
@@ -176,7 +186,7 @@
             "id": "stub",
             "covers": "A media note with the default status, no rating and no text of the author.",
             "files": ["20 Library/20.01 Films/The Lantern Keeper (2019).md"],
-            "open": "The value of the default status is not settled."
+            "open": "The value of the default status is not settled, so no test checks it."
         },
         {
             "id": "media-note-with-text",

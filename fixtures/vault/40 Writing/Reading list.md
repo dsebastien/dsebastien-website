@@ -21,6 +21,10 @@ One line, with the other keyword:
 
 LINKS: https://garden.example/bees
 
+One line, with the other keyword and without a colon:
+
+LINKS https://garden.example/ponds
+
 One line, with a Markdown link:
 
 LINK: [A guide to mulch](https://garden.example/mulch)
@@ -81,3 +85,16 @@ Not a `LINK` line, because it is in a comment:
 %%
 LINK: https://garden.example/comment
 %%
+
+Not a `LINK` line, because it is in an HTML comment:
+
+<!--
+LINK: https://garden.example/html-comment
+-->
+
+Not a `LINK` line, because it is a saved row of a frozen query:
+
+<!-- QueryToSerialize: LIST WITHOUT ID "LINK: " + url FROM #type/bookmark -->
+<!-- SerializedQuery: LIST WITHOUT ID "LINK: " + url FROM #type/bookmark -->
+LINK: https://garden.example/frozen
+<!-- SerializedQuery END -->
