@@ -37,7 +37,8 @@
         "dev": "bun run --cwd apps/site dev",
         "dev:plugin": "bun run --cwd apps/plugin dev",
         "commit:lint": "commitlint --edit",
-        "corpus": "bun scripts/generate-corpus.ts"
+        "corpus": "bun scripts/generate-corpus.ts",
+        "corpus:published": "bun scripts/export-published.ts"
     },
     "devDependencies": {
         "@commitlint/cli": "21.2.4",
