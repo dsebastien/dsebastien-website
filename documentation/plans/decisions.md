@@ -86,6 +86,50 @@ New requirements of round 2:
 | R7      | Existing plugins            | Settled                            | Before the new plugin is built: the URL helper of the Ghost Publish plugin is aligned with the URL rule for names with `+`, `%`, `&` and `?`, and the Dataview Serializer gets a dry mode and an error report                                                                                                                    |
 | R8      | Issues on other sites       | Settled                            | Recorded as private task notes of the author: the canonical host of the store, and a dead link in the theme of the main site                                                                                                                                                                                                     |
 
+## Round 4 (2026-11-17, not finished)
+
+Settled:
+
+| Id  | Decision                            | Status                | Answer of the author                                                                                                                                            |
+| --- | ----------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R9  | Analytics goals on the current site | Settled, not done yet | Add the `cta_clicked` goal with its four properties, and a goal for the 404 page, in the Plausible settings, so that ad clicks get a baseline before the switch |
+| R10 | Search baseline                     | Settled               | The level of January 2026 is the level that the new site must reach again                                                                                       |
+| R11 | First redirect list                 | Settled, not done yet | Built from the search engine URL lists and the 404 data of the current site                                                                                     |
+| R12 | Analytics                           | Settled               | A task of the author covers a better Plausible configuration: what works, what does not, what leads to sales                                                    |
+
+Asked, waiting for the answer of the author:
+
+| Id  | Question                                                                                                                                                                                                                                | First recommendation                                                                         |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Q1  | Task notes for urgent fixes on the current site (values in properties that should not be public)                                                                                                                                        | Yes                                                                                          |
+| Q2  | An allow list per property key, so that purchase, sale, storage, lending and pledge data never reach the new site                                                                                                                       | Yes. Rating, status and ownership stay public                                                |
+| D40 | Person notes: name, aliases, role, organization, Wikipedia link, website and creator channels. Life dates only for deceased persons. LinkedIn and portraits only for public figures. Never email, location or the author's private view | Yes                                                                                          |
+| Q3  | Person notes and search engines                                                                                                                                                                                                         | Index only the notes of public figures                                                       |
+| Q4  | Are the transcript notes of recordings public on purpose                                                                                                                                                                                | No recommendation: the intent of the author is not known                                     |
+| D47 | Bulk outputs (topic packs, full-text files for agents, JSON API, MCP server): opt-in per note type, with a per-note property to leave a note out. A single Markdown download per note stays available for all notes                     | Yes                                                                                          |
+| Q5  | Deny list: add the folder of the paid course and review the notes that were never published                                                                                                                                             | Yes                                                                                          |
+| D10 | Content store visibility, asked again                                                                                                                                                                                                   | Private                                                                                      |
+| Q6  | MCP sandbox: a small JavaScript engine inside the Worker, behind an interface                                                                                                                                                           | Yes                                                                                          |
+| Q7  | MCP shape: `search` plus `execute` over a typed interface                                                                                                                                                                               | Yes                                                                                          |
+| Q8  | MCP access: public without login, with a rate limit, a daily budget for `execute`, and row limits per call                                                                                                                              | Yes                                                                                          |
+| Q9  | Selection default in the publishing tool: changed notes and removals selected, the author unticks what to hold                                                                                                                          | Yes                                                                                          |
+| R4  | Plugin name                                                                                                                                                                                                                             | "Garden Gate". Other candidates: Greenhouse, Vault Press, Publication Center, Knowii Publish |
+
+Not asked yet (the research was still running):
+
+1. The decisions of `documentation/research/2026-11-17-seo-and-ai-search.md`.
+2. Which features of the theme of the main site and of the store to take over (`documentation/research/2026-11-17-existing-sites-inspiration.md`).
+3. The design: home page, note page layout, paragraph style, second theme.
+4. The license of the note content.
+5. The remaining decisions of the publishing tool study (its section 19).
+
+Facts from the private analyses that shape these questions (numbers stay private):
+
+1. The author does not hold back changed notes, but does hold back new notes. Nothing publishes without the author today.
+2. Search engines index about 1 percent of the notes today, and search traffic fell sharply during 2026, before the large media import. Media notes bring no search traffic. Permanent notes bring most of it.
+3. Ad clicks cannot be measured today: the analytics tool has no goal for them.
+4. Some properties of media notes and person notes hold data that should not be public. Some titles of private notes show as plain text. A few notes hold full transcripts of recordings that are sold.
+
 ## Consequences for spec v2
 
 1. The blog and store sections leave the spec. The codebase stays open to them, but nothing is planned or built for them here.
