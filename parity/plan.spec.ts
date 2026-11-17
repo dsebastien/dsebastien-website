@@ -21,6 +21,8 @@ describe('parity of the publication plan', () => {
         const rust = await runRustProgram(program, ['plan', '--vault', FIXTURE_VAULT])
 
         expect(rust.exitCode).toBe(0)
+        // The text first: a difference then shows as text, not as a list of bytes.
+        expect(new TextDecoder().decode(rust.stdout)).toBe(new TextDecoder().decode(typescript))
         expect(rust.stdout).toEqual(typescript)
     })
 

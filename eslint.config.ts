@@ -55,6 +55,31 @@ export default defineConfig([
             'prefer-const': 'error'
         }
     },
+    // The publishing logic exists two times, and the Rust program has no
+    // Obsidian (ADR 0009). The TypeScript logic takes what it needs as input.
+    {
+        files: ['apps/plugin/src/publishing/**/*.ts'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    paths: [
+                        {
+                            name: 'obsidian',
+                            message:
+                                'The publishing logic never imports Obsidian. The plugin gives it what it needs.'
+                        }
+                    ],
+                    patterns: [
+                        {
+                            group: ['**/app/**'],
+                            message: 'The publishing logic never imports the plugin.'
+                        }
+                    ]
+                }
+            ]
+        }
+    },
     // Astro components. `astro check` does the type check of these files, so
     // the rules that need type information stay with the TypeScript files.
     ...eslintPluginAstro.configs['flat/recommended'],

@@ -32,7 +32,16 @@ function executableOf(line: string): string | undefined {
  */
 export async function buildRustProgram(): Promise<string> {
     const child = Bun.spawn(
-        ['cargo', 'build', '--locked', '--package', PACKAGE, '--message-format=json'],
+        // The compiler writes its errors as readable text to the error output,
+        // and the list of what it built as JSON to the standard output.
+        [
+            'cargo',
+            'build',
+            '--locked',
+            '--package',
+            PACKAGE,
+            '--message-format=json-render-diagnostics'
+        ],
         { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' }
     )
     const [stdout, stderr] = await Promise.all([

@@ -28,3 +28,24 @@ test('the Rust toolchain has the formatter and the linter', async () => {
     expect(components).toContain('rustfmt')
     expect(components).toContain('clippy')
 })
+
+// CI must not install a second toolchain next to the pinned one.
+test('CI installs the pinned version', async () => {
+    const workflow: unknown = Bun.YAML.parse(
+        await Bun.file(
+            fileURLToPath(new URL('../.github/workflows/ci.yml', import.meta.url))
+        ).text()
+    )
+    const jobs = isRecord(workflow) && isRecord(workflow['jobs']) ? workflow['jobs'] : {}
+    const steps: unknown[] = Object.values(jobs).flatMap((job): unknown[] => {
+        const list: unknown = isRecord(job) ? job['steps'] : undefined
+        return Array.isArray(list) ? list : []
+    })
+    const versions = steps
+        .filter(isRecord)
+        .filter((step) => String(step['uses']).startsWith('dtolnay/rust-toolchain@'))
+        .map((step) => (isRecord(step['with']) ? step['with']['toolchain'] : undefined))
+
+    expect(versions.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(versions)).toEqual(new Set([(await readToolchain())['channel']]))
+})

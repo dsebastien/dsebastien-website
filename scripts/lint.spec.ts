@@ -27,11 +27,11 @@ async function readLintScript(): Promise<string> {
  * The source takes the name of this file, because the type-aware rules need a
  * file that the TypeScript project knows.
  */
-async function lintSource(source: string): Promise<number> {
+async function lintSource(source: string, file = 'scripts/lint.spec.ts'): Promise<number> {
     const script = await readLintScript()
     const command = script.replace(
         /\beslint \./,
-        `eslint --stdin --stdin-filename scripts/lint.spec.ts --rule 'no-debugger: warn'`
+        `eslint --stdin --stdin-filename ${file} --rule 'no-debugger: warn'`
     )
     expect(command).not.toBe(script)
     const child = Bun.spawn(['sh', '-c', command], {
@@ -50,5 +50,19 @@ describe('lint script', () => {
 
     test('fails on one warning', async () => {
         expect(await lintSource('debugger\nexport const answer = 42\n')).not.toBe(0)
+    }, 60_000)
+})
+
+// The publishing logic runs in the plugin and is compared with the Rust
+// program, which has no Obsidian. It takes what it needs as input.
+describe('lint of the publishing logic', () => {
+    const SOURCE = "import { Plugin } from 'obsidian'\nexport const loaded = Plugin.name\n"
+
+    test('refuses an import of Obsidian', async () => {
+        expect(await lintSource(SOURCE, 'apps/plugin/src/publishing/plan.ts')).not.toBe(0)
+    }, 60_000)
+
+    test('accepts the same import in the plugin itself', async () => {
+        expect(await lintSource(SOURCE, 'apps/plugin/src/app/plugin.ts')).toBe(0)
     }, 60_000)
 })
