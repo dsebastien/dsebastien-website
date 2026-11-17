@@ -4,6 +4,7 @@
     "version": "0.0.0",
     "description": "One codebase for dsebastien.net: public notes, blog and store",
     "author": "Sébastien Dubois",
+    "license": "MIT",
     "type": "module",
     "packageManager": "bun@1.4.0",
     "repository": {
