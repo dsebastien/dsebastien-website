@@ -17,6 +17,12 @@ _Avoid_: category, template
 A file that a note embeds: image, video, audio, PDF.
 _Avoid_: asset, media file
 
+**Folder note**:
+A note that has the name of its folder. It can be the home of that part of the site.
+
+**Stub**:
+A media note with the default status, no rating and no text of the author.
+
 ### Publishing
 
 **Published note**:
@@ -60,10 +66,21 @@ A property on a note that says that the publishing tool must never publish that 
 **Privacy gate**:
 The set of checks that every note, property and attachment passes before it can be published.
 
+**Parity rule**:
+The rule that the two implementations of the publishing logic give the same result for the same vault.
+
 ### Site
 
 **Canonical URL**:
 The one URL under which a note is served. Every other form redirects to it.
+
+**Original**:
+The URL that a page names to search engines as the one to rank. For a note that also exists on the main site, the original is the post there.
+_Avoid_: canonical URL (that is the address of a note on this site)
+
+**Main site**:
+The website of the author on his main domain. It is not part of this project.
+_Avoid_: blog, Ghost site
 
 **Resolver**:
 The function that turns a requested path into a canonical URL, a redirect, or "not found".
@@ -71,6 +88,16 @@ The function that turns a requested path into a canonical URL, a redirect, or "n
 **Ad**:
 A promotion of one of the author's own products or resources on a page.
 _Avoid_: CTA, banner
+
+**Offer map**:
+The list, set by hand by the author, that says which product and which free resource an ad shows for a topic.
+
+**Buy box**:
+The block at the top of a note about a product, with its name, its price and a button.
+
+**Curated list**:
+A list page with an intro of the author, made to be found by search engines.
+_Avoid_: tag page, type hub (those are generated without an intro)
 
 **Theme**:
 A named set of visual values (colors, fonts, shapes). Each theme has a light and a dark mode.
