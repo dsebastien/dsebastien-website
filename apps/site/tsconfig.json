@@ -1,0 +1,7 @@
+{
+    // The root configuration comes last, so that its strictness wins over the
+    // Astro preset (for example `allowJs` stays off).
+    "extends": ["astro/tsconfigs/strictest", "../../tsconfig.json"],
+    "include": [".astro/types.d.ts", "**/*"],
+    "exclude": ["dist", "node_modules", ".cache"]
+}

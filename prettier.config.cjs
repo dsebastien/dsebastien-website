@@ -9,5 +9,12 @@ module.exports = {
     arrowParens: 'always',
     bracketSpacing: true,
     endOfLine: 'lf',
-    quoteProps: 'consistent'
+    quoteProps: 'consistent',
+    plugins: ['prettier-plugin-astro'],
+    overrides: [
+        {
+            files: '*.astro',
+            options: { parser: 'astro' }
+        }
+    ]
 }
