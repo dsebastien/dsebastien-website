@@ -92,12 +92,12 @@ New requirements of round 2:
 
 Settled:
 
-| Id  | Decision                            | Status                | Answer of the author                                                                                                                                            |
-| --- | ----------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R9  | Analytics goals on the current site | Settled, not done yet | Add the `cta_clicked` goal with its four properties, and a goal for the 404 page, in the Plausible settings, so that ad clicks get a baseline before the switch |
-| R10 | Search baseline                     | Settled               | The level of January 2026 is the level that the new site must reach again                                                                                       |
-| R11 | First redirect list                 | Settled, not done yet | Built from the search engine URL lists and the 404 data of the current site                                                                                     |
-| R12 | Analytics                           | Settled               | A task of the author covers a better Plausible configuration: what works, what does not, what leads to sales                                                    |
+| Id  | Decision                            | Status                      | Answer of the author                                                                                                                                                                                                                                                                                      |
+| --- | ----------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R9  | Analytics goals on the current site | Settled, done               | Add the `cta_clicked` goal with its properties, and a goal for the 404 page, in the Plausible settings, so that ad clicks get a baseline before the switch. Done: both goals and five properties (`product`, `position`, `slot`, `page`, `href`) exist, and the analytics tool shows past events for them |
+| R10 | Search baseline                     | Settled                     | The level of January 2026 is the level that the new site must reach again                                                                                                                                                                                                                                 |
+| R11 | First redirect list                 | Settled, first version done | Built from the search engine URL lists and the 404 data of the current site. The first version exists as a private file with a script that builds it again. It also uses the rename history of the vault. Rows without a target wait for the author                                                       |
+| R12 | Analytics                           | Settled                     | A task of the author covers a better Plausible configuration: what works, what does not, what leads to sales                                                                                                                                                                                              |
 
 Asked, waiting for the answer of the author:
 
@@ -136,8 +136,17 @@ Facts from the private analyses that shape these questions (numbers stay private
 
 1. The author does not hold back changed notes, but does hold back new notes. Nothing publishes without the author today.
 2. Search engines index about 1 percent of the notes today, and search traffic fell sharply during 2026, before the large media import. Media notes bring no search traffic. Permanent notes bring most of it.
-3. Ad clicks cannot be measured today: the analytics tool has no goal for them.
+3. Ad clicks can be measured since the goal was added (R9). Every click comes from the ad strip at the end of a note.
 4. Some properties of media notes and person notes hold data that should not be public. Some titles of private notes show as plain text. A few notes hold full transcripts of recordings that are sold.
+
+Findings of the first redirect list that the resolver and the tests must cover:
+
+1. Old URLs exist with a note name that is cut at a dot, and with a tracking query that is encoded into the path. The resolver needs a rule for both.
+2. Most "soft 404" examples of the search engine are canonical URLs of published notes. The cause is how the current site renders, not dead URLs.
+3. Many dead URLs are former paths of product documentation under two former folders. One prefix rule can cover them.
+4. Some notes that are not published are folder notes that still get visits. They need a decision: a target, or "gone".
+5. The analytics tool shows paths decoded, so the parity test must compare the decoded form.
+6. The list uses the status codes of rule U4 of spec v1. The SEO research proposes other codes (its item 174). The script follows the decision of the author when it exists.
 
 ## Consequences for spec v2
 
