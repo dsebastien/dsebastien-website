@@ -72,6 +72,17 @@ A Markdown file with properties that is not a note (for example an issue templat
 - The corpus is never committed. The command refuses a folder of the clone that git does not ignore, and it writes over a folder only when that folder is its own earlier output (it holds `corpus.json`).
 - A corpus of full size is about 30,000 files. It is written in about one second.
 
+## Published corpus
+
+`bun run corpus:published --vault <folder> --list <file>` copies the files that the list names from a vault into `.cache/published/vault/`, with their vault paths (`scripts/export-published.ts`). The author runs it on his machines with the list of what Obsidian Publish serves today, so that prototypes and budget measurements use the real published notes (decision R30).
+
+- The list is the site cache of Obsidian Publish (a JSON object whose keys are the paths), a JSON list, or a text file with one path per line.
+- The path of the vault and the list are inputs of the command. Neither is stored in this repository. The list of the author is in his private working files.
+- A path of the list that leaves the vault is never read. A file that is missing in the vault is written to `missing.txt` of the output, and the command goes on.
+- The output is never committed: the same folder guard as for the invented corpus (`scripts/output-folder.ts`). Its marker file, `published.json`, holds three counts and no path.
+- The command never writes into the vault.
+- The public CI never has the published corpus. Its tests use the fixture vault as the vault, with an invented list.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on each push to any branch.
