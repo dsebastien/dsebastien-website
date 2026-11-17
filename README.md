@@ -6,7 +6,7 @@ A static site built with Astro, TypeScript and Tailwind from an Obsidian vault, 
 
 ## Status
 
-The plan is approved, and the build started. The site is empty for now.
+The plan is approved, and the build started. The first slice works: one note goes from a vault to a served page. The site has no design yet.
 
 - Plan: [`documentation/plans/spec-v2.md`](documentation/plans/spec-v2.md)
 - Decisions so far: [`documentation/plans/decisions.md`](documentation/plans/decisions.md)
@@ -30,6 +30,7 @@ bun install
 bun run setup         # one time per clone: activates the commit hooks
 bun run dev           # the site on a local server
 bun run build         # the static site in apps/site/dist, and the plugin in apps/plugin/dist
+bun run serve         # the built site on a plain local server, through the resolver
 bun run corpus        # an invented vault of full size in .cache/corpus, for prototypes
 bun run corpus:published --vault <folder> --list <file>   # the published notes of a vault in .cache/published
 ```

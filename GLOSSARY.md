@@ -115,6 +115,9 @@ _Avoid_: blog, Ghost site
 **Resolver**:
 The function that turns a requested path into a canonical URL, a redirect, or "not found".
 
+**Resolver map**:
+What the build writes for the resolver: which canonical path leads to which page.
+
 **URL contract**:
 The rules that say which URL each note has and which other URLs lead to it.
 

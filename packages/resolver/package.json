@@ -1,0 +1,11 @@
+{
+    "name": "@dsebastien-website/resolver",
+    "private": true,
+    "version": "0.0.0",
+    "description": "The URL function and the resolver of the notes website, in plain TypeScript",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    }
+}

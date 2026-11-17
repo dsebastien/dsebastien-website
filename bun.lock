@@ -8,6 +8,7 @@
         "@commitlint/cli": "21.2.4",
         "@commitlint/config-conventional": "21.2.4",
         "@commitlint/types": "21.2.3",
+        "@dsebastien-website/resolver": "workspace:*",
         "@dsebastien-website/testing": "workspace:*",
         "@eslint/js": "10.0.1",
         "@types/bun": "1.4.0",
@@ -34,13 +35,19 @@
       "name": "@dsebastien-website/site",
       "version": "0.0.0",
       "dependencies": {
+        "@dsebastien-website/resolver": "workspace:*",
         "@tailwindcss/vite": "4.3.5",
         "astro": "7.4.12",
         "tailwindcss": "4.3.5",
       },
       "devDependencies": {
         "@astrojs/check": "0.9.12",
+        "@dsebastien-website/testing": "workspace:*",
       },
+    },
+    "packages/resolver": {
+      "name": "@dsebastien-website/resolver",
+      "version": "0.0.0",
     },
     "packages/testing": {
       "name": "@dsebastien-website/testing",
@@ -177,6 +184,8 @@
     "@conventional-changelog/template": ["@conventional-changelog/template@1.4.1", "", {}, "sha512-mHyyEL0eIEqJ6+aF24+AdZRo4bu4W5GdUiCiCx5X7kfDY51ye8GQJ264uOINObrRSKxtSRCOWPpl9hbOy4UzxQ=="],
 
     "@dsebastien-website/plugin": ["@dsebastien-website/plugin@workspace:apps/plugin"],
+
+    "@dsebastien-website/resolver": ["@dsebastien-website/resolver@workspace:packages/resolver"],
 
     "@dsebastien-website/site": ["@dsebastien-website/site@workspace:apps/site"],
 

@@ -1,0 +1,39 @@
+---
+import type { GetStaticPaths } from 'astro'
+import { getCollection, render } from 'astro:content'
+import { readPublishedNotes } from '../../../content-store.ts'
+import '../../../styles/global.css'
+
+// The page of a published note. Its file has the identity of the note as its
+// name, which is plain ASCII on every system and on every host. The resolver
+// leads the canonical URL of the note to this file.
+export const getStaticPaths = (async () => {
+    const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
+    return (await readPublishedNotes()).flatMap((note) => {
+        const entry = entries.get(note.vaultPath)
+        if (entry === undefined) {
+            throw new Error(`the content store has no cleaned note for "${note.vaultPath}"`)
+        }
+        return [{ params: { id: note.id }, props: { entry, title: note.title } }]
+    })
+}) satisfies GetStaticPaths
+
+const { entry, title } = Astro.props
+const { Content } = await render(entry)
+---
+
+<!doctype html>
+<html lang='en'>
+    <head>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <title>{title}</title>
+    </head>
+    <body>
+        <main class='mx-auto max-w-prose p-8'>
+            <article>
+                <Content />
+            </article>
+        </main>
+    </body>
+</html>

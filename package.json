@@ -36,6 +36,7 @@
         "build:plugin": "bun run --cwd apps/plugin build",
         "dev": "bun run --cwd apps/site dev",
         "dev:plugin": "bun run --cwd apps/plugin dev",
+        "serve": "bun run --cwd apps/site serve",
         "commit:lint": "commitlint --edit",
         "corpus": "bun scripts/generate-corpus.ts",
         "corpus:published": "bun scripts/export-published.ts"
@@ -44,6 +45,7 @@
         "@commitlint/cli": "21.2.4",
         "@commitlint/config-conventional": "21.2.4",
         "@commitlint/types": "21.2.3",
+        "@dsebastien-website/resolver": "workspace:*",
         "@dsebastien-website/testing": "workspace:*",
         "@eslint/js": "10.0.1",
         "@types/bun": "1.4.0",

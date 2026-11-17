@@ -136,13 +136,16 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 ### Layout of the repository
 
 - `apps/site/`: the Astro and Tailwind site. A Bun workspace with its own `package.json` and `tsconfig.json`.
+    - `apps/site/src/content-store.ts`: how the build reads the content store. The build never reads the vault.
+    - `apps/site/server/`: the plain local server that serves the built site through the resolver.
 - `apps/plugin/`: the Obsidian plugin of the publishing tool, from the plugin template of the author. A Bun workspace. Its type check is the one of the root.
     - `apps/plugin/src/publishing/`: the TypeScript implementation of the publishing logic. It never imports Obsidian.
     - `apps/plugin/src/app/`: the plugin itself, a thin layer over the publishing logic.
 - `cli/`: the Rust command line program of the publishing tool, a member of the Cargo workspace at the root (`Cargo.toml`). It holds the Rust implementation of the publishing logic.
 - `parity/`: the parity tests. They run both implementations and compare their output byte by byte.
 - `packages/`: TypeScript code that more than one app uses. Each package is a Bun workspace.
-    - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, and `makeTestStores()`.
+    - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, `makeTestStores()`, and for a test of a publication `copyFixtureVault()` and `makeContentStoreCopy()`.
+    - `packages/resolver/`: the URL function and the resolver, in plain TypeScript. The build, the plain server and later the edge use them. No other code writes or reads a URL of a note.
 - `fixtures/`: the test data, invented. It is at the root because no implementation owns it: the TypeScript tests and the Rust tests read the same files.
     - `fixtures/vault/`: the fixture vault.
     - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.
@@ -193,6 +196,8 @@ bun run rust:test
 - On a machine of the author, `bun run corpus:published` copies the notes that are published today from his vault into `.cache/published/`. That folder holds real notes: never copy a file of it into the repository, into an issue or into a test. The public CI never has it.
 - Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`). One exception: the shared cases of the canonical form are a unit test next to the Rust writer.
 - The parity tests in `parity/` build the Rust program with cargo, so `bun run test` needs the Rust toolchain.
+- A test of a publication works on a copy of the fixture vault and on a copy of the content store, both inside the folder of the test. The expected texts of the two implementations are the same, with hashes that were computed with another tool.
+- The test of the note page publishes a note with the tool, builds the site of that content store and asks the local server: it covers the whole path.
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
 
 ## Design principles
@@ -227,6 +232,6 @@ The rules of the author for Tailwind, taken from his other repositories. They ap
 
 Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`), the fixture vault with its catalog, the test helpers for a content store and an attachment storage, the check of private files.
 
-The two implementations of the publishing logic have their skeleton: the plugin (`apps/plugin`), the `plan` command of the Rust program, the canonical form and the parity test.
+The first slice works end to end (issue 31): the two implementations publish a note for the first time into a content store (`plan`, `publish`), under the canonical form and the parity tests, the site builds one page per published note, and a plain local server serves it through the resolver. The plugin itself still does nothing: its view comes later.
 
 Not set up yet: the deployment, the performance budgets in CI, the lint rules of the Obsidian plugin catalog (the plugin is a tool for the author first).

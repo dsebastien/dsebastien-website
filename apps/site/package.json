@@ -9,14 +9,17 @@
         "dev": "astro dev",
         "build": "astro build",
         "preview": "astro preview",
-        "check": "astro check --minimumFailingSeverity warning"
+        "check": "astro check --minimumFailingSeverity warning",
+        "serve": "bun server/serve.ts"
     },
     "dependencies": {
+        "@dsebastien-website/resolver": "workspace:*",
         "@tailwindcss/vite": "4.3.5",
         "astro": "7.4.12",
         "tailwindcss": "4.3.5"
     },
     "devDependencies": {
-        "@astrojs/check": "0.9.12"
+        "@astrojs/check": "0.9.12",
+        "@dsebastien-website/testing": "workspace:*"
     }
 }

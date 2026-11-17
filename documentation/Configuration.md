@@ -118,7 +118,16 @@ The public CI never sees the content store (BUILD-11 of the spec). It builds the
 
 `apps/site/astro.config.ts`: Astro with Tailwind 4 through its Vite plugin. `src/styles/global.css` imports Tailwind. Prettier formats Astro components with `prettier-plugin-astro`.
 
-The test of the build writes its output to `apps/site/.cache/`, which git ignores. The folder must be on the file system of the site: Astro moves files into the output folder, and a move to another file system fails.
+- The variable `CONTENT_STORE` names the folder of a copy of the content store. The build reads the cleaned notes (`notes/`) as a content collection and the manifest (`manifest/`), and nothing else. It never reads the vault. Without the variable the site has no note: that is the state of the public CI, which never sees the content store.
+- One file per page (`build.format` is `file`). The page of a note is `-/note/<id>.html`, where the id is the identity of the note in the manifest. That name is plain ASCII on every system and on every host, whatever the name of the note is.
+- The build writes the resolver map to `-/resolver-map.json`: the canonical path of each published note, and the home page, with the file of its page.
+- `packages/resolver` holds the URL function (`canonicalPath`) and the resolver (`resolve`). The first version of the resolver knows the canonical path of a published note. The variants, the redirects and "gone" come with the slice of the URL contract, which also checks the encoding against the URLs of today.
+- `bun run serve` starts the plain local server on `http://127.0.0.1:4322` (`apps/site/server/serve.ts`, options `--dist` and `--port`). It answers through the resolver: 200 with the page for a path of the resolver map, 404 for every other path. The file of a response comes from the resolver map, never from the request. It is not a server for production.
+- The markup of a note comes from the Markdown renderer of Astro for now. The slice of the rendering replaces it after the adopt check of issue 12.
+
+The tests of the builds write their output to `apps/site/.cache/`, which git ignores. The folder must be on the file system of the site: Astro moves files into the output folder, and a move to another file system fails.
+
+To see a note on this machine: publish it into a copy of a content store with the command line program, build with `CONTENT_STORE=<copy> bun run build`, then `bun run serve`.
 
 ## Plugin
 
@@ -133,6 +142,12 @@ The test of the build writes its output to `apps/site/.cache/`, which git ignore
 
 ## Publishing logic and parity
 
+- The commands of the Rust program, for now:
+    - `plan --vault <folder> --content-store <folder> [--include <vault path>]...` computes a plan for the first publication of the included notes, stores it on the device and writes it with its id. It changes nothing in the vault and in the content of the store.
+    - `publish --vault <folder> --content-store <folder> --plan <id> [--time <time>]` applies one plan: one commit with the cleaned notes and their manifest entries, a push without force, then the `public_note` property of the published notes. Without `--time`, the program reads the clock one time.
+    - `--content-store` is the copy of the content store on this device: a git clone whose `origin` is the content store. The plans are stored in its git folder (`.git/vault-publish/plans/`): on the device, never in a commit, never in the vault.
+- In TypeScript the same two operations are `plan` and `publish` of `apps/plugin/src/publishing/tool.ts`. They take a device (`ports.ts`): a vault, a content store and a plan store. `node/device.ts` gives a device from two folders, with the `git` program of the system.
+- Both implementations read the properties of a note as lines of text, with the rules of `documentation/Canonical Form.md`, and use no YAML library.
 - TypeScript: `apps/plugin/src/publishing/`. Rust: `cli/src/`. The Rust program uses `clap` for its commands and `serde_json` for data. The feature `preserve_order` of `serde_json` stays off: the canonical form needs sorted keys.
 - `documentation/Canonical Form.md` is the written canonical form. `fixtures/canonical/cases.json` holds its shared cases.
 - `parity/harness.ts` builds the Rust program with `cargo build --locked` and asks cargo where the program is. `parity/*.spec.ts` compare the bytes of both implementations.
