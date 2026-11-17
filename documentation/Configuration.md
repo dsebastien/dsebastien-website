@@ -35,7 +35,7 @@ Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `
 
 `.github/workflows/ci.yml` runs on each push to any branch.
 
-- Job `checks`: dependency audit (level high), type check, Astro check, lint, tests, format check, build of the site.
+- Job `checks`: dependency audit (level high, with one advisory ignored: the workflow file says which and why), type check, Astro check, lint, tests, format check, build of the site.
 - Job `rust`, on Linux and on Windows: format check, clippy, tests.
 
 The public CI never sees the content store (BUILD-11 of the spec). It builds the empty site and, later, the site of the fixture vault.

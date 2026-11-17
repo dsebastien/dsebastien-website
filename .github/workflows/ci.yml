@@ -35,8 +35,13 @@ jobs:
 
             # Gate at `high`: advisories come from other projects, and a gate at
             # every level breaks unrelated work for each new low advisory.
+            # GHSA-fc5q-39xc-vjpf (picomatch <= 4.0.7, slow regular expression): no
+            # corrected version exists. The package arrives through Astro, Vite and
+            # typescript-eslint, and it reads only glob patterns of this repository
+            # at build time, never input from a visitor. Remove the ignore when
+            # picomatch ships a correction.
             - name: Audit dependencies
-              run: bun audit --audit-level=high
+              run: bun audit --audit-level=high --ignore GHSA-fc5q-39xc-vjpf
 
             - name: Type check
               run: bun run tsc
