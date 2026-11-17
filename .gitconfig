@@ -4,8 +4,8 @@
 #
 #   bun run setup
 #
-# (It runs `git config --local include.path ../.gitconfig`. The path is relative
-# to `.git/`, so `../.gitconfig` is this file.)
+# (It runs `git config --local --replace-all include.path ../.gitconfig`. The
+# path is relative to `.git/`, so `../.gitconfig` is this file.)
 #
 # After that, the hooks below run on each `git commit`. Never bypass them.
 
