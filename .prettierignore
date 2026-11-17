@@ -7,3 +7,5 @@ CHANGELOG.md
 .cache/
 .private/
 bun.lock
+target/
+Cargo.lock

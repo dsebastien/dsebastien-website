@@ -15,6 +15,7 @@ dist/
 out/
 build/
 .astro/
+target/
 *.map
 
 # Exported content. The export step writes public notes and attachments here.
