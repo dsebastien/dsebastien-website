@@ -3,7 +3,7 @@
 //! `apps/plugin/src/publishing/guards.ts`.
 
 use crate::configuration::Configuration;
-use crate::frontmatter::property_value;
+use crate::frontmatter::names_in_properties;
 
 /// The property that says that the tool must never publish a note.
 pub const IGNORE_PROPERTY: &str = "publish_ignore";
@@ -24,8 +24,9 @@ pub fn guard_of(path: &str, text: &str, configuration: &Configuration) -> Option
     if denied {
         return Some(Guard::DenyList);
     }
-    if property_value(text, IGNORE_PROPERTY).is_some_and(|value| value.eq_ignore_ascii_case("true"))
-    {
+    // The reading fails closed: every form of the key excludes the note,
+    // unless its value is exactly `false`.
+    if names_in_properties(text, IGNORE_PROPERTY) {
         return Some(Guard::IgnoreProperty);
     }
     None

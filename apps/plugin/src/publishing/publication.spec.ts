@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { readdir } from 'node:fs/promises'
+import { mkdir, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
     gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
+    rejectionOf,
     type TestStores
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
@@ -24,6 +25,11 @@ const NOTE = '10 Garden/Frost dates explained.md'
 const TIME = '2031-04-01T08:00:00Z'
 const NOTE_ID = '203d446940c02032'
 const NOTE_HASH = 'sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b'
+
+// The hash of `fixtures/configuration.json`, and the hash of a manifest without entries.
+const CONFIGURATION_HASH = 'sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12'
+const EMPTY_MANIFEST_HASH =
+    'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 
 const NOTE_TEXT = `---
 tags:
@@ -64,6 +70,16 @@ const PLAN_RECORD = `{
     "include": [
       "${NOTE}"
     ]
+  },
+  "state": {
+    "configuration": "${CONFIGURATION_HASH}",
+    "manifest": "${EMPTY_MANIFEST_HASH}",
+    "notes": [
+      {
+        "path": "${NOTE}",
+        "sourceHash": "${NOTE_HASH}"
+      }
+    ]
   }
 }
 `
@@ -86,6 +102,15 @@ async function git(...args: string[]): Promise<string> {
     const stdout = await new Response(child.stdout).text()
     expect(await child.exited).toBe(0)
     return stdout.trimEnd()
+}
+
+async function exists(path: string): Promise<boolean> {
+    try {
+        await stat(path)
+        return true
+    } catch {
+        return false
+    }
 }
 
 /** Every file of a folder with a hash of its bytes: a picture to compare before and after. */
@@ -169,8 +194,8 @@ describe('plan of a first publication', () => {
         await using stores = await makeTestStores()
         const { device, copy } = await setUp(stores)
 
-        expect(plan(device, { include: [path] })).rejects.toThrow(reason)
-        expect(await Bun.file(join(copy, '.git', 'vault-publish')).exists()).toBe(false)
+        expect(await rejectionOf(plan(device, { include: [path] }))).toContain(reason)
+        expect(await exists(join(copy, '.git', 'vault-publish'))).toBe(false)
     })
 })
 
@@ -257,7 +282,7 @@ describe('first publication of a note', () => {
         await using stores = await makeTestStores()
         const { device } = await setUp(stores)
 
-        expect(publish(device, '0000000000000000', TIME)).rejects.toThrow('plan')
+        expect(await rejectionOf(publish(device, '0000000000000000', TIME))).toContain('plan')
     })
 
     test('refuses a time that is not in the canonical form', async () => {
@@ -265,7 +290,7 @@ describe('first publication of a note', () => {
         const { device } = await setUp(stores)
         const planned = await plan(device, { include: [NOTE] })
 
-        expect(publish(device, planned.id, '2031-04-01 08:00')).rejects.toThrow('time')
+        expect(await rejectionOf(publish(device, planned.id, '2031-04-01 08:00'))).toContain('time')
     })
 
     test('refuses a second first publication of the same note', async () => {
@@ -273,6 +298,317 @@ describe('first publication of a note', () => {
         const setup = await setUp(stores)
         await publishNote(setup)
 
-        expect(plan(setup.device, { include: [NOTE] })).rejects.toThrow('already published')
+        expect(await rejectionOf(plan(setup.device, { include: [NOTE] }))).toContain(
+            'already published'
+        )
+    })
+})
+
+// The guards never open by accident (business rules 2 to 4). Each case here
+// was a way around a guard before it was closed.
+describe('guards of a plan', () => {
+    const DENIED = '90 Locked Shed/Shed inventory.md'
+
+    async function refuses(setup: Setup, path: string, reason: string): Promise<void> {
+        expect(await rejectionOf(plan(setup.device, { include: [path] }))).toContain(reason)
+        expect(await exists(join(setup.copy, '.git', 'vault-publish'))).toBe(false)
+    }
+
+    test('a symbolic link to a note of a deny list folder is not a note of the vault', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await symlink(join(setup.vault, DENIED), join(setup.vault, '10 Garden', 'Linked.md'))
+
+        await refuses(setup, '10 Garden/Linked.md', 'does not exist')
+    })
+
+    test('a folder that is a symbolic link to a deny list folder is not a folder of the vault', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await symlink(join(setup.vault, '90 Locked Shed'), join(setup.vault, 'Open shed'))
+
+        await refuses(setup, 'Open shed/Shed inventory.md', 'does not exist')
+    })
+
+    test('a symbolic link to a file outside the vault is not a note of the vault', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const outside = join(stores.root, 'outside.md')
+        await writeFile(outside, 'Not a note of the vault.\n')
+        await symlink(outside, join(setup.vault, 'Outside.md'))
+
+        await refuses(setup, 'Outside.md', 'does not exist')
+        expect(await Bun.file(outside).text()).toBe('Not a note of the vault.\n')
+    })
+
+    test('a note that is not valid UTF-8 is refused', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(
+            join(setup.vault, 'Latin.md'),
+            Uint8Array.from([0x63, 0x61, 0x66, 0xe9, 0x0a])
+        )
+
+        await refuses(setup, 'Latin.md', 'UTF-8')
+    })
+
+    // The reading of the ignore property fails closed. The shared cases of
+    // `frontmatter.spec.ts` hold every form.
+    test('a form of the ignore property that is not the plain one still excludes the note', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(
+            join(setup.vault, 'Quoted.md'),
+            '---\n"publish_ignore": yes # never\n---\nText\n'
+        )
+
+        await refuses(setup, 'Quoted.md', 'publish_ignore')
+    })
+
+    test.each([
+        ['is not valid UTF-8', Uint8Array.from([0x7b, 0xe9, 0x7d]), 'UTF-8'],
+        ['is not JSON', '{ "denyList": [', 'JSON'],
+        ['is a list', '[[]]', 'deny list'],
+        ['has no deny list', '{}', 'deny list'],
+        [
+            'has an entry with a slash at its end',
+            '{ "denyList": ["90 Locked Shed/"] }',
+            'vault path'
+        ],
+        [
+            'has an entry with a slash at its start',
+            '{ "denyList": ["/90 Locked Shed"] }',
+            'vault path'
+        ],
+        [
+            'has an entry in another letter case',
+            '{ "denyList": ["90 locked shed"] }',
+            'not a folder'
+        ],
+        [
+            'has an entry with a space at its end',
+            '{ "denyList": ["90 Locked Shed "] }',
+            'not a folder'
+        ],
+        ['has an entry that names a note', '{ "denyList": ["Welcome.md"] }', 'not a folder']
+    ])('a configuration that %s stops the plan', async (_case, configuration, reason) => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(setup.copy, 'configuration.json'), configuration)
+
+        // An open note: a configuration that cannot be trusted stops everything.
+        await refuses(setup, NOTE, reason)
+        await refuses(setup, DENIED, reason)
+    })
+
+    test('a configuration that is a folder stops the plan', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await rm(join(setup.copy, 'configuration.json'))
+        await mkdir(join(setup.copy, 'configuration.json'))
+
+        await refuses(setup, DENIED, 'cannot be read')
+    })
+
+    test('only a content store without a configuration has an empty deny list', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await rm(join(setup.copy, 'configuration.json'))
+
+        const planned = await plan(setup.device, { include: [DENIED] })
+
+        expect(planned.plan.publish).toEqual([DENIED])
+    })
+
+    test('a folder that is not the root of its own git repository is not a content store', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const inside = join(setup.copy, 'inside')
+        await mkdir(inside)
+        const device = nodeDevice({ vault: setup.vault, contentStore: inside })
+
+        expect(await rejectionOf(plan(device, { include: [NOTE] }))).toContain('git repository')
+    })
+})
+
+describe('publication and what changed since the plan', () => {
+    test('a note that was edited after the plan makes the plan stale', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(
+            join(setup.vault, NOTE),
+            `${NOTE_TEXT}\nA line that the author did not review.\n`
+        )
+
+        expect(await rejectionOf(publish(setup.device, planned.id, TIME))).toContain('stale')
+
+        expect(await git('--git-dir', stores.contentStore, 'rev-list', '--count', 'main')).toBe('1')
+    })
+
+    test('another publication after the plan makes the plan stale', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const first = await plan(setup.device, { include: [NOTE] })
+        const second = await plan(setup.device, { include: ['Welcome.md'] })
+        await publish(setup.device, second.id, TIME)
+
+        expect(await rejectionOf(publish(setup.device, first.id, TIME))).toContain('stale')
+    })
+
+    test('a guard that was added after the plan stops the publication', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(
+            join(setup.vault, NOTE),
+            NOTE_TEXT.replace('tags:', 'publish_ignore: true\ntags:')
+        )
+
+        expect(await rejectionOf(publish(setup.device, planned.id, TIME))).toContain(
+            'publish_ignore'
+        )
+    })
+
+    test('the same plan cannot be applied two times', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await publish(setup.device, planned.id, TIME)
+
+        await rejectionOf(publish(setup.device, planned.id, TIME))
+
+        expect(await git('--git-dir', stores.contentStore, 'rev-list', '--count', 'main')).toBe('2')
+    })
+
+    test.each([
+        ['a path in the place of the id', '../../other/.git/vault-publish/plans/0000000000000000'],
+        ['capital letters', 'ABCDEF0123456789'],
+        ['an id that is too short', 'abc']
+    ])('refuses %s', async (_case, id) => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores)
+
+        expect(await rejectionOf(publish(device, id, TIME))).toContain('16 hexadecimal digits')
+    })
+
+    test.each(['2031-13-45T99:99:99Z', '2031-02-30T08:00:00Z', '2031-04-01T24:00:00Z'])(
+        'refuses the time %s, which is not a real date and time',
+        async (time) => {
+            await using stores = await makeTestStores()
+            const { device } = await setUp(stores)
+            const planned = await plan(device, { include: [NOTE] })
+
+            expect(await rejectionOf(publish(device, planned.id, time))).toContain('time')
+        }
+    )
+})
+
+describe('commit of a publication', () => {
+    test('holds only the files of the publication', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(setup.copy, 'scratch.txt'), 'not for the content store\n')
+        await mkdir(join(setup.copy, 'notes'), { recursive: true })
+        await writeFile(
+            join(setup.copy, 'notes', 'left-over.md'),
+            'A file that no publication wrote.\n'
+        )
+
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await publish(setup.device, planned.id, TIME)
+
+        const files = await git(
+            '--git-dir',
+            stores.contentStore,
+            'ls-tree',
+            '-r',
+            '--name-only',
+            '-z',
+            'main'
+        )
+        expect(
+            files
+                .split('\0')
+                .filter((file) => file !== '')
+                .sort()
+        ).toEqual(['configuration.json', `manifest/${NOTE_ID}.json`, `notes/${NOTE}`])
+        expect(await Bun.file(join(setup.copy, 'scratch.txt')).text()).toBe(
+            'not for the content store\n'
+        )
+    })
+
+    test('holds a note that a rule of the store would ignore', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await mkdir(join(setup.copy, '.git', 'info'), { recursive: true })
+        await writeFile(join(setup.copy, '.git', 'info', 'exclude'), 'notes/\n')
+
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await publish(setup.device, planned.id, TIME)
+
+        expect(await git('--git-dir', stores.contentStore, 'show', `main:notes/${NOTE}`)).toBe(
+            NOTE_TEXT.trimEnd()
+        )
+    })
+
+    // Another device pushed first. Nothing is published, and nothing is left behind.
+    test('a refused push leaves the vault, the copy and the content store as they were', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const other = join(stores.root, 'other-device')
+        await git('clone', '--quiet', stores.contentStore, other)
+        await writeFile(join(other, 'other.txt'), 'pushed first\n')
+        await git('-C', other, 'add', 'other.txt')
+        await git(
+            '-C',
+            other,
+            '-c',
+            'user.name=Other',
+            '-c',
+            'user.email=other@example.invalid',
+            '-c',
+            'commit.gpgsign=false',
+            'commit',
+            '--quiet',
+            '--message',
+            'Another device publishes'
+        )
+        await git('-C', other, 'push', '--quiet', 'origin', 'HEAD:main')
+        const before = {
+            vault: await picture(setup.vault),
+            copy: await picture(setup.copy),
+            head: await git('-C', setup.copy, 'rev-parse', 'HEAD'),
+            remote: await git('--git-dir', stores.contentStore, 'rev-parse', 'main')
+        }
+
+        expect(await rejectionOf(publish(setup.device, planned.id, TIME))).toContain('refused')
+
+        expect(await picture(setup.vault)).toEqual(before.vault)
+        expect(await picture(setup.copy)).toEqual(before.copy)
+        expect(await git('-C', setup.copy, 'rev-parse', 'HEAD')).toBe(before.head)
+        expect(await git('-C', setup.copy, 'status', '--porcelain')).toBe('')
+        expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(before.remote)
+    })
+})
+
+describe('publication of a note with Windows line ends', () => {
+    test('writes Unix line ends to the content store and keeps the line ends of the vault', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const windows = NOTE_TEXT.replaceAll('\n', '\r\n')
+        await writeFile(join(setup.vault, NOTE), windows)
+
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await publish(setup.device, planned.id, TIME)
+
+        expect(await Bun.file(join(setup.copy, 'notes', NOTE)).text()).toBe(NOTE_TEXT)
+        expect(await Bun.file(join(setup.vault, NOTE)).text()).toBe(
+            windows.replace(
+                'updated: 2031-03-07T07:02\r\n',
+                'updated: 2031-03-07T07:02\r\npublic_note: true\r\n'
+            )
+        )
     })
 })

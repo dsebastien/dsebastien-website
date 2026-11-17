@@ -1,0 +1,299 @@
+{
+    "about": "Cases of the rules for the properties of a note (documentation/Canonical Form.md, section \"Notes and their properties\"). The TypeScript and the Rust implementation both read this file. Each expected result is written by hand.",
+    "ignored": [
+        {
+            "name": "the property with the value true",
+            "note": "---\npublish_ignore: true\n---\nText\n",
+            "excluded": true
+        },
+        {
+            "name": "the property with the value false",
+            "note": "---\npublish_ignore: false\n---\nText\n",
+            "excluded": false
+        },
+        {
+            "name": "properties without the property",
+            "note": "---\ntags:\n  - a\n---\nText\n",
+            "excluded": false
+        },
+        {
+            "name": "a note without properties",
+            "note": "publish_ignore: true\n",
+            "excluded": false
+        },
+        {
+            "name": "the value in capital letters",
+            "note": "---\npublish_ignore: True\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the value yes",
+            "note": "---\npublish_ignore: yes\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the value in quotes",
+            "note": "---\npublish_ignore: \"true\"\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a comment after the value true",
+            "note": "---\npublish_ignore: true # never\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a comment after the value false",
+            "note": "---\npublish_ignore: false # for now\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a space before the colon",
+            "note": "---\npublish_ignore : true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the key in double quotes",
+            "note": "---\n\"publish_ignore\": true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the key in single quotes",
+            "note": "---\n'publish_ignore': true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the key in another letter case",
+            "note": "---\nPublish_Ignore: true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the key below another key",
+            "note": "---\nmeta:\n  publish_ignore: true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the value on the next line",
+            "note": "---\npublish_ignore:\n  true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the value as a list item",
+            "note": "---\npublish_ignore:\n  - true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the value as a list on one line",
+            "note": "---\npublish_ignore: [true]\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the value 1",
+            "note": "---\npublish_ignore: 1\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "no value",
+            "note": "---\npublish_ignore:\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the property two times, false then true",
+            "note": "---\npublish_ignore: false\npublish_ignore: true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a byte order mark before the properties",
+            "note": "\ufeff---\npublish_ignore: true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "spaces after the opening line",
+            "note": "---  \npublish_ignore: true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "Windows line ends",
+            "note": "---\r\npublish_ignore: true\r\n---\r\nText\r\n",
+            "excluded": true
+        },
+        {
+            "name": "properties that are never closed",
+            "note": "---\npublish_ignore: true\nText\n",
+            "excluded": true
+        },
+        {
+            "name": "false with no space after the colon",
+            "note": "---\npublish_ignore:false\n---\n",
+            "excluded": false
+        },
+        {
+            "name": "false with spaces and a tab after it",
+            "note": "---\npublish_ignore: false \t\n---\n",
+            "excluded": false
+        },
+        {
+            "name": "false with a next line character after it",
+            "note": "---\npublish_ignore: false\u0085\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a longer key that starts with the key",
+            "note": "---\npublish_ignore_extra: true\n---\n",
+            "excluded": false
+        },
+        {
+            "name": "the text of the property below closed properties",
+            "note": "---\ntags: []\n---\npublish_ignore: true\n",
+            "excluded": false
+        }
+    ],
+    "source": [
+        {
+            "name": "the state property is removed",
+            "note": "---\ntags: a\npublic_note: true\n---\nText\n",
+            "source": "---\ntags: a\n---\nText\n"
+        },
+        {
+            "name": "Windows line ends become line feeds",
+            "note": "---\r\ntags: a\r\npublic_note: true\r\n---\r\nText\r\n",
+            "source": "---\ntags: a\n---\nText\n"
+        },
+        {
+            "name": "the byte order mark is removed",
+            "note": "\ufeff---\ntags: a\n---\nText\n",
+            "source": "---\ntags: a\n---\nText\n"
+        },
+        {
+            "name": "a space before the colon, and quotes around the key",
+            "note": "---\npublic_note : true\n\"public_note\": true\n'public_note': false\ntags: a\n---\n",
+            "source": "---\ntags: a\n---\n"
+        },
+        {
+            "name": "the property two times",
+            "note": "---\npublic_note: true\ntags: a\npublic_note: false\n---\n",
+            "source": "---\ntags: a\n---\n"
+        },
+        {
+            "name": "a value over several lines",
+            "note": "---\npublic_note:\n  - a\n  - b\ntags: c\n---\n",
+            "source": "---\ntags: c\n---\n"
+        },
+        {
+            "name": "a longer key stays",
+            "note": "---\npublic_note_extra: 1\n---\n",
+            "source": "---\npublic_note_extra: 1\n---\n"
+        },
+        {
+            "name": "the key below another key stays",
+            "note": "---\nmeta:\n  public_note: true\n---\n",
+            "source": "---\nmeta:\n  public_note: true\n---\n"
+        },
+        {
+            "name": "the key in another letter case stays",
+            "note": "---\nPublic_Note: true\n---\n",
+            "source": "---\nPublic_Note: true\n---\n"
+        },
+        {
+            "name": "the text of the property below the properties stays",
+            "note": "---\ntags: a\n---\npublic_note: true\n",
+            "source": "---\ntags: a\n---\npublic_note: true\n"
+        },
+        {
+            "name": "a note without properties",
+            "note": "public_note: true\nText",
+            "source": "public_note: true\nText"
+        },
+        {
+            "name": "properties that are never closed",
+            "note": "---\npublic_note: true\nText\n",
+            "source": "---\npublic_note: true\nText\n"
+        },
+        {
+            "name": "a carriage return that stands alone stays, and an empty note stays empty",
+            "note": "a\rb\n",
+            "source": "a\rb\n"
+        }
+    ],
+    "state": [
+        {
+            "name": "a new property is the last line of the properties",
+            "note": "---\ntags: a\n---\nText\n",
+            "result": "---\ntags: a\npublic_note: true\n---\nText\n"
+        },
+        {
+            "name": "a property with another value keeps its place",
+            "note": "---\npublic_note: false\ntags: a\n---\nText\n",
+            "result": "---\npublic_note: true\ntags: a\n---\nText\n"
+        },
+        {
+            "name": "a property that is already right changes nothing",
+            "note": "---\ntags: a\npublic_note: true\n---\nText\n",
+            "result": "---\ntags: a\npublic_note: true\n---\nText\n"
+        },
+        {
+            "name": "Windows line ends are kept, and the new line gets one",
+            "note": "---\r\ntags: a\r\n---\r\nText\r\n",
+            "result": "---\r\ntags: a\r\npublic_note: true\r\n---\r\nText\r\n"
+        },
+        {
+            "name": "a note without properties gets them",
+            "note": "Text\n",
+            "result": "---\npublic_note: true\n---\nText\n"
+        },
+        {
+            "name": "a note without properties and with Windows line ends",
+            "note": "Text\r\nMore\r\n",
+            "result": "---\r\npublic_note: true\r\n---\r\nText\r\nMore\r\n"
+        },
+        {
+            "name": "a byte order mark stays at the start",
+            "note": "\ufeff---\ntags: a\n---\nText\n",
+            "result": "\ufeff---\ntags: a\npublic_note: true\n---\nText\n"
+        },
+        {
+            "name": "a byte order mark and no properties",
+            "note": "\ufeffText\n",
+            "result": "\ufeff---\npublic_note: true\n---\nText\n"
+        },
+        {
+            "name": "the property two times becomes one line, at the first place",
+            "note": "---\npublic_note: false\ntags: a\npublic_note: false\n---\n",
+            "result": "---\npublic_note: true\ntags: a\n---\n"
+        },
+        {
+            "name": "a space before the colon",
+            "note": "---\npublic_note : true\n---\n",
+            "result": "---\npublic_note: true\n---\n"
+        },
+        {
+            "name": "quotes around the key",
+            "note": "---\ntags: a\n\"public_note\": true\n---\n",
+            "result": "---\ntags: a\npublic_note: true\n---\n"
+        },
+        {
+            "name": "a value over several lines",
+            "note": "---\npublic_note:\n  - a\ntags: b\n---\n",
+            "result": "---\npublic_note: true\ntags: b\n---\n"
+        },
+        {
+            "name": "an empty note",
+            "note": "",
+            "result": "---\npublic_note: true\n---\n"
+        },
+        {
+            "name": "empty properties",
+            "note": "---\n---\nText\n",
+            "result": "---\npublic_note: true\n---\nText\n"
+        },
+        {
+            "name": "a closing line with no line end",
+            "note": "---\ntags: a\n---",
+            "result": "---\ntags: a\npublic_note: true\n---"
+        },
+        {
+            "name": "properties that are never closed get a block before them",
+            "note": "---\ntags: a\nText\n",
+            "result": "---\npublic_note: true\n---\n---\ntags: a\nText\n"
+        }
+    ]
+}

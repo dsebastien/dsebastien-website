@@ -2,7 +2,8 @@
 //! (STORE-03 to STORE-05 of the spec). The TypeScript twin is
 //! `apps/plugin/src/publishing/manifest.ts`.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::device::ContentStore;
 use crate::hash::sha256_hex;
@@ -13,13 +14,13 @@ pub const MANIFEST_FOLDER: &str = "manifest";
 /// The folder of the cleaned notes in the content store.
 pub const NOTES_FOLDER: &str = "notes";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestEntry {
     /// The attachments of the note. A later slice fills it.
     pub attachments: Vec<String>,
     pub cleaned_hash: String,
-    pub cleaning_version: u32,
+    pub cleaning_version: u64,
     /// The time of the run of the first publication.
     pub first_published: String,
     /// The paths that the note had before, in the order in which they were
@@ -35,7 +36,7 @@ pub struct ManifestEntry {
     pub state: State,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum State {
     Published,
@@ -48,17 +49,56 @@ pub fn note_id(path: &str, first_published: &str) -> String {
     sha256_hex(&format!("{path}\n{first_published}"))[..16].to_owned()
 }
 
+/// The largest whole number that the TypeScript twin holds exactly.
+const LARGEST_EXACT: u64 = 9_007_199_254_740_991;
+
+/// Reads one entry from the text of its file. The text is read as a JSON value
+/// and checked by hand, as the TypeScript twin does, so that both accept and
+/// refuse the same texts.
+fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    let entry = value.as_object()?;
+    let text_of = |key: &str| entry.get(key)?.as_str().map(str::to_owned);
+    let list_of = |key: &str| {
+        entry
+            .get(key)?
+            .as_array()?
+            .iter()
+            .map(|item| item.as_str().map(str::to_owned))
+            .collect::<Option<Vec<String>>>()
+    };
+    let cleaning_version = entry
+        .get("cleaningVersion")?
+        .as_u64()
+        .filter(|version| *version <= LARGEST_EXACT)?;
+    if text_of("state")? != "published" {
+        return None;
+    }
+    Some(ManifestEntry {
+        attachments: list_of("attachments")?,
+        cleaned_hash: text_of("cleanedHash")?,
+        cleaning_version,
+        first_published: text_of("firstPublished")?,
+        former_paths: list_of("formerPaths")?,
+        id: text_of("id")?,
+        last_published: text_of("lastPublished")?,
+        path: text_of("path")?,
+        source_hash: text_of("sourceHash")?,
+        state: State::Published,
+    })
+}
+
 /// Reads every entry of the manifest of a content store.
 ///
 /// # Errors
 ///
-/// A file of the manifest is not an entry.
+/// A file of the manifest cannot be read or is not an entry.
 pub fn read_manifest(store: &ContentStore) -> Result<Vec<ManifestEntry>, String> {
     let mut entries = Vec::new();
     for file in store.list(MANIFEST_FOLDER) {
-        if let Some(text) = store.read(&file) {
-            let entry = serde_json::from_str(&text)
-                .map_err(|_| format!("{file} is not a manifest entry"))?;
+        if let Some(text) = store.read(&file)? {
+            let entry = parse_manifest_entry(&text)
+                .ok_or_else(|| format!("{file} is not a manifest entry"))?;
             entries.push(entry);
         }
     }

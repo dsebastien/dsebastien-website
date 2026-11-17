@@ -57,7 +57,7 @@ enum Command {
 
         /// The vault path of a note to publish. Give the option one time per
         /// note.
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
         include: Vec<String>,
     },
 

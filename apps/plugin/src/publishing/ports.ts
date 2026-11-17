@@ -4,20 +4,38 @@
 
 /** The vault: the only source of content. */
 export interface Vault {
-    /** The text of a file, by its vault path. `undefined` when there is no such file. */
+    /**
+     * The text of the file with exactly this vault path. `undefined` when the
+     * vault has no such file: each part of the path must be a name of the
+     * folder listing, with the same letter case, and a symbolic link is not a
+     * file of the vault. It throws when the file is not valid UTF-8.
+     */
     read(path: string): Promise<string | undefined>
+    /** True when the vault has a folder with exactly this vault path, which is not a symbolic link. */
+    hasFolder(path: string): Promise<boolean>
     write(path: string, text: string): Promise<void>
 }
 
 /** The copy of the content store on this device. */
 export interface ContentStore {
-    /** The text of a file, by its path in the content store. `undefined` when there is no such file. */
+    /** Throws when the folder is not the root of its own git repository. */
+    verify(): Promise<void>
+    /**
+     * The text of a file, by its path in the content store. `undefined` only
+     * when there is no such file. It throws when the file cannot be read or is
+     * not valid UTF-8: a file that cannot be read is never taken for a
+     * missing one.
+     */
     read(path: string): Promise<string | undefined>
     /** The files below a folder, as paths in the content store, in the order of the code points. */
     list(folder: string): Promise<string[]>
     write(path: string, text: string): Promise<void>
-    /** Puts every change in one commit and pushes it, without force. It throws when the push is refused. */
-    commitAndPush(message: string): Promise<void>
+    /**
+     * Puts exactly these files in one commit and pushes it, without force.
+     * When the push is refused, it takes the commit and the files back, and
+     * throws: the copy is then as it was before.
+     */
+    commitAndPush(message: string, paths: readonly string[]): Promise<void>
 }
 
 /** The plans of this device. They are stored outside the vault and outside the content of the store. */

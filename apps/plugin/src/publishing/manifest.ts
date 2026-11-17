@@ -59,6 +59,8 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         !isTextList(attachments) ||
         typeof cleanedHash !== 'string' ||
         typeof cleaningVersion !== 'number' ||
+        !Number.isSafeInteger(cleaningVersion) ||
+        cleaningVersion < 0 ||
         typeof firstPublished !== 'string' ||
         !isTextList(formerPaths) ||
         typeof id !== 'string' ||

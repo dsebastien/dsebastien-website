@@ -4,6 +4,16 @@
 /** The path of the configuration in the content store. */
 export const CONFIGURATION_FILE = 'configuration.json'
 
+/** True when the text is a path inside a vault: relative, with `/`, and with no part that leaves a folder. */
+export function isVaultPath(path: string): boolean {
+    const parts = path.split('/')
+    return (
+        path !== '' &&
+        !path.includes('\\') &&
+        parts.every((part) => part !== '' && part !== '.' && part !== '..')
+    )
+}
+
 export interface Configuration {
     /** The vault folders whose notes can never be published. */
     readonly denyList: readonly string[]
@@ -22,10 +32,22 @@ export function parseConfiguration(text: string | undefined): Configuration {
     if (text === undefined) {
         return { denyList: [] }
     }
-    const value: unknown = JSON.parse(text)
+    let value: unknown
+    try {
+        value = JSON.parse(text)
+    } catch {
+        throw new Error(`${CONFIGURATION_FILE} is not JSON`)
+    }
     const denyList = isRecord(value) ? value['denyList'] : undefined
     if (!Array.isArray(denyList) || !denyList.every((folder) => typeof folder === 'string')) {
         throw new Error(`${CONFIGURATION_FILE}: the deny list must be a list of folders`)
+    }
+    // An entry in another form would match no note, and the guard would be open.
+    const wrong = denyList.find((folder) => !isVaultPath(folder))
+    if (wrong !== undefined) {
+        throw new Error(
+            `${CONFIGURATION_FILE}: the deny list entry "${wrong}" is not a vault path. Write a folder as "Folder/Sub folder"`
+        )
     }
     return { denyList }
 }

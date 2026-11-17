@@ -1,3 +1,4 @@
+import { isVaultPath } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
 import { guardOf, IGNORE_PROPERTY } from './guards.ts'
 import type { ManifestEntry } from './manifest.ts'
@@ -54,16 +55,6 @@ export function makePlan(lists: {
     }
 }
 
-/** True when the text is a path inside a vault: relative, with `/`, and with no part that leaves a folder. */
-export function isVaultPath(path: string): boolean {
-    const parts = path.split('/')
-    return (
-        path !== '' &&
-        !path.includes('\\') &&
-        parts.every((part) => part !== '' && part !== '.' && part !== '..')
-    )
-}
-
 /** Checks one selected path and says why it cannot be published, or `undefined` when it can. */
 async function reasonToRefuse(path: string, input: PlanInput): Promise<string | undefined> {
     if (!isVaultPath(path)) {
@@ -72,7 +63,12 @@ async function reasonToRefuse(path: string, input: PlanInput): Promise<string | 
     if (!path.endsWith('.md')) {
         return 'is not a note'
     }
-    const text = await input.vault.read(path)
+    let text: string | undefined
+    try {
+        text = await input.vault.read(path)
+    } catch (error) {
+        return `cannot be read: it ${error instanceof Error ? error.message : 'failed'}`
+    }
     if (text === undefined) {
         return 'does not exist in the vault'
     }

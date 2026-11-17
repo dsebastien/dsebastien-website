@@ -80,3 +80,17 @@ export async function makeTestStores(): Promise<TestStores> {
         throw error
     }
 }
+
+/**
+ * Waits for a promise that must fail, and gives the message of its error. It
+ * throws when the promise does not fail. A test then checks the message as a
+ * normal value, so that the check is really waited for.
+ */
+export async function rejectionOf(promise: Promise<unknown>): Promise<string> {
+    try {
+        await promise
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+    }
+    throw new Error('the promise did not fail')
+}

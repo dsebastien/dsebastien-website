@@ -1,5 +1,5 @@
 import type { Configuration } from './configuration.ts'
-import { propertyValue } from './frontmatter.ts'
+import { namesInProperties } from './frontmatter.ts'
 
 // The two guards (ADR 0011): a note under a guard is never published,
 // whatever is selected. The Rust twin is `cli/src/guards.rs`.
@@ -19,7 +19,9 @@ export function guardOf(
     if (configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
         return 'deny-list'
     }
-    if (propertyValue(text, IGNORE_PROPERTY)?.toLowerCase() === 'true') {
+    // The reading fails closed: every form of the key excludes the note,
+    // unless its value is exactly `false`.
+    if (namesInProperties(text, IGNORE_PROPERTY)) {
         return 'ignore-property'
     }
     return undefined

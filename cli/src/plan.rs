@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
-use crate::configuration::Configuration;
+use crate::configuration::{Configuration, is_vault_path};
 use crate::device::Vault;
 use crate::guards::{Guard, IGNORE_PROPERTY, guard_of};
 use crate::manifest::ManifestEntry;
@@ -50,16 +50,6 @@ pub fn unique(paths: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// True when the text is a path inside a vault: relative, with `/`, and with
-/// no part that leaves a folder.
-fn is_vault_path(path: &str) -> bool {
-    !path.is_empty()
-        && !path.contains('\\')
-        && path
-            .split('/')
-            .all(|part| !part.is_empty() && part != "." && part != "..")
-}
-
 /// Checks one selected path and says why it cannot be published, or `None`
 /// when it can.
 fn reason_to_refuse(
@@ -79,8 +69,10 @@ fn reason_to_refuse(
     if !is_note {
         return Some("is not a note".to_owned());
     }
-    let Some(text) = vault.read(path) else {
-        return Some("does not exist in the vault".to_owned());
+    let text = match vault.read(path) {
+        Ok(Some(text)) => text,
+        Ok(None) => return Some("does not exist in the vault".to_owned()),
+        Err(error) => return Some(format!("cannot be read: it {error}")),
     };
     match guard_of(path, &text, configuration) {
         Some(Guard::DenyList) => return Some("is in a folder of the deny list".to_owned()),

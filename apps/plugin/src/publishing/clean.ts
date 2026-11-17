@@ -3,6 +3,9 @@ import { removeProperty } from './frontmatter.ts'
 // The cleaning step: a selected note becomes one cleaned note (MOD-03 of the
 // spec). The Rust twin is `cli/src/clean.rs`.
 
+/** The byte order mark. A cleaned note has none. */
+const MARK = String.fromCharCode(0xfeff)
+
 /** The version of the cleaning step. A new version makes a technical update of every note (PUB-24). */
 export const CLEANING_VERSION = 1
 
@@ -10,12 +13,13 @@ export const CLEANING_VERSION = 1
 export const STATE_PROPERTY = 'public_note'
 
 /**
- * The source of a note: its text in the vault with Unix line ends and without
- * the state property. The property is the state in the vault, not content, so
+ * The source of a note: its text in the vault without its byte order mark,
+ * with Unix line ends and without the state property. The property is the state in the vault, not content, so
  * a correction of the property never makes a note "changed" (PUB-14).
  */
 export function sourceOf(text: string): string {
-    return removeProperty(text.replaceAll('\r\n', '\n'), STATE_PROPERTY)
+    const marked = text.startsWith(MARK) ? text.slice(MARK.length) : text
+    return removeProperty(marked.replaceAll('\r\n', '\n'), STATE_PROPERTY)
 }
 
 /**
