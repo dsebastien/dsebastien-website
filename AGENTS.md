@@ -102,7 +102,8 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - A change of the publishing logic lands in both implementations in the same commit, with a test on each side and a parity test when the output changes.
 - `documentation/Canonical Form.md` says what both must write. Change it first, then the code.
 - The logic takes the time of the run as an input, reads no clock, uses no random value, and never depends on the system (path separator, locale, order of a folder listing).
-- The TypeScript logic never imports `obsidian`. The plugin gives it what it needs.
+- The TypeScript logic never imports `obsidian`. The plugin gives it what it needs. A lint rule refuses the import.
+- A list that the parity rule compares is sorted with `compareCodePoints` (TypeScript) and as `String` (Rust), never with the default `sort()` and never as `PathBuf`.
 
 ### Business rules compliance
 
@@ -146,6 +147,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
     - `fixtures/vault/`: the fixture vault.
     - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.
     - `fixtures/catalog.json`: the fixture catalog. It says which feature or trap each file of the fixture vault serves.
+    - `fixtures/canonical/cases.json`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them.
     - `fixtures/README.md`: the rules, and how to add a note.
 - `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
 - `scripts/`: tooling of the repository and its guard tests.

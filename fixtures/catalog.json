@@ -207,6 +207,11 @@
             "id": "links-to-hard-names",
             "covers": "A folder note that links to every note with a hard name.",
             "files": ["20 Library/20.02 Recipes/Recipes.md"]
+        },
+        {
+            "id": "names-that-sort-differently",
+            "covers": "Two names whose order differs between the code points and the UTF-16 units: the first starts with a character above U+FFFF, the second with a character from U+E000 to U+FFFF. In the canonical form the second comes first.",
+            "files": ["10 Garden/🌱 Seedlings.md", "10 Garden/～ Pond.md"]
         }
     ]
 }

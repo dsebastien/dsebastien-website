@@ -397,6 +397,13 @@ describe('first set of notes (spec 18.4)', () => {
             // One name has no ASCII letter at all.
             expect(notes.some((note) => !/[a-z]/i.test(note.name))).toBe(true)
         },
+        'names-that-sort-differently': (notes) => {
+            const [astral, high] = take(notes, 2)
+            expect(astral?.name.codePointAt(0) ?? 0).toBeGreaterThan(0xffff)
+            const first = high?.name.codePointAt(0) ?? 0
+            expect(first).toBeGreaterThanOrEqual(0xe000)
+            expect(first).toBeLessThanOrEqual(0xffff)
+        },
         'name-ending-like-extension': (notes) => {
             expect(notes.every((note) => /\.[a-z]{2,4}$/.test(note.name))).toBe(true)
         },

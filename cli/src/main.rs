@@ -6,6 +6,7 @@
 //! (`documentation/Canonical Form.md`).
 
 mod canonical;
+mod order;
 mod plan;
 
 use std::error::Error;

@@ -34,7 +34,13 @@ function writeNumber(value: number, where: string): string {
     return String(value === 0 ? 0 : value)
 }
 
-function write(value: unknown, indent: string, where: string): string {
+/** Deeper data is refused, in both implementations. A value that holds itself ends here too. */
+const MAX_LEVELS = 64
+
+function write(value: unknown, indent: string, where: string, level: number): string {
+    if (level > MAX_LEVELS) {
+        throw new Error(`${where}: the data has more than ${String(MAX_LEVELS)} levels`)
+    }
     if (typeof value === 'string') {
         return writeText(value, where)
     }
@@ -49,8 +55,12 @@ function write(value: unknown, indent: string, where: string): string {
         if (value.length === 0) {
             return '[]'
         }
-        const items = value.map(
-            (item, index) => inner + write(item, inner, `${where}[${String(index)}]`)
+        // `Array.from` gives `undefined` for a hole, which is then refused.
+        // `map` would skip the hole and write nothing between two commas.
+        const items = Array.from(
+            value,
+            (item: unknown, index) =>
+                inner + write(item, inner, `${where}[${String(index)}]`, level + 1)
         )
         return `[\n${items.join(',\n')}\n${indent}]`
     }
@@ -59,8 +69,9 @@ function write(value: unknown, indent: string, where: string): string {
         value !== null &&
         Object.getPrototypeOf(value) === Object.prototype
     ) {
-        // The default sort compares UTF-16 code units. For ASCII keys that is
-        // the order of the code points, which is the order of the bytes in Rust.
+        // Only the listed members with a text key are data. The default sort
+        // compares UTF-16 units. For ASCII keys that is the order of the code
+        // points, which is the order of the bytes in Rust.
         const keys = Object.keys(value).sort()
         if (keys.length === 0) {
             return '{}'
@@ -70,7 +81,8 @@ function write(value: unknown, indent: string, where: string): string {
                 throw new Error(`${where}: the key ${JSON.stringify(key)} is not plain ASCII`)
             }
             const member: unknown = (value as Record<string, unknown>)[key]
-            return `${inner}${JSON.stringify(key)}: ${write(member, inner, `${where}.${key}`)}`
+            const text = write(member, inner, `${where}.${key}`, level + 1)
+            return `${inner}${JSON.stringify(key)}: ${text}`
         })
         return `{\n${members.join(',\n')}\n${indent}}`
     }
@@ -83,8 +95,9 @@ function write(value: unknown, indent: string, where: string): string {
  *
  * It throws for a value that has no canonical form: `null`, `undefined`, a
  * number with a fraction or too large to be exact, a key outside ASCII, a
- * text with half of a surrogate pair, and anything that is not plain data.
+ * text with half of a surrogate pair, a list with a hole, data with more than
+ * 64 levels, and anything that is not plain data.
  */
 export function toCanonicalJson(value: CanonicalValue): string {
-    return `${write(value, '', 'value')}\n`
+    return `${write(value, '', 'value', 1)}\n`
 }

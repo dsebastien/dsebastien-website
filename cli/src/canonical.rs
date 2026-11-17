@@ -24,7 +24,15 @@ impl fmt::Display for NotCanonical {
 
 impl std::error::Error for NotCanonical {}
 
-fn check(value: &Value, place: &str) -> Result<(), NotCanonical> {
+/// Deeper data is refused, in both implementations.
+const MAX_LEVELS: usize = 64;
+
+fn check(value: &Value, place: &str, level: usize) -> Result<(), NotCanonical> {
+    if level > MAX_LEVELS {
+        return Err(NotCanonical(format!(
+            "{place}: the data has more than {MAX_LEVELS} levels"
+        )));
+    }
     match value {
         Value::Null => Err(NotCanonical(format!("{place}: null has no canonical form"))),
         Value::Bool(_) | Value::String(_) => Ok(()),
@@ -44,12 +52,12 @@ fn check(value: &Value, place: &str) -> Result<(), NotCanonical> {
         Value::Array(items) => items
             .iter()
             .enumerate()
-            .try_for_each(|(index, item)| check(item, &format!("{place}[{index}]"))),
+            .try_for_each(|(index, item)| check(item, &format!("{place}[{index}]"), level + 1)),
         Value::Object(members) => members.iter().try_for_each(|(key, member)| {
             // Keys are plain ASCII, so that both implementations sort them in
             // the same order.
             if key.bytes().all(|byte| (0x20..=0x7e).contains(&byte)) {
-                check(member, &format!("{place}.{key}"))
+                check(member, &format!("{place}.{key}"), level + 1)
             } else {
                 Err(NotCanonical(format!(
                     "{place}: the key {key:?} is not plain ASCII"
@@ -68,10 +76,11 @@ fn check(value: &Value, place: &str) -> Result<(), NotCanonical> {
 ///
 /// # Errors
 ///
-/// A value has no canonical form when it holds `null`, a number with a
-/// fraction or too large to be exact, or a key outside ASCII.
+/// A value has no canonical form when it holds `null`, a floating point
+/// number, a number too large to be exact, or a key outside ASCII, and when it
+/// has more than 64 levels.
 pub fn to_canonical_json(value: &Value) -> Result<String, NotCanonical> {
-    check(value, "value")?;
+    check(value, "value", 1)?;
     let mut text = serde_json::to_string_pretty(value)
         .map_err(|error| NotCanonical(format!("value: {error}")))?;
     text.push('\n');
@@ -113,17 +122,18 @@ mod tests {
         let cases: Value = serde_json::from_str(CASES).expect("the cases file is JSON");
         let refused = list(&cases, "refused");
 
-        assert!(refused.len() >= 4);
+        assert!(refused.len() >= 10);
         for case in refused {
             let name = case["name"].as_str().expect("a case has a name");
             assert!(to_canonical_json(&case["value"]).is_err(), "{name}");
         }
     }
 
+    /// TypeScript has no such number: there, `1.0` is the whole number 1. The
+    /// logic must give whole number types to the writer.
     #[test]
-    fn refuses_a_number_that_is_too_large_to_be_exact() {
-        let value: Value = serde_json::from_str("9007199254740992").expect("the text is JSON");
-
-        assert!(to_canonical_json(&value).is_err());
+    fn refuses_a_floating_point_number_also_when_its_value_is_whole() {
+        assert!(to_canonical_json(&serde_json::json!(1.0)).is_err());
+        assert!(to_canonical_json(&serde_json::json!(-0.0)).is_err());
     }
 }
