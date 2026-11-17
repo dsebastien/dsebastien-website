@@ -1,0 +1,20 @@
+# Git configuration of this repository, with config-based hooks (Git 2.54 or later).
+#
+# Activate it one time per clone:
+#
+#   bun run setup
+#
+# (It runs `git config --local include.path ../.gitconfig`. The path is relative
+# to `.git/`, so `../.gitconfig` is this file.)
+#
+# After that, the hooks below run on each `git commit`. Never bypass them.
+
+[hook "format-staged"]
+    event = pre-commit
+    command = scripts/git-hooks/format-staged.sh
+
+[hook "commitlint"]
+    event = commit-msg
+    # Git adds the path of the commit message file as the last argument. It
+    # becomes the value of --edit.
+    command = bunx commitlint --edit
