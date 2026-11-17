@@ -29,7 +29,7 @@ Tools: Bun, Node (see `.nvmrc`), Git 2.54 or later, and the stable Rust toolchai
 bun install
 bun run setup         # one time per clone: activates the commit hooks
 bun run dev           # the site on a local server
-bun run build         # the static site in apps/site/dist
+bun run build         # the static site in apps/site/dist, and the plugin in apps/plugin/dist
 ```
 
 Or in a container, with Docker as the only tool on the machine:
@@ -51,6 +51,6 @@ bun run rust:lint
 bun run rust:test
 ```
 
-Layout: `apps/site` is the Astro site, `cli` is the Rust command line program of the publishing tool, `scripts` holds the tooling.
+Layout: `apps/site` is the Astro site, `apps/plugin` is the Obsidian plugin of the publishing tool, `cli` is its Rust command line program, `parity` holds the tests that compare the two, `fixtures` holds the invented test data, and `scripts` holds the tooling.
 
 Agents and contributors: read [`AGENTS.md`](AGENTS.md) first.

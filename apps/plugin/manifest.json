@@ -1,0 +1,10 @@
+{
+    "id": "dsebastien-vault-publish",
+    "name": "Vault Publish",
+    "description": "Publishes the notes that the author selects to the website of his public notes.",
+    "version": "0.0.0",
+    "minAppVersion": "1.13.0",
+    "isDesktopOnly": true,
+    "author": "Sébastien Dubois",
+    "authorUrl": "https://dsebastien.net"
+}

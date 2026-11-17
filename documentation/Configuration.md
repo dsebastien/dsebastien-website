@@ -9,12 +9,12 @@
 - `lib` includes `DOM` for now. Packages that run only on a server get their own configuration without it.
 - `jsx` is not set. It is added with the first package that needs it.
 - Packages and apps extend this file. An Astro app also extends the strictest Astro preset.
-- The root project holds `scripts/`, `packages/` and the configuration files. Each app has its own `tsconfig.json` and is not part of the root project: `bun run tsc` checks the root project, and `bun run check` runs `astro check` on the site, where a warning fails the run.
+- The root project holds `scripts/`, `packages/`, `parity/`, `apps/plugin/` and the configuration files: `bun run tsc` checks them. The site has its own `tsconfig.json` and is not part of the root project: `bun run check` runs `astro check` on it, where a warning fails the run.
 - In `apps/site/tsconfig.json` the root configuration comes after the Astro preset, so that the strictness of the root wins (`allowJs` stays off).
 
 ## Workspaces
 
-The root `package.json` declares the Bun workspaces `apps/*` and `packages/*`. `apps/site` is the Astro site. `packages/testing` is the test support (`@dsebastien-website/testing`): it has no build step, and its entry is its TypeScript source. The root `Cargo.toml` declares the Cargo workspace, with `cli` as its only member.
+The root `package.json` declares the Bun workspaces `apps/*` and `packages/*`. `apps/site` is the Astro site. `apps/plugin` is the Obsidian plugin. `packages/testing` is the test support (`@dsebastien-website/testing`): it has no build step, and its entry is its TypeScript source. The root package depends on it, so that the tests of the root (`parity/`, `scripts/`) can import it. The root `Cargo.toml` declares the Cargo workspace, with `cli` as its only member.
 
 ## Lint
 
@@ -65,7 +65,7 @@ A Markdown file with properties that is not a note (for example an issue templat
 
 `.github/workflows/ci.yml` runs on each push to any branch.
 
-- Job `checks`: dependency audit (level high, with one advisory ignored: the workflow file says which and why), type check, Astro check, lint, tests, format check, build of the site.
+- Job `checks`: dependency audit (level high, with one advisory ignored: the workflow file says which and why), type check, Astro check, lint, tests, format check, build of the site and of the plugin. The job has the Rust toolchain, because the parity tests build the Rust program.
 - Job `rust`, on Linux and on Windows: format check, clippy, tests.
 
 The public CI never sees the content store (BUILD-11 of the spec). It builds the empty site and, later, the site of the fixture vault.
@@ -87,6 +87,22 @@ The public CI never sees the content store (BUILD-11 of the spec). It builds the
 `apps/site/astro.config.ts`: Astro with Tailwind 4 through its Vite plugin. `src/styles/global.css` imports Tailwind. Prettier formats Astro components with `prettier-plugin-astro`.
 
 The test of the build writes its output to `apps/site/.cache/`, which git ignores. The folder must be on the file system of the site: Astro moves files into the output folder, and a move to another file system fails.
+
+## Plugin
+
+`apps/plugin`, from the Obsidian plugin template of the author. Only what the skeleton needs was taken: the entry (`src/main.ts`), the plugin class (`src/app/plugin.ts`), the manifest and the build script. The settings tab, the release scripts and the lint rules of the plugin catalog are not taken yet.
+
+- `manifest.json`: the id is `dsebastien-vault-publish`, the name of the Rust program too (TOOL-14). The plugin is for desktop only.
+- `bun run build:plugin` writes `main.js` and `manifest.json` to `apps/plugin/dist/`. The modules that Obsidian gives at run time stay out of the bundle.
+- `bun run dev:plugin` builds at each change. With the variable `OBSIDIAN_VAULT_LOCATION`, it also copies the build into the plugins folder of that vault. The path is read from the environment only, and it is never stored here.
+- The test of the build (`apps/plugin/src/build.spec.ts`) builds a release into `apps/plugin/.cache/`, loads the bundle with a stand-in for the `obsidian` module, and checks that the plugin adds nothing to Obsidian.
+- A load in a real vault is a check by hand: copy the two files of `dist/` into `.obsidian/plugins/dsebastien-vault-publish/` of a vault, enable the plugin, and read the errors of the developer console.
+
+## Publishing logic and parity
+
+- TypeScript: `apps/plugin/src/publishing/`. Rust: `cli/src/`. The Rust program uses `clap` for its commands and `serde_json` for data. The feature `preserve_order` of `serde_json` stays off: the canonical form needs sorted keys.
+- `documentation/Canonical Form.md` is the written canonical form. `fixtures/canonical/cases.json` holds its shared cases.
+- `parity/harness.ts` builds the Rust program with `cargo build --locked` and asks cargo where the program is. `parity/*.spec.ts` compare the bytes of both implementations.
 
 ## Formatting
 
