@@ -5,6 +5,7 @@ Test data of the repository. Everything here is invented. Nothing comes from a r
 - `vault/`: the fixture vault. One invented note per feature and per trap of the spec (section 18.4 of `documentation/plans/spec-v2.md`).
 - `configuration.json`: the invented configuration of the publishing tool for the fixture vault, with its deny list.
 - `catalog.json`: the fixture catalog. Each entry names a feature or a trap and the files that serve it.
+- `canonical/cases.json`: the shared cases of the canonical form (`documentation/Canonical Form.md`). Both implementations of the publishing logic read them.
 
 ## Rules
 
@@ -28,4 +29,4 @@ A test checks rules 2, 4 and 5 (`packages/testing/src/fixture-vault.spec.ts`). 6
 - TypeScript: `FIXTURE_VAULT`, `FIXTURE_CONFIGURATION` and `makeTestStores()` of `packages/testing`.
 - Rust: `fixture_vault()`, `fixture_configuration()` and `TestStores` of `cli/tests/support/mod.rs`.
 
-`configuration.json` has one field for now, `denyList`. The ticket that writes the canonical form (issue 29) settles the shape of the configuration.
+`configuration.json` has one field for now, `denyList`. The first slice that reads the configuration settles its shape.
