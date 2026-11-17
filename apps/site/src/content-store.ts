@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { canonicalPath } from '@dsebastien-website/resolver'
 
@@ -43,24 +43,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Reads the published notes from the manifest, in the order of their paths. */
+/** The form of the identity of a note. It becomes the name of a file of the site. */
+const NOTE_ID = /^[0-9a-f]{16}$/
+
+/**
+ * Reads the published notes from the manifest, in the order of their paths.
+ *
+ * It throws, and so stops the build, when the content store cannot be
+ * trusted: the folder that the variable names does not exist, a file of the
+ * manifest is not an entry, or two entries have the same path.
+ */
 export async function readPublishedNotes(): Promise<PublishedNote[]> {
     const store = contentStoreFolder()
     if (store === undefined) {
         return []
     }
+    try {
+        if (!(await stat(store)).isDirectory()) {
+            throw new Error('not a folder')
+        }
+    } catch {
+        throw new Error(`CONTENT_STORE is not a folder: "${store}"`)
+    }
     let files: string[]
     try {
         files = await readdir(join(store, 'manifest'))
     } catch {
+        // A content store with no publication yet has no manifest.
         return []
     }
-    const notes: PublishedNote[] = []
-    for (const file of files.filter((name) => name.endsWith('.json'))) {
+    const notes = new Map<string, PublishedNote>()
+    for (const file of files.filter((name) => name.endsWith('.json')).sort()) {
         const entry: unknown = JSON.parse(await readFile(join(store, 'manifest', file), 'utf8'))
         if (
             !isRecord(entry) ||
             typeof entry['id'] !== 'string' ||
+            !NOTE_ID.test(entry['id']) ||
             typeof entry['path'] !== 'string'
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
@@ -69,7 +87,10 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             continue
         }
         const vaultPath = entry['path']
-        notes.push({
+        if (notes.has(vaultPath)) {
+            throw new Error(`two entries of the manifest have the path "${vaultPath}"`)
+        }
+        notes.set(vaultPath, {
             id: entry['id'],
             vaultPath,
             path: canonicalPath(vaultPath),
@@ -77,5 +98,9 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, '')
         })
     }
-    return notes.sort((one, two) => (one.vaultPath < two.vaultPath ? -1 : 1))
+    // In the order of the paths, so that two builds of one content store give
+    // the same files.
+    return [...notes.values()].sort((one, two) =>
+        one.vaultPath < two.vaultPath ? -1 : one.vaultPath > two.vaultPath ? 1 : 0
+    )
 }

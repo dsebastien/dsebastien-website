@@ -1,3 +1,4 @@
+import { readdir } from 'node:fs/promises'
 import { join, resolve as resolvePath } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolve, type ResolverMap } from '@dsebastien-website/resolver'
@@ -25,6 +26,50 @@ async function readResolverMap(dist: string): Promise<ResolverMap> {
     return { pages: pages as Record<string, string> }
 }
 
+/** The folder of the style sheets and of the other files that the pages load. Astro names each file with a hash. */
+const ASSETS = '_astro'
+
+const CONTENT_TYPES: Record<string, string> = {
+    css: 'text/css; charset=utf-8',
+    js: 'text/javascript; charset=utf-8',
+    svg: 'image/svg+xml',
+    png: 'image/png',
+    webp: 'image/webp',
+    woff2: 'font/woff2'
+}
+
+function notFound(): Response {
+    return new Response('Not found\n', {
+        status: 404,
+        headers: { 'content-type': 'text/plain; charset=utf-8' }
+    })
+}
+
+/**
+ * The files that the pages load, by the path of their URL. The list is read
+ * from the output of the build one time: the server gives a file of that list
+ * and nothing else, so a request can never name a file itself.
+ */
+async function readAssets(dist: string): Promise<{ get(path: string): Response | undefined }> {
+    let names: string[]
+    try {
+        names = await readdir(join(dist, ASSETS))
+    } catch {
+        names = []
+    }
+    const files = new Map(names.map((name) => [`/${ASSETS}/${name}`, join(dist, ASSETS, name)]))
+    return {
+        get(path) {
+            const file = files.get(path)
+            if (file === undefined) {
+                return undefined
+            }
+            const type = CONTENT_TYPES[file.split('.').at(-1) ?? ''] ?? 'application/octet-stream'
+            return new Response(Bun.file(file), { headers: { 'content-type': type } })
+        }
+    }
+}
+
 /** A running server. */
 export interface Server {
     /** The address of the server, without a slash at the end. */
@@ -41,17 +86,16 @@ export interface Server {
 export async function startServer(options: { dist: string; port: number }): Promise<Server> {
     const dist = resolvePath(options.dist)
     const map = await readResolverMap(dist)
+    const assets = await readAssets(dist)
     const server = Bun.serve({
         hostname: '127.0.0.1',
         port: options.port,
         fetch(request) {
             // The path is read as it is requested, with its percent-encoding.
-            const resolution = resolve(new URL(request.url).pathname, map)
+            const { pathname } = new URL(request.url)
+            const resolution = resolve(pathname, map)
             if (resolution.kind === 'not-found') {
-                return new Response('Not found\n', {
-                    status: 404,
-                    headers: { 'content-type': 'text/plain; charset=utf-8' }
-                })
+                return assets.get(pathname) ?? notFound()
             }
             // The file comes from the resolver map, never from the request.
             return new Response(Bun.file(join(dist, resolution.file)), {

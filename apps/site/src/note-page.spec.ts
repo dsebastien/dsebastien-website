@@ -56,6 +56,12 @@ beforeAll(async () => {
     const device = nodeDevice({ vault, contentStore })
     const planned = await plan(device, { include: [NOTE] })
     await publish(device, planned.id, '2031-04-01T08:00:00Z')
+    // The build reads the content store and never the vault (BUILD-01): after
+    // the publication the note of the vault says something else.
+    await Bun.write(
+        join(vault, NOTE),
+        '# Frost dates explained\n\nA text that was never published.\n'
+    )
 
     // The output folder is inside the site, in a folder that git ignores: Astro
     // moves files into it, and a move to another file system fails.
@@ -95,6 +101,10 @@ describe('build of a content store with one published note', () => {
         expect(html).toContain(
             '<p>The last frost date is the average day of the last frost in spring. Tender plants go out after it.</p>'
         )
+    })
+
+    test('does not read the vault: a change after the publication is not on the page', async () => {
+        expect(await readOutput(NOTE_FILE)).not.toContain('never published')
     })
 
     test('makes a page without JavaScript', async () => {
@@ -144,6 +154,28 @@ describe('plain local server', () => {
         const response = await fetch(`${serverUrl()}/..%2F..%2Fpackage.json`)
 
         expect(response.status).toBe(404)
+    })
+
+    // The page must not point to a file that the server does not give.
+    test('answers 200 for each style sheet of the page', async () => {
+        const html = await readOutput(NOTE_FILE)
+        const sheets = [...html.matchAll(/<link[^>]+href="([^"]+\.css)"/g)].map(
+            (match) => match[1] ?? ''
+        )
+        expect(sheets.length).toBeGreaterThan(0)
+
+        for (const sheet of sheets) {
+            const response = await fetch(`${serverUrl()}${sheet}`)
+            expect(response.status, sheet).toBe(200)
+            expect(response.headers.get('content-type'), sheet).toBe('text/css; charset=utf-8')
+        }
+    })
+
+    test('answers 404 for a file of the assets folder that the build did not write', async () => {
+        for (const path of ['/_astro/none.css', '/_astro/..%2F-%2Fresolver-map.json', '/_astro/']) {
+            const response = await fetch(`${serverUrl()}${path}`)
+            expect(response.status, path).toBe(404)
+        }
     })
 
     test('answers 200 for the home page', async () => {
