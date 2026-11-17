@@ -30,6 +30,7 @@ bun install
 bun run setup         # one time per clone: activates the commit hooks
 bun run dev           # the site on a local server
 bun run build         # the static site in apps/site/dist, and the plugin in apps/plugin/dist
+bun run corpus        # an invented vault of full size in .cache/corpus, for prototypes
 ```
 
 Or in a container, with Docker as the only tool on the machine:

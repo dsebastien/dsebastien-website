@@ -189,6 +189,7 @@ bun run rust:test
 - Never write into the fixture vault from a test. A test that changes notes works on a copy.
 - A test that needs a content store or an attachment storage takes them from the test helper: `await using stores = await makeTestStores()` in TypeScript, `TestStores::new()` in Rust. The content store is a bare git repository with no commit, which stands for the remote one. The attachment storage is an empty folder. Both are removed after the test.
 - A test that needs a folder of its own makes it inside the ignored `.cache/` folder of the clone, and removes only a folder that it made.
+- Data of full size is never committed. `bun run corpus` writes an invented vault of the size of the public notes into `.cache/corpus/`. The same seed gives the same bytes. Use it for prototypes and for budget tests, not for correctness tests: those use the fixture vault.
 - Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`). One exception: the shared cases of the canonical form are a unit test next to the Rust writer.
 - The parity tests in `parity/` build the Rust program with cargo, so `bun run test` needs the Rust toolchain.
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.

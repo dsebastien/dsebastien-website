@@ -61,6 +61,17 @@ A Markdown file with properties that is not a note (for example an issue templat
 - `.gitattributes` gives every text file Unix line ends on every system. A Rust test checks it for the notes on Windows too, because the parity rule compares bytes.
 - The test helpers make their folders in `.cache/test-stores/` of the clone, which git ignores.
 
+## Corpus of full size
+
+`bun run corpus` writes an invented vault of full size for prototypes and budget tests (`scripts/generate-corpus.ts`, with the generator in `scripts/corpus.ts`).
+
+- Options: `--seed` (default 1), `--notes` (default 20,735, the number of public notes that the research counted) and `--out` (default `.cache/corpus/`). The vault is in the `vault/` folder of the output.
+- The same seed and the same number of notes give the same files, byte for byte. The generator reads no clock and no random source of the system.
+- The shares of the note types, of the features (aliases, tables, frozen lists, covers) and of the name patterns follow the public counts of `documentation/research/2026-11-17-current-state.md`. The words are invented syllables.
+- Name patterns: a dot, an ending like a file extension, an apostrophe, a character outside ASCII, an ampersand, a literal plus, a percent sign. No name holds a question mark, because Windows refuses it. No two notes share a file name, also when letter case is ignored.
+- The corpus is never committed. The command refuses a folder of the clone that git does not ignore, and it writes over a folder only when that folder is its own earlier output (it holds `corpus.json`).
+- A corpus of full size is about 30,000 files. It is written in about one second.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on each push to any branch.
