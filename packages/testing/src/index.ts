@@ -7,4 +7,4 @@ export {
     readFixtureCatalog,
     type FixtureCatalogEntry
 } from './fixture-vault.ts'
-export { makeTestStores, type TestStores } from './test-stores.ts'
+export { gitEnvironment, makeTestStores, type TestStores } from './test-stores.ts'

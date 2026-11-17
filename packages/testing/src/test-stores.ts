@@ -23,8 +23,12 @@ export interface TestStores extends AsyncDisposable {
     remove(): Promise<void>
 }
 
-/** The environment without the variables that point git to another repository. */
-function cleanEnvironment(): Record<string, string> {
+/**
+ * The environment without the variables that point git to another repository.
+ * Inside a git hook, those variables name the clone. A test that runs git on
+ * a repository of its own passes this environment.
+ */
+export function gitEnvironment(): Record<string, string> {
     const entries = Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined && !entry[0].startsWith('GIT_')
     )
@@ -32,8 +36,10 @@ function cleanEnvironment(): Record<string, string> {
 }
 
 async function makeContentStore(path: string): Promise<void> {
-    const child = Bun.spawn(['git', 'init', '--quiet', '--bare', '--initial-branch=main', path], {
-        env: cleanEnvironment(),
+    // An empty template: the store gets no sample hook of the machine.
+    const options = ['--quiet', '--bare', '--initial-branch=main', '--template=']
+    const child = Bun.spawn(['git', 'init', ...options, path], {
+        env: gitEnvironment(),
         stdout: 'ignore',
         stderr: 'pipe'
     })
@@ -54,9 +60,13 @@ async function makeContentStore(path: string): Promise<void> {
 export async function makeTestStores(): Promise<TestStores> {
     await mkdir(CACHE, { recursive: true })
     const root = await mkdtemp(join(CACHE, 'test-'))
-    // Only a folder that this call made is ever removed.
+    // Only a folder that this call made is ever removed, and one time only.
+    let removed = false
     const remove = async (): Promise<void> => {
-        await rm(root, { recursive: true, force: true })
+        if (!removed) {
+            removed = true
+            await rm(root, { recursive: true, force: true })
+        }
     }
 
     try {

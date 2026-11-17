@@ -11,6 +11,7 @@
 
 use std::env;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -52,15 +53,7 @@ impl TestStores {
     pub fn new() -> Self {
         let cache = repository().join(".cache").join("test-stores");
         fs::create_dir_all(&cache).expect("the cache folder can be made");
-        let name = format!(
-            "test-rust-{}-{}",
-            process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        );
-        let root = cache.join(name);
-        // `create_dir` fails when the folder exists, so this value owns a
-        // folder that it made, and `drop` never removes another one.
-        fs::create_dir(&root).expect("the folder of the test is new");
+        let root = Self::make_root(&cache);
 
         let stores = Self {
             content_store: root.join("content-store.git"),
@@ -70,6 +63,28 @@ impl TestStores {
         stores.make_content_store();
         fs::create_dir(&stores.attachment_storage).expect("the attachment storage can be made");
         stores
+    }
+
+    /// Makes a new folder for one test.
+    ///
+    /// `create_dir` fails when the folder exists, so this value owns a folder
+    /// that it made, and `drop` never removes another one. A folder of an
+    /// earlier run with the same process id can still be there: the next
+    /// number is tried.
+    fn make_root(cache: &Path) -> PathBuf {
+        loop {
+            let name = format!(
+                "test-rust-{}-{}",
+                process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            );
+            let root = cache.join(name);
+            match fs::create_dir(&root) {
+                Ok(()) => return root,
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                Err(error) => panic!("the folder of the test cannot be made: {error}"),
+            }
+        }
     }
 
     /// The folder that was made for the test. A test can add its own folders.
@@ -90,8 +105,15 @@ impl TestStores {
 
     fn make_content_store(&self) {
         let mut git = Command::new("git");
-        git.args(["init", "--quiet", "--bare", "--initial-branch=main"])
-            .arg(&self.content_store);
+        // An empty template: the store gets no sample hook of the machine.
+        git.args([
+            "init",
+            "--quiet",
+            "--bare",
+            "--initial-branch=main",
+            "--template=",
+        ])
+        .arg(&self.content_store);
         // Inside a git hook, these variables point git to the clone.
         for (name, _) in env::vars_os() {
             if name.to_string_lossy().starts_with("GIT_") {

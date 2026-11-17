@@ -2,25 +2,21 @@ import { describe, expect, test } from 'bun:test'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { makeTestStores } from './test-stores.ts'
+import { gitEnvironment, makeTestStores } from './test-stores.ts'
 
 // Acceptance criterion 3 of issue 17: a test helper makes an empty content
 // store and an attachment storage for one test and removes them after it.
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 
-/** The environment without the variables that point git to another repository. */
-function cleanEnvironment(): Record<string, string> {
-    const entries = Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined && !entry[0].startsWith('GIT_')
-    )
-    return Object.fromEntries(entries)
-}
-
-async function git(cwd: string, ...args: string[]): Promise<{ exitCode: number; stdout: string }> {
+/**
+ * Runs git. The repository is named in the arguments (`--git-dir`, `-C`), never
+ * through the current folder: git can refuse a bare repository that it finds
+ * by itself (`safe.bareRepository`).
+ */
+async function git(...args: string[]): Promise<{ exitCode: number; stdout: string }> {
     const child = Bun.spawn(['git', ...args], {
-        cwd,
-        env: cleanEnvironment(),
+        env: gitEnvironment(),
         stdout: 'pipe',
         stderr: 'ignore'
     })
@@ -41,8 +37,21 @@ describe('content store of a test', () => {
     test('is a git repository with no commit', async () => {
         await using stores = await makeTestStores()
 
-        const commits = await git(stores.contentStore, 'rev-list', '--all', '--count')
+        const commits = await git('--git-dir', stores.contentStore, 'rev-list', '--all', '--count')
         expect(commits).toEqual({ exitCode: 0, stdout: '0' })
+    })
+
+    test('has the branch main', async () => {
+        await using stores = await makeTestStores()
+
+        const head = await git('--git-dir', stores.contentStore, 'symbolic-ref', 'HEAD')
+        expect(head).toEqual({ exitCode: 0, stdout: 'refs/heads/main' })
+    })
+
+    test('holds no file of the git template of the machine', async () => {
+        await using stores = await makeTestStores()
+
+        expect(await exists(join(stores.contentStore, 'hooks'))).toBe(false)
     })
 
     // The publishing tool works on a copy of the content store and pushes to
@@ -51,12 +60,11 @@ describe('content store of a test', () => {
         await using stores = await makeTestStores()
         const copy = join(stores.root, 'copy')
 
-        expect(
-            (await git(stores.root, 'clone', '--quiet', stores.contentStore, copy)).exitCode
-        ).toBe(0)
+        expect((await git('clone', '--quiet', stores.contentStore, copy)).exitCode).toBe(0)
         await Bun.write(join(copy, 'note.md'), 'An invented note.\n')
-        await git(copy, 'add', 'note.md')
+        await git('-C', copy, 'add', 'note.md')
         await git(
+            '-C',
             copy,
             '-c',
             'user.name=Test',
@@ -69,9 +77,9 @@ describe('content store of a test', () => {
             '--message',
             'publish one note'
         )
-        expect((await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')).exitCode).toBe(0)
+        expect((await git('-C', copy, 'push', '--quiet', 'origin', 'HEAD:main')).exitCode).toBe(0)
 
-        const pushed = await git(stores.contentStore, 'show', 'main:note.md')
+        const pushed = await git('--git-dir', stores.contentStore, 'show', 'main:note.md')
         expect(pushed).toEqual({ exitCode: 0, stdout: 'An invented note.' })
     })
 })
@@ -104,14 +112,22 @@ describe('stores of a test', () => {
         }
 
         expect(await readdir(kept.attachmentStorage)).toEqual([])
-        expect((await git(kept.contentStore, 'rev-list', '--all', '--count')).stdout).toBe('0')
+        expect(
+            (await git('--git-dir', kept.contentStore, 'rev-list', '--all', '--count')).stdout
+        ).toBe('0')
     })
 
     // Nothing that a test writes can enter a commit of this repository.
     test('live in a folder that git ignores', async () => {
         await using stores = await makeTestStores()
 
-        const ignored = await git(ROOT, 'check-ignore', '--quiet', join(stores.root, 'note.md'))
+        const ignored = await git(
+            '-C',
+            ROOT,
+            'check-ignore',
+            '--quiet',
+            join(stores.root, 'note.md')
+        )
         expect(ignored.exitCode).toBe(0)
     })
 })
