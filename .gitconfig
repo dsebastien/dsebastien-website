@@ -7,14 +7,25 @@
 # (It runs `git config --local --replace-all include.path ../.gitconfig`. The
 # path is relative to `.git/`, so `../.gitconfig` is this file.)
 #
-# After that, the hooks below run on each `git commit`. Never bypass them.
+# After that, the hooks below run on each `git commit` and `git push`. Never
+# bypass them.
 
-# This repository is public. The check refuses a staged file of the private
-# folders, a vault file outside the fixture vault, and a file of the fixture
-# vault that its catalog does not declare (`scripts/private-files.ts`).
+# This repository is public. The check refuses a file of the private folders,
+# a vault file outside the fixture vault, a file of the fixture vault that its
+# catalog does not declare, and a symbolic link (`scripts/private-files.ts`).
+#
+# Before a commit and before the commit of a merge, it reads the index.
 [hook "private-files"]
     event = pre-commit
+    event = pre-merge-commit
     command = bun scripts/private-files.ts
+
+# Before a push, it reads each commit that the push sends. A cherry-pick, a
+# rebase and a commit from a clone without these hooks run no pre-commit hook,
+# so the push is the last door of the machine.
+[hook "private-files-pushed"]
+    event = pre-push
+    command = bun scripts/private-files.ts --pushed
 
 [hook "format-staged"]
     event = pre-commit

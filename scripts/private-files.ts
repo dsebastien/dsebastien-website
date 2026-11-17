@@ -1,3 +1,4 @@
+import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 // The check of private files. This repository is public, and the vault and the
@@ -8,13 +9,18 @@ import { join } from 'node:path'
 //  1. The private folders hold nothing that git tracks.
 //  2. A vault file (a note with properties, the settings folder of a vault, a
 //     canvas, a base) exists only in the fixture vault.
-//  3. Every file of the fixture vault is declared in the catalog, with the
-//     feature or the trap that it serves. A file that someone copies into the
-//     fixture vault is refused until its entry says why it is there.
+//  3. Every file of the fixture vault is declared in the fixture catalog, with
+//     the feature or the trap that it serves. A file that someone copies into
+//     the fixture vault is refused until an entry says why it is there.
+//  4. No symbolic link: a link can point to a file outside the repository.
 //
-// It runs two times: as a pre-commit hook on the staged files (`.gitconfig`),
-// so that a private file is refused before it leaves the machine, and in the
-// tests on every file of the clone that git does not ignore.
+// A note without properties and an attachment look like any other file. The
+// check cannot find them outside the fixture vault. It does not replace care.
+//
+// It runs three times (`.gitconfig`): before a commit on the content of the
+// index, before a push on the content of each pushed commit, and in the tests
+// on every file of the clone that git does not ignore. Each run reads the
+// files and the catalog from the place that it checks, never from another one.
 
 /** Folders that git ignores and that hold private or generated files, at any depth. */
 const PRIVATE_FOLDERS = ['.private', '.content', '.cache']
@@ -25,6 +31,9 @@ const VAULT_FOLDERS = ['.obsidian', '.trash']
 /** File endings that only a vault holds. */
 const VAULT_ENDINGS = ['.canvas', '.base', '.excalidraw']
 
+/** File endings of Markdown. */
+const MARKDOWN_ENDINGS = ['.md', '.markdown', '.mdx']
+
 const FIXTURE_VAULT = 'fixtures/vault/'
 const FIXTURE_CATALOG = 'fixtures/catalog.json'
 
@@ -34,134 +43,217 @@ export interface Violation {
     reason: string
 }
 
+/** A file of the place that is checked. */
+export interface RepositoryFile {
+    /** Relative to the root of the repository, with `/` as the separator. */
+    path: string
+    symlink: boolean
+}
+
+/** A place that holds the files of the repository: the work tree, the index or a commit. */
+export interface FileSource {
+    list(): Promise<RepositoryFile[]>
+    /** The text of a file, or `undefined` when the place does not hold it. */
+    read(path: string): Promise<string | undefined>
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** True when the file is Markdown and starts with a block of properties. */
-async function isNote(root: string, path: string): Promise<boolean> {
-    if (!path.toLowerCase().endsWith('.md')) {
-        return false
+/** True when the text starts with a block of properties. A byte order mark can come first. */
+function startsWithProperties(text: string): boolean {
+    const start = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+    return /^---[ \t]*\r?\n/.test(start)
+}
+
+/** Reads the files that the fixture catalog of the source declares. Empty when there is no catalog. */
+async function readDeclaredFixtureFiles(source: FileSource): Promise<Set<string>> {
+    const text = await source.read(FIXTURE_CATALOG)
+    if (text === undefined) {
+        return new Set()
     }
-    const file = Bun.file(join(root, path))
-    // A file that is staged and then deleted from the work tree has no text to read.
-    if (!(await file.exists())) {
-        return false
+    const catalog: unknown = JSON.parse(text)
+    const entries = isRecord(catalog) ? catalog['entries'] : undefined
+    if (!Array.isArray(entries)) {
+        throw new Error(`"${FIXTURE_CATALOG}" has no list of entries`)
     }
-    // A file can start with a byte order mark.
-    const head = await file.slice(0, 8).text()
-    const start = head.charCodeAt(0) === 0xfeff ? head.slice(1) : head
-    return /^---\r?\n/.test(start)
+    const declared = new Set<string>()
+    for (const entry of entries) {
+        const files: unknown = isRecord(entry) ? entry['files'] : undefined
+        if (!Array.isArray(files) || !files.every((path) => typeof path === 'string')) {
+            throw new Error(`an entry of "${FIXTURE_CATALOG}" has no list of files`)
+        }
+        for (const path of files) {
+            declared.add(path)
+        }
+    }
+    return declared
 }
 
 async function reasonToRefuse(
-    root: string,
-    path: string,
+    source: FileSource,
+    file: RepositoryFile,
     declared: ReadonlySet<string>
 ): Promise<string | undefined> {
-    const segments = path.split('/')
+    // Windows and macOS do not tell `.Private` from `.private`.
+    const lowerPath = file.path.toLowerCase()
+    const segments = lowerPath.split('/')
     const privateFolder = PRIVATE_FOLDERS.find((folder) => segments.includes(folder))
     if (privateFolder !== undefined) {
         return `it is in the private folder "${privateFolder}", which git must ignore`
     }
-    if (path.startsWith(FIXTURE_VAULT)) {
-        return declared.has(path.slice(FIXTURE_VAULT.length))
+    if (file.symlink) {
+        return 'it is a symbolic link, and a link can point to a file outside the repository'
+    }
+    if (lowerPath.startsWith(FIXTURE_VAULT)) {
+        if (!file.path.startsWith(FIXTURE_VAULT)) {
+            return `its folder differs from "${FIXTURE_VAULT}" by letter case only`
+        }
+        return declared.has(file.path.slice(FIXTURE_VAULT.length))
             ? undefined
             : `it is in the fixture vault and "${FIXTURE_CATALOG}" does not declare it. Add an entry that says which feature or trap this invented file serves`
     }
     if (VAULT_FOLDERS.some((folder) => segments.includes(folder))) {
         return 'it is in a folder that only a vault holds. Vault files exist only in the fixture vault'
     }
-    if (VAULT_ENDINGS.some((ending) => path.toLowerCase().endsWith(ending))) {
+    if (VAULT_ENDINGS.some((ending) => lowerPath.endsWith(ending))) {
         return 'it is a file that only a vault holds. Vault files exist only in the fixture vault'
     }
-    if (await isNote(root, path)) {
-        return 'it is a note (a Markdown file with properties) outside the fixture vault. Notes exist only in the fixture vault, and they are invented'
+    if (MARKDOWN_ENDINGS.some((ending) => lowerPath.endsWith(ending))) {
+        const text = await source.read(file.path)
+        if (text !== undefined && startsWithProperties(text)) {
+            return 'it is a note (a Markdown file with properties) outside the fixture vault. Notes exist only in the fixture vault, and they are invented'
+        }
     }
     return undefined
 }
 
-/**
- * Finds the files that must not be in the repository.
- *
- * @param root the folder of the repository
- * @param paths the files to check, relative to the root, with `/` as the separator
- * @param declared the files that the catalog of the fixture vault declares, relative to the fixture vault
- */
-export async function findPrivateFiles(
-    root: string,
-    paths: readonly string[],
-    declared: ReadonlySet<string>
-): Promise<Violation[]> {
+/** Finds the files of a source that must not be in the repository. */
+export async function findPrivateFiles(source: FileSource): Promise<Violation[]> {
+    const declared = await readDeclaredFixtureFiles(source)
     const violations: Violation[] = []
-    for (const path of paths) {
-        const reason = await reasonToRefuse(root, path, declared)
+    for (const file of await source.list()) {
+        const reason = await reasonToRefuse(source, file, declared)
         if (reason !== undefined) {
-            violations.push({ path, reason })
+            violations.push({ path: file.path, reason })
         }
     }
     return violations
 }
 
-/** Reads the files that the catalog of the fixture vault declares. Empty when there is no catalog. */
-export async function readDeclaredFixtureFiles(root: string): Promise<Set<string>> {
-    const file = Bun.file(join(root, FIXTURE_CATALOG))
-    if (!(await file.exists())) {
-        return new Set()
-    }
-    const catalog: unknown = await file.json()
-    const entries = isRecord(catalog) && Array.isArray(catalog['entries']) ? catalog['entries'] : []
-    const declared = new Set<string>()
-    for (const entry of entries) {
-        const files: unknown = isRecord(entry) ? entry['files'] : undefined
-        if (Array.isArray(files)) {
-            for (const path of files) {
-                if (typeof path === 'string') {
-                    declared.add(path)
-                }
-            }
-        }
-    }
-    return declared
+interface GitResult {
+    exitCode: number
+    stdout: string
+    stderr: string
 }
 
-/**
- * Lists the files of a repository that git tracks or has staged. With
- * `untracked`, also the files that git does not track and does not ignore:
- * they are the next to be added.
- */
-export async function listRepositoryFiles(
-    root: string,
-    options: { untracked: boolean }
-): Promise<string[]> {
-    const others = options.untracked ? ['--others', '--exclude-standard'] : []
-    const child = Bun.spawn(['git', 'ls-files', '-z', '--cached', ...others], {
-        cwd: root,
-        stdout: 'pipe',
-        stderr: 'pipe'
-    })
+async function git(root: string, args: string[]): Promise<GitResult> {
+    const child = Bun.spawn(['git', ...args], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
     const [stdout, stderr] = await Promise.all([
         new Response(child.stdout).text(),
         new Response(child.stderr).text()
     ])
-    if ((await child.exited) !== 0) {
-        throw new Error(`git could not list the files of the repository: ${stderr.trim()}`)
-    }
-    return [...new Set(stdout.split('\0').filter((path) => path !== ''))]
+    return { exitCode: await child.exited, stdout, stderr }
 }
 
-// As a program: the pre-commit hook. It checks what the index holds.
+async function gitList(root: string, args: string[]): Promise<string[]> {
+    const result = await git(root, args)
+    if (result.exitCode !== 0) {
+        throw new Error(`git could not list the files: ${result.stderr.trim()}`)
+    }
+    return result.stdout.split('\0').filter((line) => line !== '')
+}
+
+/** Reads one object of git (`:path` in the index, `commit:path` in a commit). */
+async function gitRead(root: string, object: string): Promise<string | undefined> {
+    const result = await git(root, ['cat-file', 'blob', object])
+    return result.exitCode === 0 ? result.stdout : undefined
+}
+
+/** Turns lines of the form `<mode> ...<tab><path>` into files. */
+function toFiles(lines: string[]): RepositoryFile[] {
+    return lines.map((line) => {
+        const tab = line.indexOf('\t')
+        return { path: line.slice(tab + 1), symlink: line.startsWith('120000') }
+    })
+}
+
+/**
+ * The work tree: every file that git tracks, and every file that git does not
+ * track and does not ignore, because those are the next to be added.
+ */
+export function workTreeSource(root: string): FileSource {
+    return {
+        async list() {
+            const paths = await gitList(root, [
+                'ls-files',
+                '-z',
+                '--cached',
+                '--others',
+                '--exclude-standard'
+            ])
+            const files: RepositoryFile[] = []
+            for (const path of new Set(paths)) {
+                try {
+                    files.push({ path, symlink: (await lstat(join(root, path))).isSymbolicLink() })
+                } catch {
+                    // A tracked file that was deleted from the work tree.
+                    files.push({ path, symlink: false })
+                }
+            }
+            return files
+        },
+        async read(path) {
+            const file = Bun.file(join(root, path))
+            return (await file.exists()) ? await file.text() : undefined
+        }
+    }
+}
+
+/** The index: what the next commit holds. */
+export function indexSource(root: string): FileSource {
+    return {
+        list: async () => toFiles(await gitList(root, ['ls-files', '-z', '--stage'])),
+        read: (path) => gitRead(root, `:${path}`)
+    }
+}
+
+/** One commit: what a push sends. */
+export function commitSource(root: string, commit: string): FileSource {
+    return {
+        list: async () => toFiles(await gitList(root, ['ls-tree', '-r', '-z', commit])),
+        read: (path) => gitRead(root, `${commit}:${path}`)
+    }
+}
+
+/** The commits that a push sends: git gives one line per reference to the pre-push hook. */
+function pushedCommits(input: string): string[] {
+    const commits = input
+        .split('\n')
+        .map((line) => line.split(' ')[1])
+        .filter((commit): commit is string => commit !== undefined && !/^0+$/.test(commit))
+    return [...new Set(commits)]
+}
+
+// As a program: the hooks. Without an argument it checks the index (before a
+// commit). With `--pushed` it checks each commit that git names on the
+// standard input (before a push).
 if (import.meta.main) {
     const root = process.cwd()
-    const violations = await findPrivateFiles(
-        root,
-        await listRepositoryFiles(root, { untracked: false }),
-        await readDeclaredFixtureFiles(root)
-    )
-    if (violations.length > 0) {
+    const sources = process.argv.includes('--pushed')
+        ? pushedCommits(await Bun.stdin.text()).map((commit) => commitSource(root, commit))
+        : [indexSource(root)]
+    const found = new Map<string, string>()
+    for (const source of sources) {
+        for (const violation of await findPrivateFiles(source)) {
+            found.set(violation.path, violation.reason)
+        }
+    }
+    if (found.size > 0) {
         console.error('This repository is public. These files must not enter it:\n')
-        for (const violation of violations) {
-            console.error(`  ${violation.path}\n    ${violation.reason}\n`)
+        for (const [path, reason] of found) {
+            console.error(`  ${path}\n    ${reason}\n`)
         }
         process.exitCode = 1
     }

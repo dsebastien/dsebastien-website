@@ -158,23 +158,152 @@ describe('pre-commit hook', () => {
 
 // Acceptance criterion of issue 17: a private file is refused before it leaves
 // the machine. `scripts/private-files.spec.ts` tests the rules of the check.
+const REAL_NOTE = '---\ntags:\n  - type/note\n---\n\n# A real note\n'
+
 describe('pre-commit hook for private files', () => {
+    async function commit(message: string): Promise<number> {
+        return (await git('commit', '--message', message)).exitCode
+    }
+
+    /** Takes the paths out of the index and of the work tree, so that the next test starts clean. */
+    async function forget(...paths: string[]): Promise<void> {
+        await git('rm', '--cached', '--quiet', '--force', '--ignore-unmatch', '--', ...paths)
+        for (const path of paths) {
+            await rm(join(repositoryPath(), path), { force: true })
+        }
+    }
+
     test('refuses a commit that holds a file of the private folder', async () => {
         await writeFile('.private/export.csv', 'a,b\n')
-        // `--force`, because the clone ignores the folder. The hook is the second barrier.
+        // `--force`, as someone would do in the clone, where git ignores the folder.
         await git('add', '--force', '.private/export.csv')
 
-        expect((await git('commit', '--message', 'feat(all): add an export')).exitCode).not.toBe(0)
+        expect(await commit('feat(all): add an export')).not.toBe(0)
 
-        await git('rm', '--cached', '--quiet', '.private/export.csv')
+        await forget('.private/export.csv')
     }, 60_000)
 
     test('refuses a commit that holds a note outside the fixture vault', async () => {
-        await writeFile('A real note.md', '---\ntags:\n  - type/note\n---\n\n# A real note\n')
+        await writeFile('A real note.md', REAL_NOTE)
         await git('add', 'A real note.md')
 
-        expect((await git('commit', '--message', 'docs(all): add a note')).exitCode).not.toBe(0)
+        expect(await commit('docs(all): add a note')).not.toBe(0)
 
-        await git('rm', '--cached', '--quiet', 'A real note.md')
+        await forget('A real note.md')
+    }, 60_000)
+
+    // The hook checks what the commit holds, not what the work tree holds.
+    test('refuses a staged note that is deleted from the work tree', async () => {
+        await writeFile('Deleted.md', REAL_NOTE)
+        await git('add', 'Deleted.md')
+        await rm(join(repositoryPath(), 'Deleted.md'))
+
+        expect(await commit('docs(all): add a note')).not.toBe(0)
+
+        await forget('Deleted.md')
+    }, 60_000)
+
+    test('refuses a staged note whose properties are removed in the work tree only', async () => {
+        await writeFile('Edited.md', REAL_NOTE)
+        await git('add', 'Edited.md')
+        await writeFile('Edited.md', '# A real note\n')
+
+        expect(await commit('docs(all): add a note')).not.toBe(0)
+
+        await forget('Edited.md')
+    }, 60_000)
+
+    test('accepts a staged document whose work tree copy got properties', async () => {
+        await writeFile('Document.md', '# A document\n')
+        await git('add', 'Document.md')
+        await writeFile('Document.md', REAL_NOTE)
+
+        expect(await commit('docs(all): add a document')).toBe(0)
+
+        await forget('Document.md')
+        await git('commit', '--quiet', '--message', 'docs(all): remove the document')
+    }, 60_000)
+
+    test('refuses a file of the fixture vault whose catalog entry is not staged', async () => {
+        await writeFile('fixtures/vault/Copied.md', REAL_NOTE)
+        await writeFile(
+            'fixtures/catalog.json',
+            '{ "entries": [{ "id": "copied", "covers": "A test.", "files": ["Copied.md"] }] }\n'
+        )
+        await git('add', 'fixtures/vault/Copied.md')
+
+        expect(await commit('test(all): add a fixture note')).not.toBe(0)
+
+        await git('add', 'fixtures/catalog.json')
+        expect(await commit('test(all): add a fixture note')).toBe(0)
+    }, 60_000)
+})
+
+// A cherry-pick, a rebase and a commit that was made in a clone without the
+// hooks run no pre-commit hook. The push is the last door of the machine.
+describe('pre-push hook for private files', () => {
+    let remote: string
+
+    beforeAll(async () => {
+        remote = join(repositoryPath(), 'remote.git')
+        await git('init', '--quiet', '--bare', remote)
+    })
+
+    /** Makes a commit on top of HEAD that adds one file, with no hook and no change of the index. */
+    async function commitWithoutHooks(path: string, text: string): Promise<string> {
+        await writeFile('blob.tmp', text)
+        const blob = (await git('hash-object', '-w', 'blob.tmp')).stdout.trim()
+        await rm(join(repositoryPath(), 'blob.tmp'))
+        const index = join(repositoryPath(), '.git', 'index.tmp')
+        const env = { ...cleanEnvironment(), GIT_INDEX_FILE: index }
+        const plumbing = async (...args: string[]): Promise<string> => {
+            const child = Bun.spawn(['git', ...args], {
+                cwd: repositoryPath(),
+                env,
+                stdout: 'pipe'
+            })
+            const stdout = await new Response(child.stdout).text()
+            expect(await child.exited).toBe(0)
+            return stdout.trim()
+        }
+        await plumbing('read-tree', 'HEAD')
+        await plumbing('update-index', '--add', '--cacheinfo', `100644,${blob},${path}`)
+        const tree = await plumbing('write-tree')
+        const commit = await plumbing(
+            'commit-tree',
+            tree,
+            '-p',
+            'HEAD',
+            '-m',
+            'feat(all): add a file'
+        )
+        await rm(index)
+        return commit
+    }
+
+    test('lets a clean commit leave', async () => {
+        expect((await git('push', '--quiet', remote, 'HEAD:refs/heads/clean')).exitCode).toBe(0)
+    }, 60_000)
+
+    test('refuses a push of a commit that holds a file of the private folder', async () => {
+        const commit = await commitWithoutHooks('.private/export.csv', 'a,b\n')
+
+        const push = await git('push', '--quiet', remote, `${commit}:refs/heads/private`)
+
+        expect(push.exitCode).not.toBe(0)
+        expect((await git('ls-remote', remote, 'refs/heads/private')).stdout).toBe('')
+    }, 60_000)
+
+    test('refuses a push of a commit that holds a note outside the fixture vault', async () => {
+        const commit = await commitWithoutHooks('A real note.md', REAL_NOTE)
+
+        const push = await git('push', '--quiet', remote, `${commit}:refs/heads/note`)
+
+        expect(push.exitCode).not.toBe(0)
+        expect((await git('ls-remote', remote, 'refs/heads/note')).stdout).toBe('')
+    }, 60_000)
+
+    test('lets the removal of a remote branch pass', async () => {
+        expect((await git('push', '--quiet', remote, ':refs/heads/clean')).exitCode).toBe(0)
     }, 60_000)
 })

@@ -26,9 +26,10 @@ Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `
 
 `commitlint.config.ts`: Conventional Commits with a fixed list of scopes and a header of 100 characters at most.
 
-`.gitconfig` at the root declares three config-based hooks (Git 2.54 or later). `bun run setup` includes that file in the configuration of the clone, one time per clone.
+`.gitconfig` at the root declares four config-based hooks (Git 2.54 or later). `bun run setup` includes that file in the configuration of the clone, one time per clone.
 
-- `pre-commit`: `bun scripts/private-files.ts` refuses a commit that holds a private file (see "Private files" below). It runs first.
+- `pre-commit` and `pre-merge-commit`: `bun scripts/private-files.ts` refuses a commit that holds a private file (see "Private files" below). It runs first.
+- `pre-push`: `bun scripts/private-files.ts --pushed` refuses a push of a commit that holds a private file.
 - `pre-commit`: `scripts/git-hooks/format-staged.sh` formats the staged files with Prettier and stages them again.
 - `commit-msg`: commitlint refuses a message that breaks the convention.
 
@@ -36,11 +37,20 @@ Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `
 
 `scripts/private-files.ts` is the check that keeps private files out of this public repository. It cannot see the real vault, so its rules use structure:
 
-1. No file of a folder named `.private`, `.content` or `.cache`, at any depth.
-2. A vault file exists only in `fixtures/vault/`: a Markdown file that starts with a block of properties, a file of a folder named `.obsidian` or `.trash`, and a file that ends in `.canvas`, `.base` or `.excalidraw`.
+1. No file of a folder named `.private`, `.content` or `.cache`, at any depth and in any letter case.
+2. A vault file exists only in `fixtures/vault/`: a Markdown file (`.md`, `.markdown`, `.mdx`) that starts with a block of properties, a file of a folder named `.obsidian` or `.trash`, and a file that ends in `.canvas`, `.base` or `.excalidraw`.
 3. Every file of `fixtures/vault/` is declared in `fixtures/catalog.json`.
+4. No symbolic link.
 
-It runs two times. As a pre-commit hook, it checks the files of the index, so that a private file is refused before it leaves the machine. In the tests (`scripts/private-files.spec.ts`), it checks every file of the clone that git tracks or does not ignore, and that the three private folders are still ignored.
+What it cannot find outside the fixture vault: a note without properties, an attachment, and real text that someone pastes into a file. Care stays necessary.
+
+It runs three times, and each run reads the files and the catalog from the place that it checks:
+
+- Before a commit and before the commit of a merge: the index. A change of the work tree that is not staged does not count.
+- Before a push: each commit that the push sends. A cherry-pick, a rebase and a commit from a clone without the hooks run no pre-commit hook, so the push is the last door of the machine. Only the last commit of each pushed branch is read, not the commits before it.
+- In the tests (`scripts/private-files.spec.ts`): every file of the clone that git tracks or does not ignore. The test also checks that git ignores the private folders, and `.obsidian/` and `.trash/`, so that the fixture vault can be opened in Obsidian.
+
+A clone where `bun run setup` did not run has no hook. CI then finds a private file only after the push.
 
 A Markdown file with properties that is not a note (for example an issue template) needs an exception in the script. None exists today.
 
