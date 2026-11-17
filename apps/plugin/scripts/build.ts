@@ -1,4 +1,4 @@
-import { mkdir, readdir, watch } from 'node:fs/promises'
+import { mkdir, readdir, stat, watch } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
@@ -6,10 +6,15 @@ import { parseArgs } from 'node:util'
 //
 //   bun run build [--outdir <folder>]   a release build into `dist/`
 //   bun run dev                         a build at each change of `src/`
+//   bun run dev --once                  one development build
 //
-// With the variable OBSIDIAN_VAULT_LOCATION, a development build is also
-// copied into the plugins folder of that vault, with a `.hotreload` file.
-// Use a test vault, never the real one, while the plugin is young.
+// With the variable VAULT_PUBLISH_DEV_VAULT, a development build is also
+// copied into the plugins folder of that vault, with a `.hotreload` file. The
+// folder must be a vault: it must hold `.obsidian`.
+//
+// The plugin template reads OBSIDIAN_VAULT_LOCATION for that. This script
+// does not: on the machines of the author that variable names his real vault,
+// and a young plugin must never go there by accident.
 
 const SRC = 'src'
 
@@ -40,6 +45,7 @@ const { values } = parseArgs({
     args: Bun.argv.slice(2),
     options: {
         prod: { type: 'boolean', default: false },
+        once: { type: 'boolean', default: false },
         outdir: { type: 'string', default: 'dist' }
     },
     strict: true
@@ -76,8 +82,22 @@ async function build(): Promise<void> {
     await Bun.write(join(outDir, 'manifest.json'), Bun.file('manifest.json'))
 }
 
+async function isFolder(path: string): Promise<boolean> {
+    try {
+        return (await stat(path)).isDirectory()
+    } catch {
+        return false
+    }
+}
+
 /** Copies a development build into the plugins folder of a vault. */
 async function copyToVault(vault: string): Promise<void> {
+    // Nothing is made in a folder that is not a vault.
+    if (!(await isFolder(join(vault, '.obsidian')))) {
+        throw new Error(
+            `VAULT_PUBLISH_DEV_VAULT must name a vault: "${vault}" holds no .obsidian folder`
+        )
+    }
     // The folder of a plugin has the id of the manifest.
     const pluginDir = join(vault, '.obsidian', 'plugins', await readPluginId())
     await mkdir(pluginDir, { recursive: true })
@@ -91,7 +111,7 @@ async function copyToVault(vault: string): Promise<void> {
 
 async function buildForDevelopment(): Promise<void> {
     await build()
-    const vault = process.env['OBSIDIAN_VAULT_LOCATION']
+    const vault = process.env['VAULT_PUBLISH_DEV_VAULT']
     if (vault !== undefined && vault !== '') {
         await copyToVault(vault)
     }
@@ -100,12 +120,16 @@ async function buildForDevelopment(): Promise<void> {
 if (isProd) {
     await build()
 } else {
+    // The first build stops the command when it fails, for example when the
+    // vault is not a vault.
     await buildForDevelopment()
-    for await (const _event of watch(SRC, { recursive: true })) {
-        try {
-            await buildForDevelopment()
-        } catch (error) {
-            console.error(error)
+    if (!values.once) {
+        for await (const _event of watch(SRC, { recursive: true })) {
+            try {
+                await buildForDevelopment()
+            } catch (error) {
+                console.error(error)
+            }
         }
     }
 }

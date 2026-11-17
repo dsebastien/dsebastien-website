@@ -121,3 +121,77 @@ describe('the built plugin', () => {
         expect(calls).toEqual([])
     })
 })
+
+// A development build can copy itself into a vault, for a test by hand. The
+// template of the author reads the vault from OBSIDIAN_VAULT_LOCATION, which
+// names his real vault on his machines. This plugin must never go there by
+// accident, so it reads a variable of its own and wants a real vault folder.
+describe('development build', () => {
+    const ID = 'dsebastien-vault-publish'
+
+    async function developmentBuild(
+        name: string,
+        environment: Record<string, string>
+    ): Promise<{ exitCode: number; vault: string; stderr: string }> {
+        const vault = join(outputPath(), name)
+        const child = Bun.spawn(
+            ['bun', 'scripts/build.ts', '--once', '--outdir', join(outputPath(), `${name}-dist`)],
+            {
+                cwd: PLUGIN,
+                env: {
+                    PATH: process.env['PATH'] ?? '',
+                    ...Object.fromEntries(
+                        Object.entries(environment).map(([key, value]) => [
+                            key,
+                            value.replace('<vault>', vault)
+                        ])
+                    )
+                },
+                stdout: 'ignore',
+                stderr: 'pipe'
+            }
+        )
+        const stderr = await new Response(child.stderr).text()
+        return { exitCode: await child.exited, vault, stderr }
+    }
+
+    test('copies the plugin into the vault that its own variable names', async () => {
+        await mkdir(join(outputPath(), 'vault', '.obsidian'), { recursive: true })
+
+        const build = await developmentBuild('vault', { VAULT_PUBLISH_DEV_VAULT: '<vault>' })
+
+        expect(build.exitCode).toBe(0)
+        const copied = await readdir(join(build.vault, '.obsidian', 'plugins', ID))
+        expect(copied.sort()).toEqual(['.hotreload', 'main.js', 'manifest.json'])
+    }, 120_000)
+
+    test('never follows the variable of the plugin template', async () => {
+        await mkdir(join(outputPath(), 'template-vault', '.obsidian'), { recursive: true })
+
+        const build = await developmentBuild('template-vault', {
+            OBSIDIAN_VAULT_LOCATION: '<vault>'
+        })
+
+        expect(build.exitCode).toBe(0)
+        expect(await readdir(join(build.vault, '.obsidian'))).toEqual([])
+    }, 120_000)
+
+    test('refuses a folder that is not a vault, and makes nothing in it', async () => {
+        await mkdir(join(outputPath(), 'not-a-vault'), { recursive: true })
+
+        const build = await developmentBuild('not-a-vault', { VAULT_PUBLISH_DEV_VAULT: '<vault>' })
+
+        expect(build.exitCode).not.toBe(0)
+        expect(build.stderr).toContain('.obsidian')
+        expect(await readdir(build.vault)).toEqual([])
+    }, 120_000)
+
+    test('refuses a folder that does not exist, and does not make it', async () => {
+        const build = await developmentBuild('missing', { VAULT_PUBLISH_DEV_VAULT: '<vault>' })
+
+        expect(build.exitCode).not.toBe(0)
+        expect(
+            await Bun.file(join(build.vault, '.obsidian', 'plugins', ID, 'main.js')).exists()
+        ).toBe(false)
+    }, 120_000)
+})

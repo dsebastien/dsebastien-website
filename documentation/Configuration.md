@@ -20,7 +20,7 @@ The root `package.json` declares the Bun workspaces `apps/*` and `packages/*`. `
 
 ESLint (`eslint.config.ts`): the recommended rules of ESLint, the strict rules of typescript-eslint with type information, and the recommended rules of `eslint-plugin-astro` for Astro components. Every rule is an error, and the lint script adds `--max-warnings 0`. `eslint-config-prettier` switches off the rules that Prettier owns.
 
-Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `all` and `pedantic` groups of clippy and forbids unsafe code. `rust-toolchain.toml` pins one exact version of the toolchain for the machines of the author and for CI: with "stable", a new version of clippy brought a new rule and failed CI with no change of the code. A guard test checks the pin.
+Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `all` and `pedantic` groups of clippy and forbids unsafe code. `rust-toolchain.toml` pins one exact version of the toolchain for the machines of the author and for CI (the workflow names the same version, and a guard test compares the two): with "stable", a new version of clippy brought a new rule and failed CI with no change of the code. A guard test checks the pin.
 
 ## Commits
 
@@ -94,7 +94,8 @@ The test of the build writes its output to `apps/site/.cache/`, which git ignore
 
 - `manifest.json`: the id is `dsebastien-vault-publish`, the name of the Rust program too (TOOL-14). The plugin is for desktop only.
 - `bun run build:plugin` writes `main.js` and `manifest.json` to `apps/plugin/dist/`. The modules that Obsidian gives at run time stay out of the bundle.
-- `bun run dev:plugin` builds at each change. With the variable `OBSIDIAN_VAULT_LOCATION`, it also copies the build into the plugins folder of that vault. The path is read from the environment only, and it is never stored here.
+- `bun run dev:plugin` builds at each change. With the variable `VAULT_PUBLISH_DEV_VAULT`, it also copies the build into the plugins folder of that vault. The folder must hold `.obsidian`, else the command stops and makes nothing. The path is read from the environment only, and it is never stored here.
+- Use a test vault for `VAULT_PUBLISH_DEV_VAULT`, never the real vault, while the plugin is young. The plugin template reads `OBSIDIAN_VAULT_LOCATION`, which names the real vault on the machines of the author: this script does not read it, on purpose.
 - The test of the build (`apps/plugin/src/build.spec.ts`) builds a release into `apps/plugin/.cache/`, loads the bundle with a stand-in for the `obsidian` module, and checks that the plugin adds nothing to Obsidian.
 - A load in a real vault is a check by hand: copy the two files of `dist/` into `.obsidian/plugins/dsebastien-vault-publish/` of a vault, enable the plugin, and read the errors of the developer console.
 
@@ -103,6 +104,8 @@ The test of the build writes its output to `apps/site/.cache/`, which git ignore
 - TypeScript: `apps/plugin/src/publishing/`. Rust: `cli/src/`. The Rust program uses `clap` for its commands and `serde_json` for data. The feature `preserve_order` of `serde_json` stays off: the canonical form needs sorted keys.
 - `documentation/Canonical Form.md` is the written canonical form. `fixtures/canonical/cases.json` holds its shared cases.
 - `parity/harness.ts` builds the Rust program with `cargo build --locked` and asks cargo where the program is. `parity/*.spec.ts` compare the bytes of both implementations.
+- ESLint refuses an import of `obsidian` and of the plugin code in `apps/plugin/src/publishing/` (`no-restricted-imports`).
+- The Rust program writes its output with one write and a flush. A reader that closed the pipe is not an error. Another failure of the write gives exit code 1 with a message. Exit codes: 0 for success, 1 for an error, 2 for wrong arguments.
 
 ## Formatting
 
