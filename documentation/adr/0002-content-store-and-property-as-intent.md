@@ -5,3 +5,5 @@ Today the Obsidian Publish panel decides what is public, and the `public_note` p
 Considered: building straight from the vault repository at each commit. Rejected, because every vault commit would go live, "skip" would not exist, and the build would need access to the private vault.
 
 Consequence: anything that writes or removes the property creates a publication or removal candidate, so the publishing tool asks for confirmation on unusual mass changes.
+
+Changed by ADR 0008: the property is the live state that the publishing tool writes, not the intent. The content store, the manifest and the review step stay.

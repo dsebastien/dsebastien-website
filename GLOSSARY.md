@@ -19,13 +19,12 @@ _Avoid_: asset, media file
 
 ### Publishing
 
-**Public note**:
-A note that the author marked for publication. It states an intent.
-_Avoid_: published note (that is the state)
-
 **Published note**:
-A note that is live on the site.
-_Avoid_: public note (that is the intent)
+A note that is live on the site. Its `public_note` property states it, and only the publishing tool writes that property.
+_Avoid_: public note as a wish of the author (the property is the state, not an intent)
+
+**Candidate**:
+A note that is not published and that no guard excludes. The author can select it for a publication.
 
 **Publication**:
 The act, started by the author in Obsidian, that makes selected changes live.
@@ -52,7 +51,11 @@ _Avoid_: export, public repository
 The record of each published note: identity, path, former paths, dates and state.
 
 **Deny list**:
-The vault folders and note types that can never be published.
+The vault folders and note types that can never be published. It lives in the configuration of the publishing tool.
+_Avoid_: block list, ignore list, excluded folders
+
+**Ignore property**:
+A property on a note that says that the publishing tool must never publish that note.
 
 **Privacy gate**:
 The set of checks that every note, property and attachment passes before it can be published.
