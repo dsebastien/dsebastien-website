@@ -8,6 +8,23 @@
 - **Ideas**: `documentation/plans/ideas-backlog.md` holds 232 ideas that are not part of the plan.
 - **Rule**: no timing information in this plan.
 
+## 0. What the decision log changes in this spec
+
+This spec is the first take and stays as written. The author answered three interview rounds and part of a fourth. Where this spec and `decisions.md` differ, the decision log wins. The main changes:
+
+1. **Scope**: the notes website and its publishing tool only. The blog and store sections (2, 5.2, 8, 11.4, round 4 of section 13) are out. The subdomains stay as they are (ADR 0001).
+2. **No bridge**: route 1 of section 6.5 is rejected. The own publishing tool is a condition of the switch (ADR 0003). Kill criterion 4 of section 15.3 no longer has its fallback.
+3. **Indexing**: every note is indexed. Section 9.13.5 and decision D46 no longer apply (ADR 0004).
+4. **URLs**: the vault path is the canonical URL for good (ADR 0005). Generated pages live under `/-/`. Raw Markdown lives at `/-/md/<path>.md`.
+5. **Hosting**: candidate "one Worker with static assets plus object storage", to confirm by a prototype. The cache can keep HTML and Markdown answers apart with a cache rule, so the statement in section 5.5 about `Vary: Accept` is outdated. See the hosting research.
+6. **Content store**: a separate repository, private at first (ADR 0006). Renames are tracked in the manifest and a journal of the plugin (ADR 0007).
+7. **First release grows**: all agent-facing parts with a remote MCP server in the code mode pattern, the command palette on `/`, `Ctrl+G` for the graph, several ad positions with a fallback ad, link cards for `LINK:` blocks, a reading progress bar.
+8. **Second wave**: stacked pages and more themes.
+9. **Stats**: the stats page is built by this codebase and stays on its own host.
+10. **Articles and newsletters** that also exist on the main site get a canonical URL to the main site.
+11. **Analytics**: a better setup is a requirement: what works, what does not, what leads to sales.
+12. **Corrections from the research**: the Ghost Publish plugin does not call the Obsidian Publish API (sections 6.9 and 11.2 overstate that change). The author does not hold back changed notes, so changed notes are selected by default in the publishing tool.
+
 ## 1. Problem statement
 
 1. The public notes site (notes.dsebastien.net) runs on Obsidian Publish. Each first visit downloads a 13 MB site cache before any note shows. The site gets slower with each published note, and it now has 20,735 notes.
