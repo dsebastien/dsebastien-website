@@ -4,9 +4,9 @@
 #
 # The versions follow `.nvmrc` and `packageManager` of `package.json`
 # (`scripts/docker.spec.ts` checks it).
-FROM oven/bun:1.4.0 AS bun
+FROM oven/bun:1.4.4 AS bun
 
-FROM node:24.7.0-bookworm-slim
+FROM node:24.22.3-bookworm-slim
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
