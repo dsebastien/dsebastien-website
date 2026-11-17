@@ -174,6 +174,25 @@ bun run rust:test
 - Performance is a release criterion. Budgets are checked in CI.
 - Brand: the Knowii web palette and components. The canonical values are in the research file.
 
+## Styling with Tailwind
+
+The rules of the author for Tailwind, taken from his other repositories. They apply to the site and to the mockups (DES-12 of the spec).
+
+- Tailwind CSS 4, the latest stable version. The configuration is in CSS (`@theme`). There is no JavaScript configuration file.
+- Always use Tailwind. Prefer its utilities to custom CSS. Write raw CSS only for what Tailwind cannot express cleanly (`color-mix()`, `clamp()`, a gradient on a pseudo-element).
+- Utilities in the markup: for layout that one element needs, and for simple combinations that need no class.
+- `@apply` in a CSS file: for a component class that more than one element uses, for pseudo-selectors (`:hover`, `::after`), and where utilities are combined with token variables. Component classes live in `apps/site/src/styles/components.css`, apart from the tokens. The file is created with the first component class.
+- Tokens: every color, font, radius, shadow and motion value is a token, defined with `@theme`. A theme defines token values only, and components compose tokens. A change of theme or of mode changes the look with no change to a component. The token names are the same in every theme.
+- Colors: the default Tailwind palette is switched off. Never write a raw hex value or a color of the Tailwind palette in the markup or in a component class. Never write `white` or `black` directly: use the token for the text, the fill or the overlay.
+- Token names follow the store website and the Knowii app where they exist: `background`, `surface`, `surface-elevated`, `well`, `primary` (text), `muted`, `secondary` (magenta), `secondary-text`, `border`, `border-strong`, `overlay`, `success`, `warning`, `danger`.
+- `secondary-text` fails WCAG AA for normal text on the dark background. Use it for large or decorative text only.
+- Modes: dark is the default and light is the second. Check every page in both.
+- Responsive: every page works on a small, a medium and a wide screen, with the Tailwind breakpoints. Content is never cut and never needs a horizontal scroll.
+- Known traps:
+    - Tailwind 4 refuses a nested `@import url(...)` after its own import.
+    - Do not put two padding shorthands on one element through two classes: the later one removes the earlier one. Use `padding-block` and `padding-inline`.
+    - The `!` modifier does not always give `!important` in a minified build. Write the declaration in CSS when it matters.
+
 ## Tooling status
 
 Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`).
