@@ -23,6 +23,13 @@ A note that has the name of its folder. It can be the home of that part of the s
 **Stub**:
 A media note with the default status, no rating and no text of the author.
 
+**Cleaned note**:
+The form of a note that can be published: the note without its private parts. Every output of the site derives from it.
+_Avoid_: artifact, export
+
+**Fixture vault**:
+A small vault with invented notes only, made for tests.
+
 ### Publishing
 
 **Published note**:
@@ -42,6 +49,13 @@ The list of new, changed and removed notes that wait for a publication.
 **Skip**:
 To leave a change in the publication queue without publishing it. The live version stays.
 
+**Publication plan**:
+The exact list of what one publication will do: the notes to publish, to update and to remove. The author reviews it before the publication.
+_Avoid_: dry run (the act that gives a publication plan)
+
+**Publication report**:
+The result of a publication, shown to the author: what is live, what failed, and the warnings.
+
 **Unpublish**:
 To remove a published note from the site through a normal publication.
 
@@ -55,6 +69,9 @@ _Avoid_: export, public repository
 
 **Manifest**:
 The record of each published note: identity, path, former paths, dates and state.
+
+**Rename journal**:
+The record of the renames and moves of notes that wait for the next publication.
 
 **Deny list**:
 The vault folders and note types that can never be published. It lives in the configuration of the publishing tool.
@@ -84,6 +101,25 @@ _Avoid_: blog, Ghost site
 
 **Resolver**:
 The function that turns a requested path into a canonical URL, a redirect, or "not found".
+
+**URL contract**:
+The rules that say which URL each note has and which other URLs lead to it.
+
+**Generated page**:
+A page that the site makes from many notes and that is not a note: home, type hub, tag page, search, graph.
+
+**Reserved prefix**:
+The path prefix under which every generated page lives, so that a generated page can never collide with a note.
+
+**Type hub**:
+The generated page that lists all published notes of one note type.
+
+**Link card**:
+A link that shows as a card with the title, the source and a small image of its target.
+_Avoid_: bookmark, embed
+
+**Store catalog**:
+The list of products that the store publishes for other sites. Ads and the buy box read it.
 
 **Ad**:
 A promotion of one of the author's own products or resources on a page.
