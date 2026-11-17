@@ -5,3 +5,5 @@ ADR 0002 made the `public_note` property the intent of the author: a note with t
 Considered: the property as intent (ADR 0002), and two properties (one for the intent, one for the state). Rejected, because with an intent property anything that writes it (a template, a bulk edit, an agent) creates a publication candidate, and a second property adds a concept for no gain: the selection in the view is the intent.
 
 Consequence: the rest of ADR 0002 holds (content store, manifest, review step). A note that is not live is a candidate unless a guard excludes it, so the publication queue needs filters, and new notes are never selected by default. Tools that test the property to know if a note is live, such as the Ghost Publish plugin, keep working.
+
+Rule that follows: the tool never reads the property as an input. The value in a note can be wrong, for example when an assistant creates a note and sets the property to true. The manifest says what is live. At the end of each publication the tool corrects the property in every note that it looked at, so that the recorded state is right in all cases: true on a note that is live, not true on a note that is not.
