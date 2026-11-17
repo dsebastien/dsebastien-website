@@ -30,6 +30,7 @@ Do not mix them:
 - `GLOSSARY.md`: the domain language. Terms only, no implementation details. Created when the first term is settled.
 - `documentation/`: technical documentation for the author and for coding agents.
     - `Architecture.md`, `Business Rules.md`, `Configuration.md`, `Domain Model.md`
+    - `Canonical Form.md`: the exact bytes that the two implementations of the publishing logic must both write
     - `adr/`: architecture decision records, `0001-slug.md`, one short paragraph each
     - `plans/`: specs and plans
     - `research/`: dated, cited fact files
@@ -94,6 +95,15 @@ State in the final message what could not be verified (for example: a visual che
 - Clarity over grammar. Short and exact is better than long and polished.
 - Update the documentation with the change, in the same commit.
 
+### Two implementations, one result
+
+The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in Rust (`cli/src/`), under the parity rule (ADR 0009, business rule 17).
+
+- A change of the publishing logic lands in both implementations in the same commit, with a test on each side and a parity test when the output changes.
+- `documentation/Canonical Form.md` says what both must write. Change it first, then the code.
+- The logic takes the time of the run as an input, reads no clock, uses no random value, and never depends on the system (path separator, locale, order of a folder listing).
+- The TypeScript logic never imports `obsidian`. The plugin gives it what it needs.
+
 ### Business rules compliance
 
 **CRITICAL**: the rules in `documentation/Business Rules.md` are always respected, unless the author approves a change.
@@ -125,7 +135,11 @@ State in the final message what could not be verified (for example: a visual che
 ### Layout of the repository
 
 - `apps/site/`: the Astro and Tailwind site. A Bun workspace with its own `package.json` and `tsconfig.json`.
-- `cli/`: the Rust command line program of the publishing tool, a member of the Cargo workspace at the root (`Cargo.toml`).
+- `apps/plugin/`: the Obsidian plugin of the publishing tool, from the plugin template of the author. A Bun workspace. Its type check is the one of the root.
+    - `apps/plugin/src/publishing/`: the TypeScript implementation of the publishing logic. It never imports Obsidian.
+    - `apps/plugin/src/app/`: the plugin itself, a thin layer over the publishing logic.
+- `cli/`: the Rust command line program of the publishing tool, a member of the Cargo workspace at the root (`Cargo.toml`). It holds the Rust implementation of the publishing logic.
+- `parity/`: the parity tests. They run both implementations and compare their output byte by byte.
 - `packages/`: TypeScript code that more than one app uses. Each package is a Bun workspace.
     - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, and `makeTestStores()`.
 - `fixtures/`: the test data, invented. It is at the root because no implementation owns it: the TypeScript tests and the Rust tests read the same files.
@@ -135,7 +149,6 @@ State in the final message what could not be verified (for example: a visual che
     - `fixtures/README.md`: the rules, and how to add a note.
 - `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
 - `scripts/`: tooling of the repository and its guard tests.
-- The home of the Obsidian plugin is set by the ticket that creates it.
 
 Run every script from the root. The root scripts call the workspaces.
 
@@ -174,7 +187,8 @@ bun run rust:test
 - Never write into the fixture vault from a test. A test that changes notes works on a copy.
 - A test that needs a content store or an attachment storage takes them from the test helper: `await using stores = await makeTestStores()` in TypeScript, `TestStores::new()` in Rust. The content store is a bare git repository with no commit, which stands for the remote one. The attachment storage is an empty folder. Both are removed after the test.
 - A test that needs a folder of its own makes it inside the ignored `.cache/` folder of the clone, and removes only a folder that it made.
-- Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`).
+- Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`). One exception: the shared cases of the canonical form are a unit test next to the Rust writer.
+- The parity tests in `parity/` build the Rust program with cargo, so `bun run test` needs the Rust toolchain.
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
 
 ## Design principles
@@ -209,4 +223,6 @@ The rules of the author for Tailwind, taken from his other repositories. They ap
 
 Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`), the fixture vault with its catalog, the test helpers for a content store and an attachment storage, the check of private files.
 
-Not set up yet: the Obsidian plugin, the deployment, the performance budgets in CI.
+The two implementations of the publishing logic have their skeleton: the plugin (`apps/plugin`), the `plan` command of the Rust program, the canonical form and the parity test.
+
+Not set up yet: the deployment, the performance budgets in CI, the lint rules of the Obsidian plugin catalog (the plugin is a tool for the author first).

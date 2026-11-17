@@ -22,6 +22,7 @@ These rules MUST be respected in all implementations, unless the author approves
 14. **Properties.** Until an allow list per property key exists, every property of a published note is public. When an allow list exists, a property that is not on it never reaches any output.
 15. **Personal data of other people.** The properties of person notes are public for now, by decision of the author. The rule is reviewed when the allow list of rule 14 exists.
 16. **A takedown removes everything.** The page, the Markdown, the images, and every derived file, and it does not wait for a normal publication.
+17. **Two implementations, one result.** For the same input, the TypeScript and the Rust implementation of the publishing logic write the same bytes in the canonical form (`Canonical Form.md`): the publication plan, the cleaned notes and the manifest. A change lands in both in the same commit. A parity test that fails blocks a release (ADR 0009).
 
 ## Documentation Guidelines
 

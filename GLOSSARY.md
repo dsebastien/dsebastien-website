@@ -96,6 +96,9 @@ A set of automatic checks on the content of a note before it can be published. A
 **Parity rule**:
 The rule that the two implementations of the publishing logic give the same result for the same vault.
 
+**Canonical form**:
+The exact written form of the output of the publishing logic, byte for byte. The parity rule compares outputs in that form.
+
 ### Site
 
 **Canonical URL**:

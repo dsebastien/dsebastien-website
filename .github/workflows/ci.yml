@@ -30,6 +30,11 @@ jobs:
               with:
                   node-version-file: .nvmrc
 
+            # The parity test builds the Rust program and compares its output
+            # with the TypeScript implementation (ADR 0009).
+            - name: Setup Rust
+              uses: dtolnay/rust-toolchain@stable
+
             - name: Install dependencies
               run: bun install --frozen-lockfile
 

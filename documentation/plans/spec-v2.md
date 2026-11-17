@@ -560,7 +560,7 @@ This is not the MCP server of the publishing tool (TOOL-03). It is a public serv
 2. No client-side framework on note pages (v1 9.14).
 3. The resolver is a module of plain TypeScript (HOST-02).
 4. One build for the notes site. The codebase can host other sections later, but no decision here may depend on that (ADR 0001).
-5. The layout of the repository is set by the first tickets. The Rust code lives in this repository from the start, next to the plugin code (decisions R19). Set by issue 16: the site is the Bun workspace `apps/site`, the Rust program is the member `cli` of a Cargo workspace at the root, and shared TypeScript code goes to `packages/`. Set by issue 17: the test data is in `fixtures/` at the root, the test support for TypeScript is the workspace `packages/testing`, and the test support for Rust is `cli/tests/support/mod.rs`. The home of the plugin is set by issue 29.
+5. The layout of the repository is set by the first tickets. The Rust code lives in this repository from the start, next to the plugin code (decisions R19). Set by issue 16: the site is the Bun workspace `apps/site`, the Rust program is the member `cli` of a Cargo workspace at the root, and shared TypeScript code goes to `packages/`. Set by issue 17: the test data is in `fixtures/` at the root, the test support for TypeScript is the workspace `packages/testing`, and the test support for Rust is `cli/tests/support/mod.rs`. Set by issue 29: the plugin is the Bun workspace `apps/plugin`, with the TypeScript implementation of the publishing logic in `apps/plugin/src/publishing/`. The Rust implementation is in `cli/src/`. The parity tests are in `parity/`, and the canonical form is `documentation/Canonical Form.md`.
 
 ## 8. Publication flow
 

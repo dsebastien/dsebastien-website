@@ -1,0 +1,105 @@
+{
+    "about": "Cases of the canonical form (documentation/Canonical Form.md). The TypeScript and the Rust implementation both read this file. Each canonical text is written by hand.",
+    "cases": [
+        {
+            "name": "an empty object",
+            "value": {},
+            "canonical": "{}\n"
+        },
+        {
+            "name": "an empty list",
+            "value": [],
+            "canonical": "[]\n"
+        },
+        {
+            "name": "a text",
+            "value": "note",
+            "canonical": "\"note\"\n"
+        },
+        {
+            "name": "keys in the order of their code points, capital letters first",
+            "value": {
+                "b": 1,
+                "a": 2,
+                "B": 3,
+                "a1": 4
+            },
+            "canonical": "{\n  \"B\": 3,\n  \"a\": 2,\n  \"a1\": 4,\n  \"b\": 1\n}\n"
+        },
+        {
+            "name": "keys that look like numbers, sorted as text",
+            "value": {
+                "10": "a",
+                "2": "b",
+                "1": "c"
+            },
+            "canonical": "{\n  \"1\": \"c\",\n  \"10\": \"a\",\n  \"2\": \"b\"\n}\n"
+        },
+        {
+            "name": "nested objects and lists: a list keeps its order, an empty value stays on one line",
+            "value": {
+                "notes": [
+                    {
+                        "path": "b.md",
+                        "aliases": []
+                    },
+                    {
+                        "path": "a.md",
+                        "aliases": ["x", "w"]
+                    }
+                ],
+                "empty": {}
+            },
+            "canonical": "{\n  \"empty\": {},\n  \"notes\": [\n    {\n      \"aliases\": [],\n      \"path\": \"b.md\"\n    },\n    {\n      \"aliases\": [\n        \"x\",\n        \"w\"\n      ],\n      \"path\": \"a.md\"\n    }\n  ]\n}\n"
+        },
+        {
+            "name": "text outside ASCII is written as it is",
+            "value": {
+                "path": "20 Library/Crème brûlée à l'érable.md",
+                "name": "日本の庭",
+                "sign": "🌱"
+            },
+            "canonical": "{\n  \"name\": \"日本の庭\",\n  \"path\": \"20 Library/Crème brûlée à l'érable.md\",\n  \"sign\": \"🌱\"\n}\n"
+        },
+        {
+            "name": "a quote, a backslash and the control characters are escaped, and nothing else",
+            "value": "a \"quote\", a \\ backslash, a slash /, a tab\t, a line\n, a return\r, a bell\u0007, a unit separator\u001f, a delete, a separator ",
+            "canonical": "\"a \\\"quote\\\", a \\\\ backslash, a slash /, a tab\\t, a line\\n, a return\\r, a bell\\u0007, a unit separator\\u001f, a delete, a separator \"\n"
+        },
+        {
+            "name": "whole numbers and booleans",
+            "value": {
+                "zero": 0,
+                "negative": -12,
+                "large": 9007199254740991,
+                "yes": true,
+                "no": false
+            },
+            "canonical": "{\n  \"large\": 9007199254740991,\n  \"negative\": -12,\n  \"no\": false,\n  \"yes\": true,\n  \"zero\": 0\n}\n"
+        }
+    ],
+    "refused": [
+        {
+            "name": "a null value",
+            "value": {
+                "a": null
+            }
+        },
+        {
+            "name": "a null value in a list",
+            "value": [1, null]
+        },
+        {
+            "name": "a number with a fraction",
+            "value": {
+                "a": 1.5
+            }
+        },
+        {
+            "name": "a key outside ASCII",
+            "value": {
+                "clé": 1
+            }
+        }
+    ]
+}

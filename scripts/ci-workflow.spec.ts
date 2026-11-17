@@ -79,6 +79,23 @@ describe('CI workflow', () => {
         expect(rust?.['runs-on']).toBe('${{ matrix.os }}')
     })
 
+    // The parity test is one of the tests: it builds the Rust program and
+    // compares its output with the TypeScript implementation (issue 29).
+    test('gives the Rust toolchain to the job that runs the tests', async () => {
+        const jobs = readJobs(await readWorkflow())
+        const tests = jobs.find((job) =>
+            readSteps(job).some((step) => step['run'] === 'bun run test')
+        )
+        const steps = tests === undefined ? [] : readSteps(tests)
+        const toolchain = steps.findIndex(
+            (step) =>
+                typeof step['uses'] === 'string' &&
+                step['uses'].startsWith('dtolnay/rust-toolchain@')
+        )
+        expect(toolchain).toBeGreaterThanOrEqual(0)
+        expect(toolchain).toBeLessThan(steps.findIndex((step) => step['run'] === 'bun run test'))
+    })
+
     test('lets no job and no step fail without failing the run', async () => {
         const jobs = readJobs(await readWorkflow())
         const tolerant = [...jobs, ...jobs.flatMap(readSteps)].filter(
