@@ -40,6 +40,18 @@ Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `
 
 The public CI never sees the content store (BUILD-11 of the spec). It builds the empty site and, later, the site of the fixture vault.
 
+## Container for local work
+
+`Dockerfile` and `compose.yaml` at the root. `docker compose up` installs the packages and runs the dev server of the site on `http://localhost:4321`. `SITE_PORT` selects another port of the machine.
+
+- The image holds Node and Bun only, in the versions of `.nvmrc` and of `packageManager`. A guard test fails when they differ.
+- The source of the clone is mounted, so a change of a file shows at once. The packages live in two volumes, apart from the packages of the host.
+- `.dockerignore` excludes everything: the image build gets no file of the clone, so no private file can enter an image.
+- The port is published on the machine only (`127.0.0.1`).
+- The container runs as the user `node` (id 1000), so that the files it writes into the clone have the owner of a normal Linux account.
+- It is not an image for production. The plain server that serves the built site comes with the first slice (HOST-02 of the spec).
+- CI does not start the container. It is checked by hand.
+
 ## Site
 
 `apps/site/astro.config.ts`: Astro with Tailwind 4 through its Vite plugin. `src/styles/global.css` imports Tailwind. Prettier formats Astro components with `prettier-plugin-astro`.

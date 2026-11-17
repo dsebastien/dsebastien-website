@@ -32,6 +32,12 @@ bun run dev           # the site on a local server
 bun run build         # the static site in apps/site/dist
 ```
 
+Or in a container, with Docker as the only tool on the machine:
+
+```bash
+docker compose up     # the dev server on http://localhost:4321, with the source mounted
+```
+
 The checks:
 
 ```bash

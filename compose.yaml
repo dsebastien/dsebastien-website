@@ -1,0 +1,20 @@
+# Local development: the dev server of the site in a container.
+#
+#   docker compose up            http://localhost:4321
+#   SITE_PORT=4400 docker compose up   another port on this machine
+#
+# The source of the clone is mounted, so a change of a file shows at once.
+# The publishing tool is not in a container: it reads the vault.
+services:
+    site:
+        build: .
+        ports:
+            - '127.0.0.1:${SITE_PORT:-4321}:4321'
+        volumes:
+            - .:/app
+            - root_modules:/app/node_modules
+            - site_modules:/app/apps/site/node_modules
+
+volumes:
+    root_modules:
+    site_modules:

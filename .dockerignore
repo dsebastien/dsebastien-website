@@ -1,0 +1,3 @@
+# The image needs no file of the repository: the source is mounted when the
+# container runs. Nothing of the clone, private folders included, enters a build.
+*

@@ -119,6 +119,7 @@ State in the final message what could not be verified (for example: a visual che
 - Node version for tools with a `node` shebang: see `.nvmrc`.
 - Package versions are exact, and new versions wait 3 days before install (`bunfig.toml`).
 - Rust: the stable toolchain, with `rustfmt` and `clippy`.
+- A container for local work: `docker compose up` runs the dev server of the site with the source mounted. It is not an image for production, and the publishing tool never runs in it. The image gets no file of the clone (`.dockerignore` excludes everything). Keep it that way.
 
 ### Layout of the repository
 
@@ -160,7 +161,7 @@ bun run rust:test
 - Run tests with `bun run test`, never bare `bun test`. The script adds `--isolate`.
 - Test files end in `.spec.ts` and sit next to the file they test.
 - Test external behavior through the interface of a module. Do not test internals.
-- The tooling has guard tests in `scripts/`: the strict compiler options, the lint script, the commit hooks and the CI workflow. The build of the site has a test next to its source.
+- The tooling has guard tests in `scripts/`: the strict compiler options, the lint script, the commit hooks, the CI workflow and the container files. The build of the site has a test next to its source.
 - Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`).
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
 
@@ -175,6 +176,6 @@ bun run rust:test
 
 ## Tooling status
 
-Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`.
+Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`).
 
 Not set up yet: the Obsidian plugin, the deployment, the performance budgets in CI.
