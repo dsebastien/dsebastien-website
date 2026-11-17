@@ -1,0 +1,22 @@
+{
+    "name": "@dsebastien-website/site",
+    "private": true,
+    "version": "0.0.0",
+    "description": "The website of the public notes",
+    "license": "MIT",
+    "type": "module",
+    "scripts": {
+        "dev": "astro dev",
+        "build": "astro build",
+        "preview": "astro preview",
+        "check": "astro check --minimumFailingSeverity warning"
+    },
+    "dependencies": {
+        "@tailwindcss/vite": "4.3.5",
+        "astro": "7.4.12",
+        "tailwindcss": "4.3.5"
+    },
+    "devDependencies": {
+        "@astrojs/check": "0.9.12"
+    }
+}

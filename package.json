@@ -2,28 +2,54 @@
     "name": "dsebastien-website",
     "private": true,
     "version": "0.0.0",
-    "description": "One codebase for dsebastien.net: public notes, blog and store",
+    "description": "The website of my public notes, and the tool that publishes notes to it from Obsidian",
     "author": "Sébastien Dubois",
     "license": "MIT",
     "type": "module",
     "packageManager": "bun@1.4.0",
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
     "repository": {
         "type": "git",
         "url": "git+https://github.com/dsebastien/dsebastien-website.git"
     },
     "scripts": {
+        "setup": "git config --local --replace-all include.path ../.gitconfig",
         "tsc": "tsc --noEmit",
         "tsc:watch": "tsc --noEmit --watch --preserveWatchOutput",
         "tscw": "bun run tsc:watch",
+        "check": "bun run --cwd apps/site check",
+        "lint": "eslint . --max-warnings 0",
+        "lint:fix": "eslint . --fix",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "test": "bun test --isolate",
-        "test:watch": "bun test --isolate --watch"
+        "test:watch": "bun test --isolate --watch",
+        "rust:format": "cargo fmt --all",
+        "rust:format:check": "cargo fmt --all --check",
+        "rust:lint": "cargo clippy --workspace --all-targets --locked -- --deny warnings",
+        "rust:test": "cargo test --workspace --locked",
+        "build": "bun run --cwd apps/site build",
+        "dev": "bun run --cwd apps/site dev",
+        "commit:lint": "commitlint --edit"
     },
     "devDependencies": {
+        "@commitlint/cli": "21.2.4",
+        "@commitlint/config-conventional": "21.2.4",
+        "@commitlint/types": "21.2.3",
+        "@eslint/js": "10.0.1",
         "@types/bun": "1.4.0",
         "@types/node": "24.10.1",
+        "eslint": "10.15.0",
+        "eslint-config-prettier": "10.1.8",
+        "eslint-plugin-astro": "3.2.1",
+        "globals": "17.14.0",
+        "jiti": "2.7.0",
         "prettier": "^3.6.2",
-        "typescript": "^5.9.3"
+        "prettier-plugin-astro": "1.1.2",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "8.72.2"
     }
 }
