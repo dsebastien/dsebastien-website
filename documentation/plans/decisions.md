@@ -117,7 +117,7 @@ Asked, waiting for the answer of the author:
 
 Not asked yet (the research was still running):
 
-1. The decisions of `documentation/research/2026-11-17-seo-and-ai-search.md`.
+1. The 23 decisions of `documentation/research/2026-11-17-seo-and-ai-search.md` (its section G, items 174 to 196).
 2. Which features of the theme of the main site and of the store to take over (`documentation/research/2026-11-17-existing-sites-inspiration.md`).
 3. The design: home page, note page layout, paragraph style, second theme.
 4. The license of the note content.
