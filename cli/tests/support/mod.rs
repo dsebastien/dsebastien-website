@@ -131,3 +131,81 @@ impl Drop for TestStores {
         let _ = fs::remove_dir_all(&self.root);
     }
 }
+
+/// Runs git on a repository that is named in the arguments (`--git-dir`,
+/// `-C`), with an environment that points to no other repository.
+pub fn git(args: &[&str]) -> String {
+    let mut git = Command::new("git");
+    git.args(args);
+    for (name, _) in env::vars_os() {
+        if name.to_string_lossy().starts_with("GIT_") {
+            git.env_remove(name);
+        }
+    }
+    let output = git.output().expect("git starts");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .trim_end()
+        .to_owned()
+}
+
+pub fn text(path: &Path) -> &str {
+    path.to_str().expect("the path is valid UTF-8")
+}
+
+fn copy_folder(from: &Path, to: &Path) {
+    fs::create_dir(to).expect("the folder of the copy is new");
+    for entry in fs::read_dir(from).expect("the folder can be read") {
+        let entry = entry.expect("the entry can be read");
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_folder(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).expect("the file can be copied");
+        }
+    }
+}
+
+impl TestStores {
+    /// Copies the fixture vault into the folder of the test and returns the
+    /// path of the copy. A test never writes into the fixture vault itself.
+    pub fn copy_fixture_vault(&self) -> PathBuf {
+        let vault = self.root.join("vault");
+        copy_folder(&fixture_vault(), &vault);
+        vault
+    }
+
+    /// Makes the copy of the content store on which the publishing tool works:
+    /// a clone of the content store of the test, with an invented author. Its
+    /// first commit holds the configuration of the fixture vault and is
+    /// pushed, because the configuration of the tool lives in the content
+    /// store (GATE-04).
+    pub fn make_content_store_copy(&self) -> PathBuf {
+        let copy = self.root.join("copy");
+        git(&["clone", "--quiet", text(&self.content_store), text(&copy)]);
+        let run = |args: &[&str]| {
+            let mut all = vec!["-C", text(&copy)];
+            all.extend_from_slice(args);
+            git(&all)
+        };
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "user.email", "test@example.invalid"]);
+        run(&["config", "commit.gpgsign", "false"]);
+        run(&["checkout", "--quiet", "-B", "main"]);
+        fs::copy(fixture_configuration(), copy.join("configuration.json"))
+            .expect("the configuration can be copied");
+        run(&["add", "configuration.json"]);
+        run(&[
+            "commit",
+            "--quiet",
+            "--message",
+            "Add the configuration of the fixture vault",
+        ]);
+        run(&["push", "--quiet", "origin", "HEAD:main"]);
+        copy
+    }
+}

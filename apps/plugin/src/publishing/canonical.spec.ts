@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { toCanonicalJson, type CanonicalValue } from './canonical.ts'
 import { compareCodePoints } from './order.ts'
-import { computePlan } from './plan.ts'
+import { makePlan } from './plan.ts'
 
 // The canonical form (documentation/Canonical Form.md) is what the parity rule
 // compares. The Rust implementation reads the same cases
@@ -64,12 +64,14 @@ describe('order of paths', () => {
 
 describe('the document of the canonical form', () => {
     // A formatter can change the example without a word.
-    test('shows the plan of the skeleton exactly as it is written', async () => {
+    test('shows the empty plan exactly as it is written', async () => {
         const document = fileURLToPath(
             new URL('../../../../documentation/Canonical Form.md', import.meta.url)
         )
         const text = await Bun.file(document).text()
-        expect(text).toContain(`\n\`\`\`json\n${toCanonicalJson(computePlan())}\`\`\`\n`)
+        expect(text).toContain(
+            `\n\`\`\`json\n${toCanonicalJson(makePlan({ publish: [], update: [], remove: [] }))}\`\`\`\n`
+        )
     })
 })
 

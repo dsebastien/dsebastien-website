@@ -1,40 +1,58 @@
-//! The `plan` command writes a publication plan in the canonical form
-//! (`documentation/Canonical Form.md`). The skeleton gives an empty plan.
+//! How the program ends: the exit codes, and what happens when its output
+//! cannot be written.
 
 mod support;
 
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Stdio};
 
-use support::fixture_vault;
+use support::TestStores;
 
-fn plan(vault: &std::path::Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+fn plan_command(stores: &TestStores) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+    command
         .arg("plan")
         .arg("--vault")
-        .arg(vault)
-        .output()
-        .expect("the program starts")
+        .arg(stores.copy_fixture_vault())
+        .arg("--content-store")
+        .arg(stores.make_content_store_copy());
+    command
 }
 
-/// The same text as in `parity/plan.spec.ts`. The bytes are the same on every
-/// system: no Windows line end.
+/// The same text as in `parity/publication.spec.ts`. The bytes are the same on
+/// every system: no Windows line end.
 #[test]
-fn writes_an_empty_plan_in_the_canonical_form() {
-    let output = plan(&fixture_vault());
+fn writes_an_empty_plan_with_its_id_when_no_note_is_included() {
+    let stores = TestStores::new();
+
+    let output = plan_command(&stores).output().expect("the program starts");
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8(output.stdout).expect("the plan is UTF-8"),
-        "{\n  \"publish\": [],\n  \"remove\": [],\n  \"update\": []\n}\n"
-    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    let text = String::from_utf8(output.stdout).expect("the plan is UTF-8");
+    let (id, plan) = text
+        .strip_prefix("{\n  \"id\": \"")
+        .and_then(|rest| rest.split_once("\",\n"))
+        .expect("the output starts with the id");
+    assert_eq!(id.len(), 16);
+    assert_eq!(
+        plan,
+        "  \"plan\": {\n    \"publish\": [],\n    \"remove\": [],\n    \"update\": []\n  }\n}\n"
+    );
 }
 
 #[test]
-fn stops_when_the_vault_is_not_a_folder() {
-    let missing = fixture_vault().join("No such folder");
+fn stops_when_a_place_is_not_a_folder() {
+    let stores = TestStores::new();
+    let missing = stores.root().join("No such folder");
 
-    let output = plan(&missing);
+    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("plan")
+        .arg("--vault")
+        .arg(&missing)
+        .arg("--content-store")
+        .arg(stores.root())
+        .output()
+        .expect("the program starts");
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
@@ -45,10 +63,8 @@ fn stops_when_the_vault_is_not_a_folder() {
 /// error, and the program must not panic.
 #[test]
 fn ends_without_an_error_when_the_reader_closed_the_pipe() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
-        .arg("plan")
-        .arg("--vault")
-        .arg(fixture_vault())
+    let stores = TestStores::new();
+    let mut child = plan_command(&stores)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -66,15 +82,13 @@ fn ends_without_an_error_when_the_reader_closed_the_pipe() {
 #[cfg(target_os = "linux")]
 #[test]
 fn stops_with_an_error_when_the_output_cannot_be_written() {
+    let stores = TestStores::new();
     let full = std::fs::OpenOptions::new()
         .write(true)
         .open("/dev/full")
         .expect("the full device can be opened");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
-        .arg("plan")
-        .arg("--vault")
-        .arg(fixture_vault())
+    let output = plan_command(&stores)
         .stdout(full)
         .output()
         .expect("the program starts");

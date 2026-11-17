@@ -64,9 +64,19 @@ Three points differ between the languages, and the logic must stay away from the
 2. A path is written and compared as the vault gives it. The logic never changes its letter case and never converts it to another Unicode form: a converted path can name no file.
 3. The fixture vault holds names in the composed Unicode form (NFC) only. What the tool does with a name in another form is not decided: the slice of the URL contract decides it (URL-02 of the spec).
 
+## The content store
+
+| Path                 | What it holds                                                             |
+| -------------------- | ------------------------------------------------------------------------- |
+| `configuration.json` | The configuration of the tool: `denyList`, the list of the denied folders |
+| `notes/<vault path>` | The cleaned note of a published note, at its vault path                   |
+| `manifest/<id>.json` | The manifest entry of a published note, as data in the canonical form     |
+
+A content store without `configuration.json` has an empty deny list. A configuration that cannot be read stops the tool: a wrong deny list is never read as an empty one.
+
 ## The publication plan
 
-The first shape, set by issue 29. Later slices add members (the forced removals, the edits of the configuration).
+The first shape. Later slices add members (the forced removals, the edits of the configuration).
 
 | Key       | Value                                            | Order          |
 | --------- | ------------------------------------------------ | -------------- |
@@ -76,7 +86,7 @@ The first shape, set by issue 29. Later slices add members (the forced removals,
 
 Both implementations sort the three lists when they make a plan (`makePlan`, `PublicationPlan::new`), so no caller can give a plan in another order.
 
-The plan of the skeleton, which finds nothing. A test compares this block with the output of the code:
+The empty plan. A test compares this block with the output of the code:
 
 <!-- prettier-ignore -->
 ```json
@@ -87,12 +97,59 @@ The plan of the skeleton, which finds nothing. A test compares this block with t
 }
 ```
 
+A plan is stored on the device as a record: the plan, and the selection that gave it. The parity rule compares the record.
+
+| Key                 | Value                                                                       |
+| ------------------- | --------------------------------------------------------------------------- |
+| `plan`              | The plan                                                                    |
+| `selection.include` | The vault paths that were selected for a publication, each one time, sorted |
+
+The id of a plan is 16 hexadecimal digits of the SHA-256 of its record. It names the stored file. It is outside the parity rule.
+
+The first slice knows one case: the first publication of the notes of `selection.include`. A selected path stops the plan when it is not a vault path, when it does not end in `.md` (in small letters), when the vault has no such file, when a guard excludes the note, or when the note is already published.
+
+## Notes and their properties
+
+The two implementations read and write the properties of a note as lines of text. They use no YAML library, because two libraries never agree on every byte.
+
+1. A note has properties when its first line is `---` and a later line is `---`. The lines between the two are the properties. A carriage return at the end of a line is not part of the line.
+2. A property starts at a line that begins with its key and a colon. It goes on over the next lines that begin with a space, a tab or a hyphen.
+3. The value of a property is the text after the colon on its first line, without the spaces around it.
+4. To remove a property is to remove its lines.
+5. To set a property is to write `key: value` in the place of the property. A property that the note does not have becomes the last line of the properties. A note without properties gets the three lines `---`, `key: value`, `---` before its text.
+6. A note that was changed keeps the line end of its first line between the lines of its properties. The rest of the note is not touched.
+
+The guards read two things only: the vault path of a note, and the value of its `publish_ignore` property, which excludes the note when it is `true` in any letter case.
+
 ## Cleaned notes
 
-A cleaned note is Markdown text. The encoding rules above apply. The ticket that writes the cleaning step adds its rules here before the second implementation is written.
+A cleaned note is Markdown text, in the encoding of this document.
+
+1. The source of a note is its text in the vault, with each carriage return and line feed pair replaced by a line feed, and without the `public_note` property. That property is the state in the vault, not content.
+2. Version 1 of the cleaning step changes nothing more: the cleaned note is the source.
+3. The ticket that adds a rule to the cleaning step writes it here before the second implementation is written, and raises the version.
+
+## The manifest entry
+
+One file per published note, as data in the canonical form.
+
+| Key               | Value                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `attachments`     | The attachments of the note. Empty until the slice of the attachments                                                               |
+| `cleanedHash`     | `sha256:` and the SHA-256 of the cleaned note, in small hexadecimal digits                                                          |
+| `cleaningVersion` | The version of the cleaning step that made the cleaned note                                                                         |
+| `firstPublished`  | The time of the run of the first publication                                                                                        |
+| `formerPaths`     | The vault paths that the note had before, in the order in which they were added                                                     |
+| `id`              | The identity of the note: 16 hexadecimal digits of the SHA-256 of its vault path, a line feed and the time of its first publication |
+| `lastPublished`   | The time of the run of the last publication                                                                                         |
+| `path`            | The vault path of the note                                                                                                          |
+| `sourceHash`      | `sha256:` and the SHA-256 of the source of the note                                                                                 |
+| `state`           | `published`                                                                                                                         |
+
+After the push of a publication, the tool sets `public_note: true` in the vault on each note that it published. It writes a note only when the text changes.
 
 ## How it is tested
 
 1. Shared cases: `fixtures/canonical/cases.json` holds values and the text that each must give, values that must be refused, and a list of paths with its order. Each expected result is written by hand. The TypeScript tests (`apps/plugin/src/publishing/canonical.spec.ts`) and the Rust tests (`cli/src/canonical.rs`, `cli/src/order.rs`) both read that file. A value that only one language can hold has a test on that side only.
-2. Parity tests: `parity/` holds tests that run both implementations on the fixture vault and compare the bytes. They are part of `bun run test`, so CI fails when they fail.
-3. The Rust tests of the program (`cli/tests/`) state the same expected text, and they also run on Windows.
+2. Parity tests: `parity/` holds tests that run both implementations on a copy of the fixture vault and compare what they leave: the stored plan, every file of the content store and every file of the vault. They are part of `bun run test`, so CI fails when they fail.
+3. The tests of each implementation (`apps/plugin/src/publishing/publication.spec.ts`, `cli/tests/publication.rs`) state the same expected texts, with hashes that were computed with another tool. The Rust tests also run on Windows.
