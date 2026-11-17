@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 // clone because the hooks call `bunx`, which finds the tools of the clone from
 // there.
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const HOOK_FILES = ['.gitconfig', 'scripts/git-hooks/format-staged.sh']
+const HOOK_FILES = ['.gitconfig', 'scripts/git-hooks/format-staged.sh', 'scripts/private-files.ts']
 
 let repository: string | undefined
 
@@ -153,5 +153,28 @@ describe('pre-commit hook', () => {
 
         expect((await git('commit', '--message', 'feat(all): add data')).exitCode).toBe(0)
         expect((await git('show', 'HEAD:data.unknown')).stdout).toBe('a   b\n')
+    }, 60_000)
+})
+
+// Acceptance criterion of issue 17: a private file is refused before it leaves
+// the machine. `scripts/private-files.spec.ts` tests the rules of the check.
+describe('pre-commit hook for private files', () => {
+    test('refuses a commit that holds a file of the private folder', async () => {
+        await writeFile('.private/export.csv', 'a,b\n')
+        // `--force`, because the clone ignores the folder. The hook is the second barrier.
+        await git('add', '--force', '.private/export.csv')
+
+        expect((await git('commit', '--message', 'feat(all): add an export')).exitCode).not.toBe(0)
+
+        await git('rm', '--cached', '--quiet', '.private/export.csv')
+    }, 60_000)
+
+    test('refuses a commit that holds a note outside the fixture vault', async () => {
+        await writeFile('A real note.md', '---\ntags:\n  - type/note\n---\n\n# A real note\n')
+        await git('add', 'A real note.md')
+
+        expect((await git('commit', '--message', 'docs(all): add a note')).exitCode).not.toBe(0)
+
+        await git('rm', '--cached', '--quiet', 'A real note.md')
     }, 60_000)
 })

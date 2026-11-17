@@ -15,8 +15,9 @@ The main site and the store of the author are out of scope (ADR 0001).
 
 - Never commit note content, attachments, customer data, secrets, tokens, internal host names, IP addresses or infrastructure details.
 - Exported content goes to `.content/` (ignored by git) or to the content store. Never into the repository.
-- Analytics exports, vault analysis and raw reports go to `.private/` (ignored by git). Never into the repository.
-- Test data comes from the fixture vault, which holds invented notes only. Fake secrets for tests are built at run time, never stored as text.
+- Analytics exports, vault analysis and raw reports go to `.private/` (ignored by git). Never into the repository. That folder is a clone of a private repository of the author, so that it exists on each of his machines.
+- Test data comes from the fixture vault (`fixtures/vault/`), which holds invented notes only. Fake secrets for tests are built at run time, never stored as text.
+- A check refuses a private file (`scripts/private-files.ts`): a file of `.private/`, `.content/` or `.cache/`, a vault file outside the fixture vault (a Markdown file with properties, `.obsidian/`, a canvas, a base), and a file of the fixture vault that its catalog does not declare. It runs as a pre-commit hook and in the tests. It cannot see the real vault: it does not replace care.
 - Raw review reports and raw exports from the vault never go into the repository.
 - Business numbers that are not public (members, revenue, customers) do not belong in documents here.
 - When unsure whether something is public, leave it out and ask.
@@ -84,7 +85,7 @@ State in the final message what could not be verified (for example: a visual che
 
 - Conventional Commits: `type(scope): subject`. The scopes are in `commitlint.config.ts`: `all`, `build`, `ci`, `cli`, `deps`, `docs`, `plugin`, `release`, `site`.
 - One logical change per commit.
-- Never bypass commit hooks. They are activated one time per clone with `bun run setup` (Git 2.54 or later): a hook formats the staged files, and a hook refuses a message that breaks the convention.
+- Never bypass commit hooks. They are activated one time per clone with `bun run setup` (Git 2.54 or later): a hook refuses a private file, a hook formats the staged files, and a hook refuses a message that breaks the convention.
 
 ### Documentation rules
 

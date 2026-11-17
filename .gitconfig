@@ -9,6 +9,13 @@
 #
 # After that, the hooks below run on each `git commit`. Never bypass them.
 
+# This repository is public. The check refuses a staged file of the private
+# folders, a vault file outside the fixture vault, and a file of the fixture
+# vault that its catalog does not declare (`scripts/private-files.ts`).
+[hook "private-files"]
+    event = pre-commit
+    command = bun scripts/private-files.ts
+
 [hook "format-staged"]
     event = pre-commit
     command = scripts/git-hooks/format-staged.sh

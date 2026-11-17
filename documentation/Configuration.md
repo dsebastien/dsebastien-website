@@ -26,10 +26,30 @@ Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `
 
 `commitlint.config.ts`: Conventional Commits with a fixed list of scopes and a header of 100 characters at most.
 
-`.gitconfig` at the root declares two config-based hooks (Git 2.54 or later). `bun run setup` includes that file in the configuration of the clone, one time per clone.
+`.gitconfig` at the root declares three config-based hooks (Git 2.54 or later). `bun run setup` includes that file in the configuration of the clone, one time per clone.
 
+- `pre-commit`: `bun scripts/private-files.ts` refuses a commit that holds a private file (see "Private files" below). It runs first.
 - `pre-commit`: `scripts/git-hooks/format-staged.sh` formats the staged files with Prettier and stages them again.
 - `commit-msg`: commitlint refuses a message that breaks the convention.
+
+## Private files
+
+`scripts/private-files.ts` is the check that keeps private files out of this public repository. It cannot see the real vault, so its rules use structure:
+
+1. No file of a folder named `.private`, `.content` or `.cache`, at any depth.
+2. A vault file exists only in `fixtures/vault/`: a Markdown file that starts with a block of properties, a file of a folder named `.obsidian` or `.trash`, and a file that ends in `.canvas`, `.base` or `.excalidraw`.
+3. Every file of `fixtures/vault/` is declared in `fixtures/catalog.json`.
+
+It runs two times. As a pre-commit hook, it checks the files of the index, so that a private file is refused before it leaves the machine. In the tests (`scripts/private-files.spec.ts`), it checks every file of the clone that git tracks or does not ignore, and that the three private folders are still ignored.
+
+A Markdown file with properties that is not a note (for example an issue template) needs an exception in the script. None exists today.
+
+## Fixtures and test stores
+
+- `fixtures/` holds the fixture vault, its configuration and its catalog. `fixtures/README.md` has the rules.
+- Prettier does not format `fixtures/vault/` (`.prettierignore`): the notes are test data, and their bytes must not change.
+- `.gitattributes` gives every text file Unix line ends on every system. A Rust test checks it for the notes on Windows too, because the parity rule compares bytes.
+- The test helpers make their folders in `.cache/test-stores/` of the clone, which git ignores.
 
 ## CI
 
