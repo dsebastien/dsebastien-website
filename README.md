@@ -6,9 +6,9 @@ A static site built with Astro, TypeScript and Tailwind from an Obsidian vault, 
 
 ## Status
 
-Planning. No application code yet.
+The plan is approved, and the build started. The site is empty for now.
 
-- Plan: [`documentation/plans/spec-v1.md`](documentation/plans/spec-v1.md) (draft)
+- Plan: [`documentation/plans/spec-v2.md`](documentation/plans/spec-v2.md)
 - Decisions so far: [`documentation/plans/decisions.md`](documentation/plans/decisions.md)
 - Ideas: [`documentation/plans/ideas-backlog.md`](documentation/plans/ideas-backlog.md)
 - Facts about the existing sites: [`documentation/research/`](documentation/research/)
@@ -23,11 +23,28 @@ Planning. No application code yet.
 
 ## Development
 
+Tools: Bun, Node (see `.nvmrc`), Git 2.54 or later, and the stable Rust toolchain with `rustfmt` and `clippy`.
+
 ```bash
 bun install
-bun run tsc
-bun run test
-bun run format
+bun run setup         # one time per clone: activates the commit hooks
+bun run dev           # the site on a local server
+bun run build         # the static site in apps/site/dist
 ```
+
+The checks:
+
+```bash
+bun run tsc
+bun run check
+bun run lint
+bun run test
+bun run format:check
+bun run rust:format:check
+bun run rust:lint
+bun run rust:test
+```
+
+Layout: `apps/site` is the Astro site, `cli` is the Rust command line program of the publishing tool, `scripts` holds the tooling.
 
 Agents and contributors: read [`AGENTS.md`](AGENTS.md) first.

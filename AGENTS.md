@@ -7,7 +7,7 @@ The main site and the store of the author are out of scope (ADR 0001).
 - Current plan: `documentation/plans/spec-v2.md` (approved by the author on 2026-11-17; it is adjusted as the build and the tests teach us), read together with `documentation/plans/decisions.md` (the answers of the author) and the decision records in `documentation/adr/`. `documentation/plans/spec-v1.md` is the older draft that it replaces.
 - Ideas that are not part of the plan: `documentation/plans/ideas-backlog.md`.
 - Measured facts about the existing sites: `documentation/research/`.
-- No application code exists yet. The spec is approved. Code starts with the prototypes that decide (section 21 of the spec), each on a `prototype/<name>` branch, then with the tickets.
+- The spec is approved. The work is cut into tickets: GitHub issues with the labels `setup`, `prototype` and `slice`. The tooling exists (issue 16). A prototype lives on a `prototype/<name>` branch, every other ticket on a `ticket/<number>-<name>` branch.
 
 ## Privacy: this repository is public
 
@@ -67,10 +67,13 @@ Configuration for those skills:
 A change is done only when all of these hold:
 
 - `bun run tsc` passes with zero errors.
-- `bun run lint` passes with zero warnings (once ESLint is set up).
+- `bun run check` passes with zero errors and zero warnings (the Astro check of the site).
+- `bun run lint` passes with zero warnings.
 - `bun run test` passes. New logic has `.spec.ts` coverage next to the file it tests.
 - `bun run format:check` passes.
-- The build completes (once a build exists).
+- `bun run build` completes.
+- When Rust code changed: `bun run rust:format:check`, `bun run rust:lint` and `bun run rust:test` pass.
+- The CI workflow passes on the branch.
 - The file of the day in `documentation/history/` says what was done, which decisions were made, and what is open.
 - The plan that drove the work is updated or closed.
 - `documentation/` matches the code.
@@ -79,9 +82,9 @@ State in the final message what could not be verified (for example: a visual che
 
 ### Commit conventions
 
-- Conventional Commits: `type(scope): subject`.
+- Conventional Commits: `type(scope): subject`. The scopes are in `commitlint.config.ts`: `all`, `build`, `ci`, `cli`, `deps`, `docs`, `plugin`, `release`, `site`.
 - One logical change per commit.
-- Never bypass commit hooks.
+- Never bypass commit hooks. They are activated one time per clone with `bun run setup` (Git 2.54 or later): a hook formats the staged files, and a hook refuses a message that breaks the convention.
 
 ### Documentation rules
 
@@ -115,6 +118,17 @@ State in the final message what could not be verified (for example: a visual che
 - Runtime and package manager: Bun. Use `bun install`, `bun run <script>`, `bunx`.
 - Node version for tools with a `node` shebang: see `.nvmrc`.
 - Package versions are exact, and new versions wait 3 days before install (`bunfig.toml`).
+- Rust: the stable toolchain, with `rustfmt` and `clippy`.
+
+### Layout of the repository
+
+- `apps/site/`: the Astro and Tailwind site. A Bun workspace with its own `package.json` and `tsconfig.json`.
+- `cli/`: the Rust command line program of the publishing tool, a member of the Cargo workspace at the root (`Cargo.toml`).
+- `packages/`: TypeScript code that more than one app uses. Created with the first shared module.
+- `scripts/`: tooling of the repository and its guard tests.
+- The home of the Obsidian plugin is set by the ticket that creates it.
+
+Run every script from the root. The root scripts call the workspaces.
 
 ### Development workflow
 
@@ -128,7 +142,17 @@ After code changes:
 
 ```bash
 bun run format
+bun run lint
+bun run check
 bun run test
+```
+
+After changes of Rust code:
+
+```bash
+bun run rust:format
+bun run rust:lint
+bun run rust:test
 ```
 
 ## Testing
@@ -136,6 +160,8 @@ bun run test
 - Run tests with `bun run test`, never bare `bun test`. The script adds `--isolate`.
 - Test files end in `.spec.ts` and sit next to the file they test.
 - Test external behavior through the interface of a module. Do not test internals.
+- The tooling has guard tests in `scripts/`: the strict compiler options, the lint script, the commit hooks and the CI workflow. The build of the site has a test next to its source.
+- Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`).
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
 
 ## Design principles
@@ -149,6 +175,6 @@ bun run test
 
 ## Tooling status
 
-Set up: TypeScript, Prettier, Bun test, EditorConfig.
+Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`.
 
-Not set up yet (planned with the first code): ESLint with `--max-warnings 0`, commitlint and commit hooks, CI workflow, Astro, Tailwind.
+Not set up yet: the Obsidian plugin, the deployment, the performance budgets in CI.
