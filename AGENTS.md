@@ -207,6 +207,6 @@ The rules of the author for Tailwind, taken from his other repositories. They ap
 
 ## Tooling status
 
-Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`).
+Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`), the fixture vault with its catalog, the test helpers for a content store and an attachment storage, the check of private files.
 
 Not set up yet: the Obsidian plugin, the deployment, the performance budgets in CI.
