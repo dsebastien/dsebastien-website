@@ -75,6 +75,8 @@ describe('CI workflow', () => {
         const matrix = isRecord(strategy) ? strategy['matrix'] : undefined
         const systems = isRecord(matrix) ? matrix['os'] : undefined
         expect(systems).toEqual(['ubuntu-latest', 'windows-latest'])
+        // The job must run on the system of the matrix, not on a fixed one.
+        expect(rust?.['runs-on']).toBe('${{ matrix.os }}')
     })
 
     test('lets no job and no step fail without failing the run', async () => {

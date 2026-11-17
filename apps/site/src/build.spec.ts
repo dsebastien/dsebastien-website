@@ -7,15 +7,22 @@ import { fileURLToPath } from 'node:url'
 // The test runs the build script of the site and reads the files of the output.
 const SITE = fileURLToPath(new URL('..', import.meta.url))
 
-let outDir = ''
+let outDir: string | undefined
 let exitCode = -1
 
+function outputPath(): string {
+    if (outDir === undefined) {
+        throw new Error('the output folder does not exist')
+    }
+    return outDir
+}
+
 async function readOutput(path: string): Promise<string> {
-    return await Bun.file(join(outDir, path)).text()
+    return await Bun.file(join(outputPath(), path)).text()
 }
 
 async function readStylesheets(): Promise<string> {
-    const files = await readdir(outDir, { recursive: true })
+    const files = await readdir(outputPath(), { recursive: true })
     const sheets = files.filter((file) => file.endsWith('.css'))
     const texts = await Promise.all(sheets.map((sheet) => readOutput(sheet)))
     return texts.join('\n')
@@ -36,7 +43,10 @@ beforeAll(async () => {
 }, 180_000)
 
 afterAll(async () => {
-    await rm(outDir, { recursive: true, force: true })
+    // Remove only a folder that this test made.
+    if (outDir !== undefined) {
+        await rm(outDir, { recursive: true, force: true })
+    }
 })
 
 describe('build of the empty site', () => {
