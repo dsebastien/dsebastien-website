@@ -27,7 +27,7 @@ fn writes_an_empty_plan_in_the_canonical_form() {
         String::from_utf8(output.stdout).expect("the plan is UTF-8"),
         "{\n  \"publish\": [],\n  \"remove\": [],\n  \"update\": []\n}\n"
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -37,6 +37,6 @@ fn stops_when_the_vault_is_not_a_folder() {
     let output = plan(&missing);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     assert!(String::from_utf8_lossy(&output.stderr).contains("No such folder"));
 }

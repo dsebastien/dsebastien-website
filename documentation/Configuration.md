@@ -20,7 +20,7 @@ The root `package.json` declares the Bun workspaces `apps/*` and `packages/*`. `
 
 ESLint (`eslint.config.ts`): the recommended rules of ESLint, the strict rules of typescript-eslint with type information, and the recommended rules of `eslint-plugin-astro` for Astro components. Every rule is an error, and the lint script adds `--max-warnings 0`. `eslint-config-prettier` switches off the rules that Prettier owns.
 
-Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `all` and `pedantic` groups of clippy and forbids unsafe code.
+Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `all` and `pedantic` groups of clippy and forbids unsafe code. `rust-toolchain.toml` pins one exact version of the toolchain for the machines of the author and for CI: with "stable", a new version of clippy brought a new rule and failed CI with no change of the code. A guard test checks the pin.
 
 ## Commits
 

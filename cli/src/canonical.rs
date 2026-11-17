@@ -113,7 +113,7 @@ mod tests {
         let cases: Value = serde_json::from_str(CASES).expect("the cases file is JSON");
         let refused = list(&cases, "refused");
 
-        assert!(!refused.is_empty());
+        assert!(refused.len() >= 4);
         for case in refused {
             let name = case["name"].as_str().expect("a case has a name");
             assert!(to_canonical_json(&case["value"]).is_err(), "{name}");

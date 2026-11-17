@@ -26,6 +26,6 @@ fn asks_for_a_command_when_it_gets_none() {
     let output = program().output().expect("the program starts");
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     assert!(String::from_utf8_lossy(&output.stderr).contains("Usage:"));
 }

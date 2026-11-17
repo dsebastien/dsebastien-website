@@ -23,7 +23,7 @@ The plan is approved, and the build started. The site is empty for now.
 
 ## Development
 
-Tools: Bun, Node (see `.nvmrc`), Git 2.54 or later, and the stable Rust toolchain with `rustfmt` and `clippy`.
+Tools: Bun, Node (see `.nvmrc`), Git 2.54 or later, and Rust through `rustup` (the version is pinned in `rust-toolchain.toml`).
 
 ```bash
 bun install

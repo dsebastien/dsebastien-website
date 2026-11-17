@@ -129,7 +129,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - Runtime and package manager: Bun. Use `bun install`, `bun run <script>`, `bunx`.
 - Node version for tools with a `node` shebang: see `.nvmrc`.
 - Package versions are exact, and new versions wait 3 days before install (`bunfig.toml`).
-- Rust: the stable toolchain, with `rustfmt` and `clippy`.
+- Rust: the toolchain that `rust-toolchain.toml` pins, with `rustfmt` and `clippy`. `rustup` installs it at the first `cargo` command. Raise the version in a commit of its own.
 - A container for local work: `docker compose up` runs the dev server of the site with the source mounted. It is not an image for production, and the publishing tool never runs in it. The image gets no file of the clone (`.dockerignore` excludes everything). Keep it that way.
 
 ### Layout of the repository

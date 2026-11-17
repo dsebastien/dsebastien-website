@@ -1,0 +1,8 @@
+# The Rust toolchain of this repository. The machines of the author and CI use
+# this exact version, so that a new rule of clippy or of rustfmt never fails a
+# run with no change of the code. Raise the version on purpose, in a commit of
+# its own, and correct what the new version reports.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
