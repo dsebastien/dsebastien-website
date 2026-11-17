@@ -70,6 +70,8 @@ New requirements of round 2:
 4. **Analytics**: a major improvement of the Plausible setup. The author wants to know what works, what does not, and what leads to sales.
 5. **Inspiration**: the theme of the main site and the store are explored in depth: `documentation/research/2026-11-17-existing-sites-inspiration.md`.
 6. **Featured content**: a way to put notes or parts forward, driven by properties of the notes. An idea for a later wave (GitHub issue).
+7. **RSS feeds and sitemaps** are required, with the feeds and sitemaps of the theme of the main site as the model (its filtered feeds per topic, its sitemap structure). Stated again by the author at the end of the session. The research files cover both: the requirement list of the SEO research (section F) and the feed and sitemap items of the exploration of the existing sites.
+8. **Ideas recorded as GitHub issues at the end of the session**: a login through a Knowii account with OAuth for the limited parts (issue 1), a reader mode inspired by Obsidian Web Clipper (issue 4), Obsidian Web Clipper templates for the notes website and for the main website (issue 5).
 
 ## Round 3 (2026-11-17)
 
