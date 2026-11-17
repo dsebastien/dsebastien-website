@@ -65,22 +65,32 @@ A Markdown file with properties that is not a note (for example an issue templat
 
 `bun run corpus` writes an invented vault of full size for prototypes and budget tests (`scripts/generate-corpus.ts`, with the generator in `scripts/corpus.ts`).
 
-- Options: `--seed` (default 1), `--notes` (default 20,735, the number of public notes that the research counted) and `--out` (default `.cache/corpus/`). The vault is in the `vault/` folder of the output.
-- The same seed and the same number of notes give the same files, byte for byte. The generator reads no clock and no random source of the system.
-- The shares of the note types, of the features (aliases, tables, frozen lists, covers) and of the name patterns follow the public counts of `documentation/research/2026-11-17-current-state.md`. The words are invented syllables.
+- Options: `--seed` (default 1, from 0 to 4,294,967,295), `--notes` (default 20,735, the number of public notes that the research counted) and `--out` (default `.cache/corpus/`). The vault is in the `vault/` folder of the output.
+- The same seed and the same number of notes give the same files, byte for byte, on every machine. The generator reads no clock and no random source of the system, and it writes its images without a compression library. A test pins the digest of a small corpus.
+- The numbers follow the public counts of `documentation/research/2026-11-17-current-state.md`. Tuned to the totals and checked by a test: the size of the notes (about 66 MB for 71 MB) and the number of links (about 154,000 for 155,000). Close to the counts: the shares of the note types, the notes with an image, with aliases, with a table, with a frozen list, with a code block and with a link to a heading, and the aliases that two notes share. The words are invented syllables.
+- Four media notes in ten are stubs, with no text. No link goes to a heading of a stub.
 - Name patterns: a dot, an ending like a file extension, an apostrophe, a character outside ASCII, an ampersand, a literal plus, a percent sign. No name holds a question mark, because Windows refuses it. No two notes share a file name, also when letter case is ignored.
-- The corpus is never committed. The command refuses a folder of the clone that git does not ignore, and it writes over a folder only when that folder is its own earlier output (it holds `corpus.json`).
-- A corpus of full size is about 30,000 files. It is written in about one second.
+- A corpus of full size is about 32,000 files. It is written in a few seconds.
+
+Both corpus commands share the rules of their output folder (`scripts/output-folder.ts`):
+
+- Inside the clone, the output goes below `.cache/`, `.content/` or `.private/` only: git ignores those folders, and the check of private files refuses every file of them. Another folder of the clone is refused, also when git ignores it.
+- The output is never the clone, a folder that holds the clone, a folder that the command reads, a folder inside one, or a folder that holds one. Symbolic links are resolved before the comparison.
+- A command writes over a folder only when the folder is empty or is its own earlier output: it holds the marker file of the command, and the marker names the command. Files that the user added to an earlier output are removed with it.
+- A path that is a file is refused.
+- The options are checked before the earlier output is removed.
 
 ## Published corpus
 
 `bun run corpus:published --vault <folder> --list <file>` copies the files that the list names from a vault into `.cache/published/vault/`, with their vault paths (`scripts/export-published.ts`). The author runs it on his machines with the list of what Obsidian Publish serves today, so that prototypes and budget measurements use the real published notes (decision R30).
 
-- The list is the site cache of Obsidian Publish (a JSON object whose keys are the paths), a JSON list, or a text file with one path per line.
+- The list: a file that ends in `.json` is the site cache of Obsidian Publish (a JSON object whose keys are the paths) or a JSON list. Every other file is text with one path per line. An empty list stops the command.
 - The path of the vault and the list are inputs of the command. Neither is stored in this repository. The list of the author is in his private working files.
-- A path of the list that leaves the vault is never read. A file that is missing in the vault is written to `missing.txt` of the output, and the command goes on.
-- The output is never committed: the same folder guard as for the invented corpus (`scripts/output-folder.ts`). Its marker file, `published.json`, holds three counts and no path.
-- The command never writes into the vault.
+- The command never reads a file outside the vault. A path of the list that leaves the vault is not read, and a symbolic link that leads out of the vault is not followed.
+- A file that is missing in the vault, that leaves the vault or that cannot be read is written to `missing.txt` of the output, and the command goes on.
+- A file that the list names two times is copied and counted one time.
+- The command never writes into the vault, and its output folder never touches the vault (see the rules above).
+- Its marker file, `published.json`, holds the name of the command and three counts, and no path.
 - The public CI never has the published corpus. Its tests use the fixture vault as the vault, with an invented list.
 
 ## CI

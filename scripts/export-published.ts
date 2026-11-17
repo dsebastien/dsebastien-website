@@ -1,8 +1,14 @@
-import { copyFile, mkdir, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { copyFile, mkdir, realpath, stat } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { prepareOutputFolder } from './output-folder.ts'
+import {
+    isInside,
+    prepareOutputFolder,
+    realPathOf,
+    writeMarker,
+    type OutputOptions
+} from './output-folder.ts'
 
 // The command that copies the published corpus (issue 64): the notes that are
 // published today, with their attachments, from the vault of the author into
@@ -11,37 +17,25 @@ import { prepareOutputFolder } from './output-folder.ts'
 //
 //   bun run corpus:published --vault <folder of the vault> --list <file>
 //
-// The list names the published files, as vault paths. It can be the site cache
-// of Obsidian Publish (a JSON object whose keys are the paths), a JSON list,
-// or a text file with one path per line.
+// The list names the published files, as vault paths. A file that ends in
+// `.json` is the site cache of Obsidian Publish (a JSON object whose keys are
+// the paths) or a JSON list. Every other file is text, with one path per line.
 //
 // The path of the vault and the list are inputs. Neither is stored in this
-// repository, and the output is never committed.
+// repository, and the output is never committed. The command never writes
+// into the vault, and it never reads a file outside the vault: a symbolic
+// link that leaves the vault is not followed.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-
-/** The file that marks a folder as the output of this command. It holds counts only. */
-const MARKER = 'published.json'
-
-const { values } = parseArgs({
-    args: Bun.argv.slice(2),
-    options: {
-        vault: { type: 'string' },
-        list: { type: 'string' },
-        out: { type: 'string', default: join(ROOT, '.cache', 'published') }
-    },
-    strict: true
-})
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Reads the vault paths of the list, in one of its three forms. */
+/** Reads the vault paths of the list. */
 async function readList(file: string): Promise<string[]> {
     const text = await Bun.file(file).text()
-    const start = text.trimStart().charAt(0)
-    if (start !== '{' && start !== '[') {
+    if (!file.toLowerCase().endsWith('.json')) {
         return text
             .split('\n')
             .map((line) => line.trim())
@@ -57,61 +51,97 @@ async function readList(file: string): Promise<string[]> {
     throw new Error(`"${file}" is not a list of paths`)
 }
 
-/** True when the path stays inside the vault. A list never makes the command read another place. */
-function isInside(vault: string, file: string): boolean {
-    const fromVault = relative(vault, file)
-    return fromVault !== '' && !fromVault.startsWith('..') && !isAbsolute(fromVault)
-}
-
-async function isFile(path: string): Promise<boolean> {
+async function isFolder(path: string): Promise<boolean> {
     try {
-        return (await stat(path)).isFile()
+        return (await stat(path)).isDirectory()
     } catch {
         return false
     }
 }
 
+/**
+ * The real path of a file of the list, or `undefined` when the path does not
+ * name a file inside the vault. A list never makes the command read another
+ * place, also not through a symbolic link.
+ */
+async function sourceOf(vault: string, path: string): Promise<string | undefined> {
+    if (path === '' || isAbsolute(path) || path.includes('\\')) {
+        return undefined
+    }
+    if (!isInside(vault, resolve(vault, path))) {
+        return undefined
+    }
+    try {
+        const real = await realpath(resolve(vault, path))
+        return isInside(vault, real) && (await stat(real)).isFile() ? real : undefined
+    } catch {
+        return undefined
+    }
+}
+
 async function main(): Promise<void> {
+    const { values } = parseArgs({
+        args: Bun.argv.slice(2),
+        options: {
+            vault: { type: 'string' },
+            list: { type: 'string' },
+            out: { type: 'string', default: join(ROOT, '.cache', 'published') }
+        },
+        strict: true
+    })
     if (values.vault === undefined || values.list === undefined) {
         throw new Error('give the folder of the vault with --vault and the list with --list')
     }
-    const vault = resolve(values.vault)
-    const out = resolve(values.out)
+    // Every input is checked before the earlier output is removed.
+    if (!(await isFolder(values.vault))) {
+        throw new Error(`the vault is not a folder: "${values.vault}"`)
+    }
+    const vault = await realPathOf(resolve(values.vault))
     const paths = await readList(values.list)
-    await prepareOutputFolder(out, MARKER)
-    // The marker comes first: a run that stops halfway leaves a folder that
-    // the next run can write over.
-    await Bun.write(join(out, MARKER), '{}\n')
+    if (paths.length === 0) {
+        throw new Error(`"${values.list}" names no file`)
+    }
+    const options: OutputOptions = {
+        marker: 'published.json',
+        tool: 'corpus:published',
+        inputs: [vault]
+    }
+    const out = await prepareOutputFolder(resolve(values.out), options)
 
     const folders = new Set<string>()
+    const copied = new Set<string>()
     const missing: string[] = []
-    let notes = 0
-    let attachments = 0
     for (const path of paths) {
-        const source = resolve(vault, path)
-        if (isAbsolute(path) || !isInside(vault, source) || !(await isFile(source))) {
+        const source = await sourceOf(vault, path)
+        if (source === undefined) {
             missing.push(path)
             continue
         }
-        const target = join(out, 'vault', relative(vault, source))
-        const folder = dirname(target)
-        if (!folders.has(folder)) {
-            await mkdir(folder, { recursive: true })
-            folders.add(folder)
+        // The same file can be in the list two times, in two spellings.
+        const name = relative(vault, resolve(vault, path)).split(sep).join('/')
+        if (copied.has(name)) {
+            continue
         }
-        await copyFile(source, target)
-        if (path.toLowerCase().endsWith('.md')) {
-            notes += 1
-        } else {
-            attachments += 1
+        const target = join(out, 'vault', name)
+        try {
+            if (!folders.has(dirname(target))) {
+                await mkdir(dirname(target), { recursive: true })
+                folders.add(dirname(target))
+            }
+            await copyFile(source, target)
+            copied.add(name)
+        } catch {
+            // A file that cannot be read is reported, and the command goes on.
+            missing.push(path)
         }
     }
 
+    const notes = [...copied].filter((name) => name.toLowerCase().endsWith('.md')).length
+    const attachments = copied.size - notes
     if (missing.length > 0) {
         await Bun.write(join(out, 'missing.txt'), `${missing.join('\n')}\n`)
     }
-    const counts = { notes, attachments, missing: missing.length }
-    await Bun.write(join(out, MARKER), `${JSON.stringify(counts, null, 4)}\n`)
+    await writeMarker(out, options, { notes, attachments, missing: missing.length })
     console.error(
         `Copied ${String(notes)} notes and ${String(attachments)} attachments to ${join(out, 'vault')}, ${String(missing.length)} missing` +
             (missing.length > 0 ? ` (see ${join(out, 'missing.txt')})` : '')
