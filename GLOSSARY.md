@@ -74,14 +74,17 @@ The record of each published note: identity, path, former paths, dates and state
 The record of the renames and moves of notes that wait for the next publication.
 
 **Deny list**:
-The vault folders and note types that can never be published. It lives in the configuration of the publishing tool.
+The vault folders whose notes can never be published. It lives in the configuration of the publishing tool.
 _Avoid_: block list, ignore list, excluded folders
+
+**Guard**:
+A rule that says that a note can never be published, whatever the author selects. The first version has two: the deny list and the ignore property.
 
 **Ignore property**:
 A property on a note that says that the publishing tool must never publish that note.
 
 **Privacy gate**:
-The set of checks that every note, property and attachment passes before it can be published.
+A set of automatic checks on the content of a note before it can be published. An idea for later: the first version has guards only.
 
 **Parity rule**:
 The rule that the two implementations of the publishing logic give the same result for the same vault.
