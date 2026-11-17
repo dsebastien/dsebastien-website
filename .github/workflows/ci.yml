@@ -1,0 +1,93 @@
+name: CI
+
+# Each push to any branch starts the checks. A step that fails fails the run.
+on:
+    push:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+env:
+    ASTRO_TELEMETRY_DISABLED: 1
+
+jobs:
+    checks:
+        runs-on: ubuntu-slim
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: package.json
+
+            # ESLint, Astro and commitlint have a `node` shebang.
+            - name: Setup Node
+              uses: actions/setup-node@v7
+              with:
+                  node-version-file: .nvmrc
+
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+
+            # Gate at `high`: advisories come from other projects, and a gate at
+            # every level breaks unrelated work for each new low advisory.
+            - name: Audit dependencies
+              run: bun audit --audit-level=high
+
+            - name: Type check
+              run: bun run tsc
+
+            - name: Astro check
+              run: bun run check
+
+            - name: Lint
+              run: bun run lint
+
+            # The commit hook test needs Git 2.54 or later (config-based hooks).
+            - name: Git version
+              run: git --version
+
+            - name: Test
+              run: bun run test
+
+            - name: Format check
+              run: bun run format:check
+
+            - name: Build
+              run: bun run build
+
+    # The command line program of the publishing tool runs on Linux and on
+    # Windows (ADR 0009), so its checks run on both.
+    rust:
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+        runs-on: ${{ matrix.os }}
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: package.json
+
+            - name: Setup Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: rustfmt, clippy
+
+            - name: Format check
+              run: bun run rust:format:check
+
+            - name: Lint
+              run: bun run rust:lint
+
+            - name: Test
+              run: bun run rust:test
