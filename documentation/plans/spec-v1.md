@@ -2,7 +2,8 @@
 
 - **Status**: draft v1. First take, written before the interview with the author. Nothing here is approved.
 - **Reviews**: one coverage review, two adversarial reviews and one ideation pass were run on the first draft. Their findings are integrated. Section 19 records what changed.
-- **Next**: an interview (grilling) settles the open decisions of section 13, round by round. The result is spec v2.
+- **Next**: an interview (grilling) settles the open decisions of section 13, round by round. The answers are in `documentation/plans/decisions.md`. The result is spec v2.
+- **Scope change after round 1**: the author keeps the main site and the store out of this project. This spec stays as written. Read it together with the decision log.
 - **Facts**: all measurements are in `documentation/research/2026-11-17-current-state.md`. This spec refers to it as "the research".
 - **Ideas**: `documentation/plans/ideas-backlog.md` holds 232 ideas that are not part of the plan.
 - **Rule**: no timing information in this plan.

@@ -5,4 +5,5 @@ CHANGELOG.md
 .astro/
 .content/
 .cache/
+.private/
 bun.lock

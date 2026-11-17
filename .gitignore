@@ -22,6 +22,10 @@ build/
 .content/
 .cache/
 
+# Private working files: analytics exports, vault analysis, raw reports.
+# The repository is public. Nothing in here is ever committed.
+.private/
+
 # Secrets
 .env
 .env.*

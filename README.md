@@ -1,14 +1,16 @@
 # dsebastien-website
 
-One codebase for [dsebastien.net](https://www.dsebastien.net): the public notes (digital garden), the blog and the store.
+The website of my public notes: [notes.dsebastien.net](https://notes.dsebastien.net), a digital garden with more than 20,000 notes.
 
-Static sites built with Astro, TypeScript and Tailwind from an Obsidian vault.
+A static site built with Astro, TypeScript and Tailwind from an Obsidian vault, and the tool that publishes notes to it from Obsidian. It replaces Obsidian Publish.
 
 ## Status
 
 Planning. No application code yet.
 
 - Plan: [`documentation/plans/spec-v1.md`](documentation/plans/spec-v1.md) (draft)
+- Decisions so far: [`documentation/plans/decisions.md`](documentation/plans/decisions.md)
+- Ideas: [`documentation/plans/ideas-backlog.md`](documentation/plans/ideas-backlog.md)
 - Facts about the existing sites: [`documentation/research/`](documentation/research/)
 
 ## Goals

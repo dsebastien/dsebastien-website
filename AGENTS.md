@@ -1,8 +1,10 @@
 ## Project overview
 
-One codebase for dsebastien.net: the public notes (digital garden), the blog and the store. Static sites built with Astro, TypeScript and Tailwind from an Obsidian vault. The vault is private and is the only source of content.
+The website of the author's public notes (notes.dsebastien.net, a digital garden with more than 20,000 notes), and the tool that publishes notes to it from Obsidian. A static site built with Astro, TypeScript and Tailwind from an Obsidian vault. It replaces Obsidian Publish. The vault is private and is the only source of content.
 
-- Current plan: `documentation/plans/spec-v1.md` (draft, not approved).
+The main site and the store of the author are out of scope (ADR 0001).
+
+- Current plan: `documentation/plans/spec-v1.md` (draft, not approved), read together with `documentation/plans/decisions.md` (the answers of the author so far).
 - Ideas that are not part of the plan: `documentation/plans/ideas-backlog.md`.
 - Measured facts about the existing sites: `documentation/research/`.
 - No application code exists yet. Do not scaffold apps or packages before the spec is approved.
@@ -13,6 +15,7 @@ One codebase for dsebastien.net: the public notes (digital garden), the blog and
 
 - Never commit note content, attachments, customer data, secrets, tokens, internal host names, IP addresses or infrastructure details.
 - Exported content goes to `.content/` (ignored by git) or to the content store. Never into the repository.
+- Analytics exports, vault analysis and raw reports go to `.private/` (ignored by git). Never into the repository.
 - Test data comes from the fixture vault, which holds invented notes only. Fake secrets for tests are built at run time, never stored as text.
 - Raw review reports and raw exports from the vault never go into the repository.
 - Business numbers that are not public (members, revenue, customers) do not belong in documents here.
