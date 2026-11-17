@@ -1,5 +1,3 @@
-import { deflateSync } from 'node:zlib'
-
 // The generator of an invented corpus of full size (issue 18).
 //
 // It makes a vault of the size and the shape of the public notes of the
@@ -66,7 +64,8 @@ const NAME_PATTERNS = [
 
 type NamePattern = (typeof NAME_PATTERNS)[number]['name']
 
-const CONSONANTS = ['b', 'd', 'f', 'g', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'z']
+// No `z`: with it, the syllables spell a word that nobody wants in a title.
+const CONSONANTS = ['b', 'd', 'f', 'g', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v']
 const VOWELS = ['a', 'e', 'i', 'o', 'u']
 const ACCENTS: Record<string, string> = { a: 'à', e: 'é', i: 'ï', o: 'ø', u: 'ü' }
 const EXTENSIONS = ['js', 'ts', 'io', 'net', 'ai']
@@ -88,7 +87,10 @@ class Random {
     private state: number
 
     constructor(seed: number) {
-        this.state = seed >>> 0
+        if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) {
+            throw new Error('the seed must be a whole number from 0 to 4294967295')
+        }
+        this.state = seed
     }
 
     /** A number from 0 (included) to 1 (excluded). */
@@ -135,7 +137,7 @@ function words(random: Random, count: number): string {
 }
 
 function sentence(random: Random): string {
-    return `${capital(words(random, random.between(5, 14)))}.`
+    return `${capital(words(random, random.between(12, 30)))}.`
 }
 
 /** A date and a time without a time zone, from a number of minutes after the start of 2024. */
@@ -150,6 +152,8 @@ interface Outline {
     path: string
     aliases: string[]
     heading: string
+    /** A media note without a text of the author. It has no heading of its own. */
+    stub: boolean
 }
 
 function pickType(random: Random): NoteType {
@@ -212,12 +216,12 @@ function makeOutlines(random: Random, count: number): Outline[] {
         // About one note in four has aliases (research 1.4).
         const aliases: string[] = []
         if (index === 7 || random.chance(0.26)) {
-            aliases.push(capital(words(random, random.between(1, 2))))
+            aliases.push(capital(words(random, random.between(2, 3))))
         }
         // An alias that more than one note carries.
         if (index === 8 || index === 9) {
             aliases.push('Shared alias')
-        } else if (sharedAliases.length > 0 && random.chance(0.004)) {
+        } else if (sharedAliases.length > 0 && random.chance(0.007)) {
             aliases.push(random.pick(sharedAliases))
         } else if (aliases.length > 0 && random.chance(0.02)) {
             sharedAliases.push(aliases[0] ?? '')
@@ -233,7 +237,9 @@ function makeOutlines(random: Random, count: number): Outline[] {
             name,
             path: `${type.folder}/${name}.md`,
             aliases: aliases.filter((alias) => alias !== ''),
-            heading: capital(word(random))
+            heading: capital(word(random)),
+            // Four media notes in ten are stubs.
+            stub: type.media && random.chance(0.4)
         })
     }
     return outlines
@@ -248,10 +254,38 @@ function link(random: Random, target: Outline): string {
     if (form < 0.95) {
         return `[[${target.name}|${word(random)}]]`
     }
-    if (form < 0.96) {
+    // About one note in a hundred links to a heading (research 1.4). A stub
+    // has no heading to link to.
+    if (form < 0.9518 && !target.stub) {
         return `[[${target.name}#${target.heading}]]`
     }
     return `[[${target.path.replace(/\.md$/, '')}]]`
+}
+
+/** The Adler-32 checksum of the zlib format. */
+function adler32(data: Uint8Array): number {
+    let low = 1
+    let high = 0
+    for (const byte of data) {
+        low = (low + byte) % 65_521
+        high = (high + low) % 65_521
+    }
+    return ((high << 16) | low) >>> 0
+}
+
+/**
+ * The bytes in the zlib format, stored and not compressed. The compressed
+ * bytes of a library can change with its version. These cannot.
+ */
+function zlibStored(data: Uint8Array): Uint8Array {
+    const out = new Uint8Array(2 + 5 + data.length + 4)
+    const view = new DataView(out.buffer)
+    out.set([0x78, 0x01, 0x01])
+    view.setUint16(3, data.length, true)
+    view.setUint16(5, ~data.length & 0xffff, true)
+    out.set(data, 7)
+    view.setUint32(7 + data.length, adler32(data))
+    return out
 }
 
 /** A valid PNG image of 8 by 8 pixels in one color. Each color gives other bytes. */
@@ -281,7 +315,7 @@ function png(red: number, green: number, blue: number): Uint8Array {
     const parts = [
         Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
         chunk('IHDR', header),
-        chunk('IDAT', deflateSync(pixels)),
+        chunk('IDAT', zlibStored(pixels)),
         chunk('IEND', new Uint8Array(0))
     ]
     const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
@@ -313,6 +347,11 @@ function properties(random: Random, outline: Outline, cover: string | undefined)
         if (cover !== undefined) {
             lines.push(`cover: "[[${cover}]]"`)
         }
+        // A media note of the public notes carries about 60 properties, most
+        // of them empty (research 1.4).
+        for (let field = 1; field <= 45; field += 1) {
+            lines.push(`${word(random)}_${String(field).padStart(2, '0')}:`)
+        }
     }
     if (outline.type.tag === 'person') {
         lines.push(
@@ -330,25 +369,27 @@ function body(
     random: Random,
     outline: Outline,
     outlines: readonly Outline[],
-    cover: string | undefined
+    image: string | undefined
 ): string[] {
     const lines = ['', `# ${outline.name}`, '']
     // Half of the public notes hold a Meta Bind button (research 1.4).
     if (random.chance(0.5)) {
         lines.push('`BUTTON[edit-note]`', '')
     }
-    if (cover !== undefined) {
-        lines.push(`![[${cover}|300]]`, '')
+    if (image !== undefined) {
+        lines.push(`![[${image}|300]]`, '')
     }
     // A stub has no text of the author.
-    if (outline.type.media && random.chance(0.4)) {
+    if (outline.stub) {
         lines.push('## Notes', '')
         return lines
     }
 
+    // The length of the text and the number of links are tuned to the totals
+    // of the research: about 71 MB of notes and about 155,000 links.
     const others = outlines.length > 1
-    for (let paragraph = random.between(1, 5); paragraph > 0; paragraph -= 1) {
-        const sentences = Array.from({ length: random.between(1, 4) }, () => sentence(random))
+    for (let paragraph = random.between(3, 9); paragraph > 0; paragraph -= 1) {
+        const sentences = Array.from({ length: random.between(2, 6) }, () => sentence(random))
         if (others && random.chance(0.6)) {
             sentences.push(`${capital(word(random))} ${link(random, random.pick(outlines))}.`)
         }
@@ -357,19 +398,21 @@ function body(
 
     lines.push(`## ${outline.heading}`, '', sentence(random), '')
     if (others) {
-        for (let item = random.between(1, 4); item > 0; item -= 1) {
+        for (let item = random.between(2, 8); item > 0; item -= 1) {
             lines.push(`- ${link(random, random.pick(outlines))}`)
         }
         lines.push('')
     }
-    if (random.chance(0.13)) {
+    // The shares below are a little above the shares of the research,
+    // because the stubs have none of these.
+    if (random.chance(0.17)) {
         lines.push('| Name | Value |', '| ---- | ----- |')
         for (let row = random.between(2, 5); row > 0; row -= 1) {
             lines.push(`| ${word(random)} | ${String(random.between(1, 999))} |`)
         }
         lines.push('')
     }
-    if (others && random.chance(0.13)) {
+    if (others && random.chance(0.17)) {
         const query = `LIST FROM #topic/${random.pick(TOPICS)} SORT file.name ASC`
         lines.push(`<!-- QueryToSerialize: ${query} -->`, `<!-- SerializedQuery: ${query} -->`)
         for (let row = random.between(2, 8); row > 0; row -= 1) {
@@ -377,10 +420,10 @@ function body(
         }
         lines.push('<!-- SerializedQuery END -->', '')
     }
-    if (random.chance(0.03)) {
+    if (random.chance(0.04)) {
         lines.push('```text', words(random, 6), '```', '')
     }
-    if (random.chance(0.002)) {
+    if (random.chance(0.003)) {
         lines.push(`> [!note] ${capital(word(random))}`, `> ${sentence(random)}`, '')
     }
     if (random.chance(0.001)) {
@@ -405,20 +448,23 @@ export function* generateCorpus(options: CorpusOptions): Generator<CorpusFile> {
     const encoder = new TextEncoder()
 
     for (const [index, outline] of outlines.entries()) {
-        // More than half of the public notes embed an image (research 1.4).
-        const cover =
-            outline.type.media && random.chance(0.85)
-                ? `cover-${String(index).padStart(6, '0')}.png`
+        // More than half of the public notes embed an image (research 1.4):
+        // every media note has a cover, and a few other notes have a picture.
+        const prefix = outline.type.media ? 'cover' : 'image'
+        const image =
+            outline.type.media || random.chance(0.04)
+                ? `${prefix}-${String(index).padStart(6, '0')}.png`
                 : undefined
-        if (cover !== undefined) {
+        if (image !== undefined) {
             yield {
-                path: `Attachments/${cover}`,
+                path: `Attachments/${image}`,
                 bytes: png(random.between(0, 255), random.between(0, 255), random.between(0, 255))
             }
         }
+        const cover = outline.type.media ? image : undefined
         const lines = [
             ...properties(random, outline, cover),
-            ...body(random, outline, outlines, cover)
+            ...body(random, outline, outlines, image)
         ]
         yield { path: outline.path, bytes: encoder.encode(`${lines.join('\n').trimEnd()}\n`) }
     }

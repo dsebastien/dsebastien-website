@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
+import { inflateSync } from 'node:zlib'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generateCorpus, type CorpusFile } from './corpus.ts'
@@ -8,6 +9,9 @@ import { generateCorpus, type CorpusFile } from './corpus.ts'
 // that prototypes and budget tests run without any real note.
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const COMMAND = join(ROOT, 'scripts', 'generate-corpus.ts')
+
+/** The digest of the corpus of seed 1 with 50 notes. */
+const PINNED_DIGEST = 'e1cb8e05d85fc123b066e8bcb703c25535f0c92c13474b28bba22d6720a77381'
 
 function corpus(seed: number, notes: number): CorpusFile[] {
     return [...generateCorpus({ seed, notes })]
@@ -42,6 +46,14 @@ describe('generated corpus', () => {
 
     test('is the same for the same seed, byte for byte', () => {
         expect(digest(corpus(1, 600))).toBe(digest(files))
+    })
+
+    // A corpus that changes without a change of the generator would break the
+    // budget measurements that are compared over time. This digest also fails
+    // when the output depends on the clock, the time zone or the machine. When
+    // the generator changes on purpose, the test prints the new digest.
+    test('is the same on every machine and on every day', () => {
+        expect(digest(corpus(1, 50))).toBe(PINNED_DIGEST)
     })
 
     test('differs for another seed', () => {
@@ -139,6 +151,39 @@ describe('generated corpus', () => {
         expect(embeds.filter((embed) => !paths.has(embed))).toEqual([])
     })
 
+    test('links to a heading only where the target has that heading', () => {
+        const byName = new Map(notes.map((note) => [note.name, note.text]))
+        const headingLinks = notes.flatMap((note) =>
+            [...note.text.matchAll(/\[\[([^\]|#]+)#([^\]|]+)\]\]/g)].map(
+                (match) => [match[1] ?? '', match[2] ?? ''] as const
+            )
+        )
+        const broken = headingLinks.filter(
+            ([name, heading]) => !(byName.get(name) ?? '').includes(`\n## ${heading}\n`)
+        )
+        expect(broken).toEqual([])
+    })
+
+    // The image is read with the zlib of Node, not with the code that wrote it.
+    test('writes images that a PNG reader accepts', () => {
+        const image = files.find((file) => file.path.endsWith('.png'))
+        if (image === undefined) {
+            throw new Error('the corpus has no image')
+        }
+        const bytes = image.bytes
+        expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+        // The header chunk: 8 by 8 pixels, 8 bits, red, green and blue.
+        expect(new TextDecoder().decode(bytes.subarray(12, 16))).toBe('IHDR')
+        expect([view.getUint32(16), view.getUint32(20), bytes[24], bytes[25]]).toEqual([8, 8, 8, 2])
+        // The data chunk follows the header chunk (8 + 25 bytes).
+        const length = view.getUint32(33)
+        expect(new TextDecoder().decode(bytes.subarray(37, 41))).toBe('IDAT')
+        const pixels = inflateSync(bytes.subarray(41, 41 + length))
+        // Each of the 8 rows: one filter byte and 8 pixels of 3 bytes.
+        expect(pixels.length).toBe(8 * (1 + 8 * 3))
+    })
+
     test('uses Unix line ends and UTF-8', () => {
         expect(notes.filter((note) => note.text.includes('\r'))).toEqual([])
         expect(notes.every((note) => note.text.startsWith('---\n'))).toBe(true)
@@ -146,14 +191,45 @@ describe('generated corpus', () => {
 })
 
 describe('corpus of full size', () => {
+    const notes: { name: string; bytes: number; links: number }[] = []
+    for (const file of generateCorpus({ seed: 1 })) {
+        if (file.path.endsWith('.md')) {
+            const text = new TextDecoder().decode(file.bytes)
+            notes.push({
+                name: (file.path.split('/').at(-1) ?? file.path).replace(/\.md$/, ''),
+                bytes: file.bytes.length,
+                // The links in the text. The cover of a media note is a link in a property.
+                links: [...text.matchAll(/(?<!!)(?<!cover: ")\[\[/g)].length
+            })
+        }
+    }
+
     // Acceptance criterion 1: more than 20,000 notes by default.
     test('has more than 20,000 notes by default', () => {
-        let notes = 0
-        for (const file of generateCorpus({ seed: 1 })) {
-            notes += file.path.endsWith('.md') ? 1 : 0
-        }
-        expect(notes).toBeGreaterThan(20_000)
-    }, 120_000)
+        expect(notes.length).toBeGreaterThan(20_000)
+    })
+
+    // In a corpus of this size, two notes get the same name by chance about
+    // 200 times. The generator must draw again.
+    test('has no two notes with the same file name', () => {
+        expect(new Set(notes.map((note) => note.name.toLowerCase())).size).toBe(notes.length)
+    })
+
+    // The corpus is for budget tests, so its size must be the size of the
+    // public notes: about 71 MB of notes and about 155,000 links (research 1.3).
+    test('has about the size and the number of links of the public notes', () => {
+        const megabytes = notes.reduce((sum, note) => sum + note.bytes, 0) / 1_000_000
+        const links = notes.reduce((sum, note) => sum + note.links, 0)
+        expect(megabytes).toBeGreaterThan(60)
+        expect(megabytes).toBeLessThan(82)
+        expect(links).toBeGreaterThan(135_000)
+        expect(links).toBeLessThan(175_000)
+    })
+
+    test('refuses a seed that it cannot keep', () => {
+        expect(() => [...generateCorpus({ seed: 2 ** 32, notes: 1 })]).toThrow('seed')
+        expect(() => [...generateCorpus({ seed: 1.5, notes: 1 })]).toThrow('seed')
+    })
 })
 
 describe('corpus command', () => {
@@ -212,14 +288,36 @@ describe('corpus command', () => {
     }, 60_000)
 
     // Acceptance criterion 4: the corpus is never committed.
-    test('refuses a folder of the clone that git does not ignore', async () => {
+    test('refuses a folder of the clone that git could commit', async () => {
         const out = join(ROOT, 'scripts', 'corpus-output')
+        try {
+            const result = await run('--notes', '10', '--out', out)
 
-        const result = await run('--notes', '10', '--out', out)
+            expect(result.exitCode).not.toBe(0)
+            expect(result.stderr).toContain('never committed')
+            expect(await Bun.file(join(out, 'corpus.json')).exists()).toBe(false)
+        } finally {
+            await rm(out, { recursive: true, force: true })
+        }
+    }, 60_000)
 
-        expect(result.exitCode).not.toBe(0)
-        expect(result.stderr).toContain('ignore')
-        expect(await Bun.file(join(out, 'corpus.json')).exists()).toBe(false)
+    test('checks its options before it removes its earlier output', async () => {
+        const out = join(folderPath(), 'kept')
+        await run('--notes', '30', '--out', out)
+
+        for (const args of [
+            ['--notes', '0'],
+            ['--notes', '1e2'],
+            ['--seed', ''],
+            ['--seed', '4294967296'],
+            ['--unknown']
+        ]) {
+            const result = await run(...args, '--out', out)
+            expect(result.exitCode, args.join(' ')).not.toBe(0)
+            // One line, not a stack trace.
+            expect(result.stderr.trim().split('\n').length, result.stderr).toBe(1)
+        }
+        expect(await countNotes(out)).toBe(30)
     }, 60_000)
 
     test('refuses a folder that holds files of something else', async () => {
