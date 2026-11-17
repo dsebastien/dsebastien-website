@@ -136,13 +136,13 @@ bun run test
 - Run tests with `bun run test`, never bare `bun test`. The script adds `--isolate`.
 - Test files end in `.spec.ts` and sit next to the file they test.
 - Test external behavior through the interface of a module. Do not test internals.
-- Privacy gate, URL contract and the `products-light.json` shape have tests that block a release.
+- The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
 
 ## Design principles
 
 - Static first: HTML at build time. JavaScript only where a feature needs it, loaded when used.
 - Deep modules: a lot of behavior behind a small interface. Few seams.
-- Fail closed: when the pipeline is not sure that something is public, it does not publish it. Allow lists, never hide lists.
+- The author selects, the guards exclude: nothing is published that the author did not select, and a deny list folder or the `publish_ignore` property always wins. The first version runs no content check on a selected note (ADR 0011).
 - One cleaned artifact per note. Every output derives from it. Nothing reads the vault after the publication step.
 - Performance is a release criterion. Budgets are checked in CI.
 - Brand: the Knowii web palette and components. The canonical values are in the research file.
