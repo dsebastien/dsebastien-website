@@ -9,3 +9,4 @@ CHANGELOG.md
 bun.lock
 target/
 Cargo.lock
+fixtures/vault/

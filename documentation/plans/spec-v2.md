@@ -560,7 +560,7 @@ This is not the MCP server of the publishing tool (TOOL-03). It is a public serv
 2. No client-side framework on note pages (v1 9.14).
 3. The resolver is a module of plain TypeScript (HOST-02).
 4. One build for the notes site. The codebase can host other sections later, but no decision here may depend on that (ADR 0001).
-5. The layout of the repository is set by the first tickets. The Rust code lives in this repository from the start, next to the plugin code (decisions R19). Set by issue 16: the site is the Bun workspace `apps/site`, the Rust program is the member `cli` of a Cargo workspace at the root, and shared TypeScript code goes to `packages/`. The home of the plugin is set by issue 29.
+5. The layout of the repository is set by the first tickets. The Rust code lives in this repository from the start, next to the plugin code (decisions R19). Set by issue 16: the site is the Bun workspace `apps/site`, the Rust program is the member `cli` of a Cargo workspace at the root, and shared TypeScript code goes to `packages/`. Set by issue 17: the test data is in `fixtures/` at the root, the test support for TypeScript is the workspace `packages/testing`, and the test support for Rust is `cli/tests/support/mod.rs`. The home of the plugin is set by issue 29.
 
 ## 8. Publication flow
 
@@ -1324,7 +1324,16 @@ Each of these blocks a release when it fails:
 
 ### 18.4 Fixture vault
 
-One invented note per feature and per trap: a link to a note on the deny list, a link to a note that is not published, an attachment in a deny list folder, a folder on the deny list, a move into that folder, a note with the ignore property, a new note that carries `public_note: true`, person data, a frozen query with a row from the deny list, a rename with a link cascade, a folder rename, a duplicate name, an alias collision, names with `+`, `%`, `&`, `?`, apostrophes, dots and non-ASCII characters, a name that ends like a file extension, a note in French with a twin, music blocks, every form of a `LINK` block, a note that also exists on the main site with and without a verified URL, a stub, a note with `ai_generated: true`.
+One invented note per feature and per trap: a link to a note on the deny list, a link to a note that is not published, an attachment in a deny list folder, a folder on the deny list, a move into that folder, a note with the ignore property, a new note that carries `public_note: true`, person data, a frozen query with a row from the deny list, a rename with a link cascade, a folder rename, a duplicate name, an alias collision, names with `+`, `%`, `&`, apostrophes, dots and non-ASCII characters, a name that ends like a file extension, a note in French with a twin, music blocks, every form of a `LINK` block, a note that also exists on the main site with and without a verified URL, a stub, a note with `ai_generated: true`.
+
+Set by issue 17:
+
+1. The fixture vault is `fixtures/vault/` at the root of the repository. The configuration of the tool for it is `fixtures/configuration.json`, and the fixture catalog is `fixtures/catalog.json`. Both implementations read the same files.
+2. The fixture catalog declares each file of the fixture vault with the feature or the trap that it serves. A check refuses a file of the fixture vault that the catalog does not declare, a vault file outside the fixture vault, and a file of a private folder. It runs as a pre-commit hook and in the tests (GATE-05). It uses structure only: it cannot see the real vault.
+3. No file name holds `?`. An earlier text of this section asked for one. Windows refuses that character in a file name, the Rust checks run on Windows, and a vault that is used on Windows cannot hold such a name. A `?` in a requested path is a case of the resolver tests (URL-12).
+4. A test never writes into the fixture vault. A test that changes notes works on a copy.
+5. The traps that are a change (a move into a deny list folder, a rename, a folder rename) are notes that a test moves or renames in its copy.
+6. The test helper gives each test an empty content store (a bare git repository with no commit, which stands for the remote one) and an empty attachment storage (a folder, which stands for the object storage), and removes them after the test. It exists in TypeScript and in Rust.
 
 ### 18.5 Tests of the publication model
 
@@ -1375,7 +1384,7 @@ Three facts are tested on the real vault before the design of the plugin is fina
 
 ### 18.9 Prior art
 
-1. This repository holds one test today: the guard test of the strict compiler options. It shows the form: a spec file next to the code, run with the test script of the repository.
+1. The guard tests of the tooling in `scripts/` show the form: a spec file next to the code, run with the test script of the repository.
 2. The Ghost Publish plugin of the author has specs for pure helpers and a simulation of several devices that share one settings file (tool GP18, H12). The device tests of this project start from it.
 3. The plugin template of the author loads a mock of the Obsidian module before the tests (tool TP3). The TypeScript implementation uses the same setup.
 4. The tests of the Ghost Publish plugin for `LINK` blocks give fixtures for the link card grammar (sites item 103).

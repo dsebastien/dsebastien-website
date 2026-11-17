@@ -14,7 +14,7 @@
 
 ## Workspaces
 
-The root `package.json` declares the Bun workspaces `apps/*` and `packages/*`. `apps/site` is the Astro site. The root `Cargo.toml` declares the Cargo workspace, with `cli` as its only member.
+The root `package.json` declares the Bun workspaces `apps/*` and `packages/*`. `apps/site` is the Astro site. `packages/testing` is the test support (`@dsebastien-website/testing`): it has no build step, and its entry is its TypeScript source. The root `Cargo.toml` declares the Cargo workspace, with `cli` as its only member.
 
 ## Lint
 

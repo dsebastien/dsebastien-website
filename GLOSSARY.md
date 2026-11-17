@@ -30,6 +30,9 @@ _Avoid_: artifact, export
 **Fixture vault**:
 A small vault with invented notes only, made for tests.
 
+**Fixture catalog**:
+The list that says which feature or trap each file of the fixture vault serves.
+
 ### Publishing
 
 **Published note**:
@@ -66,6 +69,10 @@ _Avoid_: unpublish (which waits for a publication)
 **Content store**:
 The private snapshot of everything that is published: cleaned notes, attachments and the manifest. The site is built from it.
 _Avoid_: export, public repository
+
+**Attachment storage**:
+The storage that holds the attachments of the published notes, addressed by content hash. It is not part of the content store.
+_Avoid_: bucket, media store
 
 **Manifest**:
 The record of each published note: identity, path, former paths, dates and state.

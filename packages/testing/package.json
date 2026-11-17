@@ -1,0 +1,11 @@
+{
+    "name": "@dsebastien-website/testing",
+    "private": true,
+    "version": "0.0.0",
+    "description": "Test support: the paths of the fixture vault, and stores made for one test",
+    "license": "MIT",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    }
+}

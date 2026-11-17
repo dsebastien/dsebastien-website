@@ -125,7 +125,14 @@ State in the final message what could not be verified (for example: a visual che
 
 - `apps/site/`: the Astro and Tailwind site. A Bun workspace with its own `package.json` and `tsconfig.json`.
 - `cli/`: the Rust command line program of the publishing tool, a member of the Cargo workspace at the root (`Cargo.toml`).
-- `packages/`: TypeScript code that more than one app uses. Created with the first shared module.
+- `packages/`: TypeScript code that more than one app uses. Each package is a Bun workspace.
+    - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, and `makeTestStores()`.
+- `fixtures/`: the test data, invented. It is at the root because no implementation owns it: the TypeScript tests and the Rust tests read the same files.
+    - `fixtures/vault/`: the fixture vault.
+    - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.
+    - `fixtures/catalog.json`: the fixture catalog. It says which feature or trap each file of the fixture vault serves.
+    - `fixtures/README.md`: the rules, and how to add a note.
+- `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
 - `scripts/`: tooling of the repository and its guard tests.
 - The home of the Obsidian plugin is set by the ticket that creates it.
 
@@ -161,7 +168,11 @@ bun run rust:test
 - Run tests with `bun run test`, never bare `bun test`. The script adds `--isolate`.
 - Test files end in `.spec.ts` and sit next to the file they test.
 - Test external behavior through the interface of a module. Do not test internals.
-- The tooling has guard tests in `scripts/`: the strict compiler options, the lint script, the commit hooks, the CI workflow and the container files. The build of the site has a test next to its source.
+- The tooling has guard tests in `scripts/`: the strict compiler options, the lint script, the commit hooks, the CI workflow, the container files and the check of private files. The build of the site has a test next to its source.
+- Test data comes from the fixture vault. Read it through `packages/testing` (TypeScript) or `cli/tests/support/mod.rs` (Rust), never with a path of your own. To add a note, follow `fixtures/README.md`: every file is invented and declared in the fixture catalog.
+- Never write into the fixture vault from a test. A test that changes notes works on a copy.
+- A test that needs a content store or an attachment storage takes them from the test helper: `await using stores = await makeTestStores()` in TypeScript, `TestStores::new()` in Rust. The content store is a bare git repository with no commit, which stands for the remote one. The attachment storage is an empty folder. Both are removed after the test.
+- A test that needs a folder of its own makes it inside the ignored `.cache/` folder of the clone, and removes only a folder that it made.
 - Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`).
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
 

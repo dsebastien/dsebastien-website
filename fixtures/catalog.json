@@ -1,0 +1,202 @@
+{
+    "entries": [
+        {
+            "id": "link-to-deny-list-note",
+            "covers": "A link and an embed to a note in a deny list folder.",
+            "files": ["10 Garden/Watering schedule.md", "90 Locked Shed/Greenhouse alarm code.md"]
+        },
+        {
+            "id": "link-to-unpublished-note",
+            "covers": "A link, an embed and a link in a property to a note that is not published, and a link to a note that does not exist. The tests never select the target.",
+            "files": ["10 Garden/Seed swap day.md", "10 Garden/Winter plan (draft).md"]
+        },
+        {
+            "id": "attachment-in-deny-list-folder",
+            "covers": "A note that can be published embeds an attachment of a deny list folder.",
+            "files": ["10 Garden/Tool shed tour.md", "90 Locked Shed/Attachments/shed-key.png"]
+        },
+        {
+            "id": "attachment",
+            "covers": "A note embeds an attachment that can be published.",
+            "files": ["10 Garden/Tool shed tour.md", "Attachments/garden-plan.png"]
+        },
+        {
+            "id": "deny-list-folder",
+            "covers": "A folder on the deny list, with notes and an attachment. One of its notes carries public_note with the value true.",
+            "files": [
+                "90 Locked Shed/Greenhouse alarm code.md",
+                "90 Locked Shed/Shed inventory.md",
+                "90 Locked Shed/Attachments/shed-key.png"
+            ]
+        },
+        {
+            "id": "templates-folder",
+            "covers": "The templates folder, on the deny list. Its template carries public_note with the value true, and the tool must never write it.",
+            "files": ["80 Templates/Template - Garden note.md"]
+        },
+        {
+            "id": "move-into-deny-list-folder",
+            "covers": "A note that a test moves into a deny list folder.",
+            "files": ["10 Garden/Plot map.md"]
+        },
+        {
+            "id": "ignore-property",
+            "covers": "A note with the ignore property.",
+            "files": ["10 Garden/Neighbour dispute.md"]
+        },
+        {
+            "id": "new-note-with-public-note-true",
+            "covers": "A new note that carries public_note with the value true and was never published.",
+            "files": ["10 Garden/Bean trellis.md"]
+        },
+        {
+            "id": "person-data",
+            "covers": "A person note with personal data in its properties. The person is invented.",
+            "files": ["30 People/Ada Quillfeather.md"]
+        },
+        {
+            "id": "frozen-query-with-deny-list-row",
+            "covers": "A frozen query whose saved rows hold a note of a deny list folder.",
+            "files": ["10 Garden/Garden index.md", "90 Locked Shed/Greenhouse alarm code.md"]
+        },
+        {
+            "id": "rename-with-link-cascade",
+            "covers": "A note that a test renames, and the notes that link to it: by name, with a label, to a heading, as an embed, with the full path, as a Markdown link, in a property and in a frozen list.",
+            "files": [
+                "10 Garden/Rain barrel.md",
+                "10 Garden/Drip irrigation.md",
+                "10 Garden/Compost basics.md",
+                "10 Garden/Garden index.md"
+            ]
+        },
+        {
+            "id": "folder-rename",
+            "covers": "A folder that a test renames, with its folder note, and links that name the folder.",
+            "files": [
+                "10 Garden/Herb bed/Herb bed.md",
+                "10 Garden/Herb bed/Thyme.md",
+                "10 Garden/Herb bed/Mint.md"
+            ]
+        },
+        {
+            "id": "duplicate-name",
+            "covers": "Two notes with the same file name in two folders, and links to them by name alone and by path.",
+            "files": ["10 Garden/Herb bed/Mint.md", "20 Library/20.02 Recipes/Mint.md"]
+        },
+        {
+            "id": "alias-of-two-notes",
+            "covers": "One alias that two notes carry.",
+            "files": ["10 Garden/Watering schedule.md", "10 Garden/Drip irrigation.md"]
+        },
+        {
+            "id": "alias-equal-to-a-file-name",
+            "covers": "An alias that is the file name of another note.",
+            "files": ["10 Garden/Wormery.md", "10 Garden/Compost basics.md"]
+        },
+        {
+            "id": "name-with-plus",
+            "covers": "A file name with a literal plus sign.",
+            "files": ["20 Library/20.02 Recipes/Salt + pepper crust.md"]
+        },
+        {
+            "id": "name-with-percent",
+            "covers": "A file name with a percent sign.",
+            "files": ["20 Library/20.02 Recipes/100% rye bread.md"]
+        },
+        {
+            "id": "name-with-ampersand",
+            "covers": "A file name with an ampersand.",
+            "files": ["20 Library/20.02 Recipes/Bread & butter pickles.md"]
+        },
+        {
+            "id": "name-with-apostrophe",
+            "covers": "A file name with an apostrophe.",
+            "files": [
+                "20 Library/20.02 Recipes/Grandma's plum jam.md",
+                "20 Library/20.02 Recipes/Crème brûlée à l'érable.md"
+            ]
+        },
+        {
+            "id": "name-with-dots",
+            "covers": "A file name with a dot that is not the dot of the extension.",
+            "files": ["20 Library/20.02 Recipes/Sourdough v2.1 notes.md"]
+        },
+        {
+            "id": "folder-name-with-dot",
+            "covers": "Notes inside a folder whose name has a dot.",
+            "files": [
+                "20 Library/20.01 Films/The Lantern Keeper (2019).md",
+                "20 Library/20.01 Films/The Quiet Orchard (2021).md"
+            ]
+        },
+        {
+            "id": "name-with-non-ascii",
+            "covers": "A file name with characters outside ASCII: accents, and a name with no ASCII letter.",
+            "files": [
+                "20 Library/20.02 Recipes/Crème brûlée à l'érable.md",
+                "10 Garden/日本の庭.md"
+            ]
+        },
+        {
+            "id": "name-ending-like-extension",
+            "covers": "A file name that ends like a file extension.",
+            "files": ["20 Library/Sprout.js.md"]
+        },
+        {
+            "id": "french-note-with-twin",
+            "covers": "A note in French and its English twin. Each names the other in a property.",
+            "files": [
+                "40 Writing/Le potager en hiver.md",
+                "40 Writing/The vegetable garden in winter.md"
+            ],
+            "open": "The names of the two properties (language, translation) are not settled. The slice that builds the language pair corrects them."
+        },
+        {
+            "id": "music-blocks",
+            "covers": "One block of each music language.",
+            "files": ["20 Library/20.03 Music/Campfire song.md"]
+        },
+        {
+            "id": "link-blocks",
+            "covers": "Every form of a LINK block: the two keywords, one line or a list, with or without a colon, a URL, a Markdown link or a link to a note, a list of more than five lines, targets that are not published, blocks where nothing can show, and lines that are not LINK lines.",
+            "files": ["40 Writing/Reading list.md"]
+        },
+        {
+            "id": "main-site-with-url",
+            "covers": "A note that also exists on the main site and names the URL of the post. The result of the check of that URL lives with the manifest entry, not in the note.",
+            "files": ["40 Writing/Why I keep a garden journal.md"],
+            "open": "The name of the property that holds the URL (main_site_url) is not settled. The slice that builds the original link corrects it."
+        },
+        {
+            "id": "main-site-without-url",
+            "covers": "A note that also exists on the main site and does not name the URL of the post.",
+            "files": ["40 Writing/Garden news, week 12.md"]
+        },
+        {
+            "id": "stub",
+            "covers": "A media note with the default status, no rating and no text of the author.",
+            "files": ["20 Library/20.01 Films/The Lantern Keeper (2019).md"],
+            "open": "The value of the default status is not settled."
+        },
+        {
+            "id": "media-note-with-text",
+            "covers": "A media note that is not a stub: it has a rating and a text of the author.",
+            "files": ["20 Library/20.01 Films/The Quiet Orchard (2021).md"]
+        },
+        {
+            "id": "ai-generated",
+            "covers": "A note with ai_generated set to true.",
+            "files": ["10 Garden/Frost dates explained.md"]
+        },
+        {
+            "id": "root-note",
+            "covers": "A note at the root of the vault, in no folder.",
+            "files": ["Welcome.md"]
+        },
+        {
+            "id": "links-to-hard-names",
+            "covers": "A folder note that links to every note with a hard name.",
+            "files": ["20 Library/20.02 Recipes/Recipes.md"]
+        }
+    ]
+}
