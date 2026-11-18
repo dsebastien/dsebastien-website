@@ -101,14 +101,45 @@ function gitEnvironment(): NodeJS.ProcessEnv {
     )
 }
 
+/**
+ * How the author gets out, for the files of the copy that are not the files of
+ * its last commit. A change of the deny list is work of the author: it is
+ * committed, never thrown away. Only the tool writes the manifest.
+ */
+function waysOut(different: readonly { code: string; path: string }[]): string {
+    const ways: string[] = []
+    if (different.some((entry) => entry.path === 'configuration.json')) {
+        ways.push(
+            'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
+        )
+    }
+    const manifest = different.filter((entry) => entry.path !== 'configuration.json')
+    if (manifest.some((entry) => entry.code === 'skipped')) {
+        ways.push(
+            'Let git compare the files of the manifest again (git update-index --no-skip-worktree --no-assume-unchanged on the files that it skips)'
+        )
+    }
+    if (manifest.some((entry) => entry.code === '??' || entry.code === '!!')) {
+        ways.push('Remove the files of manifest/ that the last commit does not have')
+    }
+    if (manifest.some((entry) => !['skipped', '??', '!!'].includes(entry.code))) {
+        ways.push('Put the manifest back with git checkout HEAD -- manifest')
+    }
+    return `${ways.join('. ')}. Only the tool writes the manifest`
+}
+
 function gitContentStore(folder: string): ContentStore {
     /** Runs git in the copy. The input goes to its standard input. */
-    const gitWith = async (args: readonly string[], input: string): Promise<string> => {
+    const gitWith = async (
+        args: readonly string[],
+        input: string,
+        options: readonly string[] = GIT_OPTIONS
+    ): Promise<string> => {
         // Literal paths: a note name with `[`, `*` or `?` must never be read
         // as a pattern that names other files too. No conversion of line
         // ends: a setting of the machine must never change the bytes of a
         // file of the store.
-        const running = run('git', [...GIT_OPTIONS, ...args], {
+        const running = run('git', [...options, ...args], {
             cwd: folder,
             env: gitEnvironment(),
             maxBuffer: 1024 * 1024 * 1024
@@ -202,7 +233,7 @@ function gitContentStore(folder: string): ContentStore {
             }
             if (ahead !== '0') {
                 throw new Error(
-                    `the copy of the content store has ${ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand, for example with git fetch origin, then git reset --hard origin/main when the copy holds no other work: ${folder}`
+                    `the copy of the content store has ${ahead} commit(s) that the content store does not have. When they are a change of the configuration that you made, push them (git push origin HEAD:main). When they are a publication that git could not take back, take them back (git fetch origin, then git reset --hard origin/main when the copy holds no other work). Nothing can be published until then: ${folder}`
                 )
             }
             // The tool reads the state from the files of the copy, so they must
@@ -210,16 +241,31 @@ function gitContentStore(folder: string): ContentStore {
             // replaced could hide a published note under a guard, or empty the
             // deny list. A file that git skips or assumes unchanged is not
             // compared by git status, so it stops the run too.
-            const changes = await gitRaw(
-                '--no-optional-locks',
-                'status',
-                '--porcelain=v1',
-                '-z',
-                '--untracked-files=all',
-                '--ignored',
-                '--',
-                'configuration.json',
-                'manifest'
+            // The line ends are converted as the copy converts them: a file
+            // that differs only in its line ends is the same file. The stat
+            // data is trusted only in full.
+            const changes = await gitWith(
+                [
+                    'status',
+                    '--porcelain=v1',
+                    '-z',
+                    '--untracked-files=all',
+                    '--ignored',
+                    '--',
+                    'configuration.json',
+                    'manifest'
+                ],
+                '',
+                [
+                    '--literal-pathspecs',
+                    '--no-optional-locks',
+                    '-c',
+                    'core.checkStat=default',
+                    '-c',
+                    'core.trustctime=true',
+                    '-c',
+                    'core.fsmonitor=false'
+                ]
             )
             const flags = await gitRaw(
                 'ls-files',
@@ -233,20 +279,20 @@ function gitContentStore(folder: string): ContentStore {
                 ...changes
                     .split('\0')
                     .filter((entry) => entry.length > 3)
-                    .map((entry) => entry.slice(3)),
+                    .map((entry) => ({ code: entry.slice(0, 2), path: entry.slice(3) })),
                 ...flags
                     .split('\0')
                     .filter((entry) => entry !== '' && !entry.startsWith('H '))
-                    .map((entry) => entry.slice(2))
+                    .map((entry) => ({ code: 'skipped', path: entry.slice(2) }))
             ]
             if (different.length > 0) {
-                // A change of the deny list is work of the author: it must
-                // not be thrown away. The manifest is written by the tool only.
-                const way = different.includes('configuration.json')
-                    ? 'When you changed the deny list, commit configuration.json and push it (git commit configuration.json, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
-                    : 'Only the tool writes the manifest: put it back with git checkout HEAD -- manifest (first git update-index --no-skip-worktree --no-assume-unchanged on a file that git skips)'
                 throw new Error(
-                    `files of the content store in the copy are not the files of its last commit: ${different.slice(0, 5).join(', ')}. Nothing can be published until the copy is corrected. ${way}: ${folder}`
+                    `files of the content store in the copy are not the files of its last commit: ${different
+                        .slice(0, 5)
+                        .map((entry) => entry.path)
+                        .join(
+                            ', '
+                        )}. Nothing can be published until the copy is corrected. ${waysOut(different)}: ${folder}`
                 )
             }
         },
@@ -342,6 +388,15 @@ function gitContentStore(folder: string): ContentStore {
                         ? gitOnPaths(['rm', '--quiet', '--cached', '--ignore-unmatch'], paths)
                         : gitOnPaths(['reset', '--quiet', before], paths)
                 )
+                if (before === undefined) {
+                    // A fresh clone of an empty content store has no index. An
+                    // index with no entry would stop a later pull.
+                    await step(async () => {
+                        if ((await gitRaw('ls-files', '-z')) === '') {
+                            await rm(join(folder, '.git', 'index'), { force: true })
+                        }
+                    })
+                }
                 return failures
             }
             const failed = (what: string, failures: readonly string[]): Error =>

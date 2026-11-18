@@ -155,6 +155,13 @@ impl ContentStore {
                 self.folder.display()
             ));
         }
+        self.check_history()?;
+        self.check_files()
+    }
+
+    /// `Err` when the copy has commits that no branch of the content store
+    /// has.
+    fn check_history(&self) -> Result<(), String> {
         // A commit that a failed publication could not take back would be
         // pushed by the next one, also for a note that came under a guard. A
         // commit that a branch of the content store has is not ahead.
@@ -190,26 +197,47 @@ impl ContentStore {
         };
         if ahead != "0" {
             return Err(format!(
-                "the copy of the content store has {ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand, for example with git fetch origin, then git reset --hard origin/main when the copy holds no other work: {}",
+                "the copy of the content store has {ahead} commit(s) that the content store does not have. When they are a change of the configuration that you made, push them (git push origin HEAD:main). When they are a publication that git could not take back, take them back (git fetch origin, then git reset --hard origin/main when the copy holds no other work). Nothing can be published until then: {}",
                 self.folder.display()
             ));
         }
+        Ok(())
+    }
+
+    /// `Err` when `configuration.json` and `manifest/` in the copy are not
+    /// exactly the files of its last commit.
+    fn check_files(&self) -> Result<(), String> {
         // The tool reads the state from the files of the copy, so they must be
         // the files of its last commit: a file removed, edited, added or
         // replaced could hide a published note under a guard, or empty the
         // deny list. A file that git skips or assumes unchanged is not
         // compared by git status, so it stops the run too.
-        let changes = self.git_output(&[
-            "--no-optional-locks",
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            "--ignored",
-            "--",
-            "configuration.json",
-            "manifest",
-        ])?;
+        // The line ends are converted as the copy converts them: a file that
+        // differs only in its line ends is the same file. The stat data is
+        // trusted only in full.
+        let changes = self.git_with_options(
+            &[
+                "--literal-pathspecs",
+                "--no-optional-locks",
+                "-c",
+                "core.checkStat=default",
+                "-c",
+                "core.trustctime=true",
+                "-c",
+                "core.fsmonitor=false",
+            ],
+            &[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--ignored",
+                "--",
+                "configuration.json",
+                "manifest",
+            ],
+            &[],
+        )?;
         let flags = self.git_output(&[
             "ls-files",
             "-v",
@@ -218,35 +246,29 @@ impl ContentStore {
             "configuration.json",
             "manifest",
         ])?;
-        let different: Vec<&str> = changes
+        let different: Vec<(&str, &str)> = changes
             .split('\0')
             .filter(|entry| entry.len() > 3)
-            .map(|entry| &entry[3..])
+            .map(|entry| (&entry[..2], &entry[3..]))
             .chain(
                 flags
                     .split('\0')
                     .filter(|entry| !entry.is_empty() && !entry.starts_with("H "))
-                    .map(|entry| entry.get(2..).unwrap_or(entry)),
+                    .map(|entry| ("skipped", entry.get(2..).unwrap_or(entry))),
             )
             .collect();
         if different.is_empty() {
             return Ok(());
         }
-        // A change of the deny list is work of the author: it must not be
-        // thrown away. The manifest is written by the tool only.
-        let way = if different.contains(&"configuration.json") {
-            "When you changed the deny list, commit configuration.json and push it (git commit configuration.json, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
-        } else {
-            "Only the tool writes the manifest: put it back with git checkout HEAD -- manifest (first git update-index --no-skip-worktree --no-assume-unchanged on a file that git skips)"
-        };
         Err(format!(
-            "files of the content store in the copy are not the files of its last commit: {}. Nothing can be published until the copy is corrected. {way}: {}",
+            "files of the content store in the copy are not the files of its last commit: {}. Nothing can be published until the copy is corrected. {}: {}",
             different
                 .iter()
                 .take(5)
-                .copied()
+                .map(|(_, path)| *path)
                 .collect::<Vec<_>>()
                 .join(", "),
+            ways_out(&different),
             self.folder.display()
         ))
     }
@@ -402,6 +424,21 @@ impl ContentStore {
                 }
             };
             failures.extend(unstaged.err());
+            if before.is_none() {
+                // A fresh clone of an empty content store has no index. An
+                // index with no entry would stop a later pull.
+                match self.git_output(&["ls-files", "-z"]) {
+                    Ok(listing) if listing.is_empty() => {
+                        if let Err(error) = fs::remove_file(self.folder.join(".git").join("index"))
+                            && error.kind() != ErrorKind::NotFound
+                        {
+                            failures.push(format!("the empty index cannot be removed: {error}"));
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) => failures.push(error),
+                }
+            }
             failures
         };
         let failed = |what: String, failures: Vec<String>| {
@@ -485,12 +522,26 @@ impl ContentStore {
 
     /// Runs git in the copy. The input goes to its standard input.
     fn git_with(&self, args: &[&str], input: &[u8]) -> Result<String, String> {
-        let mut git = Command::new("git");
         // Literal paths: a note name with `[`, `*` or `?` must never be read
         // as a pattern that names other files too. No conversion of line
         // ends: a setting of the machine must never change the bytes of a
         // file of the store.
-        git.args(["--literal-pathspecs", "-c", "core.autocrlf=false"])
+        self.git_with_options(
+            &["--literal-pathspecs", "-c", "core.autocrlf=false"],
+            args,
+            input,
+        )
+    }
+
+    /// Runs git in the copy with these options before the command.
+    fn git_with_options(
+        &self,
+        options: &[&str],
+        args: &[&str],
+        input: &[u8],
+    ) -> Result<String, String> {
+        let mut git = Command::new("git");
+        git.args(options)
             .args(args)
             .current_dir(&self.folder)
             .stdin(Stdio::piped())
@@ -527,6 +578,38 @@ impl ContentStore {
             ))
         }
     }
+}
+
+/// How the author gets out, for the files of the copy that are not the files
+/// of its last commit, each with its code of `git status` or `skipped`. A
+/// change of the deny list is work of the author: it is committed, never
+/// thrown away. Only the tool writes the manifest.
+fn ways_out(different: &[(&str, &str)]) -> String {
+    let mut ways = Vec::new();
+    if different
+        .iter()
+        .any(|(_, path)| *path == "configuration.json")
+    {
+        ways.push("When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json");
+    }
+    let manifest: Vec<&str> = different
+        .iter()
+        .filter(|(_, path)| *path != "configuration.json")
+        .map(|(code, _)| *code)
+        .collect();
+    if manifest.contains(&"skipped") {
+        ways.push("Let git compare the files of the manifest again (git update-index --no-skip-worktree --no-assume-unchanged on the files that it skips)");
+    }
+    if manifest.iter().any(|code| *code == "??" || *code == "!!") {
+        ways.push("Remove the files of manifest/ that the last commit does not have");
+    }
+    if manifest
+        .iter()
+        .any(|code| !["skipped", "??", "!!"].contains(code))
+    {
+        ways.push("Put the manifest back with git checkout HEAD -- manifest");
+    }
+    format!("{}. Only the tool writes the manifest", ways.join(". "))
 }
 
 fn write_text(path: &Path, text: &str) -> Result<(), String> {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -502,6 +502,29 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         expect(await rejectionOf(status(setup.device))).toContain('last commit')
     })
 
+    /** A valid entry of a note that is not published: only a check of the files of the copy refuses it. */
+    const UNPUBLISHED_ENTRY = (id: string): string =>
+        `{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":2,"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"${id}","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"unpublished"}`
+
+    // Git for Windows converts line ends by default (`core.autocrlf`). A file
+    // that differs from the commit only in its line ends is the same file.
+    test('a copy that converts line ends is the copy of its last commit', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE] })
+        await git(setup.copy, 'config', 'core.autocrlf', 'true')
+        await rm(join(setup.copy, 'manifest'), { recursive: true })
+        await rm(join(setup.copy, 'configuration.json'))
+        await git(setup.copy, 'checkout', '--', 'configuration.json', 'manifest')
+        expect(await Bun.file(join(setup.copy, 'configuration.json')).text()).toContain('\r\n')
+        const later = new Date(Date.now() + 5000)
+        for (const file of ['configuration.json', `manifest/${NOTE_ID}.json`]) {
+            await utimes(join(setup.copy, file), later, later)
+        }
+
+        expect((await status(setup.device)).unchanged).toEqual([NOTE])
+    })
+
     // The tool reads the state from the files of the copy. Every way that
     // they can differ from the last commit could hide a published note under
     // a guard or empty the deny list, so each one stops the run.
@@ -543,7 +566,24 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         ],
         [
             'an entry that is not in the last commit',
-            (copy: string) => writeFile(join(copy, 'manifest', '00000000000000aa.json'), '{}\n')
+            (copy: string) =>
+                writeFile(
+                    join(copy, 'manifest', '00000000000000aa.json'),
+                    `${UNPUBLISHED_ENTRY('00000000000000aa')}\n`
+                )
+        ],
+        [
+            'an entry that git ignores',
+            async (copy: string) => {
+                await writeFile(
+                    join(copy, '.git', 'info', 'exclude'),
+                    'manifest/00000000000000ab.json\n'
+                )
+                await writeFile(
+                    join(copy, 'manifest', '00000000000000ab.json'),
+                    `${UNPUBLISHED_ENTRY('00000000000000ab')}\n`
+                )
+            }
         ],
         [
             'the configuration removed with git',
@@ -1030,6 +1070,28 @@ describe('commit that fails', () => {
         await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:other')
 
         expect((await status(setup.device)).new).toContain(NOTE)
+    })
+
+    // Another device published first into an empty content store: the push
+    // is refused, and the copy must then take the publication of the other
+    // device with a plain pull.
+    test('a refused first publication leaves a copy that can pull', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const first = await makeContentStoreCopyOf(stores, 'first')
+        const second = await makeContentStoreCopyOf(stores, 'second')
+        const firstDevice = nodeDevice({ vault, contentStore: first })
+        const secondDevice = nodeDevice({ vault, contentStore: second })
+        const planned = await plan(secondDevice, { include: ['Welcome.md'] })
+        await publish(firstDevice, (await plan(firstDevice, { include: ['Welcome.md'] })).id, RUN)
+
+        // Another time: else both commits are the same bytes, and git has nothing to refuse.
+        expect(
+            await rejectionOf(publish(secondDevice, planned.id, { ...RUN, time: LATER }))
+        ).toContain('refused')
+
+        await git(second, 'pull', '--quiet', '--ff-only', 'origin', 'main')
+        expect((await status(secondDevice)).unchanged).toEqual(['Welcome.md'])
     })
 
     test('a copy that has no commit takes its first publication', async () => {

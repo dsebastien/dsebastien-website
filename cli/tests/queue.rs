@@ -631,26 +631,98 @@ fn a_configuration_that_is_a_symbolic_link_stops_the_status_also_when_it_leads_n
     );
 }
 
+/// A valid entry of a note that is not published: only a check of the files
+/// of the copy refuses it.
+fn unpublished_entry(id: &str) -> String {
+    format!(
+        r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":2,"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"{id}","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"unpublished"}}
+"#
+    )
+}
+
+/// Git for Windows converts line ends by default (`core.autocrlf`). A file
+/// that differs from the commit only in its line ends is the same file.
+#[test]
+fn a_copy_that_converts_line_ends_is_the_copy_of_its_last_commit() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE] }), TIME);
+    setup.git(&["config", "core.autocrlf", "true"]);
+    fs::remove_dir_all(setup.copy.join("manifest")).expect("the folder can be removed");
+    fs::remove_file(setup.copy.join("configuration.json")).expect("the file can be removed");
+    setup.git(&["checkout", "--", "configuration.json", "manifest"]);
+    assert!(read(&setup.copy.join("configuration.json")).contains("\r\n"));
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+    for file in [
+        "configuration.json".to_owned(),
+        format!("manifest/{NOTE_ID}.json"),
+    ] {
+        fs::File::options()
+            .write(true)
+            .open(setup.copy.join(file))
+            .expect("the file opens")
+            .set_modified(later)
+            .expect("the time is set");
+    }
+
+    assert_eq!(paths(&setup.status()["unchanged"]), [NOTE]);
+}
+
+/// Another device published first into an empty content store: the push is
+/// refused, and the copy must then take the publication of the other device
+/// with a plain pull.
+#[test]
+fn a_refused_first_publication_leaves_a_copy_that_can_pull() {
+    let setup = copy_with_no_commit();
+    let first = setup.stores.root().join("first");
+    git(&[
+        "clone",
+        "--quiet",
+        text(setup.stores.content_store()),
+        text(&first),
+    ]);
+    for (key, value) in [
+        ("user.name", "Other"),
+        ("user.email", "other@example.invalid"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(&["-C", text(&first), "config", key, value]);
+    }
+    let first_device = Setup {
+        stores: TestStores::new(),
+        vault: setup.vault.clone(),
+        copy: first,
+    };
+    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
+    first_device.publish(&json!({ "include": ["Welcome.md"] }), TIME);
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("refused"),
+        "{}",
+        errors_of(&output)
+    );
+    setup.git(&["pull", "--quiet", "--ff-only", "origin", "main"]);
+    assert_eq!(paths(&setup.status()["unchanged"]), ["Welcome.md"]);
+}
+
 /// One way to change the copy of a test.
 type Change<'a> = Box<dyn Fn(&Setup) + 'a>;
 
-/// The tool reads the state from the files of the copy. Every way that they
-/// can differ from the last commit could hide a published note under a guard
-/// or empty the deny list, so each one stops the run.
-#[test]
-fn a_copy_that_differs_from_its_last_commit_stops_the_status() {
-    let entry = format!("manifest/{NOTE_ID}.json");
-    let changes: Vec<(&str, Change)> = vec![
+/// The changes of the copy that make it differ from its last commit.
+fn changes_of_the_copy(entry: &str) -> Vec<(&'static str, Change<'_>)> {
+    vec![
         (
             "an entry removed with git",
-            Box::new(|setup: &Setup| {
-                setup.git(&["rm", "--quiet", &entry]);
+            Box::new(move |setup: &Setup| {
+                setup.git(&["rm", "--quiet", entry]);
             }),
         ),
         (
             "an entry whose text says another state",
-            Box::new(|setup: &Setup| {
-                let file = setup.copy.join(&entry);
+            Box::new(move |setup: &Setup| {
+                let file = setup.copy.join(entry);
                 fs::write(
                     &file,
                     read(&file).replace("\"published\"", "\"unpublished\""),
@@ -660,45 +732,60 @@ fn a_copy_that_differs_from_its_last_commit_stops_the_status() {
         ),
         (
             "a folder in the place of an entry",
-            Box::new(|setup: &Setup| {
-                fs::remove_file(setup.copy.join(&entry)).expect("the file can be removed");
-                fs::create_dir(setup.copy.join(&entry)).expect("the folder can be made");
+            Box::new(move |setup: &Setup| {
+                fs::remove_file(setup.copy.join(entry)).expect("the file can be removed");
+                fs::create_dir(setup.copy.join(entry)).expect("the folder can be made");
             }),
         ),
         (
             "no index, and an entry removed",
-            Box::new(|setup: &Setup| {
+            Box::new(move |setup: &Setup| {
                 fs::remove_file(setup.copy.join(".git").join("index"))
                     .expect("the index can be removed");
-                fs::remove_file(setup.copy.join(&entry)).expect("the file can be removed");
+                fs::remove_file(setup.copy.join(entry)).expect("the file can be removed");
             }),
         ),
         (
             "an entry that git assumes unchanged, and that is removed",
-            Box::new(|setup: &Setup| {
-                setup.git(&["update-index", "--assume-unchanged", &entry]);
-                fs::remove_file(setup.copy.join(&entry)).expect("the file can be removed");
+            Box::new(move |setup: &Setup| {
+                setup.git(&["update-index", "--assume-unchanged", entry]);
+                fs::remove_file(setup.copy.join(entry)).expect("the file can be removed");
             }),
         ),
         (
             "an entry that is not in the last commit",
-            Box::new(|setup: &Setup| {
+            Box::new(move |setup: &Setup| {
                 fs::write(
                     setup.copy.join("manifest").join("00000000000000aa.json"),
-                    "{}\n",
+                    unpublished_entry("00000000000000aa"),
+                )
+                .expect("the file is written");
+            }),
+        ),
+        (
+            "an entry that git ignores",
+            Box::new(move |setup: &Setup| {
+                fs::write(
+                    setup.copy.join(".git").join("info").join("exclude"),
+                    "manifest/00000000000000ab.json\n",
+                )
+                .expect("the file is written");
+                fs::write(
+                    setup.copy.join("manifest").join("00000000000000ab.json"),
+                    unpublished_entry("00000000000000ab"),
                 )
                 .expect("the file is written");
             }),
         ),
         (
             "the configuration removed with git",
-            Box::new(|setup: &Setup| {
+            Box::new(move |setup: &Setup| {
                 setup.git(&["rm", "--quiet", "configuration.json"]);
             }),
         ),
         (
             "a branch that leads to no commit",
-            Box::new(|setup: &Setup| {
+            Box::new(move |setup: &Setup| {
                 fs::write(
                     setup
                         .copy
@@ -713,7 +800,7 @@ fn a_copy_that_differs_from_its_last_commit_stops_the_status() {
         ),
         (
             "a new branch with no commit and no files",
-            Box::new(|setup: &Setup| {
+            Box::new(move |setup: &Setup| {
                 setup.git(&["checkout", "--quiet", "--orphan", "fresh"]);
                 setup.git(&["rm", "-r", "--quiet", "--cached", "."]);
                 fs::remove_dir_all(setup.copy.join("manifest")).expect("the folder can be removed");
@@ -722,7 +809,16 @@ fn a_copy_that_differs_from_its_last_commit_stops_the_status() {
                     .expect("the file can be removed");
             }),
         ),
-    ];
+    ]
+}
+
+/// The tool reads the state from the files of the copy. Every way that they
+/// can differ from the last commit could hide a published note under a guard
+/// or empty the deny list, so each one stops the run.
+#[test]
+fn a_copy_that_differs_from_its_last_commit_stops_the_status() {
+    let entry = format!("manifest/{NOTE_ID}.json");
+    let changes = changes_of_the_copy(&entry);
     for (name, change) in &changes {
         let setup = Setup::fixture();
         setup.publish(&json!({ "include": [NOTE] }), TIME);
