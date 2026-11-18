@@ -679,6 +679,43 @@ fn a_copy_of_the_content_store_in_a_relative_folder_takes_new_notes_and_updates(
     );
 }
 
+/// A publication whose paths are more than the system takes as arguments of
+/// one command (about 2 MB on Linux): the paths go to git on standard input,
+/// and the selection comes from a file.
+#[cfg(unix)]
+#[test]
+fn a_publication_larger_than_the_limit_of_the_system_for_arguments_is_possible() {
+    let setup = Setup::scenario(&json!({ "vault": {}, "denyList": [] }));
+    let long = "x".repeat(230);
+    // 100 notes per folder: the scan lists the folder of each note it reads.
+    let notes: Vec<String> = (0..8_000)
+        .map(|index| format!("Big {:02}/{index:04} {long}.md", index / 100))
+        .collect();
+    for folder in 0..80 {
+        fs::create_dir(setup.vault.join(format!("Big {folder:02}")))
+            .expect("the folder can be made");
+    }
+    for note in &notes {
+        fs::write(setup.vault.join(note), "Text\n").expect("the note is written");
+    }
+    let bytes: usize = notes.iter().map(|note| note.len() * 2).sum();
+    assert!(bytes > 2 * 1024 * 1024, "{bytes}");
+    let file = setup.stores.root().join("selection.json");
+    fs::write(&file, json!({ "include": notes }).to_string()).expect("the file is written");
+    let output = setup.run("plan", &["--selection", text(&file)]);
+    assert!(output.status.success(), "{}", errors_of(&output));
+    let id = json_of(&output)["id"].as_str().expect("an id").to_owned();
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(
+        json_of(&output)["published"].as_array().map(Vec::len),
+        Some(8_000)
+    );
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+}
+
 /// Two publications on one copy must not share a file of paths.
 #[test]
 fn a_publication_needs_no_file_of_paths_in_the_git_folder() {
@@ -1036,6 +1073,29 @@ fn a_device_name_that_is_not_one_line_is_refused() {
         assert!(errors_of(&output).contains("device"), "{name:?}");
     }
     assert_eq!(setup.git(&["rev-list", "--count", "HEAD"]), "1");
+}
+
+/// One line with something to read: the old rules of the two implementations
+/// differed on these names, and both take them now.
+#[test]
+fn a_device_name_of_one_character_that_is_not_a_space_is_taken() {
+    for name in ["\u{feff}", "\u{a0}"] {
+        let setup = Setup::fixture();
+        let id = setup.plan_id(&json!({ "include": [NOTE] }));
+
+        let output = setup.run(
+            "publish",
+            &["--plan", &id, "--time", TIME, "--device", name],
+        );
+
+        assert!(output.status.success(), "{name:?}: {}", errors_of(&output));
+        assert!(
+            setup
+                .git(&["log", "-1", "--format=%B"])
+                .contains(&format!("\nDevice: {name}\n")),
+            "{name:?}"
+        );
+    }
 }
 
 /// Without `--device`, the program reads the name of the host one time.

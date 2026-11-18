@@ -21,7 +21,7 @@ mod queue;
 mod tool;
 
 use std::io::{self, ErrorKind, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -84,6 +84,13 @@ enum Command {
         /// one time per note.
         #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
         remove: Vec<String>,
+
+        /// A JSON file with the selection, in the place of the three options
+        /// above: an object with the lists `include`, `hold` and `remove`,
+        /// each one optional. A large publication holds more paths than the
+        /// system takes as arguments of one command.
+        #[arg(long, value_name = "FILE", conflicts_with_all = ["include", "hold", "remove"])]
+        selection: Option<PathBuf>,
     },
 
     /// Applies exactly one plan, by its id: the published notes that a guard
@@ -175,6 +182,47 @@ fn host_name() -> String {
         .unwrap_or_else(|| "unknown device".to_owned())
 }
 
+/// Reads a selection from a JSON file: an object with the lists `include`,
+/// `hold` and `remove` of vault paths, each one optional.
+fn selection_from_file(file: &Path) -> Result<Selection, String> {
+    let wrong = || {
+        format!(
+            "the selection file {} must be an object with the lists \"include\", \"hold\" and \"remove\" of vault paths",
+            file.display()
+        )
+    };
+    let text = std::fs::read_to_string(file).map_err(|error| {
+        format!(
+            "the selection file {} cannot be read: {error}",
+            file.display()
+        )
+    })?;
+    let value = json::parse_json(&text).map_err(|_| wrong())?;
+    let object = value.as_object().ok_or_else(wrong)?;
+    if object
+        .keys()
+        .any(|key| !["include", "hold", "remove"].contains(&key.as_str()))
+    {
+        return Err(wrong());
+    }
+    let list = |key: &str| -> Result<Vec<String>, String> {
+        match object.get(key) {
+            None => Ok(Vec::new()),
+            Some(list) => list
+                .as_array()
+                .ok_or_else(wrong)?
+                .iter()
+                .map(|path| path.as_str().map(str::to_owned).ok_or_else(wrong))
+                .collect(),
+        }
+    };
+    Ok(Selection::new(
+        &list("include")?,
+        &list("hold")?,
+        &list("remove")?,
+    ))
+}
+
 fn run(command: Command) -> Result<Outcome, String> {
     let done = |output: String| Outcome { output, failed: 0 };
     match command {
@@ -184,7 +232,14 @@ fn run(command: Command) -> Result<Outcome, String> {
             include,
             hold,
             remove,
-        } => tool::plan(&device(&places)?, &Selection::new(&include, &hold, &remove)).map(done),
+            selection,
+        } => {
+            let selection = match selection {
+                Some(file) => selection_from_file(&file)?,
+                None => Selection::new(&include, &hold, &remove),
+            };
+            tool::plan(&device(&places)?, &selection).map(done)
+        }
         Command::Publish {
             places,
             plan,

@@ -577,6 +577,22 @@ describe('commit of a publication of the queue', () => {
         expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('1')
     })
 
+    // One line with something to read: the old rules of the two
+    // implementations differed on these names, and both take them now.
+    test.each([String.fromCharCode(0xfeff), String.fromCharCode(0xa0)])(
+        'takes a device name of one character that is not a space: %p',
+        async (name) => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+
+            await publishNotes(setup, { include: [NOTE] }, { ...RUN, device: name })
+
+            expect(await git(setup.copy, 'log', '-1', '--format=%B')).toContain(
+                `\nDevice: ${name}\n`
+            )
+        }
+    )
+
     // A note name can hold the characters of a git pattern.
     test('holds only the files of the publication when a note name is a pattern for git', async () => {
         await using stores = await makeTestStores()
@@ -619,6 +635,36 @@ describe('git commands of a publication', () => {
         expect(await git(stores.contentStore, 'rev-list', '--count', 'main')).toBe('3')
         expect((await status(device)).unchanged).toEqual([SECOND, NOTE, 'Welcome.md'])
     })
+
+    // The paths of this commit are more than the system takes as arguments
+    // of one command (about 2 MB on Linux). The Rust test goes through a whole
+    // publication of that size.
+    test.skipIf(process.platform === 'win32')(
+        'a commit larger than the limit of the system for arguments is possible',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const long = 'x'.repeat(230)
+            const paths = Array.from(
+                { length: 9000 },
+                (_, index) =>
+                    `notes/Big ${String(Math.floor(index / 100)).padStart(2, '0')}/${String(index).padStart(4, '0')} ${long}.md`
+            )
+            expect(paths.reduce((sum, path) => sum + path.length, 0)).toBeGreaterThan(
+                2 * 1024 * 1024
+            )
+            await writeFiles(setup.copy, Object.fromEntries(paths.map((path) => [path, 'Text\n'])))
+
+            await setup.device.store.commitAndPush('A large commit', paths)
+
+            expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+            const files = await git(stores.contentStore, 'ls-tree', '-r', '--name-only', 'main')
+            expect(files.split('\n').filter((file) => file.startsWith('notes/Big')).length).toBe(
+                9000
+            )
+        },
+        120_000
+    )
 
     // Two publications on one copy must not share a file of paths.
     test('needs no file of paths in the git folder', async () => {
