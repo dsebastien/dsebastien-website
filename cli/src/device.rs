@@ -2,7 +2,6 @@
 //! the `git` program of the system (TOOL-12 of the spec). The TypeScript twin
 //! is `apps/plugin/src/publishing/node/device.ts`.
 
-use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::{ErrorKind, Write};
@@ -214,58 +213,52 @@ impl ContentStore {
         }
     }
 
-    /// Puts these files back as they are in the last commit of the copy: a
-    /// file of the commit gets its text again, and another file is removed.
-    ///
-    /// # Errors
-    ///
-    /// Git cannot put a file back.
-    pub fn discard(&self, paths: &[String]) -> Result<(), String> {
-        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
-        self.discard_paths(&paths)
-    }
-
-    fn discard_paths(&self, paths: &[&str]) -> Result<(), String> {
-        // A copy with no commit has no file to put back.
-        let listing = self
-            .git_output(&["ls-tree", "-r", "-z", "--name-only", "HEAD"])
-            .unwrap_or_default();
-        let committed: HashSet<&str> = listing.split('\0').collect();
-        let (to_restore, to_remove): (Vec<&str>, Vec<&str>) =
-            paths.iter().partition(|path| committed.contains(**path));
-        if !to_restore.is_empty() {
-            self.git_on_paths(&["checkout", "--quiet", "HEAD"], &to_restore)?;
-        }
-        for path in to_remove {
-            let _ = fs::remove_file(self.folder.join(path));
-        }
-        Ok(())
-    }
-
     /// Puts exactly these files in one commit and pushes it, without force. A
     /// file that was removed is removed by the commit.
     ///
     /// # Errors
     ///
-    /// The commit failed, or the push was refused. After a refused push the
-    /// commit is taken back and the files are discarded: the copy is as it
-    /// was before.
+    /// The commit failed, or the push was refused. Then the commit is taken
+    /// back and these paths are unstaged: other staged work of the copy stays
+    /// staged. The files of the copy stay as they are: the tool puts them
+    /// back.
     pub fn commit_and_push(&self, message: &str, paths: &[String]) -> Result<(), String> {
         let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
         // A copy with no commit has no commit to go back to.
         let before = self
             .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
-            .ok();
-        // Takes back everything that this publication did to the copy.
-        let undo = || -> Result<(), String> {
-            if let Some(before) = &before {
-                self.git_output(&["reset", "--quiet", before.trim()])?;
-            } else {
-                let _ = self.git_output(&["update-ref", "-d", "HEAD"]);
-                let _ =
-                    self.git_on_paths(&["rm", "--quiet", "--cached", "--ignore-unmatch"], &paths);
+            .ok()
+            .map(|head| head.trim().to_owned());
+        // Takes the commit back, when there is one, and unstages the paths of
+        // the publication. Every step runs, also when one fails. The result
+        // is what failed.
+        let undo = |committed: bool| -> Vec<String> {
+            let mut failures = Vec::new();
+            if committed {
+                let moved = match &before {
+                    Some(before) => self.git_output(&["update-ref", "HEAD", before]),
+                    None => self.git_output(&["update-ref", "-d", "HEAD"]),
+                };
+                failures.extend(moved.err());
             }
-            self.discard_paths(&paths)
+            let unstaged = match &before {
+                Some(before) => self.git_on_paths(&["reset", "--quiet", before], &paths),
+                None => {
+                    self.git_on_paths(&["rm", "--quiet", "--cached", "--ignore-unmatch"], &paths)
+                }
+            };
+            failures.extend(unstaged.err());
+            failures
+        };
+        let failed = |what: String, failures: Vec<String>| {
+            if failures.is_empty() {
+                what
+            } else {
+                format!(
+                    "{what}. Git could not take the publication back, so correct the copy by hand before the next publication: {}",
+                    failures.join("; ")
+                )
+            }
         };
         // With force: a rule of the store that ignores a path must not leave a
         // note out of its own publication. Then only the files of the
@@ -279,11 +272,9 @@ impl ContentStore {
                 )
             });
         if let Err(error) = committed {
-            // Files that stay in the copy would be read as published at the
-            // next run.
-            undo()?;
-            return Err(format!(
-                "the commit into the copy of the content store failed. Nothing is published, and the copy is as it was before: {error}"
+            return Err(failed(
+                format!("the commit into the copy of the content store failed: {error}"),
+                undo(false),
             ));
         }
         // Never with force: when another device pushed first, git refuses.
@@ -293,11 +284,10 @@ impl ContentStore {
         {
             return Ok(());
         }
-        undo()?;
-        Err(
-            "the push to the content store was refused. Nothing is published, and the copy is as it was before"
-                .to_owned(),
-        )
+        Err(failed(
+            "the push to the content store was refused".to_owned(),
+            undo(true),
+        ))
     }
 
     /// Runs a git command on a list of paths. The paths go to the standard

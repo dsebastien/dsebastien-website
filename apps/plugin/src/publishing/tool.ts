@@ -244,24 +244,88 @@ interface StoreFile {
 }
 
 /**
+ * The files of the copy as they were before a publication touched them. A
+ * failure puts them back from here, not from a commit of the copy: a copy can
+ * have no commit, and a file of it can be in no commit.
+ */
+class Journal {
+    readonly #store: Device['store']
+    readonly #before = new Map<string, string | undefined>()
+
+    constructor(store: Device['store']) {
+        this.#store = store
+    }
+
+    /** Writes a file, or removes it when there is no text. True when the file changed. */
+    async apply(file: StoreFile): Promise<boolean> {
+        if (!this.#before.has(file.path)) {
+            this.#before.set(file.path, await this.#store.read(file.path))
+        }
+        if (file.text === undefined) {
+            return await this.#store.remove(file.path)
+        }
+        await this.#store.write(file.path, file.text)
+        return true
+    }
+
+    /**
+     * Puts these files back as they were. Every file is tried, also when one
+     * fails. The result is the paths that could not be put back.
+     */
+    async putBack(paths: Iterable<string>): Promise<string[]> {
+        const failed: string[] = []
+        for (const path of paths) {
+            if (!this.#before.has(path)) {
+                continue
+            }
+            const text = this.#before.get(path)
+            try {
+                if (text === undefined) {
+                    await this.#store.remove(path)
+                } else {
+                    await this.#store.write(path, text)
+                }
+                this.#before.delete(path)
+            } catch {
+                failed.push(path)
+            }
+        }
+        return failed
+    }
+
+    /** Puts every file back that the publication touched. */
+    async putAllBack(): Promise<string[]> {
+        return await this.putBack([...this.#before.keys()])
+    }
+}
+
+/** A failure that stops the whole publication. */
+class Stop extends Error {}
+
+/**
  * Writes the files of one note. They are one unit: when a write fails, the
- * files are put back as they were, and the error goes to the caller.
+ * files are put back as they were, and the error goes to the caller. When they
+ * cannot be put back, the whole publication stops: a file that stayed would
+ * be read as published at the next run.
  *
  * @returns the paths that changed
  */
-async function applyUnit(device: Device, files: readonly StoreFile[]): Promise<string[]> {
+async function applyUnit(journal: Journal, files: readonly StoreFile[]): Promise<string[]> {
     const changed: string[] = []
     try {
         for (const file of files) {
-            if (file.text !== undefined) {
-                await device.store.write(file.path, file.text)
-                changed.push(file.path)
-            } else if (await device.store.remove(file.path)) {
+            if (await journal.apply(file)) {
                 changed.push(file.path)
             }
         }
     } catch (error) {
-        await device.store.discard(files.map((file) => file.path))
+        const stayed = await journal.putBack(files.map((file) => file.path))
+        if (stayed.length > 0) {
+            throw new Stop(
+                `the files of a note could not be written, and ${stayed.join(', ')} could not be put back: ${messageOf(error)}`,
+                { cause: error }
+            )
+        }
         throw error
     }
     return changed
@@ -370,49 +434,26 @@ async function correctState(
 }
 
 /**
- * Applies exactly one plan, by its id.
- *
- * It computes the record of the plan again: when the new record is not the
- * stored one, the plan is stale and nothing is published. The forced
- * removals come first: when one fails, nothing is published. Then the cleaned
- * notes and the manifest entries go to the content store in one commit, which
- * is pushed. A note whose files cannot be written is left out and reported.
- * Only after the push, the state property is corrected in the vault.
+ * Writes the files of a plan into the copy, and commits and pushes them. The
+ * forced removals come first: when one fails, the whole publication stops. A
+ * note whose files cannot be written is left out and reported (PUB-26).
  */
-export async function publish(device: Device, id: string, run: Run): Promise<PublicationReport> {
-    if (!isCanonicalTime(run.time)) {
-        throw new Error(
-            `the time of the run must be a real date and time in UTC, to the second: "${run.time}" is not`
-        )
-    }
-    if (!isOneLine(run.device)) {
-        throw new Error('the name of the device must be one line of text')
-    }
-    if (!FACES.includes(run.face)) {
-        throw new Error(`"${run.face}" is not a face of the tool`)
-    }
-    if (!PLAN_ID.test(id)) {
-        throw new Error(`"${id}" is not the id of a plan: an id is 16 hexadecimal digits`)
-    }
-    const record = await device.plans.load(id)
-    if (record === undefined) {
-        throw new Error(`there is no plan with the id ${id} on this device`)
-    }
-    const current = await recordFor(device, selectionOf(record, id))
-    if (current.record !== record) {
-        throw new Error(
-            `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
-        )
-    }
-    const { scan, texts } = current
-    const lists = current.plan
-
+async function writeAll(
+    device: Device,
+    journal: Journal,
+    computed: Computed,
+    run: Run
+): Promise<{
+    readonly report: Omit<PublicationReport, 'propertyRemoved' | 'propertySet' | 'warnings'>
+    readonly written: readonly string[]
+}> {
+    const { scan, texts } = computed
+    const lists = computed.plan
     const written: string[] = []
     // The forced removals come first, and they follow the takedown rule: the
     // note leaves the manifest (PUB-21, PUB-84). When one fails, the whole
     // publication stops: no note is published while a note under a guard
     // stays live.
-    const forcedFiles: string[] = []
     for (const path of lists.forcedRemove) {
         try {
             const entry = scan.manifest.get(path)
@@ -420,15 +461,13 @@ export async function publish(device: Device, id: string, run: Run): Promise<Pub
                 throw new Error('the note has no manifest entry')
             }
             for (const file of [`${NOTES_FOLDER}/${path}`, manifestFile(entry.id)]) {
-                forcedFiles.push(file)
-                if (await device.store.remove(file)) {
+                if (await journal.apply({ path: file, text: undefined })) {
                     written.push(file)
                 }
             }
         } catch (error) {
-            await device.store.discard(forcedFiles)
-            throw new Error(
-                `a guard excludes "${path}", and it could not be removed from the content store: ${messageOf(error)}. Nothing was published`,
+            throw new Stop(
+                `a guard excludes "${path}", and it could not be removed from the content store: ${messageOf(error)}`,
                 { cause: error }
             )
         }
@@ -441,9 +480,12 @@ export async function publish(device: Device, id: string, run: Run): Promise<Pub
         files: () => readonly StoreFile[]
     ): Promise<void> => {
         try {
-            written.push(...(await applyUnit(device, files())))
+            written.push(...(await applyUnit(journal, files())))
             list.push(path)
         } catch (error) {
+            if (error instanceof Stop) {
+                throw error
+            }
             // A failure of one note leaves that note out (PUB-26).
             failed.push({ path, reason: messageOf(error) })
         }
@@ -482,29 +524,87 @@ export async function publish(device: Device, id: string, run: Run): Promise<Pub
     const planned = new Set([...lists.update, ...lists.remove])
     const skipped = scan.queue.changed.filter((path) => !planned.has(path))
     const report = { failed, forcedRemoved: lists.forcedRemove, ...done, skipped }
+    if (written.length > 0) {
+        await device.store.commitAndPush(
+            [
+                `Publish: ${String(done.published.length)} new, ${String(done.updated.length)} updated, ${String(done.removed.length)} removed, ${String(lists.forcedRemove.length)} forced, ${String(skipped.length)} skipped`,
+                '',
+                `Device: ${run.device}`,
+                `Face: ${run.face}`
+            ].join('\n'),
+            written
+        )
+    }
+    return { report, written }
+}
+
+/**
+ * Applies exactly one plan, by its id.
+ *
+ * It computes the record of the plan again: when the new record is not the
+ * stored one, the plan is stale and nothing is published. The forced
+ * removals come first: when one fails, nothing is published. Then the cleaned
+ * notes and the manifest entries go to the content store in one commit, which
+ * is pushed. A note whose files cannot be written is left out and reported.
+ * Only after the push, the state property is corrected in the vault.
+ */
+export async function publish(device: Device, id: string, run: Run): Promise<PublicationReport> {
+    if (!isCanonicalTime(run.time)) {
+        throw new Error(
+            `the time of the run must be a real date and time in UTC, to the second: "${run.time}" is not`
+        )
+    }
+    if (!isOneLine(run.device)) {
+        throw new Error('the name of the device must be one line of text')
+    }
+    if (!FACES.includes(run.face)) {
+        throw new Error(`"${run.face}" is not a face of the tool`)
+    }
+    if (!PLAN_ID.test(id)) {
+        throw new Error(`"${id}" is not the id of a plan: an id is 16 hexadecimal digits`)
+    }
+    const record = await device.plans.load(id)
+    if (record === undefined) {
+        throw new Error(`there is no plan with the id ${id} on this device`)
+    }
+    const current = await recordFor(device, selectionOf(record, id))
+    if (current.record !== record) {
+        throw new Error(
+            `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
+        )
+    }
+    const journal = new Journal(device.store)
+    let outcome: Awaited<ReturnType<typeof writeAll>>
+    try {
+        outcome = await writeAll(device, journal, current, run)
+    } catch (error) {
+        // Files that stay in the copy would be read as published at the next run.
+        const stayed = await journal.putAllBack()
+        throw new Error(
+            `${messageOf(error)}. Nothing is published, ${
+                stayed.length === 0
+                    ? 'and the files of the copy are as they were before'
+                    : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next run would read them as published: put them back before the next publication`
+            }`,
+            { cause: error }
+        )
+    }
+    const { report, written } = outcome
     if (written.length === 0) {
         // Nothing to commit, so no push: without a push, no property is corrected.
         return { ...report, propertyRemoved: [], propertySet: [], warnings: [] }
     }
-    await device.store.commitAndPush(
-        [
-            `Publish: ${String(done.published.length)} new, ${String(done.updated.length)} updated, ${String(done.removed.length)} removed, ${String(lists.forcedRemove.length)} forced, ${String(skipped.length)} skipped`,
-            '',
-            `Device: ${run.device}`,
-            `Face: ${run.face}`
-        ].join('\n'),
-        written
-    )
+    const { scan } = current
 
     // The push succeeded: the manifest of the copy is the manifest of the
     // content store. The vault now says the same.
     const published = new Set(
         [...scan.manifest].filter(([, entry]) => entry.state === 'published').map(([path]) => path)
     )
-    for (const path of done.published) {
+    for (const path of report.published) {
         published.add(path)
     }
-    for (const path of [...done.removed, ...lists.forcedRemove]) {
+    for (const path of [...report.removed, ...report.forcedRemoved]) {
         published.delete(path)
     }
     return { ...report, ...(await correctState(device, scan, published)) }

@@ -286,31 +286,95 @@ struct StoreFile {
     text: Option<String>,
 }
 
-/// Writes the files of one note. They are one unit: when a write fails, the
-/// files are put back as they were, and the error goes to the caller. The
-/// result is the paths that changed.
-fn apply_unit(device: &Device, files: &[StoreFile]) -> Result<Vec<String>, String> {
-    let mut changed = Vec::new();
-    let mut write_all = || -> Result<(), String> {
-        for file in files {
-            match &file.text {
-                Some(text) => {
-                    device.store.write(&file.path, text)?;
-                    changed.push(file.path.clone());
-                }
-                None => {
-                    if device.store.remove(&file.path)? {
-                        changed.push(file.path.clone());
-                    }
-                }
+/// The files of the copy as they were before a publication touched them. A
+/// failure puts them back from here, not from a commit of the copy: a copy can
+/// have no commit, and a file of it can be in no commit.
+struct Journal<'a> {
+    store: &'a ContentStore,
+    before: BTreeMap<String, Option<String>>,
+}
+
+impl<'a> Journal<'a> {
+    fn new(store: &'a ContentStore) -> Self {
+        Self {
+            store,
+            before: BTreeMap::new(),
+        }
+    }
+
+    /// Writes a file, or removes it when there is no text. `Ok(true)` when the
+    /// file changed.
+    fn apply(&mut self, file: &StoreFile) -> Result<bool, String> {
+        if !self.before.contains_key(&file.path) {
+            let text = self.store.read(&file.path)?;
+            self.before.insert(file.path.clone(), text);
+        }
+        match &file.text {
+            Some(text) => self.store.write(&file.path, text).map(|()| true),
+            None => self.store.remove(&file.path),
+        }
+    }
+
+    /// Puts these files back as they were. Every file is tried, also when one
+    /// fails. The result is the paths that could not be put back.
+    fn put_back(&mut self, paths: &[String]) -> Vec<String> {
+        let mut failed = Vec::new();
+        for path in paths {
+            let Some(text) = self.before.get(path) else {
+                continue;
+            };
+            let result = match text {
+                Some(text) => self.store.write(path, text),
+                None => self.store.remove(path).map(|_| ()),
+            };
+            if result.is_ok() {
+                self.before.remove(path);
+            } else {
+                failed.push(path.clone());
             }
         }
-        Ok(())
-    };
-    if let Err(error) = write_all() {
-        let paths: Vec<String> = files.iter().map(|file| file.path.clone()).collect();
-        device.store.discard(&paths)?;
-        return Err(error);
+        failed
+    }
+
+    /// Puts every file back that the publication touched.
+    fn put_all_back(&mut self) -> Vec<String> {
+        let paths: Vec<String> = self.before.keys().cloned().collect();
+        self.put_back(&paths)
+    }
+}
+
+/// Why the files of a plan were not all written.
+enum Failure {
+    /// One note is left out (PUB-26).
+    Note(String),
+    /// The whole publication stops.
+    Stop(String),
+}
+
+/// Writes the files of one note. They are one unit: when a write fails, the
+/// files are put back as they were, and the error goes to the caller. When
+/// they cannot be put back, the whole publication stops: a file that stayed
+/// would be read as published at the next run. The result is the paths that
+/// changed.
+fn apply_unit(journal: &mut Journal, files: &[StoreFile]) -> Result<Vec<String>, Failure> {
+    let mut changed = Vec::new();
+    for file in files {
+        match journal.apply(file) {
+            Ok(true) => changed.push(file.path.clone()),
+            Ok(false) => {}
+            Err(error) => {
+                let paths: Vec<String> = files.iter().map(|file| file.path.clone()).collect();
+                let stayed = journal.put_back(&paths);
+                return Err(if stayed.is_empty() {
+                    Failure::Note(error)
+                } else {
+                    Failure::Stop(format!(
+                        "the files of a note could not be written, and {} could not be put back: {error}",
+                        stayed.join(", ")
+                    ))
+                });
+            }
+        }
     }
     Ok(changed)
 }
@@ -405,16 +469,14 @@ fn removal_files(path: &str, scan: &Scan) -> Result<Vec<StoreFile>, String> {
 /// entry of each note that a guard excludes leave the content store. This is
 /// the takedown rule (PUB-21, PUB-84). The result is the paths that changed.
 ///
-/// When one removal fails, every file that was touched is put back, and the
-/// error goes to the caller: no note is published while a note under a guard
-/// stays live.
+/// When one removal fails, the error goes to the caller, which puts every
+/// file back: no note is published while a note under a guard stays live.
 fn remove_forced(
-    device: &Device,
+    journal: &mut Journal,
     plan: &PublicationPlan,
     scan: &Scan,
 ) -> Result<Vec<String>, String> {
     let mut changed = Vec::new();
-    let mut touched = Vec::new();
     for path in plan.forced_remove() {
         let mut remove = || -> Result<(), String> {
             let entry = scan
@@ -422,19 +484,21 @@ fn remove_forced(
                 .get(path)
                 .ok_or("the note has no manifest entry")?;
             for file in [format!("{NOTES_FOLDER}/{path}"), manifest_file(&entry.id)] {
-                touched.push(file.clone());
-                if device.store.remove(&file)? {
+                let removal = StoreFile {
+                    path: file.clone(),
+                    text: None,
+                };
+                if journal.apply(&removal)? {
                     changed.push(file);
                 }
             }
             Ok(())
         };
-        if let Err(error) = remove() {
-            device.store.discard(&touched)?;
-            return Err(format!(
-                "a guard excludes \"{path}\", and it could not be removed from the content store: {error}. Nothing was published"
-            ));
-        }
+        remove().map_err(|error| {
+            format!(
+                "a guard excludes \"{path}\", and it could not be removed from the content store: {error}"
+            )
+        })?;
     }
     Ok(changed)
 }
@@ -542,6 +606,101 @@ fn check_inputs(id: &str, run: &Run) -> Result<(), String> {
     Ok(())
 }
 
+/// What the writes of a plan did.
+struct Written {
+    failed: Vec<Value>,
+    published: Vec<String>,
+    updated: Vec<String>,
+    removed: Vec<String>,
+    skipped: Vec<String>,
+    /// The paths of the content store that changed.
+    paths: Vec<String>,
+}
+
+/// Writes the files of a plan into the copy, and commits and pushes them.
+/// The forced removals come first: when one fails, the whole publication
+/// stops. A note whose files cannot be written is left out and reported
+/// (PUB-26).
+fn write_all(
+    device: &Device,
+    journal: &mut Journal,
+    plan: &PublicationPlan,
+    scan: &Scan,
+    texts: &BTreeMap<String, NoteTexts>,
+    run: &Run,
+) -> Result<Written, String> {
+    // The forced removals come first, and they are no unit of one note: a
+    // failure stops the whole publication.
+    let mut paths = remove_forced(journal, plan, scan)?;
+    let mut failed = Vec::new();
+    let mut apply =
+        |path: &String, files: Result<Vec<StoreFile>, String>| -> Result<bool, String> {
+            match files
+                .map_err(Failure::Note)
+                .and_then(|files| apply_unit(journal, &files))
+            {
+                Ok(changed) => {
+                    paths.extend(changed);
+                    Ok(true)
+                }
+                // A failure of one note leaves that note out (PUB-26).
+                Err(Failure::Note(reason)) => {
+                    failed.push(json!({ "path": path, "reason": reason }));
+                    Ok(false)
+                }
+                Err(Failure::Stop(reason)) => Err(reason),
+            }
+        };
+    let mut published = Vec::new();
+    let mut updated = Vec::new();
+    let mut removed = Vec::new();
+    for path in plan.publish() {
+        if apply(path, note_files(path, texts, scan, run.time))? {
+            published.push(path.clone());
+        }
+    }
+    for path in plan.update() {
+        if apply(path, note_files(path, texts, scan, run.time))? {
+            updated.push(path.clone());
+        }
+    }
+    for path in plan.remove() {
+        if apply(path, removal_files(path, scan))? {
+            removed.push(path.clone());
+        }
+    }
+    let skipped: Vec<String> = scan
+        .queue
+        .changed
+        .iter()
+        .filter(|path| !plan.update().contains(path) && !plan.remove().contains(path))
+        .cloned()
+        .collect();
+    if !paths.is_empty() {
+        device.store.commit_and_push(
+            &format!(
+                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}",
+                published.len(),
+                updated.len(),
+                removed.len(),
+                plan.forced_remove().len(),
+                skipped.len(),
+                run.device,
+                run.face
+            ),
+            &paths,
+        )?;
+    }
+    Ok(Written {
+        failed,
+        published,
+        updated,
+        removed,
+        skipped,
+        paths,
+    })
+}
+
 /// Applies exactly one plan, by its id.
 ///
 /// It computes the record of the plan again: when the new record is not the
@@ -572,65 +731,36 @@ pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> 
         plan, scan, texts, ..
     } = current;
 
-    // The forced removals come first, and they are no unit of one note: a
-    // failure stops the whole publication.
-    let mut written = remove_forced(device, &plan, &scan)?;
-    let mut failed = Vec::new();
-    // A failure of one note leaves that note out (PUB-26).
-    let mut apply = |path: &String, files: Result<Vec<StoreFile>, String>| -> bool {
-        match files.and_then(|files| apply_unit(device, &files)) {
-            Ok(changed) => {
-                written.extend(changed);
-                true
-            }
-            Err(reason) => {
-                failed.push(json!({ "path": path, "reason": reason }));
-                false
-            }
+    let mut journal = Journal::new(&device.store);
+    let written = match write_all(device, &mut journal, &plan, &scan, &texts, run) {
+        Ok(written) => written,
+        Err(error) => {
+            // Files that stay in the copy would be read as published at the
+            // next run.
+            let stayed = journal.put_all_back();
+            let after = if stayed.is_empty() {
+                "and the files of the copy are as they were before".to_owned()
+            } else {
+                format!(
+                    "and these files of the copy could not be put back: {}. The next run would read them as published: put them back before the next publication",
+                    stayed.join(", ")
+                )
+            };
+            return Err(format!("{error}. Nothing is published, {after}"));
         }
     };
-    let mut published = Vec::new();
-    let mut updated = Vec::new();
-    let mut removed = Vec::new();
-    for path in plan.publish() {
-        if apply(path, note_files(path, &texts, &scan, run.time)) {
-            published.push(path.clone());
-        }
-    }
-    for path in plan.update() {
-        if apply(path, note_files(path, &texts, &scan, run.time)) {
-            updated.push(path.clone());
-        }
-    }
-    for path in plan.remove() {
-        if apply(path, removal_files(path, &scan)) {
-            removed.push(path.clone());
-        }
-    }
-
-    let skipped: Vec<&String> = scan
-        .queue
-        .changed
-        .iter()
-        .filter(|path| !plan.update().contains(path) && !plan.remove().contains(path))
-        .collect();
+    let Written {
+        failed,
+        published,
+        updated,
+        removed,
+        skipped,
+        paths,
+    } = written;
     let mut correction = Correction::default();
     // With nothing to commit there is no push, and without a push no property
     // is corrected.
-    if !written.is_empty() {
-        device.store.commit_and_push(
-            &format!(
-                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}",
-                published.len(),
-                updated.len(),
-                removed.len(),
-                plan.forced_remove().len(),
-                skipped.len(),
-                run.device,
-                run.face
-            ),
-            &written,
-        )?;
+    if !paths.is_empty() {
         // The push succeeded: the manifest of the copy is the manifest of the
         // content store. The vault now says the same.
         let mut now_published: BTreeSet<String> = scan

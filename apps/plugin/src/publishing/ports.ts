@@ -45,15 +45,11 @@ export interface ContentStore {
     /** Removes a file. True when the file existed. */
     remove(path: string): Promise<boolean>
     /**
-     * Puts these files back as they are in the last commit of the copy: a
-     * file of the commit gets its text again, and another file is removed.
-     */
-    discard(paths: readonly string[]): Promise<void>
-    /**
      * Puts exactly these files in one commit and pushes it, without force. A
-     * file that was removed is removed by the commit. When the push is
-     * refused, it takes the commit back, discards the files, and throws: the
-     * copy is then as it was before.
+     * file that was removed is removed by the commit. When the commit fails or
+     * the push is refused, it takes the commit back and unstages these paths,
+     * and throws. It leaves the files of the copy as they are: the tool puts
+     * them back. Other staged work of the copy stays staged.
      */
     commitAndPush(message: string, paths: readonly string[]): Promise<void>
 }

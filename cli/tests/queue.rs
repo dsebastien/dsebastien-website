@@ -666,6 +666,126 @@ fn a_commit_that_fails_leaves_nothing_in_the_copy() {
     assert_eq!(paths(&queue["unchanged"]), Vec::<String>::new());
 }
 
+/// Every file of the copy but its git folder, with its bytes.
+fn files_of(copy: &Path) -> Vec<(String, Vec<u8>)> {
+    picture(copy)
+        .into_iter()
+        .filter(|(path, _)| !path.starts_with(".git/"))
+        .collect()
+}
+
+/// A step of the undo that fails must not stop the later steps. Here git
+/// cannot write its index, so neither the commit nor its undo can use it.
+#[test]
+fn a_commit_that_fails_puts_every_file_back_when_git_cannot_write_its_index() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": ["Welcome.md"] }), TIME);
+    append(&setup.vault.join("Welcome.md"), EDIT);
+    let id = setup.plan_id(&json!({ "include": [NOTE] }));
+    let lock = setup.copy.join(".git").join("index.lock");
+    fs::write(&lock, "").expect("the lock is written");
+    let before = files_of(&setup.copy);
+
+    let output = setup.publish_plan(&id, LATER);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("commit"),
+        "{}",
+        errors_of(&output)
+    );
+    assert_eq!(files_of(&setup.copy), before);
+    fs::remove_file(&lock).expect("the lock can be removed");
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+    let queue = setup.status();
+    assert!(paths(&queue["new"]).contains(&NOTE.to_owned()));
+    assert_eq!(paths(&queue["changed"]), ["Welcome.md"]);
+}
+
+/// With no commit, a file of the copy is not new for the publication only
+/// because no commit holds it.
+#[test]
+fn a_commit_that_fails_keeps_the_files_that_a_copy_with_no_commit_held_before() {
+    let published = Setup::fixture();
+    published.publish(&json!({ "include": ["Welcome.md"] }), TIME);
+    let setup = copy_with_no_commit();
+    for (path, bytes) in files_of(&published.copy) {
+        let to = setup.copy.join(&path);
+        fs::create_dir_all(to.parent().expect("a file has a folder"))
+            .expect("the folder can be made");
+        fs::write(to, bytes).expect("the file is written");
+    }
+    let setup = Setup {
+        vault: published.vault.clone(),
+        ..setup
+    };
+    append(&setup.vault.join("Welcome.md"), EDIT);
+    refuse_commits(&setup.copy);
+    let before = files_of(&setup.copy);
+    let output = setup.plan(&json!({}));
+    assert!(output.status.success(), "{}", errors_of(&output));
+    let planned = json_of(&output);
+    assert_eq!(paths(&planned["plan"]["update"]), ["Welcome.md"]);
+    let id = planned["id"].as_str().expect("an id").to_owned();
+
+    let output = setup.publish_plan(&id, LATER);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("commit"));
+    assert_eq!(files_of(&setup.copy), before);
+    assert_eq!(paths(&setup.status()["changed"]), ["Welcome.md"]);
+}
+
+/// The undo takes back the paths of the publication only.
+#[test]
+fn a_commit_that_fails_keeps_the_other_staged_work_of_the_copy() {
+    let setup = Setup::fixture();
+    let readme = setup.copy.join("README.md");
+    fs::write(&readme, "Staged\n").expect("the file is written");
+    setup.git(&["add", "README.md"]);
+    fs::write(&readme, "Staged, then edited\n").expect("the file is written");
+    refuse_commits(&setup.copy);
+    let id = setup.plan_id(&json!({ "include": [NOTE] }));
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(setup.git(&["status", "--porcelain"]), "AM README.md");
+    assert_eq!(setup.git(&["show", ":README.md"]), "Staged");
+}
+
+#[test]
+fn a_refused_push_keeps_the_other_staged_work_of_the_copy() {
+    let setup = Setup::fixture();
+    let id = setup.plan_id(&json!({ "include": [NOTE] }));
+    let other = setup.stores.root().join("other-device");
+    git(&[
+        "clone",
+        "--quiet",
+        text(setup.stores.content_store()),
+        text(&other),
+    ]);
+    for (key, value) in [
+        ("user.name", "Other"),
+        ("user.email", "other@example.invalid"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(&["-C", text(&other), "config", key, value]);
+    }
+    push_to_store(&other, &json!({ "other.txt": "Pushed first\n" }));
+    fs::write(setup.copy.join("README.md"), "Staged\n").expect("the file is written");
+    setup.git(&["add", "README.md"]);
+    let head = setup.git(&["rev-parse", "HEAD"]);
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("refused"));
+    assert_eq!(setup.git(&["rev-parse", "HEAD"]), head);
+    assert_eq!(setup.git(&["status", "--porcelain"]), "A  README.md");
+    assert!(!setup.copy.join("notes").join(NOTE).exists());
+}
+
 /// A clone of a content store that has no commit and no configuration.
 fn copy_with_no_commit() -> Setup {
     let stores = TestStores::new();
@@ -1386,7 +1506,7 @@ fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put
     let message = errors_of(&output);
     assert!(message.contains(NOTE), "{message}");
     assert!(message.contains("guard"), "{message}");
-    assert!(message.contains("Nothing was published"), "{message}");
+    assert!(message.contains("Nothing is published"), "{message}");
     assert_eq!(setup.git(&["rev-parse", "HEAD"]), before.1);
     assert_eq!(
         git(&[

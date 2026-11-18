@@ -635,6 +635,94 @@ describe('commit that fails', () => {
         expect((await status(device)).unchanged).toEqual([])
     })
 
+    /** Every file of the copy but its git folder, with a hash of its bytes. */
+    async function filesOf(copy: string): Promise<Record<string, string>> {
+        return Object.fromEntries(
+            Object.entries(await picture(copy)).filter(([path]) => !path.startsWith('.git/'))
+        )
+    }
+
+    // A step of the undo that fails must not stop the later steps. Here git
+    // cannot write its index, so neither the commit nor its undo can use it.
+    test('puts every file back when git cannot write its index', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: ['Welcome.md'] })
+        await append(join(setup.vault, 'Welcome.md'), EDIT)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(join(setup.copy, '.git', 'index.lock'), '')
+        const before = await filesOf(setup.copy)
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('commit')
+
+        expect(await filesOf(setup.copy)).toEqual(before)
+        await rm(join(setup.copy, '.git', 'index.lock'))
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+        const queue = await status(setup.device)
+        expect(queue.new).toContain(NOTE)
+        expect(queue.changed).toEqual(['Welcome.md'])
+    })
+
+    // With no commit, a file of the copy is not new for the publication only
+    // because no commit holds it.
+    test('keeps the files that a copy with no commit held before', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: ['Welcome.md'] })
+        await using others = await makeTestStores()
+        const copy = await makeContentStoreCopyOf(others, 'copy')
+        for (const file of await readdir(setup.copy, { recursive: true })) {
+            if (!file.startsWith('.git') && (await Bun.file(join(setup.copy, file)).exists())) {
+                await mkdir(dirname(join(copy, file)), { recursive: true })
+                await writeFile(join(copy, file), await Bun.file(join(setup.copy, file)).bytes())
+            }
+        }
+        const device = nodeDevice({ vault: setup.vault, contentStore: copy })
+        await append(join(setup.vault, 'Welcome.md'), EDIT)
+        await refuseCommits(copy)
+        const before = await filesOf(copy)
+        const planned = await plan(device, { include: [] })
+        expect(planned.plan.update).toEqual(['Welcome.md'])
+
+        expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('commit')
+
+        expect(await filesOf(copy)).toEqual(before)
+        expect((await status(device)).changed).toEqual(['Welcome.md'])
+    })
+
+    // The undo takes back the paths of the publication only.
+    test('keeps the other staged work of the copy', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(setup.copy, 'README.md'), 'Staged\n')
+        await git(setup.copy, 'add', 'README.md')
+        await writeFile(join(setup.copy, 'README.md'), 'Staged, then edited\n')
+        await refuseCommits(setup.copy)
+        const planned = await plan(setup.device, { include: [NOTE] })
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('commit')
+
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('AM README.md')
+        expect(await git(setup.copy, 'show', ':README.md')).toBe('Staged')
+    })
+
+    test('keeps the other staged work of the copy after a refused push', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const other = await makeContentStoreCopyOf(stores, 'other-device')
+        await pushToStore(other, { 'other.txt': 'Pushed first\n' })
+        await writeFile(join(setup.copy, 'README.md'), 'Staged\n')
+        await git(setup.copy, 'add', 'README.md')
+        const head = await git(setup.copy, 'rev-parse', 'HEAD')
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('refused')
+
+        expect(await git(setup.copy, 'rev-parse', 'HEAD')).toBe(head)
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('A  README.md')
+        expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(false)
+    })
+
     test('a copy that has no commit takes its first publication', async () => {
         await using stores = await makeTestStores()
         const vault = await copyFixtureVault(stores)
@@ -1025,6 +1113,7 @@ describe('forced removal', () => {
 
         expect(message).toContain(NOTE)
         expect(message).toContain('guard')
+        expect(message).toContain('Nothing is published')
         expect(await git(setup.copy, 'rev-parse', 'HEAD')).toBe(before.commit)
         expect(await git(stores.contentStore, 'rev-parse', 'main')).toBe(before.commit)
         // The first removal was put back, and no other note was published.

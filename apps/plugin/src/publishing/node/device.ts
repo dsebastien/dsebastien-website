@@ -131,25 +131,6 @@ function gitContentStore(folder: string): ContentStore {
     const gitOnPaths = async (args: readonly string[], paths: readonly string[]): Promise<void> => {
         await gitWith([...args, '--pathspec-from-file=-', '--pathspec-file-nul'], paths.join('\0'))
     }
-    const discard = async (paths: readonly string[]): Promise<void> => {
-        let listing: string
-        try {
-            listing = await gitRaw('ls-tree', '-r', '-z', '--name-only', 'HEAD')
-        } catch {
-            // A copy with no commit has no file to put back.
-            listing = ''
-        }
-        const committed = new Set(listing.split('\0'))
-        const toRestore = paths.filter((path) => committed.has(path))
-        if (toRestore.length > 0) {
-            await gitOnPaths(['checkout', '--quiet', 'HEAD'], toRestore)
-        }
-        for (const path of paths) {
-            if (!committed.has(path)) {
-                await rm(join(folder, path), { force: true })
-            }
-        }
-    }
     return {
         async verify() {
             let top: string
@@ -198,7 +179,6 @@ function gitContentStore(folder: string): ContentStore {
                 )
             }
         },
-        discard,
         async list(below) {
             let entries
             try {
@@ -223,19 +203,40 @@ function gitContentStore(folder: string): ContentStore {
             } catch {
                 before = undefined
             }
-            // Takes back everything that this publication did to the copy.
-            const undo = async (): Promise<void> => {
-                if (before === undefined) {
-                    await git('update-ref', '-d', 'HEAD').catch(() => undefined)
-                    await gitOnPaths(
-                        ['rm', '--quiet', '--cached', '--ignore-unmatch'],
-                        paths
-                    ).catch(() => undefined)
-                } else {
-                    await git('reset', '--quiet', before)
+            /**
+             * Takes the commit back, when there is one, and unstages the paths
+             * of the publication: the other staged work of the copy stays. Every
+             * step runs, also when one fails. The result is what failed.
+             */
+            const undo = async (committed: boolean): Promise<string[]> => {
+                const failures: string[] = []
+                const step = async (action: () => Promise<unknown>): Promise<void> => {
+                    try {
+                        await action()
+                    } catch (error) {
+                        failures.push(error instanceof Error ? error.message.trim() : 'git failed')
+                    }
                 }
-                await discard(paths)
+                if (committed) {
+                    await step(() =>
+                        before === undefined
+                            ? git('update-ref', '-d', 'HEAD')
+                            : git('update-ref', 'HEAD', before)
+                    )
+                }
+                await step(() =>
+                    before === undefined
+                        ? gitOnPaths(['rm', '--quiet', '--cached', '--ignore-unmatch'], paths)
+                        : gitOnPaths(['reset', '--quiet', before], paths)
+                )
+                return failures
             }
+            const failed = (what: string, failures: readonly string[]): Error =>
+                new Error(
+                    failures.length === 0
+                        ? what
+                        : `${what}. Git could not take the publication back, so correct the copy by hand before the next publication: ${failures.join('; ')}`
+                )
             try {
                 // With force: a rule of the store that ignores a path must not
                 // leave a note out of its own publication.
@@ -243,21 +244,16 @@ function gitContentStore(folder: string): ContentStore {
                 // Only the files of the publication. Other changes of the copy stay out.
                 await gitOnPaths(['commit', '--quiet', '--message', message, '--only'], paths)
             } catch (error) {
-                // Files that stay in the copy would be read as published at the next run.
-                await undo()
-                throw new Error(
-                    `the commit into the copy of the content store failed. Nothing is published, and the copy is as it was before: ${error instanceof Error ? error.message : 'git failed'}`,
-                    { cause: error }
+                throw failed(
+                    `the commit into the copy of the content store failed: ${error instanceof Error ? error.message.trim() : 'git failed'}`,
+                    await undo(false)
                 )
             }
             try {
                 // Never with force: when another device pushed first, git refuses.
                 await git('push', '--quiet', 'origin', 'HEAD:main')
             } catch {
-                await undo()
-                throw new Error(
-                    'the push to the content store was refused. Nothing is published, and the copy is as it was before'
-                )
+                throw failed('the push to the content store was refused', await undo(true))
             }
         }
     }
