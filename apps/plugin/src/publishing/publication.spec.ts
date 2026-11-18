@@ -6,6 +6,7 @@ import {
     gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
+    refusePushes,
     rejectionOf,
     type TestStores
 } from '@dsebastien-website/testing'
@@ -602,25 +603,7 @@ describe('commit of a publication', () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         const planned = await plan(setup.device, { include: [NOTE] })
-        const other = join(stores.root, 'other-device')
-        await git('clone', '--quiet', stores.contentStore, other)
-        await writeFile(join(other, 'other.txt'), 'pushed first\n')
-        await git('-C', other, 'add', 'other.txt')
-        await git(
-            '-C',
-            other,
-            '-c',
-            'user.name=Other',
-            '-c',
-            'user.email=other@example.invalid',
-            '-c',
-            'commit.gpgsign=false',
-            'commit',
-            '--quiet',
-            '--message',
-            'Another device publishes'
-        )
-        await git('-C', other, 'push', '--quiet', 'origin', 'HEAD:main')
+        await refusePushes(stores.contentStore)
         const before = {
             vault: await picture(setup.vault),
             copy: await picture(setup.copy),

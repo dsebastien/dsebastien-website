@@ -318,7 +318,7 @@ function gitContentStore(folder: string): ContentStore {
         }
     }
     return {
-        async verify() {
+        async verify(fetch) {
             let top: string
             try {
                 top = await git('rev-parse', '--show-toplevel')
@@ -331,11 +331,50 @@ function gitContentStore(folder: string): ContentStore {
                     `the copy of the content store is not the root of a git repository: ${folder}`
                 )
             }
+            if (fetch) {
+                try {
+                    await gitRaw('fetch', '--quiet', 'origin')
+                } catch (error) {
+                    throw new Error(
+                        `the content store cannot be reached (git fetch origin failed: ${error instanceof Error ? error.message.trim() : 'git failed'}). A plan and a publication fetch it first, so that a copy that is behind is never used: ${folder}`,
+                        { cause: error }
+                    )
+                }
+            }
+            // How far the copy is behind the content store, at the last fetch.
+            const exists = (ref: string): Promise<boolean> =>
+                git('rev-parse', '--verify', '--quiet', ref).then(
+                    () => true,
+                    () => false
+                )
+            const hasMain = await exists('refs/remotes/origin/main')
+            const hasHead = await exists('HEAD')
+            // A copy with no branch of its own that leads to a commit (a clone
+            // of a content store that had no branch yet, or a copy made with
+            // git init) has no commit ahead. An orphan branch in a copy with
+            // commits is not such a copy.
+            const noCommit =
+                !hasHead &&
+                (await git('for-each-ref', '--count=1', '--format=%(refname)', 'refs/heads')) === ''
+            const behind = hasMain
+                ? Number(
+                      await git(
+                          'rev-list',
+                          '--count',
+                          hasHead ? 'HEAD..refs/remotes/origin/main' : 'refs/remotes/origin/main'
+                      )
+                  )
+                : 0
             // A commit that a failed publication could not take back would be
             // pushed by the next one, also for a note that came under a guard.
             // A commit that a branch of the content store has is not ahead.
+            // A copy with no commit, of a content store with a branch, has no
+            // commit ahead: it is behind.
             let ahead: string
             try {
+                if (noCommit && hasMain) {
+                    throw new Error('no commit')
+                }
                 ahead = await git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin')
             } catch (error) {
                 // Only a copy of a content store with no branch yet, whose own
@@ -344,10 +383,9 @@ function gitContentStore(folder: string): ContentStore {
                 try {
                     await git('symbolic-ref', '--quiet', 'HEAD')
                     unborn =
-                        !(await git('rev-parse', '--verify', '--quiet', 'HEAD')
-                            .then(() => true)
-                            .catch(() => false)) &&
-                        (await git('for-each-ref', '--count=1', 'refs/remotes/origin')) === ''
+                        noCommit &&
+                        (hasMain ||
+                            (await git('for-each-ref', '--count=1', 'refs/remotes/origin')) === '')
                 } catch {
                     unborn = false
                 }
@@ -491,6 +529,7 @@ function gitContentStore(folder: string): ContentStore {
                         )}. Nothing can be published until the copy is corrected. ${waysOut(different)}: ${folder}`
                 )
             }
+            return behind
         },
         async read(path) {
             await refuseLinks(path)

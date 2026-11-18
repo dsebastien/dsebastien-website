@@ -705,25 +705,7 @@ fn a_refused_push_leaves_the_vault_the_copy_and_the_content_store_as_they_were()
     let setup = set_up();
     let id = setup.plan(NOTE);
     let remote = text(setup.stores.content_store());
-    let other = setup.stores.root().join("other-device");
-    git(&["clone", "--quiet", remote, text(&other)]);
-    fs::write(other.join("other.txt"), "pushed first\n").expect("the file can be written");
-    git(&["-C", text(&other), "add", "other.txt"]);
-    git(&[
-        "-C",
-        text(&other),
-        "-c",
-        "user.name=Other",
-        "-c",
-        "user.email=other@example.invalid",
-        "-c",
-        "commit.gpgsign=false",
-        "commit",
-        "--quiet",
-        "--message",
-        "Another device publishes",
-    ]);
-    git(&["-C", text(&other), "push", "--quiet", "origin", "HEAD:main"]);
+    setup.stores.refuse_pushes();
     let before = (
         picture(&setup.vault),
         picture(&setup.copy),

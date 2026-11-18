@@ -30,7 +30,8 @@
                         "new": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -102,7 +103,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Alpha.md", "Beta.md", "Folder/Gamma.md"]
+                        "unchanged": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -132,7 +134,8 @@
                         "new": ["Delta.md"],
                         "technicalUpdates": [],
                         "toRemove": ["Beta.md"],
-                        "unchanged": ["Folder/Gamma.md"]
+                        "unchanged": ["Folder/Gamma.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -516,7 +519,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Alpha.md", "Delta.md", "Folder/Gamma.md"]
+                        "unchanged": ["Alpha.md", "Delta.md", "Folder/Gamma.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -573,7 +577,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Delta.md", "Folder/Gamma.md"]
+                        "unchanged": ["Delta.md", "Folder/Gamma.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -597,7 +602,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": ["Folder/Gamma.md"],
-                        "unchanged": ["Delta.md"]
+                        "unchanged": ["Delta.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -686,7 +692,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Delta.md"]
+                        "unchanged": ["Delta.md"],
+                        "behind": 0
                     }
                 }
             ]
@@ -717,7 +724,8 @@
                         "new": ["Other.md", "Published.md", "Windows.md", "Wrong.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -826,7 +834,8 @@
                         "new": ["Other.md", "Windows.md", "Wrong.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Published.md"]
+                        "unchanged": ["Published.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -905,7 +914,8 @@
                         "new": ["Other.md", "Windows.md", "Wrong.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Published.md"]
+                        "unchanged": ["Published.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -997,7 +1007,8 @@
                         "new": [],
                         "technicalUpdates": ["Note.md"],
                         "toRemove": [],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1046,7 +1057,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Edited.md", "Note.md"]
+                        "unchanged": ["Edited.md", "Note.md"],
+                        "behind": 0
                     }
                 }
             ]
@@ -1075,7 +1087,8 @@
                         "new": ["Nested.md", "Open.md", "Other.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1121,7 +1134,8 @@
                         "new": ["Other.md"],
                         "technicalUpdates": [],
                         "toRemove": ["Nested.md", "Open.md"],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1173,7 +1187,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Other.md"]
+                        "unchanged": ["Other.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -1279,7 +1294,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1424,7 +1440,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md"],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1448,7 +1465,8 @@
                         "new": ["Marked.md"],
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md"],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1562,7 +1580,8 @@
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Hub.md", "Leaf.md"]
+                        "unchanged": ["Hub.md", "Leaf.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -1596,7 +1615,8 @@
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": [],
-                        "unchanged": ["Leaf.md"]
+                        "unchanged": ["Leaf.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -1643,7 +1663,8 @@
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Hub.md", "Leaf.md"]
+                        "unchanged": ["Hub.md", "Leaf.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -1667,7 +1688,8 @@
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": ["Leaf.md"],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1745,7 +1767,8 @@
                         "new": ["Block.md", "Flow.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": []
+                        "unchanged": [],
+                        "behind": 0
                     }
                 },
                 {
@@ -1807,7 +1830,8 @@
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Block.md", "Flow.md"]
+                        "unchanged": ["Block.md", "Flow.md"],
+                        "behind": 0
                     }
                 },
                 {
@@ -1837,8 +1861,8 @@
             "name": "byte order marks",
             "denyList": [],
             "vault": {
-                "Two.md": "\ufeff\ufeff---\npublic_note: true\n---\nText\n",
-                "Mid.md": "---\npublic_note: true\n---\n\ufeff---\ntags: a\n---\nBody\n"
+                "Two.md": "﻿﻿---\npublic_note: true\n---\nText\n",
+                "Mid.md": "---\npublic_note: true\n---\n﻿---\ntags: a\n---\nBody\n"
             },
             "steps": [
                 {
@@ -1866,8 +1890,8 @@
                     "do": "expect",
                     "why": "the cleaned note has no byte order mark. The two lines of the properties stay, because the text below them starts with a mark and would else be read as properties",
                     "vault": {
-                        "Two.md": "\ufeff\ufeff---\npublic_note: true\n---\nText\n",
-                        "Mid.md": "---\n---\n\ufeff---\ntags: a\n---\nBody\n"
+                        "Two.md": "﻿﻿---\npublic_note: true\n---\nText\n",
+                        "Mid.md": "---\n---\n﻿---\ntags: a\n---\nBody\n"
                     },
                     "store": {
                         "notes/Two.md": "Text\n"
@@ -1887,7 +1911,8 @@
                         "new": ["Mid.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
-                        "unchanged": ["Two.md"]
+                        "unchanged": ["Two.md"],
+                        "behind": 0
                     }
                 }
             ]

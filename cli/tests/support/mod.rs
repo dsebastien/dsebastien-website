@@ -98,6 +98,27 @@ impl TestStores {
         &self.content_store
     }
 
+    /// Makes the content store refuse every push, as when another device
+    /// pushes between the fetch of a publication and its push. A test of a
+    /// refused push cannot let another device push first: the fetch of the
+    /// publication would see it, and stop the run before the push.
+    pub fn refuse_pushes(&self) {
+        let hooks = self.content_store.join("hooks");
+        fs::create_dir_all(&hooks).expect("the folder can be made");
+        let hook = hooks.join("pre-receive");
+        fs::write(
+            &hook,
+            "#!/bin/sh\necho \"another device pushed first\" >&2\nexit 1\n",
+        )
+        .expect("the hook is written");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755))
+                .expect("the hook can run");
+        }
+    }
+
     /// An empty folder that stands for the object storage.
     pub fn attachment_storage(&self) -> &Path {
         &self.attachment_storage

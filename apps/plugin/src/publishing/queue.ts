@@ -15,7 +15,17 @@ import type { Vault } from './ports.ts'
 
 /** The four lists of the queue, as vault paths. Each list is sorted by path. */
 // A type alias, not an interface: the canonical form takes any object of data.
-export type PublicationQueue = {
+/** The publication queue that `status` gives: the four lists, and how far the copy is behind. */
+export type PublicationQueue = QueueLists & {
+    /**
+     * The number of commits of the content store, at the last fetch, that the
+     * copy does not have. A copy that is behind reads an older manifest.
+     */
+    readonly behind: number
+}
+
+/** The four lists of the queue. */
+export type QueueLists = {
     /** The published notes whose content in the vault is not the published content. */
     readonly changed: readonly string[]
     readonly counts: {
@@ -46,7 +56,7 @@ export interface ScannedNote {
 
 /** The result of one scan of the vault against the manifest. */
 export interface Scan {
-    readonly queue: PublicationQueue
+    readonly queue: QueueLists
     /** Every note of the scan, by its vault path. */
     readonly notes: ReadonlyMap<string, ScannedNote>
     /** The notes of the scan that the ignore property excludes. */
@@ -198,7 +208,7 @@ export async function computeQueue(input: {
             lists.new.push(path)
         }
     }
-    const queue: PublicationQueue = {
+    const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
         counts: {
             changed: lists.changed.length,

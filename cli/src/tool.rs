@@ -96,13 +96,23 @@ struct DeviceState {
 }
 
 /// Checks the content store, reads the configuration and the manifest, and
-/// scans the vault.
-fn read_state(device: &Device) -> Result<DeviceState, String> {
-    device.store.verify()?;
+/// scans the vault. With `fetch` (for `plan` and `publish`), it fetches the
+/// content store first and stops when the copy is behind it: a copy that did
+/// not pull reads an older manifest, and a note that came under a guard since
+/// would stay live (issue 70).
+fn read_state(device: &Device, fetch: bool) -> Result<DeviceState, String> {
+    let behind = device.store.verify(fetch)?;
+    if fetch && behind > 0 {
+        return Err(format!(
+            "the copy of the content store is {behind} commit(s) behind the content store: another device published since the last pull. Nothing can be planned or published until the copy is up to date: pull first (git pull --ff-only origin main)"
+        ));
+    }
     let (configuration, configuration_hash) = read_configuration(device)?;
     let manifest = read_manifest(&device.store)?;
+    let mut scan = compute_queue(&device.vault, manifest, configuration)?;
+    scan.queue.behind = behind;
     Ok(DeviceState {
-        scan: compute_queue(&device.vault, manifest, configuration)?,
+        scan,
         configuration_hash,
     })
 }
@@ -116,7 +126,7 @@ fn read_state(device: &Device) -> Result<DeviceState, String> {
 /// The content store, the configuration or the manifest cannot be trusted, or
 /// a note cannot be read.
 pub fn status(device: &Device) -> Result<String, String> {
-    canonical(&to_value(&read_state(device)?.scan.queue)?)
+    canonical(&to_value(&read_state(device, false)?.scan.queue)?)
 }
 
 /// The source, the cleaned note and the links of one note of a plan.
@@ -143,7 +153,7 @@ fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String
     let DeviceState {
         scan,
         configuration_hash,
-    } = read_state(device)?;
+    } = read_state(device, true)?;
     let plan = compute_plan(&scan, selection)?;
     let mut texts = BTreeMap::new();
     for path in plan.publish().iter().chain(plan.update()) {

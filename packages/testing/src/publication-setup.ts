@@ -1,5 +1,5 @@
-import { cp } from 'node:fs/promises'
-import { join } from 'node:path'
+import { chmod, cp, mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { FIXTURE_CONFIGURATION, FIXTURE_VAULT } from './fixture-vault.ts'
 import { gitEnvironment, type TestStores } from './test-stores.ts'
 
@@ -47,4 +47,17 @@ export async function makeContentStoreCopy(stores: TestStores, name = 'copy'): P
     await git(copy, 'commit', '--quiet', '--message', 'Add the configuration of the fixture vault')
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
     return copy
+}
+
+/**
+ * Makes the content store refuse every push, as when another device pushes
+ * between the fetch of a publication and its push. A test of a refused push
+ * cannot let another device push first: the fetch of the publication would
+ * see it, and stop the run before the push.
+ */
+export async function refusePushes(contentStore: string): Promise<void> {
+    const hook = join(contentStore, 'hooks', 'pre-receive')
+    await mkdir(dirname(hook), { recursive: true })
+    await writeFile(hook, '#!/bin/sh\necho "another device pushed first" >&2\nexit 1\n')
+    await chmod(hook, 0o755)
 }

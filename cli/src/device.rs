@@ -188,7 +188,7 @@ impl ContentStore {
     /// The folder is not the root of its own git repository: git would else
     /// work on the repository that holds the folder. Or the copy has commits
     /// that the content store does not have.
-    pub fn verify(&self) -> Result<(), String> {
+    pub fn verify(&self, fetch: bool) -> Result<u64, String> {
         let top = self.git_output(&["rev-parse", "--show-toplevel"]).ok();
         let same = top.is_some_and(|top| {
             match (fs::canonicalize(top.trim()), fs::canonicalize(&self.folder)) {
@@ -202,13 +202,61 @@ impl ContentStore {
                 self.folder.display()
             ));
         }
-        self.check_history()?;
-        self.check_files()
+        if fetch {
+            self.git_output(&["fetch", "--quiet", "origin"]).map_err(|error| {
+                format!(
+                    "the content store cannot be reached (git fetch origin failed: {}). A plan and a publication fetch it first, so that a copy that is behind is never used: {}",
+                    error.trim(),
+                    self.folder.display()
+                )
+            })?;
+        }
+        // How far the copy is behind the content store, at the last fetch.
+        let exists = |name: &str| {
+            self.git_output(&["rev-parse", "--verify", "--quiet", name])
+                .is_ok()
+        };
+        let has_main = exists("refs/remotes/origin/main");
+        let has_head = exists("HEAD");
+        // A copy with no branch of its own that leads to a commit (a clone of
+        // a content store that had no branch yet, or a copy made with git
+        // init) has no commit ahead. An orphan branch in a copy with commits
+        // is not such a copy.
+        let no_commit = !has_head
+            && self
+                .git_output(&[
+                    "for-each-ref",
+                    "--count=1",
+                    "--format=%(refname)",
+                    "refs/heads",
+                ])
+                .is_ok_and(|refs| refs.trim().is_empty());
+        let behind = if has_main {
+            let range = if has_head {
+                "HEAD..refs/remotes/origin/main"
+            } else {
+                "refs/remotes/origin/main"
+            };
+            self.git_output(&["rev-list", "--count", range])?
+                .trim()
+                .parse::<u64>()
+                .map_err(|error| format!("git gave no count of commits: {error}"))?
+        } else {
+            0
+        };
+        self.check_history(has_main, no_commit)?;
+        self.check_files()?;
+        Ok(behind)
     }
 
     /// `Err` when the copy has commits that no branch of the content store
     /// has.
-    fn check_history(&self) -> Result<(), String> {
+    fn check_history(&self, has_main: bool, no_commit: bool) -> Result<(), String> {
+        // A copy with no commit, of a content store with a branch, has no
+        // commit ahead: it is behind.
+        if no_commit && has_main {
+            return Ok(());
+        }
         // A commit that a failed publication could not take back would be
         // pushed by the next one, also for a note that came under a guard. A
         // commit that a branch of the content store has is not ahead.
@@ -226,9 +274,7 @@ impl ContentStore {
                 if self
                     .git_output(&["symbolic-ref", "--quiet", "HEAD"])
                     .is_ok()
-                    && self
-                        .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
-                        .is_err()
+                    && no_commit
                     && self
                         .git_output(&["for-each-ref", "--count=1", "refs/remotes/origin"])
                         .is_ok_and(|refs| refs.trim().is_empty()) =>

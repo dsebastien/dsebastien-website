@@ -145,7 +145,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - `cli/`: the Rust command line program of the publishing tool, a member of the Cargo workspace at the root (`Cargo.toml`). It holds the Rust implementation of the publishing logic.
 - `parity/`: the parity tests. They run both implementations and compare their output byte by byte.
 - `packages/`: TypeScript code that more than one app uses. Each package is a Bun workspace.
-    - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, `makeTestStores()`, and for a test of a publication `copyFixtureVault()` and `makeContentStoreCopy()`.
+    - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, `makeTestStores()`, and for a test of a publication `copyFixtureVault()`, `makeContentStoreCopy()` and `refusePushes()` (a content store that refuses every push: `plan` and `publish` fetch first, so a push of another device before the run stops it before its push).
     - `packages/resolver/`: the URL function and the resolver, in plain TypeScript. The build, the plain server and later the edge use them. No other code writes or reads a URL of a note.
 - `fixtures/`: the test data, invented. It is at the root because no implementation owns it: the TypeScript tests and the Rust tests read the same files.
     - `fixtures/vault/`: the fixture vault.

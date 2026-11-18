@@ -7,6 +7,7 @@ import {
     gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
+    refusePushes,
     rejectionOf,
     type TestStores
 } from '@dsebastien-website/testing'
@@ -1167,8 +1168,7 @@ describe('commit that fails', () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         const planned = await plan(setup.device, { include: [NOTE] })
-        const other = await makeContentStoreCopyOf(stores, 'other-device')
-        await pushToStore(other, { 'other.txt': 'Pushed first\n' })
+        await refusePushes(stores.contentStore)
         await writeFile(join(setup.copy, 'README.md'), 'Staged\n')
         await git(setup.copy, 'add', 'README.md')
         const head = await git(setup.copy, 'rev-parse', 'HEAD')
@@ -1267,10 +1267,10 @@ describe('commit that fails', () => {
         expect((await status(setup.device)).new).toContain(NOTE)
     })
 
-    // Another device published first into an empty content store: the push
-    // is refused, and the copy must then take the publication of the other
-    // device with a plain pull.
-    test('a refused first publication leaves a copy that can pull', async () => {
+    // Another device published first into an empty content store: the
+    // publication stops before its push, and the copy must then take the
+    // publication of the other device with a plain pull.
+    test('a first publication after another device stops, and the copy can pull', async () => {
         await using stores = await makeTestStores()
         const vault = await copyFixtureVault(stores)
         const first = await makeContentStoreCopyOf(stores, 'first')
@@ -1280,10 +1280,9 @@ describe('commit that fails', () => {
         const planned = await plan(secondDevice, { include: ['Welcome.md'] })
         await publish(firstDevice, (await plan(firstDevice, { include: ['Welcome.md'] })).id, RUN)
 
-        // Another time: else both commits are the same bytes, and git has nothing to refuse.
         expect(
             await rejectionOf(publish(secondDevice, planned.id, { ...RUN, time: LATER }))
-        ).toContain('refused')
+        ).toContain('git pull --ff-only')
 
         await git(second, 'pull', '--quiet', '--ff-only', 'origin', 'main')
         expect((await status(secondDevice)).unchanged).toEqual(['Welcome.md'])
@@ -1456,9 +1455,8 @@ describe('correction of the state property', () => {
         const published = await Bun.file(join(setup.copy, 'notes', NOTE)).text()
         await append(join(setup.vault, NOTE), EDIT)
         const planned = await plan(setup.device, { include: [SECOND], remove: ['Welcome.md'] })
-        // Another device pushes first. The copy of this device does not know it.
-        const other = await makeContentStoreCopyOf(stores, 'other')
-        await pushToStore(other, { 'elsewhere.txt': 'A change of another device\n' })
+        // Another device pushes between the fetch and the push of this one.
+        await refusePushes(stores.contentStore)
         const before = {
             vault: await picture(setup.vault),
             head: await git(setup.copy, 'rev-parse', 'HEAD')
@@ -1726,5 +1724,79 @@ describe('forced removal', () => {
         expect(await picture(setup.vault)).toEqual(before.vault)
         // Both notes still wait for their removal.
         expect((await status(setup.device)).toRemove).toEqual([SECOND, NOTE])
+    })
+})
+
+// Each device has its own copy of the content store (issue 70). A copy that
+// did not pull reads an older manifest: a note that came under a guard since
+// would stay live. So `plan` and `publish` fetch first and stop when the copy
+// is behind, and `status` stays offline and says how far behind the last
+// fetch is.
+describe('copy that is behind the content store', () => {
+    test('stops plan and publish until the pull, and the plan then holds the forced removal', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const first = await makeContentStoreCopyOf(stores, 'first')
+        const second = await makeContentStoreCopyOf(stores, 'second')
+        const firstDevice = nodeDevice({ vault, contentStore: first })
+        const secondDevice = nodeDevice({ vault, contentStore: second })
+        const waiting = await plan(secondDevice, { include: ['Welcome.md'] })
+        await publish(firstDevice, (await plan(firstDevice, { include: [NOTE] })).id, RUN)
+        await writeFile(
+            join(vault, NOTE),
+            '---\npublish_ignore: true\n---\nA text that must never go out\n'
+        )
+
+        // Offline: the second copy knows nothing of the publication yet.
+        expect((await status(secondDevice)).behind).toBe(0)
+        const planned = await rejectionOf(plan(secondDevice, { include: ['Welcome.md'] }))
+        expect(planned).toContain('behind')
+        expect(planned).toContain('git pull --ff-only')
+        expect(await rejectionOf(publish(secondDevice, waiting.id, RUN))).toContain(
+            'git pull --ff-only'
+        )
+        // The fetch of the plan is the last fetch now.
+        expect((await status(secondDevice)).behind).toBe(1)
+
+        await git(second, 'pull', '--quiet', '--ff-only', 'origin', 'main')
+
+        expect((await status(secondDevice)).behind).toBe(0)
+        expect((await plan(secondDevice, { include: [] })).plan.forcedRemove).toEqual([NOTE])
+    })
+
+    test('a copy that never fetched stops plan until the pull', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const first = await makeContentStoreCopyOf(stores, 'first')
+        await publish(
+            nodeDevice({ vault, contentStore: first }),
+            (await plan(nodeDevice({ vault, contentStore: first }), { include: [NOTE] })).id,
+            RUN
+        )
+        const fresh = join(stores.root, 'fresh')
+        await mkdir(fresh)
+        await git(fresh, 'init', '--quiet', '--initial-branch=main')
+        await git(fresh, 'remote', 'add', 'origin', stores.contentStore)
+        const device = nodeDevice({ vault, contentStore: fresh })
+
+        expect(await rejectionOf(plan(device, { include: ['Welcome.md'] }))).toContain(
+            'git pull --ff-only origin main'
+        )
+
+        await git(fresh, 'pull', '--quiet', '--ff-only', 'origin', 'main')
+        expect((await status(device)).unchanged).toEqual([NOTE])
+    })
+
+    test('status needs no network, and plan stops when the content store cannot be reached', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE] })
+        await rename(stores.contentStore, `${stores.contentStore}.away`)
+
+        expect((await status(setup.device)).unchanged).toEqual([NOTE])
+        expect(await rejectionOf(plan(setup.device, { include: [SECOND] }))).toContain(
+            'cannot be reached'
+        )
+        await rename(`${stores.contentStore}.away`, stores.contentStore)
     })
 })

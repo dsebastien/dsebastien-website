@@ -128,16 +128,30 @@ async function manifestHash(device: Device): Promise<string> {
 interface State {
     readonly scan: Scan
     readonly configurationHash: string
+    /** The number of commits of the content store, at the last fetch, that the copy does not have. */
+    readonly behind: number
 }
 
-/** Checks the content store, reads the configuration and the manifest, and scans the vault. */
-async function readState(device: Device): Promise<State> {
-    await device.store.verify()
+/**
+ * Checks the content store, reads the configuration and the manifest, and
+ * scans the vault. With `fetch` (for `plan` and `publish`), it fetches the
+ * content store first and stops when the copy is behind it: a copy that did
+ * not pull reads an older manifest, and a note that came under a guard since
+ * would stay live (issue 70).
+ */
+async function readState(device: Device, fetch: boolean): Promise<State> {
+    const behind = await device.store.verify(fetch)
+    if (fetch && behind > 0) {
+        throw new Error(
+            `the copy of the content store is ${String(behind)} commit(s) behind the content store: another device published since the last pull. Nothing can be planned or published until the copy is up to date: pull first (git pull --ff-only origin main)`
+        )
+    }
     const { configuration, hash } = await readConfiguration(device)
     const manifest = await readManifest(device.store)
     return {
         scan: await computeQueue({ vault: device.vault, manifest, configuration }),
-        configurationHash: hash
+        configurationHash: hash,
+        behind
     }
 }
 
@@ -151,7 +165,8 @@ function forRun(device: Device): Device {
  * writes nothing into the vault and nothing into the content store.
  */
 export async function status(device: Device): Promise<PublicationQueue> {
-    return (await readState(forRun(device))).scan.queue
+    const state = await readState(forRun(device), false)
+    return { ...state.scan.queue, behind: state.behind }
 }
 
 /** The source, the cleaned note and the links of one note of a plan. */
@@ -176,7 +191,7 @@ interface Computed {
  * and the state that the plan was computed from, in the canonical form.
  */
 async function recordFor(device: Device, selection: NormalSelection): Promise<Computed> {
-    const { scan, configurationHash } = await readState(device)
+    const { scan, configurationHash } = await readState(device, true)
     const plan = computePlan(scan, selection)
     const texts = new Map<string, NoteTexts>()
     const notes: {

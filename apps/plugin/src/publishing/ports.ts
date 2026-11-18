@@ -42,8 +42,12 @@ export interface ContentStore {
      * Throws when the folder is not the root of its own git repository, or
      * when the copy has commits that the content store does not have: a
      * publication that git could not take back would else be pushed later.
+     * With `fetch`, it fetches the content store first, and throws when the
+     * content store cannot be reached. It gives the number of commits of the
+     * branch `main` of the content store, at the last fetch, that the copy
+     * does not have.
      */
-    verify(): Promise<void>
+    verify(fetch: boolean): Promise<number>
     /**
      * The text of a file, by its path in the content store. `undefined` only
      * when there is no such file. It throws when the file cannot be read or is

@@ -360,7 +360,7 @@ fn the_status_of_an_empty_vault_is_the_empty_queue() {
     assert_eq!(errors_of(&output), "");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"new\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": []\n}\n"
+        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"new\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": []\n}\n"
     );
 }
 
@@ -667,11 +667,11 @@ fn a_copy_that_converts_line_ends_is_the_copy_of_its_last_commit() {
     assert_eq!(paths(&setup.status()["unchanged"]), [NOTE]);
 }
 
-/// Another device published first into an empty content store: the push is
-/// refused, and the copy must then take the publication of the other device
-/// with a plain pull.
+/// Another device published first into an empty content store: the
+/// publication stops before its push, and the copy must then take the
+/// publication of the other device with a plain pull.
 #[test]
-fn a_refused_first_publication_leaves_a_copy_that_can_pull() {
+fn a_first_publication_after_another_device_stops_and_the_copy_can_pull() {
     let setup = copy_with_no_commit();
     let first = setup.stores.root().join("first");
     git(&[
@@ -699,7 +699,7 @@ fn a_refused_first_publication_leaves_a_copy_that_can_pull() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        errors_of(&output).contains("refused"),
+        errors_of(&output).contains("git pull --ff-only"),
         "{}",
         errors_of(&output)
     );
@@ -1381,21 +1381,7 @@ fn a_commit_that_fails_keeps_the_other_staged_work_of_the_copy() {
 fn a_refused_push_keeps_the_other_staged_work_of_the_copy() {
     let setup = Setup::fixture();
     let id = setup.plan_id(&json!({ "include": [NOTE] }));
-    let other = setup.stores.root().join("other-device");
-    git(&[
-        "clone",
-        "--quiet",
-        text(setup.stores.content_store()),
-        text(&other),
-    ]);
-    for (key, value) in [
-        ("user.name", "Other"),
-        ("user.email", "other@example.invalid"),
-        ("commit.gpgsign", "false"),
-    ] {
-        git(&["-C", text(&other), "config", key, value]);
-    }
-    push_to_store(&other, &json!({ "other.txt": "Pushed first\n" }));
+    setup.stores.refuse_pushes();
     fs::write(setup.copy.join("README.md"), "Staged\n").expect("the file is written");
     setup.git(&["add", "README.md"]);
     let head = setup.git(&["rev-parse", "HEAD"]);
@@ -1974,25 +1960,8 @@ fn a_refused_push_of_an_update_puts_the_copy_back_and_corrects_nothing() {
     let published = read(&setup.copy.join("notes").join(NOTE));
     append(&setup.vault.join(NOTE), EDIT);
     let id = setup.plan_id(&json!({ "include": [SECOND], "remove": ["Welcome.md"] }));
-    // Another device pushes first. The copy of this device does not know it.
-    let other = setup.stores.root().join("other");
-    git(&[
-        "clone",
-        "--quiet",
-        text(setup.stores.content_store()),
-        text(&other),
-    ]);
-    for (key, value) in [
-        ("user.name", "Other"),
-        ("user.email", "other@example.invalid"),
-        ("commit.gpgsign", "false"),
-    ] {
-        git(&["-C", text(&other), "config", key, value]);
-    }
-    push_to_store(
-        &other,
-        &json!({ "elsewhere.txt": "A change of another device\n" }),
-    );
+    // Another device pushes between the fetch and the push of this one.
+    setup.stores.refuse_pushes();
     let before = (picture(&setup.vault), setup.git(&["rev-parse", "HEAD"]));
 
     let output = setup.publish_plan(&id, LATER);
@@ -2320,4 +2289,130 @@ fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put
     assert_eq!(picture(&setup.vault), before.0);
     // Both notes still wait for their removal.
     assert_eq!(paths(&setup.status()["toRemove"]), [SECOND, NOTE]);
+}
+
+/// Another device of the same author: a clone of the content store of the
+/// setup, with the same vault.
+fn other_device(setup: &Setup, name: &str) -> Setup {
+    let copy = setup.stores.root().join(name);
+    git(&[
+        "clone",
+        "--quiet",
+        text(setup.stores.content_store()),
+        text(&copy),
+    ]);
+    for (key, value) in [
+        ("user.name", "Other"),
+        ("user.email", "other@example.invalid"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(&["-C", text(&copy), "config", key, value]);
+    }
+    Setup {
+        stores: TestStores::new(),
+        vault: setup.vault.clone(),
+        copy,
+    }
+}
+
+/// Each device has its own copy of the content store (issue 70). A copy that
+/// did not pull reads an older manifest: a note that came under a guard since
+/// would stay live. So `plan` and `publish` fetch first and stop when the copy
+/// is behind, and `status` stays offline and says how far behind the last
+/// fetch is.
+#[test]
+fn a_copy_that_is_behind_stops_plan_and_publish_until_the_pull() {
+    let second = copy_with_no_commit();
+    let first = other_device(&second, "first");
+    let waiting = second.plan_id(&json!({ "include": ["Welcome.md"] }));
+    first.publish(&json!({ "include": [NOTE] }), TIME);
+    fs::write(
+        second.vault.join(NOTE),
+        "---\npublish_ignore: true\n---\nA text that must never go out\n",
+    )
+    .expect("the note is written");
+
+    // Offline: the second copy knows nothing of the publication yet.
+    assert_eq!(second.status()["behind"], 0);
+    let output = second.plan(&json!({ "include": ["Welcome.md"] }));
+    assert_eq!(output.status.code(), Some(1));
+    let message = errors_of(&output);
+    assert!(message.contains("behind"), "{message}");
+    assert!(message.contains("git pull --ff-only"), "{message}");
+    let output = second.publish_plan(&waiting, TIME);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("git pull --ff-only"),
+        "{}",
+        errors_of(&output)
+    );
+    // The fetch of the plan is the last fetch now.
+    assert_eq!(second.status()["behind"], 1);
+
+    second.git(&["pull", "--quiet", "--ff-only", "origin", "main"]);
+
+    assert_eq!(second.status()["behind"], 0);
+    let output = second.plan(&json!({}));
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(paths(&json_of(&output)["plan"]["forcedRemove"]), [NOTE]);
+}
+
+#[test]
+fn a_copy_that_never_fetched_stops_plan_until_the_pull() {
+    let setup = copy_with_no_commit();
+    setup.publish(&json!({ "include": [NOTE] }), TIME);
+    let fresh = setup.stores.root().join("fresh");
+    fs::create_dir(&fresh).expect("the folder can be made");
+    git(&[
+        "-C",
+        text(&fresh),
+        "init",
+        "--quiet",
+        "--initial-branch=main",
+    ]);
+    git(&[
+        "-C",
+        text(&fresh),
+        "remote",
+        "add",
+        "origin",
+        text(setup.stores.content_store()),
+    ]);
+    let device = Setup {
+        stores: TestStores::new(),
+        vault: setup.vault.clone(),
+        copy: fresh,
+    };
+
+    let output = device.plan(&json!({ "include": ["Welcome.md"] }));
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("git pull --ff-only origin main"),
+        "{}",
+        errors_of(&output)
+    );
+    device.git(&["pull", "--quiet", "--ff-only", "origin", "main"]);
+    assert_eq!(paths(&device.status()["unchanged"]), [NOTE]);
+}
+
+#[test]
+fn status_needs_no_network_and_plan_stops_when_the_content_store_cannot_be_reached() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE] }), TIME);
+    let store = setup.stores.content_store().to_path_buf();
+    let away = store.with_extension("away");
+    fs::rename(&store, &away).expect("the store can be moved");
+
+    let queue = setup.status();
+    let output = setup.plan(&json!({ "include": [SECOND] }));
+    fs::rename(&away, &store).expect("the store can be moved back");
+
+    assert_eq!(paths(&queue["unchanged"]), [NOTE]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("cannot be reached"),
+        "{}",
+        errors_of(&output)
+    );
 }

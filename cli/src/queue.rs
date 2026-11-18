@@ -27,9 +27,13 @@ pub struct Counts {
 }
 
 /// The four lists of the queue, as vault paths. Each list is sorted by path.
+/// `status` also says how far the copy is behind the content store.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicationQueue {
+    /// The number of commits of the content store, at the last fetch, that
+    /// the copy does not have. A copy that is behind reads an older manifest.
+    pub behind: u64,
     /// The published notes whose content in the vault is not the published
     /// content.
     pub changed: Vec<String>,
@@ -211,6 +215,7 @@ pub fn compute_queue(
         resolve_links(link_paths, path, &index, &guarded)
     };
     let mut queue = PublicationQueue {
+        behind: 0,
         changed: Vec::new(),
         counts: Counts {
             changed: 0,
