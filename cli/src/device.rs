@@ -158,14 +158,49 @@ impl ContentStore {
         }
     }
 
+    /// `Err` when a part of the path in the copy is a symbolic link. A link
+    /// is not a file of the store: it could lead out of the copy, or to
+    /// nothing, and a configuration that leads nowhere would be read as none.
+    fn refuse_links(&self, path: &str) -> Result<(), String> {
+        let mut part = String::new();
+        for name in path.split('/') {
+            if !part.is_empty() {
+                part.push('/');
+            }
+            part.push_str(name);
+            match fs::symlink_metadata(self.folder.join(&part)) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(format!(
+                        "{part} of the content store is a symbolic link: the tool follows no link in the copy"
+                    ));
+                }
+                Ok(_) => {}
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) =>
+                {
+                    return Ok(());
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "{part} of the content store cannot be read: {}",
+                        error.kind()
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The text of a file, by its path in the content store. `Ok(None)` only
     /// when there is no such file.
     ///
     /// # Errors
     ///
     /// The file cannot be read or is not valid UTF-8: a file that cannot be
-    /// read is never taken for a missing one.
+    /// read is never taken for a missing one. A part of the path is a
+    /// symbolic link.
     pub fn read(&self, path: &str) -> Result<Option<String>, String> {
+        self.refuse_links(path)?;
         let bytes = match fs::read(self.folder.join(path)) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
@@ -181,13 +216,25 @@ impl ContentStore {
             .map_err(|_| format!("{path} of the content store is not valid UTF-8"))
     }
 
-    /// The files below a folder, as paths in the content store, in the order
-    /// of the code points.
-    pub fn list(&self, below: &str) -> Vec<String> {
-        let mut files = Vec::new();
-        collect(&self.folder.join(below), below, &mut files);
+    /// The files of a folder, one level, as paths in the content store, in
+    /// the order of the code points. A folder below it and a symbolic link
+    /// are not in the result.
+    ///
+    /// # Errors
+    ///
+    /// A part of the path of the folder is a symbolic link.
+    pub fn list(&self, folder: &str) -> Result<Vec<String>, String> {
+        self.refuse_links(folder)?;
+        let Ok(entries) = fs::read_dir(self.folder.join(folder)) else {
+            return Ok(Vec::new());
+        };
+        let mut files: Vec<String> = entries
+            .flatten()
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+            .map(|entry| format!("{folder}/{}", entry.file_name().to_string_lossy()))
+            .collect();
         files.sort_unstable();
-        files
+        Ok(files)
     }
 
     /// # Errors
@@ -367,27 +414,6 @@ impl ContentStore {
                 args.first().unwrap_or(&""),
                 String::from_utf8_lossy(&output.stderr).trim()
             ))
-        }
-    }
-}
-
-/// Adds the files below a folder to the list, as paths with `/` on every
-/// system.
-fn collect(folder: &Path, path: &str, files: &mut Vec<String>) {
-    let Ok(entries) = fs::read_dir(folder) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let below = format!("{path}/{name}");
-        // A symbolic link is not a file of the store, as in the vault.
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
-        if kind.is_dir() {
-            collect(&entry.path(), &below, files);
-        } else if kind.is_file() {
-            files.push(below);
         }
     }
 }

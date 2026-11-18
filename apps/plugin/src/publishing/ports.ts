@@ -36,10 +36,15 @@ export interface ContentStore {
      * The text of a file, by its path in the content store. `undefined` only
      * when there is no such file. It throws when the file cannot be read or is
      * not valid UTF-8: a file that cannot be read is never taken for a
-     * missing one.
+     * missing one. It throws when a part of the path is a symbolic link.
      */
     read(path: string): Promise<string | undefined>
-    /** The files below a folder, as paths in the content store, in the order of the code points. */
+    /**
+     * The files of a folder, one level, as paths in the content store, in the
+     * order of the code points. A folder below it and a symbolic link are not
+     * in the result. It throws when a part of the path of the folder is a
+     * symbolic link.
+     */
     list(folder: string): Promise<string[]>
     write(path: string, text: string): Promise<void>
     /** Removes a file. True when the file existed. */

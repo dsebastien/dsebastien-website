@@ -434,6 +434,56 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             expect((await status(setup.device)).counts.unchanged).toBe(0)
         }
     )
+
+    // The manifest has one level: a folder below it is not read.
+    test.skipIf(process.platform === 'win32')(
+        'a symbolic link to a folder in the manifest is not read',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const elsewhere = join(stores.root, 'elsewhere')
+            await mkdir(elsewhere)
+            await writeFile(join(elsewhere, 'x.json'), '{}\n')
+            await mkdir(join(setup.copy, 'manifest'))
+            await symlink(elsewhere, join(setup.copy, 'manifest/sub'))
+
+            expect((await status(setup.device)).counts.unchanged).toBe(0)
+        }
+    )
+
+    // A configuration that is a link could lead to nothing, and be read as no
+    // configuration: the deny list would be empty.
+    test.skipIf(process.platform === 'win32')(
+        'a configuration that is a symbolic link stops the status, also when it leads nowhere',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const file = join(setup.copy, 'configuration.json')
+            const elsewhere = join(stores.root, 'configuration.json')
+            await writeFile(elsewhere, await Bun.file(file).text())
+            await rm(file)
+            await symlink(elsewhere, file)
+
+            expect(await rejectionOf(status(setup.device))).toContain('symbolic link')
+
+            await rm(elsewhere)
+
+            expect(await rejectionOf(status(setup.device))).toContain('symbolic link')
+        }
+    )
+
+    test.skipIf(process.platform === 'win32')(
+        'a manifest folder that is a symbolic link stops the status',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const elsewhere = join(stores.root, 'elsewhere')
+            await mkdir(elsewhere)
+            await symlink(elsewhere, join(setup.copy, 'manifest'))
+
+            expect(await rejectionOf(status(setup.device))).toContain('symbolic link')
+        }
+    )
 })
 
 describe('plan and what it shows', () => {

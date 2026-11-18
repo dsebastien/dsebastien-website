@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, sep } from 'node:path'
+import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { compareCodePoints } from '../order.ts'
 import type { ContentStore, Device, PlanStore, Vault, VaultEntry } from '../ports.ts'
@@ -131,6 +131,33 @@ function gitContentStore(folder: string): ContentStore {
     const gitOnPaths = async (args: readonly string[], paths: readonly string[]): Promise<void> => {
         await gitWith([...args, '--pathspec-from-file=-', '--pathspec-file-nul'], paths.join('\0'))
     }
+    /**
+     * Throws when a part of the path in the copy is a symbolic link. A link is
+     * not a file of the store: it could lead out of the copy, or to nothing,
+     * and a configuration that leads nowhere would be read as none.
+     */
+    const refuseLinks = async (path: string): Promise<void> => {
+        const parts = path.split('/')
+        for (let count = 1; count <= parts.length; count += 1) {
+            const part = parts.slice(0, count).join('/')
+            let stats
+            try {
+                stats = await lstat(join(folder, part))
+            } catch (error) {
+                if (codeOf(error) === 'ENOENT' || codeOf(error) === 'ENOTDIR') {
+                    return
+                }
+                throw new Error(`${part} of the content store cannot be read: ${codeOf(error)}`, {
+                    cause: error
+                })
+            }
+            if (stats.isSymbolicLink()) {
+                throw new Error(
+                    `${part} of the content store is a symbolic link: the tool follows no link in the copy`
+                )
+            }
+        }
+    }
     return {
         async verify() {
             let top: string
@@ -147,6 +174,7 @@ function gitContentStore(folder: string): ContentStore {
             }
         },
         async read(path) {
+            await refuseLinks(path)
             let bytes
             try {
                 bytes = await readFile(join(folder, path))
@@ -180,19 +208,17 @@ function gitContentStore(folder: string): ContentStore {
             }
         },
         async list(below) {
+            await refuseLinks(below)
             let entries
             try {
-                entries = await readdir(join(folder, below), {
-                    recursive: true,
-                    withFileTypes: true
-                })
+                entries = await readdir(join(folder, below), { withFileTypes: true })
             } catch {
                 return []
             }
+            // One level: a folder below is not read. A symbolic link is not a file.
             return entries
                 .filter((entry) => entry.isFile())
-                .map((entry) => relative(folder, join(entry.parentPath, entry.name)))
-                .map((path) => path.split(sep).join('/'))
+                .map((entry) => `${below}/${entry.name}`)
                 .sort(compareCodePoints)
         },
         async commitAndPush(message, paths) {

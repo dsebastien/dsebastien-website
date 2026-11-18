@@ -166,7 +166,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
 /// have the name of its entry, or two entries have the same path.
 pub fn read_manifest(store: &ContentStore) -> Result<BTreeMap<String, ManifestEntry>, String> {
     let mut entries = BTreeMap::new();
-    for file in store.list(MANIFEST_FOLDER) {
+    for file in store.list(MANIFEST_FOLDER)? {
         let Some(text) = store.read(&file)? else {
             continue;
         };

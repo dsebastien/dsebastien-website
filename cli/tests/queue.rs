@@ -563,6 +563,70 @@ fn a_symbolic_link_in_the_manifest_is_not_a_file_of_the_store() {
     assert_eq!(setup.status()["counts"]["unchanged"], 0);
 }
 
+/// The manifest has one level: a folder below it is not read.
+#[cfg(unix)]
+#[test]
+fn a_symbolic_link_to_a_folder_in_the_manifest_is_not_read() {
+    let setup = Setup::fixture();
+    let elsewhere = setup.stores.root().join("elsewhere");
+    fs::create_dir(&elsewhere).expect("the folder can be made");
+    fs::write(elsewhere.join("x.json"), "{}\n").expect("the file is written");
+    fs::create_dir(setup.copy.join("manifest")).expect("the folder can be made");
+    std::os::unix::fs::symlink(&elsewhere, setup.copy.join("manifest").join("sub"))
+        .expect("the link can be made");
+
+    assert_eq!(setup.status()["counts"]["unchanged"], 0);
+}
+
+/// A configuration that is a link could lead to nothing, and be read as no
+/// configuration: the deny list would be empty.
+#[cfg(unix)]
+#[test]
+fn a_configuration_that_is_a_symbolic_link_stops_the_status_also_when_it_leads_nowhere() {
+    let setup = Setup::fixture();
+    let file = setup.copy.join("configuration.json");
+    let elsewhere = setup.stores.root().join("configuration.json");
+    fs::copy(&file, &elsewhere).expect("the file can be copied");
+    fs::remove_file(&file).expect("the file can be removed");
+    std::os::unix::fs::symlink(&elsewhere, &file).expect("the link can be made");
+
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("symbolic link"),
+        "{}",
+        errors_of(&output)
+    );
+
+    fs::remove_file(&elsewhere).expect("the file can be removed");
+
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("symbolic link"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_manifest_folder_that_is_a_symbolic_link_stops_the_status() {
+    let setup = Setup::fixture();
+    let elsewhere = setup.stores.root().join("elsewhere");
+    fs::create_dir(&elsewhere).expect("the folder can be made");
+    std::os::unix::fs::symlink(&elsewhere, setup.copy.join("manifest"))
+        .expect("the link can be made");
+
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("symbolic link"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
 /// The paths go to git on standard input. A file for them was relative to
 /// the folder of the process, but git runs inside the copy.
 #[test]

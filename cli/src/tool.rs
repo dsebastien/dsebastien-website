@@ -81,7 +81,7 @@ fn read_configuration(device: &Device) -> Result<(Configuration, String), String
 /// The hash of the manifest: each file with the hash of its text.
 fn manifest_hash(device: &Device) -> Result<String, String> {
     let mut lines = String::new();
-    for file in device.store.list(MANIFEST_FOLDER) {
+    for file in device.store.list(MANIFEST_FOLDER)? {
         let text = device.store.read(&file)?.unwrap_or_default();
         // Writing to a `String` cannot fail.
         let _ = write!(lines, "{file}\n{}\n", content_hash(&text));
