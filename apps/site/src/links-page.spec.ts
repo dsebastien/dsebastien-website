@@ -39,9 +39,16 @@ const ODD_TEXT = [
     '',
     'A link in a link: [**[[Rain barrel]]**](Rain%20barrel.md).',
     '',
+    'Two definitions of one name: [a note first][n] and [a site first][w].',
+    '',
     // Another link path than the one of the Markdown link above: the tool reads no definition.
     '[b]: 10%20Garden/Rain%20barrel.md',
     '[s]: https://garden.example/',
+    // The first definition of a name wins.
+    '[n]: Seed%20library%20rules.md',
+    '[n]: https://garden.example/second',
+    '[w]: https://garden.example/first',
+    '[w]: Rain%20barrel.md',
     ''
 ].join('\n')
 
@@ -240,6 +247,15 @@ describe('page of a note whose link targets are not published', () => {
             'By reference: <span class="not-published">the barrel</span> and <a href="https://garden.example/">a site</a>.'
         )
         expect(html).not.toContain('Rain%20barrel.md')
+    })
+
+    test('takes the first definition of a reference link, as the Markdown processor does', () => {
+        const html = page(0, ODD)
+        expect(html).toContain(
+            'Two definitions of one name: <span class="not-published">a note first</span> and <a href="https://garden.example/first">a site first</a>.'
+        )
+        expect(html).not.toContain('.md"')
+        expect(html).not.toContain('garden.example/second')
     })
 
     test('reads no link inside the text of a link: the markup stays well formed', () => {

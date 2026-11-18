@@ -29,8 +29,10 @@ type NewNode = { type: 'text'; value: string } | { type: 'html'; value: string }
  * configuration are the same, and it does not see a change of this code.
  * Raise the version with every change of what the plugin writes: the name of
  * the plugin is a part of the configuration, so every note is rendered again.
+ * That holds also for a change of the two functions of the publishing tool
+ * that read a link here (`wikilinksOf`, `linkPathOfDestination`).
  */
-export const MARKUP_VERSION = 2
+export const MARKUP_VERSION = 3
 
 /** The element that stands for a link to a note until the page is made. */
 const MARK = 'note-link'
@@ -97,7 +99,10 @@ export const noteLinks: MarkdownPlugin = {
             for (const child of node.children ?? []) {
                 const item = child as { type: string; identifier?: string; url?: string }
                 if (item.type === 'definition' && item.identifier !== undefined) {
-                    definitions.set(item.identifier, item.url ?? '')
+                    // The first definition of a name wins, as for the Markdown processor.
+                    if (!definitions.has(item.identifier)) {
+                        definitions.set(item.identifier, item.url ?? '')
+                    }
                 } else {
                     read(item)
                 }
