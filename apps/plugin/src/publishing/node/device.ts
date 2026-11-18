@@ -174,25 +174,56 @@ function gitContentStore(folder: string): ContentStore {
             }
             // A commit that a failed publication could not take back would be
             // pushed by the next one, also for a note that came under a guard.
-            let head: string | undefined
+            // A commit that a branch of the content store has is not ahead.
+            let ahead: string
             try {
-                head = await git('rev-parse', '--verify', '--quiet', 'HEAD')
-            } catch {
-                head = undefined
-            }
-            if (head !== undefined) {
-                let ahead: string
+                ahead = await git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin')
+            } catch (error) {
+                // Only a branch with no commit yet has no history to compare.
+                let unborn: boolean
                 try {
-                    await git('rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main')
-                    ahead = await git('rev-list', '--count', 'refs/remotes/origin/main..HEAD')
+                    await git('symbolic-ref', '--quiet', 'HEAD')
+                    unborn = !(await git('rev-parse', '--verify', '--quiet', 'HEAD')
+                        .then(() => true)
+                        .catch(() => false))
                 } catch {
-                    ahead = await git('rev-list', '--count', 'HEAD')
+                    unborn = false
                 }
-                if (ahead !== '0') {
+                if (!unborn) {
                     throw new Error(
-                        `the copy of the content store has ${ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: ${folder}`
+                        `the history of the copy of the content store cannot be read: ${error instanceof Error ? error.message.trim() : 'git failed'}`,
+                        { cause: error }
                     )
                 }
+                ahead = '0'
+            }
+            if (ahead !== '0') {
+                throw new Error(
+                    `the copy of the content store has ${ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: ${folder}`
+                )
+            }
+            // The tool reads the state from the files of the copy. A file of
+            // the manifest or the configuration that git has and the copy does
+            // not would hide a published note or the deny list: a file that
+            // was removed, and a file that git skips (git status shows none).
+            const listing = await gitRaw(
+                'ls-files',
+                '-z',
+                '-t',
+                '--cached',
+                '--deleted',
+                '--',
+                'configuration.json',
+                'manifest'
+            )
+            const missing = listing
+                .split('\0')
+                .filter((entry) => entry.startsWith('R ') || entry.startsWith('S '))
+                .map((entry) => entry.slice(2))
+            if (missing.length > 0) {
+                throw new Error(
+                    `files of the content store are missing from the copy, or git skips them: ${missing.slice(0, 5).join(', ')}. Nothing can be published until the copy is corrected by hand: ${folder}`
+                )
             }
         },
         async read(path) {

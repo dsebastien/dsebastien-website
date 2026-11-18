@@ -472,6 +472,26 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         }
     )
 
+    // A manifest that is missing from the copy would let a published note
+    // under a guard stay live: also a file that git skips, which git status
+    // does not show, and a configuration that is missing.
+    test('a file of the manifest or the configuration that is missing from the copy stops the status', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE] })
+        await git(setup.copy, 'update-index', '--skip-worktree', `manifest/${NOTE_ID}.json`)
+        await rm(join(setup.copy, 'manifest'), { recursive: true })
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+
+        expect(await rejectionOf(status(setup.device))).toContain('missing')
+
+        await git(setup.copy, 'update-index', '--no-skip-worktree', `manifest/${NOTE_ID}.json`)
+        await git(setup.copy, 'checkout', '--', 'manifest')
+        await rm(join(setup.copy, 'configuration.json'))
+
+        expect(await rejectionOf(status(setup.device))).toContain('missing')
+    })
+
     // An empty manifest would let a published note under a guard stay live.
     test('a manifest that cannot be listed stops the status', async () => {
         await using stores = await makeTestStores()
@@ -873,6 +893,47 @@ describe('commit that fails', () => {
             )
         }
     )
+
+    // The same on a first publication: git cannot remove the branch that
+    // the failed publication made, and the content store has no branch yet.
+    test.skipIf(process.platform === 'win32')(
+        'a first commit that git cannot take back stops the next run',
+        async () => {
+            await using stores = await makeTestStores()
+            const vault = await copyFixtureVault(stores)
+            const copy = await makeContentStoreCopyOf(stores, 'copy')
+            const hooks = join(copy, '.git', 'hooks')
+            await mkdir(hooks, { recursive: true })
+            await writeFile(join(hooks, 'post-commit'), '#!/bin/sh\ntouch .git/committed\n')
+            await writeFile(
+                join(hooks, 'reference-transaction'),
+                '#!/bin/sh\nif [ "$1" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n'
+            )
+            await chmod(join(hooks, 'post-commit'), 0o755)
+            await chmod(join(hooks, 'reference-transaction'), 0o755)
+            await git(copy, 'remote', 'set-url', '--push', 'origin', join(stores.root, 'nowhere'))
+            const device = nodeDevice({ vault, contentStore: copy })
+            const planned = await plan(device, { include: ['Welcome.md'] })
+
+            expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('refused')
+
+            await rm(join(hooks, 'reference-transaction'))
+            expect(await rejectionOf(status(device))).toContain('does not have')
+        }
+    )
+
+    // A commit of the copy that the content store has on another branch is
+    // not ahead of the content store.
+    test('a copy whose commits the content store has on another branch can publish', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await pushToStore(setup.copy, { 'README.md': 'A file of another branch\n' })
+        await writeFile(join(setup.copy, 'README.md'), 'A newer text\n')
+        await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'On another branch')
+        await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:other')
+
+        expect((await status(setup.device)).new).toContain(NOTE)
+    })
 
     test('a copy that has no commit takes its first publication', async () => {
         await using stores = await makeTestStores()

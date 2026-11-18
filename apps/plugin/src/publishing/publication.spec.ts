@@ -429,11 +429,23 @@ describe('guards of a plan', () => {
     test('only a content store without a configuration has an empty deny list', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
-        await rm(join(setup.copy, 'configuration.json'))
+        // Removed from the content store too: a file that git has and the
+        // copy does not stops the tool.
+        await git('-C', setup.copy, 'rm', '--quiet', 'configuration.json')
+        await git('-C', setup.copy, 'commit', '--quiet', '--message', 'No configuration')
+        await git('-C', setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
 
         const planned = await plan(setup.device, { include: [DENIED] })
 
         expect(planned.plan.publish).toEqual([DENIED])
+    })
+
+    test('a configuration that is missing from the copy stops the plan', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await rm(join(setup.copy, 'configuration.json'))
+
+        expect(await rejectionOf(plan(setup.device, { include: [DENIED] }))).toContain('missing')
     })
 
     test('a folder that is not the root of its own git repository is not a content store', async () => {

@@ -914,23 +914,11 @@ fn a_refused_push_keeps_the_other_staged_work_of_the_copy() {
 #[cfg(unix)]
 #[test]
 fn a_commit_that_git_cannot_take_back_stops_the_next_run() {
-    use std::os::unix::fs::PermissionsExt;
     let setup = Setup::fixture();
     setup.publish(&json!({ "include": ["Welcome.md"] }), TIME);
     let before = setup.git(&["rev-parse", "HEAD"]);
+    refuse_moves_after_a_commit(&setup.copy);
     let hooks = setup.copy.join(".git").join("hooks");
-    fs::create_dir_all(&hooks).expect("the folder can be made");
-    for (name, script) in [
-        ("post-commit", "#!/bin/sh\ntouch .git/committed\n"),
-        (
-            "reference-transaction",
-            "#!/bin/sh\nif [ \"$1\" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n",
-        ),
-    ] {
-        fs::write(hooks.join(name), script).expect("the hook is written");
-        fs::set_permissions(hooks.join(name), fs::Permissions::from_mode(0o755))
-            .expect("the hook can run");
-    }
     let nowhere = setup.stores.root().join("nowhere");
     setup.git(&["remote", "set-url", "--push", "origin", text(&nowhere)]);
     let id = setup.plan_id(&json!({ "include": [NOTE] }));
@@ -954,6 +942,117 @@ fn a_commit_that_git_cannot_take_back_stops_the_next_run() {
         assert_eq!(output.status.code(), Some(1), "{command}");
         assert!(errors_of(&output).contains("does not have"), "{command}");
     }
+}
+
+/// The hooks that make git refuse to move a branch after the first commit:
+/// they stand for a lock of the reference.
+#[cfg(unix)]
+fn refuse_moves_after_a_commit(copy: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let hooks = copy.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("the folder can be made");
+    for (name, script) in [
+        ("post-commit", "#!/bin/sh\ntouch .git/committed\n"),
+        (
+            "reference-transaction",
+            "#!/bin/sh\nif [ \"$1\" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n",
+        ),
+    ] {
+        fs::write(hooks.join(name), script).expect("the hook is written");
+        fs::set_permissions(hooks.join(name), fs::Permissions::from_mode(0o755))
+            .expect("the hook can run");
+    }
+}
+
+/// The same on a first publication: git cannot remove the branch that the
+/// failed publication made, and the content store has no branch yet.
+#[cfg(unix)]
+#[test]
+fn a_first_commit_that_git_cannot_take_back_stops_the_next_run() {
+    let setup = copy_with_no_commit();
+    refuse_moves_after_a_commit(&setup.copy);
+    let nowhere = setup.stores.root().join("nowhere");
+    setup.git(&["remote", "set-url", "--push", "origin", text(&nowhere)]);
+    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("refused"),
+        "{}",
+        errors_of(&output)
+    );
+    fs::remove_file(
+        setup
+            .copy
+            .join(".git")
+            .join("hooks")
+            .join("reference-transaction"),
+    )
+    .expect("the hook can be removed");
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("does not have"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
+/// A commit of the copy that the content store has on another branch is not
+/// ahead of the content store.
+#[test]
+fn a_copy_whose_commits_the_content_store_has_on_another_branch_can_publish() {
+    let setup = Setup::fixture();
+    push_to_store(
+        &setup.copy,
+        &json!({ "README.md": "A file of another branch\n" }),
+    );
+    fs::write(setup.copy.join("README.md"), "A newer text\n").expect("the file is written");
+    setup.git(&[
+        "commit",
+        "--quiet",
+        "--all",
+        "--message",
+        "On another branch",
+    ]);
+    setup.git(&["push", "--quiet", "origin", "HEAD:other"]);
+
+    assert!(paths(&setup.status()["new"]).contains(&NOTE.to_owned()));
+}
+
+/// A manifest that is missing from the copy would let a published note under
+/// a guard stay live: also a file that git skips, which git status does not
+/// show, and a configuration that is missing.
+#[test]
+fn a_file_of_the_manifest_or_the_configuration_that_is_missing_from_the_copy_stops_the_status() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE] }), TIME);
+    let entry = format!("manifest/{NOTE_ID}.json");
+    setup.git(&["update-index", "--skip-worktree", &entry]);
+    fs::remove_dir_all(setup.copy.join("manifest")).expect("the folder can be removed");
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("missing"),
+        "{}",
+        errors_of(&output)
+    );
+
+    setup.git(&["update-index", "--no-skip-worktree", &entry]);
+    setup.git(&["checkout", "--", "manifest"]);
+    fs::remove_file(setup.copy.join("configuration.json")).expect("the file can be removed");
+
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("missing"),
+        "{}",
+        errors_of(&output)
+    );
 }
 
 /// A clone of a content store that has no commit and no configuration.

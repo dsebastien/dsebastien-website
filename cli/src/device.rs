@@ -156,32 +156,67 @@ impl ContentStore {
             ));
         }
         // A commit that a failed publication could not take back would be
-        // pushed by the next one, also for a note that came under a guard.
-        if self
-            .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
-            .is_err()
-        {
-            return Ok(());
+        // pushed by the next one, also for a note that came under a guard. A
+        // commit that a branch of the content store has is not ahead.
+        let ahead =
+            match self.git_output(&["rev-list", "--count", "HEAD", "--not", "--remotes=origin"]) {
+                Ok(ahead) => ahead.trim().to_owned(),
+                // Only a branch with no commit yet has no history to compare.
+                Err(_)
+                    if self
+                        .git_output(&["symbolic-ref", "--quiet", "HEAD"])
+                        .is_ok()
+                        && self
+                            .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
+                            .is_err() =>
+                {
+                    "0".to_owned()
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "the history of the copy of the content store cannot be read: {error}"
+                    ));
+                }
+            };
+        if ahead != "0" {
+            return Err(format!(
+                "the copy of the content store has {ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: {}",
+                self.folder.display()
+            ));
         }
-        let ahead = if self
-            .git_output(&[
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                "refs/remotes/origin/main",
-            ])
-            .is_ok()
-        {
-            self.git_output(&["rev-list", "--count", "refs/remotes/origin/main..HEAD"])?
-        } else {
-            self.git_output(&["rev-list", "--count", "HEAD"])?
-        };
-        let ahead = ahead.trim();
-        if ahead == "0" {
+        // The tool reads the state from the files of the copy. A file of the
+        // manifest or the configuration that git has and the copy does not
+        // would hide a published note or the deny list: a file that was
+        // removed, and a file that git skips (git status shows none).
+        let listing = self.git_output(&[
+            "ls-files",
+            "-z",
+            "-t",
+            "--cached",
+            "--deleted",
+            "--",
+            "configuration.json",
+            "manifest",
+        ])?;
+        let missing: Vec<&str> = listing
+            .split('\0')
+            .filter_map(|entry| {
+                entry
+                    .strip_prefix("R ")
+                    .or_else(|| entry.strip_prefix("S "))
+            })
+            .collect();
+        if missing.is_empty() {
             Ok(())
         } else {
             Err(format!(
-                "the copy of the content store has {ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: {}",
+                "files of the content store are missing from the copy, or git skips them: {}. Nothing can be published until the copy is corrected by hand: {}",
+                missing
+                    .iter()
+                    .take(5)
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 self.folder.display()
             ))
         }
@@ -268,13 +303,14 @@ impl ContentStore {
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
             Err(error) => return Err(failed(error)),
         };
-        let mut files: Vec<String> = entries
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(failed)?
-            .into_iter()
-            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
-            .map(|entry| format!("{folder}/{}", entry.file_name().to_string_lossy()))
-            .collect();
+        let mut files = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(failed)?;
+            // A file whose kind cannot be read is never taken for no file.
+            if entry.file_type().map_err(failed)?.is_file() {
+                files.push(format!("{folder}/{}", entry.file_name().to_string_lossy()));
+            }
+        }
         files.sort_unstable();
         Ok(files)
     }

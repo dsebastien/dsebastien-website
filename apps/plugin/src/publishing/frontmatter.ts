@@ -51,9 +51,14 @@ function trim(text: string): string {
     return text.slice(start, end)
 }
 
-/** True when the line opens or closes the properties: `---`, then spaces and tabs only. */
+/**
+ * True when the line opens or closes the properties: `---`, then spaces, tabs
+ * and carriage returns only. A carriage return counts so that a line `---`
+ * with two carriage returns before its line feed opens properties for every
+ * reader of the tool, also for the guard: it fails closed.
+ */
 function isFence(line: string): boolean {
-    return line.startsWith('---') && trim(line.slice(3)) === ''
+    return line.startsWith('---') && /^[ \t\r]*$/u.test(line.slice(3))
 }
 
 function read(text: string): Note {

@@ -44,11 +44,13 @@ fn trim(text: &str) -> &str {
     text.trim_matches([' ', '\t'])
 }
 
-/// True when the line opens or closes the properties: `---`, then spaces and
-/// tabs only.
+/// True when the line opens or closes the properties: `---`, then spaces,
+/// tabs and carriage returns only. A carriage return counts so that a line
+/// `---` with two carriage returns before its line feed opens properties for
+/// every reader of the tool, also for the guard: it fails closed.
 fn is_fence(line: &str) -> bool {
     line.strip_prefix("---")
-        .is_some_and(|rest| trim(rest).is_empty())
+        .is_some_and(|rest| rest.trim_matches([' ', '\t', '\r']).is_empty())
 }
 
 fn read(text: &str) -> Note {

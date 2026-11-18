@@ -508,11 +508,31 @@ fn a_configuration_that_is_a_folder_stops_the_plan() {
 #[test]
 fn only_a_content_store_without_a_configuration_has_an_empty_deny_list() {
     let setup = set_up();
-    fs::remove_file(setup.copy.join("configuration.json")).expect("the file can be removed");
+    // Removed from the content store too: a file that git has and the copy
+    // does not stops the tool.
+    let copy = text(&setup.copy);
+    git(&["-C", copy, "rm", "--quiet", "configuration.json"]);
+    git(&[
+        "-C",
+        copy,
+        "commit",
+        "--quiet",
+        "--message",
+        "No configuration",
+    ]);
+    git(&["-C", copy, "push", "--quiet", "origin", "HEAD:main"]);
 
     let output = setup.run("plan", &["--include", DENIED]);
 
     assert!(output.status.success(), "{}", errors_of(&output));
+}
+
+#[test]
+fn a_configuration_that_is_missing_from_the_copy_stops_the_plan() {
+    let setup = set_up();
+    fs::remove_file(setup.copy.join("configuration.json")).expect("the file can be removed");
+
+    setup.refuses(DENIED, "missing");
 }
 
 #[test]
