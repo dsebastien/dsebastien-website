@@ -2426,6 +2426,13 @@ fn a_copy_that_is_behind_stops_plan_and_publish_until_the_pull() {
     );
     // The fetch of the plan is the last fetch now.
     assert_eq!(second.status()["behind"], 1);
+    let output = second.run("status", &[]);
+    assert!(output.status.success());
+    assert!(
+        errors_of(&output).contains("1 commit(s) behind"),
+        "{}",
+        errors_of(&output)
+    );
 
     second.git(&["pull", "--quiet", "--ff-only", "origin", "main"]);
 
@@ -2433,6 +2440,36 @@ fn a_copy_that_is_behind_stops_plan_and_publish_until_the_pull() {
     let output = second.plan(&json!({}));
     assert!(output.status.success(), "{}", errors_of(&output));
     assert_eq!(paths(&json_of(&output)["plan"]["forcedRemove"]), [NOTE]);
+}
+
+/// The fetch names the branch: with the fetch setting of the copy removed or
+/// changed by hand, a plain fetch would leave origin/main as it was.
+#[test]
+fn a_copy_whose_fetch_setting_was_changed_still_stops_plan_and_publish() {
+    for setting in [
+        vec!["config", "--unset", "remote.origin.fetch"],
+        vec![
+            "config",
+            "remote.origin.fetch",
+            "+refs/heads/main:refs/remotes/upstream/main",
+        ],
+    ] {
+        let second = copy_with_no_commit();
+        let first = other_device(&second, "first");
+        first.publish(&json!({ "include": [NOTE] }), TIME);
+        second.git(&["pull", "--quiet", "--ff-only", "origin", "main"]);
+        second.git(&setting);
+        first.publish(&json!({ "include": ["Welcome.md"] }), LATER);
+
+        let output = second.plan(&json!({}));
+
+        assert_eq!(output.status.code(), Some(1), "{setting:?}");
+        assert!(
+            errors_of(&output).contains("git pull --ff-only"),
+            "{setting:?}: {}",
+            errors_of(&output)
+        );
+    }
 }
 
 #[test]

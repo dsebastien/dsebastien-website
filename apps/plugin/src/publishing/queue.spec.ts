@@ -1825,6 +1825,31 @@ describe('copy that is behind the content store', () => {
         expect((await plan(secondDevice, { include: [] })).plan.forcedRemove).toEqual([NOTE])
     })
 
+    // The fetch names the branch: with the fetch setting of the copy removed
+    // or changed by hand, a plain fetch would leave origin/main as it was.
+    test.each([
+        ['removed', ['--unset', 'remote.origin.fetch']],
+        ['changed', ['remote.origin.fetch', '+refs/heads/main:refs/remotes/upstream/main']]
+    ])('a copy whose fetch setting was %s still stops plan and publish', async (_case, setting) => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const first = await makeContentStoreCopyOf(stores, 'first')
+        const second = await makeContentStoreCopyOf(stores, 'second')
+        const firstDevice = nodeDevice({ vault, contentStore: first })
+        const secondDevice = nodeDevice({ vault, contentStore: second })
+        await publish(firstDevice, (await plan(firstDevice, { include: [NOTE] })).id, RUN)
+        await git(second, 'pull', '--quiet', '--ff-only', 'origin', 'main')
+        await git(second, 'config', ...setting)
+        await publish(firstDevice, (await plan(firstDevice, { include: ['Welcome.md'] })).id, {
+            ...RUN,
+            time: LATER
+        })
+
+        expect(await rejectionOf(plan(secondDevice, { include: [] }))).toContain(
+            'git pull --ff-only'
+        )
+    })
+
     test('a copy that never fetched stops plan until the pull', async () => {
         await using stores = await makeTestStores()
         const vault = await copyFixtureVault(stores)

@@ -203,13 +203,7 @@ impl ContentStore {
             ));
         }
         if fetch {
-            self.git_output(&["fetch", "--quiet", "origin"]).map_err(|error| {
-                format!(
-                    "the content store cannot be reached (git fetch origin failed: {}). A plan and a publication fetch it first, so that a copy that is behind is never used: {}",
-                    error.trim(),
-                    self.folder.display()
-                )
-            })?;
+            self.fetch_main()?;
         }
         // How far the copy is behind the content store, at the last fetch.
         let exists = |name: &str| {
@@ -247,6 +241,47 @@ impl ContentStore {
         self.check_history(has_main, no_commit)?;
         self.check_files()?;
         Ok(behind)
+    }
+
+    /// Fetches the branch `main` of the content store into
+    /// `refs/remotes/origin/main`. The fetch names the branch: the fetch
+    /// setting of the copy could else leave that ref as it was (a setting
+    /// removed or changed by hand), and a copy that is behind would look up to
+    /// date. A content store with no branch yet has nothing to fetch.
+    fn fetch_main(&self) -> Result<(), String> {
+        let failed = |error: String| {
+            format!(
+                "the content store cannot be reached (git fetch origin failed: {}). A plan and a publication fetch it first, so that a copy that is behind is never used: {}",
+                error.trim(),
+                self.folder.display()
+            )
+        };
+        let remote = self
+            .git_output(&["ls-remote", "--quiet", "origin", "refs/heads/main"])
+            .map_err(failed)?;
+        if !remote.trim().is_empty() {
+            self.git_output(&[
+                "fetch",
+                "--quiet",
+                "origin",
+                "+refs/heads/main:refs/remotes/origin/main",
+            ])
+            .map_err(failed)?;
+        } else if self
+            .git_output(&[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/main",
+            ])
+            .is_ok()
+        {
+            return Err(format!(
+                "the content store has no branch main, but the copy knows one (refs/remotes/origin/main). Nothing can be published until the copy is corrected by hand: {}",
+                self.folder.display()
+            ));
+        }
+        Ok(())
     }
 
     /// `Err` when the copy has commits that no branch of the content store

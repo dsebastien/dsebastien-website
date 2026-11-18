@@ -223,10 +223,28 @@ fn selection_from_file(file: &Path) -> Result<Selection, String> {
     ))
 }
 
+/// `status` reads no network: it warns on the error output when the copy is
+/// behind the content store at the last fetch (issue 70).
+fn warn_when_behind(queue: &str) {
+    let behind = json::parse_json(queue)
+        .ok()
+        .and_then(|queue| queue.get("behind").and_then(serde_json::Value::as_u64))
+        .unwrap_or(0);
+    if behind > 0 {
+        eprintln!(
+            "warning: the copy of the content store is {behind} commit(s) behind the content store at the last fetch. Pull before a publication (git pull --ff-only origin main)"
+        );
+    }
+}
+
 fn run(command: Command) -> Result<Outcome, String> {
     let done = |output: String| Outcome { output, failed: 0 };
     match command {
-        Command::Status { places } => tool::status(&device(&places)?).map(done),
+        Command::Status { places } => {
+            let output = tool::status(&device(&places)?)?;
+            warn_when_behind(&output);
+            Ok(done(output))
+        }
         Command::Plan {
             places,
             include,

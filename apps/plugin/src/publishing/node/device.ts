@@ -351,22 +351,41 @@ function gitContentStore(folder: string): ContentStore {
                     `the copy of the content store is not the root of a git repository: ${folder}`
                 )
             }
+            const exists = (ref: string): Promise<boolean> =>
+                git('rev-parse', '--verify', '--quiet', ref).then(
+                    () => true,
+                    () => false
+                )
             if (fetch) {
+                // The fetch names the branch: the fetch setting of the copy
+                // could else leave origin/main as it was (a setting removed or
+                // changed by hand), and a copy that is behind would look up
+                // to date. A content store with no branch yet has nothing to
+                // fetch.
+                let remote: string
                 try {
-                    await gitRaw('fetch', '--quiet', 'origin')
+                    remote = await git('ls-remote', '--quiet', 'origin', 'refs/heads/main')
+                    if (remote !== '') {
+                        await gitRaw(
+                            'fetch',
+                            '--quiet',
+                            'origin',
+                            '+refs/heads/main:refs/remotes/origin/main'
+                        )
+                    }
                 } catch (error) {
                     throw new Error(
                         `the content store cannot be reached (git fetch origin failed: ${error instanceof Error ? error.message.trim() : 'git failed'}). A plan and a publication fetch it first, so that a copy that is behind is never used: ${folder}`,
                         { cause: error }
                     )
                 }
+                if (remote === '' && (await exists('refs/remotes/origin/main'))) {
+                    throw new Error(
+                        `the content store has no branch main, but the copy knows one (refs/remotes/origin/main). Nothing can be published until the copy is corrected by hand: ${folder}`
+                    )
+                }
             }
             // How far the copy is behind the content store, at the last fetch.
-            const exists = (ref: string): Promise<boolean> =>
-                git('rev-parse', '--verify', '--quiet', ref).then(
-                    () => true,
-                    () => false
-                )
             const hasMain = await exists('refs/remotes/origin/main')
             const hasHead = await exists('HEAD')
             // A copy with no branch of its own that leads to a commit (a clone
