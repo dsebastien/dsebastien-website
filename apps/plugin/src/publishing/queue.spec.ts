@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { chmod, mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     copyFixtureVault,
@@ -543,6 +543,43 @@ describe('commit of a publication of the queue', () => {
         expect(files.split('\n').filter((file) => file.startsWith('notes/'))).toEqual([
             'notes/10 Garden/Beds [ab].md'
         ])
+    })
+})
+
+describe('git commands of a publication', () => {
+    // The paths go to git on standard input. A file for them was relative to
+    // the folder of the process, but git runs inside the copy.
+    test('a copy of the content store in a relative folder takes new notes and updates', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const device = nodeDevice({
+            vault: setup.vault,
+            contentStore: relative(process.cwd(), setup.copy)
+        })
+        let planned = await plan(device, { include: [NOTE, 'Welcome.md'] })
+        await publish(device, planned.id, RUN)
+        await append(join(setup.vault, 'Welcome.md'), EDIT)
+        planned = await plan(device, { include: [SECOND] })
+
+        const report = await publish(device, planned.id, { ...RUN, time: LATER })
+
+        expect(report.published).toEqual([SECOND])
+        expect(report.updated).toEqual(['Welcome.md'])
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+        expect(await git(stores.contentStore, 'rev-list', '--count', 'main')).toBe('3')
+        expect((await status(device)).unchanged).toEqual([SECOND, NOTE, 'Welcome.md'])
+    })
+
+    // Two publications on one copy must not share a file of paths.
+    test('needs no file of paths in the git folder', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await mkdir(join(setup.copy, '.git', 'vault-publish', 'paths'), { recursive: true })
+
+        const report = await publishNotes(setup, { include: [NOTE] })
+
+        expect(report.published).toEqual([NOTE])
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
     })
 })
 

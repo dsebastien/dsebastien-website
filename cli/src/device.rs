@@ -5,9 +5,10 @@
 use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
 
 /// What a folder holds at exactly one path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -299,18 +300,14 @@ impl ContentStore {
         )
     }
 
-    /// Runs a git command on a list of paths. The paths go in a file of the
-    /// git folder, not in the arguments: a publication can hold more paths
-    /// than the system takes as arguments of one command.
+    /// Runs a git command on a list of paths. The paths go to the standard
+    /// input of git, not in the arguments: a publication can hold more paths
+    /// than the system takes as arguments of one command. No file holds them,
+    /// so a relative folder and two publications on one copy work too.
     fn git_on_paths(&self, arguments: &[&str], paths: &[&str]) -> Result<(), String> {
-        let file = self.folder.join(".git").join("vault-publish").join("paths");
-        write_text(&file, &paths.join("\0"))?;
-        let from_file = format!("--pathspec-from-file={}", file.display());
         let mut all = arguments.to_vec();
-        all.extend([from_file.as_str(), "--pathspec-file-nul"]);
-        let result = self.git_output(&all).map(|_| ());
-        let _ = fs::remove_file(&file);
-        result
+        all.extend(["--pathspec-from-file=-", "--pathspec-file-nul"]);
+        self.git_with(&all, paths.join("\0").as_bytes()).map(|_| ())
     }
 
     /// The plans are in the git folder of the copy: on the device, never in a
@@ -335,6 +332,11 @@ impl ContentStore {
     }
 
     fn git_output(&self, args: &[&str]) -> Result<String, String> {
+        self.git_with(args, &[])
+    }
+
+    /// Runs git in the copy. The input goes to its standard input.
+    fn git_with(&self, args: &[&str], input: &[u8]) -> Result<String, String> {
         let mut git = Command::new("git");
         // Literal paths: a note name with `[`, `*` or `?` must never be read
         // as a pattern that names other files too. No conversion of line
@@ -342,16 +344,31 @@ impl ContentStore {
         // file of the store.
         git.args(["--literal-pathspecs", "-c", "core.autocrlf=false"])
             .args(args)
-            .current_dir(&self.folder);
+            .current_dir(&self.folder)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         // Inside a git hook, these variables point git to another repository.
         for (name, _) in env::vars_os() {
             if name.to_string_lossy().starts_with("GIT_") {
                 git.env_remove(name);
             }
         }
-        let output = git
-            .output()
+        let mut child = git
+            .spawn()
             .map_err(|error| format!("git could not start: {error}"))?;
+        let output = thread::scope(|scope| {
+            // The input is written while git runs, so that a full pipe of its
+            // output never blocks it. Git can end before it reads everything:
+            // the error of the pipe is not the error of the command.
+            if let Some(mut stdin) = child.stdin.take() {
+                scope.spawn(move || {
+                    let _ = stdin.write_all(input);
+                });
+            }
+            child.wait_with_output()
+        })
+        .map_err(|error| format!("git could not run: {error}"))?;
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).into_owned())
         } else {

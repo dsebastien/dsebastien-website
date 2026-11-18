@@ -563,6 +563,71 @@ fn a_symbolic_link_in_the_manifest_is_not_a_file_of_the_store() {
     assert_eq!(setup.status()["counts"]["unchanged"], 0);
 }
 
+/// The paths go to git on standard input. A file for them was relative to
+/// the folder of the process, but git runs inside the copy.
+#[test]
+fn a_copy_of_the_content_store_in_a_relative_folder_takes_new_notes_and_updates() {
+    let setup = Setup::fixture();
+    let root = setup.stores.root();
+    let copy = setup
+        .copy
+        .strip_prefix(root)
+        .expect("the copy is in the folder of the test");
+    let run = |arguments: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+            .args(arguments)
+            .arg("--vault")
+            .arg(&setup.vault)
+            .arg("--content-store")
+            .arg(copy)
+            .current_dir(root)
+            .output()
+            .expect("the program starts")
+    };
+    let publish = |include: &str, time: &str| {
+        let output = run(&["plan", &format!("--include={include}")]);
+        assert!(output.status.success(), "{}", errors_of(&output));
+        let id = json_of(&output)["id"].as_str().expect("an id").to_owned();
+        let output = run(&[
+            "publish",
+            "--plan",
+            &id,
+            "--time",
+            time,
+            "--device",
+            "garden-shed",
+        ]);
+        assert!(output.status.success(), "{}", errors_of(&output));
+        json_of(&output)
+    };
+    publish(NOTE, TIME);
+    publish("Welcome.md", TIME);
+    append(&setup.vault.join("Welcome.md"), EDIT);
+
+    let report = publish(SECOND, LATER);
+
+    assert_eq!(paths(&report["published"]), [SECOND]);
+    assert_eq!(paths(&report["updated"]), ["Welcome.md"]);
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+    assert_eq!(
+        paths(&setup.status()["unchanged"]),
+        [SECOND, NOTE, "Welcome.md"]
+    );
+}
+
+/// Two publications on one copy must not share a file of paths.
+#[test]
+fn a_publication_needs_no_file_of_paths_in_the_git_folder() {
+    let setup = Setup::fixture();
+    fs::create_dir_all(setup.copy.join(".git").join("vault-publish").join("paths"))
+        .expect("the folder can be made");
+
+    let report = setup.publish(&json!({ "include": [NOTE] }), TIME);
+
+    assert_eq!(paths(&report["published"]), [NOTE]);
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+}
+
 /// A hook of the copy that refuses every commit.
 fn refuse_commits(copy: &Path) {
     let hooks = copy.join(".git").join("hooks");

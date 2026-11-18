@@ -102,32 +102,34 @@ function gitEnvironment(): NodeJS.ProcessEnv {
 }
 
 function gitContentStore(folder: string): ContentStore {
-    const gitRaw = async (...args: string[]): Promise<string> => {
+    /** Runs git in the copy. The input goes to its standard input. */
+    const gitWith = async (args: readonly string[], input: string): Promise<string> => {
         // Literal paths: a note name with `[`, `*` or `?` must never be read
         // as a pattern that names other files too. No conversion of line
         // ends: a setting of the machine must never change the bytes of a
         // file of the store.
-        const { stdout } = await run('git', [...GIT_OPTIONS, ...args], {
+        const running = run('git', [...GIT_OPTIONS, ...args], {
             cwd: folder,
             env: gitEnvironment(),
             maxBuffer: 1024 * 1024 * 1024
         })
-        return stdout
+        const stdin = running.child.stdin
+        // Git can end before it reads everything: the error of the pipe is
+        // not the error of the command.
+        stdin?.on('error', () => undefined)
+        stdin?.end(input)
+        return (await running).stdout
     }
+    const gitRaw = (...args: string[]): Promise<string> => gitWith(args, '')
     const git = async (...args: string[]): Promise<string> => (await gitRaw(...args)).trim()
     /**
-     * Runs a git command on a list of paths. The paths go in a file of the git
-     * folder, not in the arguments: a publication can hold more paths than
-     * the system takes as arguments of one command.
+     * Runs a git command on a list of paths. The paths go to the standard
+     * input of git, not in the arguments: a publication can hold more paths
+     * than the system takes as arguments of one command. No file holds them,
+     * so a relative folder and two publications on one copy work too.
      */
     const gitOnPaths = async (args: readonly string[], paths: readonly string[]): Promise<void> => {
-        const file = join(folder, '.git', 'vault-publish', 'paths')
-        await writeText(file, paths.join('\0'))
-        try {
-            await git(...args, `--pathspec-from-file=${file}`, '--pathspec-file-nul')
-        } finally {
-            await rm(file, { force: true })
-        }
+        await gitWith([...args, '--pathspec-from-file=-', '--pathspec-file-nul'], paths.join('\0'))
     }
     const discard = async (paths: readonly string[]): Promise<void> => {
         let listing: string
