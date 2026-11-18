@@ -710,9 +710,35 @@ fn a_refused_first_publication_leaves_a_copy_that_can_pull() {
 /// One way to change the copy of a test.
 type Change<'a> = Box<dyn Fn(&Setup) + 'a>;
 
+/// Removes a deny list entry with the same size and the same time, in a copy
+/// with weak stat settings.
+fn edit_with_weak_stat_settings(setup: &Setup) {
+    setup.git(&["config", "core.checkStat", "minimal"]);
+    setup.git(&["config", "core.trustctime", "false"]);
+    // An old time, and an index written after it: git then trusts
+    // the stat data, and does not compare the text again.
+    let file = setup.copy.join("configuration.json");
+    let old = std::time::UNIX_EPOCH + std::time::Duration::from_hours(438_288);
+    let set_old = || {
+        fs::File::options()
+            .write(true)
+            .open(&file)
+            .expect("the file opens")
+            .set_modified(old)
+            .expect("the time is set");
+    };
+    set_old();
+    setup.git(&["update-index", "--refresh"]);
+    let text = read(&file);
+    let entry = ", \"90 Locked Shed\"";
+    assert!(text.contains(entry));
+    fs::write(&file, text.replace(entry, &" ".repeat(entry.len()))).expect("the file is written");
+    set_old();
+}
+
 /// The changes of the copy that make it differ from its last commit.
 fn changes_of_the_copy(entry: &str) -> Vec<(&'static str, Change<'_>)> {
-    vec![
+    let first: Vec<(&'static str, Change<'_>)> = vec![
         (
             "an entry removed with git",
             Box::new(move |setup: &Setup| {
@@ -777,10 +803,26 @@ fn changes_of_the_copy(entry: &str) -> Vec<(&'static str, Change<'_>)> {
                 .expect("the file is written");
             }),
         ),
+    ];
+    first
+        .into_iter()
+        .chain(more_changes_of_the_copy())
+        .collect()
+}
+
+/// The changes of the copy that do not need the path of an entry.
+fn more_changes_of_the_copy() -> Vec<(&'static str, Change<'static>)> {
+    vec![
         (
             "the configuration removed with git",
             Box::new(move |setup: &Setup| {
                 setup.git(&["rm", "--quiet", "configuration.json"]);
+            }),
+        ),
+        (
+            "a deny list entry removed with the same size and the same time, in a copy with weak stat settings",
+            Box::new(move |setup: &Setup| {
+                edit_with_weak_stat_settings(setup);
             }),
         ),
         (
@@ -849,6 +891,74 @@ fn a_deny_list_that_is_changed_and_not_committed_stops_the_status_and_the_messag
     let message = errors_of(&output);
     assert!(message.contains("commit configuration.json"), "{message}");
     assert!(!message.contains("checkout HEAD -- manifest"), "{message}");
+}
+
+/// A push of commits of the copy is safe only for a change of the
+/// configuration alone. A commit of a publication that git could not take
+/// back would publish an older state.
+#[test]
+fn the_message_proposes_a_push_only_for_commits_of_the_configuration_alone() {
+    let setup = Setup::fixture();
+    fs::write(
+        setup.copy.join("configuration.json"),
+        "{\"denyList\":[\"80 Templates\",\"90 Locked Shed\",\"10 Garden\"]}\n",
+    )
+    .expect("the file is written");
+    setup.git(&[
+        "commit",
+        "--quiet",
+        "--all",
+        "--message",
+        "A stricter deny list",
+    ]);
+
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("git push origin HEAD:main"),
+        "{}",
+        errors_of(&output)
+    );
+
+    fs::create_dir_all(setup.copy.join("notes")).expect("the folder can be made");
+    fs::write(
+        setup.copy.join("notes").join("Stuck.md"),
+        "A publication that stayed\n",
+    )
+    .expect("the file is written");
+    setup.git(&["add", "notes"]);
+    setup.git(&[
+        "commit",
+        "--quiet",
+        "--message",
+        "A publication that stayed",
+    ]);
+    let output = setup.run("status", &[]);
+    let message = errors_of(&output);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!message.contains("push it (git push"), "{message}");
+    assert!(
+        message.contains("git reset --hard origin/main"),
+        "{message}"
+    );
+    assert!(message.contains("notes/Stuck.md"), "{message}");
+}
+
+#[test]
+fn the_message_never_proposes_to_commit_the_removal_of_the_configuration() {
+    let setup = Setup::fixture();
+    fs::remove_file(setup.copy.join("configuration.json")).expect("the file can be removed");
+
+    let output = setup.run("status", &[]);
+    let message = errors_of(&output);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        message.contains("git checkout HEAD -- configuration.json"),
+        "{message}"
+    );
+    assert!(!message.contains("commit configuration.json"), "{message}");
 }
 
 /// An empty manifest would let a published note under a guard stay live.

@@ -102,15 +102,38 @@ function gitEnvironment(): NodeJS.ProcessEnv {
 }
 
 /**
+ * The options of the comparison of the copy with its last commit: the line
+ * ends are converted as the copy converts them, and the stat data is trusted
+ * only in full.
+ */
+const COMPARE_OPTIONS = [
+    '--literal-pathspecs',
+    '--no-optional-locks',
+    '-c',
+    'core.checkStat=default',
+    '-c',
+    'core.trustctime=true',
+    '-c',
+    'core.fsmonitor=false'
+]
+
+/**
  * How the author gets out, for the files of the copy that are not the files of
  * its last commit. A change of the deny list is work of the author: it is
  * committed, never thrown away. Only the tool writes the manifest.
  */
 function waysOut(different: readonly { code: string; path: string }[]): string {
     const ways: string[] = []
-    if (different.some((entry) => entry.path === 'configuration.json')) {
+    const configuration = different.find((entry) => entry.path === 'configuration.json')
+    if (configuration !== undefined) {
         ways.push(
-            'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
+            configuration.code.includes('D')
+                ? 'Put configuration.json back with git checkout HEAD -- configuration.json: a commit of its removal would empty the deny list'
+                : configuration.code === '??' || configuration.code === '!!'
+                  ? 'When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main). Else remove it'
+                  : configuration.code === 'skipped'
+                    ? 'Let git compare configuration.json again (git update-index --no-skip-worktree --no-assume-unchanged configuration.json)'
+                    : 'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
         )
     }
     const manifest = different.filter((entry) => entry.path !== 'configuration.json')
@@ -232,8 +255,33 @@ function gitContentStore(folder: string): ContentStore {
                 ahead = '0'
             }
             if (ahead !== '0') {
+                // A push is safe only for a change of the configuration alone:
+                // a commit of a publication that git could not take back would
+                // publish an older state, also for a note under a guard.
+                const files = [
+                    ...new Set(
+                        (
+                            await gitRaw(
+                                'log',
+                                '--format=',
+                                '--name-only',
+                                '-z',
+                                'HEAD',
+                                '--not',
+                                '--remotes=origin'
+                            )
+                        )
+                            .split('\0')
+                            .map((file) => file.trim())
+                            .filter((file) => file !== '')
+                    )
+                ]
+                const way =
+                    files.length === 1 && files[0] === 'configuration.json'
+                        ? 'the commits change configuration.json only: when that is your change of the deny list, push it (git push origin HEAD:main)'
+                        : `the commits change other files of the store too (${files.slice(0, 5).join(', ')}), so they can hold a publication that git could not take back, and a push would publish it. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it`
                 throw new Error(
-                    `the copy of the content store has ${ahead} commit(s) that the content store does not have. When they are a change of the configuration that you made, push them (git push origin HEAD:main). When they are a publication that git could not take back, take them back (git fetch origin, then git reset --hard origin/main when the copy holds no other work). Nothing can be published until then: ${folder}`
+                    `the copy of the content store has ${ahead} commit(s) that the content store does not have. Nothing can be published until the copy is corrected: ${way}: ${folder}`
                 )
             }
             // The tool reads the state from the files of the copy, so they must
@@ -247,6 +295,7 @@ function gitContentStore(folder: string): ContentStore {
             const changes = await gitWith(
                 [
                     'status',
+                    '--no-renames',
                     '--porcelain=v1',
                     '-z',
                     '--untracked-files=all',
@@ -256,16 +305,7 @@ function gitContentStore(folder: string): ContentStore {
                     'manifest'
                 ],
                 '',
-                [
-                    '--literal-pathspecs',
-                    '--no-optional-locks',
-                    '-c',
-                    'core.checkStat=default',
-                    '-c',
-                    'core.trustctime=true',
-                    '-c',
-                    'core.fsmonitor=false'
-                ]
+                COMPARE_OPTIONS
             )
             const flags = await gitRaw(
                 'ls-files',
@@ -275,7 +315,61 @@ function gitContentStore(folder: string): ContentStore {
                 'configuration.json',
                 'manifest'
             )
+            // Git status trusts the stat data of a file: an edit of the same
+            // size in the same second can look unchanged. So the text of each
+            // file is compared with the commit too, by its hash, with the line
+            // ends converted as the copy converts them. A link is compared by
+            // git status alone.
+            const edited: string[] = []
+            if (
+                await git('rev-parse', '--verify', '--quiet', 'HEAD').then(
+                    () => true,
+                    () => false
+                )
+            ) {
+                const tree = await gitRaw(
+                    'ls-tree',
+                    '-r',
+                    '-z',
+                    '--full-tree',
+                    'HEAD',
+                    '--',
+                    'configuration.json',
+                    'manifest'
+                )
+                const committed = tree
+                    .split('\0')
+                    .filter((entry) => entry !== '')
+                    .map((entry) => {
+                        const tab = entry.indexOf('\t')
+                        const [mode, , hash] = entry.slice(0, tab).split(' ')
+                        return { mode, hash, path: entry.slice(tab + 1) }
+                    })
+                    .filter((entry) => entry.mode !== '120000')
+                const present: typeof committed = []
+                for (const entry of committed) {
+                    const kind = await lstat(join(folder, entry.path)).catch(() => undefined)
+                    if (kind?.isFile() === true) {
+                        present.push(entry)
+                    }
+                }
+                if (present.length > 0) {
+                    const hashes = (
+                        await gitWith(
+                            ['hash-object', '--stdin-paths'],
+                            present.map((entry) => entry.path).join('\n') + '\n',
+                            COMPARE_OPTIONS
+                        )
+                    ).split('\n')
+                    for (const [index, entry] of present.entries()) {
+                        if (hashes[index] !== entry.hash) {
+                            edited.push(entry.path)
+                        }
+                    }
+                }
+            }
             const different = [
+                ...edited.map((path) => ({ code: ' M', path })),
                 ...changes
                     .split('\0')
                     .filter((entry) => entry.length > 3)

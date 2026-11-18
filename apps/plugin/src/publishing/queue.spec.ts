@@ -590,6 +590,24 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             (copy: string) => git(copy, 'rm', '--quiet', 'configuration.json')
         ],
         [
+            'a deny list entry removed with the same size and the same time, in a copy with weak stat settings',
+            async (copy: string) => {
+                await git(copy, 'config', 'core.checkStat', 'minimal')
+                await git(copy, 'config', 'core.trustctime', 'false')
+                // An old time, and an index written after it: git then trusts
+                // the stat data, and does not compare the text again.
+                const file = join(copy, 'configuration.json')
+                const old = new Date('2020-01-01T00:00:00Z')
+                await utimes(file, old, old)
+                await git(copy, 'update-index', '--refresh')
+                const text = await Bun.file(file).text()
+                const entry = ', "90 Locked Shed"'
+                expect(text).toContain(entry)
+                await writeFile(file, text.replace(entry, ' '.repeat(entry.length)))
+                await utimes(file, old, old)
+            }
+        ],
+        [
             'a branch that leads to no commit',
             (copy: string) =>
                 writeFile(join(copy, '.git', 'refs', 'heads', 'main'), `${'1'.repeat(40)}\n`)
@@ -632,6 +650,42 @@ describe('manifest in a form that only one reader of JSON would take', () => {
 
         expect(message).toContain('commit configuration.json')
         expect(message).not.toContain('checkout HEAD -- manifest')
+    })
+
+    // A push of commits of the copy is safe only for a change of the
+    // configuration alone. A commit of a publication that git could not take
+    // back would publish an older state.
+    test('the message proposes a push only for commits of the configuration alone', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(
+            join(setup.copy, 'configuration.json'),
+            '{"denyList":["80 Templates","90 Locked Shed","10 Garden"]}\n'
+        )
+        await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'A stricter deny list')
+
+        expect(await rejectionOf(status(setup.device))).toContain('git push origin HEAD:main')
+
+        await mkdir(join(setup.copy, 'notes'), { recursive: true })
+        await writeFile(join(setup.copy, 'notes', 'Stuck.md'), 'A publication that stayed\n')
+        await git(setup.copy, 'add', 'notes')
+        await git(setup.copy, 'commit', '--quiet', '--message', 'A publication that stayed')
+        const message = await rejectionOf(status(setup.device))
+
+        expect(message).not.toContain('push it (git push')
+        expect(message).toContain('git reset --hard origin/main')
+        expect(message).toContain('notes/Stuck.md')
+    })
+
+    test('the message never proposes to commit the removal of the configuration', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await rm(join(setup.copy, 'configuration.json'))
+
+        const message = await rejectionOf(status(setup.device))
+
+        expect(message).toContain('git checkout HEAD -- configuration.json')
+        expect(message).not.toContain('commit configuration.json')
     })
 
     // An empty manifest would let a published note under a guard stay live.

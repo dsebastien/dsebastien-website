@@ -196,8 +196,35 @@ impl ContentStore {
             }
         };
         if ahead != "0" {
+            // A push is safe only for a change of the configuration alone: a
+            // commit of a publication that git could not take back would
+            // publish an older state, also for a note under a guard.
+            let log = self.git_output(&[
+                "log",
+                "--format=",
+                "--name-only",
+                "-z",
+                "HEAD",
+                "--not",
+                "--remotes=origin",
+            ])?;
+            let mut files: Vec<&str> = log
+                .split('\0')
+                .map(str::trim)
+                .filter(|file| !file.is_empty())
+                .collect();
+            files.sort_unstable();
+            files.dedup();
+            let way = if files == ["configuration.json"] {
+                "the commits change configuration.json only: when that is your change of the deny list, push it (git push origin HEAD:main)".to_owned()
+            } else {
+                format!(
+                    "the commits change other files of the store too ({}), so they can hold a publication that git could not take back, and a push would publish it. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it",
+                    files.iter().take(5).copied().collect::<Vec<_>>().join(", ")
+                )
+            };
             return Err(format!(
-                "the copy of the content store has {ahead} commit(s) that the content store does not have. When they are a change of the configuration that you made, push them (git push origin HEAD:main). When they are a publication that git could not take back, take them back (git fetch origin, then git reset --hard origin/main when the copy holds no other work). Nothing can be published until then: {}",
+                "the copy of the content store has {ahead} commit(s) that the content store does not have. Nothing can be published until the copy is corrected: {way}: {}",
                 self.folder.display()
             ));
         }
@@ -216,18 +243,10 @@ impl ContentStore {
         // differs only in its line ends is the same file. The stat data is
         // trusted only in full.
         let changes = self.git_with_options(
-            &[
-                "--literal-pathspecs",
-                "--no-optional-locks",
-                "-c",
-                "core.checkStat=default",
-                "-c",
-                "core.trustctime=true",
-                "-c",
-                "core.fsmonitor=false",
-            ],
+            COMPARE_OPTIONS,
             &[
                 "status",
+                "--no-renames",
                 "--porcelain=v1",
                 "-z",
                 "--untracked-files=all",
@@ -246,15 +265,21 @@ impl ContentStore {
             "configuration.json",
             "manifest",
         ])?;
-        let different: Vec<(&str, &str)> = changes
-            .split('\0')
-            .filter(|entry| entry.len() > 3)
-            .map(|entry| (&entry[..2], &entry[3..]))
+        let edited = self.edited_files()?;
+        let different: Vec<(&str, &str)> = edited
+            .iter()
+            .map(|path| (" M", path.as_str()))
             .chain(
-                flags
+                changes
                     .split('\0')
-                    .filter(|entry| !entry.is_empty() && !entry.starts_with("H "))
-                    .map(|entry| ("skipped", entry.get(2..).unwrap_or(entry))),
+                    .filter(|entry| entry.len() > 3)
+                    .map(|entry| (&entry[..2], &entry[3..]))
+                    .chain(
+                        flags
+                            .split('\0')
+                            .filter(|entry| !entry.is_empty() && !entry.starts_with("H "))
+                            .map(|entry| ("skipped", entry.get(2..).unwrap_or(entry))),
+                    ),
             )
             .collect();
         if different.is_empty() {
@@ -271,6 +296,65 @@ impl ContentStore {
             ways_out(&different),
             self.folder.display()
         ))
+    }
+
+    /// The files of `configuration.json` and `manifest/` whose text is not the
+    /// text of the last commit. Git status trusts the stat data of a file: an
+    /// edit of the same size in the same second can look unchanged. So each
+    /// file is compared with the commit by its hash, with the line ends
+    /// converted as the copy converts them. A link is compared by git status
+    /// alone.
+    fn edited_files(&self) -> Result<Vec<String>, String> {
+        if self
+            .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
+            .is_err()
+        {
+            return Ok(Vec::new());
+        }
+        let tree = self.git_output(&[
+            "ls-tree",
+            "-r",
+            "-z",
+            "--full-tree",
+            "HEAD",
+            "--",
+            "configuration.json",
+            "manifest",
+        ])?;
+        let present: Vec<(&str, &str)> = tree
+            .split('\0')
+            .filter_map(|entry| {
+                let (meta, path) = entry.split_once('\t')?;
+                let mut fields = meta.split(' ');
+                let mode = fields.next()?;
+                let hash = fields.nth(1)?;
+                (mode != "120000"
+                    && fs::symlink_metadata(self.folder.join(path))
+                        .is_ok_and(|metadata| metadata.file_type().is_file()))
+                .then_some((path, hash))
+            })
+            .collect();
+        if present.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut input = present
+            .iter()
+            .map(|(path, _)| *path)
+            .collect::<Vec<_>>()
+            .join("\n");
+        input.push('\n');
+        let hashes = self.git_with_options(
+            COMPARE_OPTIONS,
+            &["hash-object", "--stdin-paths"],
+            input.as_bytes(),
+        )?;
+        let hashes: Vec<&str> = hashes.lines().collect();
+        Ok(present
+            .iter()
+            .enumerate()
+            .filter(|(index, (_, hash))| hashes.get(*index) != Some(hash))
+            .map(|(_, (path, _))| (*path).to_owned())
+            .collect())
     }
 
     /// `Err` when a part of the path in the copy is a symbolic link. A link
@@ -580,17 +664,39 @@ impl ContentStore {
     }
 }
 
+/// The options of the comparison of the copy with its last commit: the line
+/// ends are converted as the copy converts them, and the stat data is trusted
+/// only in full.
+const COMPARE_OPTIONS: &[&str] = &[
+    "--literal-pathspecs",
+    "--no-optional-locks",
+    "-c",
+    "core.checkStat=default",
+    "-c",
+    "core.trustctime=true",
+    "-c",
+    "core.fsmonitor=false",
+];
+
 /// How the author gets out, for the files of the copy that are not the files
 /// of its last commit, each with its code of `git status` or `skipped`. A
 /// change of the deny list is work of the author: it is committed, never
 /// thrown away. Only the tool writes the manifest.
 fn ways_out(different: &[(&str, &str)]) -> String {
     let mut ways = Vec::new();
-    if different
+    if let Some((code, _)) = different
         .iter()
-        .any(|(_, path)| *path == "configuration.json")
+        .find(|(_, path)| *path == "configuration.json")
     {
-        ways.push("When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json");
+        ways.push(if code.contains('D') {
+            "Put configuration.json back with git checkout HEAD -- configuration.json: a commit of its removal would empty the deny list"
+        } else if *code == "??" || *code == "!!" {
+            "When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main). Else remove it"
+        } else if *code == "skipped" {
+            "Let git compare configuration.json again (git update-index --no-skip-worktree --no-assume-unchanged configuration.json)"
+        } else {
+            "When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
+        });
     }
     let manifest: Vec<&str> = different
         .iter()
