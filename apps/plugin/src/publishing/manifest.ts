@@ -1,6 +1,7 @@
 import { isVaultPath } from './configuration.ts'
 import { sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
+import type { NoteLink } from './links.ts'
 import type { ContentStore } from './ports.ts'
 
 // The manifest: the record of each published note, one file per note
@@ -26,6 +27,8 @@ export type ManifestEntry = {
     readonly id: string
     /** The time of the run of the last publication. */
     readonly lastPublished: string
+    /** The links of the note that lead to a note, sorted by their link path. */
+    readonly links: readonly NoteLink[]
     /** The vault path of the note. */
     readonly path: string
     readonly sourceHash: string
@@ -48,6 +51,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isTextList(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+/** True when the value is the list `links` of an entry: each item has exactly a link path and the vault path of a note. */
+function isLinkList(value: unknown): value is NoteLink[] {
+    return (
+        Array.isArray(value) &&
+        value.every(
+            (item) =>
+                isRecord(item) &&
+                Object.keys(item).length === 2 &&
+                typeof item['link'] === 'string' &&
+                typeof item['path'] === 'string' &&
+                isNotePath(item['path'])
+        )
+    )
 }
 
 /** The form of the identity of a note: 16 hexadecimal digits. It names the file of the entry. */
@@ -74,7 +92,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         throw new Error(`${file} is not a manifest entry`)
     }
     const { attachments, cleanedHash, cleaningVersion, firstPublished, formerPaths } = value
-    const { id, lastPublished, path, sourceHash, state } = value
+    const { id, lastPublished, links, path, sourceHash, state } = value
     if (
         !isTextList(attachments) ||
         typeof cleanedHash !== 'string' ||
@@ -86,6 +104,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         typeof id !== 'string' ||
         !NOTE_ID.test(id) ||
         typeof lastPublished !== 'string' ||
+        !isLinkList(links) ||
         typeof path !== 'string' ||
         !isNotePath(path) ||
         typeof sourceHash !== 'string' ||
@@ -101,6 +120,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         formerPaths,
         id,
         lastPublished,
+        links: links.map((item) => ({ link: item.link, path: item.path })),
         path,
         sourceHash,
         state

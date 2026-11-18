@@ -3,6 +3,7 @@ import type { Configuration } from './configuration.ts'
 import { removeProperty, setProperty } from './frontmatter.ts'
 import { guardOf } from './guards.ts'
 import { contentHash } from './hash.ts'
+import { LinkIndex, linkPathsOf, linksOfPaths, sameLinks } from './links.ts'
 import type { ManifestEntry } from './manifest.ts'
 import { sortByCodePoint } from './order.ts'
 import type { Vault } from './ports.ts'
@@ -25,7 +26,7 @@ export type PublicationQueue = {
     }
     /** The candidates. */
     readonly new: readonly string[]
-    /** The notes of `changed` that the author did not edit: the cleaning step has a new version. */
+    /** The notes of `changed` that the author did not edit: the cleaning step gives another result. */
     readonly technicalUpdates: readonly string[]
     /** The published notes that cannot stay published as they are. */
     readonly toRemove: readonly string[]
@@ -50,6 +51,10 @@ export interface Scan {
     readonly notes: ReadonlyMap<string, ScannedNote>
     /** The notes of the scan that the ignore property excludes. */
     readonly ignored: ReadonlySet<string>
+    /** The notes of the scan by their names: what a link is resolved against. */
+    readonly index: LinkIndex
+    /** The names of the notes in the folders of the deny list, in small letters. No file of those folders is read. */
+    readonly deniedNames: ReadonlySet<string>
     /** Every entry of the manifest, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
     readonly configuration: Configuration
@@ -70,7 +75,7 @@ export async function scanVault(vault: Vault, configuration: Configuration): Pro
             }
             const path = folder === '' ? entry.name : `${folder}/${entry.name}`
             if (entry.kind === 'folder') {
-                // A folder of the deny list is not scanned: none of its files is listed or read.
+                // A folder of the deny list is not scanned for notes: none of its files is read.
                 if (!denied.has(path)) {
                     folders.push(path)
                 }
@@ -80,6 +85,32 @@ export async function scanVault(vault: Vault, configuration: Configuration): Pro
         }
     }
     return sortByCodePoint(notes)
+}
+
+/**
+ * The names of the notes in the folders of the deny list, in small letters.
+ * The tool lists those folders to know that a published note moved into one
+ * of them. It reads none of their files.
+ */
+export async function scanDeniedNames(
+    vault: Vault,
+    configuration: Configuration
+): Promise<Set<string>> {
+    const names = new Set<string>()
+    const folders = [...configuration.denyList]
+    for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {
+        for (const entry of await vault.list(folder)) {
+            if (entry.name.startsWith('.') || entry.name.includes(REPLACEMENT)) {
+                continue
+            }
+            if (entry.kind === 'folder') {
+                folders.push(`${folder}/${entry.name}`)
+            } else if (entry.name.endsWith('.md')) {
+                names.add(entry.name.toLowerCase())
+            }
+        }
+    }
+    return names
 }
 
 /**
@@ -94,6 +125,8 @@ export async function computeQueue(input: {
 }): Promise<Scan> {
     const notes = new Map<string, ScannedNote>()
     const ignored = new Set<string>()
+    // The link paths of the published notes: their links are computed again at each scan.
+    const linkPaths = new Map<string, string[]>()
     for (const path of await scanVault(input.vault, input.configuration)) {
         let text: string | undefined
         try {
@@ -113,14 +146,19 @@ export async function computeQueue(input: {
         if (guardOf(path, text, input.configuration) !== undefined) {
             ignored.add(path)
         }
+        const source = sourceOf(text)
+        if (input.manifest.get(path)?.state === 'published') {
+            linkPaths.set(path, linkPathsOf(source))
+        }
         notes.set(path, {
             textHash: contentHash(text),
-            sourceHash: contentHash(sourceOf(text)),
+            sourceHash: contentHash(source),
             stateIsSet: setProperty(text, STATE_PROPERTY, 'true') === text,
             namesState: removeProperty(text, STATE_PROPERTY) !== text
         })
     }
 
+    const index = new LinkIndex(notes.keys())
     const lists = {
         changed: [] as string[],
         new: [] as string[],
@@ -138,7 +176,11 @@ export async function computeQueue(input: {
             lists.toRemove.push(path)
         } else if (note.sourceHash !== entry.sourceHash) {
             lists.changed.push(path)
-        } else if (entry.cleaningVersion !== CLEANING_VERSION) {
+        } else if (
+            entry.cleaningVersion !== CLEANING_VERSION ||
+            // A target was made, moved or removed, or a guard now excludes it.
+            !sameLinks(linksOfPaths(linkPaths.get(path) ?? [], path, index, ignored), entry.links)
+        ) {
             lists.changed.push(path)
             lists.technicalUpdates.push(path)
         } else {
@@ -163,5 +205,13 @@ export async function computeQueue(input: {
         toRemove: sortByCodePoint(lists.toRemove),
         unchanged: sortByCodePoint(lists.unchanged)
     }
-    return { queue, notes, ignored, manifest: input.manifest, configuration: input.configuration }
+    return {
+        queue,
+        notes,
+        ignored,
+        index,
+        deniedNames: await scanDeniedNames(input.vault, input.configuration),
+        manifest: input.manifest,
+        configuration: input.configuration
+    }
 }

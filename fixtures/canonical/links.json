@@ -1,0 +1,365 @@
+{
+    "about": "Shared cases of the links of a note (documentation/Canonical Form.md, section \"The links of a note\"). The TypeScript tests and the Rust tests read this file and must get what each case states. \"linkPaths\": a source text and the link paths that it must give, each one time, in the order of the code points. \"targets\": a list of the notes of a scan, and for a link path in the note \"from\" the vault path of its target, or null when it has none. \"links\": a source text with the notes of a scan and the ones that the ignore property excludes, and the list that the manifest entry must hold. Every name is invented, and every expected value is written by hand.",
+    "linkPaths": [
+        {
+            "name": "a wikilink, and a wikilink with a link text",
+            "text": "See [[Alpha]] and [[Beta|the second one]].\n",
+            "linkPaths": ["Alpha", "Beta"]
+        },
+        {
+            "name": "a link to a heading and to a block has the path of its note, one time, and a link into the note itself has none",
+            "text": "[[Alpha#Part one]] [[Alpha#^b1]] [[Alpha#Part one|part]] [[#Here]] [[#^here]]\n",
+            "linkPaths": ["Alpha"]
+        },
+        {
+            "name": "an embed",
+            "text": "![[Gamma]]\n\n![[Delta#Part]]\n",
+            "linkPaths": ["Delta", "Gamma"]
+        },
+        {
+            "name": "a link in a table: the backslash before the bar is not part of the target",
+            "text": "| [[Alpha\\|a]] | [[Beta\\|b]] |\n",
+            "linkPaths": ["Alpha", "Beta"]
+        },
+        {
+            "name": "spaces and tabs at the two ends of the target are removed, and a space before the hash stays",
+            "text": "[[  Alpha  |x]] [[\tBeta\t]] [[Gamma #part]]\n",
+            "linkPaths": ["Alpha", "Beta", "Gamma "]
+        },
+        {
+            "name": "the last opening before the first closing",
+            "text": "[[[Alpha]]] [[one [[Beta]] ]] [[Gamma]]\n",
+            "linkPaths": ["Alpha", "Beta", "Gamma"]
+        },
+        {
+            "name": "a link is on one line",
+            "text": "[[Alpha\n]] [[Beta\n",
+            "linkPaths": []
+        },
+        {
+            "name": "a link text can hold a bracket and a bar",
+            "text": "[[Alpha|see [1] | more]]\n",
+            "linkPaths": ["Alpha"]
+        },
+        {
+            "name": "links in the properties",
+            "text": "---\nrelated: \"[[Alpha]]\"\nsources:\n  - \"[[Folder/Beta|B]]\"\n  - '[[Gamma]]'\nurl: \"[site](Delta.md)\"\n---\nText\n",
+            "linkPaths": ["Alpha", "Delta.md", "Folder/Beta", "Gamma"]
+        },
+        {
+            "name": "the tool does not read Markdown: a link in code and in a comment is read too",
+            "text": "`[[Alpha]]`\n\n```\n[[Beta]]\n```\n\n%% [[Gamma]] %%\n",
+            "linkPaths": ["Alpha", "Beta", "Gamma"]
+        },
+        {
+            "name": "Markdown links",
+            "text": "[a](Alpha.md) [b](Folder/Beta%20one.md) [c](<Gamma two.md>) [d](Delta.md \"a title\") [e](Round_(1).md) [f](  Spaced.md  )\n",
+            "linkPaths": [
+                "Alpha.md",
+                "Delta.md",
+                "Folder/Beta one.md",
+                "Gamma two.md",
+                "Round_(1).md",
+                "Spaced.md"
+            ]
+        },
+        {
+            "name": "a Markdown link to a heading, and a destination that the line ends",
+            "text": "[a](Alpha.md#part%20one) [b](<Gamma two.md#part>) [c](Beta.md\n[d](<Delta.md\n",
+            "linkPaths": ["Alpha.md", "Beta.md", "Gamma two.md"]
+        },
+        {
+            "name": "a destination with a scheme, a destination into the note itself and an empty one are not read",
+            "text": "[a](https://example.org/Alpha.md) [b](mailto:someone@example.org) [c](#part) [d]() [e](<>) [f](obsidian://open?file=Alpha)\n",
+            "linkPaths": []
+        },
+        {
+            "name": "the decoding of a destination",
+            "text": "[a](caf%C3%A9.md) [b](a%26b.md) [c](bad%ZZ.md) [d](bad%C3.md) [e](%F0%9F%8C%B1%20Seedlings.md) [f](half%.md)\n",
+            "linkPaths": [
+                "a%26b.md",
+                "bad%C3.md",
+                "bad%ZZ.md",
+                "café.md",
+                "half%.md",
+                "🌱 Seedlings.md"
+            ]
+        },
+        {
+            "name": "the decoding refuses bytes that are not UTF-8, and keeps a byte order mark inside a name as a character",
+            "text": "[a](long%C0%AFform.md) [b](half%ED%A0%80pair.md) [c](high%F4%90%80%80.md) [d](a%EF%BB%BFmark.md) [e](small%c3%a9.md)\n",
+            "linkPaths": [
+                "a\uFEFFmark.md",
+                "half%ED%A0%80pair.md",
+                "high%F4%90%80%80.md",
+                "long%C0%AFform.md",
+                "smallé.md"
+            ]
+        },
+        {
+            "name": "a no-break space of a link is a space, as in Obsidian",
+            "text": "[[Alpha\u00a0one]] [[\u00a0Beta\u00a0|x]] [c](Gamma%C2%A0two.md) [d](<Delta\u00a0two.md>) [e](%20Epsilon.md%20)\n",
+            "linkPaths": ["Alpha one", "Beta", "Delta two.md", "Epsilon.md", "Gamma two.md"]
+        },
+        {
+            "name": "the white space at the two ends of a link is removed as Obsidian does: a hair space, a wide space and a byte order mark are white space, and the next line character (U+0085) is not",
+            "text": "[[Alpha\u200a]] [[\u3000Beta\ufeff|x]] [c](Gamma.md%E2%80%8A) [[Delta\u0085]] [[Eps\u200ailon]]\n",
+            "linkPaths": ["Alpha", "Beta", "Delta\u0085", "Eps\u200ailon", "Gamma.md"]
+        },
+        {
+            "name": "the order of the code points, not of the UTF-16 units",
+            "text": "[[🌱 Seedlings]] [[～ Pond]] [[Zinnia]] [[apple]]\n",
+            "linkPaths": ["Zinnia", "apple", "～ Pond", "🌱 Seedlings"]
+        }
+    ],
+    "targets": {
+        "notes": [
+            "A/Garden/Herbs/Dill.md",
+            "Deep/Garden/Herbs/Sage.md",
+            "East/Fern.md",
+            "Garden/Herbs/Mint.md",
+            "Garden/Herbs/Thyme.md",
+            "Garden/Index.md",
+            "Garden/Mint.md",
+            "GardenX/Garden/Herbs/Dill.md",
+            "Index.md",
+            "Kitchen/Mint.md",
+            "Kitchen/Recipes/Bread v2.1.md",
+            "Kitchen/Recipes/Élan.md",
+            "West/Fern.md",
+            "ab/Reed.md",
+            "abc/Moss.md",
+            "ΟΔΟΣ.md",
+            "🌱/Moss.md",
+            "🌱/Reed.md"
+        ],
+        "cases": [
+            {
+                "name": "a name that one note has",
+                "from": "Index.md",
+                "link": "Thyme",
+                "target": "Garden/Herbs/Thyme.md"
+            },
+            {
+                "name": "the letter case is ignored",
+                "from": "Index.md",
+                "link": "tHYME",
+                "target": "Garden/Herbs/Thyme.md"
+            },
+            {
+                "name": "a name with its end, in any letter case",
+                "from": "Index.md",
+                "link": "Thyme.MD",
+                "target": "Garden/Herbs/Thyme.md"
+            },
+            {
+                "name": "a name that holds a dot",
+                "from": "Index.md",
+                "link": "Bread v2.1",
+                "target": "Kitchen/Recipes/Bread v2.1.md"
+            },
+            {
+                "name": "the letter case of a letter outside ASCII",
+                "from": "Index.md",
+                "link": "élan",
+                "target": "Kitchen/Recipes/Élan.md"
+            },
+            {
+                "name": "the end of the name is added before the small letters are made: a sigma at the end of the link path is not at the end of the name",
+                "from": "Index.md",
+                "link": "ΟΔΟΣ",
+                "target": "ΟΔΟΣ.md"
+            },
+            {
+                "name": "a small sigma of the end of a word is another letter than the sigma of the name in small letters, as in Obsidian",
+                "from": "Index.md",
+                "link": "οδος",
+                "target": null
+            },
+            {
+                "name": "a name that no note has",
+                "from": "Index.md",
+                "link": "Nothing",
+                "target": null
+            },
+            {
+                "name": "a name that three notes have, from the root: the shortest path",
+                "from": "Index.md",
+                "link": "Mint",
+                "target": "Garden/Mint.md"
+            },
+            {
+                "name": "a name that three notes have, from a folder that holds none of them: the shortest path",
+                "from": "Kitchen/Recipes/Bread v2.1.md",
+                "link": "Mint",
+                "target": "Garden/Mint.md"
+            },
+            {
+                "name": "a name that three notes have, from the folder of one of them",
+                "from": "Kitchen/Mint.md",
+                "link": "Mint",
+                "target": "Kitchen/Mint.md"
+            },
+            {
+                "name": "a name that three notes have, from a folder that holds two of them: the shortest path of the two",
+                "from": "Garden/Index.md",
+                "link": "Mint",
+                "target": "Garden/Mint.md"
+            },
+            {
+                "name": "a name that three notes have, from the deepest folder",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "Mint",
+                "target": "Garden/Herbs/Mint.md"
+            },
+            {
+                "name": "a name that is also a path from the root: the note at the root wins over the note of the same folder",
+                "from": "Garden/Mint.md",
+                "link": "Index",
+                "target": "Index.md"
+            },
+            {
+                "name": "the end of a path",
+                "from": "Index.md",
+                "link": "Herbs/Mint",
+                "target": "Garden/Herbs/Mint.md"
+            },
+            {
+                "name": "a path from the root",
+                "from": "Kitchen/Mint.md",
+                "link": "Garden/Herbs/Mint",
+                "target": "Garden/Herbs/Mint.md"
+            },
+            {
+                "name": "a path from the root, in another letter case and with its end",
+                "from": "Kitchen/Mint.md",
+                "link": "garden/herbs/MINT.md",
+                "target": "Garden/Herbs/Mint.md"
+            },
+            {
+                "name": "a slash at the start: a path from the root",
+                "from": "Kitchen/Mint.md",
+                "link": "/Garden/Mint",
+                "target": "Garden/Mint.md"
+            },
+            {
+                "name": "a slash at the start and no note at that path",
+                "from": "Kitchen/Mint.md",
+                "link": "/Mint",
+                "target": null
+            },
+            {
+                "name": "a path from the folder of the note",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "./Mint",
+                "target": "Garden/Herbs/Mint.md"
+            },
+            {
+                "name": "a path from the folder above",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "../Mint",
+                "target": "Garden/Mint.md"
+            },
+            {
+                "name": "a path from two folders above, which is the root",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "../../Index",
+                "target": "Index.md"
+            },
+            {
+                "name": "a path that goes above the root stays at the root",
+                "from": "Garden/Mint.md",
+                "link": "../../../Index",
+                "target": "Index.md"
+            },
+            {
+                "name": "the folder of the note, then the folder above",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "./../Mint",
+                "target": "Garden/Mint.md"
+            },
+            {
+                "name": "a path from the folder of a note at the root",
+                "from": "Index.md",
+                "link": "./Garden/Mint",
+                "target": "Garden/Mint.md"
+            },
+            {
+                "name": "a path from the folder above that names no note",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "../Nothing",
+                "target": null
+            },
+            {
+                "name": "a path from the folder above that fits no note is then read as the end of a path, as in Obsidian",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "../Herbs/Sage",
+                "target": "Deep/Garden/Herbs/Sage.md"
+            },
+            {
+                "name": "after a path from the folder above, the folder that comes first ends with a slash: a folder whose name only starts in the same way does not come first",
+                "from": "Garden/Herbs/Thyme.md",
+                "link": "../Herbs/Dill",
+                "target": "A/Garden/Herbs/Dill.md"
+            },
+            {
+                "name": "a name alone has no slash after its folder: a folder whose name starts in the same way comes first, as in Obsidian",
+                "from": "Garden/Mint.md",
+                "link": "Dill",
+                "target": "GardenX/Garden/Herbs/Dill.md"
+            },
+            {
+                "name": "two paths of the same length: the order of the code points",
+                "from": "Index.md",
+                "link": "Fern",
+                "target": "East/Fern.md"
+            },
+            {
+                "name": "the length is counted in UTF-16 units, not in bytes",
+                "from": "Index.md",
+                "link": "Moss",
+                "target": "🌱/Moss.md"
+            },
+            {
+                "name": "the length is counted in UTF-16 units, not in code points",
+                "from": "Index.md",
+                "link": "Reed",
+                "target": "ab/Reed.md"
+            }
+        ]
+    },
+    "links": [
+        {
+            "name": "one item per link path that has a target, sorted by the link path",
+            "notes": ["Alpha.md", "Folder/Beta.md", "From.md"],
+            "ignored": [],
+            "from": "From.md",
+            "text": "[[beta]] [[Alpha]] [again](Alpha.md) [[Beta|b]] [[Nothing]] ![[Alpha#Part]]\n",
+            "links": [
+                { "link": "Alpha", "path": "Alpha.md" },
+                { "link": "Alpha.md", "path": "Alpha.md" },
+                { "link": "Beta", "path": "Folder/Beta.md" },
+                { "link": "beta", "path": "Folder/Beta.md" }
+            ]
+        },
+        {
+            "name": "a target that the ignore property excludes gives no item, and it still takes the link from a note with the same name",
+            "notes": ["Alpha.md", "Far/Away/Secret.md", "From.md", "Secret.md"],
+            "ignored": ["Secret.md"],
+            "from": "From.md",
+            "text": "[[Secret]] and [[Alpha]] and [[Away/Secret]]\n",
+            "links": [
+                { "link": "Alpha", "path": "Alpha.md" },
+                { "link": "Away/Secret", "path": "Far/Away/Secret.md" }
+            ]
+        },
+        {
+            "name": "a note can link to itself by its name",
+            "notes": ["From.md"],
+            "ignored": [],
+            "from": "From.md",
+            "text": "[[From]] [[#Part]]\n",
+            "links": [{ "link": "From", "path": "From.md" }]
+        }
+    ]
+}

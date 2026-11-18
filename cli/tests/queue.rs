@@ -1,6 +1,6 @@
-//! The publication queue (issue 33): the four lists, the selection, the plan,
-//! the publication of updates and removals, and the correction of the state
-//! property.
+//! The publication queue (issues 33 and 34): the four lists, the selection,
+//! the plan, the publication of updates, removals and forced removals, the
+//! links of a note, and the correction of the state property.
 //!
 //! The scenarios are in `fixtures/canonical/queue.json`. The TypeScript tests
 //! run the same file (`apps/plugin/src/publishing/queue.spec.ts`), so both
@@ -388,17 +388,26 @@ fn a_manifest_that_cannot_be_trusted_stops_the_status_and_the_plan() {
         let mut entry = json!({
             "attachments": [],
             "cleanedHash": "sha256:00",
-            "cleaningVersion": 1,
+            "cleaningVersion": 2,
             "firstPublished": TIME,
             "formerPaths": [],
             "id": "00000000000000aa",
             "lastPublished": TIME,
+            "links": [],
             "path": "Welcome.md",
             "sourceHash": "sha256:00",
             "state": "published"
         });
         for (key, value) in changes.as_object().expect("the changes are an object") {
-            entry[key] = value.clone();
+            if value.is_null() {
+                // `null` stands for a member that the entry does not have.
+                entry
+                    .as_object_mut()
+                    .expect("the entry is an object")
+                    .remove(key);
+            } else {
+                entry[key] = value.clone();
+            }
         }
         entry.to_string()
     };
@@ -434,6 +443,36 @@ fn a_manifest_that_cannot_be_trusted_stops_the_status_and_the_plan() {
             "a file that is not JSON",
             json!({ "manifest/00000000000000aa.json": "not JSON" }),
         ),
+        (
+            "an entry without its links",
+            json!({ "manifest/00000000000000aa.json": entry(json!({ "links": null })) }),
+        ),
+        (
+            "links that are not a list",
+            json!({ "manifest/00000000000000aa.json": entry(json!({ "links": {} })) }),
+        ),
+        (
+            "a link whose target is not the vault path of a note",
+            json!({
+                "manifest/00000000000000aa.json":
+                    entry(json!({ "links": [{ "link": "Up", "path": "../Up.md" }] }))
+            }),
+        ),
+        (
+            "a link without its link path",
+            json!({
+                "manifest/00000000000000aa.json":
+                    entry(json!({ "links": [{ "path": "Welcome.md" }] }))
+            }),
+        ),
+        (
+            "a link with a member that the tool does not know",
+            json!({
+                "manifest/00000000000000aa.json": entry(json!({
+                    "links": [{ "link": "Welcome", "path": "Welcome.md", "title": "Welcome" }]
+                }))
+            }),
+        ),
     ];
 
     for (name, files) in cases {
@@ -451,7 +490,7 @@ fn a_manifest_that_cannot_be_trusted_stops_the_status_and_the_plan() {
 /// written here: the forms that only one reader of JSON would take.
 fn raw_entry(version: &str, former_paths: &str) -> String {
     format!(
-        r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{version},"firstPublished":"{TIME}","formerPaths":{former_paths},"id":"00000000000000aa","lastPublished":"{TIME}","path":"Welcome.md","sourceHash":"sha256:00","state":"published"}}"#
+        r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{version},"firstPublished":"{TIME}","formerPaths":{former_paths},"id":"00000000000000aa","lastPublished":"{TIME}","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"published"}}"#
     )
 }
 
@@ -717,7 +756,7 @@ fn the_commit_has_a_message_with_the_counts_the_device_and_the_face() {
 
     assert_eq!(
         setup.git(&["log", "-1", "--format=%B"]),
-        "Publish: 1 new, 1 updated, 1 removed, 1 skipped\n\nDevice: garden-shed\nFace: command-line"
+        "Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped\n\nDevice: garden-shed\nFace: command-line"
     );
     // One commit, and the content store has it.
     assert_eq!(setup.git(&["rev-list", "--count", "HEAD"]), "3");
@@ -989,4 +1028,317 @@ fn a_refused_push_of_an_update_puts_the_copy_back_and_corrects_nothing() {
     assert!(setup.copy.join("notes").join("Welcome.md").exists());
     assert!(!setup.copy.join("notes").join(SECOND).exists());
     assert_eq!(picture(&setup.vault), before.0);
+}
+
+/// The names of the files of the manifest of the copy, sorted.
+fn manifest_files(copy: &Path) -> Vec<String> {
+    let mut files: Vec<String> = fs::read_dir(copy.join("manifest"))
+        .expect("the manifest can be read")
+        .map(|entry| {
+            entry
+                .expect("the entry can be read")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+/// The manifest entry of a note in the copy of the content store, as data.
+fn entry_of(copy: &Path, path: &str) -> Value {
+    for file in manifest_files(copy) {
+        let entry: Value = serde_json::from_str(&read(&copy.join("manifest").join(file)))
+            .expect("the entry is JSON");
+        if entry["path"] == path {
+            return entry;
+        }
+    }
+    panic!("the manifest has no entry for \"{path}\"");
+}
+
+/// The files of the last commit of the copy that hold a text, below the given
+/// paths of the store. The empty text when no file holds it.
+fn committed_files_with(setup: &Setup, needle: &str, below: &[&str]) -> String {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(&setup.copy)
+        .args(["grep", "-l", needle, "HEAD"])
+        .args(below);
+    // Inside a git hook, these variables point git to another repository.
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("GIT_") {
+            command.env_remove(name);
+        }
+    }
+    let output = command.output().expect("git starts");
+    // Git ends with 1 when no file holds the text. Every other end is an error.
+    assert!(
+        matches!(output.status.code(), Some(0 | 1)),
+        "git grep failed: {}",
+        errors_of(&output)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .trim_end()
+        .to_owned()
+}
+
+const DRIP: &str = "10 Garden/Drip irrigation.md";
+const BARREL: &str = "10 Garden/Rain barrel.md";
+
+/// TEST-18, on the side of the tool: a wikilink, a link with a link text, a
+/// link to a heading, an embed, a link with the full path, a Markdown link and
+/// a link in a property lead to the same note. A name that no note has gives
+/// no item.
+#[test]
+fn a_note_with_a_link_of_each_form_names_the_target_of_each_link_path() {
+    let setup = Setup::fixture();
+
+    setup.publish(&json!({ "include": [DRIP] }), TIME);
+
+    assert_eq!(
+        entry_of(&setup.copy, DRIP)["links"],
+        json!([
+            { "link": "10 Garden/Rain barrel", "path": BARREL },
+            { "link": "Rain barrel", "path": BARREL },
+            { "link": "Rain barrel.md", "path": BARREL }
+        ])
+    );
+    // The text is published as the author wrote it.
+    let cleaned = read(&setup.copy.join("notes").join(DRIP));
+    assert!(cleaned.contains("[[Rain barrel|the barrel]] or the [[Water butt]]"));
+    assert!(cleaned.contains("[the barrel](Rain%20barrel.md)"));
+    assert!(cleaned.contains("source: \"[[Rain barrel]]\""));
+}
+
+#[test]
+fn a_link_to_a_note_in_a_folder_of_the_deny_list_gives_no_item() {
+    let setup = Setup::fixture();
+    let note = "10 Garden/Watering schedule.md";
+
+    setup.publish(&json!({ "include": [note] }), TIME);
+
+    assert_eq!(entry_of(&setup.copy, note)["links"], json!([]));
+    assert_eq!(
+        committed_files_with(&setup, "90 Locked Shed", &["--", "manifest"]),
+        ""
+    );
+}
+
+#[test]
+fn a_name_that_two_notes_have_leads_to_the_note_below_the_folder_of_the_link() {
+    let setup = Setup::fixture();
+    let note = "10 Garden/Herb bed/Thyme.md";
+
+    setup.publish(&json!({ "include": [note] }), TIME);
+
+    assert_eq!(
+        entry_of(&setup.copy, note)["links"],
+        json!([
+            {
+                "link": "20 Library/20.02 Recipes/Mint",
+                "path": "20 Library/20.02 Recipes/Mint.md"
+            },
+            { "link": "Mint", "path": "10 Garden/Herb bed/Mint.md" }
+        ])
+    );
+}
+
+/// BUILD-05: the entry of the note that links does not depend on the state of
+/// the target.
+#[test]
+fn the_publication_of_a_target_changes_nothing_in_the_note_that_links_to_it() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [DRIP] }), TIME);
+    let before = entry_of(&setup.copy, DRIP);
+
+    setup.publish(&json!({ "include": [BARREL] }), LATER);
+
+    assert_eq!(entry_of(&setup.copy, DRIP), before);
+    assert_eq!(paths(&setup.status()["unchanged"]), [DRIP, BARREL]);
+}
+
+#[test]
+fn a_published_note_that_comes_under_a_guard_after_the_plan_makes_the_plan_stale() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
+    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
+    fs::write(
+        setup.vault.join(SECOND),
+        "---\npublish_ignore: true\n---\nText\n",
+    )
+    .expect("the file is written");
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("stale"));
+    assert!(!setup.copy.join("notes").join("Welcome.md").exists());
+}
+
+#[test]
+fn a_link_of_a_note_of_the_plan_that_leads_to_another_note_makes_the_plan_stale() {
+    let setup = Setup::fixture();
+    // The note links to "Water butt", which no note has.
+    let id = setup.plan_id(&json!({ "include": [DRIP] }));
+    fs::write(
+        setup.vault.join("10 Garden/Water butt.md"),
+        "Another name\n",
+    )
+    .expect("the file is written");
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("stale"));
+}
+
+/// A note with the ignore property: a guard excludes it.
+const IGNORED: &str = "---\npublish_ignore: true\n---\nA text that must never go out\n";
+
+/// TEST-13, PUB-29: a forced removal goes with a publication, whatever is
+/// selected, and the commit says it.
+#[test]
+fn a_forced_removal_goes_with_a_publication_of_another_note_and_the_commit_counts_it() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
+    fs::write(setup.vault.join(SECOND), IGNORED).expect("the file is written");
+
+    let report = setup.publish(&json!({ "include": ["Welcome.md"] }), LATER);
+
+    assert_eq!(paths(&report["forcedRemoved"]), [SECOND]);
+    assert_eq!(paths(&report["removed"]), Vec::<String>::new());
+    assert_eq!(paths(&report["published"]), ["Welcome.md"]);
+    assert_eq!(
+        setup.git(&["log", "-1", "--format=%s"]),
+        "Publish: 1 new, 0 updated, 0 removed, 1 forced, 0 skipped"
+    );
+    assert!(!setup.copy.join("notes").join(SECOND).exists());
+    assert!(
+        !setup
+            .copy
+            .join("manifest")
+            .join(format!("{SECOND_ID}.json"))
+            .exists()
+    );
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+    // The text under the guard is nowhere in the last commit.
+    assert_eq!(committed_files_with(&setup, "must never go out", &[]), "");
+    // The write into the note under the guard changed nothing: it had no
+    // state property.
+    assert_eq!(read(&setup.vault.join(SECOND)), IGNORED);
+}
+
+/// Story 80: a move into a private folder is enough. The tool does not scan a
+/// folder of the deny list, so it knows the move by the name of the note.
+#[test]
+fn a_forced_removal_takes_a_published_note_that_was_moved_into_a_folder_of_the_deny_list() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
+    let locked = setup.vault.join("90 Locked Shed");
+    let moved = locked.join("Attachments").join("Compost basics.md");
+    fs::rename(setup.vault.join(SECOND), &moved).expect("the note can be moved");
+    // A file that cannot be read as text: the tool lists the folder and reads
+    // no file of it.
+    fs::write(locked.join("Not a text.md"), [0xff, 0xfe, 0xfd]).expect("the file is written");
+    let before = picture(&locked);
+
+    let planned = setup.plan(&json!({ "include": [] }));
+    assert!(planned.status.success(), "{}", errors_of(&planned));
+    let planned = json_of(&planned);
+    let report = setup.publish(&json!({ "include": [] }), LATER);
+
+    assert_eq!(
+        planned["plan"],
+        json!({ "forcedRemove": [SECOND], "publish": [], "remove": [], "update": [] })
+    );
+    assert_eq!(paths(&report["forcedRemoved"]), [SECOND]);
+    assert!(!setup.copy.join("notes").join(SECOND).exists());
+    assert_eq!(manifest_files(&setup.copy), [format!("{NOTE_ID}.json")]);
+    // No file of the folder of the deny list is written: the note keeps its
+    // state property there.
+    assert_eq!(picture(&locked), before);
+    assert!(read(&moved).contains("public_note: true"));
+}
+
+/// PUB-95: a file that is missing on this device is never removed without a
+/// selection.
+#[test]
+fn a_forced_removal_does_not_take_a_published_note_whose_file_is_only_missing() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
+    fs::remove_file(setup.vault.join(SECOND)).expect("the note can be removed");
+
+    let planned = setup.plan(&json!({ "include": [] }));
+    assert!(planned.status.success(), "{}", errors_of(&planned));
+    let held = setup.plan(&json!({ "include": [], "hold": [SECOND] }));
+    assert!(held.status.success(), "{}", errors_of(&held));
+
+    assert_eq!(
+        json_of(&planned)["plan"],
+        json!({ "forcedRemove": [], "publish": [], "remove": [], "update": [] })
+    );
+    assert_eq!(
+        paths(&json_of(&held)["plan"]["forcedRemove"]),
+        Vec::<String>::new()
+    );
+}
+
+/// PUB-21: if a forced removal fails, the whole publication stops. Here a
+/// folder is in the place of the cleaned note of the second removal: that
+/// fails on every system, with no change of a permission.
+#[test]
+fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put_back() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
+    fs::write(setup.vault.join(NOTE), IGNORED).expect("the file is written");
+    fs::write(setup.vault.join(SECOND), IGNORED).expect("the file is written");
+    let blocked = setup.copy.join("notes").join(NOTE);
+    fs::remove_file(&blocked).expect("the cleaned note can be removed");
+    fs::create_dir(&blocked).expect("the folder can be made");
+    fs::write(
+        blocked.join("in the way"),
+        "A file in a folder that stands for the note\n",
+    )
+    .expect("the file is written");
+    let planned = setup.plan(&json!({ "include": ["Welcome.md"] }));
+    assert!(planned.status.success(), "{}", errors_of(&planned));
+    let planned = json_of(&planned);
+    assert_eq!(paths(&planned["plan"]["forcedRemove"]), [SECOND, NOTE]);
+    let id = planned["id"].as_str().expect("the plan has an id");
+    let before = (
+        picture(&setup.vault),
+        setup.git(&["rev-parse", "HEAD"]),
+        manifest_files(&setup.copy),
+    );
+
+    let output = setup.publish_plan(id, LATER);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    let message = errors_of(&output);
+    assert!(message.contains(NOTE), "{message}");
+    assert!(message.contains("guard"), "{message}");
+    assert!(message.contains("Nothing was published"), "{message}");
+    assert_eq!(setup.git(&["rev-parse", "HEAD"]), before.1);
+    assert_eq!(
+        git(&[
+            "--git-dir",
+            text(setup.stores.content_store()),
+            "rev-parse",
+            "main"
+        ]),
+        before.1
+    );
+    // The first removal was put back, and no other note was published.
+    assert!(setup.copy.join("notes").join(SECOND).exists());
+    assert_eq!(manifest_files(&setup.copy), before.2);
+    assert_eq!(setup.git(&["status", "--porcelain", "--", "manifest"]), "");
+    assert!(!setup.copy.join("notes").join("Welcome.md").exists());
+    // Without a push, no property is corrected.
+    assert_eq!(picture(&setup.vault), before.0);
+    // Both notes still wait for their removal.
+    assert_eq!(paths(&setup.status()["toRemove"]), [SECOND, NOTE]);
 }

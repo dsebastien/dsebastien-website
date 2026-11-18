@@ -1,11 +1,13 @@
 import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
+import { linksOf } from './links.ts'
 import { CONFIGURATION_FILE, parseConfiguration } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
 import { namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
 import { contentHash, sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
+import type { NoteLink } from './links.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
 import { compareCodePoints } from './order.ts'
@@ -44,6 +46,8 @@ export interface Run {
 export type PublicationReport = {
     /** The notes of the plan that were left out, with the reason. */
     readonly failed: readonly { readonly path: string; readonly reason: string }[]
+    /** The notes that were removed because a guard excludes them. They left the manifest. */
+    readonly forcedRemoved: readonly string[]
     /** The notes whose state property was removed. */
     readonly propertyRemoved: readonly string[]
     /** The notes whose state property was set. */
@@ -145,10 +149,11 @@ export async function status(device: Device): Promise<PublicationQueue> {
     return (await readState(device)).scan.queue
 }
 
-/** The source and the cleaned note of one note of a plan. */
+/** The source, the cleaned note and the links of one note of a plan. */
 interface NoteTexts {
     readonly source: string
     readonly cleaned: string
+    readonly links: readonly NoteLink[]
 }
 
 /** A plan with everything that its publication needs. */
@@ -169,7 +174,12 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
     const { scan, configurationHash } = await readState(device)
     const plan = computePlan(scan, selection)
     const texts = new Map<string, NoteTexts>()
-    const notes: { cleanedHash: string; path: string; sourceHash: string }[] = []
+    const notes: {
+        cleanedHash: string
+        links: readonly NoteLink[]
+        path: string
+        sourceHash: string
+    }[] = []
     // The two lists have no path in common, and each one is sorted.
     for (const path of [...plan.publish, ...plan.update]) {
         const text = await device.vault.read(path)
@@ -178,8 +188,14 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
         }
         const source = sourceOf(text)
         const cleaned = cleanNote(source)
-        texts.set(path, { source, cleaned })
-        notes.push({ cleanedHash: contentHash(cleaned), path, sourceHash: contentHash(source) })
+        const links = linksOf(source, path, scan.index, scan.ignored)
+        texts.set(path, { source, cleaned, links })
+        notes.push({
+            cleanedHash: contentHash(cleaned),
+            links,
+            path,
+            sourceHash: contentHash(source)
+        })
     }
     // In the order of the canonical form: never the default order of texts.
     notes.sort((one, two) => compareCodePoints(one.path, two.path))
@@ -261,6 +277,7 @@ function entryOf(
     const hashes = {
         cleanedHash: contentHash(texts.cleaned),
         cleaningVersion: CLEANING_VERSION,
+        links: texts.links,
         sourceHash: contentHash(texts.source)
     }
     if (before === undefined) {
@@ -347,7 +364,8 @@ async function correctState(
  * Applies exactly one plan, by its id.
  *
  * It computes the record of the plan again: when the new record is not the
- * stored one, the plan is stale and nothing is published. Then the cleaned
+ * stored one, the plan is stale and nothing is published. The forced
+ * removals come first: when one fails, nothing is published. Then the cleaned
  * notes and the manifest entries go to the content store in one commit, which
  * is pushed. A note whose files cannot be written is left out and reported.
  * Only after the push, the state property is corrected in the vault.
@@ -381,6 +399,31 @@ export async function publish(device: Device, id: string, run: Run): Promise<Pub
     const lists = current.plan
 
     const written: string[] = []
+    // The forced removals come first, and they follow the takedown rule: the
+    // note leaves the manifest (PUB-21, PUB-84). When one fails, the whole
+    // publication stops: no note is published while a note under a guard
+    // stays live.
+    const forcedFiles: string[] = []
+    for (const path of lists.forcedRemove) {
+        try {
+            const entry = scan.manifest.get(path)
+            if (entry === undefined) {
+                throw new Error('the note has no manifest entry')
+            }
+            for (const file of [`${NOTES_FOLDER}/${path}`, manifestFile(entry.id)]) {
+                forcedFiles.push(file)
+                if (await device.store.remove(file)) {
+                    written.push(file)
+                }
+            }
+        } catch (error) {
+            await device.store.discard(forcedFiles)
+            throw new Error(
+                `a guard excludes "${path}", and it could not be removed from the content store: ${messageOf(error)}. Nothing was published`,
+                { cause: error }
+            )
+        }
+    }
     const failed: { path: string; reason: string }[] = []
     const done = { published: [] as string[], updated: [] as string[], removed: [] as string[] }
     const apply = async (
@@ -429,14 +472,14 @@ export async function publish(device: Device, id: string, run: Run): Promise<Pub
 
     const planned = new Set([...lists.update, ...lists.remove])
     const skipped = scan.queue.changed.filter((path) => !planned.has(path))
-    const report = { failed, ...done, skipped }
+    const report = { failed, forcedRemoved: lists.forcedRemove, ...done, skipped }
     if (written.length === 0) {
         // Nothing to commit, so no push: without a push, no property is corrected.
         return { ...report, propertyRemoved: [], propertySet: [], warnings: [] }
     }
     await device.store.commitAndPush(
         [
-            `Publish: ${String(done.published.length)} new, ${String(done.updated.length)} updated, ${String(done.removed.length)} removed, ${String(skipped.length)} skipped`,
+            `Publish: ${String(done.published.length)} new, ${String(done.updated.length)} updated, ${String(done.removed.length)} removed, ${String(lists.forcedRemove.length)} forced, ${String(skipped.length)} skipped`,
             '',
             `Device: ${run.device}`,
             `Face: ${run.face}`
@@ -452,7 +495,7 @@ export async function publish(device: Device, id: string, run: Run): Promise<Pub
     for (const path of done.published) {
         published.add(path)
     }
-    for (const path of done.removed) {
+    for (const path of [...done.removed, ...lists.forcedRemove]) {
         published.delete(path)
     }
     return { ...report, ...(await correctState(device, scan, published)) }

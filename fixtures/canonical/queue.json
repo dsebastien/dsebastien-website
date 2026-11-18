@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Every expected value is written by hand. The hashes were computed with sha256sum.",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Every expected value is written by hand. The hashes were computed with sha256sum.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -42,6 +42,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": []
@@ -58,6 +59,7 @@
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
                         "published": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
@@ -80,7 +82,7 @@
                         "notes/Alpha.md": "---\ntags: a\n---\nAlpha\n",
                         "notes/Beta.md": "Beta\n",
                         "notes/Folder/Gamma.md": "Gamma\n",
-                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"state\": \"published\"\n}\n",
                         "notes/Folder/Ignored.md": null,
                         "notes/Locked/Secret.md": null,
                         "notes/.hidden/Draft.md": null
@@ -142,6 +144,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": ["Alpha.md"]
@@ -156,6 +159,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": []
@@ -170,6 +174,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": ["Delta.md"],
                         "remove": [],
                         "update": ["Alpha.md"]
@@ -184,6 +189,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": ["Alpha.md"]
@@ -198,6 +204,7 @@
                         "remove": ["Beta.md"]
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": ["Beta.md"],
                         "update": ["Alpha.md"]
@@ -212,6 +219,7 @@
                         "remove": ["Folder/Gamma.md"]
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": ["Folder/Gamma.md"],
                         "update": []
@@ -226,6 +234,7 @@
                         "remove": ["Alpha.md"]
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": ["Alpha.md"],
                         "update": []
@@ -240,6 +249,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": ["Alpha.md"]
@@ -254,6 +264,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": ["Alpha.md"]
@@ -268,6 +279,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": ["Delta.md"],
                         "remove": [],
                         "update": ["Alpha.md"]
@@ -464,6 +476,7 @@
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": ["Delta.md"],
                         "published": ["Delta.md"],
@@ -484,9 +497,9 @@
                         "notes/Alpha.md": "---\ntags: a\n---\nAlpha, second version\n",
                         "notes/Beta.md": null,
                         "notes/Delta.md": "Delta\n",
-                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"state\": \"published\"\n}\n",
-                        "manifest/94e2c97499374edd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"state\": \"unpublished\"\n}\n",
-                        "manifest/626c2442e3f32d3a.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"626c2442e3f32d3a\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Delta.md\",\n  \"sourceHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/94e2c97499374edd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"state\": \"unpublished\"\n}\n",
+                        "manifest/626c2442e3f32d3a.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"626c2442e3f32d3a\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Delta.md\",\n  \"sourceHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -525,6 +538,7 @@
                     "time": "2031-05-03T10:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": ["Alpha.md", "Folder/Gamma.md"],
                         "published": [],
@@ -588,13 +602,14 @@
                 },
                 {
                     "do": "plan",
-                    "why": "a plan never updates a note under a guard",
+                    "why": "a plan never updates a published note under a guard: every plan removes it",
                     "selection": {
                         "hold": [],
                         "include": [],
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": ["Folder/Gamma.md"],
                         "publish": [],
                         "remove": [],
                         "update": ["Alpha.md"]
@@ -612,21 +627,22 @@
                 },
                 {
                     "do": "plan",
-                    "why": "a published note under a guard can be removed",
+                    "why": "a guard wins over an unpublish: the note is a forced removal, and the plan unpublishes nothing",
                     "selection": {
                         "hold": ["Alpha.md"],
                         "include": [],
                         "remove": ["Folder/Gamma.md"]
                     },
                     "plan": {
+                        "forcedRemove": ["Folder/Gamma.md"],
                         "publish": [],
-                        "remove": ["Folder/Gamma.md"],
+                        "remove": [],
                         "update": []
                     }
                 },
                 {
                     "do": "publish",
-                    "why": "the removal of the note under a guard",
+                    "why": "the forced removal of the note under a guard",
                     "selection": {
                         "hold": ["Alpha.md"],
                         "include": [],
@@ -635,10 +651,11 @@
                     "time": "2031-05-04T11:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": ["Folder/Gamma.md"],
                         "propertyRemoved": ["Folder/Gamma.md"],
                         "propertySet": [],
                         "published": [],
-                        "removed": ["Folder/Gamma.md"],
+                        "removed": [],
                         "skipped": ["Alpha.md"],
                         "updated": [],
                         "warnings": []
@@ -646,12 +663,13 @@
                 },
                 {
                     "do": "expect",
-                    "why": "the text under the guard never reached the content store",
+                    "why": "the text under the guard never reached the content store, and the note left the manifest",
                     "vault": {
                         "Folder/Gamma.md": "---\npublish_ignore: true\n---\nGamma, a version that must never go out\n"
                     },
                     "store": {
-                        "notes/Folder/Gamma.md": null
+                        "notes/Folder/Gamma.md": null,
+                        "manifest/8c657335a8ddf29f.json": null
                     }
                 },
                 {
@@ -711,6 +729,7 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": []
@@ -727,6 +746,7 @@
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": [],
                         "published": [],
@@ -757,6 +777,7 @@
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": ["Ignored.md", "Windows.md", "Wrong.md"],
                         "propertySet": ["Published.md"],
                         "published": ["Published.md"],
@@ -819,6 +840,7 @@
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": ["Other.md", "Published.md"],
                         "published": ["Other.md"],
@@ -848,6 +870,7 @@
                     "time": "2031-05-03T10:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": ["Other.md"],
                         "propertySet": [],
                         "published": [],
@@ -865,7 +888,7 @@
                     },
                     "store": {
                         "notes/Other.md": null,
-                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"unpublished\"\n}\n"
+                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"unpublished\"\n}\n"
                     }
                 },
                 {
@@ -896,6 +919,7 @@
                     "time": "2031-05-04T11:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": ["Other.md"],
                         "published": ["Other.md"],
@@ -911,7 +935,7 @@
                     "vault": {},
                     "store": {
                         "notes/Other.md": "Other\n",
-                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-04T11:00:00Z\",\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-04T11:00:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"published\"\n}\n"
                     }
                 }
             ]
@@ -935,6 +959,7 @@
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": ["Edited.md", "Note.md"],
                         "published": ["Edited.md", "Note.md"],
@@ -948,7 +973,7 @@
                     "do": "store",
                     "why": "the entry of one note comes from an older version of the cleaning step",
                     "files": {
-                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"cleaningVersion\": 0,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"cleaningVersion\": 0,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -986,6 +1011,7 @@
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": [],
                         "published": [],
@@ -1002,8 +1028,8 @@
                     "store": {
                         "notes/Note.md": "Text\n",
                         "notes/Edited.md": "Two\n",
-                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n",
-                        "manifest/9ae7ed34618de0b5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"9ae7ed34618de0b5\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Edited.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/9ae7ed34618de0b5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"9ae7ed34618de0b5\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Edited.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -1063,6 +1089,7 @@
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": [],
                         "propertyRemoved": [],
                         "propertySet": ["Nested.md", "Open.md"],
                         "published": ["Nested.md", "Open.md"],
@@ -1099,7 +1126,7 @@
                 },
                 {
                     "do": "publish",
-                    "why": "a publication of another note writes none of them, and says so",
+                    "why": "a publication of another note removes both from the content store, writes none of them, and says so",
                     "selection": {
                         "hold": [],
                         "include": ["Other.md"],
@@ -1108,43 +1135,44 @@
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
                         "failed": [],
+                        "forcedRemoved": ["Nested.md", "Open.md"],
                         "propertyRemoved": [],
                         "propertySet": ["Other.md"],
                         "published": ["Other.md"],
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": ["Loose.md", "Nested.md", "Open.md"]
+                        "warnings": ["Loose.md", "Nested.md"]
                     }
                 },
                 {
                     "do": "expect",
-                    "why": "the three notes have the text of the author, and nothing of them is in the content store after the first publication",
+                    "why": "the three notes have the text of the author, and nothing of them is in the content store",
                     "vault": {
                         "Open.md": "---\npublish_ignore: true\nA private text below properties that are never closed\n",
                         "Nested.md": "---\npublic_note: true\n  publish_ignore: true\n---\nA private text\n",
                         "Loose.md": "---\npublic_note: true\n  publish_ignore: true\n---\nA private text\n"
                     },
                     "store": {
-                        "notes/Open.md": "Open\n",
-                        "notes/Nested.md": "Nested\n",
+                        "notes/Open.md": null,
+                        "notes/Nested.md": null,
                         "notes/Loose.md": null
                     }
                 },
                 {
                     "do": "status",
-                    "why": "the guard still holds: no note became a changed note",
+                    "why": "the guard still holds: no note is a candidate, and no note became a changed note",
                     "queue": {
                         "changed": [],
                         "counts": {
                             "changed": 0,
                             "new": 0,
-                            "toRemove": 2,
+                            "toRemove": 0,
                             "unchanged": 1
                         },
                         "new": [],
                         "technicalUpdates": [],
-                        "toRemove": ["Nested.md", "Open.md"],
+                        "toRemove": [],
                         "unchanged": ["Other.md"]
                     }
                 },
@@ -1157,9 +1185,537 @@
                         "remove": []
                     },
                     "plan": {
+                        "forcedRemove": [],
                         "publish": [],
                         "remove": [],
                         "update": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a published note that comes under a guard is removed by the next publication",
+            "denyList": ["Locked"],
+            "vault": {
+                "Keep.md": "Keep\n",
+                "Moves.md": "Moves\n",
+                "Marked.md": "Marked\n",
+                "Lost.md": "Lost\n",
+                "Private/Diary.md": "Diary\n",
+                "Locked/Old.md": "Old\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication of five notes",
+                    "selection": {
+                        "hold": [],
+                        "include": [
+                            "Keep.md",
+                            "Lost.md",
+                            "Marked.md",
+                            "Moves.md",
+                            "Private/Diary.md"
+                        ],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [
+                            "Keep.md",
+                            "Lost.md",
+                            "Marked.md",
+                            "Moves.md",
+                            "Private/Diary.md"
+                        ],
+                        "published": [
+                            "Keep.md",
+                            "Lost.md",
+                            "Marked.md",
+                            "Moves.md",
+                            "Private/Diary.md"
+                        ],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "one note gets the ignore property, the author edits one, and one is moved into a folder below a folder of the deny list, with an edit and another letter case of its name",
+                    "files": {
+                        "Marked.md": "---\npublish_ignore: true\npublic_note: true\n---\nMarked\n",
+                        "Locked/Sub/moves.md": "---\npublic_note: true\n---\nMoves, with a line that must never go out\n",
+                        "Keep.md": "---\npublic_note: true\n---\nKeep, second version\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old path of the note that moved, and a note whose file is only missing from this vault",
+                    "paths": ["Moves.md", "Lost.md"]
+                },
+                {
+                    "do": "store",
+                    "why": "the folder of a published note enters the deny list",
+                    "files": {
+                        "configuration.json": "{\n  \"denyList\": [\"Locked\", \"Private\"]\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the four notes wait for their removal",
+                    "queue": {
+                        "changed": ["Keep.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 4,
+                            "unchanged": 0
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths holds the three forced removals: the ignore property, the folder that entered the deny list, and the note whose name is now in a folder of the deny list. The note that is only missing is not one of them",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Keep.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the removal of a note with the ignore property cannot be held",
+                    "selection": {
+                        "hold": ["Marked.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "the removal of a note in a folder of the deny list cannot be held",
+                    "selection": {
+                        "hold": ["Private/Diary.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "the removal of a note that moved into a folder of the deny list cannot be held",
+                    "selection": {
+                        "hold": ["Moves.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a note under a guard cannot be included",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Marked.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a note that is only missing can be held, and a guard wins over an unpublish: the note is a forced removal one time",
+                    "selection": {
+                        "hold": ["Lost.md"],
+                        "include": [],
+                        "remove": ["Marked.md"]
+                    },
+                    "plan": {
+                        "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Keep.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the note that is only missing is removed only when the selection names it",
+                    "selection": {
+                        "hold": ["Keep.md"],
+                        "include": [],
+                        "remove": ["Lost.md"]
+                    },
+                    "plan": {
+                        "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
+                        "publish": [],
+                        "remove": ["Lost.md"],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a publication that holds its only update still removes the three notes under a guard",
+                    "selection": {
+                        "hold": ["Keep.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": ["Marked.md", "Moves.md", "Private/Diary.md"],
+                        "propertyRemoved": ["Marked.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Keep.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the three notes left the content store with their manifest entries, the other notes stay, and no note in a folder of the deny list is written",
+                    "vault": {
+                        "Marked.md": "---\npublish_ignore: true\n---\nMarked\n",
+                        "Locked/Sub/moves.md": "---\npublic_note: true\n---\nMoves, with a line that must never go out\n",
+                        "Private/Diary.md": "---\npublic_note: true\n---\nDiary\n"
+                    },
+                    "store": {
+                        "notes/Marked.md": null,
+                        "notes/Moves.md": null,
+                        "notes/Locked/Sub/moves.md": null,
+                        "notes/Private/Diary.md": null,
+                        "manifest/5505d23a3d0785f8.json": null,
+                        "manifest/243ba59c19e2bf5b.json": null,
+                        "manifest/442fcacd5e36e565.json": null,
+                        "notes/Lost.md": "Lost\n",
+                        "manifest/e9c9059c0dc2c64b.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e9c9059c0dc2c64b\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Lost.md\",\n  \"sourceHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"state\": \"published\"\n}\n",
+                        "notes/Keep.md": "Keep\n",
+                        "manifest/119452f1e00662e5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:3588ef6202c5f548f83be05a6ab0e55a4e2d3c0219956b903b2ae782ca658d96\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"119452f1e00662e5\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Keep.md\",\n  \"sourceHash\": \"sha256:3588ef6202c5f548f83be05a6ab0e55a4e2d3c0219956b903b2ae782ca658d96\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "only the held note and the missing note wait",
+                    "queue": {
+                        "changed": ["Keep.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Lost.md"],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author removes the ignore property",
+                    "files": {
+                        "Marked.md": "Marked\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note is a candidate again",
+                    "queue": {
+                        "changed": ["Keep.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "new": ["Marked.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Lost.md"],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the note is published as a new note",
+                    "selection": {
+                        "hold": ["Keep.md"],
+                        "include": ["Marked.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Marked.md"],
+                        "published": ["Marked.md"],
+                        "removed": [],
+                        "skipped": ["Keep.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the forced removal kept nothing of the note: it has a new identity and a new first date",
+                    "vault": {},
+                    "store": {
+                        "notes/Marked.md": "Marked\n",
+                        "manifest/e5aec6303a01cd4e.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:680bd2a70b3940acc1373673d1efe911f7d243de9a1ec8ab54ee6e817d5da4e6\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-03T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e5aec6303a01cd4e\",\n  \"lastPublished\": \"2031-06-03T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Marked.md\",\n  \"sourceHash\": \"sha256:680bd2a70b3940acc1373673d1efe911f7d243de9a1ec8ab54ee6e817d5da4e6\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/5505d23a3d0785f8.json": null
+                    }
+                }
+            ]
+        },
+        {
+            "name": "the links of a note",
+            "denyList": ["Locked"],
+            "vault": {
+                "Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
+                "Leaf.md": "Leaf\n",
+                "Folder/Deep.md": "Deep\n",
+                "Hidden.md": "---\npublish_ignore: true\n---\nHidden\n",
+                "Locked/Secret.md": "Secret\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the note with the links is published, and no target of a link is",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Hub.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Hub.md"],
+                        "published": ["Hub.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the text keeps every link as it is written, and the entry names the target of a wikilink, of an embed, of a Markdown link and of a link in a property. A target that is not published has its item. A note under a guard and a name that no note has give none",
+                    "vault": {},
+                    "store": {
+                        "notes/Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n",
+                        "notes/Leaf.md": null
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a target is published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Leaf.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Leaf.md"],
+                        "published": ["Leaf.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note with the links did not change: the build makes the link from the manifest",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "new": ["Folder/Deep.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Hub.md", "Leaf.md"]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry of the note with the links is the one of its publication",
+                    "vault": {},
+                    "store": {
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/cf849639740656fd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:22e360ed279dc575a229f60fb128364506ff343b7b0cf1b83d3810ec21a62bd5\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-02T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf849639740656fd\",\n  \"lastPublished\": \"2031-06-02T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Leaf.md\",\n  \"sourceHash\": \"sha256:22e360ed279dc575a229f60fb128364506ff343b7b0cf1b83d3810ec21a62bd5\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author makes a note that a link names, and removes the ignore property from another target",
+                    "files": {
+                        "Later.md": "Later\n",
+                        "Hidden.md": "Hidden\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "two links lead to a note now: the note with the links is a technical update",
+                    "queue": {
+                        "changed": ["Hub.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "new": ["Folder/Deep.md", "Hidden.md", "Later.md"],
+                        "technicalUpdates": ["Hub.md"],
+                        "toRemove": [],
+                        "unchanged": ["Leaf.md"]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a plan without paths takes the technical update",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Hub.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry has the two new items, the text is the same, and the dates did not move",
+                    "vault": {},
+                    "store": {
+                        "notes/Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hidden\",\n      \"path\": \"Hidden.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Later\",\n      \"path\": \"Later.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "nothing waits",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "new": ["Folder/Deep.md", "Hidden.md", "Later.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Hub.md", "Leaf.md"]
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the published target gets the ignore property",
+                    "files": {
+                        "Leaf.md": "---\npublish_ignore: true\npublic_note: true\n---\nLeaf\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the target waits for its removal, and the note that links to it is a technical update",
+                    "queue": {
+                        "changed": ["Hub.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 3,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "new": ["Folder/Deep.md", "Hidden.md", "Later.md"],
+                        "technicalUpdates": ["Hub.md"],
+                        "toRemove": ["Leaf.md"],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths holds the forced removal and the technical update",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Leaf.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Hub.md"]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the target is removed, and the path of a note under a guard leaves the entry of the other note",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-04T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": ["Leaf.md"],
+                        "propertyRemoved": ["Leaf.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Hub.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the target left the content store, and the entry of the note with the links names it no more",
+                    "vault": {
+                        "Leaf.md": "---\npublish_ignore: true\n---\nLeaf\n"
+                    },
+                    "store": {
+                        "notes/Leaf.md": null,
+                        "manifest/cf849639740656fd.json": null,
+                        "notes/Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hidden\",\n      \"path\": \"Hidden.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Later\",\n      \"path\": \"Later.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n"
                     }
                 }
             ]

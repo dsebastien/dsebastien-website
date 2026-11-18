@@ -15,6 +15,8 @@ import type { Scan } from './queue.ts'
 // A type alias, not an interface: the canonical form takes any object of data,
 // and an interface is not one for the compiler.
 export type PublicationPlan = {
+    /** The forced removals: the published notes that a guard excludes. No selection changes this list (PUB-21). */
+    readonly forcedRemove: readonly string[]
     readonly publish: readonly string[]
     readonly update: readonly string[]
     readonly remove: readonly string[]
@@ -43,15 +45,17 @@ export class SelectionError extends Error {
 }
 
 /**
- * Makes a plan from its three lists. Each list is put in the order of the
+ * Makes a plan from its four lists. Each list is put in the order of the
  * canonical form here, so that no caller can give a plan in another order.
  */
 export function makePlan(lists: {
+    forcedRemove: readonly string[]
     publish: readonly string[]
     update: readonly string[]
     remove: readonly string[]
 }): PublicationPlan {
     return {
+        forcedRemove: sortByCodePoint(lists.forcedRemove),
         publish: sortByCodePoint(lists.publish),
         update: sortByCodePoint(lists.update),
         remove: sortByCodePoint(lists.remove)
@@ -86,8 +90,10 @@ function reasonOutOfQueue(path: string, scan: Scan): string {
  * Computes the publication plan of a selection from the queue.
  *
  * A plan without paths holds the changed notes only. A new candidate enters a
- * plan only when its path is included (PUB-19, PUB-54). A selection that
- * cannot become a plan stops with a `SelectionError`.
+ * plan only when its path is included (PUB-19, PUB-54). Every plan holds
+ * every forced removal: a published note that a guard excludes is removed by
+ * the next publication, whatever is selected, and it cannot be held (PUB-21).
+ * A selection that cannot become a plan stops with a `SelectionError`.
  */
 export function computePlan(scan: Scan, selection: NormalSelection): PublicationPlan {
     const { queue } = scan
@@ -112,6 +118,18 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const changed = new Set(queue.changed)
     const waiting = new Set(queue.toRemove)
     const unchanged = new Set(queue.unchanged)
+    // A published note is a forced removal when a guard excludes it: its path
+    // is in a folder of the deny list, it has the ignore property, or its file
+    // is missing and a note of its name is in a folder of the deny list (it
+    // moved there). A note whose file is only missing is not one. Every path
+    // of this list of the queue that has no ignore property is a missing file.
+    const forced = queue.toRemove.filter(
+        (path) =>
+            guardOfPath(path, scan.configuration) !== undefined ||
+            scan.ignored.has(path) ||
+            scan.deniedNames.has(path.slice(path.lastIndexOf('/') + 1).toLowerCase())
+    )
+    const underGuard = new Set(forced)
     for (const path of selection.include) {
         if (waiting.has(path)) {
             refuse(path, 'is published and waits for its removal: it cannot be published again')
@@ -121,6 +139,9 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
         }
     }
     for (const path of selection.hold) {
+        if (underGuard.has(path)) {
+            refuse(path, 'is published and a guard excludes it: its removal cannot be held')
+        }
         if (
             !candidates.has(path) &&
             !changed.has(path) &&
@@ -139,8 +160,10 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const held = new Set(selection.hold)
     const removed = new Set(selection.remove)
     return makePlan({
+        forcedRemove: forced,
         publish: selection.include.filter((path) => candidates.has(path)),
         update: queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
-        remove: selection.remove
+        // A guard wins over an unpublish: the note leaves the manifest.
+        remove: selection.remove.filter((path) => !underGuard.has(path))
     })
 }

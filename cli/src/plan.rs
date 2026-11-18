@@ -15,24 +15,40 @@ use crate::queue::Scan;
 /// The notes that one publication publishes, updates and removes, as vault
 /// paths. Each list is sorted by path, in the order of the code points.
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicationPlan {
+    /// The forced removals: the published notes that a guard excludes. No
+    /// selection changes this list (PUB-21).
+    forced_remove: Vec<String>,
     publish: Vec<String>,
     update: Vec<String>,
     remove: Vec<String>,
 }
 
 impl PublicationPlan {
-    /// Makes a plan from its three lists. Each list is put in the order of the
+    /// Makes a plan from its four lists. Each list is put in the order of the
     /// canonical form here, so that no caller can give a plan in another order.
-    pub fn new(mut publish: Vec<String>, mut update: Vec<String>, mut remove: Vec<String>) -> Self {
+    pub fn new(
+        mut forced_remove: Vec<String>,
+        mut publish: Vec<String>,
+        mut update: Vec<String>,
+        mut remove: Vec<String>,
+    ) -> Self {
+        sort_by_code_point(&mut forced_remove);
         sort_by_code_point(&mut publish);
         sort_by_code_point(&mut update);
         sort_by_code_point(&mut remove);
         Self {
+            forced_remove,
             publish,
             update,
             remove,
         }
+    }
+
+    /// The vault paths of the published notes that a guard excludes.
+    pub fn forced_remove(&self) -> &[String] {
+        &self.forced_remove
     }
 
     /// The vault paths of the notes to publish.
@@ -100,7 +116,9 @@ fn reason_out_of_queue(path: &str, scan: &Scan) -> String {
 /// Computes the publication plan of a selection from the queue.
 ///
 /// A plan without paths holds the changed notes only. A new candidate enters a
-/// plan only when its path is included (PUB-19, PUB-54).
+/// plan only when its path is included (PUB-19, PUB-54). Every plan holds
+/// every forced removal: a published note that a guard excludes is removed by
+/// the next publication, whatever is selected, and it cannot be held (PUB-21).
 ///
 /// # Errors
 ///
@@ -132,6 +150,26 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
 
     // Each list of the queue is sorted, so a binary search finds a path.
     let within = |list: &[String], path: &String| list.binary_search(path).is_ok();
+    // A published note is a forced removal when a guard excludes it: its path
+    // is in a folder of the deny list, it has the ignore property, or its file
+    // is missing and a note of its name is in a folder of the deny list (it
+    // moved there). A note whose file is only missing is not one. Every path
+    // of this list of the queue that has no ignore property is a missing file.
+    // The list is sorted, as the list of the queue is.
+    let moved_under_guard = |path: &String| {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        scan.denied_names.contains(&name.to_lowercase())
+    };
+    let forced: Vec<String> = queue
+        .to_remove
+        .iter()
+        .filter(|path| {
+            in_deny_list(path, &scan.configuration)
+                || scan.ignored.contains(*path)
+                || moved_under_guard(path)
+        })
+        .cloned()
+        .collect();
     for path in &selection.include {
         if within(&queue.to_remove, path) {
             return refuse(
@@ -147,6 +185,12 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
         }
     }
     for path in &selection.hold {
+        if within(&forced, path) {
+            return refuse(
+                path,
+                "is published and a guard excludes it: its removal cannot be held",
+            );
+        }
         if !within(&queue.new, path)
             && !within(&queue.changed, path)
             && !within(&queue.to_remove, path)
@@ -164,7 +208,15 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
         }
     }
 
+    // A guard wins over an unpublish: the note leaves the manifest.
+    let remove = selection
+        .remove
+        .iter()
+        .filter(|path| !within(&forced, path))
+        .cloned()
+        .collect();
     Ok(PublicationPlan::new(
+        forced,
         selection
             .include
             .iter()
@@ -177,6 +229,6 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             .filter(|path| !within(&selection.hold, path) && !within(&selection.remove, path))
             .cloned()
             .collect(),
-        selection.remove.clone(),
+        remove,
     ))
 }

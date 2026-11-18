@@ -53,7 +53,7 @@ The list of new, changed and removed notes that wait for a publication.
 To leave a change in the publication queue without publishing it. The live version stays. A plan names such a note in its paths to hold.
 
 **Technical update**:
-An update of a published note that the author did not edit: only the version of the cleaning step moved. It does not move the dates of the note.
+An update of a published note that the author did not edit: the cleaning step has a new version, or a link of the note leads to another note. It does not move the dates of the note.
 
 **Publication plan**:
 The exact list of what one publication will do: the notes to publish, to update and to remove. The author reviews it before the publication.
@@ -68,6 +68,9 @@ To remove a published note from the site through a normal publication.
 **Takedown**:
 The immediate and complete removal of a published note and of everything derived from it.
 _Avoid_: unpublish (which waits for a publication)
+
+**Forced removal**:
+The removal of a published note that came under a guard. Every publication does it, whatever the author selects, and it removes everything as a takedown does.
 
 **Content store**:
 The private snapshot of everything that is published: cleaned notes, attachments and the manifest. The site is built from it.

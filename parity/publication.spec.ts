@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -33,7 +33,15 @@ const NOTES = [
     '10 Garden/Bean trellis.md',
     "20 Library/20.02 Recipes/Crème brûlée à l'érable.md",
     '10 Garden/🌱 Seedlings.md',
-    '10 Garden/～ Pond.md'
+    '10 Garden/～ Pond.md',
+    // Notes with links: every form of a link, a name that two notes have, a
+    // link in a property, a link into a folder of the deny list, and names
+    // with characters that a URL encodes.
+    '10 Garden/Drip irrigation.md',
+    '10 Garden/Herb bed/Thyme.md',
+    '10 Garden/Seed swap day.md',
+    '10 Garden/Watering schedule.md',
+    '20 Library/20.02 Recipes/Recipes.md'
 ]
 
 const MARK = String.fromCharCode(0xfeff)
@@ -55,7 +63,30 @@ const CRAFTED: Record<string, string> = {
     'Crafted/Empty properties.md': '---\n---\nText\n',
     'Crafted/No line end.md': '---\ntags: a\n---',
     'Crafted/Lone return.md': 'One\rTwo\n',
-    'Crafted/Ignore is false.md': '---\npublish_ignore: false\n---\nText\n'
+    'Crafted/Ignore is false.md': '---\npublish_ignore: false\n---\nText\n',
+    // Links in hard forms: another letter case, a table, paths from the folder
+    // of the note and from the root, destinations to decode, and brackets
+    // that open no link.
+    'Crafted/Links.md': [
+        '---',
+        'related: "[[frost DATES explained]]"',
+        'sources:',
+        "  - '[[10 Garden/Herb bed/Mint|the plant]]'",
+        '---',
+        '| One | Two |',
+        '| --- | --- |',
+        '| [[Welcome\\|home]] | ![[🌱 Seedlings#Top]] |',
+        '',
+        'From here: [[../10 Garden/Bean trellis]], [[./Byte order mark]] and [[/Welcome]].',
+        "Markdown: [a](../Welcome.md) [b](<Windows line ends.md>) [c](Cr%C3%A8me%20br%C3%BBl%C3%A9e%20%C3%A0%20l'%C3%A9rable.md#top) [d](https://garden.example/x) [e](Bad%ZZ.md) [f](%EF%BB%BFmark.md)",
+        "Names: [[～ Pond]] [[CRÈME BRÛLÉE À L'ÉRABLE]] [[Mint]] [[Sprout.js]] [[日本の庭]] [[Nothing here]] [[Greenhouse alarm code]] [[Ignore is false]]",
+        'Brackets: [[[Welcome]]] [[one [[Empty]] ]] [[ Odd state |x]] [[Never closed#part|y]] [[#Here]]',
+        ''
+    ].join('\n'),
+    'Crafted/Links with Windows line ends.md':
+        '[[Welcome]]\r\n[b](Welcome.md)\r\nAlone\r[[Empty]]\n',
+    // A note whose folder enters the deny list after its publication.
+    'Private/Diary.md': 'Diary\n'
 }
 
 // Notes that no implementation may publish. Both must refuse each one.
@@ -85,6 +116,7 @@ const REFUSED_PATHS = [
 async function craft(vault: string): Promise<void> {
     await mkdir(join(vault, 'Crafted'))
     await mkdir(join(vault, 'Refused'))
+    await mkdir(join(vault, 'Private'))
     for (const [path, text] of Object.entries({ ...CRAFTED, ...REFUSED })) {
         await writeFile(join(vault, path), text)
     }
@@ -252,10 +284,15 @@ describe('parity of a first publication', () => {
             : []
         expect(fixtureNotes).toEqual([
             '10 Garden/Bean trellis.md',
+            '10 Garden/Drip irrigation.md',
             '10 Garden/Frost dates explained.md',
+            '10 Garden/Herb bed/Thyme.md',
+            '10 Garden/Seed swap day.md',
+            '10 Garden/Watering schedule.md',
             '10 Garden/～ Pond.md',
             '10 Garden/🌱 Seedlings.md',
             "20 Library/20.02 Recipes/Crème brûlée à l'érable.md",
+            '20 Library/20.02 Recipes/Recipes.md',
             'Welcome.md'
         ])
     })
@@ -347,6 +384,12 @@ const UNPUBLISHED = 'Crafted/Lone return.md'
 const HAND = 'Crafted/Byte order mark.md'
 const NEW = 'Crafted/New note.md'
 const WRONG = 'Crafted/Wrong property.md'
+const DENIED = 'Private/Diary.md'
+const MOVED = 'Crafted/Empty properties.md'
+const MOVED_TO = '90 Locked Shed/Attachments/empty PROPERTIES.md'
+const LINKS = 'Crafted/Links.md'
+const LINKING = '10 Garden/Drip irrigation.md'
+const TARGET = '10 Garden/Water butt.md'
 
 /** What the author and another device do after the first publication. */
 async function change(vault: string, copy: string): Promise<void> {
@@ -367,6 +410,19 @@ async function change(vault: string, copy: string): Promise<void> {
     await writeFile(join(vault, NEW), '---\r\ntags: a\r\n---\r\nNew\r\n')
     // A note that carries the property by mistake and that nobody selects.
     await writeFile(join(vault, WRONG), `${MARK}---\npublic_note: true\n---\nNever selected\n`)
+    // The author moves a published note into a folder of the deny list, with another letter case.
+    await rename(join(vault, MOVED), join(vault, MOVED_TO))
+    // The author makes a note that a published note names in a link.
+    await writeFile(join(vault, TARGET), 'Another name of the barrel\n')
+
+    // Another device puts the folder of a published note on the deny list.
+    await writeFile(
+        join(copy, 'configuration.json'),
+        '{\n  "denyList": ["80 Templates", "90 Locked Shed", "Private"]\n}\n'
+    )
+    await git(copy, 'add', '--', 'configuration.json')
+    await git(copy, 'commit', '--quiet', '--message', 'A folder enters the deny list')
+    await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 
     // The entry of one note comes from an older version of the cleaning step.
     for (const file of await readdir(join(copy, 'manifest'))) {
@@ -444,10 +500,12 @@ describe('parity of the publication queue', () => {
     // The comparison must have something to compare. The expected values are stated by hand.
     test('the queue has a note in each list', () => {
         const queue = JSON.parse(fromRust.queueBefore) as Record<string, string[]>
-        expect(queue['changed']).toEqual([EDITED, TECHNICAL, EDITED_WINDOWS, HELD])
-        expect(queue['technicalUpdates']).toEqual([TECHNICAL])
-        expect(queue['toRemove']).toEqual([MISSING, GUARDED])
+        expect(queue['changed']).toEqual([LINKING, EDITED, TECHNICAL, LINKS, EDITED_WINDOWS, HELD])
+        // An older version of the cleaning step, a target that was made, and a target that is missing.
+        expect(queue['technicalUpdates']).toEqual([LINKING, TECHNICAL, LINKS])
+        expect(queue['toRemove']).toEqual([MISSING, MOVED, GUARDED, DENIED])
         expect(queue['new']).toContain(NEW)
+        expect(queue['new']).toContain(TARGET)
         expect(queue['new']).toContain(WRONG)
         expect(queue['unchanged']).toContain(HAND)
         expect(queue['unchanged']).toContain(UNPUBLISHED)
@@ -455,18 +513,21 @@ describe('parity of the publication queue', () => {
 
     test('the publication does what the selection says', () => {
         expect(JSON.parse(fromRust.publication.plan)).toEqual({
+            // The note that moved into a folder of the deny list, the note with
+            // the ignore property, and the note in the new folder of the deny list.
+            forcedRemove: [MOVED, GUARDED, DENIED],
             publish: [NEW],
             remove: [UNPUBLISHED],
-            update: [EDITED, TECHNICAL, EDITED_WINDOWS]
+            update: [LINKING, EDITED, TECHNICAL, LINKS, EDITED_WINDOWS]
         })
         const report = JSON.parse(fromRust.publication.report) as Record<string, string[]>
         expect(report['published']).toEqual([NEW])
-        expect(report['updated']).toEqual([EDITED, TECHNICAL, EDITED_WINDOWS])
+        expect(report['updated']).toEqual([LINKING, EDITED, TECHNICAL, LINKS, EDITED_WINDOWS])
         expect(report['removed']).toEqual([UNPUBLISHED])
+        expect(report['forcedRemoved']).toEqual([MOVED, GUARDED, DENIED])
         expect(report['skipped']).toEqual([HELD])
         expect(report['failed']).toEqual([])
-        // The note under a guard is still published, so it has the property until it is removed.
-        expect(report['propertySet']).toEqual([HAND, NEW, GUARDED])
+        expect(report['propertySet']).toEqual([HAND, NEW])
         expect(report['propertyRemoved']).toEqual([UNPUBLISHED, WRONG])
 
         const { store, vault } = fromRust.left
@@ -480,12 +541,72 @@ describe('parity of the publication queue', () => {
         expect(vault[WRONG]).toBe(`${MARK}Never selected\n`)
         expect(vault[HAND]).toBe(`${MARK}---\ntags: a\npublic_note: true\n---\nText\n`)
         expect(vault[UNPUBLISHED]).toBe('One\rTwo\n')
+        // The forced removals left the content store. The note in the folder
+        // of the deny list is not written in the vault.
+        expect(store[`notes/${GUARDED}`]).toBeUndefined()
+        expect(store[`notes/${MOVED}`]).toBeUndefined()
+        expect(vault[MOVED_TO]).toBe('---\npublic_note: true\n---\nText\n')
+        expect(store[`notes/${DENIED}`]).toBeUndefined()
+        expect(Object.values(store).filter((text) => text.includes(`"path": "${DENIED}"`))).toEqual(
+            []
+        )
+        expect(vault[GUARDED]).toBe('---\npublish_ignore: true\n---\nText\n')
+        expect(vault[DENIED]).toBe('---\npublic_note: true\n---\nDiary\n')
 
         const after = JSON.parse(fromRust.queueAfter) as Record<string, string[]>
         expect(after['changed']).toEqual([HELD])
         expect(after['technicalUpdates']).toEqual([])
-        expect(after['toRemove']).toEqual([MISSING, GUARDED])
+        expect(after['toRemove']).toEqual([MISSING])
         expect(after['new']).toContain(UNPUBLISHED)
+    })
+
+    test('the manifest names the target of each form of a link', () => {
+        const linksOf = (note: string): unknown[] => {
+            for (const [file, text] of Object.entries(fromRust.left.store)) {
+                if (file.startsWith('manifest/')) {
+                    const entry = JSON.parse(text) as { path: string; links: unknown[] }
+                    if (entry.path === note) {
+                        return entry.links
+                    }
+                }
+            }
+            throw new Error(`the manifest has no entry for "${note}"`)
+        }
+        const creme = "20 Library/20.02 Recipes/Crème brûlée à l'érable.md"
+        const links = linksOf(LINKS)
+        for (const [link, path] of [
+            ['frost DATES explained', EDITED],
+            ['10 Garden/Herb bed/Mint', '10 Garden/Herb bed/Mint.md'],
+            ['Welcome', 'Welcome.md'],
+            ['🌱 Seedlings', TECHNICAL],
+            ['../10 Garden/Bean trellis', '10 Garden/Bean trellis.md'],
+            ['./Byte order mark', HAND],
+            ['/Welcome', 'Welcome.md'],
+            ['../Welcome.md', 'Welcome.md'],
+            ['Windows line ends.md', EDITED_WINDOWS],
+            ["Crème brûlée à l'érable.md", creme],
+            ["CRÈME BRÛLÉE À L'ÉRABLE", creme],
+            ['Mint', '10 Garden/Herb bed/Mint.md'],
+            ['Sprout.js', '20 Library/Sprout.js.md'],
+            ['日本の庭', '10 Garden/日本の庭.md'],
+            ['Ignore is false', 'Crafted/Ignore is false.md'],
+            ['Empty', 'Crafted/Empty.md'],
+            ['Odd state', 'Crafted/Odd state.md'],
+            ['Never closed', 'Crafted/Never closed.md']
+        ] as const) {
+            expect(links, link).toContainEqual({ link, path })
+        }
+        // No item for a name that no note has, for a note in a folder of the
+        // deny list, for a destination that is not a file of the vault, and
+        // for the note that went missing after the first publication.
+        expect(links).toHaveLength(18)
+        // The link whose target was made after the first publication.
+        expect(linksOf(LINKING)).toContainEqual({ link: 'Water butt', path: TARGET })
+        expect(linksOf('Crafted/Links with Windows line ends.md')).toEqual([
+            { link: 'Empty', path: 'Crafted/Empty.md' },
+            { link: 'Welcome', path: 'Welcome.md' },
+            { link: 'Welcome.md', path: 'Welcome.md' }
+        ])
     })
 })
 
@@ -529,7 +650,7 @@ describe('parity of an empty plan', () => {
 
         expect(fromRust).toEqual(fromTypeScript)
         expect(fromRust.plans).toEqual([
-            '{\n  "plan": {\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": []\n  }\n}\n'
+            '{\n  "plan": {\n    "forcedRemove": [],\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": []\n  }\n}\n'
         ])
     }, 120_000)
 })

@@ -48,11 +48,12 @@ The last frost date is the average day of the last frost in spring. Tender plant
 const MANIFEST_ENTRY = `{
   "attachments": [],
   "cleanedHash": "${NOTE_HASH}",
-  "cleaningVersion": 1,
+  "cleaningVersion": 2,
   "firstPublished": "${TIME}",
   "formerPaths": [],
   "id": "${NOTE_ID}",
   "lastPublished": "${TIME}",
+  "links": [],
   "path": "${NOTE}",
   "sourceHash": "${NOTE_HASH}",
   "state": "published"
@@ -61,6 +62,7 @@ const MANIFEST_ENTRY = `{
 
 const PLAN_RECORD = `{
   "plan": {
+    "forcedRemove": [],
     "publish": [
       "${NOTE}"
     ],
@@ -80,6 +82,7 @@ const PLAN_RECORD = `{
     "notes": [
       {
         "cleanedHash": "${NOTE_HASH}",
+        "links": [],
         "path": "${NOTE}",
         "sourceHash": "${NOTE_HASH}"
       }
@@ -138,7 +141,7 @@ describe('plan of a first publication', () => {
 
         const planned = await plan(device, { include: [NOTE] })
 
-        expect(planned.plan).toEqual({ publish: [NOTE], update: [], remove: [] })
+        expect(planned.plan).toEqual({ forcedRemove: [], publish: [NOTE], update: [], remove: [] })
         expect(planned.id).toMatch(/^[0-9a-f]{16}$/)
     })
 
@@ -172,6 +175,7 @@ describe('plan of a first publication', () => {
         const { device } = await setUp(stores)
 
         expect((await plan(device, { include: [] })).plan).toEqual({
+            forcedRemove: [],
             publish: [],
             update: [],
             remove: []
@@ -312,7 +316,7 @@ describe('first publication of a note', () => {
 
         const planned = await plan(setup.device, { include: [NOTE] })
 
-        expect(planned.plan).toEqual({ publish: [], update: [], remove: [] })
+        expect(planned.plan).toEqual({ forcedRemove: [], publish: [], update: [], remove: [] })
     })
 })
 

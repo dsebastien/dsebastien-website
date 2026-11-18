@@ -36,7 +36,7 @@ fn writes_an_empty_plan_with_its_id_when_no_note_is_included() {
     assert_eq!(id.len(), 16);
     assert_eq!(
         plan,
-        "  \"plan\": {\n    \"publish\": [],\n    \"remove\": [],\n    \"update\": []\n  }\n}\n"
+        "  \"plan\": {\n    \"forcedRemove\": [],\n    \"publish\": [],\n    \"remove\": [],\n    \"update\": []\n  }\n}\n"
     );
 }
 

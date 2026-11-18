@@ -70,7 +70,7 @@ describe('the document of the canonical form', () => {
         )
         const text = await Bun.file(document).text()
         expect(text).toContain(
-            `\n\`\`\`json\n${toCanonicalJson(makePlan({ publish: [], update: [], remove: [] }))}\`\`\`\n`
+            `\n\`\`\`json\n${toCanonicalJson(makePlan({ forcedRemove: [], publish: [], update: [], remove: [] }))}\`\`\`\n`
         )
     })
 })

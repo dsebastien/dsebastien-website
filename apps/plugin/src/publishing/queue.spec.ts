@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -29,6 +29,7 @@ const SCENARIOS = fileURLToPath(
 /** The lists of paths of a publication report. */
 interface ReportLists {
     failed: readonly string[]
+    forcedRemoved: readonly string[]
     propertyRemoved: readonly string[]
     propertySet: readonly string[]
     published: readonly string[]
@@ -133,7 +134,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         expect(await rejectionOf(plan(device, step.selection)), label).not.toBe('')
                     } else {
                         expect((await plan(device, step.selection)).plan, label).toEqual(
-                            step.plan ?? { publish: [], update: [], remove: [] }
+                            step.plan ?? { forcedRemove: [], publish: [], update: [], remove: [] }
                         )
                     }
                 } else if (step.do === 'publish') {
@@ -293,11 +294,12 @@ describe('manifest that cannot be trusted', () => {
     const ENTRY = {
         attachments: [],
         cleanedHash: 'sha256:00',
-        cleaningVersion: 1,
+        cleaningVersion: 2,
         firstPublished: TIME,
         formerPaths: [],
         id: '00000000000000aa',
         lastPublished: TIME,
+        links: [],
         path: 'Welcome.md',
         sourceHash: 'sha256:00',
         state: 'published'
@@ -338,7 +340,44 @@ describe('manifest that cannot be trusted', () => {
             'a state that the tool does not know',
             { 'manifest/00000000000000aa.json': JSON.stringify({ ...ENTRY, state: 'live' }) }
         ],
-        ['a file that is not JSON', { 'manifest/00000000000000aa.json': 'not JSON' }]
+        ['a file that is not JSON', { 'manifest/00000000000000aa.json': 'not JSON' }],
+        [
+            'an entry without its links',
+            {
+                'manifest/00000000000000aa.json': JSON.stringify({ ...ENTRY, links: undefined })
+            }
+        ],
+        [
+            'links that are not a list',
+            { 'manifest/00000000000000aa.json': JSON.stringify({ ...ENTRY, links: {} }) }
+        ],
+        [
+            'a link whose target is not the vault path of a note',
+            {
+                'manifest/00000000000000aa.json': JSON.stringify({
+                    ...ENTRY,
+                    links: [{ link: 'Up', path: '../Up.md' }]
+                })
+            }
+        ],
+        [
+            'a link without its link path',
+            {
+                'manifest/00000000000000aa.json': JSON.stringify({
+                    ...ENTRY,
+                    links: [{ path: 'Welcome.md' }]
+                })
+            }
+        ],
+        [
+            'a link with a member that the tool does not know',
+            {
+                'manifest/00000000000000aa.json': JSON.stringify({
+                    ...ENTRY,
+                    links: [{ link: 'Welcome', path: 'Welcome.md', title: 'Welcome' }]
+                })
+            }
+        ]
     ]
 
     test.each(cases)('%s stops the status and the plan', async (_name, files) => {
@@ -353,7 +392,7 @@ describe('manifest that cannot be trusted', () => {
 
 describe('manifest in a form that only one reader of JSON would take', () => {
     const entry = (version: string, formerPaths = '[]'): string =>
-        `{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":${version},"firstPublished":"${TIME}","formerPaths":${formerPaths},"id":"00000000000000aa","lastPublished":"${TIME}","path":"Welcome.md","sourceHash":"sha256:00","state":"published"}`
+        `{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":${version},"firstPublished":"${TIME}","formerPaths":${formerPaths},"id":"00000000000000aa","lastPublished":"${TIME}","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"published"}`
 
     // A whole number in another form is the same number for both implementations.
     test.each(['1.0', '1e0', '-0'])('a version that is written as %s is read', async (version) => {
@@ -464,7 +503,7 @@ describe('commit of a publication of the queue', () => {
         )
 
         expect(await git(setup.copy, 'log', '-1', '--format=%B')).toBe(
-            'Publish: 1 new, 1 updated, 1 removed, 1 skipped\n\nDevice: garden-shed\nFace: mcp-server'
+            'Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped\n\nDevice: garden-shed\nFace: mcp-server'
         )
         // One commit, and the content store has it.
         expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('3')
@@ -722,3 +761,243 @@ async function makeContentStoreCopyOf(stores: TestStores, name: string): Promise
     await git(copy, 'config', 'commit.gpgsign', 'false')
     return copy
 }
+
+/** The manifest entry of a note in the copy of the content store, as data. */
+async function entryOf(copy: string, path: string): Promise<Record<string, unknown>> {
+    for (const file of await readdir(join(copy, 'manifest'))) {
+        const entry = (await Bun.file(join(copy, 'manifest', file)).json()) as Record<
+            string,
+            unknown
+        >
+        if (entry['path'] === path) {
+            return entry
+        }
+    }
+    throw new Error(`the manifest has no entry for "${path}"`)
+}
+
+describe('links of the notes of the fixture vault', () => {
+    const BARREL = '10 Garden/Rain barrel.md'
+
+    // TEST-18, on the side of the tool: a wikilink, a link with a link text, a
+    // link to a heading, an embed, a link with the full path, a Markdown link
+    // and a link in a property lead to the same note. A name that no note has
+    // gives no item.
+    test('a note with a link of each form names the target of each link path', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const note = '10 Garden/Drip irrigation.md'
+
+        await publishNotes(setup, { include: [note] })
+
+        expect((await entryOf(setup.copy, note))['links']).toEqual([
+            { link: '10 Garden/Rain barrel', path: BARREL },
+            { link: 'Rain barrel', path: BARREL },
+            { link: 'Rain barrel.md', path: BARREL }
+        ])
+        // The text is published as the author wrote it.
+        const cleaned = await Bun.file(join(setup.copy, 'notes', note)).text()
+        expect(cleaned).toContain('[[Rain barrel|the barrel]] or the [[Water butt]]')
+        expect(cleaned).toContain('[the barrel](Rain%20barrel.md)')
+        expect(cleaned).toContain('source: "[[Rain barrel]]"')
+    })
+
+    test('a link to a note in a folder of the deny list gives no item', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const note = '10 Garden/Watering schedule.md'
+
+        await publishNotes(setup, { include: [note] })
+
+        expect((await entryOf(setup.copy, note))['links']).toEqual([])
+        const store = await git(
+            setup.copy,
+            'grep',
+            '-l',
+            '90 Locked Shed',
+            'HEAD',
+            '--',
+            'manifest'
+        ).catch(() => '')
+        expect(store).toBe('')
+    })
+
+    test('a name that two notes have leads to the note below the folder of the link', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const note = '10 Garden/Herb bed/Thyme.md'
+
+        await publishNotes(setup, { include: [note] })
+
+        expect((await entryOf(setup.copy, note))['links']).toEqual([
+            {
+                link: '20 Library/20.02 Recipes/Mint',
+                path: '20 Library/20.02 Recipes/Mint.md'
+            },
+            { link: 'Mint', path: '10 Garden/Herb bed/Mint.md' }
+        ])
+    })
+
+    // BUILD-05: the entry of the note that links does not depend on the state of the target.
+    test('the publication of a target changes nothing in the note that links to it', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const note = '10 Garden/Drip irrigation.md'
+        await publishNotes(setup, { include: [note] })
+        const before = await entryOf(setup.copy, note)
+
+        await publishNotes(setup, { include: [BARREL] }, { ...RUN, time: LATER })
+
+        expect(await entryOf(setup.copy, note)).toEqual(before)
+        expect((await status(setup.device)).unchanged).toEqual([note, BARREL])
+    })
+})
+
+describe('plan that a guard or a link makes stale', () => {
+    test('a published note that comes under a guard after the plan makes the plan stale', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE, SECOND] })
+        const planned = await plan(setup.device, { include: ['Welcome.md'] })
+        await writeFile(join(setup.vault, SECOND), '---\npublish_ignore: true\n---\nText\n')
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('stale')
+        expect(await Bun.file(join(setup.copy, 'notes/Welcome.md')).exists()).toBe(false)
+    })
+
+    test('a link of a note of the plan that leads to another note makes the plan stale', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        // The note links to "Water butt", which no note has.
+        const planned = await plan(setup.device, { include: ['10 Garden/Drip irrigation.md'] })
+        await writeFile(join(setup.vault, '10 Garden/Water butt.md'), 'Another name\n')
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('stale')
+    })
+})
+
+describe('forced removal', () => {
+    const IGNORED = '---\npublish_ignore: true\n---\nA text that must never go out\n'
+
+    // TEST-13, PUB-29: whatever is selected, and the commit says it.
+    test('goes with a publication of another note, and the commit counts it', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE, SECOND] })
+        await writeFile(join(setup.vault, SECOND), IGNORED)
+
+        const report = await publishNotes(
+            setup,
+            { include: ['Welcome.md'] },
+            { ...RUN, time: LATER }
+        )
+
+        expect(report.forcedRemoved).toEqual([SECOND])
+        expect(report.removed).toEqual([])
+        expect(report.published).toEqual(['Welcome.md'])
+        expect(await git(setup.copy, 'log', '-1', '--format=%s')).toBe(
+            'Publish: 1 new, 0 updated, 0 removed, 1 forced, 0 skipped'
+        )
+        expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(false)
+        expect(await Bun.file(join(setup.copy, 'manifest', `${SECOND_ID}.json`)).exists()).toBe(
+            false
+        )
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+        // The text under the guard is nowhere in the last commit.
+        expect(
+            await git(setup.copy, 'grep', '-l', 'must never go out', 'HEAD').catch(() => '')
+        ).toBe('')
+        // The write into the note under the guard changed nothing: it had no state property.
+        expect(await Bun.file(join(setup.vault, SECOND)).text()).toBe(IGNORED)
+    })
+
+    // Story 80: a move into a private folder is enough. The tool does not scan
+    // a folder of the deny list, so it knows the move by the name of the note.
+    test('takes a published note that was moved into a folder of the deny list', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE, SECOND] })
+        const moved = join(setup.vault, '90 Locked Shed/Attachments/Compost basics.md')
+        await rename(join(setup.vault, SECOND), moved)
+        // A file that cannot be read as text: the tool lists the folder and reads no file of it.
+        await writeFile(
+            join(setup.vault, '90 Locked Shed/Not a text.md'),
+            new Uint8Array([0xff, 0xfe, 0xfd])
+        )
+        const before = await picture(join(setup.vault, '90 Locked Shed'))
+
+        const planned = await plan(setup.device, { include: [] })
+        const report = await publish(setup.device, planned.id, { ...RUN, time: LATER })
+
+        expect(planned.plan).toEqual({
+            forcedRemove: [SECOND],
+            publish: [],
+            remove: [],
+            update: []
+        })
+        expect(report.forcedRemoved).toEqual([SECOND])
+        expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(false)
+        expect(await readdir(join(setup.copy, 'manifest'))).toEqual([`${NOTE_ID}.json`])
+        // No file of the folder of the deny list is written: the note keeps its state property there.
+        expect(await picture(join(setup.vault, '90 Locked Shed'))).toEqual(before)
+        expect(await Bun.file(moved).text()).toContain('public_note: true')
+    })
+
+    // PUB-95: a file that is missing on this device is never removed without a selection.
+    test('does not take a published note whose file is only missing', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE, SECOND] })
+        await rm(join(setup.vault, SECOND))
+
+        const planned = await plan(setup.device, { include: [] })
+
+        expect((await status(setup.device)).toRemove).toEqual([SECOND])
+        expect(planned.plan).toEqual({ forcedRemove: [], publish: [], remove: [], update: [] })
+        expect(
+            (await plan(setup.device, { include: [], hold: [SECOND] })).plan.forcedRemove
+        ).toEqual([])
+    })
+
+    // PUB-21: if a forced removal fails, the whole publication stops. Here a
+    // folder is in the place of the cleaned note of the second removal.
+    test('that fails stops the whole publication, and every file is put back', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE, SECOND] })
+        await writeFile(join(setup.vault, NOTE), IGNORED)
+        await writeFile(join(setup.vault, SECOND), IGNORED)
+        const blocked = join(setup.copy, 'notes', NOTE)
+        await rm(blocked)
+        await mkdir(blocked)
+        await writeFile(
+            join(blocked, 'in the way'),
+            'A file in a folder that stands for the note\n'
+        )
+        const planned = await plan(setup.device, { include: ['Welcome.md'] })
+        expect(planned.plan.forcedRemove).toEqual([SECOND, NOTE])
+        const before = {
+            vault: await picture(setup.vault),
+            commit: await git(setup.copy, 'rev-parse', 'HEAD'),
+            manifest: (await readdir(join(setup.copy, 'manifest'))).sort()
+        }
+
+        const message = await rejectionOf(
+            publish(setup.device, planned.id, { ...RUN, time: LATER })
+        )
+
+        expect(message).toContain(NOTE)
+        expect(message).toContain('guard')
+        expect(await git(setup.copy, 'rev-parse', 'HEAD')).toBe(before.commit)
+        expect(await git(stores.contentStore, 'rev-parse', 'main')).toBe(before.commit)
+        // The first removal was put back, and no other note was published.
+        expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(true)
+        expect((await readdir(join(setup.copy, 'manifest'))).sort()).toEqual(before.manifest)
+        expect(await git(setup.copy, 'status', '--porcelain', '--', 'manifest')).toBe('')
+        expect(await Bun.file(join(setup.copy, 'notes/Welcome.md')).exists()).toBe(false)
+        // Without a push, no property is corrected.
+        expect(await picture(setup.vault)).toEqual(before.vault)
+        // Both notes still wait for their removal.
+        expect((await status(setup.device)).toRemove).toEqual([SECOND, NOTE])
+    })
+})

@@ -12,6 +12,7 @@ mod device;
 mod frontmatter;
 mod guards;
 mod hash;
+mod links;
 mod manifest;
 mod order;
 mod plan;
@@ -61,7 +62,8 @@ enum Command {
 
     /// Computes a publication plan, stores it on this device and writes it
     /// with its id. It changes nothing in the vault and in the content store.
-    /// Without a path, the plan holds the changed notes only.
+    /// Without a path, the plan holds the changed notes only. Every plan holds
+    /// the forced removals: the published notes that a guard excludes.
     Plan {
         #[command(flatten)]
         places: Places,
@@ -83,11 +85,13 @@ enum Command {
         remove: Vec<String>,
     },
 
-    /// Applies exactly one plan, by its id: the cleaned notes and the manifest
-    /// go to the content store in one commit, the commit is pushed, and the
-    /// `public_note` property of the notes of the vault is corrected. It
-    /// writes the publication report. It ends with an error when a note of
-    /// the plan was left out.
+    /// Applies exactly one plan, by its id: the published notes that a guard
+    /// excludes leave the content store first, the cleaned notes and the
+    /// manifest go to the content store in one commit, the commit is pushed,
+    /// and the `public_note` property of the notes of the vault is corrected.
+    /// It writes the publication report. It ends with an error when a note of
+    /// the plan was left out, and it publishes nothing when a forced removal
+    /// fails.
     Publish {
         #[command(flatten)]
         places: Places,

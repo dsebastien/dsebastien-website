@@ -137,6 +137,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 
 - `apps/site/`: the Astro and Tailwind site. A Bun workspace with its own `package.json` and `tsconfig.json`.
     - `apps/site/src/content-store.ts`: how the build reads the content store. The build never reads the vault.
+    - `apps/site/src/note-links.ts`: the links between notes on a page. A plugin of the Markdown processor of Astro (Sätteri, `markdown.processor` in `astro.config.ts`) marks each link when a note is rendered. The page gives each mark its state at each build: a link when the target is published, plain text when it is not. Astro keeps the markup of a note between two builds, so nothing that depends on another note goes into that markup.
     - `apps/site/server/`: the plain local server that serves the built site through the resolver.
 - `apps/plugin/`: the Obsidian plugin of the publishing tool, from the plugin template of the author. A Bun workspace. Its type check is the one of the root.
     - `apps/plugin/src/publishing/`: the TypeScript implementation of the publishing logic. It never imports Obsidian.
@@ -150,7 +151,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
     - `fixtures/vault/`: the fixture vault.
     - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.
     - `fixtures/catalog.json`: the fixture catalog. It says which feature or trap each file of the fixture vault serves.
-    - `fixtures/canonical/`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them: `cases.json` (data), `properties.json` (the properties of a note), `queue.json` (scenarios of the publication queue).
+    - `fixtures/canonical/`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them: `cases.json` (data), `properties.json` (the properties of a note), `links.json` (the links of a note), `queue.json` (scenarios of the publication queue).
     - `fixtures/README.md`: the rules, and how to add a note.
 - `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
 - `scripts/`: tooling of the repository and its guard tests.
@@ -197,6 +198,7 @@ bun run rust:test
 - Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`). One exception: the shared cases of the canonical form are a unit test next to the Rust writer.
 - The parity tests in `parity/` build the Rust program with cargo, so `bun run test` needs the Rust toolchain.
 - A test of a publication works on a copy of the fixture vault and on a copy of the content store, both inside the folder of the test. The expected texts of the two implementations are the same, with hashes that were computed with another tool.
+- A rule of link resolution gets a case in `fixtures/canonical/links.json` before the second implementation is written. Both test suites read every case (`apps/plugin/src/publishing/links.spec.ts`, `cli/src/links.rs`). The build reads a link with the functions of the TypeScript logic, so the link path of a page is the link path of the manifest.
 - A rule of the publication queue gets a step in a scenario of `fixtures/canonical/queue.json` before the second implementation is written. Both test suites run every scenario (`apps/plugin/src/publishing/queue.spec.ts`, `cli/tests/queue.rs`). A scenario has its own small invented vault, so a new note of the fixture vault changes no scenario.
 - The test of the note page publishes a note with the tool, builds the site of that content store and asks the local server: it covers the whole path.
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
@@ -217,7 +219,7 @@ The rules of the author for Tailwind, taken from his other repositories. They ap
 - Tailwind CSS 4, the latest stable version. The configuration is in CSS (`@theme`). There is no JavaScript configuration file.
 - Always use Tailwind. Prefer its utilities to custom CSS. Write raw CSS only for what Tailwind cannot express cleanly (`color-mix()`, `clamp()`, a gradient on a pseudo-element).
 - Utilities in the markup: for layout that one element needs, and for simple combinations that need no class.
-- `@apply` in a CSS file: for a component class that more than one element uses, for pseudo-selectors (`:hover`, `::after`), and where utilities are combined with token variables. Component classes live in `apps/site/src/styles/components.css`, apart from the tokens. The file is created with the first component class.
+- `@apply` in a CSS file: for a component class that more than one element uses, for pseudo-selectors (`:hover`, `::after`), and where utilities are combined with token variables. Component classes live in `apps/site/src/styles/components.css`, apart from the tokens.
 - Tokens: every color, font, radius, shadow and motion value is a token, defined with `@theme`. A theme defines token values only, and components compose tokens. A change of theme or of mode changes the look with no change to a component. The token names are the same in every theme.
 - Colors: the default Tailwind palette is switched off. Never write a raw hex value or a color of the Tailwind palette in the markup or in a component class. Never write `white` or `black` directly: use the token for the text, the fill or the overlay.
 - Token names follow the store website and the Knowii app where they exist: `background`, `surface`, `surface-elevated`, `well`, `primary` (text), `muted`, `secondary` (magenta), `secondary-text`, `border`, `border-strong`, `overlay`, `success`, `warning`, `danger`.
@@ -233,6 +235,6 @@ The rules of the author for Tailwind, taken from his other repositories. They ap
 
 Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`), the fixture vault with its catalog, the test helpers for a content store and an attachment storage, the check of private files.
 
-The publishing logic works for the publication queue (issues 31 and 33): the two implementations give the four lists (`status`), make a plan with paths to include, to hold and to remove (`plan`), and publish new notes, updates and removals into a content store with a report (`publish`), under the canonical form and the parity tests. The site builds one page per published note, and a plain local server serves it through the resolver. The plugin itself still does nothing: its view comes later.
+The publishing logic works for the publication queue, the guards and the links (issues 31, 33 and 34): the two implementations give the four lists (`status`), make a plan with paths to include, to hold and to remove (`plan`), and publish new notes, updates and removals into a content store with a report (`publish`), under the canonical form and the parity tests. Every plan removes a published note that came under a guard (forced removal). The manifest entry of a note says to which note each of its links leads. The site builds one page per published note, with a link to each published target and plain text for every other target, and a plain local server serves it through the resolver. The plugin itself still does nothing: its view comes later.
 
 Not set up yet: the deployment, the performance budgets in CI, the lint rules of the Obsidian plugin catalog (the plugin is a tool for the author first).

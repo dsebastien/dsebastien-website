@@ -36,11 +36,12 @@ The last frost date is the average day of the last frost in spring. Tender plant
 const MANIFEST_ENTRY: &str = r#"{
   "attachments": [],
   "cleanedHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b",
-  "cleaningVersion": 1,
+  "cleaningVersion": 2,
   "firstPublished": "2031-04-01T08:00:00Z",
   "formerPaths": [],
   "id": "203d446940c02032",
   "lastPublished": "2031-04-01T08:00:00Z",
+  "links": [],
   "path": "10 Garden/Frost dates explained.md",
   "sourceHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b",
   "state": "published"
@@ -49,6 +50,7 @@ const MANIFEST_ENTRY: &str = r#"{
 
 const PLAN_RECORD: &str = r#"{
   "plan": {
+    "forcedRemove": [],
     "publish": [
       "10 Garden/Frost dates explained.md"
     ],
@@ -68,6 +70,7 @@ const PLAN_RECORD: &str = r#"{
     "notes": [
       {
         "cleanedHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b",
+        "links": [],
         "path": "10 Garden/Frost dates explained.md",
         "sourceHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b"
       }
@@ -177,7 +180,7 @@ fn the_plan_names_the_included_note_and_has_an_id() {
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "publish": [NOTE], "remove": [], "update": [] })
+        serde_json::json!({ "forcedRemove": [], "publish": [NOTE], "remove": [], "update": [] })
     );
     let id = plan["id"].as_str().expect("the plan has an id");
     assert_eq!(id.len(), 16);
@@ -360,7 +363,7 @@ fn a_published_note_that_did_not_change_adds_nothing_to_a_later_plan() {
     let plan: serde_json::Value = serde_json::from_slice(&again.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "publish": [], "remove": [], "update": [] })
+        serde_json::json!({ "forcedRemove": [], "publish": [], "remove": [], "update": [] })
     );
 }
 

@@ -10,6 +10,7 @@ use serde_json::Value;
 use crate::configuration::is_vault_path;
 use crate::device::ContentStore;
 use crate::hash::sha256_hex;
+use crate::links::NoteLink;
 
 /// The folder of the manifest in the content store.
 pub const MANIFEST_FOLDER: &str = "manifest";
@@ -33,6 +34,8 @@ pub struct ManifestEntry {
     pub id: String,
     /// The time of the run of the last publication.
     pub last_published: String,
+    /// The links of the note that lead to a note, sorted by their link path.
+    pub links: Vec<NoteLink>,
     /// The vault path of the note.
     pub path: String,
     pub source_hash: String,
@@ -98,6 +101,24 @@ fn whole_number(value: &Value) -> Option<u64> {
     whole.then_some(converted)
 }
 
+/// The list `links` of an entry: each item is an object with exactly a link
+/// path and the vault path of a note. `None` for every other value.
+fn link_list(value: &Value) -> Option<Vec<NoteLink>> {
+    value
+        .as_array()?
+        .iter()
+        .map(|item| {
+            let item = item.as_object()?;
+            let link = item.get("link")?.as_str()?;
+            let path = item.get("path")?.as_str()?;
+            (item.len() == 2 && is_note_path(path)).then(|| NoteLink {
+                link: link.to_owned(),
+                path: path.to_owned(),
+            })
+        })
+        .collect()
+}
+
 /// Reads one entry from the text of its file. The text is read as a JSON value
 /// and checked by hand, as the TypeScript twin does, so that both accept and
 /// refuse the same texts. The path and the id are checked, because the tool
@@ -128,6 +149,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         former_paths: list_of("formerPaths")?,
         id: text_of("id").filter(|id| is_note_id(id))?,
         last_published: text_of("lastPublished")?,
+        links: link_list(entry.get("links")?)?,
         path: text_of("path").filter(|path| is_note_path(path))?,
         source_hash: text_of("sourceHash")?,
         state,

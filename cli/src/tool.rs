@@ -14,6 +14,7 @@ use crate::device::{ContentStore, Vault};
 use crate::frontmatter::{names_in_properties, remove_property, set_property};
 use crate::guards::IGNORE_PROPERTY;
 use crate::hash::{content_hash, sha256_hex};
+use crate::links::{NoteLink, links_of};
 use crate::manifest::{
     MANIFEST_FOLDER, ManifestEntry, NOTES_FOLDER, State, manifest_file, note_id, read_manifest,
 };
@@ -117,10 +118,11 @@ pub fn status(device: &Device) -> Result<String, String> {
     canonical(&to_value(&read_state(device)?.scan.queue)?)
 }
 
-/// The source and the cleaned note of one note of a plan.
+/// The source, the cleaned note and the links of one note of a plan.
 struct NoteTexts {
     source: String,
     cleaned: String,
+    links: Vec<NoteLink>,
 }
 
 /// A plan with everything that its publication needs.
@@ -151,19 +153,28 @@ fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String
             .ok_or_else(|| format!("\"{path}\" does not exist in the vault any more"))?;
         let source = source_of(&text);
         let cleaned = clean_note(&source);
-        texts.insert(path.clone(), NoteTexts { source, cleaned });
+        let links = links_of(&source, path, &scan.index, &scan.ignored);
+        texts.insert(
+            path.clone(),
+            NoteTexts {
+                source,
+                cleaned,
+                links,
+            },
+        );
     }
     // The map gives the notes in the order of their paths.
-    let notes: Vec<Value> = texts
+    let notes = texts
         .iter()
         .map(|(path, texts)| {
-            json!({
+            Ok(json!({
                 "cleanedHash": content_hash(&texts.cleaned),
+                "links": to_value(&texts.links)?,
                 "path": path,
                 "sourceHash": content_hash(&texts.source),
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<Vec<Value>, String>>()?;
     let record = canonical(&json!({
         "plan": to_value(&plan)?,
         "selection": to_value(selection)?,
@@ -322,6 +333,7 @@ fn entry_of(
             former_paths: Vec::new(),
             id: note_id(path, time),
             last_published: time.to_owned(),
+            links: texts.links.clone(),
             path: path.to_owned(),
             source_hash,
             state: State::Published,
@@ -338,6 +350,7 @@ fn entry_of(
         } else {
             before.last_published.clone()
         },
+        links: texts.links.clone(),
         source_hash,
         state: State::Published,
         ..before.clone()
@@ -386,6 +399,44 @@ fn removal_files(path: &str, scan: &Scan) -> Result<Vec<StoreFile>, String> {
             text: Some(canonical(&to_value(&unpublished)?)?),
         },
     ])
+}
+
+/// Applies the forced removals of a plan: the cleaned note and the manifest
+/// entry of each note that a guard excludes leave the content store. This is
+/// the takedown rule (PUB-21, PUB-84). The result is the paths that changed.
+///
+/// When one removal fails, every file that was touched is put back, and the
+/// error goes to the caller: no note is published while a note under a guard
+/// stays live.
+fn remove_forced(
+    device: &Device,
+    plan: &PublicationPlan,
+    scan: &Scan,
+) -> Result<Vec<String>, String> {
+    let mut changed = Vec::new();
+    let mut touched = Vec::new();
+    for path in plan.forced_remove() {
+        let mut remove = || -> Result<(), String> {
+            let entry = scan
+                .manifest
+                .get(path)
+                .ok_or("the note has no manifest entry")?;
+            for file in [format!("{NOTES_FOLDER}/{path}"), manifest_file(&entry.id)] {
+                touched.push(file.clone());
+                if device.store.remove(&file)? {
+                    changed.push(file);
+                }
+            }
+            Ok(())
+        };
+        if let Err(error) = remove() {
+            device.store.discard(&touched)?;
+            return Err(format!(
+                "a guard excludes \"{path}\", and it could not be removed from the content store: {error}. Nothing was published"
+            ));
+        }
+    }
+    Ok(changed)
 }
 
 /// What the correction of the state property did.
@@ -486,7 +537,8 @@ fn check_inputs(id: &str, run: &Run) -> Result<(), String> {
 /// Applies exactly one plan, by its id.
 ///
 /// It computes the record of the plan again: when the new record is not the
-/// stored one, the plan is stale and nothing is published. Then the cleaned
+/// stored one, the plan is stale and nothing is published. The forced
+/// removals come first: when one fails, nothing is published. Then the cleaned
 /// notes and the manifest entries go to the content store in one commit, which
 /// is pushed. A note whose files cannot be written is left out and reported.
 /// Only after the push, the state property is corrected in the vault. The
@@ -494,8 +546,8 @@ fn check_inputs(id: &str, run: &Run) -> Result<(), String> {
 ///
 /// # Errors
 ///
-/// An input of the run is wrong, the plan is unknown or stale, or the commit
-/// or the push failed.
+/// An input of the run is wrong, the plan is unknown or stale, a forced
+/// removal failed, or the commit or the push failed.
 pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> {
     check_inputs(id, run)?;
     let record = device
@@ -512,7 +564,9 @@ pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> 
         plan, scan, texts, ..
     } = current;
 
-    let mut written = Vec::new();
+    // The forced removals come first, and they are no unit of one note: a
+    // failure stops the whole publication.
+    let mut written = remove_forced(device, &plan, &scan)?;
     let mut failed = Vec::new();
     // A failure of one note leaves that note out (PUB-26).
     let mut apply = |path: &String, files: Result<Vec<StoreFile>, String>| -> bool {
@@ -558,10 +612,11 @@ pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> 
     if !written.is_empty() {
         device.store.commit_and_push(
             &format!(
-                "Publish: {} new, {} updated, {} removed, {} skipped\n\nDevice: {}\nFace: {}",
+                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}",
                 published.len(),
                 updated.len(),
                 removed.len(),
+                plan.forced_remove().len(),
                 skipped.len(),
                 run.device,
                 run.face
@@ -577,13 +632,15 @@ pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> 
             .cloned()
             .collect();
         now_published.extend(published.iter().cloned());
-        for path in &removed {
+        // A forced removal left the manifest: the note is not published.
+        for path in removed.iter().chain(plan.forced_remove()) {
             now_published.remove(path);
         }
         correction = correct_state(device, &scan, &now_published);
     }
     let output = canonical(&json!({
         "failed": failed,
+        "forcedRemoved": plan.forced_remove(),
         "propertyRemoved": correction.property_removed,
         "propertySet": correction.property_set,
         "published": published,
