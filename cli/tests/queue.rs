@@ -60,6 +60,8 @@ fn write_files(folder: &Path, files: &Value) {
 }
 
 /// Commits every change of the copy and pushes it, as another device would.
+/// Only the tests of symbolic links use it, and they run on Unix.
+#[cfg(unix)]
 fn commit_all(copy: &Path) {
     let copy = text(copy);
     git(&["-C", copy, "add", "--all"]);
