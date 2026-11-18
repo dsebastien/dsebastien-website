@@ -367,7 +367,7 @@ The manifest is read strictly. The tool stops in each of these cases:
 4. Two entries have the same `path`.
 5. An item of `links` is not an object with exactly a text `link` and a `path` that is the vault path of a note.
 
-Both implementations read a JSON file of the store in the same way. A whole number can be written in another form (`1.0`, `1e0`, `-0`): it is the same number. A text with half of a surrogate pair and a number that is too large to hold are not JSON for the tool. A symbolic link in the copy of the content store is not a file of the store.
+Both implementations read a JSON file of the store and a stored plan in the same way (`json.ts`, `json.rs`, with the shared cases of the list `json` of `fixtures/canonical/cases.json`). A number is read as the nearest floating point number, as JavaScript reads it, so a whole number can be written in another form (`1.0`, `1e0`, `-0`, `9007199254740991.4`): it is that number. These texts are not JSON for the tool: a text with half of a surrogate pair, a number that is too large to hold, a key that is two times in one object (also when an escape writes it in another way), and data with more than 64 levels (rule 10 of the data). A second key with the same name would else hide a value that only one implementation refuses. A symbolic link in the copy of the content store is not a file of the store.
 
 ## The state property after a publication
 

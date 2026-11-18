@@ -14,6 +14,7 @@ use crate::device::{ContentStore, Vault};
 use crate::frontmatter::{has_flow_properties, names_in_properties, remove_property, set_property};
 use crate::guards::IGNORE_PROPERTY;
 use crate::hash::{content_hash, sha256_hex};
+use crate::json::parse_json;
 use crate::links::{NoteLink, links_of};
 use crate::manifest::{
     MANIFEST_FOLDER, ManifestEntry, NOTES_FOLDER, State, manifest_file, note_id, read_manifest,
@@ -210,7 +211,7 @@ pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
 /// Reads the selection of a stored record.
 fn selection_of(record: &str, id: &str) -> Result<Selection, String> {
     let unreadable = || format!("the stored plan {id} cannot be read");
-    let value: Value = serde_json::from_str(record).map_err(|_| unreadable())?;
+    let value = parse_json(record).map_err(|_| unreadable())?;
     let list = |key: &str| -> Result<Vec<String>, String> {
         value["selection"][key]
             .as_array()

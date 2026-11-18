@@ -4,6 +4,8 @@
 
 use serde_json::Value;
 
+use crate::json::parse_json;
+
 /// The path of the configuration in the content store.
 pub const CONFIGURATION_FILE: &str = "configuration.json";
 
@@ -37,8 +39,7 @@ pub fn parse_configuration(text: Option<&str>) -> Result<Configuration, String> 
     let Some(text) = text else {
         return Ok(Configuration::default());
     };
-    let value: Value =
-        serde_json::from_str(text).map_err(|_| format!("{CONFIGURATION_FILE} is not JSON"))?;
+    let value = parse_json(text).map_err(|_| format!("{CONFIGURATION_FILE} is not JSON"))?;
     let not_a_list = || format!("{CONFIGURATION_FILE}: the deny list must be a list of folders");
     let entries = value
         .as_object()

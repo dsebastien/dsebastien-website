@@ -10,6 +10,7 @@ use serde_json::Value;
 use crate::configuration::is_vault_path;
 use crate::device::ContentStore;
 use crate::hash::sha256_hex;
+use crate::json::parse_json;
 use crate::links::NoteLink;
 
 /// The folder of the manifest in the content store.
@@ -124,7 +125,7 @@ fn link_list(value: &Value) -> Option<Vec<NoteLink>> {
 /// refuse the same texts. The path and the id are checked, because the tool
 /// makes paths of the content store from them.
 fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
-    let value: Value = serde_json::from_str(text).ok()?;
+    let value = parse_json(text).ok()?;
     let entry = value.as_object()?;
     let text_of = |key: &str| entry.get(key)?.as_str().map(str::to_owned);
     let list_of = |key: &str| {
@@ -185,4 +186,39 @@ pub fn read_manifest(store: &ContentStore) -> Result<BTreeMap<String, ManifestEn
         entries.insert(entry.path.clone(), entry);
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_manifest_entry;
+    use serde_json::Value;
+
+    /// The cases that the TypeScript implementation reads too
+    /// (`apps/plugin/src/publishing/json.spec.ts`).
+    const CASES: &str = include_str!("../../fixtures/canonical/cases.json");
+
+    /// A manifest entry whose `cleaningVersion` is the number as it is
+    /// written.
+    fn entry_with(cleaning_version: &str) -> String {
+        format!(
+            r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{cleaning_version},"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"A.md","sourceHash":"sha256:00","state":"published"}}"#
+        )
+    }
+
+    #[test]
+    fn reads_the_version_of_the_cleaning_step_as_the_file_states() {
+        let cases: Value = serde_json::from_str(CASES).expect("the cases file is JSON");
+        let cases = cases["cleaningVersions"]["cases"]
+            .as_array()
+            .expect("the cases file has the list");
+        assert!(cases.len() > 5);
+        for case in cases {
+            let text = case["text"].as_str().expect("a text");
+            assert_eq!(
+                Some(parse_manifest_entry(&entry_with(text)).is_some()),
+                case["valid"].as_bool(),
+                "{text}"
+            );
+        }
+    }
 }

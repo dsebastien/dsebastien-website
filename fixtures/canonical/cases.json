@@ -55,11 +55,11 @@
         {
             "name": "text outside ASCII is written as it is",
             "value": {
-                "path": "20 Library/Crème brûlée à l'érable.md",
-                "name": "日本の庭",
-                "sign": "🌱"
+                "path": "20 Library/Cr\u00e8me br\u00fbl\u00e9e \u00e0 l'\u00e9rable.md",
+                "name": "\u65e5\u672c\u306e\u5ead",
+                "sign": "\ud83c\udf31"
             },
-            "canonical": "{\n  \"name\": \"日本の庭\",\n  \"path\": \"20 Library/Crème brûlée à l'érable.md\",\n  \"sign\": \"🌱\"\n}\n"
+            "canonical": "{\n  \"name\": \"\u65e5\u672c\u306e\u5ead\",\n  \"path\": \"20 Library/Cr\u00e8me br\u00fbl\u00e9e \u00e0 l'\u00e9rable.md\",\n  \"sign\": \"\ud83c\udf31\"\n}\n"
         },
         {
             "name": "a quote, a backslash and the control characters are escaped, and nothing else",
@@ -143,7 +143,7 @@
         {
             "name": "a key outside ASCII",
             "value": {
-                "clé": 1
+                "cl\u00e9": 1
             }
         },
         {
@@ -307,13 +307,13 @@
         "about": "A list of notes is sorted by vault path, in the order of the code points of the whole path, the slash included. The second list is the first one in that order, written by hand.",
         "paths": [
             "apple.md",
-            "🌱.md",
+            "\ud83c\udf31.md",
             "a/z.md",
             "Zebra.md",
             "2.md",
-            "～.md",
+            "\uff5e.md",
             "a b/c.md",
-            "É.md",
+            "\u00c9.md",
             "10.md",
             "a.md",
             "B.md"
@@ -327,9 +327,184 @@
             "a.md",
             "a/z.md",
             "apple.md",
-            "É.md",
-            "～.md",
-            "🌱.md"
+            "\u00c9.md",
+            "\uff5e.md",
+            "\ud83c\udf31.md"
+        ]
+    },
+    "json": [
+        {
+            "name": "an object",
+            "text": "{\"denyList\":[]}",
+            "valid": true
+        },
+        {
+            "name": "white space of JSON around the values",
+            "text": " {\n\t\"a\" : [ 1 , 2 ]\r\n} ",
+            "valid": true
+        },
+        {
+            "name": "a whole number written with a fraction",
+            "text": "{\"a\":1.0}",
+            "valid": true
+        },
+        {
+            "name": "a whole number written with an exponent",
+            "text": "{\"a\":1e0}",
+            "valid": true
+        },
+        {
+            "name": "a negative zero",
+            "text": "{\"a\":-0}",
+            "valid": true
+        },
+        {
+            "name": "the largest number of a floating point number, rounded",
+            "text": "{\"denyList\":[],\"x\":1.7976931348623158e308}",
+            "valid": true
+        },
+        {
+            "name": "a number too large to hold",
+            "text": "{\"a\":1e999}",
+            "valid": false
+        },
+        {
+            "name": "half of a surrogate pair",
+            "text": "{\"a\":\"\\ud800\"}",
+            "valid": false
+        },
+        {
+            "name": "a whole surrogate pair",
+            "text": "{\"a\":\"\\ud83c\\udf31\"}",
+            "valid": true
+        },
+        {
+            "name": "a key two times in one object",
+            "text": "{\"x\":1,\"x\":1}",
+            "valid": false
+        },
+        {
+            "name": "a key two times, the second one with an escape",
+            "text": "{\"a\":1,\"\\u0061\":2}",
+            "valid": false
+        },
+        {
+            "name": "a second key with the same name hides a text that is not valid Unicode",
+            "text": "{\"x\":\"\\ud800\",\"x\":1,\"denyList\":[]}",
+            "valid": false
+        },
+        {
+            "name": "a second key with the same name hides a number too large to hold",
+            "text": "{\"x\":1e999,\"x\":1,\"denyList\":[]}",
+            "valid": false
+        },
+        {
+            "name": "the same key in two objects",
+            "text": "{\"a\":{\"x\":1},\"b\":{\"x\":2},\"c\":[{\"x\":3},{\"x\":4}]}",
+            "valid": true
+        },
+        {
+            "name": "brackets and quotes inside texts",
+            "text": "{\"a\":\"[[{\\\"\",\"b\":\"\\\\\",\"c\":\"}\"}",
+            "valid": true
+        },
+        {
+            "name": "64 levels of lists",
+            "text": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+            "valid": true
+        },
+        {
+            "name": "65 levels of lists",
+            "text": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+            "valid": false
+        },
+        {
+            "name": "a number at level 64",
+            "text": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+            "valid": true
+        },
+        {
+            "name": "a number at level 65",
+            "text": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+            "valid": false
+        },
+        {
+            "name": "a text at level 65",
+            "text": "{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":\"x\"}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+            "valid": false
+        },
+        {
+            "name": "an object at level 64 with no member",
+            "text": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+            "valid": true
+        },
+        {
+            "name": "129 levels of lists",
+            "text": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+            "valid": false
+        },
+        {
+            "name": "a text that is not JSON",
+            "text": "{\"a\":",
+            "valid": false
+        },
+        {
+            "name": "a byte order mark before the text",
+            "text": "\ufeff{}",
+            "valid": false
+        }
+    ],
+    "cleaningVersions": {
+        "about": "The number of cleaningVersion in a manifest entry, as it is written in the file. A whole number from 0 that both languages hold exactly: in TypeScript every number is a floating point number, and Rust reads it in the same way.",
+        "cases": [
+            {
+                "text": "2",
+                "valid": true
+            },
+            {
+                "text": "2.0",
+                "valid": true
+            },
+            {
+                "text": "2e0",
+                "valid": true
+            },
+            {
+                "text": "-0",
+                "valid": true
+            },
+            {
+                "text": "0.9999999999999999",
+                "valid": false
+            },
+            {
+                "text": "2.4703282292062328e-324",
+                "valid": false
+            },
+            {
+                "text": "9007199254740991.4",
+                "valid": true
+            },
+            {
+                "text": "9007199254740991",
+                "valid": true
+            },
+            {
+                "text": "9007199254740992",
+                "valid": false
+            },
+            {
+                "text": "-1",
+                "valid": false
+            },
+            {
+                "text": "1.5",
+                "valid": false
+            },
+            {
+                "text": "\"2\"",
+                "valid": false
+            }
         ]
     }
 }

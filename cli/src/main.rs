@@ -12,6 +12,7 @@ mod device;
 mod frontmatter;
 mod guards;
 mod hash;
+mod json;
 mod links;
 mod manifest;
 mod order;
