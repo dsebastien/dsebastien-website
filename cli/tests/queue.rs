@@ -1082,6 +1082,84 @@ fn a_configuration_that_a_git_filter_makes_look_committed_stops_the_status() {
     );
 }
 
+/// Issue 71: each way out that the message proposes gets the tool to run
+/// again, or to the next way out. A file that git assumes unchanged is staged
+/// by no `git add`, so that advice comes first.
+#[test]
+fn the_advice_for_an_edited_configuration_that_git_assumes_unchanged_does_not_loop() {
+    let setup = Setup::fixture();
+    setup.git(&["update-index", "--assume-unchanged", "configuration.json"]);
+    fs::write(
+        setup.copy.join("configuration.json"),
+        "{\"denyList\":[\"80 Templates\",\"90 Locked Shed\",\"10 Garden\"]}\n",
+    )
+    .expect("the file is written");
+
+    let message = errors_of(&setup.run("status", &[]));
+    assert!(
+        message.contains("git update-index --no-skip-worktree --no-assume-unchanged"),
+        "{message}"
+    );
+    assert!(!message.contains("configuration.json,"), "{message}");
+    setup.git(&[
+        "update-index",
+        "--no-skip-worktree",
+        "--no-assume-unchanged",
+        "configuration.json",
+    ]);
+
+    let message = errors_of(&setup.run("status", &[]));
+    assert!(message.contains("git add configuration.json"), "{message}");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_advice_for_a_configuration_replaced_by_a_link_puts_the_file_back() {
+    let setup = Setup::fixture();
+    let file = setup.copy.join("configuration.json");
+    fs::remove_file(&file).expect("the file can be removed");
+    std::os::unix::fs::symlink("elsewhere.json", &file).expect("the link is made");
+
+    let message = errors_of(&setup.run("status", &[]));
+    assert!(
+        message.contains("git checkout HEAD -- configuration.json"),
+        "{message}"
+    );
+    assert!(!message.contains("commit configuration.json"), "{message}");
+    setup.git(&["checkout", "HEAD", "--", "configuration.json"]);
+
+    assert!(setup.status()["new"].as_array().is_some());
+}
+
+#[test]
+fn the_advice_for_a_configuration_added_and_then_removed_from_the_disk_takes_it_out_of_the_index() {
+    let setup = Setup::fixture();
+    setup.git(&["rm", "--quiet", "configuration.json"]);
+    setup.git(&["commit", "--quiet", "--message", "No deny list"]);
+    setup.git(&["push", "--quiet", "origin", "HEAD:main"]);
+    let file = setup.copy.join("configuration.json");
+    fs::write(
+        &file,
+        "{\"denyList\":[\"80 Templates\",\"90 Locked Shed\"]}\n",
+    )
+    .expect("the file is written");
+    setup.git(&["add", "configuration.json"]);
+    fs::remove_file(&file).expect("the file can be removed");
+
+    let message = errors_of(&setup.run("status", &[]));
+    assert!(
+        message.contains("git rm --cached --quiet configuration.json"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("git checkout HEAD -- configuration.json"),
+        "{message}"
+    );
+    setup.git(&["rm", "--cached", "--quiet", "configuration.json"]);
+
+    assert!(setup.status()["new"].as_array().is_some());
+}
+
 #[test]
 fn the_message_never_proposes_to_commit_the_removal_of_the_configuration() {
     let setup = Setup::fixture();

@@ -819,6 +819,67 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         }
     )
 
+    // Issue 71: each way out that the message proposes gets the tool to run
+    // again, or to the next way out. A file that git assumes unchanged is
+    // staged by no `git add`, so that advice comes first.
+    test('the advice for an edited configuration that git assumes unchanged does not loop', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await git(setup.copy, 'update-index', '--assume-unchanged', 'configuration.json')
+        const file = join(setup.copy, 'configuration.json')
+        await writeFile(file, '{"denyList":["80 Templates","90 Locked Shed","10 Garden"]}\n')
+
+        const message = await rejectionOf(status(setup.device))
+        expect(message).toContain('git update-index --no-skip-worktree --no-assume-unchanged')
+        expect(message.match(/configuration\.json,/g)).toBeNull()
+        await git(
+            setup.copy,
+            'update-index',
+            '--no-skip-worktree',
+            '--no-assume-unchanged',
+            'configuration.json'
+        )
+
+        expect(await rejectionOf(status(setup.device))).toContain('git add configuration.json')
+    })
+
+    test.skipIf(process.platform === 'win32')(
+        'the advice for a configuration replaced by a link puts the file back',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const file = join(setup.copy, 'configuration.json')
+            await rm(file)
+            await symlink('elsewhere.json', file)
+
+            const message = await rejectionOf(status(setup.device))
+            expect(message).toContain('git checkout HEAD -- configuration.json')
+            expect(message).not.toContain('commit configuration.json')
+            await git(setup.copy, 'checkout', 'HEAD', '--', 'configuration.json')
+
+            expect((await status(setup.device)).new).toContain(NOTE)
+        }
+    )
+
+    test('the advice for a configuration added and then removed from the disk takes it out of the index', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await git(setup.copy, 'rm', '--quiet', 'configuration.json')
+        await git(setup.copy, 'commit', '--quiet', '--message', 'No deny list')
+        await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
+        const file = join(setup.copy, 'configuration.json')
+        await writeFile(file, '{"denyList":["80 Templates","90 Locked Shed"]}\n')
+        await git(setup.copy, 'add', 'configuration.json')
+        await rm(file)
+
+        const message = await rejectionOf(status(setup.device))
+        expect(message).toContain('git rm --cached --quiet configuration.json')
+        expect(message).not.toContain('git checkout HEAD -- configuration.json')
+        await git(setup.copy, 'rm', '--cached', '--quiet', 'configuration.json')
+
+        expect((await status(setup.device)).new).toContain(NOTE)
+    })
+
     test('the message never proposes to commit the removal of the configuration', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)

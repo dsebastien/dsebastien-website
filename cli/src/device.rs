@@ -420,12 +420,15 @@ impl ContentStore {
         }
         Err(format!(
             "files of the content store in the copy are not the files of its last commit: {}. Nothing can be published until the copy is corrected. {}: {}",
-            different
-                .iter()
-                .take(5)
-                .map(|(_, path)| *path)
-                .collect::<Vec<_>>()
-                .join(", "),
+            {
+                let mut named: Vec<&str> = Vec::new();
+                for (_, path) in &different {
+                    if !named.contains(path) {
+                        named.push(path);
+                    }
+                }
+                named.into_iter().take(5).collect::<Vec<_>>().join(", ")
+            },
             ways_out(&different),
             self.folder.display()
         ))
@@ -841,16 +844,29 @@ const COMPARE_OPTIONS: &[&str] = &[
 /// thrown away. Only the tool writes the manifest.
 fn ways_out(different: &[(&str, &str)]) -> String {
     let mut ways = Vec::new();
-    if let Some((code, _)) = different
+    // `skipped` first, because no `git add` stages a file that git skips, then
+    // the code of git status, then the edit that only the hash shows.
+    let codes: Vec<&str> = different
         .iter()
-        .find(|(_, path)| *path == "configuration.json")
-    {
-        ways.push(if code.contains('D') {
+        .filter(|(_, path)| *path == "configuration.json")
+        .map(|(code, _)| *code)
+        .collect();
+    let code = codes
+        .iter()
+        .find(|code| **code == "skipped")
+        .or_else(|| codes.iter().find(|code| **code != " M"))
+        .or_else(|| codes.first());
+    if let Some(code) = code {
+        ways.push(if *code == "skipped" {
+            "Let git compare configuration.json again (git update-index --no-skip-worktree --no-assume-unchanged configuration.json)"
+        } else if code.starts_with('A') && code.contains('D') {
+            "Take configuration.json out of the index (git rm --cached --quiet configuration.json): the last commit has no such file"
+        } else if code.contains('D') {
             "Put configuration.json back with git checkout HEAD -- configuration.json: a commit of its removal would empty the deny list"
+        } else if code.contains('T') {
+            "Put configuration.json back with git checkout HEAD -- configuration.json: a link or a folder is not a file of the store"
         } else if *code == "??" || *code == "!!" {
             "When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main). Else remove it"
-        } else if *code == "skipped" {
-            "Let git compare configuration.json again (git update-index --no-skip-worktree --no-assume-unchanged configuration.json)"
         } else {
             "When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
         });

@@ -163,18 +163,38 @@ const COMPARE_OPTIONS = [
  * its last commit. A change of the deny list is work of the author: it is
  * committed, never thrown away. Only the tool writes the manifest.
  */
+/**
+ * The code that says best how `configuration.json` differs: `skipped` first,
+ * because no `git add` stages a file that git skips, then the code of git
+ * status, then the edit that only the hash shows.
+ */
+function configurationCode(
+    different: readonly { code: string; path: string }[]
+): string | undefined {
+    const codes = different
+        .filter((entry) => entry.path === 'configuration.json')
+        .map((entry) => entry.code)
+    return (
+        codes.find((code) => code === 'skipped') ?? codes.find((code) => code !== ' M') ?? codes[0]
+    )
+}
+
 function waysOut(different: readonly { code: string; path: string }[]): string {
     const ways: string[] = []
-    const configuration = different.find((entry) => entry.path === 'configuration.json')
+    const configuration = configurationCode(different)
     if (configuration !== undefined) {
         ways.push(
-            configuration.code.includes('D')
-                ? 'Put configuration.json back with git checkout HEAD -- configuration.json: a commit of its removal would empty the deny list'
-                : configuration.code === '??' || configuration.code === '!!'
-                  ? 'When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main). Else remove it'
-                  : configuration.code === 'skipped'
-                    ? 'Let git compare configuration.json again (git update-index --no-skip-worktree --no-assume-unchanged configuration.json)'
-                    : 'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
+            configuration === 'skipped'
+                ? 'Let git compare configuration.json again (git update-index --no-skip-worktree --no-assume-unchanged configuration.json)'
+                : configuration.startsWith('A') && configuration.includes('D')
+                  ? 'Take configuration.json out of the index (git rm --cached --quiet configuration.json): the last commit has no such file'
+                  : configuration.includes('D')
+                    ? 'Put configuration.json back with git checkout HEAD -- configuration.json: a commit of its removal would empty the deny list'
+                    : configuration.includes('T')
+                      ? 'Put configuration.json back with git checkout HEAD -- configuration.json: a link or a folder is not a file of the store'
+                      : configuration === '??' || configuration === '!!'
+                        ? 'When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main). Else remove it'
+                        : 'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
         )
     }
     const manifest = different.filter((entry) => entry.path !== 'configuration.json')
@@ -521,9 +541,10 @@ function gitContentStore(folder: string): ContentStore {
             ]
             if (different.length > 0) {
                 throw new Error(
-                    `files of the content store in the copy are not the files of its last commit: ${different
+                    `files of the content store in the copy are not the files of its last commit: ${[
+                        ...new Set(different.map((entry) => entry.path))
+                    ]
                         .slice(0, 5)
-                        .map((entry) => entry.path)
                         .join(
                             ', '
                         )}. Nothing can be published until the copy is corrected. ${waysOut(different)}: ${folder}`
