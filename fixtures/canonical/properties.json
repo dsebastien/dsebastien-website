@@ -195,6 +195,11 @@
             "name": "one line of JSON below closed properties",
             "note": "---\ntags: a\n---\n{ \"publish_ignore\": true }\n",
             "excluded": false
+        },
+        {
+            "name": "two byte order marks before the properties",
+            "note": "\ufeff\ufeff---\npublish_ignore: true\n---\nText\n",
+            "excluded": true
         }
     ],
     "source": [
@@ -302,6 +307,21 @@
             "name": "properties above text that starts with a line of hyphens and is never closed",
             "note": "---\npublic_note: true\n---\n---\ntags: a\nText\n",
             "source": "---\ntags: a\nText\n"
+        },
+        {
+            "name": "two byte order marks are removed",
+            "note": "\ufeff\ufeff---\npublic_note: true\n---\nText\n",
+            "source": "Text\n"
+        },
+        {
+            "name": "the two lines of the properties stay when the text below them starts with a byte order mark and would then be read as properties",
+            "note": "---\npublic_note: true\n---\n\ufeff---\ntags: a\n---\nBody\n",
+            "source": "---\n---\n\ufeff---\ntags: a\n---\nBody\n"
+        },
+        {
+            "name": "a byte order mark at the start and one below empty properties",
+            "note": "\ufeff---\n---\n\ufeff---\ntags: a\n---\n",
+            "source": "---\n---\n\ufeff---\ntags: a\n---\n"
         }
     ],
     "state": [
@@ -384,6 +404,16 @@
             "name": "properties that are never closed get a block before them",
             "note": "---\ntags: a\nText\n",
             "result": "---\npublic_note: true\n---\n---\ntags: a\nText\n"
+        },
+        {
+            "name": "two byte order marks stay at the start",
+            "note": "\ufeff\ufeff---\ntags: a\n---\nText\n",
+            "result": "\ufeff\ufeff---\ntags: a\npublic_note: true\n---\nText\n"
+        },
+        {
+            "name": "two byte order marks and no properties",
+            "note": "\ufeff\ufeffText\n",
+            "result": "\ufeff\ufeff---\npublic_note: true\n---\nText\n"
         }
     ],
     "removed": [
@@ -461,6 +491,16 @@
             "name": "the two lines go when the text below them starts with a line of hyphens and is never closed",
             "note": "---\npublic_note: true\n---\n---\ntags: a\nText\n",
             "result": "---\ntags: a\nText\n"
+        },
+        {
+            "name": "the two lines of the properties stay when the text below them starts with a byte order mark and would then be read as properties",
+            "note": "---\npublic_note: true\n---\n\ufeff---\ntags: a\n---\nBody\n",
+            "result": "---\n---\n\ufeff---\ntags: a\n---\nBody\n"
+        },
+        {
+            "name": "two byte order marks stay",
+            "note": "\ufeff\ufeff---\npublic_note: true\n---\nText\n",
+            "result": "\ufeff\ufeffText\n"
         }
     ],
     "flow": [
@@ -522,6 +562,11 @@
         {
             "name": "a byte order mark before the properties",
             "note": "\ufeff---\n[a]\n---\n",
+            "flow": true
+        },
+        {
+            "name": "two byte order marks before the properties",
+            "note": "\ufeff\ufeff---\n{ \"a\": 1 }\n---\n",
             "flow": true
         }
     ]

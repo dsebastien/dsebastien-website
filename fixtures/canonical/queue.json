@@ -1832,6 +1832,65 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "byte order marks",
+            "denyList": [],
+            "vault": {
+                "Two.md": "\ufeff\ufeff---\npublic_note: true\n---\nText\n",
+                "Mid.md": "---\npublic_note: true\n---\n\ufeff---\ntags: a\n---\nBody\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "a note with two byte order marks is published. The other note loses the property, and its text below the properties does not become properties",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "time": "2031-08-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Mid.md"],
+                        "propertySet": [],
+                        "published": ["Two.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the cleaned note has no byte order mark. The two lines of the properties stay, because the text below them starts with a mark and would else be read as properties",
+                    "vault": {
+                        "Two.md": "\ufeff\ufeff---\npublic_note: true\n---\nText\n",
+                        "Mid.md": "---\n---\n\ufeff---\ntags: a\n---\nBody\n"
+                    },
+                    "store": {
+                        "notes/Two.md": "Text\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note with two marks is not changed after its own publication",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "new": ["Mid.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Two.md"]
+                    }
+                }
+            ]
         }
     ]
 }

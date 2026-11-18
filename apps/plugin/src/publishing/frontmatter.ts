@@ -5,8 +5,17 @@
 // `documentation/Canonical Form.md` (section "Notes and their properties").
 // The Rust twin is `cli/src/frontmatter.rs`. Change both in the same commit.
 
-/** The byte order mark. It is not part of the first line of a note. */
-const MARK = String.fromCharCode(0xfeff)
+/** The byte order mark. The marks at the start of a note are not part of its first line. */
+export const MARK = String.fromCharCode(0xfeff)
+
+/** The byte order marks at the start of the text: none, one, or more. */
+export function marksOf(text: string): string {
+    let at = 0
+    while (text.startsWith(MARK, at)) {
+        at += MARK.length
+    }
+    return text.slice(0, at)
+}
 
 /** One line of a note: its text, and its line end (`\n`, `\r\n`, or nothing for a last line without one). */
 interface Line {
@@ -16,7 +25,7 @@ interface Line {
 
 /** A note cut in lines. */
 interface Note {
-    /** The byte order mark, or nothing. */
+    /** The byte order marks at the start of the note, or nothing. */
     mark: string
     lines: Line[]
     /** The index of the line that closes the properties. `undefined` when the note has no closed properties. */
@@ -48,7 +57,7 @@ function isFence(line: string): boolean {
 }
 
 function read(text: string): Note {
-    const mark = text.startsWith(MARK) ? MARK : ''
+    const mark = marksOf(text)
     const pieces = text.slice(mark.length).split('\n')
     const lines: Line[] = []
     for (const [index, piece] of pieces.entries()) {
@@ -187,12 +196,16 @@ function remove(note: Note, key: string): number | undefined {
     return first
 }
 
-/** True when the lines from a place on would be read as closed properties: a `---` line, and a later one. */
+/**
+ * True when the lines from a place on would be read as closed properties: a
+ * `---` line, and a later one. The byte order marks at the start of the first
+ * line do not count: at the start of a note, they are not part of its first line.
+ */
 function hasClosedProperties(lines: readonly Line[], start: number): boolean {
     const first = lines[start]
     return (
         first !== undefined &&
-        isFence(first.text) &&
+        isFence(first.text.slice(marksOf(first.text).length)) &&
         lines.some((line, index) => index > start && isFence(line.text))
     )
 }

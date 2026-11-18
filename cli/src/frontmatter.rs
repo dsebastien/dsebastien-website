@@ -6,8 +6,14 @@
 //! The TypeScript twin is `apps/plugin/src/publishing/frontmatter.ts`. Change
 //! both in the same commit.
 
-/// The byte order mark. It is not part of the first line of a note.
+/// The byte order mark. The marks at the start of a note are not part of its
+/// first line.
 pub const MARK: char = '\u{feff}';
+
+/// The text without the byte order marks at its start: none, one, or more.
+pub fn without_marks(text: &str) -> &str {
+    text.trim_start_matches(MARK)
+}
 
 /// One line of a note: its text, and its line end (`\n`, `\r\n`, or nothing
 /// for a last line without one).
@@ -18,8 +24,8 @@ struct Line {
 
 /// A note cut in lines.
 struct Note {
-    /// True when the note starts with a byte order mark.
-    marked: bool,
+    /// The number of byte order marks at the start of the note.
+    marks: usize,
     lines: Vec<Line>,
     /// The index of the line that closes the properties. `None` when the note
     /// has no closed properties.
@@ -46,10 +52,8 @@ fn is_fence(line: &str) -> bool {
 }
 
 fn read(text: &str) -> Note {
-    let (marked, rest) = match text.strip_prefix(MARK) {
-        Some(rest) => (true, rest),
-        None => (false, text),
-    };
+    let rest = without_marks(text);
+    let marks = (text.len() - rest.len()) / MARK.len_utf8();
     let pieces: Vec<&str> = rest.split('\n').collect();
     let mut lines = Vec::new();
     for (index, piece) in pieces.iter().enumerate() {
@@ -83,7 +87,7 @@ fn read(text: &str) -> Note {
         None
     };
     Note {
-        marked,
+        marks,
         lines,
         close,
         opened,
@@ -92,7 +96,7 @@ fn read(text: &str) -> Note {
 
 fn write(note: &Note) -> String {
     let mut text = String::new();
-    if note.marked {
+    for _ in 0..note.marks {
         text.push(MARK);
     }
     for line in &note.lines {
@@ -214,9 +218,13 @@ fn remove(note: &mut Note, key: &str) -> Option<usize> {
 }
 
 /// True when the lines from a place on would be read as closed properties: a
-/// `---` line, and a later one.
+/// `---` line, and a later one. The byte order marks at the start of the first
+/// line do not count: at the start of a note, they are not part of its first
+/// line.
 fn has_closed_properties(lines: &[Line], start: usize) -> bool {
-    lines.get(start).is_some_and(|line| is_fence(&line.text))
+    lines
+        .get(start)
+        .is_some_and(|line| is_fence(without_marks(&line.text)))
         && lines
             .iter()
             .skip(start + 1)

@@ -254,7 +254,7 @@ The two implementations read and write the properties of a note as lines of text
 
 Reading:
 
-1. A byte order mark at the start of a note is not part of its first line.
+1. The byte order marks at the start of a note are not part of its first line: one mark, or more. A write keeps them.
 2. A note has properties when its first line is `---`, with nothing after it but spaces and tabs, and a later line is `---` in the same form. The lines between the two are the properties. A carriage return at the end of a line is not part of the line.
 3. A line names a key when it holds, in this order: an optional quote (`"` or `'`), the key, an optional quote, optional spaces and tabs, and a colon. The value is the text after the colon, without the spaces and the tabs around it. No other character is removed.
 4. A property of the note itself starts at a line that names its key with no space and no tab before it. It goes on over the next lines that begin with a space, a tab or a hyphen.
@@ -265,9 +265,9 @@ The deny list guard excludes a note when its vault path starts with an entry of 
 
 Writing the state property (`public_note`):
 
-5. To remove the property is to remove every property of the note itself that names the key, with its lines. When the properties then hold no line, the two `---` lines are removed too: the note has no properties any more, as when the last property is removed in Obsidian. The two lines stay when the text below them would then be read as properties (it starts with a `---` line and has a later one): a text of the author never becomes properties. A note that does not name the key is not changed.
+5. To remove the property is to remove every property of the note itself that names the key, with its lines. When the properties then hold no line, the two `---` lines are removed too: the note has no properties any more, as when the last property is removed in Obsidian. The two lines stay when the text below them would then be read as properties (it starts with a `---` line, after byte order marks, and has a later one): a text of the author never becomes properties. A note that does not name the key is not changed.
 6. To set the property is to remove it, then to write the line `public_note: true` in the place of the first one that was removed. When there was none, the line becomes the last line of the properties.
-7. A note without properties gets the three lines `---`, `public_note: true`, `---` before its text, after its byte order mark when it has one.
+7. A note without properties gets the three lines `---`, `public_note: true`, `---` before its text, after its byte order marks when it has them.
 8. Every line that is kept keeps its own line end. A new line takes the line end of the first line of the note, and a line feed when the note has no line end.
 9. A note whose text would not change is not written.
 
@@ -277,7 +277,7 @@ The properties are in the flow form of YAML when they are closed and a line of t
 
 A cleaned note is Markdown text, in the encoding of this document.
 
-1. The source of a note is its text in the vault, without its byte order mark, with each pair of a carriage return and a line feed replaced by a line feed, without the `public_note` property, and without properties that hold no line (`---` and `---` with nothing between them, under the exception of rule 5 of the properties). That property is the state in the vault, not content. So the source of a note is the same before and after the tool writes the property, also for a note without properties, and a correction of the property never makes a note "changed" (PUB-14 of the spec). The shared cases check it: each note of the `source` cases has the same source after the property is set.
+1. The source of a note is its text in the vault, without the byte order marks at its start, with each pair of a carriage return and a line feed replaced by a line feed, without the `public_note` property, and without properties that hold no line (`---` and `---` with nothing between them, under the exception of rule 5 of the properties). That property is the state in the vault, not content. So the source of a note is the same before and after the tool writes the property, also for a note without properties, and a correction of the property never makes a note "changed" (PUB-14 of the spec). The shared cases check it: each note of the `source` cases has the same source after the property is set.
 2. Version 1 of the cleaning step changes nothing more: the cleaned note is the source.
 3. Version 2 resolves the links of the note (PUB-87 of the spec). It changes no character of the text: the cleaned note is still the source, and a link stays as the author wrote it, with its link text (PUB-89). The result is the list `links` of the manifest entry, which says to which note each link leads. The section "The links of a note" has the rules.
 4. The ticket that adds a rule to the cleaning step writes it here before the second implementation is written, and raises the version.
