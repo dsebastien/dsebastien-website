@@ -32,6 +32,18 @@ const TARGET_URL = '/10+Garden/Rain+barrel'
 const WATERING = '10 Garden/Watering schedule.md'
 /** A note with a link in a property, and embeds of a note that is not published. */
 const SWAP = '10 Garden/Seed swap day.md'
+/** A note that the test writes: a reference link, and a wikilink inside the text of a Markdown link. */
+const ODD = 'Odd links.md'
+const ODD_TEXT = [
+    'By reference: [the barrel][b] and [a site][s].',
+    '',
+    'A link in a link: [**[[Rain barrel]]**](Rain%20barrel.md).',
+    '',
+    // Another link path than the one of the Markdown link above: the tool reads no definition.
+    '[b]: 10%20Garden/Rain%20barrel.md',
+    '[s]: https://garden.example/',
+    ''
+].join('\n')
 
 interface Build {
     exitCode: number
@@ -49,6 +61,8 @@ const builds: Build[] = []
 const reports: PublicationReport[] = []
 /** The files that the second publication changed in the content store. */
 let secondCommit = ''
+/** The targets that the entry of the linking note names after the third publication. */
+let targetsOfHeldNote: string[] = []
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
     const child = Bun.spawn(['git', ...args], { cwd, env: gitEnvironment(), stdout: 'pipe' })
@@ -126,7 +140,8 @@ beforeAll(async () => {
         )
     }
 
-    await run({ include: [LINKING, WATERING, SWAP] }, '2031-04-01T08:00:00Z')
+    await Bun.write(join(vault, ODD), ODD_TEXT)
+    await run({ include: [LINKING, WATERING, SWAP, ODD] }, '2031-04-01T08:00:00Z')
     builds.push(await build(contentStore))
 
     await run({ include: [TARGET] }, '2031-04-02T08:00:00Z')
@@ -135,7 +150,18 @@ beforeAll(async () => {
 
     const text = await Bun.file(join(vault, TARGET)).text()
     await Bun.write(join(vault, TARGET), text.replace('---\n', '---\npublish_ignore: true\n'))
-    await run({ include: [] }, '2031-04-03T08:00:00Z')
+    // The note that links is held: its entry still names the target, so only
+    // the state of the target in the manifest can make the page right.
+    await run({ include: [], hold: [LINKING] }, '2031-04-03T08:00:00Z')
+    for (const file of await readdir(join(contentStore, 'manifest'))) {
+        const entry = (await Bun.file(join(contentStore, 'manifest', file)).json()) as {
+            path: string
+            links: { path: string }[]
+        }
+        if (entry.path === LINKING) {
+            targetsOfHeldNote = entry.links.map((link) => link.path)
+        }
+    }
     builds.push(await build(contentStore))
 }, 540_000)
 
@@ -206,8 +232,26 @@ describe('page of a note whose link targets are not published', () => {
         expect(html).not.toContain('<a ')
     })
 
+    // The tool does not read a reference link, so it never has a target. It
+    // must not stay a link to a file that the site does not have.
+    test('shows a reference link to a note as plain text, and keeps a reference link to a site', () => {
+        const html = page(0, ODD)
+        expect(html).toContain(
+            'By reference: <span class="not-published">the barrel</span> and <a href="https://garden.example/">a site</a>.'
+        )
+        expect(html).not.toContain('Rain%20barrel.md')
+    })
+
+    test('reads no link inside the text of a link: the markup stays well formed', () => {
+        const html = page(0, ODD)
+        expect(html).toContain(
+            'A link in a link: <span class="not-published"><strong>[[Rain barrel]]</strong></span>.'
+        )
+        expect(html).not.toContain('note-link')
+    })
+
     test('makes no page for a target, and the plain server answers 404 for its URL', () => {
-        expect(buildOf(0).files).toHaveLength(3)
+        expect(buildOf(0).files).toHaveLength(4)
         expect(Object.keys(buildOf(0).resolverMap.pages)).not.toContain(TARGET_URL)
         expect(buildOf(0).targetStatus).toBe(404)
     })
@@ -239,6 +283,15 @@ describe('page of the same note after its target is published', () => {
         expect(page(1, LINKING)).toContain('<span class="not-published">Water butt</span>')
     })
 
+    test('shows the link around a link as one link, and the reference link still as plain text', () => {
+        const html = page(1, ODD)
+        expect(html).toContain(
+            `A link in a link: <a href="${TARGET_URL}"><strong>[[Rain barrel]]</strong></a>.`
+        )
+        expect(html).toContain('By reference: <span class="not-published">the barrel</span>')
+        expect(html).not.toContain('note-link')
+    })
+
     test('the plain server answers 200 for the URL of the target', () => {
         expect(buildOf(1).resolverMap.pages[TARGET_URL]).toBeDefined()
         expect(buildOf(1).targetStatus).toBe(200)
@@ -250,6 +303,12 @@ describe('site after the target got the ignore property', () => {
     test('the publication without a selection removed the target', () => {
         expect(reports[2]?.forcedRemoved).toEqual([TARGET])
         expect(reports[2]?.removed).toEqual([])
+        expect(reports[2]?.skipped).toEqual([LINKING])
+    })
+
+    // The page must follow the manifest, not the entry of the note that links.
+    test('the entry of the held note still names the target', () => {
+        expect(targetsOfHeldNote).toContain(TARGET)
     })
 
     test('the build completes', () => {
@@ -259,7 +318,7 @@ describe('site after the target got the ignore property', () => {
     test('the URL of the target answers 404, and the site has no page of it', () => {
         expect(buildOf(2).targetStatus).toBe(404)
         expect(Object.keys(buildOf(2).resolverMap.pages)).not.toContain(TARGET_URL)
-        expect(buildOf(2).files).toHaveLength(3)
+        expect(buildOf(2).files).toHaveLength(4)
         expect(buildOf(2).pages.has(TARGET)).toBe(false)
     })
 

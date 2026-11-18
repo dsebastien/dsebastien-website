@@ -51,8 +51,10 @@ export interface Scan {
     readonly notes: ReadonlyMap<string, ScannedNote>
     /** The notes of the scan that the ignore property excludes. */
     readonly ignored: ReadonlySet<string>
-    /** The notes of the scan by their names: what a link is resolved against. */
+    /** The notes of the scan and of the folders of the deny list, by their names: what a link is resolved against. */
     readonly index: LinkIndex
+    /** The notes that a guard excludes: a link to one of them gives no item. */
+    readonly guarded: ReadonlySet<string>
     /** The names of the notes in the folders of the deny list, in small letters. No file of those folders is read. */
     readonly deniedNames: ReadonlySet<string>
     /** Every entry of the manifest, by the vault path of its note. */
@@ -88,29 +90,28 @@ export async function scanVault(vault: Vault, configuration: Configuration): Pro
 }
 
 /**
- * The names of the notes in the folders of the deny list, in small letters.
- * The tool lists those folders to know that a published note moved into one
- * of them. It reads none of their files.
+ * The vault paths of the notes in the folders of the deny list. The tool lists
+ * those folders for two reasons: to know that a published note moved into one
+ * of them, and to know that a link leads to a note under that guard. It reads
+ * none of their files, and it writes none of these paths.
  */
-export async function scanDeniedNames(
-    vault: Vault,
-    configuration: Configuration
-): Promise<Set<string>> {
-    const names = new Set<string>()
+export async function scanDenied(vault: Vault, configuration: Configuration): Promise<string[]> {
+    const notes: string[] = []
     const folders = [...configuration.denyList]
     for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {
         for (const entry of await vault.list(folder)) {
             if (entry.name.startsWith('.') || entry.name.includes(REPLACEMENT)) {
                 continue
             }
+            const path = `${folder}/${entry.name}`
             if (entry.kind === 'folder') {
-                folders.push(`${folder}/${entry.name}`)
-            } else if (entry.name.endsWith('.md')) {
-                names.add(entry.name.toLowerCase())
+                folders.push(path)
+            } else if (path.endsWith('.md')) {
+                notes.push(path)
             }
         }
     }
-    return names
+    return notes
 }
 
 /**
@@ -158,7 +159,12 @@ export async function computeQueue(input: {
         })
     }
 
-    const index = new LinkIndex(notes.keys())
+    // A link that Obsidian leads to a note under a guard must not lead to
+    // another note of the same name. So the notes of the deny list folders
+    // are candidates too, by their paths alone, and such a target gives no item.
+    const denied = await scanDenied(input.vault, input.configuration)
+    const index = new LinkIndex([...notes.keys(), ...denied])
+    const guarded = new Set([...ignored, ...denied])
     const lists = {
         changed: [] as string[],
         new: [] as string[],
@@ -179,7 +185,7 @@ export async function computeQueue(input: {
         } else if (
             entry.cleaningVersion !== CLEANING_VERSION ||
             // A target was made, moved or removed, or a guard now excludes it.
-            !sameLinks(linksOfPaths(linkPaths.get(path) ?? [], path, index, ignored), entry.links)
+            !sameLinks(linksOfPaths(linkPaths.get(path) ?? [], path, index, guarded), entry.links)
         ) {
             lists.changed.push(path)
             lists.technicalUpdates.push(path)
@@ -210,7 +216,10 @@ export async function computeQueue(input: {
         notes,
         ignored,
         index,
-        deniedNames: await scanDeniedNames(input.vault, input.configuration),
+        guarded,
+        deniedNames: new Set(
+            denied.map((path) => path.slice(path.lastIndexOf('/') + 1).toLowerCase())
+        ),
         manifest: input.manifest,
         configuration: input.configuration
     }

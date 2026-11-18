@@ -92,7 +92,7 @@ The tool scans the vault to find its notes. Both implementations scan in the sam
 2. A name that starts with a dot is not part of the vault: a folder (`.obsidian`, `.trash`) or a file. Obsidian does not show them.
 3. A symbolic link is not part of the vault, as a file and as a folder.
 4. A name that is not valid Unicode, or that holds the replacement character (U+FFFD), is not part of the vault.
-5. A folder of the deny list is not scanned for notes. The tool reads none of its files and writes none. It lists the names of the notes below it (rules 2, 3, 4 and 6 apply), to know that a published note moved into it: see the forced removals of the publication plan.
+5. A folder of the deny list is not scanned for notes. The tool reads none of its files and writes none. It lists the notes below it by their paths (rules 2, 3, 4 and 6 apply), for two reasons: to know that a published note moved into it (see the forced removals of the publication plan), and to know that a link leads to a note under that guard (see the links of a note). It writes none of these paths.
 6. A note is a file of the scan whose name ends in `.md`, in small letters.
 7. The tool reads every note of the scan. A note that cannot be read, or that is not valid UTF-8, stops the run with a message that names it. A note that cannot be read is never taken for a note without the ignore property.
 
@@ -172,7 +172,7 @@ The plan of a selection:
 
 1. `publish`: the paths of `include` that are in the list `new` of the queue. A new candidate enters a plan only when its path is named.
 2. `update`: every path of the list `changed` of the queue that is not in `hold` and not in `remove`. So a plan without paths holds the changed notes only. A path of `include` that is in `changed` or in `unchanged` adds nothing.
-3. `forcedRemove`: every path of the list `toRemove` of the queue that a guard excludes. There are three cases. The path is in a folder of the deny list. The ignore property excludes the note. Or the scan did not find the file of the note, and a note with the same name, the letter case ignored, is in a folder of the deny list: the note moved there. The tool compares names only and reads no file of such a folder, so a published note that is missing from this vault is removed too when another note of its name is in a folder of the deny list: the tool fails closed. A published note whose file is only missing, with no note of its name in a folder of the deny list, is not a forced removal. No selection changes this list: every plan holds every forced removal, also a plan without paths (PUB-21 of the spec).
+3. `forcedRemove`: every path of the list `toRemove` of the queue that a guard excludes. There are three cases. The path is in a folder of the deny list. The ignore property excludes the note. Or the scan did not find the file of the note, and a note with the same name, the letter case ignored, is in a folder of the deny list: the note moved there. The tool compares names only and reads no file of such a folder, so a published note that is missing from this vault is removed too when another note of its name is in a folder of the deny list: the tool fails closed. A note that gets another name when it moves, or that moves into a folder whose name starts with a dot, is only missing for the tool: the rename journal of a later slice gives the exact move. A published note whose file is only missing, with no note of its name in a folder of the deny list, is not a forced removal. No selection changes this list: every plan holds every forced removal, also a plan without paths (PUB-21 of the spec).
 4. `remove`: the paths of `remove` of the selection that are not in `forcedRemove`. A guard wins over an unpublish.
 
 Both implementations sort the four lists when they make a plan (`makePlan`, `PublicationPlan::new`), so no caller can give a plan in another order.
@@ -303,7 +303,7 @@ A link path is the part of a link that names its target. The tool reads the sour
 
 ### The target of a link path
 
-The inputs are the link path, the vault path of the note that holds the link, and the notes of the scan. A note in a folder of the deny list is not in the scan, so no link leads to it.
+The inputs are the link path, the vault path of the note that holds the link, and the notes of the vault: the notes of the scan, and the notes of the folders of the deny list, which the tool knows by their paths alone (rule 5 of the scan). A note under a guard is a candidate like every other note, so that a link which Obsidian leads to it does not lead to another note of the same name. It never gets an item: see the list `links`.
 
 The letter case is ignored: the link path and each vault path are compared in small letters (`toLowerCase` in TypeScript, `to_lowercase` in Rust, on the whole text). The name of a path is its part after the last slash. The folder of a path is its part before the last slash, and the empty text for a note at the root.
 
@@ -321,7 +321,7 @@ In steps 3 to 6, "starts with" and "ends with" compare texts, not path parts, as
 ### The list `links`
 
 1. Each link path of the note that has a target gives one item: `link` is the link path, and `path` is the vault path of the target, as the vault gives it.
-2. A target that the ignore property excludes gives no item. So no path of a note under a guard is written into the content store by this list, for both guards.
+2. A target that a guard excludes gives no item: a note in a folder of the deny list, and a note that the ignore property excludes. So the tool writes no path of a note under a guard into the content store. An entry that was written before the guard came holds the path until the next update of its note: that update is a technical update of rule 5, and the author can hold it like every update.
 3. Each link path is in the list one time. The list is sorted by `link`, in the order of the code points.
 4. The state of the target is not an input: a target that is not published has its item like every other. The build makes a link only when the manifest has a published note at that path, and shows the link text as plain text in every other case (PUB-89, BUILD-05). So a link appears when its target is published, with no change to the note that holds it.
 5. The links of a published note are computed again at each scan. When they are not the `links` of its manifest entry, the note is a technical update (see the publication queue).

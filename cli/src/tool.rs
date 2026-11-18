@@ -153,7 +153,7 @@ fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String
             .ok_or_else(|| format!("\"{path}\" does not exist in the vault any more"))?;
         let source = source_of(&text);
         let cleaned = clean_note(&source);
-        let links = links_of(&source, path, &scan.index, &scan.ignored);
+        let links = links_of(&source, path, &scan.index, &scan.guarded);
         texts.insert(
             path.clone(),
             NoteTexts {

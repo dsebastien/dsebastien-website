@@ -23,6 +23,15 @@ type MarkdownPlugin = NonNullable<SatteriProcessorOptions['mdastPlugins']>[numbe
 /** A node that the plugin puts into the tree. */
 type NewNode = { type: 'text'; value: string } | { type: 'html'; value: string }
 
+/**
+ * The version of the markup that this plugin writes. Astro keeps the markup
+ * of a note between two builds while the text of the note and the
+ * configuration are the same, and it does not see a change of this code.
+ * Raise the version with every change of what the plugin writes: the name of
+ * the plugin is a part of the configuration, so every note is rendered again.
+ */
+export const MARKUP_VERSION = 2
+
 /** The element that stands for a link to a note until the page is made. */
 const MARK = 'note-link'
 
@@ -71,16 +80,40 @@ function split(value: string): NewNode[] | undefined {
     return parts
 }
 
+/** The part of the data of one document where the plugin keeps the definitions of its reference links. */
+const DEFINITIONS = 'noteLinkDefinitions'
+
 /**
  * The plugin of the Markdown renderer: it marks the links to notes. Code and
  * raw HTML are not text for the renderer, so a link in them stays as it is.
  */
 export const noteLinks: MarkdownPlugin = {
-    name: 'note-links',
+    name: `note-links-${String(MARKUP_VERSION)}`,
+    // The destination of a reference link is on another line of the note,
+    // often below the link. So the definitions are read before the visitors run.
+    before(root, context) {
+        const definitions = new Map<string, string>()
+        const read = (node: { type: string; children?: readonly unknown[] }): void => {
+            for (const child of node.children ?? []) {
+                const item = child as { type: string; identifier?: string; url?: string }
+                if (item.type === 'definition' && item.identifier !== undefined) {
+                    definitions.set(item.identifier, item.url ?? '')
+                } else {
+                    read(item)
+                }
+            }
+        }
+        read(root)
+        ;(context.data as Record<string, unknown>)[DEFINITIONS] = definitions
+    },
     text(node, context) {
-        // The text of a Markdown link is not read again: a mark holds no mark.
-        if (context.parent(node).type === 'link') {
-            return
+        // The text of a link is not read again, at any depth: a mark holds no mark.
+        let parent: ReturnType<typeof context.parent> = context.parent(node)
+        while (parent !== undefined && parent.type !== 'root') {
+            if (parent.type === 'link' || parent.type === 'linkReference') {
+                return
+            }
+            parent = context.parent(parent)
         }
         const parts = split(node.value)
         if (parts !== undefined) {
@@ -90,6 +123,17 @@ export const noteLinks: MarkdownPlugin = {
     // A Markdown link to a file of the vault. Its text stays as it is.
     link(node, context) {
         const linkPath = linkPathOfDestination(node.url)
+        if (linkPath !== undefined && linkPath !== '') {
+            context.replaceNode(node, [open(linkPath), ...node.children, CLOSE])
+        }
+    },
+    // A reference link to a file of the vault. The tool does not read this
+    // form, so its link path has no target: it shows as plain text, and it is
+    // never a link to a file that the site does not have (business rule 5).
+    linkReference(node, context) {
+        const data = context.data as Record<string, unknown>
+        const url = (data[DEFINITIONS] as Map<string, string> | undefined)?.get(node.identifier)
+        const linkPath = url === undefined ? undefined : linkPathOfDestination(url)
         if (linkPath !== undefined && linkPath !== '') {
             context.replaceNode(node, [open(linkPath), ...node.children, CLOSE])
         }
@@ -119,7 +163,14 @@ export function withLinkState(
     urlOf: (vaultPath: string) => string | undefined
 ): string {
     return html.replace(MARKED, (_all, linkPath: string, inner: string) => {
-        const target = links.get(decodeURIComponent(linkPath))
+        // A mark that the plugin did not write (raw HTML of a note) can hold a
+        // text that cannot be decoded: it has no target.
+        let target: string | undefined
+        try {
+            target = links.get(decodeURIComponent(linkPath))
+        } catch {
+            target = undefined
+        }
         const url = target === undefined ? undefined : urlOf(target)
         // Business rule 5: a link to a note that is not published leads to no
         // page. The same holds for a link path that has no target: a name that

@@ -1,5 +1,5 @@
 {
-    "about": "Shared cases of the links of a note (documentation/Canonical Form.md, section \"The links of a note\"). The TypeScript tests and the Rust tests read this file and must get what each case states. \"linkPaths\": a source text and the link paths that it must give, each one time, in the order of the code points. \"targets\": a list of the notes of a scan, and for a link path in the note \"from\" the vault path of its target, or null when it has none. \"links\": a source text with the notes of a scan and the ones that the ignore property excludes, and the list that the manifest entry must hold. Every name is invented, and every expected value is written by hand.",
+    "about": "Shared cases of the links of a note (documentation/Canonical Form.md, section \"The links of a note\"). The TypeScript tests and the Rust tests read this file and must get what each case states. \"linkPaths\": a source text and the link paths that it must give, each one time, in the order of the code points. \"targets\": a list of the notes of a scan, and for a link path in the note \"from\" the vault path of its target, or null when it has none. \"links\": a source text with the notes of a vault and the ones that a guard excludes (\"ignored\"), and the list that the manifest entry must hold. Every name is invented, and every expected value is written by hand.",
     "linkPaths": [
         {
             "name": "a wikilink, and a wikilink with a link text",
@@ -343,7 +343,7 @@
             ]
         },
         {
-            "name": "a target that the ignore property excludes gives no item, and it still takes the link from a note with the same name",
+            "name": "a target that a guard excludes gives no item, and it still takes the link from a note with the same name",
             "notes": ["Alpha.md", "Far/Away/Secret.md", "From.md", "Secret.md"],
             "ignored": ["Secret.md"],
             "from": "From.md",

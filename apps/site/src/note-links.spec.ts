@@ -48,6 +48,12 @@ describe('markup of a note with the state of its links', () => {
         )
     })
 
+    test('a mark of raw HTML with a link path that cannot be decoded has no target, and the build goes on', () => {
+        expect(withLinkState('<note-link data-link="%E0">raw</note-link>', LINKS, urlOf)).toBe(
+            '<span class="not-published">raw</span>'
+        )
+    })
+
     test('the text of a mark can hold markup', () => {
         expect(
             withLinkState(

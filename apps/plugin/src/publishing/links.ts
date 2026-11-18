@@ -377,16 +377,16 @@ export class LinkIndex {
 
 /**
  * The list `links` of the manifest entry of a note: one item per link path
- * that leads to a note, sorted by the link path. A target that the ignore
- * property excludes gives no item.
+ * that leads to a note, sorted by the link path. A target that a guard
+ * excludes gives no item.
  */
 export function linksOf(
     source: string,
     from: string,
     index: LinkIndex,
-    ignored: ReadonlySet<string>
+    guarded: ReadonlySet<string>
 ): NoteLink[] {
-    return linksOfPaths(linkPathsOf(source), from, index, ignored)
+    return linksOfPaths(linkPathsOf(source), from, index, guarded)
 }
 
 /** The list `links` of a note whose link paths are known. */
@@ -394,12 +394,12 @@ export function linksOfPaths(
     linkPaths: readonly string[],
     from: string,
     index: LinkIndex,
-    ignored: ReadonlySet<string>
+    guarded: ReadonlySet<string>
 ): NoteLink[] {
     const links: NoteLink[] = []
     for (const link of linkPaths) {
         const path = index.targetOf(link, from)
-        if (path !== undefined && !ignored.has(path)) {
+        if (path !== undefined && !guarded.has(path)) {
             links.push({ link, path })
         }
     }

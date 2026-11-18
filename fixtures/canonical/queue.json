@@ -1492,7 +1492,8 @@
                 "Leaf.md": "Leaf\n",
                 "Folder/Deep.md": "Deep\n",
                 "Hidden.md": "---\npublish_ignore: true\n---\nHidden\n",
-                "Locked/Secret.md": "Secret\n"
+                "Locked/Secret.md": "Secret\n",
+                "Folder/Sub/Secret.md": "A public note with the name of the secret one, and a longer path\n"
             },
             "steps": [
                 {
@@ -1518,7 +1519,7 @@
                 },
                 {
                     "do": "expect",
-                    "why": "the text keeps every link as it is written, and the entry names the target of a wikilink, of an embed, of a Markdown link and of a link in a property. A target that is not published has its item. A note under a guard and a name that no note has give none",
+                    "why": "the text keeps every link as it is written, and the entry names the target of a wikilink, of an embed, of a Markdown link and of a link in a property. A target that is not published has its item. A note under a guard and a name that no note has give none. The link that Obsidian leads to the note in the folder of the deny list does not lead to the public note of the same name",
                     "vault": {},
                     "store": {
                         "notes/Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
@@ -1554,11 +1555,11 @@
                         "changed": [],
                         "counts": {
                             "changed": 0,
-                            "new": 1,
+                            "new": 2,
                             "toRemove": 0,
                             "unchanged": 2
                         },
-                        "new": ["Folder/Deep.md"],
+                        "new": ["Folder/Deep.md", "Folder/Sub/Secret.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Hub.md", "Leaf.md"]
@@ -1588,11 +1589,11 @@
                         "changed": ["Hub.md"],
                         "counts": {
                             "changed": 1,
-                            "new": 3,
+                            "new": 4,
                             "toRemove": 0,
                             "unchanged": 1
                         },
-                        "new": ["Folder/Deep.md", "Hidden.md", "Later.md"],
+                        "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": [],
                         "unchanged": ["Leaf.md"]
@@ -1635,11 +1636,11 @@
                         "changed": [],
                         "counts": {
                             "changed": 0,
-                            "new": 3,
+                            "new": 4,
                             "toRemove": 0,
                             "unchanged": 2
                         },
-                        "new": ["Folder/Deep.md", "Hidden.md", "Later.md"],
+                        "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Hub.md", "Leaf.md"]
@@ -1659,11 +1660,11 @@
                         "changed": ["Hub.md"],
                         "counts": {
                             "changed": 1,
-                            "new": 3,
+                            "new": 4,
                             "toRemove": 1,
                             "unchanged": 0
                         },
-                        "new": ["Folder/Deep.md", "Hidden.md", "Later.md"],
+                        "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": ["Leaf.md"],
                         "unchanged": []

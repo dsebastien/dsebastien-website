@@ -188,7 +188,7 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
         }
         const source = sourceOf(text)
         const cleaned = cleanNote(source)
-        const links = linksOf(source, path, scan.index, scan.ignored)
+        const links = linksOf(source, path, scan.index, scan.guarded)
         texts.set(path, { source, cleaned, links })
         notes.push({
             cleanedHash: contentHash(cleaned),

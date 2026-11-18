@@ -64,8 +64,11 @@ pub struct Scan {
     pub notes: BTreeMap<String, ScannedNote>,
     /// The notes of the scan that the ignore property excludes.
     pub ignored: BTreeSet<String>,
-    /// The notes of the scan by their names: what a link is resolved against.
+    /// The notes of the scan and of the folders of the deny list, by their
+    /// names: what a link is resolved against.
     pub index: LinkIndex,
+    /// The notes that a guard excludes: a link to one of them gives no item.
+    pub guarded: BTreeSet<String>,
     /// The names of the notes in the folders of the deny list, in small
     /// letters. No file of those folders is read.
     pub denied_names: BTreeSet<String>,
@@ -119,33 +122,32 @@ fn scan_vault(vault: &Vault, configuration: &Configuration) -> Result<Vec<String
     Ok(notes)
 }
 
-/// The names of the notes in the folders of the deny list, in small letters.
-/// The tool lists those folders to know that a published note moved into one
-/// of them. It reads none of their files.
-fn scan_denied_names(
-    vault: &Vault,
-    configuration: &Configuration,
-) -> Result<BTreeSet<String>, String> {
-    let mut names = BTreeSet::new();
+/// The vault paths of the notes in the folders of the deny list. The tool lists
+/// those folders for two reasons: to know that a published note moved into one
+/// of them, and to know that a link leads to a note under that guard. It reads
+/// none of their files, and it writes none of these paths.
+fn scan_denied(vault: &Vault, configuration: &Configuration) -> Result<Vec<String>, String> {
+    let mut notes = Vec::new();
     let mut folders = configuration.deny_list.clone();
     while let Some(folder) = folders.pop() {
         for (name, kind) in vault.list(&folder)? {
             if name.starts_with('.') || name.contains('\u{fffd}') {
                 continue;
             }
+            let path = format!("{folder}/{name}");
             if kind == Entry::Folder {
-                folders.push(format!("{folder}/{name}"));
+                folders.push(path);
             } else {
                 // Letter case is never ignored for the end of a name.
                 #[allow(clippy::case_sensitive_file_extension_comparisons)]
-                let is_note = name.ends_with(".md");
+                let is_note = path.ends_with(".md");
                 if is_note {
-                    names.insert(name.to_lowercase());
+                    notes.push(path);
                 }
             }
         }
     }
-    Ok(names)
+    Ok(notes)
 }
 
 /// Scans the vault and fills the four lists of the queue. The state property
@@ -196,11 +198,17 @@ pub fn compute_queue(
         );
     }
 
-    let index = LinkIndex::new(notes.keys());
+    // A link that Obsidian leads to a note under a guard must not lead to
+    // another note of the same name. So the notes of the deny list folders
+    // are candidates too, by their paths alone, and such a target gives no
+    // item.
+    let denied = scan_denied(vault, &configuration)?;
+    let index = LinkIndex::new(notes.keys().chain(denied.iter()));
+    let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
     // The links that a published note has now, from its link paths.
     let links_now = |path: &String| {
         let link_paths = link_paths.get(path).map_or(&[][..], Vec::as_slice);
-        resolve_links(link_paths, path, &index, &ignored)
+        resolve_links(link_paths, path, &index, &guarded)
     };
     let mut queue = PublicationQueue {
         changed: Vec::new(),
@@ -256,12 +264,16 @@ pub fn compute_queue(
         to_remove: queue.to_remove.len(),
         unchanged: queue.unchanged.len(),
     };
-    let denied_names = scan_denied_names(vault, &configuration)?;
+    let denied_names = denied
+        .iter()
+        .map(|path| path.rsplit('/').next().unwrap_or(path).to_lowercase())
+        .collect();
     Ok(Scan {
         queue,
         notes,
         ignored,
         index,
+        guarded,
         denied_names,
         manifest,
         configuration,
