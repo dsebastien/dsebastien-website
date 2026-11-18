@@ -259,7 +259,7 @@ Reading:
 3. A line names a key when it holds, in this order: an optional quote (`"` or `'`), the key, an optional quote, optional spaces and tabs, and a colon. The value is the text after the colon, without the spaces and the tabs around it. No other character is removed.
 4. A property of the note itself starts at a line that names its key with no space and no tab before it. It goes on over the next lines that begin with a space, a tab or a hyphen.
 
-The ignore property is read to fail closed. The guard excludes a note when a line names `publish_ignore`, also after spaces and tabs and in any case of its ASCII letters, unless the value of every such line is exactly `false`. So `true`, `yes`, `"true"`, a value on the next line, a comment after the value and a nested key all exclude the note. When the first line opens the properties and no line closes them, every line of the note is read for the guard.
+The ignore property is read to fail closed. The guard excludes a note when a line of the properties holds `publish_ignore` anywhere, in any case of its ASCII letters, unless that line names the key (rule 3, also after spaces and tabs) with the value exactly `false`. So `true`, `yes`, `"true"`, a value on the next line, a comment after the value, a nested key, properties in one line of JSON (`{ "publish_ignore": false }` too), a complex key of YAML (`? publish_ignore`), a longer key and the key in the value of another property all exclude the note. When the first line opens the properties and no line closes them, every line of the note is read for the guard. Not read: a key that YAML spells with escapes (`"publish\x5fignore"`) or folds over two lines in quotes. Obsidian writes no such key.
 
 The deny list guard excludes a note when its vault path starts with an entry of the deny list and a slash.
 
@@ -270,6 +270,8 @@ Writing the state property (`public_note`):
 7. A note without properties gets the three lines `---`, `public_note: true`, `---` before its text, after its byte order mark when it has one.
 8. Every line that is kept keeps its own line end. A new line takes the line end of the first line of the note, and a line feed when the note has no line end.
 9. A note whose text would not change is not written.
+
+The properties are in the flow form of YAML when they are closed and a line of them starts with `{` or `[`, after optional spaces and tabs (`{ "tags": ["a"] }`, also `tags:` with `[a, b]` on the next line). A line that the tool adds below such a line is not valid YAML. So the tool never writes the state property into a note in that form (see "The state property after a publication").
 
 ## Cleaned notes
 
@@ -372,8 +374,9 @@ After a push that succeeded, the tool corrects the `public_note` property in the
 2. A note that is published after the run gets the property with the value `true`. Every other note of the scan loses the property, also a note that the ignore property excludes: it is not published.
 3. A note is written only when its text changes.
 4. Before a note is written, it is read again. When its text is not the text of the scan, the note is not written and the report has a warning: the property is corrected at the next publication. A write that fails gives a warning too.
-5. A write never changes what the ignore property says. In an odd form of the properties, a line of the ignore property can belong to the state property, or the new lines can close properties that were open. When the ignore property would be read in another way after the write, the note is not written and the report has a warning: the author corrects the property by hand. A write of the tool can so never open a guard.
-6. Without a push, nothing is corrected: an empty plan, a publication whose every note failed, a refused push. The push is the proof that the copy of the content store followed the content store. Without that proof, a note that another device published could lose its property.
+5. A note whose properties are in the flow form of YAML is not written, and the report has a warning: the author corrects the property by hand.
+6. A write never changes what the ignore property says. In an odd form of the properties, a line of the ignore property can belong to the state property, or the new lines can close properties that were open. When the ignore property would be read in another way after the write, the note is not written and the report has a warning: the author corrects the property by hand. A write of the tool can so never open a guard.
+7. Without a push, nothing is corrected: an empty plan, a publication whose every note failed, a refused push. The push is the proof that the copy of the content store followed the content store. Without that proof, a note that another device published could lose its property.
 
 ## How it is tested
 

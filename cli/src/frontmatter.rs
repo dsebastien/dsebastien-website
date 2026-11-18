@@ -153,21 +153,41 @@ fn continues(line: &str) -> bool {
     line.starts_with(' ') || line.starts_with('\t') || line.starts_with('-')
 }
 
-/// True when the properties of the note name the key with a value that is not
-/// exactly `false`. It is the reading of a guard, so it fails closed: the key
-/// counts in any letter case, in quotes, below another key, and with any
-/// value. When the properties are never closed, every line of the note is
-/// read.
-pub fn names_in_properties(text: &str, key: &str) -> bool {
-    let note = read(text);
-    if !note.opened {
-        return false;
+/// The lines of the properties: up to the closing line, or every line when
+/// the properties are never closed.
+fn property_lines(note: &Note) -> &[Line] {
+    if note.opened {
+        &note.lines[1..note.close.unwrap_or(note.lines.len())]
+    } else {
+        &[]
     }
-    let end = note.close.unwrap_or(note.lines.len());
-    note.lines[1..end]
-        .iter()
-        .filter_map(|line| value_of(&line.text, key, true, true))
-        .any(|value| value != "false")
+}
+
+/// True when a line of the properties holds the key, unless that line names
+/// the key with the value exactly `false`. It is the reading of a guard, so it
+/// fails closed: the key counts anywhere in a line (in one line of JSON, in a
+/// complex key, inside another word), in any case of its ASCII letters, in
+/// quotes, below another key, and with any value. When the properties are
+/// never closed, every line of the note is read.
+pub fn names_in_properties(text: &str, key: &str) -> bool {
+    let wanted = key.to_ascii_lowercase();
+    property_lines(&read(text)).iter().any(|line| {
+        line.text.to_ascii_lowercase().contains(&wanted)
+            && value_of(&line.text, key, true, true) != Some("false")
+    })
+}
+
+/// True when closed properties are in the flow form of YAML: a line of them
+/// starts with `{` or `[`, after optional spaces and tabs. A line that the
+/// tool adds below such a line is not valid YAML, so the tool never writes
+/// into such properties.
+pub fn has_flow_properties(text: &str) -> bool {
+    let note = read(text);
+    note.close.is_some()
+        && property_lines(&note).iter().any(|line| {
+            let start = trim(&line.text);
+            start.starts_with('{') || start.starts_with('[')
+        })
 }
 
 /// Removes every property of the note itself that names the key, with its
@@ -273,7 +293,7 @@ pub fn set_property(text: &str, key: &str, value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{names_in_properties, remove_property, set_property};
+    use super::{has_flow_properties, names_in_properties, remove_property, set_property};
     use crate::clean::{STATE_PROPERTY, source_of};
     use crate::guards::IGNORE_PROPERTY;
     use serde_json::Value;
@@ -302,6 +322,23 @@ mod tests {
             assert_eq!(
                 Some(names_in_properties(text(case, "note"), IGNORE_PROPERTY)),
                 case["excluded"].as_bool(),
+                "{}",
+                text(case, "name")
+            );
+        }
+    }
+
+    /// The tool never writes the state property into properties in the flow
+    /// form of YAML (`{ }`, `[ ]`): a new line below such a line is not valid
+    /// YAML.
+    #[test]
+    fn finds_the_flow_form_of_the_properties_as_the_file_states() {
+        let cases = cases("flow");
+        assert!(cases.len() > 10);
+        for case in &cases {
+            assert_eq!(
+                Some(has_flow_properties(text(case, "note"))),
+                case["flow"].as_bool(),
                 "{}",
                 text(case, "name")
             );

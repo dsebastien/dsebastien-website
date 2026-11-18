@@ -3,7 +3,7 @@ import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.t
 import { linksOf } from './links.ts'
 import { CONFIGURATION_FILE, parseConfiguration } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
-import { namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
+import { hasFlowProperties, namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
 import { contentHash, sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
@@ -328,6 +328,15 @@ async function correctState(
                 warnings.push({
                     path,
                     message: `the note changed during the publication: its ${STATE_PROPERTY} property is corrected at the next publication`
+                })
+                continue
+            }
+            // A new line below a line in the flow form of YAML (`{ }`, `[ ]`)
+            // is not valid YAML. The note stays as the author wrote it.
+            if (hasFlowProperties(text)) {
+                warnings.push({
+                    path,
+                    message: `the properties of the note are in the flow form of YAML ({ } or [ ]), and the tool does not write into that form: correct the ${STATE_PROPERTY} property by hand`
                 })
                 continue
             }

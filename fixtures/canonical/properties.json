@@ -137,13 +137,63 @@
             "excluded": true
         },
         {
-            "name": "a longer key that starts with the key",
+            "name": "a longer key that holds the key",
             "note": "---\npublish_ignore_extra: true\n---\n",
-            "excluded": false
+            "excluded": true
         },
         {
             "name": "the text of the property below closed properties",
             "note": "---\ntags: []\n---\npublish_ignore: true\n",
+            "excluded": false
+        },
+        {
+            "name": "properties in one line of JSON",
+            "note": "---\n{ \"publish_ignore\": true, \"tags\": [\"a\"] }\n---\nA private text\n",
+            "excluded": true
+        },
+        {
+            "name": "the value false in one line of JSON",
+            "note": "---\n{ \"publish_ignore\": false }\n---\nText\n",
+            "excluded": true
+        },
+        {
+            "name": "one line of JSON with no space",
+            "note": "---\n{\"tags\":[\"a\"],\"publish_ignore\":true}\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the key in capital letters in one line of JSON",
+            "note": "---\n{\"PUBLISH_IGNORE\": true}\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a flow mapping over two lines",
+            "note": "---\n{ \"tags\": [\"a\"],\n  \"publish_ignore\": true }\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a complex key of YAML",
+            "note": "---\n? publish_ignore\n: true\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "the key in the value of another property",
+            "note": "---\ntags: [publish_ignore]\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "a line that names the key with false, and a line of JSON",
+            "note": "---\npublish_ignore: false\n{ \"publish_ignore\": false }\n---\n",
+            "excluded": true
+        },
+        {
+            "name": "one line of JSON in properties that are never closed",
+            "note": "---\n{ \"publish_ignore\": true }\nText\n",
+            "excluded": true
+        },
+        {
+            "name": "one line of JSON below closed properties",
+            "note": "---\ntags: a\n---\n{ \"publish_ignore\": true }\n",
             "excluded": false
         }
     ],
@@ -411,6 +461,68 @@
             "name": "the two lines go when the text below them starts with a line of hyphens and is never closed",
             "note": "---\npublic_note: true\n---\n---\ntags: a\nText\n",
             "result": "---\ntags: a\nText\n"
+        }
+    ],
+    "flow": [
+        {
+            "name": "one line of JSON",
+            "note": "---\n{ \"tags\": [\"a\"] }\n---\nText\n",
+            "flow": true
+        },
+        {
+            "name": "a flow sequence",
+            "note": "---\n[a, b]\n---\nText\n",
+            "flow": true
+        },
+        {
+            "name": "a flow mapping after spaces",
+            "note": "---\n  { \"tags\": [] }\n---\n",
+            "flow": true
+        },
+        {
+            "name": "a flow mapping after a property",
+            "note": "---\ntags: a\n{ \"b\": 1 }\n---\n",
+            "flow": true
+        },
+        {
+            "name": "a list in brackets on its own line counts too",
+            "note": "---\ntags:\n  [a, b]\n---\n",
+            "flow": true
+        },
+        {
+            "name": "a list in brackets after a key",
+            "note": "---\ntags: [a, b]\n---\nText\n",
+            "flow": false
+        },
+        {
+            "name": "a mapping in braces after a key",
+            "note": "---\nmeta: { a: 1 }\n---\n",
+            "flow": false
+        },
+        {
+            "name": "properties that are never closed",
+            "note": "---\n{ \"tags\": [] }\nText\n",
+            "flow": false
+        },
+        {
+            "name": "a line of JSON below the properties",
+            "note": "---\ntags: a\n---\n{ \"tags\": [] }\n",
+            "flow": false
+        },
+        {
+            "name": "a note without properties",
+            "note": "{ \"tags\": [] }\n",
+            "flow": false
+        },
+        {
+            "name": "Windows line ends",
+            "note": "---\r\n{ \"tags\": [] }\r\n---\r\n",
+            "flow": true
+        },
+        {
+            "name": "a byte order mark before the properties",
+            "note": "\ufeff---\n[a]\n---\n",
+            "flow": true
         }
     ]
 }

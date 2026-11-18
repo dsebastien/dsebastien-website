@@ -64,6 +64,8 @@ const CRAFTED: Record<string, string> = {
     'Crafted/No line end.md': '---\ntags: a\n---',
     'Crafted/Lone return.md': 'One\rTwo\n',
     'Crafted/Ignore is false.md': '---\npublish_ignore: false\n---\nText\n',
+    // Properties in the flow form of YAML: the tool never writes into them.
+    'Crafted/Flow form.md': '---\n{ "tags": ["a"] }\n---\nText\n',
     // Links in hard forms: another letter case, a table, paths from the folder
     // of the note and from the root, destinations to decode, and brackets
     // that open no link.
@@ -95,7 +97,9 @@ const REFUSED: Record<string, string> = {
     'Refused/Nested key.md': '---\nmeta:\n  publish_ignore: true\n---\nText\n',
     'Refused/Value below.md': '---\npublish_ignore:\n  - true\n---\nText\n',
     'Refused/Mark.md': `${MARK}---\npublish_ignore: true\n---\nText\n`,
-    'Refused/Next line character.md': '---\npublish_ignore: false\u0085\n---\nText\n'
+    'Refused/Next line character.md': '---\npublish_ignore: false\u0085\n---\nText\n',
+    'Refused/One line of JSON.md': '---\n{ "publish_ignore": true, "tags": ["a"] }\n---\nText\n',
+    'Refused/Inside a word.md': '---\nnot_publish_ignore_x: 1\n---\nText\n'
 }
 
 // A note that cannot be read stops every plan, so it is not in the vault of the other cases.
@@ -241,7 +245,7 @@ describe('parity of a first publication', () => {
             PUBLISHED.map((note) => `notes/${note}`).sort()
         )
         expect(files.filter((file) => file.startsWith('manifest/')).length).toBe(PUBLISHED.length)
-        for (const note of PUBLISHED) {
+        for (const note of PUBLISHED.filter((path) => path !== 'Crafted/Flow form.md')) {
             expect(fromTypeScript.vault[note], note).toMatch(/(^|\n)public_note: true(\r?\n|$)/)
         }
     })
@@ -270,6 +274,8 @@ describe('parity of a first publication', () => {
         )
         expect(vault['Crafted/Empty.md']).toBe('---\npublic_note: true\n---\n')
         expect(store['notes/Crafted/Lone return.md']).toBe('One\rTwo\n')
+        expect(store['notes/Crafted/Flow form.md']).toBe('---\n{ "tags": ["a"] }\n---\nText\n')
+        expect(vault['Crafted/Flow form.md']).toBe('---\n{ "tags": ["a"] }\n---\nText\n')
     })
 
     // The order of the code points, not the order of the UTF-16 units.

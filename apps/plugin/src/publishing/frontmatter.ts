@@ -71,8 +71,13 @@ function write(note: Note): string {
     return note.mark + note.lines.map((line) => line.text + line.end).join('')
 }
 
+/** The text with its ASCII capital letters in small letters. No other character changes, as in Rust. */
+function asciiLower(text: string): string {
+    return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase())
+}
+
 function equalsKey(text: string, key: string, anyCase: boolean): boolean {
-    return anyCase ? text.toLowerCase() === key.toLowerCase() : text === key
+    return anyCase ? asciiLower(text) === asciiLower(key) : text === key
 }
 
 /**
@@ -116,22 +121,43 @@ function continues(line: string): boolean {
     return line.startsWith(' ') || line.startsWith('\t') || line.startsWith('-')
 }
 
+/** The lines of the properties: up to the closing line, or every line when the properties are never closed. */
+function propertyLines(note: Note): readonly Line[] {
+    return note.opened ? note.lines.slice(1, note.close ?? note.lines.length) : []
+}
+
 /**
- * True when the properties of the note name the key with a value that is not
- * exactly `false`. It is the reading of a guard, so it fails closed: the key
- * counts in any letter case, in quotes, below another key, and with any value.
- * When the properties are never closed, every line of the note is read.
+ * True when a line of the properties holds the key, unless that line names the
+ * key with the value exactly `false`. It is the reading of a guard, so it
+ * fails closed: the key counts anywhere in a line (in one line of JSON, in a
+ * complex key, inside another word), in any case of its ASCII letters, in
+ * quotes, below another key, and with any value. When the properties are never
+ * closed, every line of the note is read.
  */
 export function namesInProperties(text: string, key: string): boolean {
+    const wanted = asciiLower(key)
+    return propertyLines(read(text)).some(
+        (line) =>
+            asciiLower(line.text).includes(wanted) &&
+            valueOf(line.text, key, true, true) !== 'false'
+    )
+}
+
+/**
+ * True when closed properties are in the flow form of YAML: a line of them
+ * starts with `{` or `[`, after optional spaces and tabs. A line that the tool
+ * adds below such a line is not valid YAML, so the tool never writes into such
+ * properties.
+ */
+export function hasFlowProperties(text: string): boolean {
     const note = read(text)
-    if (!note.opened) {
+    if (note.close === undefined) {
         return false
     }
-    const values = note.lines
-        .slice(1, note.close ?? note.lines.length)
-        .map((line) => valueOf(line.text, key, true, true))
-        .filter((value) => value !== undefined)
-    return values.some((value) => value !== 'false')
+    return propertyLines(note).some((line) => {
+        const start = trim(line.text)
+        return start.startsWith('{') || start.startsWith('[')
+    })
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { sourceOf, STATE_PROPERTY } from './clean.ts'
-import { namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
+import { hasFlowProperties, namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
 
 // The rules for the properties of a note (documentation/Canonical Form.md).
@@ -16,6 +16,7 @@ interface Cases {
     source: { name: string; note: string; source: string }[]
     state: { name: string; note: string; result: string }[]
     removed: { name: string; note: string; result: string }[]
+    flow: { name: string; note: string; flow: boolean }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
@@ -25,6 +26,14 @@ const cases = (await Bun.file(CASES).json()) as Cases
 describe('ignore property of a note', () => {
     test.each(cases.ignored.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
         expect(namesInProperties(entry.note, IGNORE_PROPERTY)).toBe(entry.excluded)
+    })
+})
+
+// The tool never writes the state property into properties in the flow form
+// of YAML (`{ }`, `[ ]`): a new line below such a line is not valid YAML.
+describe('flow form of the properties', () => {
+    test.each(cases.flow.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
+        expect(hasFlowProperties(entry.note)).toBe(entry.flow)
     })
 })
 
@@ -59,5 +68,6 @@ describe('state property of a note', () => {
         expect(cases.ignored.length).toBeGreaterThan(20)
         expect(cases.source.length).toBeGreaterThan(10)
         expect(cases.state.length).toBeGreaterThan(10)
+        expect(cases.flow.length).toBeGreaterThan(10)
     })
 })

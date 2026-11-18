@@ -1720,6 +1720,118 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "properties in the flow form of YAML",
+            "denyList": [],
+            "vault": {
+                "Block.md": "---\ntags: a\n---\nText\n",
+                "Flow.md": "---\n{ \"tags\": [\"a\"] }\n---\nText\n",
+                "Hidden flow.md": "---\n{ \"publish_ignore\": true, \"tags\": [\"a\"] }\n---\nA private text\n",
+                "Hidden false.md": "---\n{ \"publish_ignore\": false }\n---\nText\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "the ignore property in one line of JSON excludes the note, also with the value false: the guard fails closed",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": ["Block.md", "Flow.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a note whose properties in one line of JSON hold the ignore property cannot be included",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Hidden flow.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "publish",
+                    "why": "both notes are published. The tool does not write the state property into properties in the flow form, and warns",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Block.md", "Flow.md"],
+                        "remove": []
+                    },
+                    "time": "2031-07-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Block.md"],
+                        "published": ["Block.md", "Flow.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["Flow.md"]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note in the flow form is as the author wrote it, in the vault and in the store. No text of a note under the guard is in the store",
+                    "vault": {
+                        "Flow.md": "---\n{ \"tags\": [\"a\"] }\n---\nText\n",
+                        "Block.md": "---\ntags: a\npublic_note: true\n---\nText\n",
+                        "Hidden flow.md": "---\n{ \"publish_ignore\": true, \"tags\": [\"a\"] }\n---\nA private text\n"
+                    },
+                    "store": {
+                        "notes/Flow.md": "---\n{ \"tags\": [\"a\"] }\n---\nText\n",
+                        "notes/Hidden flow.md": null,
+                        "notes/Hidden false.md": null
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "both notes are published and did not change",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Block.md", "Flow.md"]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a plan without paths changes nothing and pushes nothing, so it corrects no property and warns about nothing",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-07-02T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                }
+            ]
         }
     ]
 }

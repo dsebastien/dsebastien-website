@@ -11,7 +11,7 @@ use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, parse_configuration};
 use crate::device::{ContentStore, Vault};
-use crate::frontmatter::{names_in_properties, remove_property, set_property};
+use crate::frontmatter::{has_flow_properties, names_in_properties, remove_property, set_property};
 use crate::guards::IGNORE_PROPERTY;
 use crate::hash::{content_hash, sha256_hex};
 use crate::links::{NoteLink, links_of};
@@ -483,6 +483,14 @@ fn correct_state(device: &Device, scan: &Scan, published: &BTreeSet<String>) -> 
                 continue;
             }
         };
+        // A new line below a line in the flow form of YAML (`{ }`, `[ ]`) is
+        // not valid YAML. The note stays as the author wrote it.
+        if has_flow_properties(&text) {
+            warn(format!(
+                "the properties of the note are in the flow form of YAML ({{ }} or [ ]), and the tool does not write into that form: correct the {STATE_PROPERTY} property by hand"
+            ));
+            continue;
+        }
         let wanted = if is_published {
             set_property(&text, STATE_PROPERTY, "true")
         } else {
