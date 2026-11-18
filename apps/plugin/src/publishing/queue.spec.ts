@@ -308,6 +308,18 @@ describe('status of the fixture vault', () => {
         expect(await rejectionOf(status(setup.device))).toContain('90 Locked Shed')
     })
 
+    // On Linux the file system refuses a path in another letter case by
+    // itself, so the test above also passes with listings that live too long.
+    // A note added between two runs fails on every file system.
+    test('sees a note that was added between two runs of the same device', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await status(setup.device)
+        await writeFile(join(setup.vault, 'Fresh.md'), 'Text\n')
+
+        expect((await status(setup.device)).new).toContain('Fresh.md')
+    })
+
     // When the scan listed the folder of each note again, this status took
     // about 20 s. It now takes far less than the budget, which leaves room for
     // a slow runner.
