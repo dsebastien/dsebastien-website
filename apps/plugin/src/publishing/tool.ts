@@ -2,8 +2,10 @@ import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
 import { CONFIGURATION_FILE, parseConfiguration } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
-import { removeProperty, setProperty } from './frontmatter.ts'
+import { namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
+import { IGNORE_PROPERTY } from './guards.ts'
 import { contentHash, sha256Hex } from './hash.ts'
+import { parseJson } from './json.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
 import { compareCodePoints } from './order.ts'
@@ -86,9 +88,9 @@ function isCanonicalTime(time: string): boolean {
     return !Number.isNaN(date.getTime()) && `${date.toISOString().slice(0, 19)}Z` === time
 }
 
-/** True when the text is one line with something to read: no control character, not only spaces. */
+/** True when the text is one line with something to read: no control character, and not only spaces (U+0020). */
 function isOneLine(text: string): boolean {
-    return text.trim() !== '' && !/\p{Cc}/u.test(text)
+    return !/\p{Cc}/u.test(text) && /[^ ]/u.test(text)
 }
 
 /** Reads the configuration and checks it against the vault. */
@@ -205,7 +207,7 @@ export async function plan(device: Device, selection: Selection): Promise<Stored
 function selectionOf(record: string, id: string): NormalSelection {
     let value: unknown
     try {
-        value = JSON.parse(record)
+        value = parseJson(record)
     } catch {
         value = undefined
     }
@@ -312,13 +314,25 @@ async function correctState(
                 })
                 continue
             }
-            if (isPublished) {
-                await device.vault.write(path, setProperty(text, STATE_PROPERTY, 'true'))
-                propertySet.push(path)
-            } else {
-                await device.vault.write(path, removeProperty(text, STATE_PROPERTY))
-                propertyRemoved.push(path)
+            const wanted = isPublished
+                ? setProperty(text, STATE_PROPERTY, 'true')
+                : removeProperty(text, STATE_PROPERTY)
+            // The write must not change what the guard reads. In an odd form
+            // of the properties, a line of the ignore property can belong to
+            // the state property, or the new lines can close properties that
+            // were open. Such a note is never written.
+            if (
+                namesInProperties(wanted, IGNORE_PROPERTY) !==
+                namesInProperties(text, IGNORE_PROPERTY)
+            ) {
+                warnings.push({
+                    path,
+                    message: `the ${STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand`
+                })
+                continue
             }
+            await device.vault.write(path, wanted)
+            ;(isPublished ? propertySet : propertyRemoved).push(path)
         } catch (error) {
             warnings.push({
                 path,

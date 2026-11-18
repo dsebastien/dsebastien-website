@@ -447,6 +447,180 @@ fn a_manifest_that_cannot_be_trusted_stops_the_status_and_the_plan() {
     }
 }
 
+/// The text of a manifest entry with a version and former paths as they are
+/// written here: the forms that only one reader of JSON would take.
+fn raw_entry(version: &str, former_paths: &str) -> String {
+    format!(
+        r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{version},"firstPublished":"{TIME}","formerPaths":{former_paths},"id":"00000000000000aa","lastPublished":"{TIME}","path":"Welcome.md","sourceHash":"sha256:00","state":"published"}}"#
+    )
+}
+
+/// A whole number in another form is the same number for both
+/// implementations.
+#[test]
+fn a_version_that_is_written_in_another_form_is_read() {
+    for version in ["1.0", "1e0", "-0"] {
+        let setup = Setup::fixture();
+        push_to_store(
+            &setup.copy,
+            &json!({ "manifest/00000000000000aa.json": raw_entry(version, "[]") }),
+        );
+
+        assert_eq!(
+            paths(&setup.status()["changed"]),
+            ["Welcome.md"],
+            "{version}"
+        );
+    }
+}
+
+#[test]
+fn a_manifest_or_a_configuration_that_only_one_reader_would_take_stops_the_status() {
+    let cases = [
+        (
+            "manifest/00000000000000aa.json",
+            raw_entry("1.5", "[]"),
+            "manifest",
+        ),
+        (
+            "manifest/00000000000000aa.json",
+            raw_entry("-1", "[]"),
+            "manifest",
+        ),
+        (
+            "manifest/00000000000000aa.json",
+            raw_entry("1", r#"["\ud800"]"#),
+            "manifest",
+        ),
+        (
+            "configuration.json",
+            r#"{"denyList":[],"x":1e999}"#.to_owned(),
+            "configuration.json",
+        ),
+    ];
+
+    for (file, content, named) in cases {
+        let setup = Setup::fixture();
+        push_to_store(&setup.copy, &json!({ file: content }));
+
+        let output = setup.run("status", &[]);
+
+        assert_eq!(output.status.code(), Some(1), "{content}");
+        assert!(errors_of(&output).contains(named), "{content}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symbolic_link_in_the_manifest_is_not_a_file_of_the_store() {
+    let setup = Setup::fixture();
+    fs::create_dir(setup.copy.join("manifest")).expect("the folder can be made");
+    std::os::unix::fs::symlink(
+        setup.vault.join("Welcome.md"),
+        setup.copy.join("manifest").join("link.json"),
+    )
+    .expect("the link can be made");
+
+    assert_eq!(setup.status()["counts"]["unchanged"], 0);
+}
+
+/// A hook of the copy that refuses every commit.
+fn refuse_commits(copy: &Path) {
+    let hooks = copy.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("the folder can be made");
+    let hook = hooks.join("pre-commit");
+    fs::write(&hook, "#!/bin/sh\nexit 1\n").expect("the hook is written");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("the hook can run");
+    }
+}
+
+/// Files that stay in the copy would be read as published at the next run.
+#[test]
+fn a_commit_that_fails_leaves_nothing_in_the_copy() {
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": ["Welcome.md"] }), TIME);
+    append(&setup.vault.join("Welcome.md"), EDIT);
+    refuse_commits(&setup.copy);
+    let before = (picture(&setup.vault), setup.git(&["ls-files", "--stage"]));
+    let id = setup.plan_id(&json!({ "include": [NOTE] }));
+
+    let output = setup.publish_plan(&id, LATER);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("commit"));
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+    assert_eq!(setup.git(&["ls-files", "--stage"]), before.1);
+    assert!(!setup.copy.join("notes").join(NOTE).exists());
+    assert!(!read(&setup.copy.join("notes").join("Welcome.md")).contains("A second paragraph."));
+    assert_eq!(picture(&setup.vault), before.0);
+    let queue = setup.status();
+    assert!(paths(&queue["new"]).contains(&NOTE.to_owned()));
+    assert_eq!(paths(&queue["changed"]), ["Welcome.md"]);
+    assert_eq!(paths(&queue["unchanged"]), Vec::<String>::new());
+}
+
+/// A clone of a content store that has no commit and no configuration.
+fn copy_with_no_commit() -> Setup {
+    let stores = TestStores::new();
+    let vault = stores.copy_fixture_vault();
+    let copy = stores.root().join("copy");
+    git(&[
+        "clone",
+        "--quiet",
+        text(stores.content_store()),
+        text(&copy),
+    ]);
+    for (key, value) in [
+        ("user.name", "Test"),
+        ("user.email", "test@example.invalid"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(&["-C", text(&copy), "config", key, value]);
+    }
+    Setup {
+        stores,
+        vault,
+        copy,
+    }
+}
+
+#[test]
+fn a_commit_that_fails_leaves_nothing_in_a_copy_that_has_no_commit() {
+    let setup = copy_with_no_commit();
+    refuse_commits(&setup.copy);
+    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
+
+    let output = setup.publish_plan(&id, TIME);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("commit"));
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+    assert_eq!(paths(&setup.status()["unchanged"]), Vec::<String>::new());
+}
+
+#[test]
+fn a_copy_that_has_no_commit_takes_its_first_publication() {
+    let setup = copy_with_no_commit();
+
+    let report = setup.publish(&json!({ "include": ["Welcome.md"] }), TIME);
+
+    assert_eq!(paths(&report["published"]), ["Welcome.md"]);
+    assert_eq!(
+        git(&[
+            "--git-dir",
+            text(setup.stores.content_store()),
+            "rev-list",
+            "--count",
+            "main"
+        ]),
+        "1"
+    );
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+}
+
 /// TEST-22: the review holds. The record of the plan holds the hash of each
 /// cleaned note, and the publication writes exactly that text.
 #[test]

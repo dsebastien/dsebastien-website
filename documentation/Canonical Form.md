@@ -210,8 +210,8 @@ The `publish` command applies exactly one plan. After the check of the record:
 1. For each note of `publish` and of `update`, it writes the cleaned note to `notes/<vault path>` and the manifest entry of the note. The cleaned note that it writes is the text whose hash the record holds.
 2. For each note of `remove`, it removes `notes/<vault path>` and writes the manifest entry with the state `unpublished`.
 3. The two files of a note are one unit. When a write of the unit fails, the files of that note are put back as they were, the note is left out of the publication, and the report names it with the reason. The other notes are published.
-4. Every file that it wrote or removed goes into one commit, which is pushed without force. With nothing to commit, there is no commit and no push.
-5. When the push is refused, the commit is taken back and every file of the publication is put back as it was. Nothing is published.
+4. Every file that it wrote or removed goes into one commit, which is pushed without force. With nothing to commit, there is no commit and no push. The tool gives the paths to git in a file of the git folder, not as arguments: a publication can hold more paths than one command takes. A copy with no commit takes its first publication.
+5. When the commit fails or the push is refused, the commit is taken back and every file of the publication is put back as it was. Nothing is published. A file that stayed in the copy would be read as published at the next run.
 6. After a push that succeeded, the `public_note` property is corrected (see below).
 
 The message of the commit holds the counts, the device and the face that started the publication (PUB-29 of the spec). The skipped notes are the changed notes of the queue that the plan does not update and does not remove. The message is outside the parity rule, like every text for a person, and both implementations write it in this form:
@@ -223,7 +223,7 @@ Device: garden-shed
 Face: command-line
 ```
 
-The name of the device and the name of the face are inputs, like the time of the run. Each is one line of text, not empty, with no control character. The faces are `plugin`, `command-line` and `mcp-server`.
+The name of the device and the name of the face are inputs, like the time of the run. The name of the device is one line of text: it has no control character, and it is not empty and not only spaces (U+0020). The faces are `plugin`, `command-line` and `mcp-server`.
 
 ## The publication report
 
@@ -259,7 +259,7 @@ The deny list guard excludes a note when its vault path starts with an entry of 
 
 Writing the state property (`public_note`):
 
-5. To remove the property is to remove every property of the note itself that names the key, with its lines. When the properties then hold no line, the two `---` lines are removed too: the note has no properties any more, as when the last property is removed in Obsidian. A note that does not name the key is not changed.
+5. To remove the property is to remove every property of the note itself that names the key, with its lines. When the properties then hold no line, the two `---` lines are removed too: the note has no properties any more, as when the last property is removed in Obsidian. The two lines stay when the text below them would then be read as properties (it starts with a `---` line and has a later one): a text of the author never becomes properties. A note that does not name the key is not changed.
 6. To set the property is to remove it, then to write the line `public_note: true` in the place of the first one that was removed. When there was none, the line becomes the last line of the properties.
 7. A note without properties gets the three lines `---`, `public_note: true`, `---` before its text, after its byte order mark when it has one.
 8. Every line that is kept keeps its own line end. A new line takes the line end of the first line of the note, and a line feed when the note has no line end.
@@ -269,7 +269,7 @@ Writing the state property (`public_note`):
 
 A cleaned note is Markdown text, in the encoding of this document.
 
-1. The source of a note is its text in the vault, without its byte order mark, with each pair of a carriage return and a line feed replaced by a line feed, without the `public_note` property, and without properties that hold no line (`---` and `---` with nothing between them). That property is the state in the vault, not content. So the source of a note is the same before and after the tool writes the property, also for a note without properties, and a correction of the property never makes a note "changed" (PUB-14 of the spec).
+1. The source of a note is its text in the vault, without its byte order mark, with each pair of a carriage return and a line feed replaced by a line feed, without the `public_note` property, and without properties that hold no line (`---` and `---` with nothing between them, under the exception of rule 5 of the properties). That property is the state in the vault, not content. So the source of a note is the same before and after the tool writes the property, also for a note without properties, and a correction of the property never makes a note "changed" (PUB-14 of the spec). The shared cases check it: each note of the `source` cases has the same source after the property is set.
 2. Version 1 of the cleaning step changes nothing more: the cleaned note is the source.
 3. The ticket that adds a rule to the cleaning step writes it here before the second implementation is written, and raises the version.
 
@@ -304,15 +304,18 @@ The manifest is read strictly. The tool stops in each of these cases:
 3. The `path` of an entry is not a vault path that ends in `.md`. The tool removes `notes/<path>` at an unpublish, so a path in another form could name a file outside the notes.
 4. Two entries have the same `path`.
 
+Both implementations read a JSON file of the store in the same way. A whole number can be written in another form (`1.0`, `1e0`, `-0`): it is the same number. A text with half of a surrogate pair and a number that is too large to hold are not JSON for the tool. A symbolic link in the copy of the content store is not a file of the store.
+
 ## The state property after a publication
 
 After a push that succeeded, the tool corrects the `public_note` property in the vault (PUB-13 of the spec):
 
 1. The scope is the notes of the scan, as the publication read them when it checked the plan. A note in a folder of the deny list is not in the scan, so it is never written. The folders of the note templates are on the deny list.
-2. A note that is published after the run gets the property with the value `true`. Every other note of the scan loses the property.
+2. A note that is published after the run gets the property with the value `true`. Every other note of the scan loses the property, also a note that the ignore property excludes: it is not published.
 3. A note is written only when its text changes.
 4. Before a note is written, it is read again. When its text is not the text of the scan, the note is not written and the report has a warning: the property is corrected at the next publication. A write that fails gives a warning too.
-5. Without a push, nothing is corrected: an empty plan, a publication whose every note failed, a refused push. The push is the proof that the copy of the content store followed the content store. Without that proof, a note that another device published could lose its property.
+5. A write never changes what the ignore property says. In an odd form of the properties, a line of the ignore property can belong to the state property, or the new lines can close properties that were open. When the ignore property would be read in another way after the write, the note is not written and the report has a warning: the author corrects the property by hand. A write of the tool can so never open a guard.
+6. Without a push, nothing is corrected: an empty plan, a publication whose every note failed, a refused push. The push is the proof that the copy of the content store followed the content store. Without that proof, a note that another device published could lose its property.
 
 ## How it is tested
 

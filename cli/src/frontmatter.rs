@@ -193,9 +193,21 @@ fn remove(note: &mut Note, key: &str) -> Option<usize> {
     first
 }
 
-/// Removes the two lines of the properties when no line is between them.
+/// True when the lines from a place on would be read as closed properties: a
+/// `---` line, and a later one.
+fn has_closed_properties(lines: &[Line], start: usize) -> bool {
+    lines.get(start).is_some_and(|line| is_fence(&line.text))
+        && lines
+            .iter()
+            .skip(start + 1)
+            .any(|line| is_fence(&line.text))
+}
+
+/// Removes the two lines of the properties when no line is between them. They
+/// stay when the text below them would then be read as properties: a text of
+/// the author must never become properties.
 fn drop_empty_properties(note: &mut Note) -> bool {
-    if note.close != Some(1) {
+    if note.close != Some(1) || has_closed_properties(&note.lines, 2) {
         return false;
     }
     note.lines.drain(0..2);
@@ -216,11 +228,13 @@ pub fn remove_property(text: &str, key: &str) -> String {
     write(&note)
 }
 
-/// The note without properties that hold no line. The same text when it has
-/// none.
-pub fn without_empty_properties(text: &str) -> String {
+/// The note without the property, and without properties that hold no line,
+/// also when the note did not name the property. It is the rule of the source
+/// of a note: the result is the same before and after the property is set.
+pub fn without_property(text: &str, key: &str) -> String {
     let mut note = read(text);
-    if drop_empty_properties(&mut note) {
+    let removed = remove(&mut note, key).is_some();
+    if drop_empty_properties(&mut note) || removed {
         write(&note)
     } else {
         text.to_owned()

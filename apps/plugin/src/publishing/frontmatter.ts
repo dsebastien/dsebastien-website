@@ -161,9 +161,23 @@ function remove(note: Note, key: string): number | undefined {
     return first
 }
 
-/** Removes the two lines of the properties when no line is between them. */
+/** True when the lines from a place on would be read as closed properties: a `---` line, and a later one. */
+function hasClosedProperties(lines: readonly Line[], start: number): boolean {
+    const first = lines[start]
+    return (
+        first !== undefined &&
+        isFence(first.text) &&
+        lines.some((line, index) => index > start && isFence(line.text))
+    )
+}
+
+/**
+ * Removes the two lines of the properties when no line is between them. They
+ * stay when the text below them would then be read as properties: a text of
+ * the author must never become properties.
+ */
 function dropEmptyProperties(note: Note): boolean {
-    if (note.close !== 1) {
+    if (note.close !== 1 || hasClosedProperties(note.lines, 2)) {
         return false
     }
     note.lines.splice(0, 2)
@@ -186,10 +200,15 @@ export function removeProperty(text: string, key: string): string {
     return write(note)
 }
 
-/** The note without properties that hold no line. The same text when it has none. */
-export function withoutEmptyProperties(text: string): string {
+/**
+ * The note without the property, and without properties that hold no line,
+ * also when the note did not name the property. It is the rule of the source
+ * of a note: the result is the same before and after the property is set.
+ */
+export function withoutProperty(text: string, key: string): string {
     const note = read(text)
-    return dropEmptyProperties(note) ? write(note) : text
+    const removed = remove(note, key) !== undefined
+    return dropEmptyProperties(note) || removed ? write(note) : text
 }
 
 /**

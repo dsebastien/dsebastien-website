@@ -1,6 +1,8 @@
 // The configuration of the publishing tool. It lives in one file of the
 // content store (GATE-04 of the spec). The Rust twin is `cli/src/configuration.rs`.
 
+import { parseJson } from './json.ts'
+
 /** The path of the configuration in the content store. */
 export const CONFIGURATION_FILE = 'configuration.json'
 
@@ -34,7 +36,7 @@ export function parseConfiguration(text: string | undefined): Configuration {
     }
     let value: unknown
     try {
-        value = JSON.parse(text)
+        value = parseJson(text)
     } catch {
         throw new Error(`${CONFIGURATION_FILE} is not JSON`)
     }

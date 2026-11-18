@@ -11,7 +11,8 @@ use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, parse_configuration};
 use crate::device::{ContentStore, Vault};
-use crate::frontmatter::{remove_property, set_property};
+use crate::frontmatter::{names_in_properties, remove_property, set_property};
+use crate::guards::IGNORE_PROPERTY;
 use crate::hash::{content_hash, sha256_hex};
 use crate::manifest::{
     MANIFEST_FOLDER, ManifestEntry, NOTES_FOLDER, State, manifest_file, note_id, read_manifest,
@@ -263,9 +264,9 @@ fn is_plan_id(id: &str) -> bool {
 }
 
 /// True when the text is one line with something to read: no control
-/// character, not only spaces.
+/// character, and not only spaces (U+0020).
 fn is_one_line(text: &str) -> bool {
-    !text.trim().is_empty() && !text.chars().any(char::is_control)
+    !text.chars().any(char::is_control) && text.chars().any(|character| character != ' ')
 }
 
 /// One file of the content store to write, or to remove when it has no text.
@@ -436,6 +437,18 @@ fn correct_state(device: &Device, scan: &Scan, published: &BTreeSet<String>) -> 
         } else {
             remove_property(&text, STATE_PROPERTY)
         };
+        // The write must not change what the guard reads. In an odd form of
+        // the properties, a line of the ignore property can belong to the
+        // state property, or the new lines can close properties that were
+        // open. Such a note is never written.
+        if names_in_properties(&wanted, IGNORE_PROPERTY)
+            != names_in_properties(&text, IGNORE_PROPERTY)
+        {
+            warn(format!(
+                "the {STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand"
+            ));
+            continue;
+        }
         match device.vault.write(path, &wanted) {
             Ok(()) if is_published => correction.property_set.push(path.clone()),
             Ok(()) => correction.property_removed.push(path.clone()),

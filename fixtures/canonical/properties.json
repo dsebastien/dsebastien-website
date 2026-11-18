@@ -237,6 +237,21 @@
             "name": "the empty line below removed properties stays",
             "note": "---\r\npublic_note: true\r\n---\r\n\r\nText\r\n",
             "source": "\nText\n"
+        },
+        {
+            "name": "properties that hold no line stay when the text below them would then be read as properties",
+            "note": "---\n---\n---\n---\nBody\n",
+            "source": "---\n---\n---\n---\nBody\n"
+        },
+        {
+            "name": "the two lines of the properties stay when the text below them would then be read as properties",
+            "note": "---\npublic_note: true\n---\n---\nA line of the text\n---\nMore text\n",
+            "source": "---\n---\n---\nA line of the text\n---\nMore text\n"
+        },
+        {
+            "name": "properties above text that starts with a line of hyphens and is never closed",
+            "note": "---\npublic_note: true\n---\n---\ntags: a\nText\n",
+            "source": "---\ntags: a\nText\n"
         }
     ],
     "state": [
@@ -386,6 +401,16 @@
             "name": "a note that is only the property becomes empty",
             "note": "---\npublic_note: true\n---",
             "result": ""
+        },
+        {
+            "name": "the two lines of the properties stay when the text below them would then be read as properties",
+            "note": "---\npublic_note: true\n---\n---\nA line of the text\n---\nMore text\n",
+            "result": "---\n---\n---\nA line of the text\n---\nMore text\n"
+        },
+        {
+            "name": "the two lines go when the text below them starts with a line of hyphens and is never closed",
+            "note": "---\npublic_note: true\n---\n---\ntags: a\nText\n",
+            "result": "---\ntags: a\nText\n"
         }
     ]
 }

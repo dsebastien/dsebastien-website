@@ -220,19 +220,20 @@ impl ContentStore {
     ///
     /// Git cannot put a file back.
     pub fn discard(&self, paths: &[String]) -> Result<(), String> {
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        self.discard_paths(&paths)
+    }
+
+    fn discard_paths(&self, paths: &[&str]) -> Result<(), String> {
         // A copy with no commit has no file to put back.
         let listing = self
             .git_output(&["ls-tree", "-r", "-z", "--name-only", "HEAD"])
             .unwrap_or_default();
         let committed: HashSet<&str> = listing.split('\0').collect();
-        let (to_restore, to_remove): (Vec<&str>, Vec<&str>) = paths
-            .iter()
-            .map(String::as_str)
-            .partition(|path| committed.contains(path));
-        for chunk in to_restore.chunks(100) {
-            let mut arguments = vec!["checkout", "--quiet", "HEAD", "--"];
-            arguments.extend_from_slice(chunk);
-            self.git_output(&arguments)?;
+        let (to_restore, to_remove): (Vec<&str>, Vec<&str>) =
+            paths.iter().partition(|path| committed.contains(**path));
+        if !to_restore.is_empty() {
+            self.git_on_paths(&["checkout", "--quiet", "HEAD"], &to_restore)?;
         }
         for path in to_remove {
             let _ = fs::remove_file(self.folder.join(path));
@@ -249,18 +250,41 @@ impl ContentStore {
     /// commit is taken back and the files are discarded: the copy is as it
     /// was before.
     pub fn commit_and_push(&self, message: &str, paths: &[String]) -> Result<(), String> {
-        let before = self.git_output(&["rev-parse", "HEAD"])?;
-        let with_paths = |arguments: &[&str]| {
-            let mut all: Vec<&str> = arguments.to_vec();
-            all.push("--");
-            all.extend(paths.iter().map(String::as_str));
-            self.git_output(&all).map(|_| ())
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        // A copy with no commit has no commit to go back to.
+        let before = self
+            .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
+            .ok();
+        // Takes back everything that this publication did to the copy.
+        let undo = || -> Result<(), String> {
+            if let Some(before) = &before {
+                self.git_output(&["reset", "--quiet", before.trim()])?;
+            } else {
+                let _ = self.git_output(&["update-ref", "-d", "HEAD"]);
+                let _ =
+                    self.git_on_paths(&["rm", "--quiet", "--cached", "--ignore-unmatch"], &paths);
+            }
+            self.discard_paths(&paths)
         };
         // With force: a rule of the store that ignores a path must not leave a
-        // note out of its own publication.
-        with_paths(&["add", "--force"])?;
-        // Only the files of the publication. Other changes of the copy stay out.
-        with_paths(&["commit", "--quiet", "--message", message, "--only"])?;
+        // note out of its own publication. Then only the files of the
+        // publication: other changes of the copy stay out.
+        let committed = self
+            .git_on_paths(&["add", "--force"], &paths)
+            .and_then(|()| {
+                self.git_on_paths(
+                    &["commit", "--quiet", "--message", message, "--only"],
+                    &paths,
+                )
+            });
+        if let Err(error) = committed {
+            // Files that stay in the copy would be read as published at the
+            // next run.
+            undo()?;
+            return Err(format!(
+                "the commit into the copy of the content store failed. Nothing is published, and the copy is as it was before: {error}"
+            ));
+        }
         // Never with force: when another device pushed first, git refuses.
         if self
             .git_output(&["push", "--quiet", "origin", "HEAD:main"])
@@ -268,12 +292,25 @@ impl ContentStore {
         {
             return Ok(());
         }
-        self.git_output(&["reset", "--quiet", before.trim()])?;
-        self.discard(paths)?;
+        undo()?;
         Err(
             "the push to the content store was refused. Nothing is published, and the copy is as it was before"
                 .to_owned(),
         )
+    }
+
+    /// Runs a git command on a list of paths. The paths go in a file of the
+    /// git folder, not in the arguments: a publication can hold more paths
+    /// than the system takes as arguments of one command.
+    fn git_on_paths(&self, arguments: &[&str], paths: &[&str]) -> Result<(), String> {
+        let file = self.folder.join(".git").join("vault-publish").join("paths");
+        write_text(&file, &paths.join("\0"))?;
+        let from_file = format!("--pathspec-from-file={}", file.display());
+        let mut all = arguments.to_vec();
+        all.extend([from_file.as_str(), "--pathspec-file-nul"]);
+        let result = self.git_output(&all).map(|_| ());
+        let _ = fs::remove_file(&file);
+        result
     }
 
     /// The plans are in the git folder of the copy: on the device, never in a
@@ -336,9 +373,13 @@ fn collect(folder: &Path, path: &str, files: &mut Vec<String>) {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let below = format!("{path}/{name}");
-        if entry.path().is_dir() {
+        // A symbolic link is not a file of the store, as in the vault.
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() {
             collect(&entry.path(), &below, files);
-        } else {
+        } else if kind.is_file() {
             files.push(below);
         }
     }

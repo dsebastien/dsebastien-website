@@ -81,6 +81,22 @@ pub fn note_id(path: &str, first_published: &str) -> String {
 
 /// The largest whole number that the TypeScript twin holds exactly.
 const LARGEST_EXACT: u64 = 9_007_199_254_740_991;
+const LARGEST_EXACT_FLOAT: f64 = 9_007_199_254_740_991.0;
+
+/// A whole number from 0, as the TypeScript twin reads it: every number is a
+/// floating point number there, so `1.0`, `1e0` and `-0` are whole numbers
+/// too.
+fn whole_number(value: &Value) -> Option<u64> {
+    if value.is_u64() || value.is_i64() {
+        return value.as_u64().filter(|number| *number <= LARGEST_EXACT);
+    }
+    let number = value.as_f64()?;
+    let whole = number.fract() == 0.0 && (0.0..=LARGEST_EXACT_FLOAT).contains(&number);
+    // The number is whole, not negative and small enough: the cast is exact.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let converted = number as u64;
+    whole.then_some(converted)
+}
 
 /// Reads one entry from the text of its file. The text is read as a JSON value
 /// and checked by hand, as the TypeScript twin does, so that both accept and
@@ -98,10 +114,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
             .map(|item| item.as_str().map(str::to_owned))
             .collect::<Option<Vec<String>>>()
     };
-    let cleaning_version = entry
-        .get("cleaningVersion")?
-        .as_u64()
-        .filter(|version| *version <= LARGEST_EXACT)?;
+    let cleaning_version = whole_number(entry.get("cleaningVersion")?)?;
     let state = match text_of("state")?.as_str() {
         "published" => State::Published,
         "unpublished" => State::Unpublished,

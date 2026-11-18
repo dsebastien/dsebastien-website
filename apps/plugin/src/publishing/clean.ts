@@ -1,4 +1,4 @@
-import { removeProperty, withoutEmptyProperties } from './frontmatter.ts'
+import { withoutProperty } from './frontmatter.ts'
 
 // The cleaning step: a selected note becomes one cleaned note (MOD-03 of the
 // spec). The Rust twin is `cli/src/clean.rs`.
@@ -21,7 +21,7 @@ export const STATE_PROPERTY = 'public_note'
  */
 export function sourceOf(text: string): string {
     const marked = text.startsWith(MARK) ? text.slice(MARK.length) : text
-    return withoutEmptyProperties(removeProperty(marked.replaceAll('\r\n', '\n'), STATE_PROPERTY))
+    return withoutProperty(marked.replaceAll('\r\n', '\n'), STATE_PROPERTY)
 }
 
 /**

@@ -115,6 +115,20 @@ function gitContentStore(folder: string): ContentStore {
         return stdout
     }
     const git = async (...args: string[]): Promise<string> => (await gitRaw(...args)).trim()
+    /**
+     * Runs a git command on a list of paths. The paths go in a file of the git
+     * folder, not in the arguments: a publication can hold more paths than
+     * the system takes as arguments of one command.
+     */
+    const gitOnPaths = async (args: readonly string[], paths: readonly string[]): Promise<void> => {
+        const file = join(folder, '.git', 'vault-publish', 'paths')
+        await writeText(file, paths.join('\0'))
+        try {
+            await git(...args, `--pathspec-from-file=${file}`, '--pathspec-file-nul')
+        } finally {
+            await rm(file, { force: true })
+        }
+    }
     const discard = async (paths: readonly string[]): Promise<void> => {
         let listing: string
         try {
@@ -125,8 +139,8 @@ function gitContentStore(folder: string): ContentStore {
         }
         const committed = new Set(listing.split('\0'))
         const toRestore = paths.filter((path) => committed.has(path))
-        for (let start = 0; start < toRestore.length; start += 100) {
-            await git('checkout', '--quiet', 'HEAD', '--', ...toRestore.slice(start, start + 100))
+        if (toRestore.length > 0) {
+            await gitOnPaths(['checkout', '--quiet', 'HEAD'], toRestore)
         }
         for (const path of paths) {
             if (!committed.has(path)) {
@@ -200,18 +214,45 @@ function gitContentStore(folder: string): ContentStore {
                 .sort(compareCodePoints)
         },
         async commitAndPush(message, paths) {
-            const before = await git('rev-parse', 'HEAD')
-            // With force: a rule of the store that ignores a path must not
-            // leave a note out of its own publication.
-            await git('add', '--force', '--', ...paths)
-            // Only the files of the publication. Other changes of the copy stay out.
-            await git('commit', '--quiet', '--message', message, '--only', '--', ...paths)
+            // A copy with no commit has no commit to go back to.
+            let before: string | undefined
+            try {
+                before = await git('rev-parse', '--verify', '--quiet', 'HEAD')
+            } catch {
+                before = undefined
+            }
+            // Takes back everything that this publication did to the copy.
+            const undo = async (): Promise<void> => {
+                if (before === undefined) {
+                    await git('update-ref', '-d', 'HEAD').catch(() => undefined)
+                    await gitOnPaths(
+                        ['rm', '--quiet', '--cached', '--ignore-unmatch'],
+                        paths
+                    ).catch(() => undefined)
+                } else {
+                    await git('reset', '--quiet', before)
+                }
+                await discard(paths)
+            }
+            try {
+                // With force: a rule of the store that ignores a path must not
+                // leave a note out of its own publication.
+                await gitOnPaths(['add', '--force'], paths)
+                // Only the files of the publication. Other changes of the copy stay out.
+                await gitOnPaths(['commit', '--quiet', '--message', message, '--only'], paths)
+            } catch (error) {
+                // Files that stay in the copy would be read as published at the next run.
+                await undo()
+                throw new Error(
+                    `the commit into the copy of the content store failed. Nothing is published, and the copy is as it was before: ${error instanceof Error ? error.message : 'git failed'}`,
+                    { cause: error }
+                )
+            }
             try {
                 // Never with force: when another device pushed first, git refuses.
                 await git('push', '--quiet', 'origin', 'HEAD:main')
             } catch {
-                await git('reset', '--quiet', before)
-                await discard(paths)
+                await undo()
                 throw new Error(
                     'the push to the content store was refused. Nothing is published, and the copy is as it was before'
                 )

@@ -1,5 +1,6 @@
 import { isVaultPath } from './configuration.ts'
 import { sha256Hex } from './hash.ts'
+import { parseJson } from './json.ts'
 import type { ContentStore } from './ports.ts'
 
 // The manifest: the record of each published note, one file per note
@@ -65,7 +66,7 @@ export function isNotePath(path: string): boolean {
 export function parseManifestEntry(text: string, file: string): ManifestEntry {
     let value: unknown
     try {
-        value = JSON.parse(text)
+        value = parseJson(text)
     } catch {
         value = undefined
     }

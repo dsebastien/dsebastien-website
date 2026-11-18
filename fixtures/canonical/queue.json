@@ -1024,6 +1024,145 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "the correction of the state property never opens a guard",
+            "denyList": [],
+            "vault": {
+                "Open.md": "Open\n",
+                "Nested.md": "Nested\n",
+                "Other.md": "Other\n",
+                "Loose.md": "---\npublic_note: true\n  publish_ignore: true\n---\nA private text\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "a note with the ignore property below the state property is in no list",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": ["Nested.md", "Open.md", "Other.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the note under the guard keeps its text: a removal of its state property would remove the ignore property too",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Open.md", "Nested.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Nested.md", "Open.md"],
+                        "published": ["Nested.md", "Open.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["Loose.md"]
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "two published notes get the ignore property, in forms that a write of the state property would damage",
+                    "files": {
+                        "Open.md": "---\npublish_ignore: true\nA private text below properties that are never closed\n",
+                        "Nested.md": "---\npublic_note: true\n  publish_ignore: true\n---\nA private text\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "both wait for their removal",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 2,
+                            "unchanged": 0
+                        },
+                        "new": ["Other.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Nested.md", "Open.md"],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a publication of another note writes none of them, and says so",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Other.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-02T09:30:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Other.md"],
+                        "published": ["Other.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["Loose.md", "Nested.md", "Open.md"]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the three notes have the text of the author, and nothing of them is in the content store after the first publication",
+                    "vault": {
+                        "Open.md": "---\npublish_ignore: true\nA private text below properties that are never closed\n",
+                        "Nested.md": "---\npublic_note: true\n  publish_ignore: true\n---\nA private text\n",
+                        "Loose.md": "---\npublic_note: true\n  publish_ignore: true\n---\nA private text\n"
+                    },
+                    "store": {
+                        "notes/Open.md": "Open\n",
+                        "notes/Nested.md": "Nested\n",
+                        "notes/Loose.md": null
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the guard still holds: no note became a changed note",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 2,
+                            "unchanged": 1
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Nested.md", "Open.md"],
+                        "unchanged": ["Other.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths publishes none of them",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                }
+            ]
         }
     ]
 }

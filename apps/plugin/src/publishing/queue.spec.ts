@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -351,6 +351,52 @@ describe('manifest that cannot be trusted', () => {
     })
 })
 
+describe('manifest in a form that only one reader of JSON would take', () => {
+    const entry = (version: string, formerPaths = '[]'): string =>
+        `{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":${version},"firstPublished":"${TIME}","formerPaths":${formerPaths},"id":"00000000000000aa","lastPublished":"${TIME}","path":"Welcome.md","sourceHash":"sha256:00","state":"published"}`
+
+    // A whole number in another form is the same number for both implementations.
+    test.each(['1.0', '1e0', '-0'])('a version that is written as %s is read', async (version) => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await pushToStore(setup.copy, { 'manifest/00000000000000aa.json': entry(version) })
+
+        expect((await status(setup.device)).changed).toEqual(['Welcome.md'])
+    })
+
+    test.each([
+        ['a version with a fraction', entry('1.5')],
+        ['a negative version', entry('-1')],
+        ['half of a surrogate pair in a text', entry('1', String.raw`["\ud800"]`)]
+    ])('%s stops the status', async (_name, text) => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await pushToStore(setup.copy, { 'manifest/00000000000000aa.json': text })
+
+        expect(await rejectionOf(status(setup.device))).toContain('manifest')
+    })
+
+    test('a configuration with a number that is too large stops the status', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await pushToStore(setup.copy, { 'configuration.json': '{"denyList":[],"x":1e999}' })
+
+        expect(await rejectionOf(status(setup.device))).toContain('configuration.json')
+    })
+
+    test.skipIf(process.platform === 'win32')(
+        'a symbolic link in the manifest is not a file of the store',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            await mkdir(join(setup.copy, 'manifest'))
+            await symlink(join(setup.vault, 'Welcome.md'), join(setup.copy, 'manifest/link.json'))
+
+            expect((await status(setup.device)).counts.unchanged).toBe(0)
+        }
+    )
+})
+
 describe('plan and what it shows', () => {
     // TEST-22: the review holds. The record of the plan holds the hash of each
     // cleaned note, and the publication writes exactly that text.
@@ -458,6 +504,73 @@ describe('commit of a publication of the queue', () => {
         expect(files.split('\n').filter((file) => file.startsWith('notes/'))).toEqual([
             'notes/10 Garden/Beds [ab].md'
         ])
+    })
+})
+
+describe('commit that fails', () => {
+    /** A hook of the copy that refuses every commit. */
+    async function refuseCommits(copy: string): Promise<void> {
+        const hook = join(copy, '.git', 'hooks', 'pre-commit')
+        await mkdir(join(copy, '.git', 'hooks'), { recursive: true })
+        await writeFile(hook, '#!/bin/sh\nexit 1\n')
+        await chmod(hook, 0o755)
+    }
+
+    // Files that stay in the copy would be read as published at the next run.
+    test('leaves nothing in the copy, and the note is not read as published', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: ['Welcome.md'] })
+        await append(join(setup.vault, 'Welcome.md'), EDIT)
+        await refuseCommits(setup.copy)
+        const before = {
+            vault: await picture(setup.vault),
+            store: await git(setup.copy, 'ls-files', '--stage')
+        }
+        const planned = await plan(setup.device, { include: [NOTE] })
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('commit')
+
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+        expect(await git(setup.copy, 'ls-files', '--stage')).toBe(before.store)
+        expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(false)
+        expect(await Bun.file(join(setup.copy, 'notes/Welcome.md')).text()).not.toContain(
+            'A second paragraph.'
+        )
+        expect(await picture(setup.vault)).toEqual(before.vault)
+        const queue = await status(setup.device)
+        expect(queue.new).toContain(NOTE)
+        expect(queue.changed).toEqual(['Welcome.md'])
+        expect(queue.unchanged).toEqual([])
+    })
+
+    test('leaves nothing in a copy that has no commit', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        // A clone of a content store that has no commit and no configuration.
+        const copy = await makeContentStoreCopyOf(stores, 'copy')
+        await refuseCommits(copy)
+        const device = nodeDevice({ vault, contentStore: copy })
+        const planned = await plan(device, { include: ['Welcome.md'] })
+
+        expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('commit')
+
+        expect(await git(copy, 'status', '--porcelain')).toBe('')
+        expect((await status(device)).unchanged).toEqual([])
+    })
+
+    test('a copy that has no commit takes its first publication', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const copy = await makeContentStoreCopyOf(stores, 'copy')
+        const device = nodeDevice({ vault, contentStore: copy })
+        const planned = await plan(device, { include: ['Welcome.md'] })
+
+        const report = await publish(device, planned.id, RUN)
+
+        expect(report.published).toEqual(['Welcome.md'])
+        expect(await git(stores.contentStore, 'rev-list', '--count', 'main')).toBe('1')
+        expect(await git(copy, 'status', '--porcelain')).toBe('')
     })
 })
 
