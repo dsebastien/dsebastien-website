@@ -581,6 +581,19 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         }
     )
 
+    // A change of the deny list is work of the author. The message must not
+    // propose a command that throws it away.
+    test('a deny list that is changed and not committed stops the status, and the message says to commit it', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(setup.copy, 'configuration.json'), '{"denyList":["80 Templates"]}\n')
+
+        const message = await rejectionOf(status(setup.device))
+
+        expect(message).toContain('commit configuration.json')
+        expect(message).not.toContain('checkout HEAD -- manifest')
+    })
+
     // An empty manifest would let a published note under a guard stay live.
     test('a manifest that cannot be listed stops the status', async () => {
         await using stores = await makeTestStores()

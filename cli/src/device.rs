@@ -230,19 +230,25 @@ impl ContentStore {
             )
             .collect();
         if different.is_empty() {
-            Ok(())
-        } else {
-            Err(format!(
-                "files of the content store in the copy are not the files of its last commit: {}. Nothing can be published until the copy is corrected by hand, for example with git checkout HEAD -- configuration.json manifest: {}",
-                different
-                    .iter()
-                    .take(5)
-                    .copied()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                self.folder.display()
-            ))
+            return Ok(());
         }
+        // A change of the deny list is work of the author: it must not be
+        // thrown away. The manifest is written by the tool only.
+        let way = if different.contains(&"configuration.json") {
+            "When you changed the deny list, commit configuration.json and push it (git commit configuration.json, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
+        } else {
+            "Only the tool writes the manifest: put it back with git checkout HEAD -- manifest (first git update-index --no-skip-worktree --no-assume-unchanged on a file that git skips)"
+        };
+        Err(format!(
+            "files of the content store in the copy are not the files of its last commit: {}. Nothing can be published until the copy is corrected. {way}: {}",
+            different
+                .iter()
+                .take(5)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.folder.display()
+        ))
     }
 
     /// `Err` when a part of the path in the copy is a symbolic link. A link

@@ -735,6 +735,26 @@ fn a_copy_that_differs_from_its_last_commit_stops_the_status() {
     }
 }
 
+/// A change of the deny list is work of the author. The message must not
+/// propose a command that throws it away.
+#[test]
+fn a_deny_list_that_is_changed_and_not_committed_stops_the_status_and_the_message_says_to_commit_it()
+ {
+    let setup = Setup::fixture();
+    fs::write(
+        setup.copy.join("configuration.json"),
+        "{\"denyList\":[\"80 Templates\"]}\n",
+    )
+    .expect("the file is written");
+
+    let output = setup.run("status", &[]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let message = errors_of(&output);
+    assert!(message.contains("commit configuration.json"), "{message}");
+    assert!(!message.contains("checkout HEAD -- manifest"), "{message}");
+}
+
 /// An empty manifest would let a published note under a guard stay live.
 #[test]
 fn a_manifest_that_cannot_be_listed_stops_the_status() {

@@ -240,8 +240,13 @@ function gitContentStore(folder: string): ContentStore {
                     .map((entry) => entry.slice(2))
             ]
             if (different.length > 0) {
+                // A change of the deny list is work of the author: it must
+                // not be thrown away. The manifest is written by the tool only.
+                const way = different.includes('configuration.json')
+                    ? 'When you changed the deny list, commit configuration.json and push it (git commit configuration.json, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
+                    : 'Only the tool writes the manifest: put it back with git checkout HEAD -- manifest (first git update-index --no-skip-worktree --no-assume-unchanged on a file that git skips)'
                 throw new Error(
-                    `files of the content store in the copy are not the files of its last commit: ${different.slice(0, 5).join(', ')}. Nothing can be published until the copy is corrected by hand, for example with git checkout HEAD -- configuration.json manifest: ${folder}`
+                    `files of the content store in the copy are not the files of its last commit: ${different.slice(0, 5).join(', ')}. Nothing can be published until the copy is corrected. ${way}: ${folder}`
                 )
             }
         },
