@@ -732,6 +732,8 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         const file = join(setup.copy, 'configuration.json')
+        // Git for Windows converts line ends by default: the commit must keep them.
+        await git(setup.copy, 'config', 'core.autocrlf', 'false')
         await writeFile(file, (await Bun.file(file).text()).replaceAll('\n', '\r\n'))
         await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'Windows line ends')
         await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')

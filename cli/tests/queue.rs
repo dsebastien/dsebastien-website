@@ -1021,6 +1021,8 @@ fn the_message_never_proposes_to_push_a_merge_that_takes_back_a_change_of_anothe
 fn a_configuration_committed_with_windows_line_ends_is_the_file_of_the_commit() {
     let setup = Setup::fixture();
     let file = setup.copy.join("configuration.json");
+    // Git for Windows converts line ends by default: the commit must keep them.
+    setup.git(&["config", "core.autocrlf", "false"]);
     fs::write(&file, read(&file).replace('\n', "\r\n")).expect("the file is written");
     setup.git(&[
         "commit",
