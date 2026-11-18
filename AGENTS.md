@@ -75,7 +75,7 @@ A change is done only when all of these hold:
 - `bun run format:check` passes.
 - `bun run build` completes.
 - When Rust code changed: `bun run rust:format:check`, `bun run rust:lint` and `bun run rust:test` pass.
-- The CI workflow passes on the branch.
+- The CI workflow passes on the branch. For the first milestone (decision R43), a ticket is merged when every other point passes on the machine, with no wait for CI. When CI fails after the merge, correct it before the next ticket.
 - The file of the day in `documentation/history/` says what was done, which decisions were made, and what is open.
 - The plan that drove the work is updated or closed.
 - `documentation/` matches the code.
