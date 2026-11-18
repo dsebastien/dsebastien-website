@@ -86,6 +86,13 @@ async function writeFiles(folder: string, files: Record<string, string>): Promis
     }
 }
 
+/** Commits every change of the copy and pushes it, as another device would. */
+async function commitAll(copy: string): Promise<void> {
+    await git(copy, 'add', '--all')
+    await git(copy, 'commit', '--quiet', '--message', 'A change of another device')
+    await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+}
+
 /** Another device: it writes files into the content store and pushes them. */
 async function pushToStore(copy: string, files: Record<string, string>): Promise<void> {
     await writeFiles(copy, files)
@@ -430,6 +437,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             const setup = await setUp(stores)
             await mkdir(join(setup.copy, 'manifest'))
             await symlink(join(setup.vault, 'Welcome.md'), join(setup.copy, 'manifest/link.json'))
+            await commitAll(setup.copy)
 
             expect((await status(setup.device)).counts.unchanged).toBe(0)
         }
@@ -446,6 +454,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             await writeFile(join(elsewhere, 'x.json'), '{}\n')
             await mkdir(join(setup.copy, 'manifest'))
             await symlink(elsewhere, join(setup.copy, 'manifest/sub'))
+            await commitAll(setup.copy)
 
             expect((await status(setup.device)).counts.unchanged).toBe(0)
         }
@@ -463,6 +472,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             await writeFile(elsewhere, await Bun.file(file).text())
             await rm(file)
             await symlink(elsewhere, file)
+            await commitAll(setup.copy)
 
             expect(await rejectionOf(status(setup.device))).toContain('symbolic link')
 
@@ -483,14 +493,93 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         await rm(join(setup.copy, 'manifest'), { recursive: true })
         expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
 
-        expect(await rejectionOf(status(setup.device))).toContain('missing')
+        expect(await rejectionOf(status(setup.device))).toContain('last commit')
 
         await git(setup.copy, 'update-index', '--no-skip-worktree', `manifest/${NOTE_ID}.json`)
         await git(setup.copy, 'checkout', '--', 'manifest')
         await rm(join(setup.copy, 'configuration.json'))
 
-        expect(await rejectionOf(status(setup.device))).toContain('missing')
+        expect(await rejectionOf(status(setup.device))).toContain('last commit')
     })
+
+    // The tool reads the state from the files of the copy. Every way that
+    // they can differ from the last commit could hide a published note under
+    // a guard or empty the deny list, so each one stops the run.
+    test.each([
+        [
+            'an entry removed with git',
+            (copy: string) => git(copy, 'rm', '--quiet', `manifest/${NOTE_ID}.json`)
+        ],
+        [
+            'an entry whose text says another state',
+            async (copy: string) => {
+                const file = join(copy, 'manifest', `${NOTE_ID}.json`)
+                await writeFile(
+                    file,
+                    (await Bun.file(file).text()).replace('"published"', '"unpublished"')
+                )
+            }
+        ],
+        [
+            'a folder in the place of an entry',
+            async (copy: string) => {
+                await rm(join(copy, 'manifest', `${NOTE_ID}.json`))
+                await mkdir(join(copy, 'manifest', `${NOTE_ID}.json`))
+            }
+        ],
+        [
+            'no index, and an entry removed',
+            async (copy: string) => {
+                await rm(join(copy, '.git', 'index'))
+                await rm(join(copy, 'manifest', `${NOTE_ID}.json`))
+            }
+        ],
+        [
+            'an entry that git assumes unchanged, and that is removed',
+            async (copy: string) => {
+                await git(copy, 'update-index', '--assume-unchanged', `manifest/${NOTE_ID}.json`)
+                await rm(join(copy, 'manifest', `${NOTE_ID}.json`))
+            }
+        ],
+        [
+            'an entry that is not in the last commit',
+            (copy: string) => writeFile(join(copy, 'manifest', '00000000000000aa.json'), '{}\n')
+        ],
+        [
+            'the configuration removed with git',
+            (copy: string) => git(copy, 'rm', '--quiet', 'configuration.json')
+        ],
+        [
+            'a branch that leads to no commit',
+            (copy: string) =>
+                writeFile(join(copy, '.git', 'refs', 'heads', 'main'), `${'1'.repeat(40)}\n`)
+        ],
+        [
+            'a new branch with no commit and no files',
+            async (copy: string) => {
+                await git(copy, 'checkout', '--quiet', '--orphan', 'fresh')
+                await git(copy, 'rm', '-r', '--quiet', '--cached', '.')
+                for (const path of ['manifest', 'notes', 'configuration.json']) {
+                    await rm(join(copy, path), { recursive: true })
+                }
+            }
+        ]
+    ] as const)(
+        'a copy that differs from its last commit stops the status: %s',
+        async (_name, change) => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            await publishNotes(setup, { include: [NOTE] })
+            await writeFile(
+                join(setup.vault, NOTE),
+                '---\npublish_ignore: true\n---\nA text that must never go out\n'
+            )
+
+            await change(setup.copy)
+
+            expect(await rejectionOf(status(setup.device))).not.toBe('')
+        }
+    )
 
     // An empty manifest would let a published note under a guard stay live.
     test('a manifest that cannot be listed stops the status', async () => {
@@ -508,7 +597,9 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             const setup = await setUp(stores)
             const elsewhere = join(stores.root, 'elsewhere')
             await mkdir(elsewhere)
+            await writeFile(join(elsewhere, 'x.json'), '{}\n')
             await symlink(elsewhere, join(setup.copy, 'manifest'))
+            await commitAll(setup.copy)
 
             expect(await rejectionOf(status(setup.device))).toContain('symbolic link')
         }
@@ -789,30 +880,23 @@ describe('commit that fails', () => {
     })
 
     // With no commit, a file of the copy is not new for the publication only
-    // because no commit holds it.
+    // because no commit holds it. A copy whose manifest or configuration is
+    // in no commit stops before (see "a copy that differs from its last
+    // commit"), so here it is a cleaned note that waits in the copy.
     test('keeps the files that a copy with no commit held before', async () => {
         await using stores = await makeTestStores()
-        const setup = await setUp(stores)
-        await publishNotes(setup, { include: ['Welcome.md'] })
-        await using others = await makeTestStores()
-        const copy = await makeContentStoreCopyOf(others, 'copy')
-        for (const file of await readdir(setup.copy, { recursive: true })) {
-            if (!file.startsWith('.git') && (await Bun.file(join(setup.copy, file)).exists())) {
-                await mkdir(dirname(join(copy, file)), { recursive: true })
-                await writeFile(join(copy, file), await Bun.file(join(setup.copy, file)).bytes())
-            }
-        }
-        const device = nodeDevice({ vault: setup.vault, contentStore: copy })
-        await append(join(setup.vault, 'Welcome.md'), EDIT)
+        const vault = await copyFixtureVault(stores)
+        const copy = await makeContentStoreCopyOf(stores, 'copy')
+        await mkdir(join(copy, 'notes'))
+        await writeFile(join(copy, 'notes', 'Welcome.md'), 'A text that was here before\n')
         await refuseCommits(copy)
+        const device = nodeDevice({ vault, contentStore: copy })
         const before = await filesOf(copy)
-        const planned = await plan(device, { include: [] })
-        expect(planned.plan.update).toEqual(['Welcome.md'])
+        const planned = await plan(device, { include: ['Welcome.md'] })
 
         expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('commit')
 
         expect(await filesOf(copy)).toEqual(before)
-        expect((await status(device)).changed).toEqual(['Welcome.md'])
     })
 
     // The undo takes back the paths of the publication only.

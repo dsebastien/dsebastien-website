@@ -59,6 +59,21 @@ fn write_files(folder: &Path, files: &Value) {
     }
 }
 
+/// Commits every change of the copy and pushes it, as another device would.
+fn commit_all(copy: &Path) {
+    let copy = text(copy);
+    git(&["-C", copy, "add", "--all"]);
+    git(&[
+        "-C",
+        copy,
+        "commit",
+        "--quiet",
+        "--message",
+        "A change of another device",
+    ]);
+    git(&["-C", copy, "push", "--quiet", "origin", "HEAD:main"]);
+}
+
 /// Another device: it writes files into the content store and pushes them.
 fn push_to_store(copy: &Path, files: &Value) {
     write_files(copy, files);
@@ -560,6 +575,8 @@ fn a_symbolic_link_in_the_manifest_is_not_a_file_of_the_store() {
     )
     .expect("the link can be made");
 
+    commit_all(&setup.copy);
+
     assert_eq!(setup.status()["counts"]["unchanged"], 0);
 }
 
@@ -575,6 +592,8 @@ fn a_symbolic_link_to_a_folder_in_the_manifest_is_not_read() {
     std::os::unix::fs::symlink(&elsewhere, setup.copy.join("manifest").join("sub"))
         .expect("the link can be made");
 
+    commit_all(&setup.copy);
+
     assert_eq!(setup.status()["counts"]["unchanged"], 0);
 }
 
@@ -589,6 +608,7 @@ fn a_configuration_that_is_a_symbolic_link_stops_the_status_also_when_it_leads_n
     fs::copy(&file, &elsewhere).expect("the file can be copied");
     fs::remove_file(&file).expect("the file can be removed");
     std::os::unix::fs::symlink(&elsewhere, &file).expect("the link can be made");
+    commit_all(&setup.copy);
 
     let output = setup.run("status", &[]);
     assert_eq!(output.status.code(), Some(1));
@@ -607,6 +627,110 @@ fn a_configuration_that_is_a_symbolic_link_stops_the_status_also_when_it_leads_n
         "{}",
         errors_of(&output)
     );
+}
+
+/// One way to change the copy of a test.
+type Change<'a> = Box<dyn Fn(&Setup) + 'a>;
+
+/// The tool reads the state from the files of the copy. Every way that they
+/// can differ from the last commit could hide a published note under a guard
+/// or empty the deny list, so each one stops the run.
+#[test]
+fn a_copy_that_differs_from_its_last_commit_stops_the_status() {
+    let entry = format!("manifest/{NOTE_ID}.json");
+    let changes: Vec<(&str, Change)> = vec![
+        (
+            "an entry removed with git",
+            Box::new(|setup: &Setup| {
+                setup.git(&["rm", "--quiet", &entry]);
+            }),
+        ),
+        (
+            "an entry whose text says another state",
+            Box::new(|setup: &Setup| {
+                let file = setup.copy.join(&entry);
+                fs::write(
+                    &file,
+                    read(&file).replace("\"published\"", "\"unpublished\""),
+                )
+                .expect("the file is written");
+            }),
+        ),
+        (
+            "a folder in the place of an entry",
+            Box::new(|setup: &Setup| {
+                fs::remove_file(setup.copy.join(&entry)).expect("the file can be removed");
+                fs::create_dir(setup.copy.join(&entry)).expect("the folder can be made");
+            }),
+        ),
+        (
+            "no index, and an entry removed",
+            Box::new(|setup: &Setup| {
+                fs::remove_file(setup.copy.join(".git").join("index"))
+                    .expect("the index can be removed");
+                fs::remove_file(setup.copy.join(&entry)).expect("the file can be removed");
+            }),
+        ),
+        (
+            "an entry that git assumes unchanged, and that is removed",
+            Box::new(|setup: &Setup| {
+                setup.git(&["update-index", "--assume-unchanged", &entry]);
+                fs::remove_file(setup.copy.join(&entry)).expect("the file can be removed");
+            }),
+        ),
+        (
+            "an entry that is not in the last commit",
+            Box::new(|setup: &Setup| {
+                fs::write(
+                    setup.copy.join("manifest").join("00000000000000aa.json"),
+                    "{}\n",
+                )
+                .expect("the file is written");
+            }),
+        ),
+        (
+            "the configuration removed with git",
+            Box::new(|setup: &Setup| {
+                setup.git(&["rm", "--quiet", "configuration.json"]);
+            }),
+        ),
+        (
+            "a branch that leads to no commit",
+            Box::new(|setup: &Setup| {
+                fs::write(
+                    setup
+                        .copy
+                        .join(".git")
+                        .join("refs")
+                        .join("heads")
+                        .join("main"),
+                    format!("{}\n", "1".repeat(40)),
+                )
+                .expect("the reference is written");
+            }),
+        ),
+        (
+            "a new branch with no commit and no files",
+            Box::new(|setup: &Setup| {
+                setup.git(&["checkout", "--quiet", "--orphan", "fresh"]);
+                setup.git(&["rm", "-r", "--quiet", "--cached", "."]);
+                fs::remove_dir_all(setup.copy.join("manifest")).expect("the folder can be removed");
+                fs::remove_dir_all(setup.copy.join("notes")).expect("the folder can be removed");
+                fs::remove_file(setup.copy.join("configuration.json"))
+                    .expect("the file can be removed");
+            }),
+        ),
+    ];
+    for (name, change) in &changes {
+        let setup = Setup::fixture();
+        setup.publish(&json!({ "include": [NOTE] }), TIME);
+        fs::write(setup.vault.join(NOTE), IGNORED).expect("the note is written");
+
+        change(&setup);
+
+        let output = setup.run("status", &[]);
+        assert_eq!(output.status.code(), Some(1), "{name}");
+    }
 }
 
 /// An empty manifest would let a published note under a guard stay live.
@@ -635,8 +759,10 @@ fn a_manifest_folder_that_is_a_symbolic_link_stops_the_status() {
     let setup = Setup::fixture();
     let elsewhere = setup.stores.root().join("elsewhere");
     fs::create_dir(&elsewhere).expect("the folder can be made");
+    fs::write(elsewhere.join("x.json"), "{}\n").expect("the file is written");
     std::os::unix::fs::symlink(&elsewhere, setup.copy.join("manifest"))
         .expect("the link can be made");
+    commit_all(&setup.copy);
 
     let output = setup.run("status", &[]);
     assert_eq!(output.status.code(), Some(1));
@@ -824,37 +950,27 @@ fn a_commit_that_fails_puts_every_file_back_when_git_cannot_write_its_index() {
 }
 
 /// With no commit, a file of the copy is not new for the publication only
-/// because no commit holds it.
+/// because no commit holds it. A copy whose manifest or configuration is in
+/// no commit stops before (see `a_copy_that_differs_from_its_last_commit_*`),
+/// so here it is a cleaned note that waits in the copy.
 #[test]
 fn a_commit_that_fails_keeps_the_files_that_a_copy_with_no_commit_held_before() {
-    let published = Setup::fixture();
-    published.publish(&json!({ "include": ["Welcome.md"] }), TIME);
     let setup = copy_with_no_commit();
-    for (path, bytes) in files_of(&published.copy) {
-        let to = setup.copy.join(&path);
-        fs::create_dir_all(to.parent().expect("a file has a folder"))
-            .expect("the folder can be made");
-        fs::write(to, bytes).expect("the file is written");
-    }
-    let setup = Setup {
-        vault: published.vault.clone(),
-        ..setup
-    };
-    append(&setup.vault.join("Welcome.md"), EDIT);
+    fs::create_dir(setup.copy.join("notes")).expect("the folder can be made");
+    fs::write(
+        setup.copy.join("notes").join("Welcome.md"),
+        "A text that was here before\n",
+    )
+    .expect("the file is written");
     refuse_commits(&setup.copy);
     let before = files_of(&setup.copy);
-    let output = setup.plan(&json!({}));
-    assert!(output.status.success(), "{}", errors_of(&output));
-    let planned = json_of(&output);
-    assert_eq!(paths(&planned["plan"]["update"]), ["Welcome.md"]);
-    let id = planned["id"].as_str().expect("an id").to_owned();
+    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
 
-    let output = setup.publish_plan(&id, LATER);
+    let output = setup.publish_plan(&id, TIME);
 
     assert_eq!(output.status.code(), Some(1));
     assert!(errors_of(&output).contains("commit"));
     assert_eq!(files_of(&setup.copy), before);
-    assert_eq!(paths(&setup.status()["changed"]), ["Welcome.md"]);
 }
 
 /// The undo takes back the paths of the publication only.
@@ -1037,7 +1153,7 @@ fn a_file_of_the_manifest_or_the_configuration_that_is_missing_from_the_copy_sto
     let output = setup.run("status", &[]);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        errors_of(&output).contains("missing"),
+        errors_of(&output).contains("last commit"),
         "{}",
         errors_of(&output)
     );
@@ -1049,7 +1165,7 @@ fn a_file_of_the_manifest_or_the_configuration_that_is_missing_from_the_copy_sto
     let output = setup.run("status", &[]);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        errors_of(&output).contains("missing"),
+        errors_of(&output).contains("last commit"),
         "{}",
         errors_of(&output)
     );

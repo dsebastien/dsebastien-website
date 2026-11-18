@@ -158,60 +158,83 @@ impl ContentStore {
         // A commit that a failed publication could not take back would be
         // pushed by the next one, also for a note that came under a guard. A
         // commit that a branch of the content store has is not ahead.
-        let ahead =
-            match self.git_output(&["rev-list", "--count", "HEAD", "--not", "--remotes=origin"]) {
-                Ok(ahead) => ahead.trim().to_owned(),
-                // Only a branch with no commit yet has no history to compare.
-                Err(_)
-                    if self
-                        .git_output(&["symbolic-ref", "--quiet", "HEAD"])
-                        .is_ok()
-                        && self
-                            .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
-                            .is_err() =>
-                {
-                    "0".to_owned()
-                }
-                Err(error) => {
-                    return Err(format!(
-                        "the history of the copy of the content store cannot be read: {error}"
-                    ));
-                }
-            };
+        let ahead = match self.git_output(&[
+            "rev-list",
+            "--count",
+            "HEAD",
+            "--not",
+            "--remotes=origin",
+        ]) {
+            Ok(ahead) => ahead.trim().to_owned(),
+            // Only a copy of a content store with no branch yet, whose own
+            // branch has no commit yet, has no history to compare.
+            Err(_)
+                if self
+                    .git_output(&["symbolic-ref", "--quiet", "HEAD"])
+                    .is_ok()
+                    && self
+                        .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
+                        .is_err()
+                    && self
+                        .git_output(&["for-each-ref", "--count=1", "refs/remotes/origin"])
+                        .is_ok_and(|refs| refs.trim().is_empty()) =>
+            {
+                "0".to_owned()
+            }
+            Err(error) => {
+                return Err(format!(
+                    "the history of the copy of the content store cannot be read: {error}. Correct the copy by hand, for example with git fetch origin: {}",
+                    self.folder.display()
+                ));
+            }
+        };
         if ahead != "0" {
             return Err(format!(
-                "the copy of the content store has {ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: {}",
+                "the copy of the content store has {ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand, for example with git fetch origin, then git reset --hard origin/main when the copy holds no other work: {}",
                 self.folder.display()
             ));
         }
-        // The tool reads the state from the files of the copy. A file of the
-        // manifest or the configuration that git has and the copy does not
-        // would hide a published note or the deny list: a file that was
-        // removed, and a file that git skips (git status shows none).
-        let listing = self.git_output(&[
-            "ls-files",
+        // The tool reads the state from the files of the copy, so they must be
+        // the files of its last commit: a file removed, edited, added or
+        // replaced could hide a published note under a guard, or empty the
+        // deny list. A file that git skips or assumes unchanged is not
+        // compared by git status, so it stops the run too.
+        let changes = self.git_output(&[
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v1",
             "-z",
-            "-t",
-            "--cached",
-            "--deleted",
+            "--untracked-files=all",
+            "--ignored",
             "--",
             "configuration.json",
             "manifest",
         ])?;
-        let missing: Vec<&str> = listing
+        let flags = self.git_output(&[
+            "ls-files",
+            "-v",
+            "-z",
+            "--",
+            "configuration.json",
+            "manifest",
+        ])?;
+        let different: Vec<&str> = changes
             .split('\0')
-            .filter_map(|entry| {
-                entry
-                    .strip_prefix("R ")
-                    .or_else(|| entry.strip_prefix("S "))
-            })
+            .filter(|entry| entry.len() > 3)
+            .map(|entry| &entry[3..])
+            .chain(
+                flags
+                    .split('\0')
+                    .filter(|entry| !entry.is_empty() && !entry.starts_with("H "))
+                    .map(|entry| entry.get(2..).unwrap_or(entry)),
+            )
             .collect();
-        if missing.is_empty() {
+        if different.is_empty() {
             Ok(())
         } else {
             Err(format!(
-                "files of the content store are missing from the copy, or git skips them: {}. Nothing can be published until the copy is corrected by hand: {}",
-                missing
+                "files of the content store in the copy are not the files of its last commit: {}. Nothing can be published until the copy is corrected by hand, for example with git checkout HEAD -- configuration.json manifest: {}",
+                different
                     .iter()
                     .take(5)
                     .copied()
@@ -379,8 +402,12 @@ impl ContentStore {
             if failures.is_empty() {
                 what
             } else {
+                let way_out = before.as_ref().map_or_else(
+                    || "git update-ref -d HEAD".to_owned(),
+                    |before| format!("git reset --soft {before}"),
+                );
                 format!(
-                    "{what}. Git could not take the publication back, so correct the copy by hand before the next publication: {}",
+                    "{what}. Git could not take the publication back, so correct the copy by hand before the next publication ({way_out}): {}",
                     failures.join("; ")
                 )
             }

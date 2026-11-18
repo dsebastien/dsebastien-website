@@ -96,6 +96,15 @@ fn set_up() -> Setup {
     }
 }
 
+/// Commits every change of the copy and pushes it, as another device would:
+/// the tool reads the files of the last commit of the copy.
+fn commit_in_copy(copy: &Path, message: &str) {
+    let copy = text(copy);
+    git(&["-C", copy, "add", "--all"]);
+    git(&["-C", copy, "commit", "--quiet", "--message", message]);
+    git(&["-C", copy, "push", "--quiet", "origin", "HEAD:main"]);
+}
+
 fn errors_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
@@ -489,6 +498,7 @@ fn a_configuration_that_cannot_be_trusted_stops_the_plan() {
     for (configuration, reason) in cases {
         fs::write(setup.copy.join("configuration.json"), configuration)
             .expect("the configuration can be written");
+        commit_in_copy(&setup.copy, "A configuration that cannot be trusted");
 
         // An open note too: a configuration that cannot be trusted stops everything.
         setup.refuses(NOTE, reason);
@@ -499,8 +509,20 @@ fn a_configuration_that_cannot_be_trusted_stops_the_plan() {
 #[test]
 fn a_configuration_that_is_a_folder_stops_the_plan() {
     let setup = set_up();
-    fs::remove_file(setup.copy.join("configuration.json")).expect("the file can be removed");
+    git(&[
+        "-C",
+        text(&setup.copy),
+        "rm",
+        "--quiet",
+        "configuration.json",
+    ]);
     fs::create_dir(setup.copy.join("configuration.json")).expect("the folder can be made");
+    fs::write(
+        setup.copy.join("configuration.json").join("inside"),
+        "A file in a folder\n",
+    )
+    .expect("the file is written");
+    commit_in_copy(&setup.copy, "A configuration that is a folder");
 
     setup.refuses(DENIED, "cannot be read");
 }
@@ -532,7 +554,7 @@ fn a_configuration_that_is_missing_from_the_copy_stops_the_plan() {
     let setup = set_up();
     fs::remove_file(setup.copy.join("configuration.json")).expect("the file can be removed");
 
-    setup.refuses(DENIED, "missing");
+    setup.refuses(DENIED, "last commit");
 }
 
 #[test]

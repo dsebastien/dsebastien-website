@@ -104,6 +104,16 @@ async function setUp(stores: TestStores): Promise<Setup> {
     return { stores, vault, copy, device: nodeDevice({ vault, contentStore: copy }) }
 }
 
+/**
+ * Commits every change of the copy and pushes it, as another device would: the
+ * tool reads the files of the last commit of the copy.
+ */
+async function commitInCopy(copy: string, message: string): Promise<void> {
+    await git('-C', copy, 'add', '--all')
+    await git('-C', copy, 'commit', '--quiet', '--message', message)
+    await git('-C', copy, 'push', '--quiet', 'origin', 'HEAD:main')
+}
+
 async function git(...args: string[]): Promise<string> {
     const child = Bun.spawn(['git', ...args], { env: gitEnvironment(), stdout: 'pipe' })
     const stdout = await new Response(child.stdout).text()
@@ -411,6 +421,7 @@ describe('guards of a plan', () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         await writeFile(join(setup.copy, 'configuration.json'), configuration)
+        await commitInCopy(setup.copy, 'A configuration that cannot be trusted')
 
         // An open note: a configuration that cannot be trusted stops everything.
         await refuses(setup, NOTE, reason)
@@ -420,8 +431,10 @@ describe('guards of a plan', () => {
     test('a configuration that is a folder stops the plan', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
-        await rm(join(setup.copy, 'configuration.json'))
+        await git('-C', setup.copy, 'rm', '--quiet', 'configuration.json')
         await mkdir(join(setup.copy, 'configuration.json'))
+        await writeFile(join(setup.copy, 'configuration.json', 'inside'), 'A file in a folder\n')
+        await commitInCopy(setup.copy, 'A configuration that is a folder')
 
         await refuses(setup, DENIED, 'cannot be read')
     })
@@ -445,7 +458,9 @@ describe('guards of a plan', () => {
         const setup = await setUp(stores)
         await rm(join(setup.copy, 'configuration.json'))
 
-        expect(await rejectionOf(plan(setup.device, { include: [DENIED] }))).toContain('missing')
+        expect(await rejectionOf(plan(setup.device, { include: [DENIED] }))).toContain(
+            'last commit'
+        )
     })
 
     test('a folder that is not the root of its own git repository is not a content store', async () => {

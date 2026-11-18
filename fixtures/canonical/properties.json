@@ -202,8 +202,23 @@
             "excluded": true
         },
         {
-            "name": "a first line of hyphens with two carriage returns opens properties: the guard fails closed",
+            "name": "a first line of hyphens with two carriage returns: the guard reads it as a fence too, and fails closed",
             "note": "---\r\r\npublish_ignore: true\r\n---\r\nText\r\n",
+            "excluded": true
+        },
+        {
+            "name": "a line of hyphens with two carriage returns inside the properties: the guard reads the lines below it too",
+            "note": "---\n---\r\r\npublish_ignore: true\n---\nText\n",
+            "excluded": true
+        },
+        {
+            "name": "a line of hyphens with two carriage returns inside properties with Windows line ends",
+            "note": "---\r\n---\r\r\npublish_ignore: true\r\n---\r\nText\r\n",
+            "excluded": true
+        },
+        {
+            "name": "a line of hyphens with two carriage returns after a property",
+            "note": "---\ntags: a\n---\r\r\npublish_ignore: true\n---\nText\n",
             "excluded": true
         }
     ],
@@ -334,9 +349,9 @@
             "source": "Text\n"
         },
         {
-            "name": "a first line of hyphens with two carriage returns opens properties, as the guard reads them",
+            "name": "a first line of hyphens with two carriage returns opens no properties for the write and the source",
             "note": "---\r\r\ntags: a\r\npublic_note: true\r\n---\r\nText\r\n",
-            "source": "---\r\ntags: a\n---\nText\n"
+            "source": "---\r\ntags: a\npublic_note: true\n---\nText\n"
         }
     ],
     "state": [
@@ -518,9 +533,9 @@
             "result": "\ufeff\ufeffText\n"
         },
         {
-            "name": "a closing line of hyphens with a carriage return before its line end closes the properties",
+            "name": "a line of hyphens with two carriage returns closes no properties for the write",
             "note": "---\npublic_note: true\n---\r\r\nText\n",
-            "result": "Text\n"
+            "result": "---\npublic_note: true\n---\r\r\nText\n"
         }
     ],
     "flow": [

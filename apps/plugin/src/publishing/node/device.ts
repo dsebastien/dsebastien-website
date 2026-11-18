@@ -179,19 +179,22 @@ function gitContentStore(folder: string): ContentStore {
             try {
                 ahead = await git('rev-list', '--count', 'HEAD', '--not', '--remotes=origin')
             } catch (error) {
-                // Only a branch with no commit yet has no history to compare.
+                // Only a copy of a content store with no branch yet, whose own
+                // branch has no commit yet, has no history to compare.
                 let unborn: boolean
                 try {
                     await git('symbolic-ref', '--quiet', 'HEAD')
-                    unborn = !(await git('rev-parse', '--verify', '--quiet', 'HEAD')
-                        .then(() => true)
-                        .catch(() => false))
+                    unborn =
+                        !(await git('rev-parse', '--verify', '--quiet', 'HEAD')
+                            .then(() => true)
+                            .catch(() => false)) &&
+                        (await git('for-each-ref', '--count=1', 'refs/remotes/origin')) === ''
                 } catch {
                     unborn = false
                 }
                 if (!unborn) {
                     throw new Error(
-                        `the history of the copy of the content store cannot be read: ${error instanceof Error ? error.message.trim() : 'git failed'}`,
+                        `the history of the copy of the content store cannot be read: ${error instanceof Error ? error.message.trim() : 'git failed'}. Correct the copy by hand, for example with git fetch origin: ${folder}`,
                         { cause: error }
                     )
                 }
@@ -199,30 +202,46 @@ function gitContentStore(folder: string): ContentStore {
             }
             if (ahead !== '0') {
                 throw new Error(
-                    `the copy of the content store has ${ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: ${folder}`
+                    `the copy of the content store has ${ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand, for example with git fetch origin, then git reset --hard origin/main when the copy holds no other work: ${folder}`
                 )
             }
-            // The tool reads the state from the files of the copy. A file of
-            // the manifest or the configuration that git has and the copy does
-            // not would hide a published note or the deny list: a file that
-            // was removed, and a file that git skips (git status shows none).
-            const listing = await gitRaw(
-                'ls-files',
+            // The tool reads the state from the files of the copy, so they must
+            // be the files of its last commit: a file removed, edited, added or
+            // replaced could hide a published note under a guard, or empty the
+            // deny list. A file that git skips or assumes unchanged is not
+            // compared by git status, so it stops the run too.
+            const changes = await gitRaw(
+                '--no-optional-locks',
+                'status',
+                '--porcelain=v1',
                 '-z',
-                '-t',
-                '--cached',
-                '--deleted',
+                '--untracked-files=all',
+                '--ignored',
                 '--',
                 'configuration.json',
                 'manifest'
             )
-            const missing = listing
-                .split('\0')
-                .filter((entry) => entry.startsWith('R ') || entry.startsWith('S '))
-                .map((entry) => entry.slice(2))
-            if (missing.length > 0) {
+            const flags = await gitRaw(
+                'ls-files',
+                '-v',
+                '-z',
+                '--',
+                'configuration.json',
+                'manifest'
+            )
+            const different = [
+                ...changes
+                    .split('\0')
+                    .filter((entry) => entry.length > 3)
+                    .map((entry) => entry.slice(3)),
+                ...flags
+                    .split('\0')
+                    .filter((entry) => entry !== '' && !entry.startsWith('H '))
+                    .map((entry) => entry.slice(2))
+            ]
+            if (different.length > 0) {
                 throw new Error(
-                    `files of the content store are missing from the copy, or git skips them: ${missing.slice(0, 5).join(', ')}. Nothing can be published until the copy is corrected by hand: ${folder}`
+                    `files of the content store in the copy are not the files of its last commit: ${different.slice(0, 5).join(', ')}. Nothing can be published until the copy is corrected by hand, for example with git checkout HEAD -- configuration.json manifest: ${folder}`
                 )
             }
         },
@@ -324,7 +343,7 @@ function gitContentStore(folder: string): ContentStore {
                 new Error(
                     failures.length === 0
                         ? what
-                        : `${what}. Git could not take the publication back, so correct the copy by hand before the next publication: ${failures.join('; ')}`
+                        : `${what}. Git could not take the publication back, so correct the copy by hand before the next publication (${before === undefined ? 'git update-ref -d HEAD' : `git reset --soft ${before}`}): ${failures.join('; ')}`
                 )
             try {
                 // With force: a rule of the store that ignores a path must not

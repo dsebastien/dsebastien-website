@@ -44,16 +44,27 @@ fn trim(text: &str) -> &str {
     text.trim_matches([' ', '\t'])
 }
 
-/// True when the line opens or closes the properties: `---`, then spaces,
-/// tabs and carriage returns only. A carriage return counts so that a line
-/// `---` with two carriage returns before its line feed opens properties for
-/// every reader of the tool, also for the guard: it fails closed.
-fn is_fence(line: &str) -> bool {
-    line.strip_prefix("---")
-        .is_some_and(|rest| rest.trim_matches([' ', '\t', '\r']).is_empty())
+/// True when the line opens or closes the properties: `---`, then spaces and
+/// tabs only.
+///
+/// `loose` accepts carriage returns after the hyphens too. Only the guard
+/// reads in that way, as a second reading, so that it fails closed on a line
+/// `---` with two carriage returns before its line feed.
+fn is_fence(line: &str, loose: bool) -> bool {
+    line.strip_prefix("---").is_some_and(|rest| {
+        if loose {
+            rest.trim_matches([' ', '\t', '\r']).is_empty()
+        } else {
+            trim(rest).is_empty()
+        }
+    })
 }
 
 fn read(text: &str) -> Note {
+    read_with(text, false)
+}
+
+fn read_with(text: &str, loose: bool) -> Note {
     let rest = without_marks(text);
     let marks = (text.len() - rest.len()) / MARK.len_utf8();
     let pieces: Vec<&str> = rest.split('\n').collect();
@@ -77,13 +88,15 @@ fn read(text: &str) -> Note {
             });
         }
     }
-    let opened = lines.first().is_some_and(|line| is_fence(&line.text));
+    let opened = lines
+        .first()
+        .is_some_and(|line| is_fence(&line.text, loose));
     let close = if opened {
         lines
             .iter()
             .enumerate()
             .skip(1)
-            .find(|(_, line)| is_fence(&line.text))
+            .find(|(_, line)| is_fence(&line.text, loose))
             .map(|(index, _)| index)
     } else {
         None
@@ -174,13 +187,20 @@ fn property_lines(note: &Note) -> &[Line] {
 /// fails closed: the key counts anywhere in a line (in one line of JSON, in a
 /// complex key, inside another word), in any case of its ASCII letters, in
 /// quotes, below another key, and with any value. When the properties are
-/// never closed, every line of the note is read.
+/// never closed, every line of the note is read. The properties are read two
+/// times: with the fence lines of the other readers, and with fence lines
+/// that also end in carriage returns. The key in either reading excludes the
+/// note.
 pub fn names_in_properties(text: &str, key: &str) -> bool {
     let wanted = key.to_ascii_lowercase();
-    property_lines(&read(text)).iter().any(|line| {
-        line.text.to_ascii_lowercase().contains(&wanted)
-            && value_of(&line.text, key, true, true) != Some("false")
-    })
+    [read_with(text, false), read_with(text, true)]
+        .iter()
+        .any(|note| {
+            property_lines(note).iter().any(|line| {
+                line.text.to_ascii_lowercase().contains(&wanted)
+                    && value_of(&line.text, key, true, true) != Some("false")
+            })
+        })
 }
 
 /// True when closed properties are in the flow form of YAML: a line of them
@@ -226,11 +246,11 @@ fn remove(note: &mut Note, key: &str) -> Option<usize> {
 fn has_closed_properties(lines: &[Line], start: usize) -> bool {
     lines
         .get(start)
-        .is_some_and(|line| is_fence(without_marks(&line.text)))
+        .is_some_and(|line| is_fence(without_marks(&line.text), false))
         && lines
             .iter()
             .skip(start + 1)
-            .any(|line| is_fence(&line.text))
+            .any(|line| is_fence(&line.text, false))
 }
 
 /// Removes the two lines of the properties when no line is between them. They

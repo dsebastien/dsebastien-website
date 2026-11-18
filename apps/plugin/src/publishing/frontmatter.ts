@@ -52,16 +52,18 @@ function trim(text: string): string {
 }
 
 /**
- * True when the line opens or closes the properties: `---`, then spaces, tabs
- * and carriage returns only. A carriage return counts so that a line `---`
- * with two carriage returns before its line feed opens properties for every
- * reader of the tool, also for the guard: it fails closed.
+ * True when the line opens or closes the properties: `---`, then spaces and
+ * tabs only.
+ *
+ * @param loose true to accept carriage returns after the hyphens too. Only the
+ * guard reads in that way, as a second reading, so that it fails closed on a
+ * line `---` with two carriage returns before its line feed.
  */
-function isFence(line: string): boolean {
-    return line.startsWith('---') && /^[ \t\r]*$/u.test(line.slice(3))
+function isFence(line: string, loose = false): boolean {
+    return line.startsWith('---') && (loose ? /^[ \t\r]*$/u : /^[ \t]*$/u).test(line.slice(3))
 }
 
-function read(text: string): Note {
+function read(text: string, loose = false): Note {
     const mark = marksOf(text)
     const pieces = text.slice(mark.length).split('\n')
     const lines: Line[] = []
@@ -76,8 +78,10 @@ function read(text: string): Note {
             lines.push({ text: piece, end: '' })
         }
     }
-    const opened = lines[0] !== undefined && isFence(lines[0].text)
-    const close = opened ? lines.findIndex((line, index) => index > 0 && isFence(line.text)) : -1
+    const opened = lines[0] !== undefined && isFence(lines[0].text, loose)
+    const close = opened
+        ? lines.findIndex((line, index) => index > 0 && isFence(line.text, loose))
+        : -1
     return { mark, lines, close: close < 0 ? undefined : close, opened }
 }
 
@@ -146,14 +150,18 @@ function propertyLines(note: Note): readonly Line[] {
  * fails closed: the key counts anywhere in a line (in one line of JSON, in a
  * complex key, inside another word), in any case of its ASCII letters, in
  * quotes, below another key, and with any value. When the properties are never
- * closed, every line of the note is read.
+ * closed, every line of the note is read. The properties are read two times:
+ * with the fence lines of the other readers, and with fence lines that also
+ * end in carriage returns. The key in either reading excludes the note.
  */
 export function namesInProperties(text: string, key: string): boolean {
     const wanted = asciiLower(key)
-    return propertyLines(read(text)).some(
-        (line) =>
-            asciiLower(line.text).includes(wanted) &&
-            valueOf(line.text, key, true, true) !== 'false'
+    return [read(text), read(text, true)].some((note) =>
+        propertyLines(note).some(
+            (line) =>
+                asciiLower(line.text).includes(wanted) &&
+                valueOf(line.text, key, true, true) !== 'false'
+        )
     )
 }
 
