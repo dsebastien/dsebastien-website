@@ -141,12 +141,17 @@ async function readState(device: Device): Promise<State> {
     }
 }
 
+/** The device with the vault of one run: each folder of the vault is listed one time. */
+function forRun(device: Device): Device {
+    return { ...device, vault: device.vault.forRun() }
+}
+
 /**
  * The publication queue: the four lists of what waits for a publication. It
  * writes nothing into the vault and nothing into the content store.
  */
 export async function status(device: Device): Promise<PublicationQueue> {
-    return (await readState(device)).scan.queue
+    return (await readState(forRun(device))).scan.queue
 }
 
 /** The source, the cleaned note and the links of one note of a plan. */
@@ -211,7 +216,8 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
  * Computes a publication plan and stores it on the device. It writes nothing
  * into the vault and nothing into the content of the store.
  */
-export async function plan(device: Device, selection: Selection): Promise<StoredPlan> {
+export async function plan(given: Device, selection: Selection): Promise<StoredPlan> {
+    const device = forRun(given)
     const { plan: computed, record } = await recordFor(device, normalSelection(selection))
     // The id names the record. It is outside the parity rule (TOOL-30).
     const id = sha256Hex(record).slice(0, 16)
@@ -548,7 +554,8 @@ async function writeAll(
  * is pushed. A note whose files cannot be written is left out and reported.
  * Only after the push, the state property is corrected in the vault.
  */
-export async function publish(device: Device, id: string, run: Run): Promise<PublicationReport> {
+export async function publish(given: Device, id: string, run: Run): Promise<PublicationReport> {
+    const device = forRun(given)
     if (!isCanonicalTime(run.time)) {
         throw new Error(
             `the time of the run must be a real date and time in UTC, to the second: "${run.time}" is not`

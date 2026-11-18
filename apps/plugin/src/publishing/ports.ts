@@ -26,6 +26,14 @@ export interface Vault {
     /** True when the vault has a folder with exactly this vault path, which is not a symbolic link. */
     hasFolder(path: string): Promise<boolean>
     write(path: string, text: string): Promise<void>
+    /**
+     * The vault for one run of the tool (`status`, `plan`, `publish`). It lists
+     * each folder one time per run and keeps the listing until the end of the
+     * run, so a scan does not list the folder of each note again (issue 69).
+     * The tool asks for it at the start of each run, and never keeps it for a
+     * later run: a folder renamed between two runs must be seen.
+     */
+    forRun(): Vault
 }
 
 /** The copy of the content store on this device. */

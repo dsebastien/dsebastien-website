@@ -1227,6 +1227,27 @@ fn a_publication_larger_than_the_limit_of_the_system_for_arguments_is_possible()
     assert_eq!(setup.git(&["status", "--porcelain"]), "");
 }
 
+/// The scan lists each folder of the vault one time per run (issue 69). When it
+/// listed the folder of each note again, `status` on 6,000 notes in one folder
+/// took about 7 s with the debug build. It now takes far less than the budget,
+/// which leaves room for a slow runner.
+#[test]
+fn the_time_of_a_scan_grows_with_the_number_of_notes_in_a_folder_not_with_its_square() {
+    let setup = Setup::scenario(&json!({ "vault": {}, "denyList": [] }));
+    fs::create_dir(setup.vault.join("Big")).expect("the folder can be made");
+    for index in 0..6_000 {
+        fs::write(setup.vault.join(format!("Big/{index:04}.md")), "Text\n")
+            .expect("the note is written");
+    }
+
+    let start = std::time::Instant::now();
+    let queue = setup.status();
+    let time = start.elapsed();
+
+    assert_eq!(queue["counts"]["new"], 6_000);
+    assert!(time.as_secs_f64() < 3.0, "{time:?}");
+}
+
 /// Two publications on one copy must not share a file of paths.
 #[test]
 fn a_publication_needs_no_file_of_paths_in_the_git_folder() {

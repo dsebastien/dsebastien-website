@@ -35,62 +35,103 @@ async function writeText(path: string, text: string): Promise<void> {
     await writeFile(path, text, 'utf8')
 }
 
-/**
- * What the folder holds at exactly this path: a file, a folder, or nothing.
- *
- * Each part of the path must be a name of the folder listing. A file system
- * that ignores letter case would else open `90 locked shed/` for the folder
- * `90 Locked Shed/` of the deny list. A symbolic link is nothing: it can lead
- * to a file that the guards would refuse, or out of the vault.
- */
-async function exactEntry(root: string, path: string): Promise<'file' | 'folder' | undefined> {
-    const parts = path.split('/')
-    let folder = root
-    for (const [index, part] of parts.entries()) {
-        let entries
-        try {
-            entries = await readdir(folder, { withFileTypes: true })
-        } catch {
-            return undefined
-        }
-        const entry = entries.find((candidate) => candidate.name === part)
-        if (entry === undefined || entry.isSymbolicLink()) {
-            return undefined
-        }
-        if (index === parts.length - 1) {
-            return entry.isFile() ? 'file' : entry.isDirectory() ? 'folder' : undefined
-        }
-        if (!entry.isDirectory()) {
-            return undefined
-        }
-        folder = join(folder, part)
-    }
-    return undefined
-}
+/** The files and the folders of one folder, by name. A symbolic link is neither. */
+type Listing = ReadonlyMap<string, 'file' | 'folder'>
 
-function folderVault(folder: string): Vault {
-    return {
-        async list(path) {
-            const entries = await readdir(join(folder, path), { withFileTypes: true })
-            const listed: VaultEntry[] = []
+/**
+ * The vault of a folder. A vault for one run (`listings` given) lists each
+ * folder one time and keeps the listing until the end of the run (issue 69):
+ * a check of the exact path of a note would else list the folder of each note
+ * again. A vault with no `listings` lists the folder at each call.
+ */
+function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): Vault {
+    function listing(path: string): Promise<Listing> {
+        const kept = listings?.get(path)
+        if (kept !== undefined) {
+            return kept
+        }
+        const read = readdir(join(folder, path), { withFileTypes: true }).then((entries) => {
+            const listed = new Map<string, 'file' | 'folder'>()
             for (const entry of entries) {
-                // A symbolic link is neither: `isFile` and `isDirectory` are false for it.
+                // `isFile` and `isDirectory` are false for a symbolic link.
                 if (entry.isFile()) {
-                    listed.push({ name: entry.name, kind: 'file' })
+                    listed.set(entry.name, 'file')
                 } else if (entry.isDirectory()) {
-                    listed.push({ name: entry.name, kind: 'folder' })
+                    listed.set(entry.name, 'folder')
                 }
             }
             return listed
-        },
-        async read(path) {
-            if ((await exactEntry(folder, path)) !== 'file') {
+        })
+        // A listing that failed is not kept: the next call tries again.
+        listings?.set(path, read)
+        read.catch(() => listings?.delete(path))
+        return read
+    }
+
+    /**
+     * What the vault holds at exactly this path: a file, a folder, or nothing.
+     *
+     * Each part of the path must be a name of the folder listing. A file
+     * system that ignores letter case would else open `90 locked shed/` for
+     * the folder `90 Locked Shed/` of the deny list. A symbolic link is
+     * nothing: it can lead to a file that the guards would refuse, or out of
+     * the vault. The listing is the one of the run, and the kind of each part
+     * is read again now, so a part that became a link since is nothing too.
+     */
+    async function exactEntry(path: string): Promise<'file' | 'folder' | undefined> {
+        let parent = ''
+        let kind: 'file' | 'folder' | undefined
+        for (const part of path.split('/')) {
+            if (kind === 'file') {
                 return undefined
             }
-            return decode(await readFile(join(folder, path)))
+            let entries
+            try {
+                entries = await listing(parent)
+            } catch {
+                return undefined
+            }
+            if (!entries.has(part)) {
+                return undefined
+            }
+            parent = parent === '' ? part : `${parent}/${part}`
+            let now
+            try {
+                now = await lstat(join(folder, parent))
+            } catch {
+                return undefined
+            }
+            kind = now.isFile() ? 'file' : now.isDirectory() ? 'folder' : undefined
+            if (kind === undefined) {
+                return undefined
+            }
+        }
+        return kind
+    }
+
+    return {
+        async list(path) {
+            return [...(await listing(path))].map(([name, kind]): VaultEntry => ({ name, kind }))
         },
-        hasFolder: async (path) => (await exactEntry(folder, path)) === 'folder',
-        write: (path, text) => writeText(join(folder, path), text)
+        async read(path) {
+            if ((await exactEntry(path)) !== 'file') {
+                return undefined
+            }
+            let bytes
+            try {
+                bytes = await readFile(join(folder, path))
+            } catch (error) {
+                // A file that went away during the run is no file.
+                if (codeOf(error) === 'ENOENT') {
+                    return undefined
+                }
+                throw error
+            }
+            return decode(bytes)
+        },
+        hasFolder: async (path) => (await exactEntry(path)) === 'folder',
+        write: (path, text) => writeText(join(folder, path), text),
+        forRun: () => folderVault(folder, new Map())
     }
 }
 

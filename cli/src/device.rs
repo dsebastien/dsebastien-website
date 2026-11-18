@@ -2,11 +2,14 @@
 //! the `git` program of the system (TOOL-12 of the spec). The TypeScript twin
 //! is `apps/plugin/src/publishing/node/device.ts`.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 use std::thread;
 
 /// What a folder holds at exactly one path.
@@ -16,94 +19,138 @@ pub enum Entry {
     Folder,
 }
 
-/// What the folder holds at exactly this path: a file, a folder, or nothing.
-///
-/// Each part of the path must be a name of the folder listing. A file system
-/// that ignores letter case would else open `90 locked shed/` for the folder
-/// `90 Locked Shed/` of the deny list. A symbolic link is nothing: it can lead
-/// to a file that the guards would refuse, or out of the vault.
-fn exact_entry(root: &Path, path: &str) -> Option<Entry> {
-    let parts: Vec<&str> = path.split('/').collect();
-    let mut folder = root.to_path_buf();
-    for (index, part) in parts.iter().enumerate() {
-        let entry = fs::read_dir(&folder)
-            .ok()?
-            .flatten()
-            .find(|entry| entry.file_name().to_str() == Some(*part))?;
-        let kind = entry.file_type().ok()?;
-        if kind.is_symlink() {
-            return None;
-        }
-        if index == parts.len() - 1 {
-            return if kind.is_file() {
-                Some(Entry::File)
-            } else if kind.is_dir() {
-                Some(Entry::Folder)
-            } else {
-                None
-            };
-        }
-        if !kind.is_dir() {
-            return None;
-        }
-        folder.push(part);
-    }
-    None
+/// The listing of one folder: its files and its folders, by their names. A
+/// symbolic link is neither, and a name that is not valid Unicode has no exact
+/// name, so it matches no path.
+struct Listing {
+    /// The files and the folders, with the replacement character in a name in
+    /// the place of what cannot be read.
+    entries: Vec<(String, Entry)>,
+    /// The files and the folders whose names are valid Unicode, by name.
+    exact: HashMap<String, Entry>,
 }
 
 /// The vault: the only source of content.
+///
+/// A vault lives for one run of the program: it lists each folder one time and
+/// keeps the listing until the end of the run (issue 69). A check of the exact
+/// path of a note would else list the folder of each note again.
 pub struct Vault {
     folder: PathBuf,
+    listings: RefCell<HashMap<String, Rc<Listing>>>,
 }
 
 impl Vault {
     pub fn new(folder: &Path) -> Self {
         Self {
             folder: folder.to_path_buf(),
+            listings: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// The listing of one folder, read one time per run.
+    fn listing(&self, folder: &str) -> Result<Rc<Listing>, String> {
+        if let Some(listing) = self.listings.borrow().get(folder) {
+            return Ok(Rc::clone(listing));
+        }
+        let failed = |error: std::io::Error| {
+            format!("the folder \"{folder}\" of the vault cannot be listed: {error}")
+        };
+        let mut listing = Listing {
+            entries: Vec::new(),
+            exact: HashMap::new(),
+        };
+        for entry in fs::read_dir(self.folder.join(folder)).map_err(failed)? {
+            let entry = entry.map_err(failed)?;
+            let kind = entry.file_type().map_err(failed)?;
+            // A symbolic link is neither a file nor a folder of the vault.
+            let kind = if kind.is_file() {
+                Entry::File
+            } else if kind.is_dir() {
+                Entry::Folder
+            } else {
+                continue;
+            };
+            let name = entry.file_name();
+            if let Some(exact) = name.to_str() {
+                listing.exact.insert(exact.to_owned(), kind);
+            }
+            listing
+                .entries
+                .push((name.to_string_lossy().into_owned(), kind));
+        }
+        let listing = Rc::new(listing);
+        self.listings
+            .borrow_mut()
+            .insert(folder.to_owned(), Rc::clone(&listing));
+        Ok(listing)
+    }
+
+    /// What the vault holds at exactly this path: a file, a folder, or nothing.
+    ///
+    /// Each part of the path must be a name of the folder listing. A file
+    /// system that ignores letter case would else open `90 locked shed/` for
+    /// the folder `90 Locked Shed/` of the deny list. A symbolic link is
+    /// nothing: it can lead to a file that the guards would refuse, or out of
+    /// the vault. The listing is the one of the run, and the kind of each part
+    /// is read again now, so a part that became a link since is nothing too.
+    fn exact_entry(&self, path: &str) -> Option<Entry> {
+        let parts: Vec<&str> = path.split('/').collect();
+        let mut folder = String::new();
+        let mut kind = None;
+        for part in &parts {
+            if !self.listing(&folder).ok()?.exact.contains_key(*part) {
+                return None;
+            }
+            if kind == Some(Entry::File) {
+                return None;
+            }
+            if !folder.is_empty() {
+                folder.push('/');
+            }
+            folder.push_str(part);
+            let now = fs::symlink_metadata(self.folder.join(&folder)).ok()?;
+            kind = if now.file_type().is_file() {
+                Some(Entry::File)
+            } else if now.file_type().is_dir() {
+                Some(Entry::Folder)
+            } else {
+                return None;
+            };
+        }
+        kind
     }
 
     /// The files and the folders of one folder of the vault, by their names,
     /// in any order. The root is the empty path. A symbolic link is not a file
     /// and not a folder of the vault, so it is not in the result. A name that
     /// is not valid Unicode comes with the replacement character in the place
-    /// of what cannot be read.
+    /// of what cannot be read. Each folder is listed one time per run.
     ///
     /// # Errors
     ///
     /// The folder cannot be listed.
     pub fn list(&self, folder: &str) -> Result<Vec<(String, Entry)>, String> {
-        let failed = |error: std::io::Error| {
-            format!("the folder \"{folder}\" of the vault cannot be listed: {error}")
-        };
-        let mut listed = Vec::new();
-        for entry in fs::read_dir(self.folder.join(folder)).map_err(failed)? {
-            let entry = entry.map_err(failed)?;
-            let kind = entry.file_type().map_err(failed)?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // A symbolic link is neither.
-            if kind.is_file() {
-                listed.push((name, Entry::File));
-            } else if kind.is_dir() {
-                listed.push((name, Entry::Folder));
-            }
-        }
-        Ok(listed)
+        Ok(self.listing(folder)?.entries.clone())
     }
 
     /// The text of the file with exactly this vault path. `Ok(None)` when the
     /// vault has no such file: each part of the path must be a name of the
     /// folder listing, with the same letter case, and a symbolic link is not a
-    /// file of the vault.
+    /// file of the vault. A file that went away during the run is no file.
     ///
     /// # Errors
     ///
     /// The file is not valid UTF-8, or cannot be read.
     pub fn read(&self, path: &str) -> Result<Option<String>, String> {
-        if exact_entry(&self.folder, path) != Some(Entry::File) {
+        if self.exact_entry(path) != Some(Entry::File) {
             return Ok(None);
         }
-        let bytes = fs::read(self.folder.join(path)).map_err(|error| error.kind().to_string())?;
+        let bytes = match fs::read(self.folder.join(path)) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.kind().to_string()),
+        };
         String::from_utf8(bytes)
             .map(Some)
             .map_err(|_| "is not valid UTF-8".to_owned())
@@ -112,7 +159,7 @@ impl Vault {
     /// True when the vault has a folder with exactly this vault path, which is
     /// not a symbolic link.
     pub fn has_folder(&self, path: &str) -> bool {
-        exact_entry(&self.folder, path) == Some(Entry::Folder)
+        self.exact_entry(path) == Some(Entry::Folder)
     }
 
     /// # Errors

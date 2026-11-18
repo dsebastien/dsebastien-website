@@ -295,6 +295,40 @@ describe('status of the fixture vault', () => {
 
         expect(await rejectionOf(status(setup.device))).toContain('90 Locked Shed')
     })
+
+    // Each run lists each folder of the vault one time (issue 69). A listing
+    // must not live longer than its run: the same device runs again after the
+    // author renames a folder of the deny list to another letter case.
+    test('reads the vault again at each run of the same device', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await status(setup.device)
+        await rename(join(setup.vault, '90 Locked Shed'), join(setup.vault, '90 locked shed'))
+
+        expect(await rejectionOf(status(setup.device))).toContain('90 Locked Shed')
+    })
+
+    // When the scan listed the folder of each note again, this status took
+    // about 20 s. It now takes far less than the budget, which leaves room for
+    // a slow runner.
+    test('takes a time that grows with the number of notes in a folder, not with its square', async () => {
+        await using stores = await makeTestStores()
+        const vault = join(stores.root, 'vault')
+        await mkdir(join(vault, 'Big'), { recursive: true })
+        for (let index = 0; index < 6000; index++) {
+            await writeFile(join(vault, 'Big', `${String(index).padStart(4, '0')}.md`), 'Text\n')
+        }
+        const copy = await makeContentStoreCopy(stores)
+        await pushToStore(copy, { 'configuration.json': JSON.stringify({ denyList: [] }) })
+        const device = nodeDevice({ vault, contentStore: copy })
+
+        const start = performance.now()
+        const queue = await status(device)
+        const time = performance.now() - start
+
+        expect(queue.counts.new).toBe(6000)
+        expect(time).toBeLessThan(3000)
+    }, 120_000)
 })
 
 describe('manifest that cannot be trusted', () => {
