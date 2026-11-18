@@ -55,7 +55,11 @@ beforeAll(async () => {
     const contentStore = await makeContentStoreCopy(stores)
     const device = nodeDevice({ vault, contentStore })
     const planned = await plan(device, { include: [NOTE] })
-    await publish(device, planned.id, '2031-04-01T08:00:00Z')
+    await publish(device, planned.id, {
+        time: '2031-04-01T08:00:00Z',
+        device: 'garden-shed',
+        face: 'plugin'
+    })
     // The build reads the content store and never the vault (BUILD-01): after
     // the publication the note of the vault says something else.
     await Bun.write(

@@ -161,10 +161,35 @@ function remove(note: Note, key: string): number | undefined {
     return first
 }
 
-/** The note without the property. The same text when the note has no such property. */
+/** Removes the two lines of the properties when no line is between them. */
+function dropEmptyProperties(note: Note): boolean {
+    if (note.close !== 1) {
+        return false
+    }
+    note.lines.splice(0, 2)
+    note.close = undefined
+    note.opened = false
+    return true
+}
+
+/**
+ * The note without the property. When the properties then hold no line, their
+ * two lines go too, as when the last property is removed in Obsidian. The same
+ * text when the note does not name the property.
+ */
 export function removeProperty(text: string, key: string): string {
     const note = read(text)
-    return remove(note, key) === undefined ? text : write(note)
+    if (remove(note, key) === undefined) {
+        return text
+    }
+    dropEmptyProperties(note)
+    return write(note)
+}
+
+/** The note without properties that hold no line. The same text when it has none. */
+export function withoutEmptyProperties(text: string): string {
+    const note = read(text)
+    return dropEmptyProperties(note) ? write(note) : text
 }
 
 /**

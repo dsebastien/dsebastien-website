@@ -10,7 +10,9 @@ A change of a rule here lands in both implementations in the same commit.
 2. The cleaned notes.
 3. The manifest.
 
-Outside the rule (TOOL-30): the view, the order of the writes into the vault, ids (plan id, run id), the time of a run, and the text of logs, reports and error messages.
+The parity tests compare two more outputs, so that every face of the tool shows the same thing: the publication queue, and the lists of paths of the publication report.
+
+Outside the rule (TOOL-30): the view, the order of the writes into the vault, ids (plan id, run id), the time of a run, and the text of logs, reports, commit messages and error messages.
 
 ## Inputs
 
@@ -80,17 +82,95 @@ The configuration is read strictly. The tool stops, and publishes nothing, in ea
 
 Only a content store that has no `configuration.json` at all has an empty deny list.
 
-The copy of the content store must be the root of its own git repository. The tool stages and commits only the files that it wrote.
+The copy of the content store must be the root of its own git repository. The tool stages and commits only the files that it wrote. Every git command of the tool reads paths as they are written (a note name can hold `[` or `*`) and converts no line end, whatever the settings of the machine say.
+
+## The notes of the vault
+
+The tool scans the vault to find its notes. Both implementations scan in the same way:
+
+1. The scan starts at the root of the vault and goes into each folder.
+2. A name that starts with a dot is not part of the vault: a folder (`.obsidian`, `.trash`) or a file. Obsidian does not show them.
+3. A symbolic link is not part of the vault, as a file and as a folder.
+4. A name that is not valid Unicode, or that holds the replacement character (U+FFFD), is not part of the vault.
+5. A folder of the deny list is not scanned. The tool lists none of its files, reads none and writes none.
+6. A note is a file of the scan whose name ends in `.md`, in small letters.
+7. The tool reads every note of the scan. A note that cannot be read, or that is not valid UTF-8, stops the run with a message that names it. A note that cannot be read is never taken for a note without the ignore property.
+
+## The publication queue
+
+The publication queue is what the `status` command writes, as data in the canonical form. It changes nothing in the vault and in the content store.
+
+| Key                | Value                                                                                            | Order          |
+| ------------------ | ------------------------------------------------------------------------------------------------ | -------------- |
+| `changed`          | The vault paths of the published notes whose content in the vault is not the published content   | Sorted by path |
+| `counts`           | The number of paths of each of the four lists: `changed`, `new`, `toRemove`, `unchanged`         |                |
+| `new`              | The vault paths of the candidates                                                                | Sorted by path |
+| `technicalUpdates` | The paths of `changed` that the author did not edit: only the version of the cleaning step moved | Sorted by path |
+| `toRemove`         | The vault paths of the published notes that cannot stay published as they are                    | Sorted by path |
+| `unchanged`        | The vault paths of the published notes that are the same in the vault and in the content store   | Sorted by path |
+
+A published note is a note with a manifest entry whose state is `published`. Each note is in one of the four lists at most:
+
+1. A published note is in `toRemove` when the scan did not find its file (it is missing from this vault, or it is now in a folder of the deny list), or when the ignore property excludes it. Such a note is never updated.
+2. Another published note is in `changed` when the hash of its source is not the `sourceHash` of its manifest entry. It is in `changed` and in `technicalUpdates` when the hash is the same and the `cleaningVersion` of its entry is not the version of the cleaning step.
+3. Every other published note is in `unchanged`.
+4. A note of the scan that is not published is in `new` when the ignore property does not exclude it. A note that was unpublished is a candidate again.
+5. A note that is not published and that a guard excludes is in no list.
+
+The `public_note` property is not read for the queue. A note that carries it by mistake is a candidate like every other note, and a published note without it stays published.
+
+The empty queue. A test compares this block with the output of the code:
+
+<!-- prettier-ignore -->
+```json
+{
+  "changed": [],
+  "counts": {
+    "changed": 0,
+    "new": 0,
+    "toRemove": 0,
+    "unchanged": 0
+  },
+  "new": [],
+  "technicalUpdates": [],
+  "toRemove": [],
+  "unchanged": []
+}
+```
+
+## The selection
+
+The selection is the intent of the author for one plan. It has three lists of vault paths:
+
+| Key       | Value                                                         |
+| --------- | ------------------------------------------------------------- |
+| `hold`    | The notes to leave out of this plan: their live version stays |
+| `include` | The notes to publish                                          |
+| `remove`  | The published notes to unpublish                              |
+
+A selection stops the plan in each of these cases:
+
+1. A path is not a vault path, or it does not end in `.md` (in small letters).
+2. A path is in more than one of the three lists.
+3. A path of `include` is not in the list `new`, `changed` or `unchanged` of the queue. So a note under a guard, a file that is not a note of the scan and a published note that waits for its removal cannot be included.
+4. A path of `hold` is in no list of the queue. A hold that names no note would hold nothing, and the note that the author meant would be published.
+5. A path of `remove` is not the path of a published note.
 
 ## The publication plan
 
-The first shape. Later slices add members (the forced removals, the edits of the configuration).
+| Key       | Value                                               | Order          |
+| --------- | --------------------------------------------------- | -------------- |
+| `publish` | The vault paths of the notes to publish             | Sorted by path |
+| `remove`  | The vault paths of the published notes to unpublish | Sorted by path |
+| `update`  | The vault paths of the published notes to update    | Sorted by path |
 
-| Key       | Value                                            | Order          |
-| --------- | ------------------------------------------------ | -------------- |
-| `publish` | The vault paths of the notes to publish          | Sorted by path |
-| `remove`  | The vault paths of the published notes to remove | Sorted by path |
-| `update`  | The vault paths of the published notes to update | Sorted by path |
+Later slices add members (the forced removals, the edits of the configuration).
+
+The plan of a selection:
+
+1. `publish`: the paths of `include` that are in the list `new` of the queue. A new candidate enters a plan only when its path is named.
+2. `update`: every path of the list `changed` of the queue that is not in `hold` and not in `remove`. So a plan without paths holds the changed notes only. A path of `include` that is in `changed` or in `unchanged` adds nothing.
+3. `remove`: the paths of `remove` of the selection.
 
 Both implementations sort the three lists when they make a plan (`makePlan`, `PublicationPlan::new`), so no caller can give a plan in another order.
 
@@ -105,27 +185,62 @@ The empty plan. A test compares this block with the output of the code:
 }
 ```
 
-A plan is stored on the device as a record: the plan, the selection that gave it, and the state that it was computed from. The parity rule compares the record.
+A plan is stored on the device as a record: the plan, the selection that gave it, and the state that it was computed from. The record is stored outside the vault and outside the content of the store. The parity rule compares the record.
 
 | Key                   | Value                                                                                                                                                                                                 |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `plan`                | The plan                                                                                                                                                                                              |
-| `selection.include`   | The vault paths that were selected for a publication, each one time, sorted                                                                                                                           |
+| `selection.hold`      | The vault paths of the selection to hold, each one time, sorted                                                                                                                                       |
+| `selection.include`   | The vault paths of the selection to publish, each one time, sorted                                                                                                                                    |
+| `selection.remove`    | The vault paths of the selection to unpublish, each one time, sorted                                                                                                                                  |
 | `state.configuration` | `sha256:` and the SHA-256 of the text of `configuration.json`, or `none` when the store has no such file                                                                                              |
 | `state.manifest`      | `sha256:` and the SHA-256 of the manifest: for each file of `manifest/`, in the order of the paths, its path in the store, a line feed, the hash of its text in the form of the manifest, a line feed |
-| `state.notes`         | A list with, for each note of the plan, its `path` and its `sourceHash`, sorted by path                                                                                                               |
+| `state.notes`         | A list with, for each note of `publish` and of `update`, its `path`, its `sourceHash` and its `cleanedHash`, sorted by path                                                                           |
+
+The `cleanedHash` of a note in the record is the hash of the cleaned note that the publication will write. It is what the plan shows of the text (PUB-92 of the spec).
 
 The id of a plan is 16 hexadecimal digits of the SHA-256 of its record. It names the stored file. It is outside the parity rule. The tool accepts no other form of id.
 
-Before a plan is applied, its record is computed again from the selection. When the new record is not the stored one, the plan is stale and nothing is published: a note of the plan was edited, the configuration changed, or another publication changed the manifest.
+Before a plan is applied, its record is computed again from the selection. When the new record is not the stored one, the plan is stale and nothing is published: a note of the plan was edited, another published note changed and would enter the plan, the configuration changed, another publication changed the manifest, or the version of the cleaning step is another one. A new candidate and an edit of a note that is not published do not make a plan stale.
 
-The first slice knows one case: the first publication of the notes of `selection.include`. A selected path stops the plan in each of these cases:
+## A publication
 
-1. It is not a vault path, or it does not end in `.md` (in small letters).
-2. The vault has no file with exactly that path. Each part of the path must be a name of the folder listing, with the same letter case and the same Unicode form. A symbolic link is not a file of the vault, and a folder that is a link is not a folder of the vault.
-3. The note is not valid UTF-8.
-4. A guard excludes the note.
-5. The note is already published.
+The `publish` command applies exactly one plan. After the check of the record:
+
+1. For each note of `publish` and of `update`, it writes the cleaned note to `notes/<vault path>` and the manifest entry of the note. The cleaned note that it writes is the text whose hash the record holds.
+2. For each note of `remove`, it removes `notes/<vault path>` and writes the manifest entry with the state `unpublished`.
+3. The two files of a note are one unit. When a write of the unit fails, the files of that note are put back as they were, the note is left out of the publication, and the report names it with the reason. The other notes are published.
+4. Every file that it wrote or removed goes into one commit, which is pushed without force. With nothing to commit, there is no commit and no push.
+5. When the push is refused, the commit is taken back and every file of the publication is put back as it was. Nothing is published.
+6. After a push that succeeded, the `public_note` property is corrected (see below).
+
+The message of the commit holds the counts, the device and the face that started the publication (PUB-29 of the spec). The skipped notes are the changed notes of the queue that the plan does not update and does not remove. The message is outside the parity rule, like every text for a person, and both implementations write it in this form:
+
+```text
+Publish: 1 new, 2 updated, 0 removed, 1 skipped
+
+Device: garden-shed
+Face: command-line
+```
+
+The name of the device and the name of the face are inputs, like the time of the run. Each is one line of text, not empty, with no control character. The faces are `plugin`, `command-line` and `mcp-server`.
+
+## The publication report
+
+The result of the `publish` command, as data in the canonical form. Every list of paths is sorted by path.
+
+| Key               | Value                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| `failed`          | The notes of the plan that were left out, each with its `path` and a `reason`                    |
+| `propertyRemoved` | The vault paths of the notes whose `public_note` property was removed                            |
+| `propertySet`     | The vault paths of the notes whose `public_note` property was set                                |
+| `published`       | The vault paths of the notes that were published for the first time, or again after an unpublish |
+| `removed`         | The vault paths of the notes that were unpublished                                               |
+| `skipped`         | The vault paths of the changed notes that the plan did not update                                |
+| `updated`         | The vault paths of the published notes that were updated                                         |
+| `warnings`        | What the author must know and what stopped nothing, each with its `path` and a `message`         |
+
+The parity tests compare the lists of paths. The texts (`reason`, `message`) are outside the rule.
 
 ## Notes and their properties
 
@@ -144,7 +259,7 @@ The deny list guard excludes a note when its vault path starts with an entry of 
 
 Writing the state property (`public_note`):
 
-5. To remove the property is to remove every property of the note itself that names the key, with its lines.
+5. To remove the property is to remove every property of the note itself that names the key, with its lines. When the properties then hold no line, the two `---` lines are removed too: the note has no properties any more, as when the last property is removed in Obsidian. A note that does not name the key is not changed.
 6. To set the property is to remove it, then to write the line `public_note: true` in the place of the first one that was removed. When there was none, the line becomes the last line of the properties.
 7. A note without properties gets the three lines `---`, `public_note: true`, `---` before its text, after its byte order mark when it has one.
 8. Every line that is kept keeps its own line end. A new line takes the line end of the first line of the note, and a line feed when the note has no line end.
@@ -154,7 +269,7 @@ Writing the state property (`public_note`):
 
 A cleaned note is Markdown text, in the encoding of this document.
 
-1. The source of a note is its text in the vault, without its byte order mark, with each pair of a carriage return and a line feed replaced by a line feed, and without the `public_note` property. That property is the state in the vault, not content.
+1. The source of a note is its text in the vault, without its byte order mark, with each pair of a carriage return and a line feed replaced by a line feed, without the `public_note` property, and without properties that hold no line (`---` and `---` with nothing between them). That property is the state in the vault, not content. So the source of a note is the same before and after the tool writes the property, also for a note without properties, and a correction of the property never makes a note "changed" (PUB-14 of the spec).
 2. Version 1 of the cleaning step changes nothing more: the cleaned note is the source.
 3. The ticket that adds a rule to the cleaning step writes it here before the second implementation is written, and raises the version.
 
@@ -173,12 +288,34 @@ One file per published note, as data in the canonical form.
 | `lastPublished`   | The time of the run of the last publication                                                                                         |
 | `path`            | The vault path of the note                                                                                                          |
 | `sourceHash`      | `sha256:` and the SHA-256 of the source of the note                                                                                 |
-| `state`           | `published`                                                                                                                         |
+| `state`           | `published`, or `unpublished` after the note was removed by a publication                                                           |
 
-After the push of a publication, the tool sets `public_note: true` in the vault on each note that it published. It writes a note only when the text changes.
+The entry of a note at a publication:
+
+1. A note that is published for the first time gets a new entry. `firstPublished` and `lastPublished` are the time of the run.
+2. A note that was unpublished and is published again keeps its entry: its `id`, its `firstPublished`, its `formerPaths` and its `attachments` stay. Its state is `published` again, and `lastPublished` is the time of the run.
+3. An update writes `cleanedHash`, `cleaningVersion` and `sourceHash`. `lastPublished` is the time of the run when the hash of the source changed. A technical update does not move it (PUB-24 of the spec).
+4. An unpublish changes the state only.
+
+The manifest is read strictly. The tool stops in each of these cases:
+
+1. A file of `manifest/` cannot be read, or is not an entry with every key of the table.
+2. The `id` of an entry is not 16 hexadecimal digits, or the file is not named `manifest/<id>.json`.
+3. The `path` of an entry is not a vault path that ends in `.md`. The tool removes `notes/<path>` at an unpublish, so a path in another form could name a file outside the notes.
+4. Two entries have the same `path`.
+
+## The state property after a publication
+
+After a push that succeeded, the tool corrects the `public_note` property in the vault (PUB-13 of the spec):
+
+1. The scope is the notes of the scan, as the publication read them when it checked the plan. A note in a folder of the deny list is not in the scan, so it is never written. The folders of the note templates are on the deny list.
+2. A note that is published after the run gets the property with the value `true`. Every other note of the scan loses the property.
+3. A note is written only when its text changes.
+4. Before a note is written, it is read again. When its text is not the text of the scan, the note is not written and the report has a warning: the property is corrected at the next publication. A write that fails gives a warning too.
+5. Without a push, nothing is corrected: an empty plan, a publication whose every note failed, a refused push. The push is the proof that the copy of the content store followed the content store. Without that proof, a note that another device published could lose its property.
 
 ## How it is tested
 
-1. Shared cases: `fixtures/canonical/properties.json` holds notes with the result that each rule for the properties must give. `fixtures/canonical/cases.json` holds values and the text that each must give, values that must be refused, and a list of paths with its order. Each expected result is written by hand. The TypeScript tests (`apps/plugin/src/publishing/canonical.spec.ts`, `frontmatter.spec.ts`) and the Rust tests (`cli/src/canonical.rs`, `cli/src/order.rs`, `cli/src/frontmatter.rs`) both read those files. A value that only one language can hold has a test on that side only.
-2. Parity tests: `parity/` holds tests that run both implementations on a copy of the fixture vault, with notes in hard forms added (Windows line ends, a byte order mark, no properties, odd forms of the properties), and compare what they leave: the stored plan, every file of the content store and every file of the vault. A second test checks that both refuse the same notes. They are part of `bun run test`, so CI fails when they fail.
-3. The tests of each implementation (`apps/plugin/src/publishing/publication.spec.ts`, `cli/tests/publication.rs`) state the same expected texts, with hashes that were computed with another tool. The Rust tests also run on Windows.
+1. Shared cases: `fixtures/canonical/properties.json` holds notes with the result that each rule for the properties must give. `fixtures/canonical/cases.json` holds values and the text that each must give, values that must be refused, and a list of paths with its order. `fixtures/canonical/queue.json` holds scenarios of the publication queue: a small invented vault, the steps of the author (edits, plans, publications), and after each step the queue, the plan, the report and the files that the rules must give. Each expected result is written by hand, with hashes that were computed with another tool. The TypeScript tests (`apps/plugin/src/publishing/canonical.spec.ts`, `frontmatter.spec.ts`, `queue.spec.ts`) and the Rust tests (`cli/src/canonical.rs`, `cli/src/order.rs`, `cli/src/frontmatter.rs`, `cli/tests/queue.rs`) both read those files. A value that only one language can hold has a test on that side only.
+2. Parity tests: `parity/` holds tests that run both implementations on a copy of the fixture vault, with notes in hard forms added (Windows line ends, a byte order mark, no properties, odd forms of the properties), and compare what they leave: the stored plan, every file of the content store and every file of the vault. A second test checks that both refuse the same notes. A third one goes through the publication queue: a first publication, then edits, a technical update, a removal and a note that carries the property by mistake, and it compares the queue, the plans, the reports, the content store and the vault after each publication. They are part of `bun run test`, so CI fails when they fail.
+3. The tests of each implementation (`apps/plugin/src/publishing/publication.spec.ts` and `queue.spec.ts`, `cli/tests/publication.rs` and `queue.rs`) state the same expected texts, with hashes that were computed with another tool. The Rust tests also run on Windows.

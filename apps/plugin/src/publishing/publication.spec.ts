@@ -23,6 +23,7 @@ import type { Device } from './ports.ts'
 
 const NOTE = '10 Garden/Frost dates explained.md'
 const TIME = '2031-04-01T08:00:00Z'
+const RUN = { time: TIME, device: 'garden-shed', face: 'plugin' } as const
 const NOTE_ID = '203d446940c02032'
 const NOTE_HASH = 'sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b'
 
@@ -67,15 +68,18 @@ const PLAN_RECORD = `{
     "update": []
   },
   "selection": {
+    "hold": [],
     "include": [
       "${NOTE}"
-    ]
+    ],
+    "remove": []
   },
   "state": {
     "configuration": "${CONFIGURATION_HASH}",
     "manifest": "${EMPTY_MANIFEST_HASH}",
     "notes": [
       {
+        "cleanedHash": "${NOTE_HASH}",
         "path": "${NOTE}",
         "sourceHash": "${NOTE_HASH}"
       }
@@ -202,7 +206,7 @@ describe('plan of a first publication', () => {
 describe('first publication of a note', () => {
     async function publishNote(setup: Setup, note = NOTE): Promise<void> {
         const planned = await plan(setup.device, { include: [note] })
-        await publish(setup.device, planned.id, TIME)
+        await publish(setup.device, planned.id, RUN)
     }
 
     test('adds one commit with the cleaned note and its manifest entry, and pushes it', async () => {
@@ -243,7 +247,10 @@ describe('first publication of a note', () => {
         expect(await Bun.file(entry).text()).toBe(MANIFEST_ENTRY)
     })
 
-    test('sets the property of the note to true, and changes no other file of the vault', async () => {
+    // The fixture vault has three notes that carry the property by mistake:
+    // one candidate, and two notes in folders of the deny list, which are
+    // never written (PUB-13).
+    test('sets the property of the note to true, and removes it from the note that is not published', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         const before = await picture(setup.vault)
@@ -258,7 +265,10 @@ describe('first publication of a note', () => {
         )
         const after = await picture(setup.vault)
         const changed = Object.keys(after).filter((file) => after[file] !== before[file])
-        expect(changed).toEqual([NOTE])
+        expect(changed.sort()).toEqual(['10 Garden/Bean trellis.md', NOTE])
+        expect(await Bun.file(join(setup.vault, '10 Garden/Bean trellis.md')).text()).not.toContain(
+            'public_note'
+        )
         // No file was added and no file was removed.
         expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort())
     })
@@ -282,7 +292,7 @@ describe('first publication of a note', () => {
         await using stores = await makeTestStores()
         const { device } = await setUp(stores)
 
-        expect(await rejectionOf(publish(device, '0000000000000000', TIME))).toContain('plan')
+        expect(await rejectionOf(publish(device, '0000000000000000', RUN))).toContain('plan')
     })
 
     test('refuses a time that is not in the canonical form', async () => {
@@ -290,17 +300,19 @@ describe('first publication of a note', () => {
         const { device } = await setUp(stores)
         const planned = await plan(device, { include: [NOTE] })
 
-        expect(await rejectionOf(publish(device, planned.id, '2031-04-01 08:00'))).toContain('time')
+        expect(
+            await rejectionOf(publish(device, planned.id, { ...RUN, time: '2031-04-01 08:00' }))
+        ).toContain('time')
     })
 
-    test('refuses a second first publication of the same note', async () => {
+    test('a published note that did not change adds nothing to a later plan', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         await publishNote(setup)
 
-        expect(await rejectionOf(plan(setup.device, { include: [NOTE] }))).toContain(
-            'already published'
-        )
+        const planned = await plan(setup.device, { include: [NOTE] })
+
+        expect(planned.plan).toEqual({ publish: [], update: [], remove: [] })
     })
 })
 
@@ -441,7 +453,7 @@ describe('publication and what changed since the plan', () => {
             `${NOTE_TEXT}\nA line that the author did not review.\n`
         )
 
-        expect(await rejectionOf(publish(setup.device, planned.id, TIME))).toContain('stale')
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('stale')
 
         expect(await git('--git-dir', stores.contentStore, 'rev-list', '--count', 'main')).toBe('1')
     })
@@ -451,9 +463,9 @@ describe('publication and what changed since the plan', () => {
         const setup = await setUp(stores)
         const first = await plan(setup.device, { include: [NOTE] })
         const second = await plan(setup.device, { include: ['Welcome.md'] })
-        await publish(setup.device, second.id, TIME)
+        await publish(setup.device, second.id, RUN)
 
-        expect(await rejectionOf(publish(setup.device, first.id, TIME))).toContain('stale')
+        expect(await rejectionOf(publish(setup.device, first.id, RUN))).toContain('stale')
     })
 
     test('a guard that was added after the plan stops the publication', async () => {
@@ -465,7 +477,7 @@ describe('publication and what changed since the plan', () => {
             NOTE_TEXT.replace('tags:', 'publish_ignore: true\ntags:')
         )
 
-        expect(await rejectionOf(publish(setup.device, planned.id, TIME))).toContain(
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain(
             'publish_ignore'
         )
     })
@@ -474,9 +486,9 @@ describe('publication and what changed since the plan', () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         const planned = await plan(setup.device, { include: [NOTE] })
-        await publish(setup.device, planned.id, TIME)
+        await publish(setup.device, planned.id, RUN)
 
-        await rejectionOf(publish(setup.device, planned.id, TIME))
+        await rejectionOf(publish(setup.device, planned.id, RUN))
 
         expect(await git('--git-dir', stores.contentStore, 'rev-list', '--count', 'main')).toBe('2')
     })
@@ -489,7 +501,7 @@ describe('publication and what changed since the plan', () => {
         await using stores = await makeTestStores()
         const { device } = await setUp(stores)
 
-        expect(await rejectionOf(publish(device, id, TIME))).toContain('16 hexadecimal digits')
+        expect(await rejectionOf(publish(device, id, RUN))).toContain('16 hexadecimal digits')
     })
 
     test.each(['2031-13-45T99:99:99Z', '2031-02-30T08:00:00Z', '2031-04-01T24:00:00Z'])(
@@ -499,7 +511,9 @@ describe('publication and what changed since the plan', () => {
             const { device } = await setUp(stores)
             const planned = await plan(device, { include: [NOTE] })
 
-            expect(await rejectionOf(publish(device, planned.id, time))).toContain('time')
+            expect(await rejectionOf(publish(device, planned.id, { ...RUN, time }))).toContain(
+                'time'
+            )
         }
     )
 })
@@ -516,7 +530,7 @@ describe('commit of a publication', () => {
         )
 
         const planned = await plan(setup.device, { include: [NOTE] })
-        await publish(setup.device, planned.id, TIME)
+        await publish(setup.device, planned.id, RUN)
 
         const files = await git(
             '--git-dir',
@@ -545,7 +559,7 @@ describe('commit of a publication', () => {
         await writeFile(join(setup.copy, '.git', 'info', 'exclude'), 'notes/\n')
 
         const planned = await plan(setup.device, { include: [NOTE] })
-        await publish(setup.device, planned.id, TIME)
+        await publish(setup.device, planned.id, RUN)
 
         expect(await git('--git-dir', stores.contentStore, 'show', `main:notes/${NOTE}`)).toBe(
             NOTE_TEXT.trimEnd()
@@ -583,7 +597,7 @@ describe('commit of a publication', () => {
             remote: await git('--git-dir', stores.contentStore, 'rev-parse', 'main')
         }
 
-        expect(await rejectionOf(publish(setup.device, planned.id, TIME))).toContain('refused')
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('refused')
 
         expect(await picture(setup.vault)).toEqual(before.vault)
         expect(await picture(setup.copy)).toEqual(before.copy)
@@ -601,7 +615,7 @@ describe('publication of a note with Windows line ends', () => {
         await writeFile(join(setup.vault, NOTE), windows)
 
         const planned = await plan(setup.device, { include: [NOTE] })
-        await publish(setup.device, planned.id, TIME)
+        await publish(setup.device, planned.id, RUN)
 
         expect(await Bun.file(join(setup.copy, 'notes', NOTE)).text()).toBe(NOTE_TEXT)
         expect(await Bun.file(join(setup.vault, NOTE)).text()).toBe(

@@ -56,15 +56,18 @@ const PLAN_RECORD: &str = r#"{
     "update": []
   },
   "selection": {
+    "hold": [],
     "include": [
       "10 Garden/Frost dates explained.md"
-    ]
+    ],
+    "remove": []
   },
   "state": {
     "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",
     "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "notes": [
       {
+        "cleanedHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b",
         "path": "10 Garden/Frost dates explained.md",
         "sourceHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b"
       }
@@ -118,7 +121,10 @@ impl Setup {
 
     fn publish(&self, note: &str) {
         let id = self.plan(note);
-        let output = self.run("publish", &["--plan", &id, "--time", TIME]);
+        let output = self.run(
+            "publish",
+            &["--plan", &id, "--time", TIME, "--device", "garden-shed"],
+        );
         assert!(output.status.success(), "{}", errors_of(&output));
     }
 
@@ -283,8 +289,11 @@ fn the_publication_writes_the_cleaned_note_and_the_manifest_entry() {
     assert_eq!(read(&entry), MANIFEST_ENTRY);
 }
 
+/// The fixture vault has three notes that carry the property by mistake: one
+/// candidate, and two notes in folders of the deny list, which are never
+/// written (PUB-13).
 #[test]
-fn the_publication_sets_the_property_and_changes_no_other_file_of_the_vault() {
+fn the_publication_sets_the_property_and_removes_it_from_the_note_that_is_not_published() {
     let setup = set_up();
     let before = picture(&setup.vault);
 
@@ -305,7 +314,8 @@ fn the_publication_sets_the_property_and_changes_no_other_file_of_the_vault() {
         .filter(|(now, then)| now != then)
         .map(|(now, _)| now.0.as_str())
         .collect();
-    assert_eq!(changed, [NOTE]);
+    assert_eq!(changed, ["10 Garden/Bean trellis.md", NOTE]);
+    assert!(!read(&setup.vault.join("10 Garden/Bean trellis.md")).contains("public_note"));
 }
 
 /// The property is the state in the vault, not content: it never reaches the
@@ -326,7 +336,7 @@ fn the_publication_leaves_the_property_out_of_the_cleaned_note() {
 }
 
 #[test]
-fn the_publication_refuses_an_unknown_plan_a_wrong_time_and_a_second_first_publication() {
+fn the_publication_refuses_an_unknown_plan_and_a_wrong_time() {
     let setup = set_up();
 
     let unknown = setup.run("publish", &["--plan", "0000000000000000", "--time", TIME]);
@@ -337,11 +347,21 @@ fn the_publication_refuses_an_unknown_plan_a_wrong_time_and_a_second_first_publi
     let wrong_time = setup.run("publish", &["--plan", &id, "--time", "2031-04-01 08:00"]);
     assert_eq!(wrong_time.status.code(), Some(1));
     assert!(errors_of(&wrong_time).contains("time"));
+}
 
+#[test]
+fn a_published_note_that_did_not_change_adds_nothing_to_a_later_plan() {
+    let setup = set_up();
     setup.publish(NOTE);
+
     let again = setup.run("plan", &["--include", NOTE]);
-    assert_eq!(again.status.code(), Some(1));
-    assert!(errors_of(&again).contains("already published"));
+
+    assert!(again.status.success(), "{}", errors_of(&again));
+    let plan: serde_json::Value = serde_json::from_slice(&again.stdout).expect("the plan is JSON");
+    assert_eq!(
+        plan["plan"],
+        serde_json::json!({ "publish": [], "remove": [], "update": [] })
+    );
 }
 
 /// Without `--time`, the program reads the clock one time and gives the

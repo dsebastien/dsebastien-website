@@ -2,8 +2,20 @@
 // gives the vault of Obsidian. The tests and the parity harness give folders.
 // The logic itself never touches a file system, git or Obsidian.
 
+/** One name of a folder of the vault. */
+export interface VaultEntry {
+    readonly name: string
+    readonly kind: 'file' | 'folder'
+}
+
 /** The vault: the only source of content. */
 export interface Vault {
+    /**
+     * The files and the folders of one folder of the vault, by their names, in
+     * any order. The root is the empty path. A symbolic link is not a file and
+     * not a folder of the vault, so it is not in the result.
+     */
+    list(folder: string): Promise<VaultEntry[]>
     /**
      * The text of the file with exactly this vault path. `undefined` when the
      * vault has no such file: each part of the path must be a name of the
@@ -30,10 +42,18 @@ export interface ContentStore {
     /** The files below a folder, as paths in the content store, in the order of the code points. */
     list(folder: string): Promise<string[]>
     write(path: string, text: string): Promise<void>
+    /** Removes a file. True when the file existed. */
+    remove(path: string): Promise<boolean>
     /**
-     * Puts exactly these files in one commit and pushes it, without force.
-     * When the push is refused, it takes the commit and the files back, and
-     * throws: the copy is then as it was before.
+     * Puts these files back as they are in the last commit of the copy: a
+     * file of the commit gets its text again, and another file is removed.
+     */
+    discard(paths: readonly string[]): Promise<void>
+    /**
+     * Puts exactly these files in one commit and pushes it, without force. A
+     * file that was removed is removed by the commit. When the push is
+     * refused, it takes the commit back, discards the files, and throws: the
+     * copy is then as it was before.
      */
     commitAndPush(message: string, paths: readonly string[]): Promise<void>
 }

@@ -212,6 +212,31 @@
             "name": "a carriage return that stands alone stays, and an empty note stays empty",
             "note": "a\rb\n",
             "source": "a\rb\n"
+        },
+        {
+            "name": "properties that hold only the state property are removed with it",
+            "note": "---\npublic_note: true\n---\nText\n",
+            "source": "Text\n"
+        },
+        {
+            "name": "properties that hold no line are removed",
+            "note": "---\n---\nText\n",
+            "source": "Text\n"
+        },
+        {
+            "name": "properties that hold no line are removed, also at the end of a note without a line end",
+            "note": "---\n---",
+            "source": ""
+        },
+        {
+            "name": "properties that hold an empty line stay",
+            "note": "---\n\n---\nText\n",
+            "source": "---\n\n---\nText\n"
+        },
+        {
+            "name": "the empty line below removed properties stays",
+            "note": "---\r\npublic_note: true\r\n---\r\n\r\nText\r\n",
+            "source": "\nText\n"
         }
     ],
     "state": [
@@ -294,6 +319,73 @@
             "name": "properties that are never closed get a block before them",
             "note": "---\ntags: a\nText\n",
             "result": "---\npublic_note: true\n---\n---\ntags: a\nText\n"
+        }
+    ],
+    "removed": [
+        {
+            "name": "the property is removed, and the other properties stay",
+            "note": "---\ntags: a\npublic_note: true\nlast: b\n---\nText\n",
+            "result": "---\ntags: a\nlast: b\n---\nText\n"
+        },
+        {
+            "name": "a note that does not name the property is not changed",
+            "note": "---\ntags: a\n---\nText\n",
+            "result": "---\ntags: a\n---\nText\n"
+        },
+        {
+            "name": "a note without properties is not changed",
+            "note": "Text\n",
+            "result": "Text\n"
+        },
+        {
+            "name": "properties that hold no line are not changed when the note does not name the property",
+            "note": "---\n---\nText\n",
+            "result": "---\n---\nText\n"
+        },
+        {
+            "name": "the last property goes with the two lines of the properties",
+            "note": "---\npublic_note: true\n---\nText\n",
+            "result": "Text\n"
+        },
+        {
+            "name": "every line of the property goes",
+            "note": "---\npublic_note:\n  - x\n  - y\n---\nText\n",
+            "result": "Text\n"
+        },
+        {
+            "name": "the property two times",
+            "note": "---\npublic_note: true\ntags: a\n\"public_note\": false\n---\nText\n",
+            "result": "---\ntags: a\n---\nText\n"
+        },
+        {
+            "name": "Windows line ends stay",
+            "note": "---\r\ntags: a\r\npublic_note: true\r\n---\r\nText\r\n",
+            "result": "---\r\ntags: a\r\n---\r\nText\r\n"
+        },
+        {
+            "name": "Windows line ends stay when the properties go",
+            "note": "---\r\npublic_note: true\r\n---\r\nText\r\n",
+            "result": "Text\r\n"
+        },
+        {
+            "name": "the byte order mark stays",
+            "note": "\ufeff---\npublic_note: true\n---\nText\n",
+            "result": "\ufeffText\n"
+        },
+        {
+            "name": "the key below another key stays",
+            "note": "---\nmeta:\n  public_note: true\n---\nText\n",
+            "result": "---\nmeta:\n  public_note: true\n---\nText\n"
+        },
+        {
+            "name": "properties that are never closed are not changed",
+            "note": "---\npublic_note: true\nText\n",
+            "result": "---\npublic_note: true\nText\n"
+        },
+        {
+            "name": "a note that is only the property becomes empty",
+            "note": "---\npublic_note: true\n---",
+            "result": ""
         }
     ]
 }

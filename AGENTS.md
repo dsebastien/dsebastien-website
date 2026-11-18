@@ -103,7 +103,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - `documentation/Canonical Form.md` says what both must write. Change it first, then the code.
 - The logic takes the time of the run as an input, reads no clock, uses no random value, and never depends on the system (path separator, locale, order of a folder listing).
 - The TypeScript logic never imports `obsidian`. The plugin gives it what it needs. A lint rule refuses the import.
-- A list that the parity rule compares is sorted with `compareCodePoints` (TypeScript) and as `String` (Rust), never with the default `sort()` and never as `PathBuf`.
+- A list that the parity rule compares is sorted with `compareCodePoints` (TypeScript) and as `String` (Rust), never with the default `sort()`, never with `<` on two texts, and never as `PathBuf`.
 
 ### Business rules compliance
 
@@ -150,7 +150,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
     - `fixtures/vault/`: the fixture vault.
     - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.
     - `fixtures/catalog.json`: the fixture catalog. It says which feature or trap each file of the fixture vault serves.
-    - `fixtures/canonical/cases.json`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them.
+    - `fixtures/canonical/`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them: `cases.json` (data), `properties.json` (the properties of a note), `queue.json` (scenarios of the publication queue).
     - `fixtures/README.md`: the rules, and how to add a note.
 - `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
 - `scripts/`: tooling of the repository and its guard tests.
@@ -197,6 +197,7 @@ bun run rust:test
 - Rust tests run with `bun run rust:test`. Tests of the command line program go through the program itself (`cli/tests/`). One exception: the shared cases of the canonical form are a unit test next to the Rust writer.
 - The parity tests in `parity/` build the Rust program with cargo, so `bun run test` needs the Rust toolchain.
 - A test of a publication works on a copy of the fixture vault and on a copy of the content store, both inside the folder of the test. The expected texts of the two implementations are the same, with hashes that were computed with another tool.
+- A rule of the publication queue gets a step in a scenario of `fixtures/canonical/queue.json` before the second implementation is written. Both test suites run every scenario (`apps/plugin/src/publishing/queue.spec.ts`, `cli/tests/queue.rs`). A scenario has its own small invented vault, so a new note of the fixture vault changes no scenario.
 - The test of the note page publishes a note with the tool, builds the site of that content store and asks the local server: it covers the whole path.
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.
 
@@ -232,6 +233,6 @@ The rules of the author for Tailwind, taken from his other repositories. They ap
 
 Set up: TypeScript, Prettier, Bun test, EditorConfig, ESLint with `--max-warnings 0`, commitlint and commit hooks, the CI workflow, Astro with its check, Tailwind, the Cargo workspace with `rustfmt` and `clippy`, the container for local work (`Dockerfile`, `compose.yaml`), the fixture vault with its catalog, the test helpers for a content store and an attachment storage, the check of private files.
 
-The first slice works end to end (issue 31): the two implementations publish a note for the first time into a content store (`plan`, `publish`), under the canonical form and the parity tests, the site builds one page per published note, and a plain local server serves it through the resolver. The plugin itself still does nothing: its view comes later.
+The publishing logic works for the publication queue (issues 31 and 33): the two implementations give the four lists (`status`), make a plan with paths to include, to hold and to remove (`plan`), and publish new notes, updates and removals into a content store with a report (`publish`), under the canonical form and the parity tests. The site builds one page per published note, and a plain local server serves it through the resolver. The plugin itself still does nothing: its view comes later.
 
 Not set up yet: the deployment, the performance budgets in CI, the lint rules of the Obsidian plugin catalog (the plugin is a tool for the author first).

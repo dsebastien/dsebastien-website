@@ -1,0 +1,611 @@
+import { describe, expect, test } from 'bun:test'
+import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+    copyFixtureVault,
+    gitEnvironment,
+    makeContentStoreCopy,
+    makeTestStores,
+    rejectionOf,
+    type TestStores
+} from '@dsebastien-website/testing'
+import { nodeDevice } from './node/device.ts'
+import type { PublicationPlan, Selection } from './plan.ts'
+import type { Device } from './ports.ts'
+import type { PublicationQueue } from './queue.ts'
+import { plan, publish, status } from './tool.ts'
+import type { Run } from './tool.ts'
+
+// The publication queue (issue 33): the four lists, the selection, the plan,
+// the publication of updates and removals, and the correction of the state
+// property. The scenarios are in `fixtures/canonical/queue.json`. The Rust
+// tests run the same file (`cli/tests/queue.rs`), so both implementations must
+// give what each step states.
+const SCENARIOS = fileURLToPath(
+    new URL('../../../../fixtures/canonical/queue.json', import.meta.url)
+)
+
+/** The lists of paths of a publication report. */
+interface ReportLists {
+    failed: readonly string[]
+    propertyRemoved: readonly string[]
+    propertySet: readonly string[]
+    published: readonly string[]
+    removed: readonly string[]
+    skipped: readonly string[]
+    updated: readonly string[]
+    warnings: readonly string[]
+}
+
+type Files = Record<string, string | null>
+
+type Step = { why: string } & (
+    | { do: 'write'; files: Record<string, string> }
+    | { do: 'delete'; paths: string[] }
+    | { do: 'store'; files: Record<string, string> }
+    | { do: 'status'; queue: PublicationQueue }
+    | { do: 'plan'; selection: Selection; plan?: PublicationPlan; refused?: true }
+    | { do: 'publish'; selection: Selection; time: string; report: ReportLists }
+    | { do: 'expect'; vault: Files; store: Files }
+)
+
+interface Scenario {
+    name: string
+    denyList: string[]
+    vault: Record<string, string>
+    steps: Step[]
+}
+
+// The file is test data of this repository. The cast is the boundary: a wrong
+// shape fails the tests that read it.
+const { scenarios } = (await Bun.file(SCENARIOS).json()) as { scenarios: Scenario[] }
+
+async function git(cwd: string, ...args: string[]): Promise<string> {
+    const child = Bun.spawn(['git', ...args], {
+        cwd,
+        env: gitEnvironment(),
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+    const [output, errors] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text()
+    ])
+    if ((await child.exited) !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${errors.trim()}`)
+    }
+    return output.trimEnd()
+}
+
+async function writeFiles(folder: string, files: Record<string, string>): Promise<void> {
+    for (const [path, text] of Object.entries(files)) {
+        await mkdir(dirname(join(folder, path)), { recursive: true })
+        await writeFile(join(folder, path), text)
+    }
+}
+
+/** Another device: it writes files into the content store and pushes them. */
+async function pushToStore(copy: string, files: Record<string, string>): Promise<void> {
+    await writeFiles(copy, files)
+    await git(copy, 'add', '--', ...Object.keys(files))
+    await git(copy, 'commit', '--quiet', '--message', 'A change of another device')
+    await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+}
+
+/** The text of a file, or `null` when the file does not exist. */
+async function textOf(path: string): Promise<string | null> {
+    const file = Bun.file(path)
+    if (!(await file.exists())) {
+        return null
+    }
+    return new TextDecoder('utf-8', { ignoreBOM: true }).decode(await file.bytes())
+}
+
+describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
+    'scenario of the publication queue: %s',
+    (_name, scenario) => {
+        test('every step gives what the shared file states', async () => {
+            await using stores = await makeTestStores()
+            const vault = join(stores.root, 'vault')
+            await mkdir(vault)
+            await writeFiles(vault, scenario.vault)
+            const copy = await makeContentStoreCopy(stores)
+            await pushToStore(copy, {
+                'configuration.json': JSON.stringify({ denyList: scenario.denyList })
+            })
+            const device = nodeDevice({ vault, contentStore: copy })
+
+            for (const [index, step] of scenario.steps.entries()) {
+                const label = `step ${String(index + 1)}: ${step.why}`
+                if (step.do === 'write') {
+                    await writeFiles(vault, step.files)
+                } else if (step.do === 'delete') {
+                    for (const path of step.paths) {
+                        await rm(join(vault, path))
+                    }
+                } else if (step.do === 'store') {
+                    await pushToStore(copy, step.files)
+                } else if (step.do === 'status') {
+                    expect(await status(device), label).toEqual(step.queue)
+                } else if (step.do === 'plan') {
+                    if (step.refused === true) {
+                        expect(await rejectionOf(plan(device, step.selection)), label).not.toBe('')
+                    } else {
+                        expect((await plan(device, step.selection)).plan, label).toEqual(
+                            step.plan ?? { publish: [], update: [], remove: [] }
+                        )
+                    }
+                } else if (step.do === 'publish') {
+                    const planned = await plan(device, step.selection)
+                    const report = await publish(device, planned.id, {
+                        time: step.time,
+                        device: 'garden-shed',
+                        face: 'plugin'
+                    })
+                    const lists: ReportLists = {
+                        ...report,
+                        failed: report.failed.map((entry) => entry.path),
+                        warnings: report.warnings.map((entry) => entry.path)
+                    }
+                    expect(lists, label).toEqual(step.report)
+                } else {
+                    for (const [path, text] of Object.entries(step.vault)) {
+                        expect(await textOf(join(vault, path)), `${label}: ${path}`).toBe(text)
+                    }
+                    for (const [path, text] of Object.entries(step.store)) {
+                        expect(await textOf(join(copy, path)), `${label}: ${path}`).toBe(text)
+                    }
+                }
+            }
+        }, 120_000)
+    }
+)
+
+describe('shared scenarios of the publication queue', () => {
+    test('the file has scenarios with steps of each kind', () => {
+        const kinds = new Set(
+            scenarios.flatMap((scenario) => scenario.steps.map((step) => step.do))
+        )
+        expect([...kinds].sort()).toEqual([
+            'delete',
+            'expect',
+            'plan',
+            'publish',
+            'status',
+            'store',
+            'write'
+        ])
+        expect(scenarios.length).toBeGreaterThanOrEqual(3)
+    })
+})
+
+// The rest goes through the fixture vault. The Rust tests state the same
+// expected texts (`cli/tests/queue.rs`). The hashes were computed with
+// `sha256sum`, not with this code.
+
+const NOTE = '10 Garden/Frost dates explained.md'
+const SECOND = '10 Garden/Compost basics.md'
+const TIME = '2031-04-01T08:00:00Z'
+const LATER = '2031-04-02T09:00:00Z'
+const RUN: Run = { time: TIME, device: 'garden-shed', face: 'plugin' }
+const NOTE_ID = '203d446940c02032'
+const SECOND_ID = 'd0fd5a0726f54141'
+
+// The note with one more line, and the hash of that text.
+const EDIT = '\nA second paragraph.\n'
+// The hash of the second note.
+const SECOND_HASH = 'sha256:bcd6b6e0fe725e19061691651bd572fa6c592774832ed25732644e51e8114c36'
+const EDITED_HASH = 'sha256:ae719597cce4e0bc1f415607af4723afb0a28eb9fa09c45179bc0aca4a53605c'
+
+interface Setup {
+    vault: string
+    copy: string
+    device: Device
+}
+
+async function setUp(stores: TestStores): Promise<Setup> {
+    const vault = await copyFixtureVault(stores)
+    const copy = await makeContentStoreCopy(stores)
+    return { vault, copy, device: nodeDevice({ vault, contentStore: copy }) }
+}
+
+async function publishNotes(setup: Setup, selection: Selection, run: Run = RUN) {
+    const planned = await plan(setup.device, selection)
+    return await publish(setup.device, planned.id, run)
+}
+
+async function append(path: string, text: string): Promise<void> {
+    await writeFile(path, (await Bun.file(path).text()) + text)
+}
+
+/** Every file of a folder with a hash of its bytes: a picture to compare before and after. */
+async function picture(folder: string): Promise<Record<string, string>> {
+    const entries = await readdir(folder, { recursive: true, withFileTypes: true })
+    const files: Record<string, string> = {}
+    for (const entry of entries) {
+        const path = join(entry.parentPath, entry.name)
+        if (entry.isFile()) {
+            const hash = new Bun.CryptoHasher('sha256').update(await Bun.file(path).bytes())
+            files[path.slice(folder.length + 1)] = hash.digest('hex')
+        }
+    }
+    return files
+}
+
+function hashOf(text: string): string {
+    return `sha256:${new Bun.CryptoHasher('sha256').update(text).digest('hex')}`
+}
+
+describe('status of the fixture vault', () => {
+    test('lists every candidate, and no note under a guard', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores)
+
+        const queue = await status(device)
+
+        expect(queue.new).toContain(NOTE)
+        expect(queue.new).toContain('Welcome.md')
+        expect(queue.counts).toEqual({
+            changed: 0,
+            new: queue.new.length,
+            toRemove: 0,
+            unchanged: 0
+        })
+        // The guards: two folders of the deny list, and the ignore property.
+        expect(queue.new.filter((path) => path.startsWith('80 Templates/'))).toEqual([])
+        expect(queue.new.filter((path) => path.startsWith('90 Locked Shed/'))).toEqual([])
+        expect(queue.new).not.toContain('10 Garden/Neighbour dispute.md')
+        // Only notes: no attachment, no canvas.
+        expect(queue.new.filter((path) => !path.endsWith('.md'))).toEqual([])
+    })
+
+    test('writes nothing into the vault and into the copy of the content store', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE] })
+        const before = { vault: await picture(setup.vault), copy: await picture(setup.copy) }
+
+        await status(setup.device)
+
+        expect(await picture(setup.vault)).toEqual(before.vault)
+        expect(await picture(setup.copy)).toEqual(before.copy)
+    })
+
+    test('stops when a note cannot be read, and names it', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(setup.vault, '10 Garden/Broken.md'), Uint8Array.from([0xff, 0xfe]))
+
+        expect(await rejectionOf(status(setup.device))).toContain('10 Garden/Broken.md')
+    })
+
+    test('stops when the deny list names no folder of the vault', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await rm(join(setup.vault, '90 Locked Shed'), { recursive: true })
+
+        expect(await rejectionOf(status(setup.device))).toContain('90 Locked Shed')
+    })
+})
+
+describe('manifest that cannot be trusted', () => {
+    const ENTRY = {
+        attachments: [],
+        cleanedHash: 'sha256:00',
+        cleaningVersion: 1,
+        firstPublished: TIME,
+        formerPaths: [],
+        id: '00000000000000aa',
+        lastPublished: TIME,
+        path: 'Welcome.md',
+        sourceHash: 'sha256:00',
+        state: 'published'
+    }
+    const cases: [string, Record<string, string>][] = [
+        [
+            'a path that leaves the notes',
+            {
+                'manifest/00000000000000aa.json': JSON.stringify({
+                    ...ENTRY,
+                    path: '../Welcome.md'
+                })
+            }
+        ],
+        [
+            'a path that is not a note',
+            { 'manifest/00000000000000aa.json': JSON.stringify({ ...ENTRY, path: 'Welcome' }) }
+        ],
+        [
+            'an id that is not 16 hexadecimal digits',
+            { 'manifest/x.json': JSON.stringify({ ...ENTRY, id: '../../x' }) }
+        ],
+        [
+            'a file that does not have the name of its entry',
+            { 'manifest/00000000000000bb.json': JSON.stringify(ENTRY) }
+        ],
+        [
+            'two entries with the same path',
+            {
+                'manifest/00000000000000aa.json': JSON.stringify(ENTRY),
+                'manifest/00000000000000bb.json': JSON.stringify({
+                    ...ENTRY,
+                    id: '00000000000000bb'
+                })
+            }
+        ],
+        [
+            'a state that the tool does not know',
+            { 'manifest/00000000000000aa.json': JSON.stringify({ ...ENTRY, state: 'live' }) }
+        ],
+        ['a file that is not JSON', { 'manifest/00000000000000aa.json': 'not JSON' }]
+    ]
+
+    test.each(cases)('%s stops the status and the plan', async (_name, files) => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await pushToStore(setup.copy, files)
+
+        expect(await rejectionOf(status(setup.device))).toContain('manifest')
+        expect(await rejectionOf(plan(setup.device, { include: [] }))).toContain('manifest')
+    })
+})
+
+describe('plan and what it shows', () => {
+    // TEST-22: the review holds. The record of the plan holds the hash of each
+    // cleaned note, and the publication writes exactly that text.
+    test('the cleaned notes after a publication equal the text that the plan showed', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE] })
+        await append(join(setup.vault, NOTE), EDIT)
+
+        const planned = await plan(setup.device, { include: [SECOND] })
+        const record = (await Bun.file(
+            join(setup.copy, '.git', 'vault-publish', 'plans', `${planned.id}.json`)
+        ).json()) as { state: { notes: { path: string; cleanedHash: string }[] } }
+        await publish(setup.device, planned.id, { ...RUN, time: LATER })
+
+        expect(record.state.notes.map((note) => note.path)).toEqual([SECOND, NOTE])
+        for (const note of record.state.notes) {
+            const cleaned = await Bun.file(join(setup.copy, 'notes', note.path)).text()
+            expect(hashOf(cleaned), note.path).toBe(note.cleanedHash)
+        }
+        expect(record.state.notes[0]?.cleanedHash).toBe(SECOND_HASH)
+        expect(record.state.notes[1]?.cleanedHash).toBe(EDITED_HASH)
+    })
+
+    test('a published note that is edited after a plan without paths makes the plan stale', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE, SECOND] })
+        await append(join(setup.vault, NOTE), EDIT)
+        const planned = await plan(setup.device, { include: [] })
+        // The plan did not show this change, so it cannot publish it (PUB-53).
+        await append(join(setup.vault, SECOND), EDIT)
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('stale')
+        expect(await Bun.file(join(setup.copy, 'notes', NOTE)).text()).not.toContain(
+            'A second paragraph.'
+        )
+    })
+
+    test('a new candidate after the plan does not make the plan stale', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(join(setup.vault, '10 Garden/A new idea.md'), 'An idea\n')
+
+        const report = await publish(setup.device, planned.id, RUN)
+
+        expect(report.published).toEqual([NOTE])
+    })
+})
+
+describe('commit of a publication of the queue', () => {
+    // PUB-29: the counts, the device, the face and the number of skipped entries.
+    test('has a message with the counts, the device and the face', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE, SECOND, 'Welcome.md'] })
+        await append(join(setup.vault, NOTE), EDIT)
+        await append(join(setup.vault, SECOND), EDIT)
+
+        await publishNotes(
+            setup,
+            { include: ['10 Garden/Bean trellis.md'], hold: [SECOND], remove: ['Welcome.md'] },
+            { time: LATER, device: 'garden-shed', face: 'mcp-server' }
+        )
+
+        expect(await git(setup.copy, 'log', '-1', '--format=%B')).toBe(
+            'Publish: 1 new, 1 updated, 1 removed, 1 skipped\n\nDevice: garden-shed\nFace: mcp-server'
+        )
+        // One commit, and the content store has it.
+        expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('3')
+        expect(await git(stores.contentStore, 'rev-parse', 'main')).toBe(
+            await git(setup.copy, 'rev-parse', 'HEAD')
+        )
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+    })
+
+    test('refuses a device name that is not one line, and a face that the tool does not have', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const attempt = async (run: Run): Promise<string> =>
+            await rejectionOf(publish(setup.device, planned.id, run))
+
+        expect(await attempt({ ...RUN, device: 'shed\nFace: plugin' })).toContain('device')
+        expect(await attempt({ ...RUN, device: ' ' })).toContain('device')
+        // A face comes from outside the types when a face of the tool passes a text.
+        expect(await attempt({ ...RUN, face: 'robot' as Run['face'] })).toContain('face')
+        expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('1')
+    })
+
+    // A note name can hold the characters of a git pattern.
+    test('holds only the files of the publication when a note name is a pattern for git', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const pattern = '10 Garden/Beds [ab].md'
+        await writeFile(join(setup.vault, pattern), 'Beds\n')
+        // A file of the copy that the pattern would name, and that no publication wrote.
+        await mkdir(join(setup.copy, 'notes/10 Garden'), { recursive: true })
+        await writeFile(join(setup.copy, 'notes/10 Garden/Beds a.md'), 'Not of this publication\n')
+
+        await publishNotes(setup, { include: [pattern] })
+
+        const files = await git(setup.copy, 'show', '--name-only', '--format=', 'HEAD')
+        expect(files.split('\n').filter((file) => file.startsWith('notes/'))).toEqual([
+            'notes/10 Garden/Beds [ab].md'
+        ])
+    })
+})
+
+describe('publication with a note that fails', () => {
+    // PUB-26: a failure of one note before the commit leaves that note out and
+    // reports it. Here a file of the copy is in the place of the folder of the
+    // note, so the cleaned note cannot be written.
+    test('leaves the note out, reports it, and publishes the other notes', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const blocked = '30 People/Ada Quillfeather.md'
+        await mkdir(join(setup.copy, 'notes'), { recursive: true })
+        await writeFile(join(setup.copy, 'notes/30 People'), 'A file in the place of a folder\n')
+
+        const report = await publishNotes(setup, { include: [NOTE, blocked] })
+
+        expect(report.published).toEqual([NOTE])
+        expect(report.failed.map((entry) => entry.path)).toEqual([blocked])
+        expect(report.failed[0]?.reason).not.toBe('')
+        // The note that failed is not published: no entry, no property.
+        expect(await readdir(join(setup.copy, 'manifest'))).toEqual([`${NOTE_ID}.json`])
+        expect(await Bun.file(join(setup.vault, blocked)).text()).not.toContain('public_note')
+        expect(report.propertySet).toEqual([NOTE])
+        expect(await status(setup.device).then((queue) => queue.new)).toContain(blocked)
+    })
+
+    // The two files of a note are one unit: the cleaned note is not left
+    // behind when its manifest entry cannot be written.
+    test('puts the cleaned note back when the manifest entry cannot be written', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        // A folder in the place of the manifest entry of the note.
+        await mkdir(join(setup.copy, 'manifest', `${SECOND_ID}.json`), { recursive: true })
+
+        const report = await publishNotes(setup, { include: [NOTE, SECOND] })
+
+        expect(report.published).toEqual([NOTE])
+        expect(report.failed.map((entry) => entry.path)).toEqual([SECOND])
+        expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(false)
+        expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(true)
+    })
+
+    test('publishes nothing and corrects nothing when every note fails', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const blocked = '30 People/Ada Quillfeather.md'
+        await mkdir(join(setup.copy, 'notes'), { recursive: true })
+        await writeFile(join(setup.copy, 'notes/30 People'), 'A file in the place of a folder\n')
+        const before = await picture(setup.vault)
+
+        const report = await publishNotes(setup, { include: [blocked] })
+
+        expect(report.published).toEqual([])
+        expect(report.failed.map((entry) => entry.path)).toEqual([blocked])
+        expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('1')
+        expect(await picture(setup.vault)).toEqual(before)
+    })
+})
+
+describe('correction of the state property', () => {
+    // PUB-13: a file that changed during the run is skipped and reported. The
+    // device of this test edits a note at the moment of the push.
+    test('skips a note that changed during the publication, and reports it', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const wrong = '10 Garden/Bean trellis.md'
+        const store = setup.device.store
+        const device: Device = {
+            ...setup.device,
+            store: {
+                ...store,
+                async commitAndPush(message, paths) {
+                    await store.commitAndPush(message, paths)
+                    await append(join(setup.vault, wrong), 'A line that the author adds now.\n')
+                }
+            }
+        }
+        const planned = await plan(device, { include: [NOTE] })
+
+        const report = await publish(device, planned.id, RUN)
+
+        expect(report.propertySet).toEqual([NOTE])
+        expect(report.propertyRemoved).toEqual([])
+        expect(report.warnings.map((warning) => warning.path)).toEqual([wrong])
+        const text = await Bun.file(join(setup.vault, wrong)).text()
+        expect(text).toContain('public_note: true')
+        expect(text).toContain('A line that the author adds now.')
+
+        // The next publication corrects it.
+        const next = await publishNotes(setup, { include: [SECOND] }, { ...RUN, time: LATER })
+        expect(next.propertyRemoved).toEqual([wrong])
+        expect(next.warnings).toEqual([])
+    })
+
+    test.skipIf(process.platform === 'win32')(
+        'reports a note that cannot be written, and the publication stays done',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const wrong = '10 Garden/Bean trellis.md'
+            await chmod(join(setup.vault, wrong), 0o444)
+
+            const report = await publishNotes(setup, { include: [NOTE] })
+
+            expect(report.published).toEqual([NOTE])
+            expect(report.warnings.map((warning) => warning.path)).toEqual([wrong])
+            expect(await git(stores.contentStore, 'rev-list', '--count', 'main')).toBe('2')
+        }
+    )
+
+    // TEST-20: no correction when the push fails.
+    test('a refused push of an update puts the copy back and corrects nothing', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        // A setting of the machine that converts line ends must not change a file that is put back.
+        await git(setup.copy, 'config', 'core.autocrlf', 'true')
+        await publishNotes(setup, { include: [NOTE, 'Welcome.md'] })
+        const published = await Bun.file(join(setup.copy, 'notes', NOTE)).text()
+        await append(join(setup.vault, NOTE), EDIT)
+        const planned = await plan(setup.device, { include: [SECOND], remove: ['Welcome.md'] })
+        // Another device pushes first. The copy of this device does not know it.
+        const other = await makeContentStoreCopyOf(stores, 'other')
+        await pushToStore(other, { 'elsewhere.txt': 'A change of another device\n' })
+        const before = {
+            vault: await picture(setup.vault),
+            head: await git(setup.copy, 'rev-parse', 'HEAD')
+        }
+
+        expect(
+            await rejectionOf(publish(setup.device, planned.id, { ...RUN, time: LATER }))
+        ).toContain('refused')
+
+        expect(await git(setup.copy, 'rev-parse', 'HEAD')).toBe(before.head)
+        expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+        // The file of the update has its committed text again, and the file of the removal is back.
+        expect(await Bun.file(join(setup.copy, 'notes', NOTE)).text()).toBe(published)
+        expect(await Bun.file(join(setup.copy, 'notes/Welcome.md')).exists()).toBe(true)
+        expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(false)
+        expect(await picture(setup.vault)).toEqual(before.vault)
+    })
+})
+
+/** A second clone of the content store: the copy of another device. */
+async function makeContentStoreCopyOf(stores: TestStores, name: string): Promise<string> {
+    const copy = join(stores.root, name)
+    await git(stores.root, 'clone', '--quiet', stores.contentStore, copy)
+    await git(copy, 'config', 'user.name', 'Other')
+    await git(copy, 'config', 'user.email', 'other@example.invalid')
+    await git(copy, 'config', 'commit.gpgsign', 'false')
+    return copy
+}

@@ -14,14 +14,18 @@ pub enum Guard {
     IgnoreProperty,
 }
 
-/// The guard that excludes the note, or `None` when no guard does.
-pub fn guard_of(path: &str, text: &str, configuration: &Configuration) -> Option<Guard> {
-    // A folder of the deny list covers every file below it.
-    let denied = configuration.deny_list.iter().any(|folder| {
+/// True when the path alone is under a guard: a folder of the deny list covers
+/// every file below it.
+pub fn in_deny_list(path: &str, configuration: &Configuration) -> bool {
+    configuration.deny_list.iter().any(|folder| {
         path.strip_prefix(folder.as_str())
             .is_some_and(|rest| rest.starts_with('/'))
-    });
-    if denied {
+    })
+}
+
+/// The guard that excludes the note, or `None` when no guard does.
+pub fn guard_of(path: &str, text: &str, configuration: &Configuration) -> Option<Guard> {
+    if in_deny_list(path, configuration) {
         return Some(Guard::DenyList);
     }
     // The reading fails closed: every form of the key excludes the note,

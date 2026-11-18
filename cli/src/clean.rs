@@ -1,7 +1,7 @@
 //! The cleaning step: a selected note becomes one cleaned note (MOD-03 of the
 //! spec). The TypeScript twin is `apps/plugin/src/publishing/clean.ts`.
 
-use crate::frontmatter::{MARK, remove_property};
+use crate::frontmatter::{MARK, remove_property, without_empty_properties};
 
 /// The version of the cleaning step. A new version makes a technical update of
 /// every note (PUB-24).
@@ -12,11 +12,16 @@ pub const CLEANING_VERSION: u64 = 1;
 pub const STATE_PROPERTY: &str = "public_note";
 
 /// The source of a note: its text in the vault without its byte order mark,
-/// with Unix line ends and without the state property. The property is the state in the vault, not content, so
-/// a correction of the property never makes a note "changed" (PUB-14).
+/// with Unix line ends, without the state property and without properties that
+/// hold no line. The property is the state in the vault, not content, so a
+/// correction of the property never makes a note "changed" (PUB-14), also when
+/// the tool had to add the properties to write it.
 pub fn source_of(text: &str) -> String {
     let marked = text.strip_prefix(MARK).unwrap_or(text);
-    remove_property(&marked.replace("\r\n", "\n"), STATE_PROPERTY)
+    without_empty_properties(&remove_property(
+        &marked.replace("\r\n", "\n"),
+        STATE_PROPERTY,
+    ))
 }
 
 /// The cleaned note of a source. The first version changes nothing: a selected

@@ -50,7 +50,10 @@ _Avoid_: deploy, sync, upload
 The list of new, changed and removed notes that wait for a publication.
 
 **Skip**:
-To leave a change in the publication queue without publishing it. The live version stays.
+To leave a change in the publication queue without publishing it. The live version stays. A plan names such a note in its paths to hold.
+
+**Technical update**:
+An update of a published note that the author did not edit: only the version of the cleaning step moved. It does not move the dates of the note.
 
 **Publication plan**:
 The exact list of what one publication will do: the notes to publish, to update and to remove. The author reviews it before the publication.

@@ -1,3 +1,4 @@
+import { isVaultPath } from './configuration.ts'
 import { sha256Hex } from './hash.ts'
 import type { ContentStore } from './ports.ts'
 
@@ -27,7 +28,8 @@ export type ManifestEntry = {
     /** The vault path of the note. */
     readonly path: string
     readonly sourceHash: string
-    readonly state: 'published'
+    /** `unpublished` after a publication removed the note. The entry stays: it keeps the identity of the note. */
+    readonly state: 'published' | 'unpublished'
 }
 
 /**
@@ -47,9 +49,26 @@ function isTextList(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
-/** Reads one entry from the text of its file. It throws when the text is not an entry. */
+/** The form of the identity of a note: 16 hexadecimal digits. It names the file of the entry. */
+const NOTE_ID = /^[0-9a-f]{16}$/
+
+/** True when the path is the vault path of a note: its name ends in `.md`, in small letters. */
+export function isNotePath(path: string): boolean {
+    return isVaultPath(path) && path.endsWith('.md')
+}
+
+/**
+ * Reads one entry from the text of its file. It throws when the text is not an
+ * entry. The path and the id are checked, because the tool makes paths of the
+ * content store from them.
+ */
 export function parseManifestEntry(text: string, file: string): ManifestEntry {
-    const value: unknown = JSON.parse(text)
+    let value: unknown
+    try {
+        value = JSON.parse(text)
+    } catch {
+        value = undefined
+    }
     if (!isRecord(value)) {
         throw new Error(`${file} is not a manifest entry`)
     }
@@ -64,10 +83,12 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         typeof firstPublished !== 'string' ||
         !isTextList(formerPaths) ||
         typeof id !== 'string' ||
+        !NOTE_ID.test(id) ||
         typeof lastPublished !== 'string' ||
         typeof path !== 'string' ||
+        !isNotePath(path) ||
         typeof sourceHash !== 'string' ||
-        state !== 'published'
+        (state !== 'published' && state !== 'unpublished')
     ) {
         throw new Error(`${file} is not a manifest entry`)
     }
@@ -85,14 +106,31 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
     }
 }
 
-/** Reads every entry of the manifest of a content store. */
-export async function readManifest(store: ContentStore): Promise<ManifestEntry[]> {
-    const entries: ManifestEntry[] = []
+/** The path of the entry of a note in the content store. */
+export function manifestFile(id: string): string {
+    return `${MANIFEST_FOLDER}/${id}.json`
+}
+
+/**
+ * Reads every entry of the manifest of a content store, by the vault path of
+ * its note. It throws when a file is not an entry, when a file does not have
+ * the name of its entry, and when two entries have the same path.
+ */
+export async function readManifest(store: ContentStore): Promise<Map<string, ManifestEntry>> {
+    const entries = new Map<string, ManifestEntry>()
     for (const file of await store.list(MANIFEST_FOLDER)) {
         const text = await store.read(file)
-        if (text !== undefined) {
-            entries.push(parseManifestEntry(text, file))
+        if (text === undefined) {
+            continue
         }
+        const entry = parseManifestEntry(text, file)
+        if (file !== manifestFile(entry.id)) {
+            throw new Error(`${file} does not have the name of its manifest entry`)
+        }
+        if (entries.has(entry.path)) {
+            throw new Error(`two manifest entries have the path "${entry.path}"`)
+        }
+        entries.set(entry.path, entry)
     }
     return entries
 }

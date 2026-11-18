@@ -1,9 +1,17 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, readdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { copyFixtureVault, makeContentStoreCopy, makeTestStores } from '@dsebastien-website/testing'
+import {
+    copyFixtureVault,
+    gitEnvironment,
+    makeContentStoreCopy,
+    makeTestStores
+} from '@dsebastien-website/testing'
+import { toCanonicalJson } from '../apps/plugin/src/publishing/canonical.ts'
+import type { CanonicalValue } from '../apps/plugin/src/publishing/canonical.ts'
 import { nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
-import { plan, publish } from '../apps/plugin/src/publishing/tool.ts'
+import type { Selection } from '../apps/plugin/src/publishing/plan.ts'
+import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import { buildRustProgram, runRustProgram } from './harness.ts'
 
 // The parity rule (ADR 0009, TEST-03 of the spec): for the same input, the
@@ -13,6 +21,7 @@ import { buildRustProgram, runRustProgram } from './harness.ts'
 // failure here blocks a release.
 
 const TIME = '2031-04-01T08:00:00Z'
+const DEVICE = 'garden-shed'
 
 // Notes that give the comparison something to disagree on: a plain note, a
 // note at the root, a note whose property is removed by the cleaning step, a
@@ -50,14 +59,16 @@ const CRAFTED: Record<string, string> = {
 }
 
 // Notes that no implementation may publish. Both must refuse each one.
-const REFUSED: Record<string, string | Uint8Array> = {
+const REFUSED: Record<string, string> = {
     'Refused/Quoted key.md': '---\n"publish_ignore": yes # never\n---\nText\n',
     'Refused/Nested key.md': '---\nmeta:\n  publish_ignore: true\n---\nText\n',
     'Refused/Value below.md': '---\npublish_ignore:\n  - true\n---\nText\n',
     'Refused/Mark.md': `${MARK}---\npublish_ignore: true\n---\nText\n`,
-    'Refused/Next line character.md': '---\npublish_ignore: false\u0085\n---\nText\n',
-    'Refused/Not UTF-8.md': Uint8Array.from([0x63, 0x61, 0x66, 0xe9, 0x0a])
+    'Refused/Next line character.md': '---\npublish_ignore: false\u0085\n---\nText\n'
 }
+
+// A note that cannot be read stops every plan, so it is not in the vault of the other cases.
+const NOT_UTF8 = 'Refused/Not UTF-8.md'
 
 /** Paths that no implementation may publish, with no file to write. */
 const REFUSED_PATHS = [
@@ -129,7 +140,7 @@ type Implementation = (vault: string, copy: string, include: readonly string[]) 
 const typescript: Implementation = async (vault, copy, include) => {
     const device = nodeDevice({ vault, contentStore: copy })
     const planned = await plan(device, { include })
-    await publish(device, planned.id, TIME)
+    await publish(device, planned.id, { time: TIME, device: DEVICE, face: 'command-line' })
 }
 
 let program: string
@@ -250,6 +261,256 @@ describe('parity of a first publication', () => {
     })
 })
 
+// The publication queue (issue 33). Each implementation goes through the same
+// story on stores of its own: a first publication, then what an author and
+// another device do, then the queue, a plan with paths to include, to hold and
+// to remove, and its publication.
+
+const LATER = '2031-04-02T09:00:00Z'
+
+/** One implementation on one vault and one copy of the content store. Every result is text in the canonical form. */
+interface Tool {
+    status(): Promise<string>
+    /** Makes the plan of a selection, applies it, and gives the plan and the lists of paths of the report. */
+    publish(selection: Selection, time: string): Promise<{ plan: string; report: string }>
+}
+
+/** The lists of paths of a report: the texts for a person are outside the parity rule. */
+function reportLists(report: Record<string, unknown>): string {
+    const pathsOf = (list: unknown): string[] =>
+        Array.isArray(list)
+            ? list.map((item: unknown) =>
+                  typeof item === 'string' ? item : (item as { path: string }).path
+              )
+            : []
+    return toCanonicalJson(
+        Object.fromEntries(Object.keys(report).map((key) => [key, pathsOf(report[key])]))
+    )
+}
+
+function typescriptTool(vault: string, copy: string): Tool {
+    const device = nodeDevice({ vault, contentStore: copy })
+    return {
+        status: async () => toCanonicalJson(await status(device)),
+        async publish(selection, time) {
+            const planned = await plan(device, selection)
+            const report = await publish(device, planned.id, {
+                time,
+                device: DEVICE,
+                face: 'command-line'
+            })
+            return { plan: toCanonicalJson(planned.plan), report: reportLists(report) }
+        }
+    }
+}
+
+function rustTool(vault: string, copy: string): Tool {
+    const places = ['--vault', vault, '--content-store', copy]
+    const run = async (command: string, args: readonly string[]): Promise<string> => {
+        const result = await runRustProgram(program, [command, ...places, ...args])
+        expect(result.stderr, command).toBe('')
+        return new TextDecoder().decode(result.stdout)
+    }
+    return {
+        status: () => run('status', []),
+        async publish(selection, time) {
+            const planned = JSON.parse(
+                await run('plan', [
+                    ...selection.include.map((path) => `--include=${path}`),
+                    ...(selection.hold ?? []).map((path) => `--hold=${path}`),
+                    ...(selection.remove ?? []).map((path) => `--remove=${path}`)
+                ])
+            ) as { id: string; plan: Record<string, CanonicalValue> }
+            const report = JSON.parse(
+                await run('publish', ['--plan', planned.id, '--time', time, '--device', DEVICE])
+            ) as Record<string, unknown>
+            return { plan: toCanonicalJson(planned.plan), report: reportLists(report) }
+        }
+    }
+}
+
+async function git(cwd: string, ...args: string[]): Promise<void> {
+    const child = Bun.spawn(['git', ...args], { cwd, env: gitEnvironment(), stderr: 'pipe' })
+    const errors = await new Response(child.stderr).text()
+    if ((await child.exited) !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${errors.trim()}`)
+    }
+}
+
+const EDITED = '10 Garden/Frost dates explained.md'
+const EDITED_WINDOWS = 'Crafted/Windows line ends.md'
+const HELD = 'Welcome.md'
+const MISSING = '10 Garden/～ Pond.md'
+const GUARDED = 'Crafted/No properties.md'
+const TECHNICAL = '10 Garden/🌱 Seedlings.md'
+const UNPUBLISHED = 'Crafted/Lone return.md'
+const HAND = 'Crafted/Byte order mark.md'
+const NEW = 'Crafted/New note.md'
+const WRONG = 'Crafted/Wrong property.md'
+
+/** What the author and another device do after the first publication. */
+async function change(vault: string, copy: string): Promise<void> {
+    const append = async (path: string, text: string): Promise<void> => {
+        const file = join(vault, path)
+        const before = new TextDecoder('utf-8', { ignoreBOM: true }).decode(
+            await Bun.file(file).bytes()
+        )
+        await writeFile(file, before + text)
+    }
+    await append(EDITED, '\nA second paragraph.\n')
+    await append(EDITED_WINDOWS, 'A third line\r\n')
+    await append(HELD, '\nA change that is not ready.\n')
+    await rm(join(vault, MISSING))
+    await writeFile(join(vault, GUARDED), '---\npublish_ignore: true\n---\nText\n')
+    // The author removes the property of a published note by hand.
+    await writeFile(join(vault, HAND), `${MARK}---\ntags: a\n---\nText\n`)
+    await writeFile(join(vault, NEW), '---\r\ntags: a\r\n---\r\nNew\r\n')
+    // A note that carries the property by mistake and that nobody selects.
+    await writeFile(join(vault, WRONG), `${MARK}---\npublic_note: true\n---\nNever selected\n`)
+
+    // The entry of one note comes from an older version of the cleaning step.
+    for (const file of await readdir(join(copy, 'manifest'))) {
+        const path = join(copy, 'manifest', file)
+        const entry = (await Bun.file(path).json()) as Record<string, CanonicalValue>
+        if (entry['path'] === TECHNICAL) {
+            await writeFile(path, toCanonicalJson({ ...entry, cleaningVersion: 0 }))
+            await git(copy, 'add', '--', `manifest/${file}`)
+            await git(copy, 'commit', '--quiet', '--message', 'An entry of an older version')
+            await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+        }
+    }
+}
+
+/** What one implementation gave at each step of the story. */
+interface Story {
+    queueBefore: string
+    publication: { plan: string; report: string }
+    queueAfter: string
+    left: Result
+}
+
+async function story(toolOf: (vault: string, copy: string) => Tool): Promise<Story> {
+    await using stores = await makeTestStores()
+    const vault = await copyFixtureVault(stores)
+    const copy = await makeContentStoreCopy(stores)
+    await craft(vault)
+    const tool = toolOf(vault, copy)
+    await tool.publish({ include: PUBLISHED }, TIME)
+    await change(vault, copy)
+    const queueBefore = await tool.status()
+    const publication = await tool.publish(
+        { include: [NEW], hold: [HELD], remove: [UNPUBLISHED] },
+        LATER
+    )
+    return {
+        queueBefore,
+        publication,
+        queueAfter: await tool.status(),
+        left: await resultOf(vault, copy)
+    }
+}
+
+describe('parity of the publication queue', () => {
+    let fromTypeScript: Story
+    let fromRust: Story
+
+    beforeAll(async () => {
+        fromTypeScript = await story(typescriptTool)
+        fromRust = await story(rustTool)
+    }, 120_000)
+
+    test('both implementations give the same queue', () => {
+        expect(fromRust.queueBefore).toBe(fromTypeScript.queueBefore)
+        expect(fromRust.queueAfter).toBe(fromTypeScript.queueAfter)
+    })
+
+    test('both implementations make the same plan and the same report', () => {
+        expect(fromRust.publication).toEqual(fromTypeScript.publication)
+    })
+
+    test('both implementations store the same plans', () => {
+        expect(fromRust.left.plans).toEqual(fromTypeScript.left.plans)
+        expect(fromTypeScript.left.plans.length).toBe(2)
+    })
+
+    test('both implementations write the same content store', () => {
+        expect(fromRust.left.store).toEqual(fromTypeScript.left.store)
+    })
+
+    test('both implementations leave the same vault', () => {
+        expect(fromRust.left.vault).toEqual(fromTypeScript.left.vault)
+    })
+
+    // The comparison must have something to compare. The expected values are stated by hand.
+    test('the queue has a note in each list', () => {
+        const queue = JSON.parse(fromRust.queueBefore) as Record<string, string[]>
+        expect(queue['changed']).toEqual([EDITED, TECHNICAL, EDITED_WINDOWS, HELD])
+        expect(queue['technicalUpdates']).toEqual([TECHNICAL])
+        expect(queue['toRemove']).toEqual([MISSING, GUARDED])
+        expect(queue['new']).toContain(NEW)
+        expect(queue['new']).toContain(WRONG)
+        expect(queue['unchanged']).toContain(HAND)
+        expect(queue['unchanged']).toContain(UNPUBLISHED)
+    })
+
+    test('the publication does what the selection says', () => {
+        expect(JSON.parse(fromRust.publication.plan)).toEqual({
+            publish: [NEW],
+            remove: [UNPUBLISHED],
+            update: [EDITED, TECHNICAL, EDITED_WINDOWS]
+        })
+        const report = JSON.parse(fromRust.publication.report) as Record<string, string[]>
+        expect(report['published']).toEqual([NEW])
+        expect(report['updated']).toEqual([EDITED, TECHNICAL, EDITED_WINDOWS])
+        expect(report['removed']).toEqual([UNPUBLISHED])
+        expect(report['skipped']).toEqual([HELD])
+        expect(report['failed']).toEqual([])
+        // The note under a guard is still published, so it has the property until it is removed.
+        expect(report['propertySet']).toEqual([HAND, NEW, GUARDED])
+        expect(report['propertyRemoved']).toEqual([UNPUBLISHED, WRONG])
+
+        const { store, vault } = fromRust.left
+        expect(store[`notes/${NEW}`]).toBe('---\ntags: a\n---\nNew\n')
+        expect(store[`notes/${UNPUBLISHED}`]).toBeUndefined()
+        expect(store[`notes/${WRONG}`]).toBeUndefined()
+        expect(store[`notes/${EDITED_WINDOWS}`]).toBe(
+            '---\ntags: a\n---\nText\nMore\nA third line\n'
+        )
+        expect(vault[NEW]).toBe('---\r\ntags: a\r\npublic_note: true\r\n---\r\nNew\r\n')
+        expect(vault[WRONG]).toBe(`${MARK}Never selected\n`)
+        expect(vault[HAND]).toBe(`${MARK}---\ntags: a\npublic_note: true\n---\nText\n`)
+        expect(vault[UNPUBLISHED]).toBe('One\rTwo\n')
+
+        const after = JSON.parse(fromRust.queueAfter) as Record<string, string[]>
+        expect(after['changed']).toEqual([HELD])
+        expect(after['technicalUpdates']).toEqual([])
+        expect(after['toRemove']).toEqual([MISSING, GUARDED])
+        expect(after['new']).toContain(UNPUBLISHED)
+    })
+})
+
+describe('parity of an empty queue', () => {
+    test('both implementations write the empty queue of the canonical form', async () => {
+        const queueOf = async (toolOf: (vault: string, copy: string) => Tool): Promise<string> => {
+            await using stores = await makeTestStores()
+            const vault = join(stores.root, 'vault')
+            await mkdir(vault)
+            const copy = await makeContentStoreCopy(stores)
+            await writeFile(join(copy, 'configuration.json'), '{"denyList": []}')
+            await git(copy, 'commit', '--quiet', '--all', '--message', 'An empty deny list')
+            await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+            return await toolOf(vault, copy).status()
+        }
+
+        const fromTypeScript = await queueOf(typescriptTool)
+
+        expect(await queueOf(rustTool)).toBe(fromTypeScript)
+        expect(fromTypeScript).toBe(
+            '{\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "new": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": []\n}\n'
+        )
+    }, 120_000)
+})
+
 describe('parity of an empty plan', () => {
     test('both implementations store the same plan and change nothing', async () => {
         const fromTypeScript = await run(async (vault, copy) => {
@@ -268,7 +529,7 @@ describe('parity of an empty plan', () => {
 
         expect(fromRust).toEqual(fromTypeScript)
         expect(fromRust.plans).toEqual([
-            '{\n  "plan": {\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "include": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": []\n  }\n}\n'
+            '{\n  "plan": {\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": []\n  }\n}\n'
         ])
     }, 120_000)
 })
@@ -292,6 +553,16 @@ describe('parity of the guards', () => {
                     outcomes[path] = true
                 } catch {
                     outcomes[path] = false
+                }
+            }
+            // A note that cannot be read stops the plan of that note, and of every other note.
+            await writeFile(join(vault, NOT_UTF8), Uint8Array.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
+            for (const path of [NOT_UTF8, 'Welcome.md']) {
+                try {
+                    await implementation(vault, copy, [path])
+                    outcomes[`${path}, with a note that cannot be read`] = true
+                } catch {
+                    outcomes[`${path}, with a note that cannot be read`] = false
                 }
             }
             // Nothing of a refused note reached the content store.
@@ -319,6 +590,8 @@ describe('parity of the guards', () => {
         const fromRust = await outcome(rustOrThrow)
 
         expect(fromRust).toEqual(fromTypeScript)
-        expect(Object.values(fromTypeScript)).toEqual(refused.map(() => false))
+        expect(Object.values(fromTypeScript)).toEqual(
+            [...refused, NOT_UTF8, 'Welcome.md'].map(() => false)
+        )
     }, 120_000)
 })

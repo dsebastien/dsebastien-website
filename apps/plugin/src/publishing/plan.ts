@@ -1,12 +1,12 @@
 import { isVaultPath } from './configuration.ts'
-import type { Configuration } from './configuration.ts'
-import { guardOf, IGNORE_PROPERTY } from './guards.ts'
-import type { ManifestEntry } from './manifest.ts'
+import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
 import { sortByCodePoint } from './order.ts'
-import type { Vault } from './ports.ts'
+import type { Scan } from './queue.ts'
 
 // The publication plan as data: the exact list of what one publication will
-// do. The Rust twin is `cli/src/plan.rs`. Change both in the same commit.
+// do. The rules are in `documentation/Canonical Form.md`, sections "The
+// selection" and "The publication plan". The Rust twin is `cli/src/plan.rs`.
+// Change both in the same commit.
 
 /**
  * The notes that one publication publishes, updates and removes, as vault
@@ -20,18 +20,21 @@ export type PublicationPlan = {
     readonly remove: readonly string[]
 }
 
-/** What the author, or an agent that he started, selected. */
+/** What the author, or an agent that he started, selected for one plan. */
 export interface Selection {
-    /** The vault paths of the notes to publish. */
+    /** The vault paths of the notes to publish. A new candidate enters a plan only through this list. */
     readonly include: readonly string[]
+    /** The vault paths of the notes to leave out: their live version stays. */
+    readonly hold?: readonly string[]
+    /** The vault paths of the published notes to unpublish. */
+    readonly remove?: readonly string[]
 }
 
-/** The inputs of a plan. The same inputs give the same plan. */
-export interface PlanInput {
-    readonly vault: Vault
-    readonly manifest: readonly ManifestEntry[]
-    readonly configuration: Configuration
-    readonly selection: Selection
+/** A selection with its three lists, each path one time, sorted. It is a part of the record of a plan. */
+export type NormalSelection = {
+    readonly hold: readonly string[]
+    readonly include: readonly string[]
+    readonly remove: readonly string[]
 }
 
 /** A selection that cannot become a plan. The message says which path and why. */
@@ -55,51 +58,89 @@ export function makePlan(lists: {
     }
 }
 
-/** Checks one selected path and says why it cannot be published, or `undefined` when it can. */
-async function reasonToRefuse(path: string, input: PlanInput): Promise<string | undefined> {
-    if (!isVaultPath(path)) {
-        return 'is not a vault path'
+function unique(paths: readonly string[] | undefined): string[] {
+    return sortByCodePoint([...new Set(paths ?? [])])
+}
+
+/** The selection with each path one time, in the order of the canonical form. */
+export function normalSelection(selection: Selection): NormalSelection {
+    return {
+        hold: unique(selection.hold),
+        include: unique(selection.include),
+        remove: unique(selection.remove)
     }
-    if (!path.endsWith('.md')) {
-        return 'is not a note'
-    }
-    let text: string | undefined
-    try {
-        text = await input.vault.read(path)
-    } catch (error) {
-        return `cannot be read: it ${error instanceof Error ? error.message : 'failed'}`
-    }
-    if (text === undefined) {
-        return 'does not exist in the vault'
-    }
-    const guard = guardOf(path, text, input.configuration)
-    if (guard === 'deny-list') {
+}
+
+/** Why a path that is in no list of the queue cannot be published. */
+function reasonOutOfQueue(path: string, scan: Scan): string {
+    if (guardOfPath(path, scan.configuration) !== undefined) {
         return 'is in a folder of the deny list'
     }
-    if (guard === 'ignore-property') {
+    if (scan.ignored.has(path)) {
         return `has the ${IGNORE_PROPERTY} property`
     }
-    if (input.manifest.some((entry) => entry.path === path)) {
-        return 'is already published. A new version of a published note comes with the publication queue'
-    }
-    return undefined
+    return 'does not exist in the vault as a note. A symbolic link and a name that starts with a dot are not part of the vault'
 }
 
 /**
- * Computes the publication plan.
+ * Computes the publication plan of a selection from the queue.
  *
- * The first slice knows one case: the first publication of the notes that the
- * selection includes. A path that cannot be published stops the plan with a
- * `SelectionError`. The publication queue (changed notes, removals) comes with
- * a later slice.
+ * A plan without paths holds the changed notes only. A new candidate enters a
+ * plan only when its path is included (PUB-19, PUB-54). A selection that
+ * cannot become a plan stops with a `SelectionError`.
  */
-export async function computePlan(input: PlanInput): Promise<PublicationPlan> {
-    const publish = [...new Set(input.selection.include)]
-    for (const path of sortByCodePoint(publish)) {
-        const reason = await reasonToRefuse(path, input)
-        if (reason !== undefined) {
-            throw new SelectionError(`"${path}" ${reason}`)
+export function computePlan(scan: Scan, selection: NormalSelection): PublicationPlan {
+    const { queue } = scan
+    const refuse = (path: string, reason: string): never => {
+        throw new SelectionError(`"${path}" ${reason}`)
+    }
+    const all = [...selection.hold, ...selection.include, ...selection.remove]
+    for (const path of all) {
+        if (!isVaultPath(path)) {
+            refuse(path, 'is not a vault path')
+        }
+        if (!path.endsWith('.md')) {
+            refuse(path, 'is not a note: its name does not end in .md')
         }
     }
-    return makePlan({ publish, update: [], remove: [] })
+    const twice = sortByCodePoint(all).find((path, index, paths) => paths[index + 1] === path)
+    if (twice !== undefined) {
+        refuse(twice, 'is in more than one list of the selection')
+    }
+
+    const candidates = new Set(queue.new)
+    const changed = new Set(queue.changed)
+    const waiting = new Set(queue.toRemove)
+    const unchanged = new Set(queue.unchanged)
+    for (const path of selection.include) {
+        if (waiting.has(path)) {
+            refuse(path, 'is published and waits for its removal: it cannot be published again')
+        }
+        if (!candidates.has(path) && !changed.has(path) && !unchanged.has(path)) {
+            refuse(path, reasonOutOfQueue(path, scan))
+        }
+    }
+    for (const path of selection.hold) {
+        if (
+            !candidates.has(path) &&
+            !changed.has(path) &&
+            !waiting.has(path) &&
+            !unchanged.has(path)
+        ) {
+            refuse(path, 'is not a note of the publication queue: there is nothing to hold')
+        }
+    }
+    for (const path of selection.remove) {
+        if (scan.manifest.get(path)?.state !== 'published') {
+            refuse(path, 'is not published: there is nothing to remove')
+        }
+    }
+
+    const held = new Set(selection.hold)
+    const removed = new Set(selection.remove)
+    return makePlan({
+        publish: selection.include.filter((path) => candidates.has(path)),
+        update: queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
+        remove: selection.remove
+    })
 }

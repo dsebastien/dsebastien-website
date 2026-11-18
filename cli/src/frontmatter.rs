@@ -193,13 +193,37 @@ fn remove(note: &mut Note, key: &str) -> Option<usize> {
     first
 }
 
-/// The note without the property. The same text when the note has no such
-/// property.
+/// Removes the two lines of the properties when no line is between them.
+fn drop_empty_properties(note: &mut Note) -> bool {
+    if note.close != Some(1) {
+        return false;
+    }
+    note.lines.drain(0..2);
+    note.close = None;
+    note.opened = false;
+    true
+}
+
+/// The note without the property. When the properties then hold no line, their
+/// two lines go too, as when the last property is removed in Obsidian. The
+/// same text when the note does not name the property.
 pub fn remove_property(text: &str, key: &str) -> String {
     let mut note = read(text);
-    match remove(&mut note, key) {
-        Some(_) => write(&note),
-        None => text.to_owned(),
+    if remove(&mut note, key).is_none() {
+        return text.to_owned();
+    }
+    drop_empty_properties(&mut note);
+    write(&note)
+}
+
+/// The note without properties that hold no line. The same text when it has
+/// none.
+pub fn without_empty_properties(text: &str) -> String {
+    let mut note = read(text);
+    if drop_empty_properties(&mut note) {
+        write(&note)
+    } else {
+        text.to_owned()
     }
 }
 
@@ -235,7 +259,7 @@ pub fn set_property(text: &str, key: &str, value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{names_in_properties, set_property};
+    use super::{names_in_properties, remove_property, set_property};
     use crate::clean::{STATE_PROPERTY, source_of};
     use crate::guards::IGNORE_PROPERTY;
     use serde_json::Value;
@@ -292,6 +316,33 @@ mod tests {
             assert_eq!(
                 set_property(text(case, "note"), STATE_PROPERTY, "true"),
                 text(case, "result"),
+                "{}",
+                text(case, "name")
+            );
+        }
+    }
+
+    #[test]
+    fn removes_the_state_property_as_the_file_states() {
+        let cases = cases("removed");
+        assert!(cases.len() > 10);
+        for case in &cases {
+            assert_eq!(
+                remove_property(text(case, "note"), STATE_PROPERTY),
+                text(case, "result"),
+                "{}",
+                text(case, "name")
+            );
+        }
+    }
+
+    /// A correction of the property must never make a note "changed" (PUB-14).
+    #[test]
+    fn the_source_is_the_same_after_the_property_is_set() {
+        for case in &cases("source") {
+            assert_eq!(
+                source_of(&set_property(text(case, "note"), STATE_PROPERTY, "true")),
+                text(case, "source"),
                 "{}",
                 text(case, "name")
             );

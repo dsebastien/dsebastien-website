@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { dirname, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { compareCodePoints } from '../order.ts'
-import type { ContentStore, Device, PlanStore, Vault } from '../ports.ts'
+import type { ContentStore, Device, PlanStore, Vault, VaultEntry } from '../ports.ts'
 
 // A device whose vault and whose copy of the content store are folders, with
 // the `git` program of the system (TOOL-12 of the spec). The tests and the
@@ -11,6 +11,9 @@ import type { ContentStore, Device, PlanStore, Vault } from '../ports.ts'
 // inside Obsidian on a desktop. The Rust twin is `cli/src/device.rs`.
 
 const run = promisify(execFile)
+
+/** The options of every git command of the tool. */
+const GIT_OPTIONS = ['--literal-pathspecs', '-c', 'core.autocrlf=false']
 
 /** Decodes bytes as UTF-8. It throws for bytes that are not UTF-8, and it keeps a byte order mark. */
 function decode(bytes: Uint8Array): string {
@@ -67,6 +70,19 @@ async function exactEntry(root: string, path: string): Promise<'file' | 'folder'
 
 function folderVault(folder: string): Vault {
     return {
+        async list(path) {
+            const entries = await readdir(join(folder, path), { withFileTypes: true })
+            const listed: VaultEntry[] = []
+            for (const entry of entries) {
+                // A symbolic link is neither: `isFile` and `isDirectory` are false for it.
+                if (entry.isFile()) {
+                    listed.push({ name: entry.name, kind: 'file' })
+                } else if (entry.isDirectory()) {
+                    listed.push({ name: entry.name, kind: 'folder' })
+                }
+            }
+            return listed
+        },
         async read(path) {
             if ((await exactEntry(folder, path)) !== 'file') {
                 return undefined
@@ -86,9 +102,37 @@ function gitEnvironment(): NodeJS.ProcessEnv {
 }
 
 function gitContentStore(folder: string): ContentStore {
-    const git = async (...args: string[]): Promise<string> => {
-        const { stdout } = await run('git', args, { cwd: folder, env: gitEnvironment() })
-        return stdout.trim()
+    const gitRaw = async (...args: string[]): Promise<string> => {
+        // Literal paths: a note name with `[`, `*` or `?` must never be read
+        // as a pattern that names other files too. No conversion of line
+        // ends: a setting of the machine must never change the bytes of a
+        // file of the store.
+        const { stdout } = await run('git', [...GIT_OPTIONS, ...args], {
+            cwd: folder,
+            env: gitEnvironment(),
+            maxBuffer: 1024 * 1024 * 1024
+        })
+        return stdout
+    }
+    const git = async (...args: string[]): Promise<string> => (await gitRaw(...args)).trim()
+    const discard = async (paths: readonly string[]): Promise<void> => {
+        let listing: string
+        try {
+            listing = await gitRaw('ls-tree', '-r', '-z', '--name-only', 'HEAD')
+        } catch {
+            // A copy with no commit has no file to put back.
+            listing = ''
+        }
+        const committed = new Set(listing.split('\0'))
+        const toRestore = paths.filter((path) => committed.has(path))
+        for (let start = 0; start < toRestore.length; start += 100) {
+            await git('checkout', '--quiet', 'HEAD', '--', ...toRestore.slice(start, start + 100))
+        }
+        for (const path of paths) {
+            if (!committed.has(path)) {
+                await rm(join(folder, path), { force: true })
+            }
+        }
     }
     return {
         async verify() {
@@ -124,6 +168,21 @@ function gitContentStore(folder: string): ContentStore {
             }
         },
         write: (path, text) => writeText(join(folder, path), text),
+        async remove(path) {
+            try {
+                await rm(join(folder, path))
+                return true
+            } catch (error) {
+                if (codeOf(error) === 'ENOENT') {
+                    return false
+                }
+                throw new Error(
+                    `${path} of the content store cannot be removed: ${codeOf(error)}`,
+                    { cause: error }
+                )
+            }
+        },
+        discard,
         async list(below) {
             let entries
             try {
@@ -152,9 +211,7 @@ function gitContentStore(folder: string): ContentStore {
                 await git('push', '--quiet', 'origin', 'HEAD:main')
             } catch {
                 await git('reset', '--quiet', before)
-                for (const path of paths) {
-                    await rm(join(folder, path), { force: true })
-                }
+                await discard(paths)
                 throw new Error(
                     'the push to the content store was refused. Nothing is published, and the copy is as it was before'
                 )

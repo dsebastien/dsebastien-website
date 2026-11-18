@@ -1,0 +1,1029 @@
+{
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Every expected value is written by hand. The hashes were computed with sha256sum.",
+    "scenarios": [
+        {
+            "name": "the four lists and the selection",
+            "denyList": ["Locked"],
+            "vault": {
+                "Alpha.md": "---\ntags: a\n---\nAlpha\n",
+                "Beta.md": "Beta\n",
+                "Folder/Gamma.md": "Gamma\n",
+                "Folder/Ignored.md": "---\npublish_ignore: true\n---\nNever\n",
+                "Folder/Upper.MD": "Not a note: the end of the name is in capital letters\n",
+                "Folder/list.txt": "Not a note\n",
+                "Folder/.Draft.md": "A file whose name starts with a dot\n",
+                ".hidden/Draft.md": "A file in a folder whose name starts with a dot\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "every note of the scan that no guard excludes is a candidate",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths holds no new candidate",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the first publication of three notes",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Folder/Gamma.md", "Alpha.md", "Beta.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
+                        "published": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the cleaned notes have no state property, and the notes of the vault have it",
+                    "vault": {
+                        "Alpha.md": "---\ntags: a\npublic_note: true\n---\nAlpha\n",
+                        "Beta.md": "---\npublic_note: true\n---\nBeta\n",
+                        "Folder/Ignored.md": "---\npublish_ignore: true\n---\nNever\n",
+                        "Locked/Secret.md": "A note in a folder of the deny list\n"
+                    },
+                    "store": {
+                        "notes/Alpha.md": "---\ntags: a\n---\nAlpha\n",
+                        "notes/Beta.md": "Beta\n",
+                        "notes/Folder/Gamma.md": "Gamma\n",
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"state\": \"published\"\n}\n",
+                        "notes/Folder/Ignored.md": null,
+                        "notes/Locked/Secret.md": null,
+                        "notes/.hidden/Draft.md": null
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the property that the tool wrote makes no note changed, also a note that had no properties",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 3
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Alpha.md", "Beta.md", "Folder/Gamma.md"]
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits a note and writes a new one",
+                    "files": {
+                        "Alpha.md": "---\ntags: a\npublic_note: true\n---\nAlpha, second version\n",
+                        "Delta.md": "Delta\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the file of a published note is missing",
+                    "paths": ["Beta.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "one note in each list",
+                    "queue": {
+                        "changed": ["Alpha.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "new": ["Delta.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Beta.md"],
+                        "unchanged": ["Folder/Gamma.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths holds the changed notes only",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a changed note that is held stays out",
+                    "selection": {
+                        "hold": ["Alpha.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a new candidate enters a plan when its path is named",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Delta.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": ["Delta.md"],
+                        "remove": [],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a published note that is included adds nothing",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Alpha.md", "Folder/Gamma.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a path to remove",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Beta.md"]
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": ["Beta.md"],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "an unchanged note can be removed",
+                    "selection": {
+                        "hold": ["Alpha.md"],
+                        "include": [],
+                        "remove": ["Folder/Gamma.md"]
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": ["Folder/Gamma.md"],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a changed note that is removed is not updated",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Alpha.md"]
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": ["Alpha.md"],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a hold of a candidate holds nothing",
+                    "selection": {
+                        "hold": ["Delta.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a hold of a note that waits for its removal holds nothing",
+                    "selection": {
+                        "hold": ["Beta.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a path that is given two times counts one time",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Delta.md", "Delta.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": ["Delta.md"],
+                        "remove": [],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a note in a folder of the deny list",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Locked/Secret.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a note with the ignore property",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Folder/Ignored.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a file in a folder whose name starts with a dot",
+                    "selection": {
+                        "hold": [],
+                        "include": [".hidden/Draft.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a file whose name starts with a dot",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Folder/.Draft.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a name that ends in capital letters",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Folder/Upper.MD"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a file that is not a note",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Folder/list.txt"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a note that does not exist",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Missing.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a published note whose file is missing",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Beta.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a path that leaves the vault",
+                    "selection": {
+                        "hold": [],
+                        "include": ["../Alpha.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a hold that names no note",
+                    "selection": {
+                        "hold": ["Missing.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a hold in another letter case",
+                    "selection": {
+                        "hold": ["alpha.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a hold of a note in a folder of the deny list",
+                    "selection": {
+                        "hold": ["Locked/Secret.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a hold of a note with the ignore property",
+                    "selection": {
+                        "hold": ["Folder/Ignored.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a removal of a note that is not published",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Delta.md"]
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a removal of a note that does not exist",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Missing.md"]
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a path to include and to hold",
+                    "selection": {
+                        "hold": ["Alpha.md"],
+                        "include": ["Alpha.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a path to hold and to remove",
+                    "selection": {
+                        "hold": ["Alpha.md"],
+                        "include": [],
+                        "remove": ["Alpha.md"]
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a path to include and to remove",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Folder/Gamma.md"],
+                        "remove": ["Folder/Gamma.md"]
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "publish",
+                    "why": "a new note, an update and a removal in one publication",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Delta.md"],
+                        "remove": ["Beta.md"]
+                    },
+                    "time": "2031-05-02T09:30:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Delta.md"],
+                        "published": ["Delta.md"],
+                        "removed": ["Beta.md"],
+                        "skipped": [],
+                        "updated": ["Alpha.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "an update keeps the identity and the first date, and an unpublished note keeps its entry",
+                    "vault": {
+                        "Beta.md": null,
+                        "Delta.md": "---\npublic_note: true\n---\nDelta\n"
+                    },
+                    "store": {
+                        "notes/Alpha.md": "---\ntags: a\n---\nAlpha, second version\n",
+                        "notes/Beta.md": null,
+                        "notes/Delta.md": "Delta\n",
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/94e2c97499374edd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"state\": \"unpublished\"\n}\n",
+                        "manifest/626c2442e3f32d3a.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"626c2442e3f32d3a\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Delta.md\",\n  \"sourceHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "nothing waits",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 3
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Alpha.md", "Delta.md", "Folder/Gamma.md"]
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits two published notes",
+                    "files": {
+                        "Alpha.md": "Alpha, third version\n",
+                        "Folder/Gamma.md": "Gamma, second version\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a held note is skipped: its live version stays",
+                    "selection": {
+                        "hold": ["Alpha.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-05-03T10:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md", "Folder/Gamma.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Alpha.md"],
+                        "updated": ["Folder/Gamma.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the skipped note is still published, so it has its property again, and its live version did not move",
+                    "vault": {
+                        "Alpha.md": "---\npublic_note: true\n---\nAlpha, third version\n"
+                    },
+                    "store": {
+                        "notes/Alpha.md": "---\ntags: a\n---\nAlpha, second version\n",
+                        "notes/Folder/Gamma.md": "Gamma, second version\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the skipped note still waits",
+                    "queue": {
+                        "changed": ["Alpha.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Delta.md", "Folder/Gamma.md"]
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a published note gets the ignore property, with an edit",
+                    "files": {
+                        "Folder/Gamma.md": "---\npublish_ignore: true\npublic_note: true\n---\nGamma, a version that must never go out\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a published note under a guard waits for its removal, and it is not a changed note",
+                    "queue": {
+                        "changed": ["Alpha.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Folder/Gamma.md"],
+                        "unchanged": ["Delta.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan never updates a note under a guard",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Alpha.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a published note under a guard cannot be included",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Folder/Gamma.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "a published note under a guard can be removed",
+                    "selection": {
+                        "hold": ["Alpha.md"],
+                        "include": [],
+                        "remove": ["Folder/Gamma.md"]
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": ["Folder/Gamma.md"],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the removal of the note under a guard",
+                    "selection": {
+                        "hold": ["Alpha.md"],
+                        "include": [],
+                        "remove": ["Folder/Gamma.md"]
+                    },
+                    "time": "2031-05-04T11:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": ["Folder/Gamma.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Folder/Gamma.md"],
+                        "skipped": ["Alpha.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the text under the guard never reached the content store",
+                    "vault": {
+                        "Folder/Gamma.md": "---\npublish_ignore: true\n---\nGamma, a version that must never go out\n"
+                    },
+                    "store": {
+                        "notes/Folder/Gamma.md": null
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a note under a guard that is not published is in no list",
+                    "queue": {
+                        "changed": ["Alpha.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Delta.md"]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "the state property is corrected, and it is never an input",
+            "denyList": ["Locked"],
+            "vault": {
+                "Published.md": "---\ntags: a\n---\nText\n",
+                "Wrong.md": "---\npublic_note: true\ntags: a\n---\nNever published\n",
+                "Other.md": "Other\n",
+                "Ignored.md": "---\npublish_ignore: true\npublic_note: true\n---\nText\n",
+                "Windows.md": "---\r\npublic_note: true\r\n---\r\nText\r\n",
+                "Locked/Template.md": "---\npublic_note: true\n---\nA template\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "a note that carries the property by mistake is a candidate like the others",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 4,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": ["Other.md", "Published.md", "Windows.md", "Wrong.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the property selects nothing",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "an empty plan publishes nothing and corrects nothing",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "without a push, no note is written",
+                    "vault": {
+                        "Wrong.md": "---\npublic_note: true\ntags: a\n---\nNever published\n"
+                    },
+                    "store": {
+                        "notes/Wrong.md": null
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication of another note removes the wrong property",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Published.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": ["Ignored.md", "Windows.md", "Wrong.md"],
+                        "propertySet": ["Published.md"],
+                        "published": ["Published.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note with the wrong property is not published, and no note of the deny list folder is written",
+                    "vault": {
+                        "Wrong.md": "---\ntags: a\n---\nNever published\n",
+                        "Ignored.md": "---\npublish_ignore: true\n---\nText\n",
+                        "Windows.md": "Text\r\n",
+                        "Locked/Template.md": "---\npublic_note: true\n---\nA template\n",
+                        "Published.md": "---\ntags: a\npublic_note: true\n---\nText\n",
+                        "Other.md": "Other\n"
+                    },
+                    "store": {
+                        "notes/Wrong.md": null,
+                        "notes/Ignored.md": null,
+                        "notes/Windows.md": null,
+                        "notes/Published.md": "---\ntags: a\n---\nText\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author removes the property of a published note by hand",
+                    "files": {
+                        "Published.md": "---\ntags: a\n---\nText\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note stays published and is not changed",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "new": ["Other.md", "Windows.md", "Wrong.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Published.md"]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the next publication writes the property again",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Other.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-02T09:30:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Other.md", "Published.md"],
+                        "published": ["Other.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "both published notes have the property",
+                    "vault": {
+                        "Published.md": "---\ntags: a\npublic_note: true\n---\nText\n",
+                        "Other.md": "---\npublic_note: true\n---\nOther\n"
+                    },
+                    "store": {}
+                },
+                {
+                    "do": "publish",
+                    "why": "an unpublish removes the property",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Other.md"]
+                    },
+                    "time": "2031-05-03T10:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": ["Other.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Other.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note is as it was before its publication, and its entry stays",
+                    "vault": {
+                        "Other.md": "Other\n"
+                    },
+                    "store": {
+                        "notes/Other.md": null,
+                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"unpublished\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a note that was unpublished is a candidate again",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "new": ["Other.md", "Windows.md", "Wrong.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Published.md"]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a note that is published again keeps its identity",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Other.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-04T11:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Other.md"],
+                        "published": ["Other.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the same id and the same first date",
+                    "vault": {},
+                    "store": {
+                        "notes/Other.md": "Other\n",
+                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-04T11:00:00Z\",\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a technical update does not move the dates",
+            "denyList": [],
+            "vault": {
+                "Note.md": "Text\n",
+                "Edited.md": "One\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Note.md", "Edited.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Edited.md", "Note.md"],
+                        "published": ["Edited.md", "Note.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "the entry of one note comes from an older version of the cleaning step",
+                    "files": {
+                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"cleaningVersion\": 0,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits the other note",
+                    "files": {
+                        "Edited.md": "---\npublic_note: true\n---\nTwo\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "both notes are changed, and one of them is a technical update",
+                    "queue": {
+                        "changed": ["Edited.md", "Note.md"],
+                        "counts": {
+                            "changed": 2,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": [],
+                        "technicalUpdates": ["Note.md"],
+                        "toRemove": [],
+                        "unchanged": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "both are updated",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-05-02T09:30:00Z",
+                    "report": {
+                        "failed": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Edited.md", "Note.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "only the edited note has a new date",
+                    "vault": {},
+                    "store": {
+                        "notes/Note.md": "Text\n",
+                        "notes/Edited.md": "Two\n",
+                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/9ae7ed34618de0b5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 1,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"9ae7ed34618de0b5\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"path\": \"Edited.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "nothing waits",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Edited.md", "Note.md"]
+                    }
+                }
+            ]
+        }
+    ]
+}

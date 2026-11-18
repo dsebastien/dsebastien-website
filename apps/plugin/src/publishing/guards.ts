@@ -9,15 +9,22 @@ export const IGNORE_PROPERTY = 'publish_ignore'
 
 export type Guard = 'deny-list' | 'ignore-property'
 
+/** The guard that excludes the path alone: a folder of the deny list covers every file below it. */
+export function guardOfPath(path: string, configuration: Configuration): Guard | undefined {
+    return configuration.denyList.some((folder) => path.startsWith(`${folder}/`))
+        ? 'deny-list'
+        : undefined
+}
+
 /** The guard that excludes the note, or `undefined` when no guard does. */
 export function guardOf(
     path: string,
     text: string,
     configuration: Configuration
 ): Guard | undefined {
-    // A folder of the deny list covers every file below it.
-    if (configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
-        return 'deny-list'
+    const guard = guardOfPath(path, configuration)
+    if (guard !== undefined) {
+        return guard
     }
     // The reading fails closed: every form of the key excludes the note,
     // unless its value is exactly `false`.

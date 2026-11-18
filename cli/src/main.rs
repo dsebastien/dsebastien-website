@@ -15,6 +15,7 @@ mod hash;
 mod manifest;
 mod order;
 mod plan;
+mod queue;
 mod tool;
 
 use std::io::{self, ErrorKind, Write};
@@ -25,7 +26,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Args, Parser, Subcommand};
 
 use device::{ContentStore, Vault};
-use tool::Device;
+use plan::Selection;
+use tool::{Device, Outcome, Run};
 
 #[derive(Parser)]
 #[command(version, about, arg_required_else_help = true)]
@@ -49,21 +51,43 @@ struct Places {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Writes the publication queue: the new, the changed and the unchanged
+    /// notes, and the notes to remove, with a count per list. It changes
+    /// nothing in the vault and in the content store.
+    Status {
+        #[command(flatten)]
+        places: Places,
+    },
+
     /// Computes a publication plan, stores it on this device and writes it
     /// with its id. It changes nothing in the vault and in the content store.
+    /// Without a path, the plan holds the changed notes only.
     Plan {
         #[command(flatten)]
         places: Places,
 
-        /// The vault path of a note to publish. Give the option one time per
-        /// note.
+        /// The vault path of a note to publish. A note that was never
+        /// published enters a plan only in this way. Give the option one time
+        /// per note.
         #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
         include: Vec<String>,
+
+        /// The vault path of a changed note to leave out: its live version
+        /// stays. Give the option one time per note.
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        hold: Vec<String>,
+
+        /// The vault path of a published note to unpublish. Give the option
+        /// one time per note.
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        remove: Vec<String>,
     },
 
     /// Applies exactly one plan, by its id: the cleaned notes and the manifest
     /// go to the content store in one commit, the commit is pushed, and the
-    /// `public_note` property of the published notes is corrected.
+    /// `public_note` property of the notes of the vault is corrected. It
+    /// writes the publication report. It ends with an error when a note of
+    /// the plan was left out.
     Publish {
         #[command(flatten)]
         places: Places,
@@ -76,6 +100,11 @@ enum Command {
         /// 2031-04-01T08:00:00Z. The default is the time of the clock.
         #[arg(long)]
         time: Option<String>,
+
+        /// The name of this device, for the message of the commit. The
+        /// default is the name of the host.
+        #[arg(long, value_name = "NAME")]
+        device: Option<String>,
     },
 }
 
@@ -125,12 +154,46 @@ fn now() -> String {
     )
 }
 
-fn run(command: Command) -> Result<String, String> {
+/// The name of the host: the default name of the device. The program reads it
+/// here. The logic never does.
+fn host_name() -> String {
+    let from_file = || {
+        std::fs::read_to_string("/etc/hostname")
+            .ok()
+            .map(|name| name.trim().to_owned())
+    };
+    ["COMPUTERNAME", "HOSTNAME"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok())
+        .or_else(from_file)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "unknown device".to_owned())
+}
+
+fn run(command: Command) -> Result<Outcome, String> {
+    let done = |output: String| Outcome { output, failed: 0 };
     match command {
-        Command::Plan { places, include } => tool::plan(&device(&places)?, &include),
-        Command::Publish { places, plan, time } => {
-            tool::publish(&device(&places)?, &plan, &time.unwrap_or_else(now))
-        }
+        Command::Status { places } => tool::status(&device(&places)?).map(done),
+        Command::Plan {
+            places,
+            include,
+            hold,
+            remove,
+        } => tool::plan(&device(&places)?, &Selection::new(&include, &hold, &remove)).map(done),
+        Command::Publish {
+            places,
+            plan,
+            time,
+            device: name,
+        } => tool::publish(
+            &device(&places)?,
+            &plan,
+            &Run {
+                time: &time.unwrap_or_else(now),
+                device: &name.unwrap_or_else(host_name),
+                face: "command-line",
+            },
+        ),
     }
 }
 
@@ -151,8 +214,17 @@ fn write_output(output: &str) -> io::Result<()> {
 }
 
 fn main() -> ExitCode {
-    let written = run(Arguments::parse().command)
-        .and_then(|output| write_output(&output).map_err(|error| error.to_string()));
+    let written = run(Arguments::parse().command).and_then(|outcome| {
+        write_output(&outcome.output).map_err(|error| error.to_string())?;
+        // The report is written. The exit code says that it names a failure.
+        match outcome.failed {
+            0 => Ok(()),
+            1 => Err("1 note of the plan was left out: the report says why".to_owned()),
+            count => Err(format!(
+                "{count} notes of the plan were left out: the report says why"
+            )),
+        }
+    });
     match written {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

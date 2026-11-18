@@ -2,6 +2,7 @@
 //! the `git` program of the system (TOOL-12 of the spec). The TypeScript twin
 //! is `apps/plugin/src/publishing/node/device.ts`.
 
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::ErrorKind;
@@ -9,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// What a folder holds at exactly one path.
-#[derive(PartialEq, Eq)]
-enum Entry {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entry {
     File,
     Folder,
 }
@@ -60,6 +61,34 @@ impl Vault {
         Self {
             folder: folder.to_path_buf(),
         }
+    }
+
+    /// The files and the folders of one folder of the vault, by their names,
+    /// in any order. The root is the empty path. A symbolic link is not a file
+    /// and not a folder of the vault, so it is not in the result. A name that
+    /// is not valid Unicode comes with the replacement character in the place
+    /// of what cannot be read.
+    ///
+    /// # Errors
+    ///
+    /// The folder cannot be listed.
+    pub fn list(&self, folder: &str) -> Result<Vec<(String, Entry)>, String> {
+        let failed = |error: std::io::Error| {
+            format!("the folder \"{folder}\" of the vault cannot be listed: {error}")
+        };
+        let mut listed = Vec::new();
+        for entry in fs::read_dir(self.folder.join(folder)).map_err(failed)? {
+            let entry = entry.map_err(failed)?;
+            let kind = entry.file_type().map_err(failed)?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // A symbolic link is neither.
+            if kind.is_file() {
+                listed.push((name, Entry::File));
+            } else if kind.is_dir() {
+                listed.push((name, Entry::Folder));
+            }
+        }
+        Ok(listed)
     }
 
     /// The text of the file with exactly this vault path. `Ok(None)` when the
@@ -168,12 +197,57 @@ impl ContentStore {
         write_text(&self.folder.join(path), text)
     }
 
-    /// Puts exactly these files in one commit and pushes it, without force.
+    /// Removes a file. `Ok(true)` when the file existed.
+    ///
+    /// # Errors
+    ///
+    /// The file exists and cannot be removed.
+    pub fn remove(&self, path: &str) -> Result<bool, String> {
+        match fs::remove_file(self.folder.join(path)) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(format!(
+                "{path} of the content store cannot be removed: {}",
+                error.kind()
+            )),
+        }
+    }
+
+    /// Puts these files back as they are in the last commit of the copy: a
+    /// file of the commit gets its text again, and another file is removed.
+    ///
+    /// # Errors
+    ///
+    /// Git cannot put a file back.
+    pub fn discard(&self, paths: &[String]) -> Result<(), String> {
+        // A copy with no commit has no file to put back.
+        let listing = self
+            .git_output(&["ls-tree", "-r", "-z", "--name-only", "HEAD"])
+            .unwrap_or_default();
+        let committed: HashSet<&str> = listing.split('\0').collect();
+        let (to_restore, to_remove): (Vec<&str>, Vec<&str>) = paths
+            .iter()
+            .map(String::as_str)
+            .partition(|path| committed.contains(path));
+        for chunk in to_restore.chunks(100) {
+            let mut arguments = vec!["checkout", "--quiet", "HEAD", "--"];
+            arguments.extend_from_slice(chunk);
+            self.git_output(&arguments)?;
+        }
+        for path in to_remove {
+            let _ = fs::remove_file(self.folder.join(path));
+        }
+        Ok(())
+    }
+
+    /// Puts exactly these files in one commit and pushes it, without force. A
+    /// file that was removed is removed by the commit.
     ///
     /// # Errors
     ///
     /// The commit failed, or the push was refused. After a refused push the
-    /// commit and the files are taken back: the copy is as it was before.
+    /// commit is taken back and the files are discarded: the copy is as it
+    /// was before.
     pub fn commit_and_push(&self, message: &str, paths: &[String]) -> Result<(), String> {
         let before = self.git_output(&["rev-parse", "HEAD"])?;
         let with_paths = |arguments: &[&str]| {
@@ -195,9 +269,7 @@ impl ContentStore {
             return Ok(());
         }
         self.git_output(&["reset", "--quiet", before.trim()])?;
-        for path in paths {
-            let _ = fs::remove_file(self.folder.join(path));
-        }
+        self.discard(paths)?;
         Err(
             "the push to the content store was refused. Nothing is published, and the copy is as it was before"
                 .to_owned(),
@@ -227,7 +299,13 @@ impl ContentStore {
 
     fn git_output(&self, args: &[&str]) -> Result<String, String> {
         let mut git = Command::new("git");
-        git.args(args).current_dir(&self.folder);
+        // Literal paths: a note name with `[`, `*` or `?` must never be read
+        // as a pattern that names other files too. No conversion of line
+        // ends: a setting of the machine must never change the bytes of a
+        // file of the store.
+        git.args(["--literal-pathspecs", "-c", "core.autocrlf=false"])
+            .args(args)
+            .current_dir(&self.folder);
         // Inside a git hook, these variables point git to another repository.
         for (name, _) in env::vars_os() {
             if name.to_string_lossy().starts_with("GIT_") {

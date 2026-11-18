@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { sourceOf, STATE_PROPERTY } from './clean.ts'
-import { namesInProperties, setProperty } from './frontmatter.ts'
+import { namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
 
 // The rules for the properties of a note (documentation/Canonical Form.md).
@@ -15,6 +15,7 @@ interface Cases {
     ignored: { name: string; note: string; excluded: boolean }[]
     source: { name: string; note: string; source: string }[]
     state: { name: string; note: string; result: string }[]
+    removed: { name: string; note: string; result: string }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
@@ -38,7 +39,23 @@ describe('state property of a note', () => {
         expect(setProperty(entry.note, STATE_PROPERTY, 'true')).toBe(entry.result)
     })
 
+    test.each(cases.removed.map((entry) => [entry.name, entry] as const))(
+        'removed: %s',
+        (_name, entry) => {
+            expect(removeProperty(entry.note, STATE_PROPERTY)).toBe(entry.result)
+        }
+    )
+
+    // A correction of the property must never make a note "changed" (PUB-14).
+    test.each(cases.source.map((entry) => [entry.name, entry] as const))(
+        'the source is the same after the property is set: %s',
+        (_name, entry) => {
+            expect(sourceOf(setProperty(entry.note, STATE_PROPERTY, 'true'))).toBe(entry.source)
+        }
+    )
+
     test('the shared file has cases of each kind', () => {
+        expect(cases.removed.length).toBeGreaterThan(10)
         expect(cases.ignored.length).toBeGreaterThan(20)
         expect(cases.source.length).toBeGreaterThan(10)
         expect(cases.state.length).toBeGreaterThan(10)
