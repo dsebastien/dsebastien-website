@@ -30,7 +30,11 @@ export interface Vault {
 
 /** The copy of the content store on this device. */
 export interface ContentStore {
-    /** Throws when the folder is not the root of its own git repository. */
+    /**
+     * Throws when the folder is not the root of its own git repository, or
+     * when the copy has commits that the content store does not have: a
+     * publication that git could not take back would else be pushed later.
+     */
     verify(): Promise<void>
     /**
      * The text of a file, by its path in the content store. `undefined` only

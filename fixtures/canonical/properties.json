@@ -200,6 +200,11 @@
             "name": "two byte order marks before the properties",
             "note": "\ufeff\ufeff---\npublish_ignore: true\n---\nText\n",
             "excluded": true
+        },
+        {
+            "name": "a first line of hyphens with two carriage returns opens no properties",
+            "note": "---\r\r\npublish_ignore: true\r\n---\r\nText\r\n",
+            "excluded": false
         }
     ],
     "source": [
@@ -322,6 +327,16 @@
             "name": "a byte order mark at the start and one below empty properties",
             "note": "\ufeff---\n---\n\ufeff---\ntags: a\n---\n",
             "source": "---\n---\n\ufeff---\ntags: a\n---\n"
+        },
+        {
+            "name": "a byte order mark below properties that are removed is not at the start of the source",
+            "note": "---\npublic_note: true\n---\n\ufeffText\n",
+            "source": "Text\n"
+        },
+        {
+            "name": "a first line of hyphens with two carriage returns opens no properties",
+            "note": "---\r\r\ntags: a\r\npublic_note: true\r\n---\r\nText\r\n",
+            "source": "---\r\ntags: a\npublic_note: true\n---\nText\n"
         }
     ],
     "state": [

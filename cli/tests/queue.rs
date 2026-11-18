@@ -609,6 +609,26 @@ fn a_configuration_that_is_a_symbolic_link_stops_the_status_also_when_it_leads_n
     );
 }
 
+/// An empty manifest would let a published note under a guard stay live.
+#[test]
+fn a_manifest_that_cannot_be_listed_stops_the_status() {
+    let setup = Setup::fixture();
+    fs::write(
+        setup.copy.join("manifest"),
+        "A file in the place of the folder\n",
+    )
+    .expect("the file is written");
+
+    let output = setup.run("status", &[]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("manifest"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_manifest_folder_that_is_a_symbolic_link_stops_the_status() {
@@ -885,6 +905,55 @@ fn a_refused_push_keeps_the_other_staged_work_of_the_copy() {
     assert_eq!(setup.git(&["rev-parse", "HEAD"]), head);
     assert_eq!(setup.git(&["status", "--porcelain"]), "A  README.md");
     assert!(!setup.copy.join("notes").join(NOTE).exists());
+}
+
+/// A push that fails, and an undo whose first step fails: git cannot move
+/// the branch back (a hook stands for a lock of the reference). The second
+/// step still runs, and the commit that stayed stops the next run: it would
+/// else be pushed later, also for a note that came under a guard.
+#[cfg(unix)]
+#[test]
+fn a_commit_that_git_cannot_take_back_stops_the_next_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": ["Welcome.md"] }), TIME);
+    let before = setup.git(&["rev-parse", "HEAD"]);
+    let hooks = setup.copy.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("the folder can be made");
+    for (name, script) in [
+        ("post-commit", "#!/bin/sh\ntouch .git/committed\n"),
+        (
+            "reference-transaction",
+            "#!/bin/sh\nif [ \"$1\" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n",
+        ),
+    ] {
+        fs::write(hooks.join(name), script).expect("the hook is written");
+        fs::set_permissions(hooks.join(name), fs::Permissions::from_mode(0o755))
+            .expect("the hook can run");
+    }
+    let nowhere = setup.stores.root().join("nowhere");
+    setup.git(&["remote", "set-url", "--push", "origin", text(&nowhere)]);
+    let id = setup.plan_id(&json!({ "include": [NOTE] }));
+
+    let output = setup.publish_plan(&id, LATER);
+
+    assert_eq!(output.status.code(), Some(1));
+    let message = errors_of(&output);
+    assert!(message.contains("refused"), "{message}");
+    assert!(
+        message.contains("could not take the publication back"),
+        "{message}"
+    );
+    assert_ne!(setup.git(&["rev-parse", "HEAD"]), before);
+    // The second step ran: the index holds the files of before.
+    assert_eq!(setup.git(&["diff", "--cached", "--name-only", &before]), "");
+    assert!(!setup.copy.join("notes").join(NOTE).exists());
+    fs::remove_file(hooks.join("reference-transaction")).expect("the hook can be removed");
+    for command in ["status", "plan"] {
+        let output = setup.run(command, &[]);
+        assert_eq!(output.status.code(), Some(1), "{command}");
+        assert!(errors_of(&output).contains("does not have"), "{command}");
+    }
 }
 
 /// A clone of a content store that has no commit and no configuration.

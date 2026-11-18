@@ -17,7 +17,12 @@ pub const STATE_PROPERTY: &str = "public_note";
 /// correction of the property never makes a note "changed" (PUB-14), also when
 /// the tool had to add the properties to write it.
 pub fn source_of(text: &str) -> String {
-    without_property(&without_marks(text).replace("\r\n", "\n"), STATE_PROPERTY)
+    // The property is removed from the text as the vault has it, as the guard
+    // and the write read it. The line ends are converted after: a first line
+    // `---` with two carriage returns must not open properties here.
+    let source = without_property(without_marks(text), STATE_PROPERTY).replace("\r\n", "\n");
+    // The text below removed properties can start with a mark too.
+    without_marks(&source).to_owned()
 }
 
 /// The cleaned note of a source. It changes nothing: a selected note is

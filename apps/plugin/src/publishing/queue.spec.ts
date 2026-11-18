@@ -472,6 +472,15 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         }
     )
 
+    // An empty manifest would let a published note under a guard stay live.
+    test('a manifest that cannot be listed stops the status', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(setup.copy, 'manifest'), 'A file in the place of the folder\n')
+
+        expect(await rejectionOf(status(setup.device))).toContain('manifest')
+    })
+
     test.skipIf(process.platform === 'win32')(
         'a manifest folder that is a symbolic link stops the status',
         async () => {
@@ -819,6 +828,52 @@ describe('commit that fails', () => {
         expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(false)
     })
 
+    // A push that fails, and an undo whose first step fails: git cannot move
+    // the branch back (a hook stands for a lock of the reference). The second
+    // step still runs, and the commit that stayed stops the next run: it
+    // would else be pushed later, also for a note that came under a guard.
+    test.skipIf(process.platform === 'win32')(
+        'a commit that git cannot take back stops the next run',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            await publishNotes(setup, { include: ['Welcome.md'] })
+            const before = await git(setup.copy, 'rev-parse', 'HEAD')
+            const hooks = join(setup.copy, '.git', 'hooks')
+            await mkdir(hooks, { recursive: true })
+            await writeFile(join(hooks, 'post-commit'), '#!/bin/sh\ntouch .git/committed\n')
+            await writeFile(
+                join(hooks, 'reference-transaction'),
+                '#!/bin/sh\nif [ "$1" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n'
+            )
+            await chmod(join(hooks, 'post-commit'), 0o755)
+            await chmod(join(hooks, 'reference-transaction'), 0o755)
+            await git(
+                setup.copy,
+                'remote',
+                'set-url',
+                '--push',
+                'origin',
+                join(stores.root, 'nowhere')
+            )
+            const planned = await plan(setup.device, { include: [NOTE] })
+
+            const message = await rejectionOf(publish(setup.device, planned.id, RUN))
+
+            expect(message).toContain('refused')
+            expect(message).toContain('could not take the publication back')
+            expect(await git(setup.copy, 'rev-parse', 'HEAD')).not.toBe(before)
+            // The second step ran: the index holds the files of before.
+            expect(await git(setup.copy, 'diff', '--cached', '--name-only', before)).toBe('')
+            expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(false)
+            await rm(join(hooks, 'reference-transaction'))
+            expect(await rejectionOf(status(setup.device))).toContain('does not have')
+            expect(await rejectionOf(plan(setup.device, { include: [] }))).toContain(
+                'does not have'
+            )
+        }
+    )
+
     test('a copy that has no commit takes its first publication', async () => {
         await using stores = await makeTestStores()
         const vault = await copyFixtureVault(stores)
@@ -871,6 +926,41 @@ describe('publication with a note that fails', () => {
         expect(report.failed.map((entry) => entry.path)).toEqual([SECOND])
         expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(false)
         expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(true)
+    })
+
+    // A file of a note that cannot be put back would be read as published at
+    // the next run: the whole publication stops, and the other files go back.
+    test('stops the whole publication when the files of a note cannot be put back', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const store = setup.device.store
+        const device: Device = {
+            ...setup.device,
+            store: {
+                ...store,
+                async write(path, text) {
+                    if (path === `manifest/${SECOND_ID}.json`) {
+                        throw new Error('the disk is full')
+                    }
+                    await store.write(path, text)
+                },
+                async remove(path) {
+                    if (path === `notes/${SECOND}`) {
+                        throw new Error('the file is locked')
+                    }
+                    return await store.remove(path)
+                }
+            }
+        }
+        const planned = await plan(device, { include: [NOTE, SECOND] })
+
+        const message = await rejectionOf(publish(device, planned.id, RUN))
+
+        expect(message).toContain('could not be put back')
+        expect(message).toContain(`notes/${SECOND}`)
+        expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('1')
+        expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(false)
+        expect(await Bun.file(join(setup.copy, 'manifest', `${NOTE_ID}.json`)).exists()).toBe(false)
     })
 
     test('publishes nothing and corrects nothing when every note fails', async () => {

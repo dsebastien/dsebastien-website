@@ -17,8 +17,13 @@ export const STATE_PROPERTY = 'public_note'
  * the tool had to add the properties to write it.
  */
 export function sourceOf(text: string): string {
+    // The property is removed from the text as the vault has it, as the guard
+    // and the write read it. The line ends are converted after: a first
+    // line `---` with two carriage returns must not open properties here.
     const unmarked = text.slice(marksOf(text).length)
-    return withoutProperty(unmarked.replaceAll('\r\n', '\n'), STATE_PROPERTY)
+    const source = withoutProperty(unmarked, STATE_PROPERTY).replaceAll('\r\n', '\n')
+    // The text below removed properties can start with a mark too.
+    return source.slice(marksOf(source).length)
 }
 
 /**

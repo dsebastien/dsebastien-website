@@ -172,6 +172,28 @@ function gitContentStore(folder: string): ContentStore {
                     `the copy of the content store is not the root of a git repository: ${folder}`
                 )
             }
+            // A commit that a failed publication could not take back would be
+            // pushed by the next one, also for a note that came under a guard.
+            let head: string | undefined
+            try {
+                head = await git('rev-parse', '--verify', '--quiet', 'HEAD')
+            } catch {
+                head = undefined
+            }
+            if (head !== undefined) {
+                let ahead: string
+                try {
+                    await git('rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main')
+                    ahead = await git('rev-list', '--count', 'refs/remotes/origin/main..HEAD')
+                } catch {
+                    ahead = await git('rev-list', '--count', 'HEAD')
+                }
+                if (ahead !== '0') {
+                    throw new Error(
+                        `the copy of the content store has ${ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: ${folder}`
+                    )
+                }
+            }
         },
         async read(path) {
             await refuseLinks(path)
@@ -212,8 +234,18 @@ function gitContentStore(folder: string): ContentStore {
             let entries
             try {
                 entries = await readdir(join(folder, below), { withFileTypes: true })
-            } catch {
-                return []
+            } catch (error) {
+                // Only a folder that does not exist is empty. A folder that
+                // cannot be listed would else hide the published notes.
+                if (codeOf(error) === 'ENOENT') {
+                    return []
+                }
+                throw new Error(
+                    `${below} of the content store cannot be listed: ${codeOf(error)}`,
+                    {
+                        cause: error
+                    }
+                )
             }
             // One level: a folder below is not read. A symbolic link is not a file.
             return entries

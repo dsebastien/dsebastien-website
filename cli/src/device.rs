@@ -138,8 +138,9 @@ impl ContentStore {
 
     /// # Errors
     ///
-    /// The folder is not the root of its own git repository. Git would else
-    /// work on the repository that holds the folder.
+    /// The folder is not the root of its own git repository: git would else
+    /// work on the repository that holds the folder. Or the copy has commits
+    /// that the content store does not have.
     pub fn verify(&self) -> Result<(), String> {
         let top = self.git_output(&["rev-parse", "--show-toplevel"]).ok();
         let same = top.is_some_and(|top| {
@@ -148,11 +149,39 @@ impl ContentStore {
                 _ => false,
             }
         });
-        if same {
+        if !same {
+            return Err(format!(
+                "the copy of the content store is not the root of a git repository: {}",
+                self.folder.display()
+            ));
+        }
+        // A commit that a failed publication could not take back would be
+        // pushed by the next one, also for a note that came under a guard.
+        if self
+            .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
+            .is_err()
+        {
+            return Ok(());
+        }
+        let ahead = if self
+            .git_output(&[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/main",
+            ])
+            .is_ok()
+        {
+            self.git_output(&["rev-list", "--count", "refs/remotes/origin/main..HEAD"])?
+        } else {
+            self.git_output(&["rev-list", "--count", "HEAD"])?
+        };
+        let ahead = ahead.trim();
+        if ahead == "0" {
             Ok(())
         } else {
             Err(format!(
-                "the copy of the content store is not the root of a git repository: {}",
+                "the copy of the content store has {ahead} commit(s) that the content store does not have, for example a publication that git could not take back. Nothing can be published until the copy is corrected by hand: {}",
                 self.folder.display()
             ))
         }
@@ -222,14 +251,27 @@ impl ContentStore {
     ///
     /// # Errors
     ///
-    /// A part of the path of the folder is a symbolic link.
+    /// A part of the path of the folder is a symbolic link, or the folder
+    /// exists and cannot be listed.
     pub fn list(&self, folder: &str) -> Result<Vec<String>, String> {
         self.refuse_links(folder)?;
-        let Ok(entries) = fs::read_dir(self.folder.join(folder)) else {
-            return Ok(Vec::new());
+        // Only a folder that does not exist is empty. A folder that cannot be
+        // listed would else hide the published notes.
+        let failed = |error: std::io::Error| {
+            format!(
+                "{folder} of the content store cannot be listed: {}",
+                error.kind()
+            )
+        };
+        let entries = match fs::read_dir(self.folder.join(folder)) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(failed(error)),
         };
         let mut files: Vec<String> = entries
-            .flatten()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(failed)?
+            .into_iter()
             .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
             .map(|entry| format!("{folder}/{}", entry.file_name().to_string_lossy()))
             .collect();
