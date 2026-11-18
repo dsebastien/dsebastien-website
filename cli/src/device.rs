@@ -199,28 +199,22 @@ impl ContentStore {
             // A push is safe only for a change of the configuration alone: a
             // commit of a publication that git could not take back would
             // publish an older state, also for a note under a guard.
-            let log = self.git_output(&[
-                "log",
-                "--format=",
-                "--name-only",
-                "-z",
-                "HEAD",
-                "--not",
-                "--remotes=origin",
-            ])?;
-            let mut files: Vec<&str> = log
-                .split('\0')
-                .map(str::trim)
-                .filter(|file| !file.is_empty())
-                .collect();
-            files.sort_unstable();
-            files.dedup();
-            let way = if files == ["configuration.json"] {
-                "the commits change configuration.json only: when that is your change of the deny list, push it (git push origin HEAD:main)".to_owned()
+            let files = self.pushed_changes()?;
+            let safe = files.is_empty()
+                || (files.len() == 1
+                    && files[0].1 == "configuration.json"
+                    && (files[0].0 == "M" || files[0].0 == "A"));
+            let way = if safe {
+                "a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main)".to_owned()
             } else {
                 format!(
-                    "the commits change other files of the store too ({}), so they can hold a publication that git could not take back, and a push would publish it. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it",
-                    files.iter().take(5).copied().collect::<Vec<_>>().join(", ")
+                    "a push would change other files of the store too, or remove the configuration ({}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it",
+                    files
+                        .iter()
+                        .take(5)
+                        .map(|(_, path)| path.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
             };
             return Err(format!(
@@ -229,6 +223,52 @@ impl ContentStore {
             ));
         }
         Ok(())
+    }
+
+    /// What a push of the copy would change in the content store: each file
+    /// with its code (`A`, `M`, `D`, `T`), sorted by path. The commits alone do
+    /// not say it: a commit that removes the configuration names only that
+    /// file, and a merge commit names no file.
+    fn pushed_changes(&self) -> Result<Vec<(String, String)>, String> {
+        let pushed = if self
+            .git_output(&[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/main",
+            ])
+            .is_ok()
+        {
+            self.git_output(&[
+                "diff",
+                "--no-renames",
+                "--name-status",
+                "-z",
+                "refs/remotes/origin/main",
+                "HEAD",
+            ])?
+        } else {
+            // The content store has no branch yet: a push adds every file.
+            self.git_output(&["ls-tree", "-r", "-z", "--name-only", "--full-tree", "HEAD"])?
+                .split('\0')
+                .filter(|path| !path.is_empty())
+                .flat_map(|path| ["A", path])
+                .collect::<Vec<_>>()
+                .join("\0")
+        };
+        let fields: Vec<&str> = pushed
+            .split('\0')
+            .filter(|field| !field.is_empty())
+            .collect();
+        let mut files: Vec<(String, String)> = fields
+            .chunks(2)
+            .filter_map(|pair| match pair {
+                [code, path] => Some(((*code).to_owned(), (*path).to_owned())),
+                _ => None,
+            })
+            .collect();
+        files.sort_by(|left, right| left.1.cmp(&right.1));
+        Ok(files)
     }
 
     /// `Err` when `configuration.json` and `manifest/` in the copy are not
@@ -343,18 +383,42 @@ impl ContentStore {
             .collect::<Vec<_>>()
             .join("\n");
         input.push('\n');
-        let hashes = self.git_with_options(
-            COMPARE_OPTIONS,
-            &["hash-object", "--stdin-paths"],
+        // The bytes that the tool reads, with no filter and no attribute of
+        // git: a filter could make other bytes look like the commit.
+        let hashes = self.git_with(
+            &["hash-object", "--no-filters", "--stdin-paths"],
             input.as_bytes(),
         )?;
         let hashes: Vec<&str> = hashes.lines().collect();
-        Ok(present
-            .iter()
-            .enumerate()
-            .filter(|(index, (_, hash))| hashes.get(*index) != Some(hash))
-            .map(|(_, (path, _))| (*path).to_owned())
-            .collect())
+        let mut edited = Vec::new();
+        for (index, (path, hash)) in present.iter().enumerate() {
+            if hashes.get(index) == Some(hash) || self.same_with_unix_line_ends(path, hash)? {
+                continue;
+            }
+            edited.push((*path).to_owned());
+        }
+        Ok(edited)
+    }
+
+    /// True when the file, with each carriage return and line feed made a
+    /// line feed, has this hash. A copy that converts line ends writes the
+    /// files of its commit with Windows line ends. In a valid JSON text a line
+    /// end is only white space, so both texts say the same.
+    fn same_with_unix_line_ends(&self, path: &str, hash: &str) -> Result<bool, String> {
+        let bytes = fs::read(self.folder.join(path))
+            .map_err(|error| format!("\"{path}\" of the copy cannot be read: {error}"))?;
+        if !bytes.windows(2).any(|pair| pair == b"\r\n") {
+            return Ok(false);
+        }
+        let mut unix = Vec::with_capacity(bytes.len());
+        for (index, byte) in bytes.iter().enumerate() {
+            if *byte == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+                continue;
+            }
+            unix.push(*byte);
+        }
+        let converted = self.git_with(&["hash-object", "--no-filters", "--stdin"], &unix)?;
+        Ok(converted.trim() == hash)
     }
 
     /// `Err` when a part of the path in the copy is a symbolic link. A link

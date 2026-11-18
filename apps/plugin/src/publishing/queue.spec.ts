@@ -677,6 +677,99 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         expect(message).toContain('notes/Stuck.md')
     })
 
+    // The advice reads what a push would change in the content store, not the
+    // names of the files in the commits: a commit that removes the
+    // configuration would empty the deny list.
+    test('the message never proposes to push a commit that removes the configuration', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await git(setup.copy, 'rm', '--quiet', 'configuration.json')
+        await git(setup.copy, 'commit', '--quiet', '--message', 'No deny list')
+
+        const message = await rejectionOf(status(setup.device))
+
+        expect(message).not.toContain('push it (git push')
+        expect(message).toContain('configuration.json')
+    })
+
+    // A merge commit names no file in `git log`. A merge that keeps the files
+    // of the copy takes back what another device published, for example the
+    // forced removal of a note under a guard.
+    test('the message never proposes to push a merge that takes back a change of another device', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const other = join(stores.root, 'other')
+        await git(stores.root, 'clone', '--quiet', stores.contentStore, other)
+        await git(other, 'config', 'user.name', 'Test')
+        await git(other, 'config', 'user.email', 'test@example.invalid')
+        await git(other, 'config', 'commit.gpgsign', 'false')
+        await pushToStore(other, { 'manifest/a.json': '{}\n' })
+        await writeFile(
+            join(setup.copy, 'configuration.json'),
+            '{"denyList":["80 Templates","90 Locked Shed","10 Garden"]}\n'
+        )
+        await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'A stricter deny list')
+        await git(setup.copy, 'fetch', '--quiet', 'origin')
+        await git(
+            setup.copy,
+            'merge',
+            '--quiet',
+            '--strategy=ours',
+            '--message',
+            'Keep the copy',
+            'origin/main'
+        )
+
+        const message = await rejectionOf(status(setup.device))
+
+        expect(message).not.toContain('push it (git push')
+        expect(message).toContain('manifest/a.json')
+    })
+
+    // A configuration committed with Windows line ends is the file of its last
+    // commit, also in a copy that converts line ends.
+    test('a configuration committed with Windows line ends is the file of the commit', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const file = join(setup.copy, 'configuration.json')
+        await writeFile(file, (await Bun.file(file).text()).replaceAll('\n', '\r\n'))
+        await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'Windows line ends')
+        await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
+        await git(setup.copy, 'config', 'core.autocrlf', 'true')
+
+        expect((await status(setup.device)).counts.new).toBeGreaterThan(0)
+    })
+
+    // A filter of git attributes makes git compare the copy with what the
+    // filter gives, not with the bytes that the tool reads. Here git sees the
+    // committed deny list, and the tool would read one folder less.
+    test.skipIf(process.platform === 'win32')(
+        'a configuration that a git filter makes look committed stops the status',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const file = join(setup.copy, 'configuration.json')
+            const committed = await Bun.file(file).text()
+            const entry = ', "90 Locked Shed"'
+            expect(committed).toContain(entry)
+            await git(
+                setup.copy,
+                'config',
+                'filter.back.clean',
+                `sed 's/"80 Templates"]/"80 Templates"${entry}]/'`
+            )
+            await writeFile(
+                join(setup.copy, '.git', 'info', 'attributes'),
+                'configuration.json filter=back\n'
+            )
+            await writeFile(file, committed.replace(entry, ''))
+            await git(setup.copy, 'add', 'configuration.json')
+            expect(await git(setup.copy, 'status', '--porcelain')).toBe('')
+
+            expect(await rejectionOf(status(setup.device))).toContain('configuration.json')
+        }
+    )
+
     test('the message never proposes to commit the removal of the configuration', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)

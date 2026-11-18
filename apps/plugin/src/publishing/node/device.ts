@@ -155,7 +155,7 @@ function gitContentStore(folder: string): ContentStore {
     /** Runs git in the copy. The input goes to its standard input. */
     const gitWith = async (
         args: readonly string[],
-        input: string,
+        input: string | Uint8Array,
         options: readonly string[] = GIT_OPTIONS
     ): Promise<string> => {
         // Literal paths: a note name with `[`, `*` or `?` must never be read
@@ -176,6 +176,70 @@ function gitContentStore(folder: string): ContentStore {
     }
     const gitRaw = (...args: string[]): Promise<string> => gitWith(args, '')
     const git = async (...args: string[]): Promise<string> => (await gitRaw(...args)).trim()
+    /**
+     * What a push of the copy would change in the content store: each file
+     * with its code (`A`, `M`, `D`, `T`), sorted by path. The commits alone do
+     * not say it: a commit that removes the configuration names only that
+     * file, and a merge commit names no file.
+     */
+    const pushedChanges = async (): Promise<{ code: string; path: string }[]> => {
+        const hasBranch = await git(
+            'rev-parse',
+            '--verify',
+            '--quiet',
+            'refs/remotes/origin/main'
+        ).then(
+            () => true,
+            () => false
+        )
+        const fields = hasBranch
+            ? (
+                  await gitRaw(
+                      'diff',
+                      '--no-renames',
+                      '--name-status',
+                      '-z',
+                      'refs/remotes/origin/main',
+                      'HEAD'
+                  )
+              )
+                  .split('\0')
+                  .filter((field) => field !== '')
+            : // The content store has no branch yet: a push adds every file.
+              (await gitRaw('ls-tree', '-r', '-z', '--name-only', '--full-tree', 'HEAD'))
+                  .split('\0')
+                  .filter((path) => path !== '')
+                  .flatMap((path) => ['A', path])
+        const files: { code: string; path: string }[] = []
+        for (let index = 0; index + 1 < fields.length; index += 2) {
+            files.push({ code: fields[index] ?? '', path: fields[index + 1] ?? '' })
+        }
+        return files.sort((left, right) => compareCodePoints(left.path, right.path))
+    }
+    /**
+     * True when the file, with each carriage return and line feed made a line
+     * feed, has this hash. A copy that converts line ends writes the files of
+     * its commit with Windows line ends. In a valid JSON text a line end is
+     * only white space, so both texts say the same.
+     */
+    const sameWithUnixLineEnds = async (path: string, hash: string): Promise<boolean> => {
+        const bytes = await readFile(join(folder, path))
+        const unix: number[] = []
+        let converted = false
+        for (const [index, byte] of bytes.entries()) {
+            if (byte === 0x0d && bytes[index + 1] === 0x0a) {
+                converted = true
+                continue
+            }
+            unix.push(byte)
+        }
+        return (
+            converted &&
+            (
+                await gitWith(['hash-object', '--no-filters', '--stdin'], Uint8Array.from(unix))
+            ).trim() === hash
+        )
+    }
     /**
      * Runs a git command on a list of paths. The paths go to the standard
      * input of git, not in the arguments: a publication can hold more paths
@@ -258,28 +322,20 @@ function gitContentStore(folder: string): ContentStore {
                 // A push is safe only for a change of the configuration alone:
                 // a commit of a publication that git could not take back would
                 // publish an older state, also for a note under a guard.
-                const files = [
-                    ...new Set(
-                        (
-                            await gitRaw(
-                                'log',
-                                '--format=',
-                                '--name-only',
-                                '-z',
-                                'HEAD',
-                                '--not',
-                                '--remotes=origin'
-                            )
-                        )
-                            .split('\0')
-                            .map((file) => file.trim())
-                            .filter((file) => file !== '')
-                    )
-                ]
-                const way =
-                    files.length === 1 && files[0] === 'configuration.json'
-                        ? 'the commits change configuration.json only: when that is your change of the deny list, push it (git push origin HEAD:main)'
-                        : `the commits change other files of the store too (${files.slice(0, 5).join(', ')}), so they can hold a publication that git could not take back, and a push would publish it. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it`
+                const files = await pushedChanges()
+                const safe =
+                    files.length === 0 ||
+                    (files.length === 1 &&
+                        files[0]?.path === 'configuration.json' &&
+                        (files[0].code === 'M' || files[0].code === 'A'))
+                const way = safe
+                    ? 'a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main)'
+                    : `a push would change other files of the store too, or remove the configuration (${files
+                          .slice(0, 5)
+                          .map((file) => file.path)
+                          .join(
+                              ', '
+                          )}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it`
                 throw new Error(
                     `the copy of the content store has ${ahead} commit(s) that the content store does not have. Nothing can be published until the copy is corrected: ${way}: ${folder}`
                 )
@@ -354,15 +410,20 @@ function gitContentStore(folder: string): ContentStore {
                     }
                 }
                 if (present.length > 0) {
+                    // The bytes that the tool reads, with no filter and no
+                    // attribute of git: a filter could make other bytes look
+                    // like the commit.
                     const hashes = (
                         await gitWith(
-                            ['hash-object', '--stdin-paths'],
-                            present.map((entry) => entry.path).join('\n') + '\n',
-                            COMPARE_OPTIONS
+                            ['hash-object', '--no-filters', '--stdin-paths'],
+                            present.map((entry) => entry.path).join('\n') + '\n'
                         )
                     ).split('\n')
                     for (const [index, entry] of present.entries()) {
-                        if (hashes[index] !== entry.hash) {
+                        if (
+                            hashes[index] !== entry.hash &&
+                            !(await sameWithUnixLineEnds(entry.path, entry.hash ?? ''))
+                        ) {
                             edited.push(entry.path)
                         }
                     }

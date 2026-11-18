@@ -945,6 +945,141 @@ fn the_message_proposes_a_push_only_for_commits_of_the_configuration_alone() {
     assert!(message.contains("notes/Stuck.md"), "{message}");
 }
 
+/// The advice reads what a push would change in the content store, not the
+/// names of the files in the commits: a commit that removes the configuration
+/// would empty the deny list.
+#[test]
+fn the_message_never_proposes_to_push_a_commit_that_removes_the_configuration() {
+    let setup = Setup::fixture();
+    setup.git(&["rm", "--quiet", "configuration.json"]);
+    setup.git(&["commit", "--quiet", "--message", "No deny list"]);
+
+    let output = setup.run("status", &[]);
+    let message = errors_of(&output);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!message.contains("push it (git push"), "{message}");
+    assert!(message.contains("configuration.json"), "{message}");
+}
+
+/// A merge commit names no file in `git log`. A merge that keeps the files of
+/// the copy takes back what another device published, for example the forced
+/// removal of a note under a guard.
+#[test]
+fn the_message_never_proposes_to_push_a_merge_that_takes_back_a_change_of_another_device() {
+    let setup = Setup::fixture();
+    let other = setup.stores.root().join("other");
+    git(&[
+        "clone",
+        "--quiet",
+        text(setup.stores.content_store()),
+        text(&other),
+    ]);
+    git(&["-C", text(&other), "config", "user.name", "Test"]);
+    git(&[
+        "-C",
+        text(&other),
+        "config",
+        "user.email",
+        "test@example.invalid",
+    ]);
+    git(&["-C", text(&other), "config", "commit.gpgsign", "false"]);
+    push_to_store(&other, &json!({ "manifest/a.json": "{}\n" }));
+    fs::write(
+        setup.copy.join("configuration.json"),
+        "{\"denyList\":[\"80 Templates\",\"90 Locked Shed\",\"10 Garden\"]}\n",
+    )
+    .expect("the file is written");
+    setup.git(&[
+        "commit",
+        "--quiet",
+        "--all",
+        "--message",
+        "A stricter deny list",
+    ]);
+    setup.git(&["fetch", "--quiet", "origin"]);
+    setup.git(&[
+        "merge",
+        "--quiet",
+        "--strategy=ours",
+        "--message",
+        "Keep the copy",
+        "origin/main",
+    ]);
+
+    let output = setup.run("status", &[]);
+    let message = errors_of(&output);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!message.contains("push it (git push"), "{message}");
+    assert!(message.contains("manifest/a.json"), "{message}");
+}
+
+/// A configuration committed with Windows line ends is the file of its last
+/// commit, also in a copy that converts line ends.
+#[test]
+fn a_configuration_committed_with_windows_line_ends_is_the_file_of_the_commit() {
+    let setup = Setup::fixture();
+    let file = setup.copy.join("configuration.json");
+    fs::write(&file, read(&file).replace('\n', "\r\n")).expect("the file is written");
+    setup.git(&[
+        "commit",
+        "--quiet",
+        "--all",
+        "--message",
+        "Windows line ends",
+    ]);
+    setup.git(&["push", "--quiet", "origin", "HEAD:main"]);
+    setup.git(&["config", "core.autocrlf", "true"]);
+
+    let output = setup.run("status", &[]);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+}
+
+/// A filter of git attributes makes git compare the copy with what the filter
+/// gives, not with the bytes that the tool reads. Here git sees the committed
+/// deny list, and the tool would read a deny list with one folder less.
+#[cfg(unix)]
+#[test]
+fn a_configuration_that_a_git_filter_makes_look_committed_stops_the_status() {
+    let setup = Setup::fixture();
+    let file = setup.copy.join("configuration.json");
+    let committed = read(&file);
+    let entry = ",\"90 Locked Shed\"";
+    let entry = if committed.contains(entry) {
+        entry
+    } else {
+        ", \"90 Locked Shed\""
+    };
+    assert!(committed.contains(entry), "{committed}");
+    setup.git(&[
+        "config",
+        "filter.back.clean",
+        &format!(
+            "sed 's/\"80 Templates\"]/\"80 Templates\"{}]/'",
+            entry.replace('"', "\\\"")
+        ),
+    ]);
+    fs::write(
+        setup.copy.join(".git").join("info").join("attributes"),
+        "configuration.json filter=back\n",
+    )
+    .expect("the attributes are written");
+    fs::write(&file, committed.replace(entry, "")).expect("the file is written");
+    setup.git(&["add", "configuration.json"]);
+    assert_eq!(setup.git(&["status", "--porcelain"]), "");
+
+    let output = setup.run("status", &[]);
+
+    assert_eq!(output.status.code(), Some(1), "{}", errors_of(&output));
+    assert!(
+        errors_of(&output).contains("configuration.json"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
 #[test]
 fn the_message_never_proposes_to_commit_the_removal_of_the_configuration() {
     let setup = Setup::fixture();
