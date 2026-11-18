@@ -13,10 +13,11 @@ const SITE = fileURLToPath(new URL('..', import.meta.url))
 const ENTRY = {
     attachments: [],
     cleanedHash: 'sha256:0',
-    cleaningVersion: 1,
+    cleaningVersion: 2,
     firstPublished: '2031-04-01T08:00:00Z',
     formerPaths: [],
     lastPublished: '2031-04-01T08:00:00Z',
+    links: [],
     sourceHash: 'sha256:0',
     state: 'published'
 }
@@ -47,7 +48,12 @@ afterEach(async () => {
 describe('published notes of a content store', () => {
     test('are the entries of the manifest, with the canonical path and the page file of each', async () => {
         await contentStore({
-            'b.json': { ...ENTRY, id: 'bbbbbbbbbbbbbbbb', path: 'Welcome.md' },
+            'b.json': {
+                ...ENTRY,
+                id: 'bbbbbbbbbbbbbbbb',
+                path: 'Welcome.md',
+                links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }]
+            },
             'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: '10 Garden/Compost basics.md' }
         })
 
@@ -57,14 +63,16 @@ describe('published notes of a content store', () => {
                 vaultPath: '10 Garden/Compost basics.md',
                 path: '/10+Garden/Compost+basics',
                 file: '-/note/aaaaaaaaaaaaaaaa.html',
-                title: 'Compost basics'
+                title: 'Compost basics',
+                links: []
             },
             {
                 id: 'bbbbbbbbbbbbbbbb',
                 vaultPath: 'Welcome.md',
                 path: '/Welcome',
                 file: '-/note/bbbbbbbbbbbbbbbb.html',
-                title: 'Welcome'
+                title: 'Welcome',
+                links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }]
             }
         ])
     })
@@ -97,6 +105,20 @@ describe('published notes of a content store', () => {
     // The id becomes the name of a file of the site.
     test('stop the build when an id is not 16 hexadecimal digits', async () => {
         await contentStore({ 'a.json': { ...ENTRY, id: '../../outside', path: 'Welcome.md' } })
+
+        expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
+    })
+
+    // The page of a note reads its links from the entry.
+    const wrongLinks: [string, unknown][] = [
+        ['no links', undefined],
+        ['links that are not a list', 'Welcome'],
+        ['a link without the path of its target', [{ link: 'Welcome' }]]
+    ]
+    test.each(wrongLinks)('stop the build when an entry has %s', async (_name, links) => {
+        await contentStore({
+            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Welcome.md', links }
+        })
 
         expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
     })

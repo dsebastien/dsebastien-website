@@ -1,7 +1,8 @@
 ---
 import type { GetStaticPaths } from 'astro'
-import { getCollection, render } from 'astro:content'
+import { getCollection } from 'astro:content'
 import { readPublishedNotes } from '../../../content-store.ts'
+import { withLinkState } from '../../../note-links.ts'
 import '../../../styles/global.css'
 
 // The page of a published note. Its file has the identity of the note as its
@@ -9,17 +10,30 @@ import '../../../styles/global.css'
 // leads the canonical URL of the note to this file.
 export const getStaticPaths = (async () => {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
-    return (await readPublishedNotes()).flatMap((note) => {
+    const notes = await readPublishedNotes()
+    // The link index of the build (BUILD-05): the canonical path of each published note.
+    const urls = new Map(notes.map((note) => [note.vaultPath, note.path]))
+    return notes.flatMap((note) => {
         const entry = entries.get(note.vaultPath)
         if (entry === undefined) {
             throw new Error(`the content store has no cleaned note for "${note.vaultPath}"`)
         }
-        return [{ params: { id: note.id }, props: { entry, title: note.title } }]
+        return [{ params: { id: note.id }, props: { entry, note, urls } }]
     })
 }) satisfies GetStaticPaths
 
-const { entry, title } = Astro.props
-const { Content } = await render(entry)
+const { entry, note, urls } = Astro.props
+const { title } = note
+if (entry.rendered === undefined) {
+    throw new Error(`the note "${note.vaultPath}" has no markup`)
+}
+// The markup is the same as long as the text of the note is the same. The
+// state of each link is the one of this build.
+const html = withLinkState(
+    entry.rendered.html,
+    new Map(note.links.map((link) => [link.link, link.path])),
+    (vaultPath) => urls.get(vaultPath)
+)
 ---
 
 <!doctype html>
@@ -31,9 +45,7 @@ const { Content } = await render(entry)
     </head>
     <body>
         <main class='mx-auto max-w-prose p-8'>
-            <article>
-                <Content />
-            </article>
+            <article set:html={html} />
         </main>
     </body>
 </html>

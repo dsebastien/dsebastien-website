@@ -37,10 +37,25 @@ export interface PublishedNote {
     file: string
     /** The title of the page. A first version: the file name of the note. */
     title: string
+    /** The links of the note that lead to a note: the link path as the note writes it, and the vault path of its target. */
+    links: { link: string; path: string }[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** True when the value is the list `links` of a manifest entry. */
+function isLinkList(value: unknown): value is { link: string; path: string }[] {
+    return (
+        Array.isArray(value) &&
+        value.every(
+            (item) =>
+                isRecord(item) &&
+                typeof item['link'] === 'string' &&
+                typeof item['path'] === 'string'
+        )
+    )
 }
 
 /** The form of the identity of a note. It becomes the name of a file of the site. */
@@ -79,7 +94,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             !isRecord(entry) ||
             typeof entry['id'] !== 'string' ||
             !NOTE_ID.test(entry['id']) ||
-            typeof entry['path'] !== 'string'
+            typeof entry['path'] !== 'string' ||
+            !isLinkList(entry['links'])
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
         }
@@ -95,7 +111,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             vaultPath,
             path: canonicalPath(vaultPath),
             file: `-/note/${entry['id']}.html`,
-            title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, '')
+            title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, ''),
+            links: entry['links'].map((item) => ({ link: item.link, path: item.path }))
         })
     }
     // In the order of the paths, so that two builds of one content store give

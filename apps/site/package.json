@@ -13,6 +13,7 @@
         "serve": "bun server/serve.ts"
     },
     "dependencies": {
+        "@astrojs/markdown-satteri": "0.4.10",
         "@dsebastien-website/resolver": "workspace:*",
         "@tailwindcss/vite": "4.3.5",
         "astro": "7.4.12",

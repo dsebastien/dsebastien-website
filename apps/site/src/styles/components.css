@@ -1,0 +1,6 @@
+/* The component classes of the site. The tokens are apart, in the theme. */
+
+/* The text of a link whose target is not published (REN-04). The mockups set its final look. */
+.not-published {
+    @apply underline decoration-dotted underline-offset-4 opacity-75;
+}
