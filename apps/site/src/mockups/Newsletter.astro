@@ -1,0 +1,37 @@
+---
+// The newsletter block at the end of a page. The fixed bar of NEWS-01 comes
+// with its slice.
+interface Props {
+    filled?: boolean
+}
+
+const { filled = false } = Astro.props
+---
+
+<section
+    aria-labelledby='newsletter-title'
+    class:list={['rounded-card p-6 sm:p-8', filled ? 'bg-secondary text-on-secondary' : 'card']}
+>
+    <h2 id='newsletter-title' class='text-xl font-bold'>
+        Get one useful idea each week
+    </h2>
+    <p class:list={['mt-2', filled ? '' : 'text-muted']}>
+        The newsletter about knowledge management, productivity and AI. Free, every week.
+    </p>
+    <form class='mt-5 flex flex-col gap-3 sm:flex-row' action='#'>
+        <label class='visually-hidden' for='email'>
+            Email address
+        </label>
+        <input id='email' type='email' placeholder='you@example.com' class='field sm:max-w-sm' />
+        <button
+            type='submit'
+            class:list={[
+                filled
+                    ? 'inline-flex items-center justify-center rounded-control bg-background px-4 py-2 font-semibold text-primary'
+                    : 'button'
+            ]}
+        >
+            Subscribe
+        </button>
+    </form>
+</section>

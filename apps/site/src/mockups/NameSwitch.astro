@@ -1,0 +1,17 @@
+---
+import { SITE_NAMES } from './sample.ts'
+
+// For the mockups only: a choice of the proposed site names (OPEN-06).
+---
+
+<label class='flex items-center gap-2 text-sm text-muted'>
+    <span>Site name</span>
+    <select
+        data-name-switch
+        class='rounded-control border border-border-strong bg-well px-2 py-1 text-primary'
+    >
+        {SITE_NAMES.map((name) => (
+            <option value={name}>{name}</option>
+        ))}
+    </select>
+</label>

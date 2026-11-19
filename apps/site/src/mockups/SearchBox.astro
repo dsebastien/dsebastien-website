@@ -1,0 +1,35 @@
+---
+// The search field (NAV-01). In the mockups it does nothing.
+interface Props {
+    hint: string
+    large?: boolean
+}
+
+const { hint, large = false } = Astro.props
+---
+
+<form role='search' class='relative w-full' action='#'>
+    <label class='visually-hidden' for={large ? 'search-large' : 'search'}>
+        Search the notes
+    </label>
+    <svg
+        class='pointer-events-none absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2 text-muted'
+        viewBox='0 0 24 24'
+        fill='none'
+        stroke='currentColor'
+        stroke-width='2'
+        aria-hidden='true'
+    >
+        <circle cx='11' cy='11' r='7'></circle>
+        <path d='m20 20-3.5-3.5'></path>
+    </svg>
+    <input
+        id={large ? 'search-large' : 'search'}
+        type='search'
+        placeholder={hint}
+        class:list={['field pl-10', large ? 'py-3.5 text-lg' : 'py-2']}
+    />
+    <kbd class='pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded-control border border-border-strong px-1.5 text-xs text-muted sm:block'>
+        /
+    </kbd>
+</form>

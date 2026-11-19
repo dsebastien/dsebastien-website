@@ -1,0 +1,76 @@
+/*
+ * The token contract of the site (DES-02, DES-12 of the spec). Components use
+ * the Tailwind utilities that these theme variables make (`bg-surface`,
+ * `text-muted`, `rounded-card`), never a raw value. A theme gives each
+ * `--theme-*` value, in a dark and a light mode: see `themes/knowii.css`.
+ * The names are the same in every theme.
+ */
+
+/* The modes: the attribute `data-theme` of the page (MODE-01). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+
+/* The default palette, fonts, radii and shadows of Tailwind are switched off. */
+@theme {
+    --color-*: initial;
+    --font-*: initial;
+    --radius-*: initial;
+    --shadow-*: initial;
+}
+
+@theme inline {
+    /* Surfaces, from the page to a raised card. */
+    --color-background: var(--theme-background);
+    --color-surface: var(--theme-surface);
+    --color-surface-elevated: var(--theme-surface-elevated);
+    --color-well: var(--theme-well);
+    --color-overlay: var(--theme-overlay);
+
+    /* Text. `secondary-text` fails WCAG AA for normal text in the dark mode: large or decorative text only. */
+    --color-primary: var(--theme-primary);
+    --color-muted: var(--theme-muted);
+    --color-secondary: var(--theme-secondary);
+    --color-secondary-text: var(--theme-secondary-text);
+    --color-on-secondary: var(--theme-on-secondary);
+
+    /* Links and focus rings pass contrast on every surface (DES-05). */
+    --color-link: var(--theme-link);
+    --color-link-decoration: var(--theme-link-decoration);
+    --color-focus: var(--theme-focus);
+
+    --color-border: var(--theme-border);
+    --color-border-strong: var(--theme-border-strong);
+
+    --color-success: var(--theme-success);
+    --color-warning: var(--theme-warning);
+    --color-danger: var(--theme-danger);
+
+    --font-sans: var(--theme-font-sans);
+    --font-mono: var(--theme-font-mono);
+
+    --radius-control: var(--theme-radius-control);
+    --radius-card: var(--theme-radius-card);
+    --radius-pill: var(--theme-radius-pill);
+
+    --shadow-raised: var(--theme-shadow-raised);
+
+    --ease-standard: var(--theme-ease-standard);
+}
+
+:root {
+    /* Paragraphs: left-aligned, no hyphenation (DES-06). */
+    --paragraph-align: left;
+    --paragraph-hyphens: manual;
+    /* Motion (DES-09). */
+    --duration-quick: 150ms;
+}
+
+/* One rule removes motion when the reader asked for less (DES-09). */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-quick: 0ms;
+    }
+    html {
+        scroll-behavior: auto;
+    }
+}

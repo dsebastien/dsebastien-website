@@ -1,6 +1,139 @@
-/* The component classes of the site. The tokens are apart, in the theme. */
+/* The component classes of the site. The tokens are apart, in `tokens.css`. */
 
-/* The text of a link whose target is not published (REN-04). The mockups set its final look. */
-.not-published {
-    @apply underline decoration-dotted underline-offset-4 opacity-75;
+@layer base {
+    html {
+        @apply bg-background font-sans text-primary antialiased;
+        scroll-behavior: smooth;
+    }
+
+    body {
+        @apply min-h-screen leading-relaxed;
+    }
+
+    :focus-visible {
+        @apply outline-2 outline-offset-2 outline-focus;
+    }
+}
+
+/* A utility, so that other component classes can apply it. */
+@utility card {
+    @apply rounded-card border border-border bg-surface;
+}
+
+@utility badge {
+    @apply inline-flex items-center rounded-pill border border-border-strong px-2.5 py-0.5 text-xs font-semibold tracking-wide text-primary uppercase;
+}
+
+@layer components {
+    /* A link in a text: the text color, with an underline in the accent. */
+    .link {
+        @apply text-link underline decoration-link-decoration decoration-2 underline-offset-4;
+        transition: text-decoration-thickness var(--duration-quick) var(--ease-standard);
+    }
+
+    .link:hover {
+        @apply decoration-[3px];
+    }
+
+    /* The text of a link whose target is not published (REN-04). */
+    .not-published {
+        @apply text-muted underline decoration-dotted underline-offset-4;
+    }
+
+    /* The skip link: hidden until it has the focus (DES-11). */
+    .skip-link {
+        @apply absolute -top-full left-4 z-50 rounded-control bg-secondary px-4 py-2 text-on-secondary;
+    }
+
+    .skip-link:focus {
+        @apply top-4;
+    }
+
+    .card-link {
+        @apply card block p-4 transition-colors;
+    }
+
+    .card-link:hover {
+        @apply border-border-strong bg-surface-elevated;
+    }
+
+    .badge-accent {
+        @apply badge border-secondary bg-secondary text-on-secondary;
+    }
+
+    .chip {
+        @apply inline-flex items-center gap-1 rounded-pill bg-well px-3 py-1 text-sm text-primary;
+    }
+
+    .chip:hover {
+        @apply bg-surface-elevated;
+    }
+
+    .button {
+        @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-[filter];
+    }
+
+    .button:hover {
+        filter: brightness(1.1);
+    }
+
+    .button-quiet {
+        @apply inline-flex items-center justify-center gap-2 rounded-control border border-border-strong px-3 py-1.5 text-sm text-primary;
+    }
+
+    .button-quiet:hover {
+        @apply bg-surface-elevated;
+    }
+
+    .field {
+        @apply w-full rounded-control border border-border-strong bg-well px-4 py-2.5 text-primary placeholder:text-muted;
+    }
+
+    .section-title {
+        @apply mb-4 text-sm font-semibold tracking-widest text-muted uppercase;
+    }
+
+    /* The text of a note. */
+    .note-text {
+        @apply text-lg leading-8;
+    }
+
+    .note-text p,
+    .note-text li {
+        text-align: var(--paragraph-align);
+        hyphens: var(--paragraph-hyphens);
+    }
+
+    .note-text > * + * {
+        @apply mt-5;
+    }
+
+    .note-text h2 {
+        @apply mt-10 scroll-mt-24 text-2xl font-bold;
+    }
+
+    .note-text h3 {
+        @apply mt-8 scroll-mt-24 text-xl font-semibold;
+    }
+
+    .note-text ul {
+        @apply list-disc space-y-2 pl-6 marker:text-secondary-text;
+    }
+
+    .note-text ol {
+        @apply list-decimal space-y-2 pl-6;
+    }
+
+    .note-text blockquote {
+        @apply border-l-4 border-secondary py-1 pl-5 text-muted italic;
+    }
+
+    .note-text code {
+        @apply rounded-control bg-well px-1.5 py-0.5 font-mono text-base;
+    }
+
+    /* Text for screen readers only. */
+    .visually-hidden {
+        @apply sr-only;
+    }
 }

@@ -1,0 +1,124 @@
+---
+import Blocks from '../Blocks.astro'
+import Footer from '../Footer.astro'
+import Header from './Header.astro'
+import LocalGraph from '../LocalGraph.astro'
+import Newsletter from '../Newsletter.astro'
+import NoteBody from '../NoteBody.astro'
+import { BOOK, NOTE } from '../sample.ts'
+
+// Variant A of the note page: one reading column in the decided order
+// (section 11.2.3), the outline in a side column on wide screens. The author
+// line is under the title; cite and share close the text.
+interface Props {
+    kind: 'concept' | 'book'
+}
+
+const { kind } = Astro.props
+const note = kind === 'book' ? BOOK : NOTE
+const outline =
+    kind === 'book'
+        ? [
+              { id: 'notes', label: 'My notes' },
+              { id: 'highlights', label: 'Highlights' }
+          ]
+        : NOTE.outline
+---
+
+<Header />
+<div class='mx-auto grid max-w-6xl gap-10 px-4 pt-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_15rem]'>
+    <main id='content' class='min-w-0 max-w-[72ch]'>
+        <Blocks block='breadcrumb' kind={kind} />
+        <header class='mt-4'>
+            <h1 class='text-3xl font-bold tracking-tight sm:text-4xl'>{note.title}</h1>
+            <p class='mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted'>
+                <span class='badge-accent'>{note.type}</span>
+                <span>
+                    Created <time datetime={note.created}>{note.created}</time>
+                </span>
+                <span aria-hidden='true'>·</span>
+                <span>
+                    Updated <time datetime={note.updated}>{note.updated}</time>
+                </span>
+                <span aria-hidden='true'>·</span>
+                <span>{note.readingTime}</span>
+            </p>
+            <div class='mt-4'>
+                <Blocks block='author' />
+            </div>
+        </header>
+
+        <details class='card mt-6 lg:hidden'>
+            <summary class='cursor-pointer px-5 py-3 font-semibold'>On this page</summary>
+            <ol class='space-y-1 border-t border-border px-5 py-3 text-sm'>
+                {outline.map((item) => (
+                    <li>
+                        <a class='hover:underline' href={`#${item.id}`}>
+                            {item.label}
+                        </a>
+                    </li>
+                ))}
+            </ol>
+        </details>
+
+        <div class='mt-6 space-y-5'>
+            <Blocks block='in-short' kind={kind} />
+            {kind === 'book' && <Blocks block='key-facts' />}
+            <Blocks block='part-of' kind={kind} />
+            <Blocks block='properties' />
+        </div>
+
+        <article class='mt-8'>
+            {kind === 'book' ? <Blocks block='highlights' /> : <NoteBody />}
+        </article>
+
+        <div class='mt-12 space-y-5 border-t border-border pt-8'>
+            <Blocks block='share' />
+            <Blocks block='cite' kind={kind} />
+        </div>
+
+        <div class='mt-12 space-y-12'>
+            <Blocks block='related' />
+            <Blocks block='ad' />
+            <Blocks block='backlinks' />
+            <section aria-labelledby='graph-heading'>
+                <h2 id='graph-heading' class='section-title'>
+                    Local graph
+                </h2>
+                <LocalGraph />
+            </section>
+            <Newsletter />
+        </div>
+    </main>
+
+    <aside class='hidden lg:block' aria-label='On this page'>
+        <nav class='sticky top-24'>
+            <p class='section-title'>On this page</p>
+            <ol class='space-y-2 border-l border-border text-sm'>
+                {outline.map((item, index) => (
+                    <li>
+                        <a
+                            href={`#${item.id}`}
+                            class:list={[
+                                '-ml-px block border-l-2 pl-4 hover:text-primary',
+                                index === 0
+                                    ? 'border-secondary text-primary'
+                                    : 'border-transparent text-muted'
+                            ]}
+                        >
+                            {item.label}
+                        </a>
+                    </li>
+                ))}
+            </ol>
+        </nav>
+    </aside>
+</div>
+<a
+    href='#content'
+    class='button-quiet fixed right-4 bottom-4 bg-surface shadow-raised'
+    aria-label='Back to the top'
+>
+    ↑
+</a>
+<Footer />

@@ -1,0 +1,37 @@
+---
+import ModeSwitch from '../ModeSwitch.astro'
+import SearchBox from '../SearchBox.astro'
+import { HERO } from '../sample.ts'
+
+// Variant B: a bar on the surface, the search in the middle, and a direct
+// way to the graph and the types (NAV-01).
+---
+
+<header class='sticky top-0 z-40 border-b border-border bg-surface'>
+    <div class='flex h-16 items-center gap-4 px-4 sm:px-6'>
+        <a href='home' class='flex shrink-0 items-center gap-2 text-lg font-bold'>
+            <span
+                class='flex h-8 w-8 items-center justify-center rounded-control bg-secondary text-sm text-on-secondary'
+                aria-hidden='true'
+            >
+                K
+            </span>
+            <span data-site-name></span>
+        </a>
+        <div class='mx-auto hidden w-full max-w-xl md:block'>
+            <SearchBox hint={HERO.searchHint} />
+        </div>
+        <nav aria-label='Main' class='ml-auto flex items-center gap-2 md:ml-0'>
+            <a class='button-quiet hidden sm:inline-flex' href='#'>
+                Graph
+            </a>
+            <a class='button-quiet hidden sm:inline-flex' href='#'>
+                Types
+            </a>
+            <ModeSwitch />
+        </nav>
+    </div>
+    <div class='border-t border-border px-4 py-2 md:hidden'>
+        <SearchBox hint={HERO.searchHint} />
+    </div>
+</header>

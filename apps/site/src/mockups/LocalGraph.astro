@@ -1,0 +1,56 @@
+---
+import { NOTE } from './sample.ts'
+
+// The local graph of a note (PAGE-06), with a list of the neighbors for
+// screen readers and small screens. In the mockups it is a drawing.
+---
+
+<div class='card overflow-hidden'>
+    <svg
+        viewBox='0 0 340 210'
+        class='h-auto w-full bg-well'
+        role='img'
+        aria-labelledby='graph-title'
+    >
+        <title id='graph-title'>The notes linked to this note</title>
+        {NOTE.graph.map((node) => (
+            <line
+                x1='170'
+                y1='100'
+                x2={node.x}
+                y2={node.y}
+                class='stroke-border-strong'
+                stroke-width='1.5'
+            />
+        ))}
+        <circle cx='170' cy='100' r='11' class='fill-secondary' />
+        {NOTE.graph.map((node) => (
+            <g>
+                <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r='7'
+                    class='fill-surface-elevated stroke-muted'
+                    stroke-width='1.5'
+                />
+                <text
+                    x={node.x}
+                    y={node.y + 20}
+                    text-anchor='middle'
+                    class='fill-muted text-[10px]'
+                >
+                    {node.label}
+                </text>
+            </g>
+        ))}
+    </svg>
+    <ul class='flex flex-wrap gap-2 p-4 text-sm'>
+        {NOTE.graph.map((node) => (
+            <li>
+                <a class='chip' href='#'>
+                    {node.label}
+                </a>
+            </li>
+        ))}
+    </ul>
+</div>

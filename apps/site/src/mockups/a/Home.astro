@@ -1,0 +1,107 @@
+---
+import Footer from '../Footer.astro'
+import Header from './Header.astro'
+import Newsletter from '../Newsletter.astro'
+import SearchBox from '../SearchBox.astro'
+import { HERO, NOTE_TYPES, RECENTLY_ADDED, RECENTLY_UPDATED, STATS, TOPICS } from '../sample.ts'
+
+// Variant A of the home page, in the decided order (NAV-02): hero with the
+// search, topics, note types, recently added and updated, stats, newsletter.
+// The "start here" block is hidden while no note is featured.
+---
+
+<Header />
+<main id='content' class='mx-auto max-w-6xl px-4 sm:px-6'>
+    <section class='py-16 text-center sm:py-24'>
+        <h1 class='text-4xl font-bold tracking-tight sm:text-5xl' data-site-name></h1>
+        <p class='mx-auto mt-5 max-w-2xl text-lg text-muted sm:text-xl'>{HERO.sentence}</p>
+        <div class='mx-auto mt-8 max-w-xl'>
+            <SearchBox hint={HERO.searchHint} large />
+        </div>
+    </section>
+
+    <section aria-labelledby='topics' class='py-8'>
+        <h2 id='topics' class='section-title'>
+            Explore by topic
+        </h2>
+        <ul class='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+            {TOPICS.map((topic) => (
+                <li>
+                    <a class='card-link flex items-baseline justify-between gap-3' href='#'>
+                        <span class='font-semibold'>{topic.name}</span>
+                        <span class='text-sm text-muted'>{topic.count.toLocaleString('en')}</span>
+                    </a>
+                </li>
+            ))}
+        </ul>
+    </section>
+
+    <section aria-labelledby='types' class='py-8'>
+        <h2 id='types' class='section-title'>
+            Explore by note type
+        </h2>
+        <ul class='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+            {NOTE_TYPES.map((type) => (
+                <li>
+                    <a class='card-link h-full' href='#'>
+                        <span class='flex items-baseline justify-between gap-3'>
+                            <span class='font-semibold'>{type.name}</span>
+                            <span class='text-sm text-muted'>
+                                {type.count.toLocaleString('en')}
+                            </span>
+                        </span>
+                        <span class='mt-1 block text-sm text-muted'>{type.hint}</span>
+                    </a>
+                </li>
+            ))}
+        </ul>
+    </section>
+
+    <div class='grid gap-8 py-8 md:grid-cols-2'>
+        {[
+            { id: 'added', title: 'Recently added', notes: RECENTLY_ADDED },
+            { id: 'updated', title: 'Recently updated', notes: RECENTLY_UPDATED }
+        ].map((list) => (
+            <section aria-labelledby={list.id}>
+                <h2 id={list.id} class='section-title'>
+                    {list.title}
+                </h2>
+                <ul class='card divide-y divide-border'>
+                    {list.notes.map((note) => (
+                        <li>
+                            <a
+                                class='flex items-center justify-between gap-4 px-4 py-3 hover:bg-surface-elevated'
+                                href='note'
+                            >
+                                <span>
+                                    <span class='font-medium'>{note.title}</span>
+                                    <span class='ml-2 text-sm text-muted'>{note.type}</span>
+                                </span>
+                                <time class='shrink-0 text-sm text-muted' datetime={note.date}>
+                                    {note.date}
+                                </time>
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </section>
+        ))}
+    </div>
+
+    <p class='py-6 text-center text-muted'>
+        <strong class='text-primary'>{STATS.notes}</strong>
+        {' notes, '}
+        <strong class='text-primary'>{STATS.links}</strong>
+        {' links and '}
+        <strong class='text-primary'>{STATS.words}</strong>
+        {` words, written since ${STATS.since}. `}
+        <a class='link' href='#'>
+            See the stats
+        </a>
+    </p>
+
+    <div class='py-8'>
+        <Newsletter />
+    </div>
+</main>
+<Footer />

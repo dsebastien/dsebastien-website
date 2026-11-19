@@ -1,0 +1,123 @@
+---
+import Blocks from '../Blocks.astro'
+import Footer from '../Footer.astro'
+import Header from './Header.astro'
+import LocalGraph from '../LocalGraph.astro'
+import Newsletter from '../Newsletter.astro'
+import NoteBody from '../NoteBody.astro'
+import { BOOK, NOTE } from '../sample.ts'
+
+// Variant B of the note page: a title band, then three columns on wide
+// screens. The outline is in the left rail; the author, cite and share are in
+// the right rail. On a small screen the rails go below the text. The main
+// column keeps the decided order (section 11.2.3).
+interface Props {
+    kind: 'concept' | 'book'
+}
+
+const { kind } = Astro.props
+const note = kind === 'book' ? BOOK : NOTE
+const outline =
+    kind === 'book'
+        ? [
+              { id: 'notes', label: 'My notes' },
+              { id: 'highlights', label: 'Highlights' }
+          ]
+        : NOTE.outline
+---
+
+<Header />
+<div class='border-b border-border bg-well'>
+    <div class='mx-auto max-w-7xl px-4 py-8 sm:px-6'>
+        <Blocks block='breadcrumb' kind={kind} />
+        <h1 class='mt-4 max-w-4xl text-3xl font-bold tracking-tight sm:text-5xl'>{note.title}</h1>
+        <p class='mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted'>
+            <span class='badge'>{note.type}</span>
+            <span>
+                Created <time datetime={note.created}>{note.created}</time>
+            </span>
+            <span>
+                Updated <time datetime={note.updated}>{note.updated}</time>
+            </span>
+            <span>{note.readingTime}</span>
+        </p>
+    </div>
+</div>
+
+<div class='mx-auto grid max-w-7xl gap-10 px-4 pt-8 sm:px-6 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[13rem_minmax(0,1fr)_18rem]'>
+    <aside class='hidden lg:block' aria-label='On this page'>
+        <nav class='sticky top-24'>
+            <p class='section-title'>On this page</p>
+            <ol class='space-y-1 text-sm'>
+                {outline.map((item, index) => (
+                    <li>
+                        <a
+                            href={`#${item.id}`}
+                            class:list={[
+                                'block rounded-control px-3 py-1.5 hover:bg-surface',
+                                index === 0 ? 'bg-surface font-semibold text-primary' : 'text-muted'
+                            ]}
+                        >
+                            {item.label}
+                        </a>
+                    </li>
+                ))}
+            </ol>
+        </nav>
+    </aside>
+
+    <main id='content' class='min-w-0 max-w-[72ch]'>
+        <div class='sticky top-32 z-30 -mx-4 mb-4 md:top-16 border-b border-border bg-background/95 px-4 py-2 text-sm backdrop-blur lg:hidden'>
+            <span class='text-muted'>Section:</span>{' '}
+            <a class='font-semibold' href={`#${outline[0]?.id ?? ''}`}>
+                {outline[0]?.label}
+            </a>
+        </div>
+        <div class='space-y-5'>
+            <Blocks block='in-short' kind={kind} />
+            {kind === 'book' && <Blocks block='key-facts' />}
+            <Blocks block='part-of' kind={kind} />
+            <Blocks block='properties' />
+        </div>
+        <article class='mt-8'>
+            {kind === 'book' ? <Blocks block='highlights' /> : <NoteBody />}
+        </article>
+        <div class='mt-12 space-y-12'>
+            <div class='space-y-5 xl:hidden'>
+                <Blocks block='author' />
+                <Blocks block='share' />
+                <Blocks block='cite' kind={kind} />
+            </div>
+            <Blocks block='related' />
+            <Blocks block='ad' />
+            <Blocks block='backlinks' />
+            <section aria-labelledby='graph-heading'>
+                <h2 id='graph-heading' class='section-title'>
+                    Local graph
+                </h2>
+                <LocalGraph />
+            </section>
+            <Newsletter filled />
+        </div>
+    </main>
+
+    <aside class='hidden xl:block' aria-label='About this note'>
+        <div class='sticky top-24 space-y-5'>
+            <div class='card p-5'>
+                <Blocks block='author' />
+            </div>
+            <Blocks block='cite' kind={kind} />
+            <div class='card p-5'>
+                <Blocks block='share' />
+            </div>
+        </div>
+    </aside>
+</div>
+<a
+    href='#content'
+    class='button-quiet fixed right-4 bottom-4 bg-surface shadow-raised'
+    aria-label='Back to the top'
+>
+    ↑
+</a>
+<Footer />
