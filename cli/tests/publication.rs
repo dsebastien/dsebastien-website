@@ -901,6 +901,7 @@ fn a_note_whose_name_starts_with_a_hyphen_can_be_included() {
 }
 
 /// The lock of another run: the author ran unlock while a publication ran.
+#[cfg(unix)]
 const OTHER_LOCK: &str = "{\n  \"command\": \"plan\",\n  \"process\": 1\n}\n";
 
 /// The corrections after the first review of issue 36: a publication whose
@@ -1023,6 +1024,7 @@ fn a_folder_that_is_not_a_copy_of_the_content_store_gets_no_file_of_the_tool() {
 }
 
 /// The note with the ignore property: a guard now excludes it.
+#[cfg(unix)]
 const IGNORED_NOTE: &str = "---\npublish_ignore: true\n---\nPrivate now.\n";
 
 /// The corrections after the second review of issue 36: another run puts a
