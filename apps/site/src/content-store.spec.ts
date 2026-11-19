@@ -11,6 +11,7 @@ import { readPublishedNotes } from './content-store.ts'
 const SITE = fileURLToPath(new URL('..', import.meta.url))
 
 const ENTRY = {
+    aliases: [],
     attachments: [],
     cleanedHash: 'sha256:0',
     cleaningVersion: 2,

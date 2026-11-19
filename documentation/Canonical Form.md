@@ -65,7 +65,7 @@ Three points differ between the languages, and the logic must stay away from the
 
 1. A vault path is relative to the root of the vault, with `/` between its parts and no `/` at the start, on every system.
 2. A path is written and compared as the vault gives it. The logic never changes its letter case and never converts it to another Unicode form: a converted path can name no file.
-3. The fixture vault holds names in the composed Unicode form (NFC) only. What the tool does with a name in another form is not decided: the slice of the URL contract decides it (URL-02 of the spec).
+3. The fixture vault holds names in the composed Unicode form (NFC) only. A name in another form is published as the vault writes it, and its canonical URL encodes it so (decision R47). The resolver of the site reads a request in the composed form, so the other forms lead to the note with a redirect (URL-02 of the spec). The tool compares two names in the folded form of "The root names of the site" only to stop a plan, never to name a file.
 
 ## The content store
 
@@ -205,15 +205,15 @@ The empty plan. A test compares this block with the output of the code:
 
 A plan is stored on the device as a record: the plan, the selection that gave it, and the state that it was computed from. The record is stored outside the vault and outside the content of the store. The parity rule compares the record.
 
-| Key                   | Value                                                                                                                                                                                                 |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `plan`                | The plan                                                                                                                                                                                              |
-| `selection.hold`      | The vault paths of the selection to hold, each one time, sorted                                                                                                                                       |
-| `selection.include`   | The vault paths of the selection to publish, each one time, sorted                                                                                                                                    |
-| `selection.remove`    | The vault paths of the selection to unpublish, each one time, sorted                                                                                                                                  |
-| `state.configuration` | `sha256:` and the SHA-256 of the text of `configuration.json`, or `none` when the store has no such file                                                                                              |
-| `state.manifest`      | `sha256:` and the SHA-256 of the manifest: for each file of `manifest/`, in the order of the paths, its path in the store, a line feed, the hash of its text in the form of the manifest, a line feed |
-| `state.notes`         | A list with, for each note of `publish` and of `update`, its `path`, its `sourceHash`, its `cleanedHash`, its `links` and its `attachments` (in the form of the manifest entry), sorted by path       |
+| Key                   | Value                                                                                                                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plan`                | The plan                                                                                                                                                                                                       |
+| `selection.hold`      | The vault paths of the selection to hold, each one time, sorted                                                                                                                                                |
+| `selection.include`   | The vault paths of the selection to publish, each one time, sorted                                                                                                                                             |
+| `selection.remove`    | The vault paths of the selection to unpublish, each one time, sorted                                                                                                                                           |
+| `state.configuration` | `sha256:` and the SHA-256 of the text of `configuration.json`, or `none` when the store has no such file                                                                                                       |
+| `state.manifest`      | `sha256:` and the SHA-256 of the manifest: for each file of `manifest/`, in the order of the paths, its path in the store, a line feed, the hash of its text in the form of the manifest, a line feed          |
+| `state.notes`         | A list with, for each note of `publish` and of `update`, its `path`, its `sourceHash`, its `cleanedHash`, its `aliases`, its `links` and its `attachments` (in the form of the manifest entry), sorted by path |
 
 The `cleanedHash` of a note in the record is the hash of the cleaned note that the publication will write. It is what the plan shows of the text (PUB-92 of the spec).
 
@@ -221,7 +221,7 @@ The `plan` command gives the id, the plan, and `offline`: `true` when the conten
 
 The id of a plan is 16 hexadecimal digits of the SHA-256 of its record. It names the stored file. It is outside the parity rule. The tool accepts no other form of id.
 
-Before a plan is applied, its record is computed again from the selection. When the new record is not the stored one, the plan is stale and nothing is published: a note of the plan was edited, another published note changed and would enter the plan, a published note came under a guard, a link of a note of the plan leads to another note, an attachment of a note of the plan changed, the configuration changed, another publication changed the manifest, or the version of the cleaning step is another one. A new candidate and an edit of a note that is not published do not make a plan stale.
+Before a plan is applied, its record is computed again from the selection. When the new record is not the stored one, the plan is stale and nothing is published: a note of the plan was edited, another published note changed and would enter the plan, a published note came under a guard, a link of a note of the plan leads to another note, an attachment of a note of the plan changed, the configuration changed, another publication changed the manifest, or the version of the cleaning step is another one. A new candidate and an edit of a note that is not published do not make a plan stale. A plan that would stop on the rules of "The root names of the site" is refused at its computation, so no record of it is stored.
 
 ## A publication
 
@@ -359,7 +359,8 @@ A cleaned note is Markdown text, in the encoding of this document.
 2. Version 1 of the cleaning step changes nothing more: the cleaned note is the source.
 3. Version 2 resolves the links of the note (PUB-87 of the spec). It changes no character of the text: the cleaned note is still the source, and a link stays as the author wrote it, with its link text (PUB-89). The result is the list `links` of the manifest entry, which says to which note each link leads. The section "The links of a note" has the rules.
 4. Version 3 also resolves a link to a file that is not a note, and collects the attachments of the note (PUB-37). It still changes no character of the text. The result is the list `attachments` of the manifest entry. The section "The attachments of a note" has the rules.
-5. The ticket that adds a rule to the cleaning step writes it here before the second implementation is written, and raises the version.
+5. Version 4 also reads the aliases of the note (URL-02 of the spec). It still changes no character of the text. The result is the list `aliases` of the manifest entry. The section "The aliases of a note" has the rules.
+6. The ticket that adds a rule to the cleaning step writes it here before the second implementation is written, and raises the version.
 
 No content store was written with version 1 outside the tests, so the tool reads no manifest entry without `links`.
 
@@ -439,12 +440,47 @@ An attachment is a file of the vault that is not a note and that a link of a not
 
 The shared cases are in `fixtures/canonical/links.json` (which file a link leads to) and `fixtures/canonical/images.json` (the bytes of a file and the size that rule 5 gives).
 
+## The aliases of a note
+
+An alias is another name of a note: a URL with the alias leads to the note (URL-02 and URL-24 of the spec). The tool reads the aliases from the source of the note, as lines of text, with the rules of "Notes and their properties".
+
+1. Only closed properties are read (rule 2 of the properties). A note without them has no alias.
+2. A property of the note itself (rule 4 of the properties) whose key is exactly `aliases` (rule 3, the letter case as written) holds aliases. No other key is read: not `alias`, not `Aliases`. When two properties name the key, both are read.
+3. The value of the property:
+    - Empty: the items are the next lines of the property that start with a hyphen after optional spaces and tabs, and with a space, a tab or nothing after that hyphen. An item is the text after the hyphen. Every other line of the property is skipped.
+    - Starts with `[` and ends with `]`: a list in the flow form. The text between them is cut at each comma, and each piece is an item. A piece that starts with a quote, after spaces and tabs, goes on to its closing quote first: a comma inside it does not cut. In double quotes, a backslash takes the next character with it. In single quotes, `''` is no closing quote.
+    - Any other value: one item.
+4. An item, without the spaces and the tabs around it:
+    - In double quotes (it starts and ends with `"`, and is at least 2 characters long): the text between them, where `\"` is `"` and `\\` is `\`. An item with another backslash escape gives no alias: YAML would read it in a way that these rules do not write.
+    - In single quotes (it starts and ends with `'`, at least 2 characters): the text between them, where `''` is `'`.
+    - Any other item: the text before the first space or tab that is followed by `#` (a comment), without the spaces and the tabs at its end.
+    - An empty result gives no alias.
+5. A reserved alias gives no alias: an alias whose first part (the text before its first slash, or the whole alias when it has none) is a reserved root name (see "The root names of the site"). The reserved file of the site always wins over the alias. The publication of the note goes on, and the report has a warning for each reserved alias of each note that it publishes or updates, with the vault path of the note as its `path` (decision of the author, R47).
+6. The list `aliases` of the manifest entry holds each alias of the note one time, sorted in the order of the code points. The warnings name each reserved alias one time, in the same order.
+
+The shared cases are in the list `aliases` of `fixtures/canonical/properties.json`.
+
+## The root names of the site
+
+The site answers some names at its root itself: `robots.txt`, the sitemaps, `llms.txt`, the files of the search engines, `/-/` (URL-08 and URL-09 of the spec). A note must never take one of them.
+
+1. A root name is reserved when, with its ASCII capital letters in small letters, it is `-`, it starts with `.`, or it ends in `.html`, `.ico`, `.json`, `.txt` or `.xml`. That covers the files that the spec names (`robots.txt`, `sitemap.xml`, `sitemap-*.xml`, `llms.txt`, the key file of IndexNow, the files of the search engines, `.well-known/`) and the ones that a later slice adds.
+2. The folded form of a text: the text in the composed Unicode form (NFC), then in small letters (`toLowerCase` in TypeScript, `to_lowercase` in Rust). Two texts that have one folded form are one URL for the resolver, which ignores the letter case and the Unicode form of a request.
+3. A plan that publishes a note (its list `publish` is not empty) stops, with a message that names the note:
+    - when the file name of a note of `publish` (without `.md`) or the first folder of its path is a reserved root name;
+    - when two different texts among the published notes after the plan have one folded form. The texts are the vault path of each note without `.md`, and each folder of those paths. The published notes after the plan are the published entries of the manifest, without the notes of `forcedRemove` and of `remove`, with the notes of `publish`. A note and a folder with the same text are not two texts: the note wins (URL-16 of the spec).
+4. A plan without a new note never stops on these rules, so a forced removal is never blocked by them. A published note passed them when it was published, and an update does not change its path.
+5. Two notes with one file name in two folders are allowed. The URL with the file name alone then leads to no note, and the "not found" page names both (decision of the author, R47).
+
+The shared cases are in `fixtures/canonical/names.json` (`reserved`: a name and whether it is reserved; `folded`: two texts and whether they have one folded form). The queue scenarios hold plans that stop on these rules.
+
 ## The manifest entry
 
 One file per published note, as data in the canonical form.
 
 | Key               | Value                                                                                                                                                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `aliases`         | The aliases of the note that get a URL, each one time, in the order of the code points (see "The aliases of a note")                                               |
 | `attachments`     | The attachments of the note: for each link to a file that is not a note, its `link`, `path`, `hash`, `size` and the size of an image, sorted by `link` (see above) |
 | `cleanedHash`     | `sha256:` and the SHA-256 of the cleaned note, in small hexadecimal digits                                                                                         |
 | `cleaningVersion` | The version of the cleaning step that made the cleaned note: a whole number from 0                                                                                 |
@@ -460,8 +496,8 @@ One file per published note, as data in the canonical form.
 The entry of a note at a publication:
 
 1. A note that is published for the first time gets a new entry. `firstPublished` and `lastPublished` are the time of the run.
-2. A note that was unpublished and is published again keeps its entry: its `id`, its `firstPublished` and its `formerPaths` stay. Its state is `published` again, `lastPublished` is the time of the run, and the publication writes `cleanedHash`, `cleaningVersion`, `links`, `attachments` and `sourceHash`.
-3. An update writes `cleanedHash`, `cleaningVersion`, `links`, `attachments` and `sourceHash`. `lastPublished` is the time of the run when the hash of the source changed. A technical update does not move it (PUB-24 of the spec).
+2. A note that was unpublished and is published again keeps its entry: its `id`, its `firstPublished` and its `formerPaths` stay. Its state is `published` again, `lastPublished` is the time of the run, and the publication writes `aliases`, `cleanedHash`, `cleaningVersion`, `links`, `attachments` and `sourceHash`.
+3. An update writes `aliases`, `cleanedHash`, `cleaningVersion`, `links`, `attachments` and `sourceHash`. `lastPublished` is the time of the run when the hash of the source changed. A technical update does not move it (PUB-24 of the spec).
 4. An unpublish changes the state only. The entry keeps its `attachments`, but an unpublished note uses no file of the attachment storage.
 5. A forced removal removes the entry.
 
@@ -473,6 +509,7 @@ The manifest is read strictly. The tool stops in each of these cases:
 4. Two entries have the same `path`.
 5. An item of `links` is not an object with exactly a text `link` and a `path` that is the vault path of a note.
 6. An item of `attachments` is not an object with a text `link`, a `path` that is a vault path whose name does not end in `.md` in any letter case, a `hash` that is `sha256:` and 64 small hexadecimal digits, and a whole number `size` from 0, with `width` and `height` both whole numbers above 0 or both missing, and no other key. The tool makes the name of a file of the attachment storage from the hash, so a hash in another form could name another file.
+7. An item of `aliases` is not a text, or the list is not sorted in the order of the code points with each alias one time.
 
 Both implementations read a JSON file of the store and a stored plan in the same way (`json.ts`, `json.rs`, with the shared cases of the list `json` of `fixtures/canonical/cases.json`). A number is read as the nearest floating point number, as JavaScript reads it, so a whole number can be written in another form (`1.0`, `1e0`, `-0`, `9007199254740991.4`): it is that number. These texts are not JSON for the tool: a text with half of a surrogate pair, a number that is too large to hold, a key that is two times in one object (also when an escape writes it in another way), and data with more than 64 levels (rule 10 of the data). A second key with the same name would else hide a value that only one implementation refuses. A symbolic link in the copy of the content store is not a file of the store, and the tool follows none: a read or a write whose path has a link in one of its parts fails: it stops the run, but for the files of one note of `publish`, `update` or `remove`, where that note is left out (rule 4 of "A publication"), so `configuration.json` as a link, also a link that leads nowhere, is never read as no configuration. The manifest has one level: its files are the files directly in `manifest/`. A folder below it and a link in it are not read.
 

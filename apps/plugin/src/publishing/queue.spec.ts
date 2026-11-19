@@ -456,6 +456,7 @@ describe('status of the fixture vault', () => {
 
 describe('manifest that cannot be trusted', () => {
     const ENTRY = {
+        aliases: [],
         attachments: [],
         cleanedHash: 'sha256:00',
         cleaningVersion: 2,
@@ -556,7 +557,7 @@ describe('manifest that cannot be trusted', () => {
 
 describe('manifest in a form that only one reader of JSON would take', () => {
     const entry = (version: string, formerPaths = '[]'): string =>
-        `{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":${version},"firstPublished":"${TIME}","formerPaths":${formerPaths},"id":"00000000000000aa","lastPublished":"${TIME}","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"published"}`
+        `{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":${version},"firstPublished":"${TIME}","formerPaths":${formerPaths},"id":"00000000000000aa","lastPublished":"${TIME}","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"published"}`
 
     // A whole number in another form is the same number for both implementations.
     test.each(['1.0', '1e0', '-0'])('a version that is written as %s is read', async (version) => {
@@ -661,7 +662,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
 
     /** A valid entry of a note that is not published: only a check of the files of the copy refuses it. */
     const UNPUBLISHED_ENTRY = (id: string): string =>
-        `{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":2,"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"${id}","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"unpublished"}`
+        `{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":2,"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"${id}","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"unpublished"}`
 
     // Git for Windows converts line ends by default (`core.autocrlf`). A file
     // that differs from the commit only in its line ends is the same file.

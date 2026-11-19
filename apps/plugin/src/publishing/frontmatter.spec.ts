@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { sourceOf, STATE_PROPERTY } from './clean.ts'
-import { hasFlowProperties, namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
+import {
+    aliasesOf,
+    hasFlowProperties,
+    namesInProperties,
+    removeProperty,
+    setProperty
+} from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
 
 // The rules for the properties of a note (documentation/Canonical Form.md).
@@ -17,6 +23,7 @@ interface Cases {
     state: { name: string; note: string; result: string }[]
     removed: { name: string; note: string; result: string }[]
     flow: { name: string; note: string; flow: boolean }[]
+    aliases: { name: string; note: string; aliases: string[]; reserved: string[] }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
@@ -34,6 +41,16 @@ describe('ignore property of a note', () => {
 describe('flow form of the properties', () => {
     test.each(cases.flow.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
         expect(hasFlowProperties(entry.note)).toBe(entry.flow)
+    })
+})
+
+// The aliases of a note, from its source (section "The aliases of a note").
+describe('aliases of a note', () => {
+    test.each(cases.aliases.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
+        expect(aliasesOf(sourceOf(entry.note))).toEqual({
+            aliases: entry.aliases,
+            reserved: entry.reserved
+        })
     })
 })
 
@@ -69,5 +86,6 @@ describe('state property of a note', () => {
         expect(cases.source.length).toBeGreaterThan(10)
         expect(cases.state.length).toBeGreaterThan(10)
         expect(cases.flow.length).toBeGreaterThan(10)
+        expect(cases.aliases.length).toBeGreaterThan(20)
     })
 })

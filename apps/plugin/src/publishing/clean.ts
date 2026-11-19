@@ -4,7 +4,7 @@ import { marksOf, withoutProperty } from './frontmatter.ts'
 // spec). The Rust twin is `cli/src/clean.rs`.
 
 /** The version of the cleaning step. A new version makes a technical update of every note (PUB-24). */
-export const CLEANING_VERSION = 3
+export const CLEANING_VERSION = 4
 
 /** The property that records in the vault that a note is published. Only the tool writes it. */
 export const STATE_PROPERTY = 'public_note'
@@ -30,7 +30,8 @@ export function sourceOf(text: string): string {
  * The cleaned note of a source. It changes nothing: a selected note is
  * published as it is in the vault (ADR 0011). Version 2 resolves the links of
  * the note with no change of its text: the result is the list `links` of the
- * manifest entry (`links.ts`). Later slices remove what is not for rendering.
+ * manifest entry (`links.ts`). Version 3 adds the attachments, and version 4
+ * the aliases (`aliasesOf`). Later slices remove what is not for rendering.
  */
 export function cleanNote(source: string): string {
     return source

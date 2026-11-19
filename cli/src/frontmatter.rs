@@ -6,6 +6,9 @@
 //! The TypeScript twin is `apps/plugin/src/publishing/frontmatter.ts`. Change
 //! both in the same commit.
 
+use crate::names::{first_part, is_reserved_root_name};
+use crate::order::sort_by_code_point;
+
 /// The byte order mark. The marks at the start of a note are not part of its
 /// first line.
 pub const MARK: char = '\u{feff}';
@@ -321,9 +324,166 @@ pub fn set_property(text: &str, key: &str, value: &str) -> String {
     write(&note)
 }
 
+/// The property of the aliases of a note.
+const ALIASES: &str = "aliases";
+
+/// The aliases of a note: the ones that get a URL, and the reserved ones,
+/// which get none.
+#[derive(Debug, Default)]
+pub struct Aliases {
+    /// Each alias that gets a URL, one time, in the order of the code points.
+    pub aliases: Vec<String>,
+    /// Each reserved alias, one time, in the order of the code points.
+    pub reserved: Vec<String>,
+}
+
+/// The text of a list item of a property: after the hyphen. `None` when the
+/// line is no list item.
+fn list_item_of(line: &str) -> Option<&str> {
+    let start = line.trim_start_matches([' ', '\t']);
+    let rest = start.strip_prefix('-')?;
+    if rest.is_empty() || rest.starts_with([' ', '\t']) {
+        Some(rest)
+    } else {
+        None
+    }
+}
+
+/// The text between double quotes, with `\"` and `\\` read. `None` for
+/// another escape.
+fn unescape_double(text: &str) -> Option<String> {
+    let mut result = String::with_capacity(text.len());
+    let mut characters = text.chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            result.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some(next @ ('"' | '\\')) => result.push(next),
+            _ => return None,
+        }
+    }
+    Some(result)
+}
+
+/// One alias from one item of the property. `None` when the item gives no
+/// alias.
+fn alias_of_item(item: &str) -> Option<String> {
+    let text = trim(item);
+    let quoted = |quote: char| text.len() >= 2 && text.starts_with(quote) && text.ends_with(quote);
+    let alias = if quoted('"') {
+        unescape_double(&text[1..text.len() - 1])?
+    } else if quoted('\'') {
+        text[1..text.len() - 1].replace("''", "'")
+    } else {
+        let bytes = text.as_bytes();
+        let comment = (1..bytes.len()).find(|at| bytes[*at] == b'#' && is_blank(bytes[at - 1]));
+        trim(comment.map_or(text, |at| &text[..at - 1])).to_owned()
+    };
+    if alias.is_empty() { None } else { Some(alias) }
+}
+
+/// The end of an item in quotes that starts at a place: the place after its
+/// closing quote, or the end of the text.
+fn end_of_quoted(bytes: &[u8], start: usize) -> usize {
+    let quote = bytes[start];
+    let mut at = start + 1;
+    while at < bytes.len() {
+        if quote == b'"' && bytes[at] == b'\\' {
+            at += 2;
+            continue;
+        }
+        if bytes[at] == quote {
+            if quote == b'\'' && bytes.get(at + 1) == Some(&b'\'') {
+                at += 2;
+                continue;
+            }
+            return at + 1;
+        }
+        at += 1;
+    }
+    bytes.len()
+}
+
+/// The items of a list in the flow form, without its brackets: cut at each
+/// comma that is not inside an item in quotes.
+fn flow_items_of(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut items = Vec::new();
+    let mut start = 0;
+    loop {
+        let mut at = start;
+        while bytes.get(at).is_some_and(|byte| is_blank(*byte)) {
+            at += 1;
+        }
+        if bytes
+            .get(at)
+            .is_some_and(|byte| *byte == b'"' || *byte == b'\'')
+        {
+            at = end_of_quoted(bytes, at);
+        }
+        match bytes[at.min(bytes.len())..]
+            .iter()
+            .position(|byte| *byte == b',')
+        {
+            None => {
+                items.push(&text[start..]);
+                return items;
+            }
+            Some(offset) => {
+                items.push(&text[start..at + offset]);
+                start = at + offset + 1;
+            }
+        }
+    }
+}
+
+/// The aliases of a note, from its source (`documentation/Canonical Form.md`,
+/// section "The aliases of a note"). Only the property `aliases` of the note
+/// itself in closed properties is read. A reserved alias gets no URL: the file
+/// of the site wins.
+pub fn aliases_of(source: &str) -> Aliases {
+    let note = read(source);
+    let Some(close) = note.close else {
+        return Aliases::default();
+    };
+    let lines: Vec<&str> = note.lines[1..close]
+        .iter()
+        .map(|line| line.text.as_str())
+        .collect();
+    let mut items: Vec<&str> = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let Some(value) = value_of(line, ALIASES, false, false) else {
+            continue;
+        };
+        if value.is_empty() {
+            items.extend(
+                lines[index + 1..]
+                    .iter()
+                    .take_while(|next| continues(next))
+                    .filter_map(|next| list_item_of(next)),
+            );
+        } else if value.len() >= 2 && value.starts_with('[') && value.ends_with(']') {
+            items.extend(flow_items_of(&value[1..value.len() - 1]));
+        } else {
+            items.push(value);
+        }
+    }
+    let mut all: Vec<String> = items.into_iter().filter_map(alias_of_item).collect();
+    sort_by_code_point(&mut all);
+    all.dedup();
+    let (reserved, aliases) = all
+        .into_iter()
+        .partition(|alias| is_reserved_root_name(first_part(alias)));
+    Aliases { aliases, reserved }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{has_flow_properties, names_in_properties, remove_property, set_property};
+    use super::{
+        aliases_of, has_flow_properties, names_in_properties, remove_property, set_property,
+    };
     use crate::clean::{STATE_PROPERTY, source_of};
     use crate::guards::IGNORE_PROPERTY;
     use serde_json::Value;
@@ -352,6 +512,37 @@ mod tests {
             assert_eq!(
                 Some(names_in_properties(text(case, "note"), IGNORE_PROPERTY)),
                 case["excluded"].as_bool(),
+                "{}",
+                text(case, "name")
+            );
+        }
+    }
+
+    fn texts(case: &Value, key: &str) -> Vec<String> {
+        case[key]
+            .as_array()
+            .expect("a case has the list")
+            .iter()
+            .map(|item| item.as_str().expect("an item is a text").to_owned())
+            .collect()
+    }
+
+    /// The aliases of a note, from its source (section "The aliases of a note").
+    #[test]
+    fn reads_the_aliases_as_the_file_states() {
+        let cases = cases("aliases");
+        assert!(cases.len() > 20);
+        for case in &cases {
+            let aliases = aliases_of(&source_of(text(case, "note")));
+            assert_eq!(
+                aliases.aliases,
+                texts(case, "aliases"),
+                "{}",
+                text(case, "name")
+            );
+            assert_eq!(
+                aliases.reserved,
+                texts(case, "reserved"),
                 "{}",
                 text(case, "name")
             );

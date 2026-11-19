@@ -524,6 +524,7 @@ fn the_status_stops_when_the_deny_list_names_no_folder_of_the_vault() {
 fn a_manifest_that_cannot_be_trusted_stops_the_status_and_the_plan() {
     let entry = |changes: Value| {
         let mut entry = json!({
+            "aliases": [],
             "attachments": [],
             "cleanedHash": "sha256:00",
             "cleaningVersion": 2,
@@ -628,7 +629,7 @@ fn a_manifest_that_cannot_be_trusted_stops_the_status_and_the_plan() {
 /// written here: the forms that only one reader of JSON would take.
 fn raw_entry(version: &str, former_paths: &str) -> String {
     format!(
-        r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{version},"firstPublished":"{TIME}","formerPaths":{former_paths},"id":"00000000000000aa","lastPublished":"{TIME}","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"published"}}"#
+        r#"{{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{version},"firstPublished":"{TIME}","formerPaths":{former_paths},"id":"00000000000000aa","lastPublished":"{TIME}","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"published"}}"#
     )
 }
 
@@ -756,7 +757,7 @@ fn a_configuration_that_is_a_symbolic_link_stops_the_status_also_when_it_leads_n
 /// of the copy refuses it.
 fn unpublished_entry(id: &str) -> String {
     format!(
-        r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":2,"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"{id}","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"unpublished"}}
+        r#"{{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":2,"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"{id}","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"Welcome.md","sourceHash":"sha256:00","state":"unpublished"}}
 "#
     )
 }

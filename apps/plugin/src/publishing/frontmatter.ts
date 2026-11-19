@@ -1,3 +1,6 @@
+import { firstPart, isReservedRootName } from './names.ts'
+import { sortByCodePoint } from './order.ts'
+
 // The properties of a note, read and written as text.
 //
 // The publishing logic exists two times, and two YAML libraries never agree
@@ -282,4 +285,149 @@ export function setProperty(text: string, key: string, value: string): string {
     const first = remove(note, key)
     note.lines.splice(first ?? note.close, 0, line)
     return write(note)
+}
+
+/** The property of the aliases of a note. */
+const ALIASES = 'aliases'
+
+/** The aliases of a note: the ones that get a URL, and the reserved ones, which get none. */
+export interface Aliases {
+    /** Each alias that gets a URL, one time, in the order of the code points. */
+    readonly aliases: string[]
+    /** Each reserved alias, one time, in the order of the code points. */
+    readonly reserved: string[]
+}
+
+/** The text of a list item of a property: after the hyphen. `undefined` when the line is no list item. */
+function listItemOf(line: string): string | undefined {
+    let at = 0
+    while (isBlank(line[at])) {
+        at += 1
+    }
+    if (line[at] !== '-') {
+        return undefined
+    }
+    const next = line[at + 1]
+    return next === undefined || isBlank(next) ? line.slice(at + 1) : undefined
+}
+
+/** The text between double quotes, with `\"` and `\\` read. `undefined` for another escape. */
+function unescapeDouble(text: string): string | undefined {
+    let result = ''
+    for (let at = 0; at < text.length; at += 1) {
+        const character = text[at]
+        if (character !== '\\') {
+            result += character ?? ''
+            continue
+        }
+        const next = text[at + 1]
+        if (next !== '"' && next !== '\\') {
+            return undefined
+        }
+        result += next
+        at += 1
+    }
+    return result
+}
+
+/** One alias from one item of the property. `undefined` when the item gives no alias. */
+function aliasOfItem(item: string): string | undefined {
+    const text = trim(item)
+    let alias: string | undefined
+    if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+        alias = unescapeDouble(text.slice(1, -1))
+    } else if (text.length >= 2 && text.startsWith("'") && text.endsWith("'")) {
+        alias = text.slice(1, -1).replaceAll("''", "'")
+    } else {
+        const comment = /[ \t]#/u.exec(text)
+        alias = trim(comment === null ? text : text.slice(0, comment.index))
+    }
+    return alias === '' ? undefined : alias
+}
+
+/** The end of an item in quotes that starts at a place: the place after its closing quote, or the end of the text. */
+function endOfQuoted(text: string, start: number): number {
+    const quote = text[start]
+    let at = start + 1
+    while (at < text.length) {
+        if (quote === '"' && text[at] === '\\') {
+            at += 2
+            continue
+        }
+        if (text[at] === quote) {
+            if (quote === "'" && text[at + 1] === "'") {
+                at += 2
+                continue
+            }
+            return at + 1
+        }
+        at += 1
+    }
+    return text.length
+}
+
+/** The items of a list in the flow form, without its brackets: cut at each comma that is not inside an item in quotes. */
+function flowItemsOf(text: string): string[] {
+    const items: string[] = []
+    let start = 0
+    for (;;) {
+        let at = start
+        while (isBlank(text[at])) {
+            at += 1
+        }
+        if (text[at] === '"' || text[at] === "'") {
+            at = endOfQuoted(text, at)
+        }
+        const comma = text.indexOf(',', at)
+        if (comma < 0) {
+            items.push(text.slice(start))
+            return items
+        }
+        items.push(text.slice(start, comma))
+        start = comma + 1
+    }
+}
+
+/**
+ * The aliases of a note, from its source (`documentation/Canonical Form.md`,
+ * section "The aliases of a note"). Only the property `aliases` of the note
+ * itself in closed properties is read. A reserved alias gets no URL: the file
+ * of the site wins.
+ */
+export function aliasesOf(source: string): Aliases {
+    const note = read(source)
+    if (note.close === undefined) {
+        return { aliases: [], reserved: [] }
+    }
+    const lines = note.lines.slice(1, note.close).map((line) => line.text)
+    const items: string[] = []
+    for (const [index, line] of lines.entries()) {
+        const value = valueOf(line, ALIASES, false, false)
+        if (value === undefined) {
+            continue
+        }
+        if (value === '') {
+            for (let next = index + 1; next < lines.length; next += 1) {
+                const text = lines[next] ?? ''
+                if (!continues(text)) {
+                    break
+                }
+                const item = listItemOf(text)
+                if (item !== undefined) {
+                    items.push(item)
+                }
+            }
+        } else if (value.startsWith('[') && value.endsWith(']')) {
+            items.push(...flowItemsOf(value.slice(1, -1)))
+        } else {
+            items.push(value)
+        }
+    }
+    const all = sortByCodePoint([
+        ...new Set(items.map(aliasOfItem).filter((alias) => alias !== undefined))
+    ])
+    return {
+        aliases: all.filter((alias) => !isReservedRootName(firstPart(alias))),
+        reserved: all.filter((alias) => isReservedRootName(firstPart(alias)))
+    }
 }

@@ -3,12 +3,14 @@
 //! selection" and "The publication plan". The TypeScript twin is
 //! `apps/plugin/src/publishing/plan.ts`. Change both in the same commit.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
 use crate::configuration::is_vault_path;
 use crate::guards::{IGNORE_PROPERTY, in_deny_list};
+use crate::manifest::State;
+use crate::names::{first_part, folded_form, is_reserved_root_name};
 use crate::order::sort_by_code_point;
 use crate::queue::Scan;
 
@@ -204,7 +206,7 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
         .filter(|path| !within(&forced, path))
         .cloned()
         .collect();
-    Ok(PublicationPlan::new(
+    let plan = PublicationPlan::new(
         forced,
         selection
             .include
@@ -219,5 +221,71 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             .cloned()
             .collect(),
         remove,
-    ))
+    );
+    refuse_root_names(scan, &plan)?;
+    Ok(plan)
+}
+
+/// The vault path of a note without `.md`: the text of its URL.
+fn without_suffix(path: &str) -> &str {
+    path.strip_suffix(".md").unwrap_or(path)
+}
+
+/// Stops a plan that publishes a note when a note would take a reserved root
+/// name of the site, or when two published paths after the plan would be one
+/// URL for the resolver (URL-09 of the spec, section "The root names of the
+/// site" of the canonical form). A plan without a new note never stops here,
+/// so no forced removal waits for these rules.
+fn refuse_root_names(scan: &Scan, plan: &PublicationPlan) -> Result<(), String> {
+    if plan.publish.is_empty() {
+        return Ok(());
+    }
+    for path in &plan.publish {
+        let name = without_suffix(path.rsplit('/').next().unwrap_or(path));
+        if is_reserved_root_name(name) {
+            return Err(format!(
+                "\"{path}\" cannot be published: its file name \"{name}\" is a reserved root name of the site"
+            ));
+        }
+        if path.contains('/') && is_reserved_root_name(first_part(path)) {
+            return Err(format!(
+                "\"{path}\" cannot be published: its first folder \"{}\" is a reserved root name of the site",
+                first_part(path)
+            ));
+        }
+    }
+    let leaving: BTreeSet<&str> = plan
+        .forced_remove
+        .iter()
+        .chain(&plan.remove)
+        .map(String::as_str)
+        .collect();
+    let notes = scan
+        .manifest
+        .values()
+        .filter(|entry| entry.state == State::Published && !leaving.contains(entry.path.as_str()))
+        .map(|entry| entry.path.as_str())
+        .chain(plan.publish.iter().map(String::as_str));
+    // Each text of a URL: the path of each note, and each folder of it. A
+    // note and a folder with the same text are one text: the note wins. The
+    // set of `String` is in the order of the code points.
+    let mut texts: BTreeSet<String> = BTreeSet::new();
+    for path in notes {
+        let text = without_suffix(path);
+        texts.insert(text.to_owned());
+        for (slash, _) in text.match_indices('/') {
+            texts.insert(text[..slash].to_owned());
+        }
+    }
+    let mut by_folded: BTreeMap<String, &str> = BTreeMap::new();
+    for text in &texts {
+        let folded = folded_form(text);
+        if let Some(other) = by_folded.get(&folded) {
+            return Err(format!(
+                "\"{other}\" and \"{text}\" cannot both be published: they differ only in letter case or in Unicode form, and the site gives them one URL"
+            ));
+        }
+        by_folded.insert(folded, text);
+    }
+    Ok(())
 }

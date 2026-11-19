@@ -4,6 +4,7 @@ import { isVaultPath } from './configuration.ts'
 import { sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
 import type { NoteLink } from './links.ts'
+import { compareCodePoints } from './order.ts'
 import type { ContentStore } from './ports.ts'
 
 // The manifest: the record of each published note, one file per note
@@ -17,6 +18,8 @@ export const NOTES_FOLDER = 'notes'
 
 // A type alias, not an interface: the canonical form takes any object of data.
 export type ManifestEntry = {
+    /** The aliases of the note that get a URL, each one time, in the order of the code points. */
+    readonly aliases: readonly string[]
     /** The links of the note that lead to a file that is not a note, with the facts of the file, sorted by their link path. */
     readonly attachments: readonly Attachment[]
     readonly cleanedHash: string
@@ -53,6 +56,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isTextList(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+/** True when the value is the list `aliases` of an entry: texts, each one time, in the order of the code points. */
+function isAliasList(value: unknown): value is string[] {
+    return (
+        isTextList(value) &&
+        value.every(
+            (alias, index) => index === 0 || compareCodePoints(value[index - 1] ?? '', alias) < 0
+        )
+    )
 }
 
 /** True when the value is the list `links` of an entry: each item has exactly a link path and the vault path of a note. */
@@ -93,9 +106,11 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
     if (!isRecord(value)) {
         throw new Error(`${file} is not a manifest entry`)
     }
-    const { attachments, cleanedHash, cleaningVersion, firstPublished, formerPaths } = value
+    const { aliases, attachments, cleanedHash, cleaningVersion, firstPublished, formerPaths } =
+        value
     const { id, lastPublished, links, path, sourceHash, state } = value
     if (
+        !isAliasList(aliases) ||
         !isAttachmentList(attachments, isVaultPath) ||
         typeof cleanedHash !== 'string' ||
         typeof cleaningVersion !== 'number' ||
@@ -115,6 +130,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         throw new Error(`${file} is not a manifest entry`)
     }
     return {
+        aliases,
         attachments: attachments.map((item) => ({
             hash: item.hash,
             ...(item.height === undefined ? {} : { height: item.height }),

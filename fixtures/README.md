@@ -6,7 +6,8 @@ Test data of the repository. Everything here is invented. Nothing comes from a r
 - `configuration.json`: the invented configuration of the publishing tool for the fixture vault, with its deny list.
 - `catalog.json`: the fixture catalog. Each entry names a feature or a trap and the files that serve it.
 - `canonical/cases.json`: the shared cases of the canonical form (`documentation/Canonical Form.md`). Both implementations of the publishing logic read them.
-- `canonical/properties.json`: the shared cases of the rules for the properties of a note.
+- `canonical/properties.json`: the shared cases of the rules for the properties of a note, the aliases included.
+- `canonical/names.json`: the shared cases of the root names of the site: which names are reserved, and which two texts are one URL.
 - `canonical/links.json`: the shared cases of the links of a note: the link paths of a text, the target of a link path in a list of notes, and the list that a manifest entry holds.
 - `canonical/queue.json`: the shared scenarios of the publication queue. Each scenario has its own small invented vault, written inside the file, so that a new note of the fixture vault changes no scenario.
 

@@ -13,7 +13,9 @@ use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
 use crate::device::{AttachmentStorage, ContentStore, Fetch, Lock, Recovery, Vault, crash_point};
-use crate::frontmatter::{has_flow_properties, names_in_properties, remove_property, set_property};
+use crate::frontmatter::{
+    Aliases, aliases_of, has_flow_properties, names_in_properties, remove_property, set_property,
+};
 use crate::guards::IGNORE_PROPERTY;
 use crate::hash::{bytes_hash, content_hash, sha256_hex};
 use crate::json::parse_json;
@@ -332,6 +334,7 @@ pub fn status(device: &Device) -> Result<String, String> {
 /// a plan.
 struct NoteTexts {
     source: String,
+    aliases: Aliases,
     cleaned: String,
     links: Vec<NoteLink>,
     attachments: Vec<Attachment>,
@@ -374,6 +377,7 @@ fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Co
         texts.insert(
             path.clone(),
             NoteTexts {
+                aliases: aliases_of(&source),
                 source,
                 cleaned,
                 links: targets.links,
@@ -386,6 +390,7 @@ fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Co
         .iter()
         .map(|(path, texts)| {
             Ok(json!({
+                "aliases": texts.aliases.aliases,
                 "attachments": to_value(&texts.attachments)?,
                 "cleanedHash": content_hash(&texts.cleaned),
                 "links": to_value(&texts.links)?,
@@ -645,6 +650,7 @@ fn entry_of(
     let source_hash = content_hash(&texts.source);
     let Some(before) = before else {
         return ManifestEntry {
+            aliases: texts.aliases.aliases.clone(),
             attachments: texts.attachments.clone(),
             cleaned_hash,
             cleaning_version: CLEANING_VERSION,
@@ -662,6 +668,7 @@ fn entry_of(
     // the last date: the author did not edit the note (PUB-24).
     let edited = before.state != State::Published || before.source_hash != source_hash;
     ManifestEntry {
+        aliases: texts.aliases.aliases.clone(),
         attachments: texts.attachments.clone(),
         cleaned_hash,
         cleaning_version: CLEANING_VERSION,
@@ -1432,13 +1439,41 @@ fn apply(
     if correct {
         device.store.remove_journal()?;
     }
+    let reserved = reserved_alias_warnings(
+        &current.texts,
+        written.published.iter().chain(&written.updated),
+    );
     report_of(
         &written,
         &current.plan,
         &uploads.uploaded,
+        reserved,
         correction,
         cleanup,
     )
+}
+
+/// A warning for each reserved alias of each note that the publication
+/// published or updated: the alias gets no URL, because the file of the site
+/// wins (decision R47).
+fn reserved_alias_warnings<'a>(
+    texts: &BTreeMap<String, NoteTexts>,
+    paths: impl Iterator<Item = &'a String>,
+) -> Vec<Value> {
+    paths
+        .flat_map(|path| {
+            texts
+                .get(path)
+                .map_or(&[][..], |texts| texts.aliases.reserved.as_slice())
+                .iter()
+                .map(move |alias| {
+                    json!({
+                        "path": path,
+                        "message": format!("the alias \"{alias}\" is a reserved root name of the site: it gets no URL"),
+                    })
+                })
+        })
+        .collect()
 }
 
 /// The report of a publication, in the canonical form.
@@ -1446,13 +1481,15 @@ fn report_of(
     written: &Written,
     plan: &PublicationPlan,
     uploads: &[String],
+    reserved: Vec<Value>,
     correction: Correction,
     cleanup: Cleanup,
 ) -> Result<Outcome, String> {
     let mut uploaded = uploads.to_vec();
     uploaded.extend(cleanup.uploaded);
     sort_by_code_point(&mut uploaded);
-    let mut warnings = correction.warnings;
+    let mut warnings = reserved;
+    warnings.extend(correction.warnings);
     warnings.extend(cleanup.warnings);
     // A stable sort, by the path of each warning.
     warnings.sort_by(|one, two| one["path"].as_str().cmp(&two["path"].as_str()));

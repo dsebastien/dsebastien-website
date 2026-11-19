@@ -5,7 +5,14 @@ import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.t
 import { linksOf } from './links.ts'
 import { CONFIGURATION_FILE, isVaultPath, parseConfiguration } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
-import { hasFlowProperties, namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
+import {
+    aliasesOf,
+    hasFlowProperties,
+    namesInProperties,
+    removeProperty,
+    setProperty
+} from './frontmatter.ts'
+import type { Aliases } from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
 import { bytesHash, contentHash, sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
@@ -325,9 +332,10 @@ export async function status(given: Device): Promise<PublicationQueue> {
     return { ...state.scan.queue, behind: state.behind }
 }
 
-/** The source, the cleaned note, the links and the attachments of one note of a plan. */
+/** The source, the cleaned note, the aliases, the links and the attachments of one note of a plan. */
 interface NoteTexts {
     readonly source: string
+    readonly aliases: Aliases
     readonly cleaned: string
     readonly links: readonly NoteLink[]
     readonly attachments: readonly Attachment[]
@@ -358,6 +366,7 @@ async function recordFor(
     const plan = computePlan(scan, selection)
     const texts = new Map<string, NoteTexts>()
     const notes: {
+        aliases: readonly string[]
         attachments: readonly Attachment[]
         cleanedHash: string
         links: readonly NoteLink[]
@@ -374,8 +383,10 @@ async function recordFor(
         const cleaned = cleanNote(source)
         const { links, files } = linksOf(source, path, scan.index, scan.guarded)
         const attachments = await attachmentsOf(files, scan.files)
-        texts.set(path, { source, cleaned, links, attachments })
+        const aliases = aliasesOf(source)
+        texts.set(path, { source, aliases, cleaned, links, attachments })
         notes.push({
+            aliases: aliases.aliases,
             attachments,
             cleanedHash: contentHash(cleaned),
             links,
@@ -560,6 +571,7 @@ function entryOf(
     time: string
 ): ManifestEntry {
     const hashes = {
+        aliases: texts.aliases.aliases,
         attachments: texts.attachments,
         cleanedHash: contentHash(texts.cleaned),
         cleaningVersion: CLEANING_VERSION,
@@ -586,6 +598,23 @@ function entryOf(
         lastPublished: edited ? time : before.lastPublished,
         state: 'published'
     }
+}
+
+/**
+ * A warning for each reserved alias of each note that the publication
+ * published or updated: the alias gets no URL, because the file of the site
+ * wins (decision R47).
+ */
+function reservedAliasWarnings(
+    texts: ReadonlyMap<string, NoteTexts>,
+    paths: readonly string[]
+): { path: string; message: string }[] {
+    return paths.flatMap((path) =>
+        (texts.get(path)?.aliases.reserved ?? []).map((alias) => ({
+            path,
+            message: `the alias "${alias}" is a reserved root name of the site: it gets no URL`
+        }))
+    )
 }
 
 /**
@@ -1187,8 +1216,10 @@ async function apply(
         attachmentsDeleted: cleanup.deleted,
         attachmentsUploaded: sortByCodePoint([...uploads.uploaded, ...cleanup.uploaded]),
         ...correction,
-        warnings: [...correction.warnings, ...cleanup.warnings].sort((one, two) =>
-            compareCodePoints(one.path, two.path)
-        )
+        warnings: [
+            ...reservedAliasWarnings(current.texts, [...report.published, ...report.updated]),
+            ...correction.warnings,
+            ...cleanup.warnings
+        ].sort((one, two) => compareCodePoints(one.path, two.path))
     }
 }

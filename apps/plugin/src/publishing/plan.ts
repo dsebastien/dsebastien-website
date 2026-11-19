@@ -1,5 +1,6 @@
 import { isVaultPath } from './configuration.ts'
 import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
+import { firstPart, foldedForm, isReservedRootName } from './names.ts'
 import { sortByCodePoint } from './order.ts'
 import type { Scan } from './queue.ts'
 
@@ -152,11 +153,72 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
 
     const held = new Set(selection.hold)
     const removed = new Set(selection.remove)
-    return makePlan({
+    const plan = makePlan({
         forcedRemove: forced,
         publish: selection.include.filter((path) => candidates.has(path)),
         update: queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
         // A guard wins over an unpublish: the note leaves the manifest.
         remove: selection.remove.filter((path) => !underGuard.has(path))
     })
+    refuseRootNames(scan, plan)
+    return plan
+}
+
+/** The vault path of a note without `.md`: the text of its URL. */
+function withoutSuffix(path: string): string {
+    return path.slice(0, -'.md'.length)
+}
+
+/**
+ * Stops a plan that publishes a note when a note would take a reserved root
+ * name of the site, or when two published paths after the plan would be one
+ * URL for the resolver (URL-09 of the spec, section "The root names of the
+ * site" of the canonical form). A plan without a new note never stops here,
+ * so no forced removal waits for these rules.
+ */
+function refuseRootNames(scan: Scan, plan: PublicationPlan): void {
+    if (plan.publish.length === 0) {
+        return
+    }
+    for (const path of plan.publish) {
+        const name = withoutSuffix(path.slice(path.lastIndexOf('/') + 1))
+        if (isReservedRootName(name)) {
+            throw new SelectionError(
+                `"${path}" cannot be published: its file name "${name}" is a reserved root name of the site`
+            )
+        }
+        if (path.includes('/') && isReservedRootName(firstPart(path))) {
+            throw new SelectionError(
+                `"${path}" cannot be published: its first folder "${firstPart(path)}" is a reserved root name of the site`
+            )
+        }
+    }
+    const leaving = new Set([...plan.forcedRemove, ...plan.remove])
+    const notes = [
+        ...[...scan.manifest.values()]
+            .filter((entry) => entry.state === 'published' && !leaving.has(entry.path))
+            .map((entry) => entry.path),
+        ...plan.publish
+    ]
+    // Each text of a URL: the path of each note, and each folder of it. A
+    // note and a folder with the same text are one text: the note wins.
+    const texts = new Set<string>()
+    for (const path of notes) {
+        const text = withoutSuffix(path)
+        texts.add(text)
+        for (let slash = text.indexOf('/'); slash >= 0; slash = text.indexOf('/', slash + 1)) {
+            texts.add(text.slice(0, slash))
+        }
+    }
+    const byFolded = new Map<string, string>()
+    for (const text of sortByCodePoint([...texts])) {
+        const folded = foldedForm(text)
+        const other = byFolded.get(folded)
+        if (other !== undefined) {
+            throw new SelectionError(
+                `"${other}" and "${text}" cannot both be published: they differ only in letter case or in Unicode form, and the site gives them one URL`
+            )
+        }
+        byFolded.set(folded, text)
+    }
 }

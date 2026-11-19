@@ -51,9 +51,10 @@ The last frost date is the average day of the last frost in spring. Tender plant
 `
 
 const MANIFEST_ENTRY = `{
+  "aliases": [],
   "attachments": [],
   "cleanedHash": "${NOTE_HASH}",
-  "cleaningVersion": 3,
+  "cleaningVersion": 4,
   "firstPublished": "${TIME}",
   "formerPaths": [],
   "id": "${NOTE_ID}",
@@ -86,6 +87,7 @@ const PLAN_RECORD = `{
     "manifest": "${EMPTY_MANIFEST_HASH}",
     "notes": [
       {
+        "aliases": [],
         "attachments": [],
         "cleanedHash": "${NOTE_HASH}",
         "links": [],

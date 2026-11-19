@@ -604,5 +604,176 @@
             "note": "\ufeff\ufeff---\n{ \"a\": 1 }\n---\n",
             "flow": true
         }
+    ],
+    "aliases": [
+        {
+            "name": "a list of items",
+            "note": "---\naliases:\n  - One\n  - Two words\n---\nText\n",
+            "aliases": ["One", "Two words"],
+            "reserved": []
+        },
+        {
+            "name": "the items are sorted by code points and each one is one time",
+            "note": "---\naliases:\n  - b\n  - B\n  - a\n  - b\n---\nText\n",
+            "aliases": ["B", "a", "b"],
+            "reserved": []
+        },
+        { "name": "no properties", "note": "Text\n", "aliases": [], "reserved": [] },
+        {
+            "name": "properties that are never closed",
+            "note": "---\naliases:\n  - One\nText\n",
+            "aliases": [],
+            "reserved": []
+        },
+        {
+            "name": "an empty property",
+            "note": "---\naliases:\ntags: a\n---\nText\n",
+            "aliases": [],
+            "reserved": []
+        },
+        {
+            "name": "an empty list in the flow form",
+            "note": "---\naliases: []\n---\nText\n",
+            "aliases": [],
+            "reserved": []
+        },
+        {
+            "name": "a list in the flow form",
+            "note": "---\naliases: [One, \"Two, three\", 'Four']\n---\nText\n",
+            "aliases": ["Four", "One", "Two, three"],
+            "reserved": []
+        },
+        {
+            "name": "one text",
+            "note": "---\naliases: One alias\n---\nText\n",
+            "aliases": ["One alias"],
+            "reserved": []
+        },
+        {
+            "name": "items in double quotes",
+            "note": "---\naliases:\n  - \"A: b\"\n  - \"Say \\\"hi\\\"\"\n  - \"back\\\\slash\"\n---\nText\n",
+            "aliases": ["A: b", "Say \"hi\"", "back\\slash"],
+            "reserved": []
+        },
+        {
+            "name": "an item with another escape gives no alias",
+            "note": "---\naliases:\n  - \"tab\\there\"\n  - Kept\n---\nText\n",
+            "aliases": ["Kept"],
+            "reserved": []
+        },
+        {
+            "name": "items in single quotes",
+            "note": "---\naliases:\n  - 'It''s'\n  - 'A: b'\n---\nText\n",
+            "aliases": ["A: b", "It's"],
+            "reserved": []
+        },
+        {
+            "name": "a comment after an item",
+            "note": "---\naliases:\n  - One # a comment\n  - C#\n  - Two\t# a comment\n---\nText\n",
+            "aliases": ["C#", "One", "Two"],
+            "reserved": []
+        },
+        {
+            "name": "an empty item",
+            "note": "---\naliases:\n  -\n  - \"\"\n  - One\n---\nText\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
+            "name": "an item without a space after the hyphen is not an item",
+            "note": "---\naliases:\n  -One\n  - Two\n---\nText\n",
+            "aliases": ["Two"],
+            "reserved": []
+        },
+        {
+            "name": "items without an indent",
+            "note": "---\naliases:\n- One\n- Two\n---\nText\n",
+            "aliases": ["One", "Two"],
+            "reserved": []
+        },
+        {
+            "name": "items indented with a tab",
+            "note": "---\naliases:\n\t- One\n---\nText\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
+            "name": "the key in quotes",
+            "note": "---\n\"aliases\": One\n---\nText\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
+            "name": "another letter case of the key is not read",
+            "note": "---\nAliases:\n  - One\n---\nText\n",
+            "aliases": [],
+            "reserved": []
+        },
+        {
+            "name": "the key alias is not read",
+            "note": "---\nalias: One\n---\nText\n",
+            "aliases": [],
+            "reserved": []
+        },
+        {
+            "name": "an indented key is not read",
+            "note": "---\nparent:\n  aliases:\n    - One\n---\nText\n",
+            "aliases": [],
+            "reserved": []
+        },
+        {
+            "name": "the key two times",
+            "note": "---\naliases:\n  - One\ntags: a\naliases: Two\n---\nText\n",
+            "aliases": ["One", "Two"],
+            "reserved": []
+        },
+        {
+            "name": "the lines of the next property are not items",
+            "note": "---\naliases:\n  - One\ntags:\n  - a\n---\nText\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
+            "name": "Windows line ends",
+            "note": "---\r\naliases:\r\n  - One\r\n---\r\nText\r\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
+            "name": "a byte order mark before the properties",
+            "note": "\ufeff---\naliases:\n  - One\n---\nText\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
+            "name": "a reserved alias gives no alias",
+            "note": "---\naliases:\n  - llms.txt\n  - LLMs.txt\n  - Kept\n---\nText\n",
+            "aliases": ["Kept"],
+            "reserved": ["LLMs.txt", "llms.txt"]
+        },
+        {
+            "name": "an alias whose first part is reserved",
+            "note": "---\naliases:\n  - -/one\n  - .well-known/x\n  - robots.txt/a\n---\nText\n",
+            "aliases": [],
+            "reserved": ["-/one", ".well-known/x", "robots.txt/a"]
+        },
+        {
+            "name": "a reserved name after the first part is no reserved alias",
+            "note": "---\naliases:\n  - a/robots.txt\n---\nText\n",
+            "aliases": ["a/robots.txt"],
+            "reserved": []
+        },
+        {
+            "name": "an alias with a slash",
+            "note": "---\naliases:\n  - One/Two\n---\nText\n",
+            "aliases": ["One/Two"],
+            "reserved": []
+        },
+        {
+            "name": "an alias that is not in the composed form is kept as written",
+            "note": "---\naliases:\n  - Cafe\u0301\n---\nText\n",
+            "aliases": ["Cafe\u0301"],
+            "reserved": []
+        }
     ]
 }

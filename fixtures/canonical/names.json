@@ -1,0 +1,145 @@
+{
+    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form.",
+    "reserved": [
+        {
+            "name": "a plain name",
+            "text": "Obsidian Publish",
+            "reserved": false
+        },
+        {
+            "name": "the reserved prefix",
+            "text": "-",
+            "reserved": true
+        },
+        {
+            "name": "two hyphens",
+            "text": "--",
+            "reserved": false
+        },
+        {
+            "name": "a name that starts with a dot",
+            "text": ".well-known",
+            "reserved": true
+        },
+        {
+            "name": "robots.txt",
+            "text": "robots.txt",
+            "reserved": true
+        },
+        {
+            "name": "robots.txt in capital letters",
+            "text": "ROBOTS.TXT",
+            "reserved": true
+        },
+        {
+            "name": "a sitemap",
+            "text": "sitemap-notes-1.xml",
+            "reserved": true
+        },
+        {
+            "name": "llms.txt",
+            "text": "llms.txt",
+            "reserved": true
+        },
+        {
+            "name": "a page of a search engine",
+            "text": "google0123456789abcdef.html",
+            "reserved": true
+        },
+        {
+            "name": "an icon",
+            "text": "favicon.ico",
+            "reserved": true
+        },
+        {
+            "name": "a JSON file",
+            "text": "manifest.json",
+            "reserved": true
+        },
+        {
+            "name": "a name that ends like a script",
+            "text": "Node.js",
+            "reserved": false
+        },
+        {
+            "name": "a name with a dot inside",
+            "text": "33.02 Content",
+            "reserved": false
+        },
+        {
+            "name": "a name that ends in .md",
+            "text": "Draft.md",
+            "reserved": false
+        },
+        {
+            "name": "a name that ends in .txt with a space after",
+            "text": "notes.txt ",
+            "reserved": false
+        },
+        {
+            "name": "a name with a hyphen at its start",
+            "text": "-draft",
+            "reserved": false
+        },
+        {
+            "name": "an empty name",
+            "text": "",
+            "reserved": false
+        },
+        {
+            "name": "a capital I with a dot is not ASCII",
+            "text": "ROBOTS.TXT\u0130",
+            "reserved": false
+        }
+    ],
+    "folded": [
+        {
+            "name": "the same text",
+            "one": "Notes/One",
+            "two": "Notes/One",
+            "equal": true
+        },
+        {
+            "name": "another letter case",
+            "one": "Notes/One",
+            "two": "notes/one",
+            "equal": true
+        },
+        {
+            "name": "another Unicode form",
+            "one": "Caf\u00e9",
+            "two": "Cafe\u0301",
+            "equal": true
+        },
+        {
+            "name": "another Unicode form and letter case",
+            "one": "CAF\u00c9",
+            "two": "cafe\u0301",
+            "equal": true
+        },
+        {
+            "name": "two different texts",
+            "one": "Notes/One",
+            "two": "Notes/Two",
+            "equal": false
+        },
+        {
+            "name": "a space and a plus",
+            "one": "A B",
+            "two": "A+B",
+            "equal": false
+        },
+        {
+            "name": "a letter outside ASCII",
+            "one": "\u00c5ngstr\u00f6m",
+            "two": "\u00e5ngstr\u00f6m",
+            "equal": true
+        },
+        {
+            "name": "Greek capital letters, with the small final sigma",
+            "one": "\u039f\u0394\u039f\u03a3",
+            "two": "\u03bf\u03b4\u03bf\u03c2",
+            "equal": true
+        }
+    ]
+}

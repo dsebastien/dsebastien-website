@@ -29,7 +29,7 @@ function accepts(text: string): boolean {
 
 /** A manifest entry whose `cleaningVersion` is the number as it is written. */
 function entryWith(cleaningVersion: string): string {
-    return `{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":${cleaningVersion},"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"A.md","sourceHash":"sha256:00","state":"published"}`
+    return `{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":${cleaningVersion},"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"A.md","sourceHash":"sha256:00","state":"published"}`
 }
 
 describe('reading of a JSON file of the store', () => {

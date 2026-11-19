@@ -23,6 +23,9 @@ pub const NOTES_FOLDER: &str = "notes";
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestEntry {
+    /// The aliases of the note that get a URL, each one time, in the order of
+    /// the code points.
+    pub aliases: Vec<String>,
     /// The links of the note that lead to a file that is not a note, with the
     /// facts of the file, sorted by their link path.
     pub attachments: Vec<Attachment>,
@@ -193,7 +196,11 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         "unpublished" => State::Unpublished,
         _ => return None,
     };
+    // Texts, each one time, in the order of the code points.
+    let aliases =
+        list_of("aliases").filter(|aliases| aliases.windows(2).all(|pair| pair[0] < pair[1]))?;
     Some(ManifestEntry {
+        aliases,
         attachments: attachment_list(entry.get("attachments")?)?,
         cleaned_hash: text_of("cleanedHash")?,
         cleaning_version,
@@ -252,7 +259,7 @@ mod tests {
     /// written.
     fn entry_with(cleaning_version: &str) -> String {
         format!(
-            r#"{{"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{cleaning_version},"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"A.md","sourceHash":"sha256:00","state":"published"}}"#
+            r#"{{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{cleaning_version},"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"A.md","sourceHash":"sha256:00","state":"published"}}"#
         )
     }
 

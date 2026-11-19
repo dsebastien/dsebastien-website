@@ -17,6 +17,7 @@ mod images;
 mod json;
 mod links;
 mod manifest;
+mod names;
 mod order;
 mod plan;
 mod queue;
