@@ -26,13 +26,18 @@ const { notes } = Astro.props
 ---
 
 <Page title='Not found'>
-    <h1 class='text-2xl font-bold'>Not found</h1>
-    <p>This name leads to more than one note:</p>
-    <ul>
-        {notes.map((note) => (
-            <li>
-                <a href={note.href}>{note.title}</a> ({note.path})
-            </li>
-        ))}
-    </ul>
+    <div class='max-w-2xl py-12'>
+        <h1 class='text-3xl font-bold'>Not found</h1>
+        <p class='mt-4 text-muted'>This name leads to more than one note:</p>
+        <ul class='card mt-6 divide-y divide-border'>
+            {notes.map((note) => (
+                <li>
+                    <a class='block px-4 py-3 hover:bg-surface-elevated' href={note.href}>
+                        <span class='font-semibold'>{note.title}</span>
+                        <span class='block text-sm text-muted'>{note.path}</span>
+                    </a>
+                </li>
+            ))}
+        </ul>
+    </div>
 </Page>

@@ -37,6 +37,7 @@
         "dev": "bun run --cwd apps/site dev",
         "dev:plugin": "bun run --cwd apps/plugin dev",
         "serve": "bun run --cwd apps/site serve",
+        "site:fixture": "bun scripts/site-fixture.ts",
         "commit:lint": "commitlint --edit",
         "corpus": "bun scripts/generate-corpus.ts",
         "corpus:published": "bun scripts/export-published.ts"

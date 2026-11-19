@@ -38,5 +38,5 @@ const html = withLinkState(
 ---
 
 <Page title={title} path={note.path}>
-    <article set:html={html} />
+    <article class='note-text max-w-[72ch]' set:html={html} />
 </Page>

@@ -41,23 +41,37 @@ const { name, path, notes, folders } = Astro.props
 ---
 
 <Page title={name} path={path}>
-    <h1 class='text-2xl font-bold'>{name}</h1>
+    <h1 class='text-3xl font-bold tracking-tight'>{name}</h1>
     {folders.length > 0 && (
-        <ul>
-            {folders.map((folder) => (
-                <li>
-                    <a href={folder.href}>{folder.title}</a>
-                </li>
-            ))}
-        </ul>
+        <section aria-labelledby='folders' class='mt-8'>
+            <h2 id='folders' class='section-title'>
+                Folders
+            </h2>
+            <ul class='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
+                {folders.map((folder) => (
+                    <li>
+                        <a class='card-link font-semibold' href={folder.href}>
+                            {folder.title}
+                        </a>
+                    </li>
+                ))}
+            </ul>
+        </section>
     )}
     {notes.length > 0 && (
-        <ul>
-            {notes.map((note) => (
-                <li>
-                    <a href={note.href}>{note.title}</a>
-                </li>
-            ))}
-        </ul>
+        <section aria-labelledby='notes' class='mt-8'>
+            <h2 id='notes' class='section-title'>
+                Notes
+            </h2>
+            <ul class='card divide-y divide-border'>
+                {notes.map((note) => (
+                    <li>
+                        <a class='block px-4 py-3 hover:bg-surface-elevated' href={note.href}>
+                            {note.title}
+                        </a>
+                    </li>
+                ))}
+            </ul>
+        </section>
     )}
 </Page>

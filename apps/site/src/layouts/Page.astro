@@ -1,9 +1,13 @@
 ---
 import '../styles/global.css'
+import Footer from '../components/Footer.astro'
+import Header from '../components/Header.astro'
+import { modeScript, modeSwitchScript } from '../mode.ts'
 
-// The frame of every page of the site. The canonical link names the canonical
-// URL of the page, so a URL with a query shows the same page with a clean
-// canonical link (URL-12 of the spec).
+// The frame of every page of the site, from variant B of the mockups (R49).
+// The canonical link names the canonical URL of the page, so a URL with a
+// query shows the same page with a clean canonical link (URL-12 of the spec).
+// The mode is set before any style (MODE-01): dark until the script runs.
 interface Props {
     title: string
     /** The canonical path of the page. The "not found" page has none. */
@@ -15,16 +19,23 @@ const canonical = path === undefined ? undefined : new URL(path, Astro.site).hre
 ---
 
 <!doctype html>
-<html lang='en'>
+<html lang='en' data-theme='dark'>
     <head>
         <meta charset='utf-8' />
         <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <script is:inline set:html={modeScript} />
         <title>{title}</title>
         {canonical !== undefined && <link rel='canonical' href={canonical} />}
     </head>
-    <body>
-        <main class='mx-auto max-w-prose p-8'>
+    <body class='flex min-h-screen flex-col'>
+        <a class='skip-link' href='#content'>
+            Skip to the content
+        </a>
+        <Header />
+        <main id='content' class='mx-auto w-full max-w-7xl flex-1 px-4 py-10 sm:px-6'>
             <slot />
         </main>
+        <Footer />
+        <script is:inline set:html={modeSwitchScript} />
     </body>
 </html>

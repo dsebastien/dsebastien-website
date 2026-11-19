@@ -138,6 +138,9 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - `apps/site/`: the Astro and Tailwind site. A Bun workspace with its own `package.json` and `tsconfig.json`.
     - `apps/site/src/content-store.ts`: how the build reads the content store. The build never reads the vault.
     - `apps/site/src/note-links.ts`: the links between notes on a page. A plugin of the Markdown processor of Astro (Sätteri, `markdown.processor` in `astro.config.ts`) marks each link when a note is rendered. The page gives each mark its state at each build: a link when the target is published, plain text when it is not. Astro keeps the markup of a note between two builds, so nothing that depends on another note goes into that markup. Astro does not see a change of the plugin code either: raise `MARKUP_VERSION` in that file with every change of what the plugin writes, or the old markup of every note stays. That holds also for a change of `wikilinksOf` and of `linkPathOfDestination` in `apps/plugin/src/publishing/links.ts`, which the plugin calls. The Markdown processor reads the text first, so a wikilink with Markdown syntax inside its brackets stays text until the rendering slice (issue 45).
+    - `apps/site/src/styles/`: the design base (issue 46, variant B of the mockups, R49). `tokens.css` is the token contract (Tailwind theme variables; the default palette, fonts, radii and shadows of Tailwind are off), `themes/knowii.css` gives the values of the theme `knowii` in its dark and light modes, `components.css` holds the component classes. Only a theme file holds a raw color: `apps/site/src/design.spec.ts` refuses one anywhere else, and checks the contrast of the theme (WCAG AA) in both modes.
+    - `apps/site/src/mode.ts`: the mode of a page (MODE-01). The head runs `modeScript` before any style; the switch of the header runs `modeSwitchScript`.
+    - `apps/site/src/components/`: the header, the footer and the switch of the mode. `apps/site/src/site.ts` holds the site name and the license.
     - `apps/site/server/`: the plain local server that serves the built site through the resolver, and the attachments from a folder of the attachment storage.
 - `apps/plugin/`: the Obsidian plugin of the publishing tool, from the plugin template of the author. A Bun workspace. Its type check is the one of the root.
     - `apps/plugin/src/publishing/`: the TypeScript implementation of the publishing logic. It never imports Obsidian.
@@ -154,7 +157,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
     - `fixtures/canonical/`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them: `cases.json` (data), `properties.json` (the properties of a note), `links.json` (the links of a note), `images.json` (the size of an image), `names.json` (the root names of the site), `queue.json` (scenarios of the publication queue).
     - `fixtures/README.md`: the rules, and how to add a note.
 - `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
-- `scripts/`: tooling of the repository and its guard tests.
+- `scripts/`: tooling of the repository and its guard tests. `bun run site:fixture [--port 4322]` publishes every new note of a copy of the fixture vault into a local content store, builds the site and serves it with the plain local server, to click through the site with invented notes. It never reads the real vault, and it removes its folders when it stops.
 
 Run every script from the root. The root scripts call the workspaces.
 

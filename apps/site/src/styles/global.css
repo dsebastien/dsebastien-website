@@ -1,2 +1,5 @@
+@import '@fontsource-variable/noto-sans';
 @import 'tailwindcss';
+@import './tokens.css';
+@import './themes/knowii.css';
 @import './components.css';

@@ -1,8 +1,19 @@
 ---
 import Page from '../layouts/Page.astro'
+import { SITE_NAME } from '../site.ts'
+
+// The home page. Its content and order come with its slice (issue 50).
 ---
 
-<Page title='Notes' path='/'>
-    <h1 class='text-2xl font-bold'>Notes</h1>
-    <p>The home page comes with its slice.</p>
+<Page title={SITE_NAME} path='/'>
+    <section class='py-12 sm:py-16'>
+        <p class='text-sm font-semibold tracking-widest text-secondary-text uppercase'>
+            A digital garden
+        </p>
+        <h1 class='mt-3 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl'>{SITE_NAME}</h1>
+        <p class='mt-5 max-w-2xl text-lg text-muted'>
+            Thousands of connected notes about knowledge management, personal productivity, software
+            and the things I read, watch and play. The home page comes with its slice.
+        </p>
+    </section>
 </Page>

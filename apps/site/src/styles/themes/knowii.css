@@ -1,0 +1,78 @@
+/*
+ * The theme `knowii` (DES-01, DES-03): the Knowii web palette of the store
+ * website, with the light mode completed. Dark is the default mode. A theme
+ * gives values only; components never read these variables directly.
+ *
+ * Contrast (WCAG 2.2), measured on the background and on the surface:
+ * dark   primary 10.5 and 9.1, muted 6.1 and 5.3, link 10.5 and 9.1, focus 10.5
+ * light  primary 15.9 and 17.1, muted 6.1 and 6.6, link 5.6 and 6.0, focus 5.6
+ * The signature magenta is for fills, borders and decoration only.
+ */
+
+:root,
+[data-theme='dark'] {
+    color-scheme: dark;
+    --theme-background: #37404c;
+    --theme-surface: #3f4957;
+    --theme-surface-elevated: #475363;
+    --theme-well: #2b323c;
+    --theme-overlay: rgb(20 24 30 / 0.6);
+
+    --theme-primary: #ffffff;
+    --theme-muted: #c3c6c9;
+    --theme-secondary: #e5007d;
+    --theme-secondary-text: #ff1493;
+    --theme-on-secondary: #ffffff;
+
+    --theme-link: #ffffff;
+    --theme-link-decoration: #ff1493;
+    --theme-focus: #ffffff;
+
+    --theme-border: rgb(255 255 255 / 0.12);
+    --theme-border-strong: rgb(255 255 255 / 0.28);
+
+    --theme-success: #4ade80;
+    --theme-warning: #fbbf24;
+    --theme-danger: #fca5a5;
+
+    --theme-shadow-raised: 0 1px 2px rgb(0 0 0 / 0.25), 0 8px 24px rgb(0 0 0 / 0.2);
+}
+
+[data-theme='light'] {
+    color-scheme: light;
+    --theme-background: #f5f7fa;
+    --theme-surface: #ffffff;
+    --theme-surface-elevated: #ffffff;
+    --theme-well: #eceff3;
+    --theme-overlay: rgb(26 26 46 / 0.4);
+
+    --theme-primary: #1a1a2e;
+    --theme-muted: #5c5c6b;
+    --theme-secondary: #d10070;
+    --theme-secondary-text: #c20066;
+    --theme-on-secondary: #ffffff;
+
+    --theme-link: #c20066;
+    --theme-link-decoration: #c20066;
+    --theme-focus: #c20066;
+
+    --theme-border: rgb(26 26 46 / 0.1);
+    --theme-border-strong: rgb(26 26 46 / 0.24);
+
+    --theme-success: #15803d;
+    --theme-warning: #b45309;
+    --theme-danger: #b91c1c;
+
+    --theme-shadow-raised: 0 1px 2px rgb(26 26 46 / 0.06), 0 8px 24px rgb(26 26 46 / 0.08);
+}
+
+:root {
+    --theme-font-sans:
+        'Noto Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+        sans-serif;
+    --theme-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    --theme-radius-control: 0.5rem;
+    --theme-radius-card: 0.75rem;
+    --theme-radius-pill: 9999px;
+    --theme-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}

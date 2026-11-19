@@ -192,6 +192,15 @@ function page(index: number, note: string): string {
     return html
 }
 
+/** The text of the note on its page: the frame of the page has links of its own (the header, the skip link). */
+function noteOf(html: string): string {
+    const text = /<article[^>]*>([\s\S]*)<\/article>/u.exec(html)?.[1]
+    if (text === undefined) {
+        throw new Error('the page has no article')
+    }
+    return text
+}
+
 describe('page of a note whose link targets are not published', () => {
     test('the build completes', () => {
         expect(buildOf(0).exitCode).toBe(0)
@@ -215,7 +224,7 @@ describe('page of a note whose link targets are not published', () => {
 
     test('has no address of the target, and no link syntax', () => {
         const html = page(0, LINKING)
-        expect(html).not.toContain('<a ')
+        expect(noteOf(html)).not.toContain('<a ')
         expect(html).not.toContain('Rain+barrel')
         expect(html).not.toContain('[[')
         expect(html).not.toContain('note-link')
@@ -224,7 +233,7 @@ describe('page of a note whose link targets are not published', () => {
     test('shows a link and an embed to a note in a folder of the deny list as plain text', () => {
         const html = page(0, WATERING)
         expect(html).toContain('code of <span class="not-published">Greenhouse alarm code</span>.')
-        expect(html).not.toContain('<a ')
+        expect(noteOf(html)).not.toContain('<a ')
         expect(html).not.toContain('90 Locked Shed')
         expect(html).not.toContain('90+Locked+Shed')
     })
@@ -236,7 +245,7 @@ describe('page of a note whose link targets are not published', () => {
         )
         expect(html).toContain('<span class="not-published">Winter plan (draft)#Beds</span>')
         expect(html).toContain('<span class="not-published">Seed library rules</span>')
-        expect(html).not.toContain('<a ')
+        expect(noteOf(html)).not.toContain('<a ')
     })
 
     // The tool does not read a reference link, so it never has a target. It
@@ -343,7 +352,7 @@ describe('site after the target got the ignore property', () => {
         expect(html).toContain(
             'The hose starts at the <span class="not-published">Rain barrel</span>.'
         )
-        expect(html).not.toContain('<a ')
+        expect(noteOf(html)).not.toContain('<a ')
         expect(html).not.toContain('Rain+barrel')
     })
 })

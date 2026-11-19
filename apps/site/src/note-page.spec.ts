@@ -111,8 +111,18 @@ describe('build of a content store with one published note', () => {
         expect(await readOutput(NOTE_FILE)).not.toContain('never published')
     })
 
-    test('makes a page without JavaScript', async () => {
-        expect(await readOutput(NOTE_FILE)).not.toContain('<script')
+    // The page works without JavaScript (PAGE-01): its only scripts are the
+    // two inline scripts of the mode (MODE-01), and it loads no script file.
+    test('makes a page without JavaScript, but for the mode', async () => {
+        const html = await readOutput(NOTE_FILE)
+        expect(html).not.toMatch(/<script[^>]* src=/u)
+        const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gu)].map(
+            ([, text = '']) => text
+        )
+        expect(scripts.length).toBe(2)
+        for (const script of scripts) {
+            expect(script).toContain('prefers-color-scheme: light')
+        }
     })
 
     test('does not write the properties of the note as text of the page', async () => {
