@@ -52,7 +52,23 @@ describe('published notes of a content store', () => {
                 ...ENTRY,
                 id: 'bbbbbbbbbbbbbbbb',
                 path: 'Welcome.md',
-                links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }]
+                links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }],
+                attachments: [
+                    {
+                        hash: 'sha256:a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33',
+                        height: 12,
+                        link: 'garden-plan.png',
+                        path: 'Attachments/garden-plan.png',
+                        size: 78,
+                        width: 16
+                    },
+                    {
+                        hash: 'sha256:a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33',
+                        link: 'map.pdf',
+                        path: 'Maps/map.pdf',
+                        size: 9
+                    }
+                ]
             },
             'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: '10 Garden/Compost basics.md' }
         })
@@ -64,7 +80,8 @@ describe('published notes of a content store', () => {
                 path: '/10+Garden/Compost+basics',
                 file: '-/note/aaaaaaaaaaaaaaaa.html',
                 title: 'Compost basics',
-                links: []
+                links: [],
+                attachments: []
             },
             {
                 id: 'bbbbbbbbbbbbbbbb',
@@ -72,7 +89,23 @@ describe('published notes of a content store', () => {
                 path: '/Welcome',
                 file: '-/note/bbbbbbbbbbbbbbbb.html',
                 title: 'Welcome',
-                links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }]
+                links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }],
+                attachments: [
+                    {
+                        link: 'garden-plan.png',
+                        key: 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33',
+                        url: '/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png',
+                        name: 'garden-plan.png',
+                        width: 16,
+                        height: 12
+                    },
+                    {
+                        link: 'map.pdf',
+                        key: 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33',
+                        url: '/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/map.pdf',
+                        name: 'map.pdf'
+                    }
+                ]
             }
         ])
     })

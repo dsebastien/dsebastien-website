@@ -5,10 +5,15 @@
 export interface ResolverMap {
     /** The file of the page of each canonical path, relative to the output of the build. */
     readonly pages: Readonly<Record<string, string>>
+    /** The key in the attachment storage of each hashed path of an attachment that a page uses. */
+    readonly attachments?: Readonly<Record<string, string>>
 }
 
 /** What a requested path leads to. Later slices add a redirect and "gone". */
-export type Resolution = { kind: 'page'; file: string } | { kind: 'not-found' }
+export type Resolution =
+    | { kind: 'page'; file: string }
+    | { kind: 'attachment'; key: string; name: string }
+    | { kind: 'not-found' }
 
 /**
  * Resolves a requested path.
@@ -19,5 +24,19 @@ export type Resolution = { kind: 'page'; file: string } | { kind: 'not-found' }
 export function resolve(path: string, map: ResolverMap): Resolution {
     // `Object.hasOwn`: a path such as "constructor" is not a page.
     const file = Object.hasOwn(map.pages, path) ? map.pages[path] : undefined
-    return file === undefined ? { kind: 'not-found' } : { kind: 'page', file }
+    if (file !== undefined) {
+        return { kind: 'page', file }
+    }
+    const attachments = map.attachments ?? {}
+    const key = Object.hasOwn(attachments, path) ? attachments[path] : undefined
+    if (key === undefined) {
+        return { kind: 'not-found' }
+    }
+    // The name gives the kind of the file. The map holds only paths that the
+    // build wrote, so the name decodes.
+    return {
+        kind: 'attachment',
+        key,
+        name: decodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
+    }
 }

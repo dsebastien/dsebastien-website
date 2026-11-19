@@ -128,7 +128,10 @@ describe('build of a content store with one published note', () => {
 
     test('writes the resolver map: the canonical path of the note leads to its page', async () => {
         const map: unknown = JSON.parse(await readOutput('-/resolver-map.json'))
-        expect(map).toEqual({ pages: { '/': 'index.html', [NOTE_URL]: NOTE_FILE } })
+        expect(map).toEqual({
+            pages: { '/': 'index.html', [NOTE_URL]: NOTE_FILE },
+            attachments: {}
+        })
     })
 })
 

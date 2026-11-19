@@ -28,3 +28,25 @@ describe('resolver', () => {
         expect(resolve('__proto__', MAP)).toEqual({ kind: 'not-found' })
     })
 })
+
+describe('resolver of attachments', () => {
+    const KEY = 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33'
+    const WITH: ResolverMap = {
+        pages: {},
+        attachments: { [`/-/attachments/${KEY}/garden-plan.png`]: KEY }
+    }
+
+    test('gives the key of the file of an attachment', () => {
+        expect(resolve(`/-/attachments/${KEY}/garden-plan.png`, WITH)).toEqual({
+            kind: 'attachment',
+            key: KEY,
+            name: 'garden-plan.png'
+        })
+    })
+
+    test('does not find the key with another name, or a name of the language', () => {
+        expect(resolve(`/-/attachments/${KEY}/other.png`, WITH)).toEqual({ kind: 'not-found' })
+        expect(resolve(`/-/attachments/${KEY}`, WITH)).toEqual({ kind: 'not-found' })
+        expect(resolve('constructor', WITH)).toEqual({ kind: 'not-found' })
+    })
+})

@@ -32,7 +32,8 @@ if (entry.rendered === undefined) {
 const html = withLinkState(
     entry.rendered.html,
     new Map(note.links.map((link) => [link.link, link.path])),
-    (vaultPath) => urls.get(vaultPath)
+    (vaultPath) => urls.get(vaultPath),
+    new Map(note.attachments.map((file) => [file.link, file]))
 )
 ---
 

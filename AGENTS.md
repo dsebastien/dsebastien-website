@@ -138,7 +138,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - `apps/site/`: the Astro and Tailwind site. A Bun workspace with its own `package.json` and `tsconfig.json`.
     - `apps/site/src/content-store.ts`: how the build reads the content store. The build never reads the vault.
     - `apps/site/src/note-links.ts`: the links between notes on a page. A plugin of the Markdown processor of Astro (Sätteri, `markdown.processor` in `astro.config.ts`) marks each link when a note is rendered. The page gives each mark its state at each build: a link when the target is published, plain text when it is not. Astro keeps the markup of a note between two builds, so nothing that depends on another note goes into that markup. Astro does not see a change of the plugin code either: raise `MARKUP_VERSION` in that file with every change of what the plugin writes, or the old markup of every note stays. That holds also for a change of `wikilinksOf` and of `linkPathOfDestination` in `apps/plugin/src/publishing/links.ts`, which the plugin calls. The Markdown processor reads the text first, so a wikilink with Markdown syntax inside its brackets stays text until the rendering slice (issue 45).
-    - `apps/site/server/`: the plain local server that serves the built site through the resolver.
+    - `apps/site/server/`: the plain local server that serves the built site through the resolver, and the attachments from a folder of the attachment storage.
 - `apps/plugin/`: the Obsidian plugin of the publishing tool, from the plugin template of the author. A Bun workspace. Its type check is the one of the root.
     - `apps/plugin/src/publishing/`: the TypeScript implementation of the publishing logic. It never imports Obsidian.
     - `apps/plugin/src/app/`: the plugin itself, a thin layer over the publishing logic.
@@ -146,7 +146,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - `parity/`: the parity tests. They run both implementations and compare their output byte by byte.
 - `packages/`: TypeScript code that more than one app uses. Each package is a Bun workspace.
     - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, `makeTestStores()` (a content store and an attachment storage), and for a test of a publication `copyFixtureVault()`, `makeContentStoreCopy()` and `refusePushes()` (a content store that refuses every push: `plan` and `publish` fetch first, so a push of another device before the run stops it before its push).
-    - `packages/resolver/`: the URL function and the resolver, in plain TypeScript. The build, the plain server and later the edge use them. No other code writes or reads a URL of a note.
+    - `packages/resolver/`: the URL function, the hashed path of an attachment and the resolver, in plain TypeScript. The build, the plain server and later the edge use them. No other code writes or reads a URL of a note.
 - `fixtures/`: the test data, invented. It is at the root because no implementation owns it: the TypeScript tests and the Rust tests read the same files.
     - `fixtures/vault/`: the fixture vault.
     - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.

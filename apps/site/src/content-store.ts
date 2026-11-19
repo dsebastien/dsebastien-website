@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { canonicalPath } from '@dsebastien-website/resolver'
+import { attachmentPath, canonicalPath } from '@dsebastien-website/resolver'
 
 // The content store as the build reads it (BUILD-01 of the spec). The build
 // never reads the vault: the content store holds the cleaned notes and the
@@ -39,6 +39,22 @@ export interface PublishedNote {
     title: string
     /** The links of the note that lead to a note: the link path as the note writes it, and the vault path of its target. */
     links: { link: string; path: string }[]
+    /** The links of the note that lead to an attachment, with the hashed URL of the file and the size of an image. */
+    attachments: PublishedAttachment[]
+}
+
+/** A link of a published note to an attachment. */
+export interface PublishedAttachment {
+    /** The link path as the note writes it. */
+    link: string
+    /** The key of the file in the attachment storage. */
+    key: string
+    /** The hashed URL of the file. */
+    url: string
+    /** The name of the file. */
+    name: string
+    width?: number
+    height?: number
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,6 +73,30 @@ function isLinkList(value: unknown): value is { link: string; path: string }[] {
         )
     )
 }
+
+/** True when the value is the list `attachments` of a manifest entry, as the build reads it. */
+function isAttachmentList(
+    value: unknown
+): value is { link: string; path: string; hash: string; width?: number; height?: number }[] {
+    const isSize = (size: unknown): boolean =>
+        size === undefined || (typeof size === 'number' && Number.isSafeInteger(size) && size > 0)
+    return (
+        Array.isArray(value) &&
+        value.every(
+            (item) =>
+                isRecord(item) &&
+                typeof item['link'] === 'string' &&
+                typeof item['path'] === 'string' &&
+                typeof item['hash'] === 'string' &&
+                ATTACHMENT_HASH.test(item['hash']) &&
+                isSize(item['width']) &&
+                isSize(item['height'])
+        )
+    )
+}
+
+/** The form of the hash of an attachment. Its digits name a file of the attachment storage. */
+const ATTACHMENT_HASH = /^sha256:[0-9a-f]{64}$/
 
 /** The form of the identity of a note. It becomes the name of a file of the site. */
 const NOTE_ID = /^[0-9a-f]{16}$/
@@ -95,7 +135,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             typeof entry['id'] !== 'string' ||
             !NOTE_ID.test(entry['id']) ||
             typeof entry['path'] !== 'string' ||
-            !isLinkList(entry['links'])
+            !isLinkList(entry['links']) ||
+            !isAttachmentList(entry['attachments'])
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
         }
@@ -112,7 +153,16 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             path: canonicalPath(vaultPath),
             file: `-/note/${entry['id']}.html`,
             title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, ''),
-            links: entry['links'].map((item) => ({ link: item.link, path: item.path }))
+            links: entry['links'].map((item) => ({ link: item.link, path: item.path })),
+            attachments: entry['attachments'].map((item) => ({
+                link: item.link,
+                key: item.hash.slice('sha256:'.length),
+                url: attachmentPath(item.hash, item.path),
+                name: item.path.slice(item.path.lastIndexOf('/') + 1),
+                ...(item.width === undefined || item.height === undefined
+                    ? {}
+                    : { width: item.width, height: item.height })
+            }))
         })
     }
     // In the order of the paths, so that two builds of one content store give

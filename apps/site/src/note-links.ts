@@ -32,7 +32,7 @@ type NewNode = { type: 'text'; value: string } | { type: 'html'; value: string }
  * That holds also for a change of the two functions of the publishing tool
  * that read a link here (`wikilinksOf`, `linkPathOfDestination`).
  */
-export const MARKUP_VERSION = 3
+export const MARKUP_VERSION = 4
 
 /** The element that stands for a link to a note until the page is made. */
 const MARK = 'note-link'
@@ -42,9 +42,10 @@ function encode(text: string): string {
     return encodeURIComponent(text).replaceAll("'", '%27')
 }
 
-/** The start of the mark of one link, with its link path. */
-function open(linkPath: string): NewNode {
-    return { type: 'html', value: `<${MARK} data-link="${encode(linkPath)}">` }
+/** The start of the mark of one link, with its link path. An embed shows its target in the page. */
+function open(linkPath: string, embed = false): NewNode {
+    const kind = embed ? ' data-embed=""' : ''
+    return { type: 'html', value: `<${MARK} data-link="${encode(linkPath)}"${kind}>` }
 }
 
 const CLOSE: NewNode = { type: 'html', value: `</${MARK}>` }
@@ -66,8 +67,10 @@ function split(value: string): NewNode[] | undefined {
                 // A link into the note itself is plain text until the rendering slice.
                 parts.push(shown)
             } else {
-                // An embed is a link until the rendering slice puts the text of its target in its place.
-                parts.push(open(link.linkPath), shown, CLOSE)
+                // An embed of a note is a link until the rendering slice puts
+                // the text of its target in its place. An embed of a file
+                // shows the file.
+                parts.push(open(link.linkPath, link.embed), shown, CLOSE)
             }
             done = end
         }
@@ -132,6 +135,18 @@ export const noteLinks: MarkdownPlugin = {
             context.replaceNode(node, [open(linkPath), ...node.children, CLOSE])
         }
     },
+    // A Markdown image of a file of the vault: an embed whose text is the
+    // alternative text of the image.
+    image(node, context) {
+        const linkPath = linkPathOfDestination(node.url)
+        if (linkPath !== undefined && linkPath !== '') {
+            context.replaceNode(node, [
+                open(linkPath, true),
+                { type: 'text', value: node.alt ?? '' },
+                CLOSE
+            ])
+        }
+    },
     // A reference link to a file of the vault. The tool does not read this
     // form, so its link path has no target: it shows as plain text, and it is
     // never a link to a file that the site does not have (business rule 5).
@@ -153,7 +168,68 @@ function escapeHtml(value: string): string {
         .replaceAll('"', '&quot;')
 }
 
-const MARKED = new RegExp(`<${MARK} data-link="([^"]*)">(.*?)</${MARK}>`, 'gs')
+const MARKED = new RegExp(`<${MARK} data-link="([^"]*)"( data-embed="")?>(.*?)</${MARK}>`, 'gs')
+
+/** A link of a note that leads to an attachment, as the page shows it. */
+export interface FileLink {
+    /** The hashed URL of the file. */
+    readonly url: string
+    /** The name of the file, which gives its kind. */
+    readonly name: string
+    readonly width?: number
+    readonly height?: number
+}
+
+/** The ends of the names of the files that a page shows in its place, by their kind. */
+const IMAGES = new Set(['avif', 'bmp', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
+const VIDEOS = new Set(['mkv', 'mov', 'mp4', 'ogv', 'webm'])
+const SOUNDS = new Set(['3gp', 'flac', 'm4a', 'mp3', 'ogg', 'wav'])
+
+/** The end of a name, in small letters. */
+function endOf(name: string): string {
+    const dot = name.lastIndexOf('.')
+    return dot === -1 ? '' : name.slice(dot + 1).toLowerCase()
+}
+
+/** The text of markup, for an attribute: the tags go, the escapes stay, and a quote is escaped. */
+function attributeText(inner: string): string {
+    return inner.replace(/<[^>]*>/g, '').replaceAll('"', '&quot;')
+}
+
+/** The markup of an embed of a file: an image, a player, or a link. */
+function embedOf(file: FileLink, inner: string): string {
+    const src = escapeHtml(file.url)
+    const kind = endOf(file.name)
+    if (IMAGES.has(kind)) {
+        // Obsidian writes a width, or a width and a height, after the bar.
+        const size = /^(\d+)(?:x(\d+))?$/.exec(inner)
+        const alt = size === null ? attributeText(inner) : escapeHtml(file.name)
+        let width = file.width
+        let height = file.height
+        if (size !== null) {
+            const asked = Number(size[1])
+            height =
+                size[2] !== undefined
+                    ? Number(size[2])
+                    : width !== undefined && height !== undefined
+                      ? Math.round((asked * height) / width)
+                      : undefined
+            width = asked
+        }
+        const dimensions =
+            width !== undefined && height !== undefined
+                ? ` width="${String(width)}" height="${String(height)}"`
+                : ''
+        return `<img src="${src}" alt="${alt}"${dimensions} loading="lazy" decoding="async">`
+    }
+    if (VIDEOS.has(kind)) {
+        return `<video src="${src}" controls preload="metadata"></video>`
+    }
+    if (SOUNDS.has(kind)) {
+        return `<audio src="${src}" controls preload="metadata"></audio>`
+    }
+    return `<a href="${src}">${inner}</a>`
+}
 
 /**
  * The markup of a note with its links in the state of this build.
@@ -161,28 +237,39 @@ const MARKED = new RegExp(`<${MARK} data-link="([^"]*)">(.*?)</${MARK}>`, 'gs')
  * @param html the markup that the renderer made, with the marks
  * @param links the links of the note, from its manifest entry: link path to the vault path of the target
  * @param urlOf the canonical path of a published note, or `undefined` for every other vault path
+ * @param files the links of the note that lead to an attachment, from its manifest entry, by their link path
  */
 export function withLinkState(
     html: string,
     links: ReadonlyMap<string, string>,
-    urlOf: (vaultPath: string) => string | undefined
+    urlOf: (vaultPath: string) => string | undefined,
+    files: ReadonlyMap<string, FileLink> = new Map()
 ): string {
-    return html.replace(MARKED, (_all, linkPath: string, inner: string) => {
-        // A mark that the plugin did not write (raw HTML of a note) can hold a
-        // text that cannot be decoded: it has no target.
-        let target: string | undefined
-        try {
-            target = links.get(decodeURIComponent(linkPath))
-        } catch {
-            target = undefined
+    return html.replace(
+        MARKED,
+        (_all, linkPath: string, embed: string | undefined, inner: string) => {
+            // A mark that the plugin did not write (raw HTML of a note) can hold a
+            // text that cannot be decoded: it has no target.
+            let decoded: string | undefined
+            try {
+                decoded = decodeURIComponent(linkPath)
+            } catch {
+                decoded = undefined
+            }
+            const file = decoded === undefined ? undefined : files.get(decoded)
+            if (file !== undefined) {
+                return embed === undefined
+                    ? `<a href="${escapeHtml(file.url)}">${inner}</a>`
+                    : embedOf(file, inner)
+            }
+            const target = decoded === undefined ? undefined : links.get(decoded)
+            const url = target === undefined ? undefined : urlOf(target)
+            // Business rule 5: a link to a note that is not published leads to no
+            // page. The same holds for a link path that has no target: a name that
+            // no file has, or a file under a guard.
+            return url === undefined
+                ? `<span class="not-published">${inner}</span>`
+                : `<a href="${escapeHtml(url)}">${inner}</a>`
         }
-        const url = target === undefined ? undefined : urlOf(target)
-        // Business rule 5: a link to a note that is not published leads to no
-        // page. The same holds for a link path that has no target: a name that
-        // no note has, a note under a guard, or a file that is not a note
-        // (until the slice of the attachments).
-        return url === undefined
-            ? `<span class="not-published">${inner}</span>`
-            : `<a href="${escapeHtml(url)}">${inner}</a>`
-    })
+    )
 }

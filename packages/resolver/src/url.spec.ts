@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { canonicalPath } from './url.ts'
+import { attachmentPath, canonicalPath } from './url.ts'
 
 // URL-01 of the spec: the canonical URL of a note is the URL that it has
 // today. Each segment of the vault path is percent-encoded, then `%20` is
@@ -37,5 +37,30 @@ describe('canonical path of a note', () => {
 
     test('is refused for a path that is not a note', () => {
         expect(() => canonicalPath('Attachments/garden-plan.png')).toThrow('note')
+    })
+})
+
+// URL-15 of the spec, first part: the content-hashed URL of an attachment,
+// which pages use. It keeps the readable name of the file. The stable URL
+// that follows the vault path comes with the slice of the URL contract.
+describe('hashed path of an attachment', () => {
+    const KEY = 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33'
+
+    test.each([
+        ['a plain name', 'Attachments/garden-plan.png', `/-/attachments/${KEY}/garden-plan.png`],
+        ['a name with a space', 'Pond video.mp4', `/-/attachments/${KEY}/Pond%20video.mp4`],
+        [
+            'a literal plus and a percent sign',
+            'a+b 100%.pdf',
+            `/-/attachments/${KEY}/a%2Bb%20100%25.pdf`
+        ],
+        ['a name outside ASCII', 'Plans/Étang.webp', `/-/attachments/${KEY}/%C3%89tang.webp`]
+    ])('%s', (_case, vaultPath, expected) => {
+        expect(attachmentPath(`sha256:${KEY}`, vaultPath)).toBe(expected)
+    })
+
+    test('is refused for a hash in another form', () => {
+        expect(() => attachmentPath('sha256:../../etc', 'a.png')).toThrow('hash')
+        expect(() => attachmentPath(KEY, 'a.png')).toThrow('hash')
     })
 })
