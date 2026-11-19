@@ -1,3 +1,4 @@
+import { attachmentsOf, FileReader, sameAttachments } from './attachments.ts'
 import { CLEANING_VERSION, sourceOf, STATE_PROPERTY } from './clean.ts'
 import type { Configuration } from './configuration.ts'
 import { removeProperty, setProperty } from './frontmatter.ts'
@@ -61,10 +62,12 @@ export interface Scan {
     readonly notes: ReadonlyMap<string, ScannedNote>
     /** The notes of the scan that the ignore property excludes. */
     readonly ignored: ReadonlySet<string>
-    /** The notes of the scan and of the folders of the deny list, by their names: what a link is resolved against. */
+    /** The files of the scan and of the folders of the deny list, by their names: what a link is resolved against. */
     readonly index: LinkIndex
-    /** The notes that a guard excludes: a link to one of them gives no item. */
+    /** The files that a guard excludes: a link to one of them gives no item. */
     readonly guarded: ReadonlySet<string>
+    /** The files that the notes link to, each one read one time per run. */
+    readonly files: FileReader
     /** The names of the notes in the folders of the deny list, in small letters. No file of those folders is read. */
     readonly deniedNames: ReadonlySet<string>
     /** Every entry of the manifest, by the vault path of its note. */
@@ -75,10 +78,19 @@ export interface Scan {
 /** The replacement character: it stands for bytes of a name that are not valid Unicode. */
 const REPLACEMENT = String.fromCharCode(0xfffd)
 
-/** The vault paths of the notes of the vault, in the order of the canonical form. */
-export async function scanVault(vault: Vault, configuration: Configuration): Promise<string[]> {
+/** The files of the scan of the vault: its notes and its other files. */
+export interface ScannedFiles {
+    /** The vault paths of the notes, in the order of the canonical form. */
+    readonly notes: string[]
+    /** The vault paths of the other files, which a note can link to. */
+    readonly others: string[]
+}
+
+/** The vault paths of the files of the vault, outside the folders of the deny list. */
+export async function scanVault(vault: Vault, configuration: Configuration): Promise<ScannedFiles> {
     const denied = new Set(configuration.denyList)
     const notes: string[] = []
+    const others: string[] = []
     const folders = ['']
     for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {
         for (const entry of await vault.list(folder)) {
@@ -93,17 +105,20 @@ export async function scanVault(vault: Vault, configuration: Configuration): Pro
                 }
             } else if (path.endsWith('.md')) {
                 notes.push(path)
+            } else {
+                others.push(path)
             }
         }
     }
-    return sortByCodePoint(notes)
+    return { notes: sortByCodePoint(notes), others: sortByCodePoint(others) }
 }
 
 /**
- * The vault paths of the notes in the folders of the deny list. The tool lists
- * those folders for two reasons: to know that a published note moved into one
- * of them, and to know that a link leads to a note under that guard. It reads
- * none of their files, and it writes none of these paths.
+ * The vault paths of the files in the folders of the deny list, notes and
+ * other files. The tool lists those folders for two reasons: to know that a
+ * published note moved into one of them, and to know that a link leads to a
+ * file under that guard. It reads none of their files, and it writes none of
+ * these paths.
  */
 export async function scanDenied(vault: Vault, configuration: Configuration): Promise<string[]> {
     const notes: string[] = []
@@ -116,7 +131,7 @@ export async function scanDenied(vault: Vault, configuration: Configuration): Pr
             const path = `${folder}/${entry.name}`
             if (entry.kind === 'folder') {
                 folders.push(path)
-            } else if (path.endsWith('.md')) {
+            } else {
                 notes.push(path)
             }
         }
@@ -138,7 +153,8 @@ export async function computeQueue(input: {
     const ignored = new Set<string>()
     // The link paths of the published notes: their links are computed again at each scan.
     const linkPaths = new Map<string, string[]>()
-    for (const path of await scanVault(input.vault, input.configuration)) {
+    const scanned = await scanVault(input.vault, input.configuration)
+    for (const path of scanned.notes) {
         let text: string | undefined
         try {
             text = await input.vault.read(path)
@@ -169,12 +185,13 @@ export async function computeQueue(input: {
         })
     }
 
-    // A link that Obsidian leads to a note under a guard must not lead to
-    // another note of the same name. So the notes of the deny list folders
+    // A link that Obsidian leads to a file under a guard must not lead to
+    // another file of the same name. So the files of the deny list folders
     // are candidates too, by their paths alone, and such a target gives no item.
     const denied = await scanDenied(input.vault, input.configuration)
-    const index = new LinkIndex([...notes.keys(), ...denied])
+    const index = new LinkIndex([...notes.keys(), ...scanned.others, ...denied])
     const guarded = new Set([...ignored, ...denied])
+    const files = new FileReader(input.vault)
     const lists = {
         changed: [] as string[],
         new: [] as string[],
@@ -192,15 +209,20 @@ export async function computeQueue(input: {
             lists.toRemove.push(path)
         } else if (note.sourceHash !== entry.sourceHash) {
             lists.changed.push(path)
-        } else if (
-            entry.cleaningVersion !== CLEANING_VERSION ||
-            // A target was made, moved or removed, or a guard now excludes it.
-            !sameLinks(linksOfPaths(linkPaths.get(path) ?? [], path, index, guarded), entry.links)
-        ) {
-            lists.changed.push(path)
-            lists.technicalUpdates.push(path)
         } else {
-            lists.unchanged.push(path)
+            const targets = linksOfPaths(linkPaths.get(path) ?? [], path, index, guarded)
+            if (
+                entry.cleaningVersion !== CLEANING_VERSION ||
+                // A target was made, moved or removed, or a guard now excludes it.
+                !sameLinks(targets.links, entry.links) ||
+                // A file was added, changed, moved or removed, or a guard now excludes it.
+                !sameAttachments(await attachmentsOf(targets.files, files), entry.attachments)
+            ) {
+                lists.changed.push(path)
+                lists.technicalUpdates.push(path)
+            } else {
+                lists.unchanged.push(path)
+            }
         }
     }
     for (const path of notes.keys()) {
@@ -227,8 +249,13 @@ export async function computeQueue(input: {
         ignored,
         index,
         guarded,
+        files,
+        // The notes of the folders of the deny list, by their names: a
+        // published note that is missing may have moved there.
         deniedNames: new Set(
-            denied.map((path) => path.slice(path.lastIndexOf('/') + 1).toLowerCase())
+            denied
+                .filter((path) => path.endsWith('.md'))
+                .map((path) => path.slice(path.lastIndexOf('/') + 1).toLowerCase())
         ),
         manifest: input.manifest,
         configuration: input.configuration

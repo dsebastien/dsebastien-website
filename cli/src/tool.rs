@@ -7,18 +7,21 @@ use std::fmt::Write;
 use serde::Serialize;
 use serde_json::{Value, json};
 
+use crate::attachments::attachments_of;
+use crate::attachments::{Attachment, key_of};
 use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, parse_configuration};
-use crate::device::{ContentStore, Vault};
+use crate::device::{AttachmentStorage, ContentStore, Vault};
 use crate::frontmatter::{has_flow_properties, names_in_properties, remove_property, set_property};
 use crate::guards::IGNORE_PROPERTY;
-use crate::hash::{content_hash, sha256_hex};
+use crate::hash::{bytes_hash, content_hash, sha256_hex};
 use crate::json::parse_json;
 use crate::links::{NoteLink, links_of};
 use crate::manifest::{
     MANIFEST_FOLDER, ManifestEntry, NOTES_FOLDER, State, manifest_file, note_id, read_manifest,
 };
+use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, compute_plan};
 use crate::queue::{Scan, compute_queue};
 
@@ -129,11 +132,13 @@ pub fn status(device: &Device) -> Result<String, String> {
     canonical(&to_value(&read_state(device, false)?.scan.queue)?)
 }
 
-/// The source, the cleaned note and the links of one note of a plan.
+/// The source, the cleaned note, the links and the attachments of one note of
+/// a plan.
 struct NoteTexts {
     source: String,
     cleaned: String,
     links: Vec<NoteLink>,
+    attachments: Vec<Attachment>,
 }
 
 /// A plan with everything that its publication needs.
@@ -164,13 +169,15 @@ fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String
             .ok_or_else(|| format!("\"{path}\" does not exist in the vault any more"))?;
         let source = source_of(&text);
         let cleaned = clean_note(&source);
-        let links = links_of(&source, path, &scan.index, &scan.guarded);
+        let targets = links_of(&source, path, &scan.index, &scan.guarded);
+        let attachments = attachments_of(&targets.files, &device.vault, &scan.files)?;
         texts.insert(
             path.clone(),
             NoteTexts {
                 source,
                 cleaned,
-                links,
+                links: targets.links,
+                attachments,
             },
         );
     }
@@ -179,6 +186,7 @@ fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String
         .iter()
         .map(|(path, texts)| {
             Ok(json!({
+                "attachments": to_value(&texts.attachments)?,
                 "cleanedHash": content_hash(&texts.cleaned),
                 "links": to_value(&texts.links)?,
                 "path": path,
@@ -401,7 +409,7 @@ fn entry_of(
     let source_hash = content_hash(&texts.source);
     let Some(before) = before else {
         return ManifestEntry {
-            attachments: Vec::new(),
+            attachments: texts.attachments.clone(),
             cleaned_hash,
             cleaning_version: CLEANING_VERSION,
             first_published: time.to_owned(),
@@ -418,6 +426,7 @@ fn entry_of(
     // the last date: the author did not edit the note (PUB-24).
     let edited = before.state != State::Published || before.source_hash != source_hash;
     ManifestEntry {
+        attachments: texts.attachments.clone(),
         cleaned_hash,
         cleaning_version: CLEANING_VERSION,
         last_published: if edited {
@@ -432,30 +441,42 @@ fn entry_of(
     }
 }
 
-/// The two files of a note to publish or to update.
-fn note_files(
+/// The files of one note to write or to remove, its entry after the write,
+/// and the attachments to upload before the files are written.
+struct Unit {
+    files: Vec<StoreFile>,
+    entry: ManifestEntry,
+    attachments: Vec<Attachment>,
+}
+
+/// The unit of a note to publish or to update.
+fn note_unit(
     path: &str,
     texts: &BTreeMap<String, NoteTexts>,
     scan: &Scan,
     time: &str,
-) -> Result<Vec<StoreFile>, String> {
+) -> Result<Unit, String> {
     let texts = texts.get(path).ok_or("the plan has no text for the note")?;
     let entry = entry_of(path, texts, scan.manifest.get(path), time);
-    Ok(vec![
-        StoreFile {
-            path: format!("{NOTES_FOLDER}/{path}"),
-            text: Some(texts.cleaned.clone()),
-        },
-        StoreFile {
-            path: manifest_file(&entry.id),
-            text: Some(canonical(&to_value(&entry)?)?),
-        },
-    ])
+    Ok(Unit {
+        files: vec![
+            StoreFile {
+                path: format!("{NOTES_FOLDER}/{path}"),
+                text: Some(texts.cleaned.clone()),
+            },
+            StoreFile {
+                path: manifest_file(&entry.id),
+                text: Some(canonical(&to_value(&entry)?)?),
+            },
+        ],
+        entry,
+        attachments: texts.attachments.clone(),
+    })
 }
 
-/// The two files of a note to unpublish: its cleaned note goes, and its entry
+/// The unit of a note to unpublish: its cleaned note goes, and its entry
 /// stays with another state.
-fn removal_files(path: &str, scan: &Scan) -> Result<Vec<StoreFile>, String> {
+fn removal_unit(path: &str, scan: &Scan) -> Result<Unit, String> {
     let entry = scan
         .manifest
         .get(path)
@@ -464,16 +485,138 @@ fn removal_files(path: &str, scan: &Scan) -> Result<Vec<StoreFile>, String> {
         state: State::Unpublished,
         ..entry.clone()
     };
-    Ok(vec![
-        StoreFile {
-            path: format!("{NOTES_FOLDER}/{path}"),
-            text: None,
-        },
-        StoreFile {
-            path: manifest_file(&entry.id),
-            text: Some(canonical(&to_value(&unpublished)?)?),
-        },
-    ])
+    Ok(Unit {
+        files: vec![
+            StoreFile {
+                path: format!("{NOTES_FOLDER}/{path}"),
+                text: None,
+            },
+            StoreFile {
+                path: manifest_file(&entry.id),
+                text: Some(canonical(&to_value(&unpublished)?)?),
+            },
+        ],
+        entry: unpublished,
+        attachments: Vec::new(),
+    })
+}
+
+/// The keys of the files of the attachment storage that the published notes
+/// of a manifest use.
+fn used_keys(manifest: &BTreeMap<String, ManifestEntry>) -> BTreeSet<String> {
+    manifest
+        .values()
+        .filter(|entry| entry.state == State::Published)
+        .flat_map(|entry| &entry.attachments)
+        .map(|attachment| key_of(&attachment.hash).to_owned())
+        .collect()
+}
+
+/// The uploads of one publication to the attachment storage (PUB-39).
+struct Uploads<'a> {
+    vault: &'a Vault,
+    storage: &'a AttachmentStorage,
+    present: BTreeSet<String>,
+    /// The keys that this run uploaded, in the order of the uploads.
+    uploaded: Vec<String>,
+}
+
+impl<'a> Uploads<'a> {
+    fn new(vault: &'a Vault, storage: &'a AttachmentStorage) -> Self {
+        Self {
+            vault,
+            storage,
+            present: BTreeSet::new(),
+            uploaded: Vec::new(),
+        }
+    }
+
+    /// Lists the storage one time, before the first upload.
+    fn start(&mut self) -> Result<(), String> {
+        self.present = self.storage.list()?.into_iter().collect();
+        Ok(())
+    }
+
+    /// Uploads each attachment whose key the storage does not have yet. The
+    /// bytes are read from the vault again, and must have the hash of the
+    /// record: a file that changed since the plan is not uploaded.
+    fn upload(&mut self, attachments: &[Attachment]) -> Result<(), String> {
+        for attachment in attachments {
+            let key = key_of(&attachment.hash);
+            if self.present.contains(key) {
+                continue;
+            }
+            let bytes = self.vault.read_bytes(&attachment.path)?;
+            let Some(bytes) = bytes.filter(|bytes| bytes_hash(bytes) == attachment.hash) else {
+                return Err(format!(
+                    "the file \"{}\" changed since the plan, and it is not uploaded",
+                    attachment.path
+                ));
+            };
+            self.storage.put(key, &bytes)?;
+            self.present.insert(key.to_owned());
+            self.uploaded.push(key.to_owned());
+        }
+        Ok(())
+    }
+
+    /// Deletes the uploads of this run that no published entry of the
+    /// manifest lists (PUB-93). Every upload is tried. The result is the keys
+    /// that could not be deleted.
+    fn take_back(&self, manifest: &BTreeMap<String, ManifestEntry>) -> Vec<String> {
+        let used = used_keys(manifest);
+        self.uploaded
+            .iter()
+            .filter(|key| !used.contains(*key) && self.storage.remove(key).is_err())
+            .cloned()
+            .collect()
+    }
+}
+
+/// What the cleanup of the attachment storage did.
+struct Cleanup {
+    deleted: Vec<String>,
+    warnings: Vec<Value>,
+}
+
+/// Cleans the attachment storage: every file whose name is not the key of an
+/// attachment of a published entry goes (PUB-82, PUB-84, PUB-93). It reads no
+/// file of the storage. A deletion that fails gives a warning, and the next
+/// publication tries again.
+fn clean_storage(
+    storage: &AttachmentStorage,
+    manifest: &BTreeMap<String, ManifestEntry>,
+) -> Cleanup {
+    let used = used_keys(manifest);
+    let mut cleanup = Cleanup {
+        deleted: Vec::new(),
+        warnings: Vec::new(),
+    };
+    let mut names = match storage.list() {
+        Ok(names) => names,
+        Err(error) => {
+            cleanup.warnings.push(json!({
+                "message": format!("the attachment storage could not be listed, and it is cleaned at the next publication: {error}"),
+                "path": "",
+            }));
+            return cleanup;
+        }
+    };
+    sort_by_code_point(&mut names);
+    for name in names {
+        if used.contains(&name) {
+            continue;
+        }
+        match storage.remove(&name) {
+            Ok(true) => cleanup.deleted.push(name),
+            Ok(false) => {}
+            Err(error) => cleanup.warnings.push(json!({
+                "message": format!("the file could not be deleted from the attachment storage, and the next publication tries again: {error}"),
+                "path": name,
+            })),
+        }
+    }
+    cleanup
 }
 
 /// Applies the forced removals of a plan: the cleaned note and the manifest
@@ -626,58 +769,77 @@ struct Written {
     skipped: Vec<String>,
     /// The paths of the content store that changed.
     paths: Vec<String>,
+    /// The manifest after the writes, by the vault path of each note.
+    manifest: BTreeMap<String, ManifestEntry>,
+}
+
+/// The lists of the notes of a plan that were written.
+#[derive(Default)]
+struct Done {
+    published: Vec<String>,
+    updated: Vec<String>,
+    removed: Vec<String>,
 }
 
 /// Writes the files of a plan into the copy, and commits and pushes them.
 /// The forced removals come first: when one fails, the whole publication
-/// stops. A note whose files cannot be written is left out and reported
+/// stops. A note whose uploads or files fail is left out and reported
 /// (PUB-26).
 fn write_all(
     device: &Device,
     journal: &mut Journal,
-    plan: &PublicationPlan,
-    scan: &Scan,
-    texts: &BTreeMap<String, NoteTexts>,
+    uploads: &mut Uploads,
+    computed: &Computed,
     run: &Run,
 ) -> Result<Written, String> {
+    let Computed {
+        plan, scan, texts, ..
+    } = computed;
+    uploads.start()?;
     // The forced removals come first, and they are no unit of one note: a
     // failure stops the whole publication.
     let mut paths = remove_forced(journal, plan, scan)?;
+    let mut manifest = scan.manifest.clone();
+    for path in plan.forced_remove() {
+        manifest.remove(path);
+    }
     let mut failed = Vec::new();
-    let mut apply =
-        |path: &String, files: Result<Vec<StoreFile>, String>| -> Result<bool, String> {
-            match files
-                .map_err(Failure::Note)
-                .and_then(|files| apply_unit(journal, &files))
-            {
-                Ok(changed) => {
-                    paths.extend(changed);
-                    Ok(true)
-                }
-                // A failure of one note leaves that note out (PUB-26).
-                Err(Failure::Note(reason)) => {
-                    failed.push(json!({ "path": path, "reason": reason }));
-                    Ok(false)
-                }
-                Err(Failure::Stop(reason)) => Err(reason),
+    let mut done = Done::default();
+    let mut apply = |path: &String, unit: Result<Unit, String>| -> Result<bool, String> {
+        // The uploads come first: a note whose file is not in the storage is
+        // never published.
+        let result = unit.map_err(Failure::Note).and_then(|unit| {
+            uploads.upload(&unit.attachments).map_err(Failure::Note)?;
+            let changed = apply_unit(journal, &unit.files)?;
+            Ok((changed, unit.entry))
+        });
+        match result {
+            Ok((changed, entry)) => {
+                paths.extend(changed);
+                manifest.insert(path.clone(), entry);
+                Ok(true)
             }
-        };
-    let mut published = Vec::new();
-    let mut updated = Vec::new();
-    let mut removed = Vec::new();
+            // A failure of one note leaves that note out (PUB-26).
+            Err(Failure::Note(reason)) => {
+                failed.push(json!({ "path": path, "reason": reason }));
+                Ok(false)
+            }
+            Err(Failure::Stop(reason)) => Err(reason),
+        }
+    };
     for path in plan.publish() {
-        if apply(path, note_files(path, texts, scan, run.time))? {
-            published.push(path.clone());
+        if apply(path, note_unit(path, texts, scan, run.time))? {
+            done.published.push(path.clone());
         }
     }
     for path in plan.update() {
-        if apply(path, note_files(path, texts, scan, run.time))? {
-            updated.push(path.clone());
+        if apply(path, note_unit(path, texts, scan, run.time))? {
+            done.updated.push(path.clone());
         }
     }
     for path in plan.remove() {
-        if apply(path, removal_files(path, scan))? {
-            removed.push(path.clone());
+        if apply(path, removal_unit(path, scan))? {
+            done.removed.push(path.clone());
         }
     }
     let skipped: Vec<String> = scan
@@ -691,9 +853,9 @@ fn write_all(
         device.store.commit_and_push(
             &format!(
                 "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}",
-                published.len(),
-                updated.len(),
-                removed.len(),
+                done.published.len(),
+                done.updated.len(),
+                done.removed.len(),
                 plan.forced_remove().len(),
                 skipped.len(),
                 run.device,
@@ -704,11 +866,12 @@ fn write_all(
     }
     Ok(Written {
         failed,
-        published,
-        updated,
-        removed,
+        published: done.published,
+        updated: done.updated,
+        removed: done.removed,
         skipped,
         paths,
+        manifest,
     })
 }
 
@@ -716,17 +879,24 @@ fn write_all(
 ///
 /// It computes the record of the plan again: when the new record is not the
 /// stored one, the plan is stale and nothing is published. The forced
-/// removals come first: when one fails, nothing is published. Then the cleaned
-/// notes and the manifest entries go to the content store in one commit, which
-/// is pushed. A note whose files cannot be written is left out and reported.
-/// Only after the push, the state property is corrected in the vault. The
-/// result is the report of the publication, in the canonical form.
+/// removals come first: when one fails, nothing is published. Then the
+/// attachments go to the attachment storage, and the cleaned notes and the
+/// manifest entries go to the content store in one commit, which is pushed. A
+/// note whose uploads or files fail is left out and reported. Only after the
+/// push, the state property is corrected in the vault. Then every file of the
+/// attachment storage that no published note uses is deleted. The result is
+/// the report of the publication, in the canonical form.
 ///
 /// # Errors
 ///
 /// An input of the run is wrong, the plan is unknown or stale, a forced
 /// removal failed, or the commit or the push failed.
-pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> {
+pub fn publish(
+    device: &Device,
+    storage: &AttachmentStorage,
+    id: &str,
+    run: &Run,
+) -> Result<Outcome, String> {
     check_inputs(id, run)?;
     let record = device
         .store
@@ -738,18 +908,18 @@ pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> 
             "the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan"
         ));
     }
-    let Computed {
-        plan, scan, texts, ..
-    } = current;
 
     let mut journal = Journal::new(&device.store);
-    let written = match write_all(device, &mut journal, &plan, &scan, &texts, run) {
+    let mut uploads = Uploads::new(&device.vault, storage);
+    let written = match write_all(device, &mut journal, &mut uploads, &current, run) {
         Ok(written) => written,
         Err(error) => {
             // Files that stay in the copy would be read as published at the
-            // next run.
+            // next run, and an upload that stays would be public with no
+            // entry.
             let stayed = journal.put_all_back();
-            let after = if stayed.is_empty() {
+            let kept = uploads.take_back(&current.scan.manifest);
+            let files = if stayed.is_empty() {
                 "and the files of the copy are as they were before".to_owned()
             } else {
                 format!(
@@ -757,49 +927,55 @@ pub fn publish(device: &Device, id: &str, run: &Run) -> Result<Outcome, String> 
                     stayed.join(", ")
                 )
             };
-            return Err(format!("{error}. Nothing is published, {after}"));
+            let storage = if kept.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    ". These uploads could not be deleted from the attachment storage, and the next publication deletes them: {}",
+                    kept.join(", ")
+                )
+            };
+            return Err(format!("{error}. Nothing is published, {files}{storage}"));
         }
     };
-    let Written {
-        failed,
-        published,
-        updated,
-        removed,
-        skipped,
-        paths,
-    } = written;
     let mut correction = Correction::default();
     // With nothing to commit there is no push, and without a push no property
     // is corrected.
-    if !paths.is_empty() {
+    if !written.paths.is_empty() {
         // The push succeeded: the manifest of the copy is the manifest of the
         // content store. The vault now says the same.
-        let mut now_published: BTreeSet<String> = scan
+        let now_published: BTreeSet<String> = written
             .manifest
-            .keys()
-            .filter(|path| scan.is_published(path))
-            .cloned()
+            .iter()
+            .filter(|(_, entry)| entry.state == State::Published)
+            .map(|(path, _)| path.clone())
             .collect();
-        now_published.extend(published.iter().cloned());
-        // A forced removal left the manifest: the note is not published.
-        for path in removed.iter().chain(plan.forced_remove()) {
-            now_published.remove(path);
-        }
-        correction = correct_state(device, &scan, &now_published);
+        correction = correct_state(device, &current.scan, &now_published);
     }
+    // The copy follows the content store: the run fetched it and was not
+    // behind, and a push, when there was one, succeeded.
+    let cleanup = clean_storage(storage, &written.manifest);
+    let mut uploaded = uploads.uploaded.clone();
+    sort_by_code_point(&mut uploaded);
+    let mut warnings = correction.warnings;
+    warnings.extend(cleanup.warnings);
+    // A stable sort, by the path of each warning.
+    warnings.sort_by(|one, two| one["path"].as_str().cmp(&two["path"].as_str()));
     let output = canonical(&json!({
-        "failed": failed,
-        "forcedRemoved": plan.forced_remove(),
+        "attachmentsDeleted": cleanup.deleted,
+        "attachmentsUploaded": uploaded,
+        "failed": written.failed,
+        "forcedRemoved": current.plan.forced_remove(),
         "propertyRemoved": correction.property_removed,
         "propertySet": correction.property_set,
-        "published": published,
-        "removed": removed,
-        "skipped": skipped,
-        "updated": updated,
-        "warnings": correction.warnings,
+        "published": written.published,
+        "removed": written.removed,
+        "skipped": written.skipped,
+        "updated": written.updated,
+        "warnings": warnings,
     }))?;
     Ok(Outcome {
         output,
-        failed: failed.len(),
+        failed: written.failed.len(),
     })
 }

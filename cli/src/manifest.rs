@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::attachments::{Attachment, is_attachment_hash};
 use crate::configuration::is_vault_path;
 use crate::device::ContentStore;
 use crate::hash::sha256_hex;
@@ -22,8 +23,9 @@ pub const NOTES_FOLDER: &str = "notes";
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestEntry {
-    /// The attachments of the note. A later slice fills it.
-    pub attachments: Vec<String>,
+    /// The links of the note that lead to a file that is not a note, with the
+    /// facts of the file, sorted by their link path.
+    pub attachments: Vec<Attachment>,
     pub cleaned_hash: String,
     pub cleaning_version: u64,
     /// The time of the run of the first publication.
@@ -120,6 +122,55 @@ fn link_list(value: &Value) -> Option<Vec<NoteLink>> {
         .collect()
 }
 
+/// True when the name of a path ends in `.md` in any letter case.
+fn ends_in_md(path: &str) -> bool {
+    path.len() >= 3
+        && path.is_char_boundary(path.len() - 3)
+        && path[path.len() - 3..].eq_ignore_ascii_case(".md")
+}
+
+/// The list `attachments` of an entry. `None` for every other value.
+fn attachment_list(value: &Value) -> Option<Vec<Attachment>> {
+    const KEYS: [&str; 6] = ["hash", "height", "link", "path", "size", "width"];
+    value
+        .as_array()?
+        .iter()
+        .map(|item| {
+            let item = item.as_object()?;
+            if !item.keys().all(|key| KEYS.contains(&key.as_str())) {
+                return None;
+            }
+            let hash = item
+                .get("hash")?
+                .as_str()
+                .filter(|hash| is_attachment_hash(hash))?;
+            let link = item.get("link")?.as_str()?;
+            let path = item
+                .get("path")?
+                .as_str()
+                .filter(|path| is_vault_path(path) && !ends_in_md(path))?;
+            let size = whole_number(item.get("size")?)?;
+            let (width, height) = match (item.get("width"), item.get("height")) {
+                (None, None) => (None, None),
+                (Some(width), Some(height)) => {
+                    let width = whole_number(width).filter(|width| *width > 0)?;
+                    let height = whole_number(height).filter(|height| *height > 0)?;
+                    (Some(width), Some(height))
+                }
+                _ => return None,
+            };
+            Some(Attachment {
+                hash: hash.to_owned(),
+                height,
+                link: link.to_owned(),
+                path: path.to_owned(),
+                size,
+                width,
+            })
+        })
+        .collect()
+}
+
 /// Reads one entry from the text of its file. The text is read as a JSON value
 /// and checked by hand, as the TypeScript twin does, so that both accept and
 /// refuse the same texts. The path and the id are checked, because the tool
@@ -143,7 +194,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         _ => return None,
     };
     Some(ManifestEntry {
-        attachments: list_of("attachments")?,
+        attachments: attachment_list(entry.get("attachments")?)?,
         cleaned_hash: text_of("cleanedHash")?,
         cleaning_version,
         first_published: text_of("firstPublished")?,

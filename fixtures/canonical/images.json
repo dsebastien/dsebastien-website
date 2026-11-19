@@ -1,0 +1,199 @@
+{
+    "about": "Shared cases of the size of an image (documentation/Canonical Form.md, section \"The attachments of a note\", rule 5). Each case has the bytes of a file, in hexadecimal, and the width and the height that the reading must give. A case without a width and a height has no size. The TypeScript tests and the Rust tests read this file. Every file is invented, and every expected value is written by hand from the form of the file.",
+    "cases": [
+        {
+            "name": "a PNG: the width and the height of its first chunk",
+            "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000",
+            "width": 16,
+            "height": 12
+        },
+        {
+            "name": "a PNG of large size",
+            "bytes": "89504e470d0a1a0a0000000d4948445200011170000000010802000000",
+            "width": 70000,
+            "height": 1
+        },
+        {
+            "name": "a PNG that is cut before its height",
+            "bytes": "89504e470d0a1a0a0000000d49484452000000100000"
+        },
+        {
+            "name": "a PNG whose width is 0",
+            "bytes": "89504e470d0a1a0a0000000d49484452000000000000000c0802000000"
+        },
+        {
+            "name": "a PNG whose first chunk is not IHDR",
+            "bytes": "89504e470d0a1a0a0000000d49444154000000100000000c"
+        },
+        {
+            "name": "a GIF of the year 89",
+            "bytes": "4749463839618002e001f70000",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "a GIF of the year 87",
+            "bytes": "47494638376101000200",
+            "width": 1,
+            "height": 2
+        },
+        {
+            "name": "a GIF that is cut",
+            "bytes": "474946383961800201"
+        },
+        {
+            "name": "a WebP with VP8: 14 bits of each number, the 2 high bits are a scale",
+            "bytes": "524946461600000057454250565038200a0000000000009d012a2c41c880",
+            "width": 300,
+            "height": 200
+        },
+        {
+            "name": "a WebP with VP8 without its start code",
+            "bytes": "524946461600000057454250565038200a0000000000009d01002c01c800"
+        },
+        {
+            "name": "a WebP with VP8L: the width and the height less 1, in 14 bits each",
+            "bytes": "5249464611000000574542505650384c050000002f8fc14a00",
+            "width": 400,
+            "height": 300
+        },
+        {
+            "name": "a WebP with VP8L without its signature byte",
+            "bytes": "5249464611000000574542505650384c050000002e8fc14a00"
+        },
+        {
+            "name": "a WebP with VP8X: the width and the height less 1, in 3 bytes each",
+            "bytes": "524946461600000057454250565038580a000000000000007f0700370400",
+            "width": 1920,
+            "height": 1080
+        },
+        {
+            "name": "a WebP that is cut in its VP8X chunk",
+            "bytes": "5249464613000000574542505650385807000000000000007f0700"
+        },
+        {
+            "name": "a RIFF file that is not a WebP",
+            "bytes": "524946461400000057415645666d742000000000000000000000000000000000"
+        },
+        {
+            "name": "a JPEG: the height and the width of its frame",
+            "bytes": "ffd8ffe000104a46494600010100000100010000ffc000110801e0028003000000000000000000ffda",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "a progressive JPEG",
+            "bytes": "ffd8ffe000104a46494600010100000100010000ffc2001108006400c803000000000000000000",
+            "width": 200,
+            "height": 100
+        },
+        {
+            "name": "a JPEG with a table of codes first: C4 holds no size",
+            "bytes": "ffd8ffc40005000000ffc0001108000a001403000000000000000000",
+            "width": 20,
+            "height": 10
+        },
+        {
+            "name": "a JPEG with fill bytes before a marker",
+            "bytes": "ffd8ffffffe000104a46494600010100000100010000ffc1001108001e002803000000000000000000",
+            "width": 40,
+            "height": 30
+        },
+        {
+            "name": "a JPEG with a marker that has no length",
+            "bytes": "ffd8ffd0ff01ffc0001108001e002803000000000000000000",
+            "width": 40,
+            "height": 30
+        },
+        {
+            "name": "a JPEG whose scan comes before any frame",
+            "bytes": "ffd8ffe000104a46494600010100000100010000ffda0002ffc0001108001e002803000000000000000000"
+        },
+        {
+            "name": "a JPEG with a byte that starts no segment",
+            "bytes": "ffd800ffc0001108001e002803000000000000000000"
+        },
+        {
+            "name": "a JPEG with a length below 2",
+            "bytes": "ffd8ffe00001ffc0001108001e002803000000000000000000"
+        },
+        {
+            "name": "a JPEG that is cut in its frame",
+            "bytes": "ffd8ffc000110801"
+        },
+        {
+            "name": "a JPEG whose height is 0",
+            "bytes": "ffd8ffc00011080000028003000000000000000000"
+        },
+        {
+            "name": "a JPEG turned by a quarter (rotation 6, numbers LE): the width and the height change places",
+            "bytes": "ffd8ffe1002245786966000049492a0008000000010012010300010000000600000000000000ffc000110801e0028003000000000000000000",
+            "width": 480,
+            "height": 640
+        },
+        {
+            "name": "a JPEG turned by a quarter the other way (rotation 8, numbers BE)",
+            "bytes": "ffd8ffe100224578696600004d4d002a00000008000101120003000000010008000000000000ffc000110801e0028003000000000000000000",
+            "width": 480,
+            "height": 640
+        },
+        {
+            "name": "a JPEG turned by a quarter and mirrored (rotation 5)",
+            "bytes": "ffd8ffe100224578696600004d4d002a00000008000101120003000000010005000000000000ffc000110801e0028003000000000000000000",
+            "width": 480,
+            "height": 640
+        },
+        {
+            "name": "a JPEG turned by a half (rotation 3): no change",
+            "bytes": "ffd8ffe1002245786966000049492a0008000000010012010300010000000300000000000000ffc000110801e0028003000000000000000000",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "a rotation tag of another type says nothing",
+            "bytes": "ffd8ffe1002245786966000049492a0008000000010012010400010000000600000000000000ffc000110801e0028003000000000000000000",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "only the first rotation segment counts",
+            "bytes": "ffd8ffe1002245786966000049492a0008000000010012010300010000000100000000000000ffe1002245786966000049492a0008000000010012010300010000000600000000000000ffc000110801e0028003000000000000000000",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "a rotation block whose list of tags is outside it says nothing",
+            "bytes": "ffd8ffe1001045786966000049492a00c8000000ffc000110801e0028003000000000000000000",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "a rotation segment after the frame does not count",
+            "bytes": "ffd8ffc000110801e0028003000000000000000000ffe1002245786966000049492a0008000000010012010300010000000600000000000000",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "a rotation block whose list of tags is after the end of its segment says nothing",
+            "bytes": "ffd8ffe1001045786966000049492a000c000000ffe20014010012010300010000000600000000000000ffc000110801e0028003000000000000000000",
+            "width": 640,
+            "height": 480
+        },
+        {
+            "name": "a JPEG whose end comes before any frame",
+            "bytes": "ffd8ffd90002ffc000110801e0028003000000000000000000"
+        },
+        {
+            "name": "an SVG has no size here",
+            "bytes": "3c73766720786d6c6e733d22687474703a2f2f7777772e77332e6f72672f323030302f737667222077696474683d22313022206865696768743d223130223e3c2f7376673e"
+        },
+        {
+            "name": "a text with the name of an image has no size",
+            "bytes": "4e6f7420616e20696d6167650a"
+        },
+        {
+            "name": "an empty file has no size",
+            "bytes": ""
+        }
+    ]
+}

@@ -139,7 +139,7 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore })
+    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
     const run = async (selection: Selection, time: string): Promise<void> => {
         const planned = await plan(device, selection)
         reports.push(

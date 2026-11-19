@@ -1,9 +1,26 @@
 import { execFile } from 'node:child_process'
-import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import {
+    lstat,
+    mkdir,
+    readdir,
+    readFile,
+    realpath,
+    rename,
+    rm,
+    unlink,
+    writeFile
+} from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { compareCodePoints } from '../order.ts'
-import type { ContentStore, Device, PlanStore, Vault, VaultEntry } from '../ports.ts'
+import type {
+    AttachmentStorage,
+    ContentStore,
+    Device,
+    PlanStore,
+    Vault,
+    VaultEntry
+} from '../ports.ts'
 
 // A device whose vault and whose copy of the content store are folders, with
 // the `git` program of the system (TOOL-12 of the spec). The tests and the
@@ -109,26 +126,31 @@ function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): 
         return kind
     }
 
+    /** The bytes of the file with exactly this vault path, or `undefined` when there is none. */
+    async function bytesOf(path: string): Promise<Uint8Array | undefined> {
+        if ((await exactEntry(path)) !== 'file') {
+            return undefined
+        }
+        try {
+            return await readFile(join(folder, path))
+        } catch (error) {
+            // A file that went away during the run is no file.
+            if (codeOf(error) === 'ENOENT') {
+                return undefined
+            }
+            throw error
+        }
+    }
+
     return {
         async list(path) {
             return [...(await listing(path))].map(([name, kind]): VaultEntry => ({ name, kind }))
         },
         async read(path) {
-            if ((await exactEntry(path)) !== 'file') {
-                return undefined
-            }
-            let bytes
-            try {
-                bytes = await readFile(join(folder, path))
-            } catch (error) {
-                // A file that went away during the run is no file.
-                if (codeOf(error) === 'ENOENT') {
-                    return undefined
-                }
-                throw error
-            }
-            return decode(bytes)
+            const bytes = await bytesOf(path)
+            return bytes === undefined ? undefined : decode(bytes)
         },
+        readBytes: bytesOf,
         hasFolder: async (path) => (await exactEntry(path)) === 'folder',
         write: (path, text) => writeText(join(folder, path), text),
         forRun: () => folderVault(folder, new Map())
@@ -702,6 +724,61 @@ function gitContentStore(folder: string): ContentStore {
     }
 }
 
+/** The form of a key of the attachment storage: the SHA-256 of the bytes of a file. */
+const ATTACHMENT_KEY = /^[0-9a-f]{64}$/
+
+/**
+ * The attachment storage of a folder. Its files are directly in the folder,
+ * named by their keys. A file is written under another name first and then
+ * renamed, so a key never names a part of a file.
+ */
+function folderAttachmentStorage(folder: string): AttachmentStorage {
+    /** The path of a file of the storage. A name never leaves the folder. */
+    function pathOf(name: string): string {
+        if (
+            name === '' ||
+            name === '.' ||
+            name === '..' ||
+            name.includes('/') ||
+            name.includes('\\')
+        ) {
+            throw new Error(`"${name}" is not the name of a file of the attachment storage`)
+        }
+        return join(folder, name)
+    }
+    return {
+        async list() {
+            const entries = await readdir(folder, { withFileTypes: true })
+            // `isFile` is false for a symbolic link and for a folder.
+            return entries.filter((entry) => entry.isFile()).map((entry) => entry.name)
+        },
+        async put(key, bytes) {
+            if (!ATTACHMENT_KEY.test(key)) {
+                throw new Error(`"${key}" is not a key of the attachment storage`)
+            }
+            const part = pathOf(`.${key}.part`)
+            await writeFile(part, bytes)
+            try {
+                await rename(part, pathOf(key))
+            } catch (error) {
+                await rm(part, { force: true })
+                throw error
+            }
+        },
+        async remove(name) {
+            try {
+                await unlink(pathOf(name))
+                return true
+            } catch (error) {
+                if (codeOf(error) === 'ENOENT') {
+                    return false
+                }
+                throw error
+            }
+        }
+    }
+}
+
 /** The plans are in the git folder of the copy: on the device, never in a commit, never in the vault. */
 function folderPlanStore(contentStore: string): PlanStore {
     const folder = join(contentStore, '.git', 'vault-publish', 'plans')
@@ -718,15 +795,21 @@ function folderPlanStore(contentStore: string): PlanStore {
 }
 
 /**
- * Makes a device from two folders.
+ * Makes a device from three folders.
  *
  * @param options.vault the folder of the vault
  * @param options.contentStore the folder of the copy of the content store: a git clone whose `origin` is the content store
+ * @param options.attachmentStorage the folder of the attachment storage
  */
-export function nodeDevice(options: { vault: string; contentStore: string }): Device {
+export function nodeDevice(options: {
+    vault: string
+    contentStore: string
+    attachmentStorage: string
+}): Device {
     return {
         vault: folderVault(options.vault),
         store: gitContentStore(options.contentStore),
+        attachments: folderAttachmentStorage(options.attachmentStorage),
         plans: folderPlanStore(options.contentStore)
     }
 }

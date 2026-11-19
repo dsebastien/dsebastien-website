@@ -11,23 +11,24 @@ import {
 import type { NoteLink } from './links.ts'
 
 // The rules for the links of a note (documentation/Canonical Form.md, section
-// "The links of a note"). The Rust implementation reads the same cases
+// "The links of a note" and "The attachments of a note"). The Rust implementation reads the same cases
 // (`cli/src/links.rs`), so both must give the result that the file states.
 const CASES = fileURLToPath(new URL('../../../../fixtures/canonical/links.json', import.meta.url))
 
 interface Cases {
     linkPaths: { name: string; text: string; linkPaths: string[] }[]
     targets: {
-        notes: string[]
+        files: string[]
         cases: { name: string; from: string; link: string; target: string | null }[]
     }
     links: {
         name: string
-        notes: string[]
-        ignored: string[]
+        files: string[]
+        guarded: string[]
         from: string
         text: string
         links: NoteLink[]
+        attachments: NoteLink[]
     }[]
 }
 
@@ -91,7 +92,7 @@ describe('link path of a Markdown destination', () => {
 })
 
 describe('target of a link path', () => {
-    const index = new LinkIndex(cases.targets.notes)
+    const index = new LinkIndex(cases.targets.files)
 
     test.each(cases.targets.cases.map((entry) => [entry.name, entry] as const))(
         '%s',
@@ -101,17 +102,17 @@ describe('target of a link path', () => {
     )
 
     test('the order in which the notes are given changes nothing', () => {
-        const reversed = new LinkIndex([...cases.targets.notes].reverse())
+        const reversed = new LinkIndex([...cases.targets.files].reverse())
         for (const entry of cases.targets.cases) {
             expect(reversed.targetOf(entry.link, entry.from) ?? null, entry.name).toBe(entry.target)
         }
     })
 
-    test('every note of the list exists for a case to find', () => {
+    test('every file of the list exists for a case to find', () => {
         for (const entry of cases.targets.cases) {
-            expect(cases.targets.notes, entry.name).toContain(entry.from)
+            expect(cases.targets.files, entry.name).toContain(entry.from)
             if (entry.target !== null) {
-                expect(cases.targets.notes, entry.name).toContain(entry.target)
+                expect(cases.targets.files, entry.name).toContain(entry.target)
             }
         }
     })
@@ -119,13 +120,13 @@ describe('target of a link path', () => {
 
 describe('links of a note', () => {
     test.each(cases.links.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
-        const links = linksOf(
+        const targets = linksOf(
             entry.text,
             entry.from,
-            new LinkIndex(entry.notes),
-            new Set(entry.ignored)
+            new LinkIndex(entry.files),
+            new Set(entry.guarded)
         )
-        expect(links).toEqual(entry.links)
+        expect(targets).toEqual({ links: entry.links, files: entry.attachments })
     })
 
     test('two lists are the same only with the same items in the same order', () => {
@@ -143,5 +144,6 @@ describe('links of a note', () => {
         expect(cases.linkPaths.length).toBeGreaterThan(12)
         expect(cases.targets.cases.length).toBeGreaterThan(25)
         expect(cases.links.length).toBeGreaterThan(2)
+        expect(cases.links.some((entry) => entry.attachments.length > 0)).toBe(true)
     })
 })

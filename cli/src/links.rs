@@ -262,7 +262,7 @@ struct Candidate {
     lower: String,
 }
 
-/// The note of the list whose path in small letters is exactly this one.
+/// The file of the list whose path in small letters is exactly this one.
 fn exact<'a>(candidates: &'a [Candidate], wanted: &str) -> Option<&'a str> {
     candidates
         .iter()
@@ -270,22 +270,23 @@ fn exact<'a>(candidates: &'a [Candidate], wanted: &str) -> Option<&'a str> {
         .map(|candidate| candidate.path.as_str())
 }
 
-/// The notes of a scan, by their names: what a link path is resolved against.
+/// The files of a scan, notes and other files, by their names: what a link
+/// path is resolved against.
 pub struct LinkIndex {
-    /// The notes by their name in small letters. The notes of one name are in
+    /// The files by their name in small letters. The files of one name are in
     /// the order of the code points of their paths.
     by_name: BTreeMap<String, Vec<Candidate>>,
 }
 
 impl LinkIndex {
-    /// The index of the notes of a scan, from their vault paths. The order in
+    /// The index of the files of a scan, from their vault paths. The order in
     /// which the paths are given changes nothing.
-    pub fn new<Notes>(notes: Notes) -> Self
+    pub fn new<Files>(files: Files) -> Self
     where
-        Notes: IntoIterator,
-        Notes::Item: AsRef<str>,
+        Files: IntoIterator,
+        Files::Item: AsRef<str>,
     {
-        let mut paths: Vec<String> = notes
+        let mut paths: Vec<String> = files
             .into_iter()
             .map(|path| path.as_ref().to_owned())
             .collect();
@@ -301,26 +302,21 @@ impl LinkIndex {
         Self { by_name }
     }
 
-    /// The vault path of the note that a link path leads to, from the note
-    /// that holds the link. `None` when the link path has no target.
+    /// The vault path of the file that a link path leads to, from the note
+    /// that holds the link: a note or another file. `None` when the link path
+    /// has no target.
     pub fn target_of(&self, link_path: &str, from: &str) -> Option<&str> {
-        // Step 1: the candidates have the name of the link path.
+        // Step 1: the candidates have the name of the link path. A file that
+        // is not a note comes first, as in Obsidian.
         let mut wanted = link_path.to_lowercase();
-        // Letter case is ignored for a link: the text is in small letters.
-        #[allow(clippy::case_sensitive_file_extension_comparisons)]
-        let has_end = wanted.ends_with(".md");
-        let mut candidates = if has_end {
-            self.by_name.get(name_of(&wanted))
-        } else {
-            None
-        };
+        let mut candidates = self.by_name.get(name_of(&wanted));
         if candidates.is_none() {
             // The end is added before the small letters are made.
             wanted = format!("{link_path}.md").to_lowercase();
             candidates = self.by_name.get(name_of(&wanted));
         }
         let candidates = candidates?;
-        // Step 2: a name alone that one note has.
+        // Step 2: a name alone that one file has.
         if let ([only], false) = (candidates.as_slice(), wanted.contains('/')) {
             return Some(&only.path);
         }
@@ -375,37 +371,65 @@ impl LinkIndex {
     }
 }
 
-/// The list `links` of a note, from its link paths: one item per link path
-/// that leads to a note of the scan that the ignore property does not exclude.
-/// The link paths are sorted, so the list is sorted by the link path.
+/// The targets of the links of a note, each list sorted by the link path.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Targets {
+    /// The list `links` of the manifest entry: the links that lead to a note.
+    pub links: Vec<NoteLink>,
+    /// The links that lead to a file that is not a note: the attachments of
+    /// the note, without their bytes.
+    pub files: Vec<NoteLink>,
+}
+
+/// True when the name of a path ends in `.md` in any letter case.
+fn ends_in_md(path: &str) -> bool {
+    path.len() >= 3
+        && path.is_char_boundary(path.len() - 3)
+        && path[path.len() - 3..].eq_ignore_ascii_case(".md")
+}
+
+/// The targets of the links of a note, from its link paths: one item per link
+/// path that has a target, sorted by the link path. A target that a guard
+/// excludes gives no item, and a file whose name ends in `.md` in another
+/// letter case gives none: it is not a note, and as an attachment it would
+/// pass the guard of the ignore property.
 pub fn resolve_links(
     link_paths: &[String],
     from: &str,
     index: &LinkIndex,
-    ignored: &BTreeSet<String>,
-) -> Vec<NoteLink> {
-    link_paths
-        .iter()
-        .filter_map(|link| {
-            let path = index.target_of(link, from)?;
-            (!ignored.contains(path)).then(|| NoteLink {
-                link: link.clone(),
-                path: path.to_owned(),
-            })
-        })
-        .collect()
+    guarded: &BTreeSet<String>,
+) -> Targets {
+    let mut targets = Targets::default();
+    for link in link_paths {
+        let Some(path) = index.target_of(link, from) else {
+            continue;
+        };
+        if guarded.contains(path) {
+            continue;
+        }
+        let item = NoteLink {
+            link: link.clone(),
+            path: path.to_owned(),
+        };
+        // A note ends in `.md` in small letters.
+        #[allow(clippy::case_sensitive_file_extension_comparisons)]
+        if path.ends_with(".md") {
+            targets.links.push(item);
+        } else if !ends_in_md(path) {
+            targets.files.push(item);
+        }
+    }
+    targets
 }
 
-/// The list `links` of the manifest entry of a note: one item per link path
-/// that leads to a note, sorted by the link path. A target that the ignore
-/// property excludes gives no item.
+/// The targets of the links of a note, from its source.
 pub fn links_of(
     source: &str,
     from: &str,
     index: &LinkIndex,
-    ignored: &BTreeSet<String>,
-) -> Vec<NoteLink> {
-    resolve_links(&link_paths_of(source), from, index, ignored)
+    guarded: &BTreeSet<String>,
+) -> Targets {
+    resolve_links(&link_paths_of(source), from, index, guarded)
 }
 
 /// True when two lists of links say the same: the same items in the same
@@ -480,7 +504,7 @@ mod tests {
     #[test]
     fn gives_the_target_of_each_shared_link_path_as_the_file_states() {
         let cases = cases();
-        let index = LinkIndex::new(texts(&cases["targets"], "notes"));
+        let index = LinkIndex::new(texts(&cases["targets"], "files"));
         let cases = list(&cases["targets"], "cases");
         assert!(cases.len() > 25);
         for case in cases {
@@ -496,7 +520,7 @@ mod tests {
     #[test]
     fn the_order_in_which_the_notes_are_given_changes_nothing() {
         let cases = cases();
-        let notes = texts(&cases["targets"], "notes");
+        let notes = texts(&cases["targets"], "files");
         // The list of the file, turned around, and a list in an order that is
         // neither: the second half before the first one.
         let reversed: Vec<String> = notes.iter().rev().cloned().collect();
@@ -519,9 +543,9 @@ mod tests {
     }
 
     #[test]
-    fn every_note_of_the_shared_list_exists_for_a_case_to_find() {
+    fn every_file_of_the_shared_list_exists_for_a_case_to_find() {
         let cases = cases();
-        let notes = texts(&cases["targets"], "notes");
+        let notes = texts(&cases["targets"], "files");
         for case in list(&cases["targets"], "cases") {
             let name = text(case, "name");
             assert!(
@@ -539,26 +563,34 @@ mod tests {
         let cases = cases();
         let cases = list(&cases, "links");
         assert!(cases.len() > 2);
+        assert!(
+            cases
+                .iter()
+                .any(|case| !list(case, "attachments").is_empty())
+        );
         for case in cases {
             let name = text(case, "name");
-            let ignored: BTreeSet<String> = texts(case, "ignored").into_iter().collect();
-            let expected: Vec<NoteLink> = list(case, "links")
-                .iter()
-                .map(|item| {
-                    let members = item.as_object().expect("an item is an object");
-                    assert_eq!(members.len(), 2, "{name}");
-                    link(text(item, "link"), text(item, "path"))
-                })
-                .collect();
+            let guarded: BTreeSet<String> = texts(case, "guarded").into_iter().collect();
+            let items = |key: &str| -> Vec<NoteLink> {
+                list(case, key)
+                    .iter()
+                    .map(|item| {
+                        let members = item.as_object().expect("an item is an object");
+                        assert_eq!(members.len(), 2, "{name}");
+                        link(text(item, "link"), text(item, "path"))
+                    })
+                    .collect()
+            };
 
-            let links = links_of(
+            let targets = links_of(
                 text(case, "text"),
                 text(case, "from"),
-                &LinkIndex::new(texts(case, "notes")),
-                &ignored,
+                &LinkIndex::new(texts(case, "files")),
+                &guarded,
             );
 
-            assert_eq!(links, expected, "{name}");
+            assert_eq!(targets.links, items("links"), "{name}");
+            assert_eq!(targets.files, items("attachments"), "{name}");
         }
     }
 

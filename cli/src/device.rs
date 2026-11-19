@@ -143,17 +143,29 @@ impl Vault {
     ///
     /// The file is not valid UTF-8, or cannot be read.
     pub fn read(&self, path: &str) -> Result<Option<String>, String> {
-        if self.exact_entry(path) != Some(Entry::File) {
+        let Some(bytes) = self.read_bytes(path)? else {
             return Ok(None);
-        }
-        let bytes = match fs::read(self.folder.join(path)) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error.kind().to_string()),
         };
         String::from_utf8(bytes)
             .map(Some)
             .map_err(|_| "is not valid UTF-8".to_owned())
+    }
+
+    /// The bytes of the file with exactly this vault path, as they are: the
+    /// same rules as `read`, for a file that is not a note.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be read.
+    pub fn read_bytes(&self, path: &str) -> Result<Option<Vec<u8>>, String> {
+        if self.exact_entry(path) != Some(Entry::File) {
+            return Ok(None);
+        }
+        match fs::read(self.folder.join(path)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.kind().to_string()),
+        }
     }
 
     /// True when the vault has a folder with exactly this vault path, which is
@@ -167,6 +179,90 @@ impl Vault {
     /// The file cannot be written.
     pub fn write(&self, path: &str, text: &str) -> Result<(), String> {
         write_text(&self.folder.join(path), text)
+    }
+}
+
+/// The attachment storage: an object storage on the host, a folder on a
+/// device and in the tests. Its files are directly in the folder, named by
+/// their keys: the 64 hexadecimal digits of the SHA-256 of their bytes.
+pub struct AttachmentStorage {
+    folder: PathBuf,
+}
+
+/// True when the text is a key of the attachment storage.
+fn is_attachment_key(key: &str) -> bool {
+    key.len() == 64
+        && key
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+impl AttachmentStorage {
+    pub fn new(folder: &Path) -> Self {
+        Self {
+            folder: folder.to_path_buf(),
+        }
+    }
+
+    /// The path of a file of the storage. A name never leaves the folder.
+    fn path_of(&self, name: &str) -> Result<PathBuf, String> {
+        if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+            return Err(format!(
+                "\"{name}\" is not the name of a file of the attachment storage"
+            ));
+        }
+        Ok(self.folder.join(name))
+    }
+
+    /// The names of the files of the storage, in any order. A folder and a
+    /// symbolic link are not files of it.
+    ///
+    /// # Errors
+    ///
+    /// The folder cannot be listed.
+    pub fn list(&self) -> Result<Vec<String>, String> {
+        let failed =
+            |error: std::io::Error| format!("the attachment storage cannot be listed: {error}");
+        let mut names = Vec::new();
+        for entry in fs::read_dir(&self.folder).map_err(failed)? {
+            let entry = entry.map_err(failed)?;
+            if entry.file_type().map_err(failed)?.is_file() {
+                names.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        Ok(names)
+    }
+
+    /// Stores the bytes under the key. The file is written under another name
+    /// first and then renamed, so a key never names a part of a file.
+    ///
+    /// # Errors
+    ///
+    /// The key has another form, or the file cannot be written.
+    pub fn put(&self, key: &str, bytes: &[u8]) -> Result<(), String> {
+        if !is_attachment_key(key) {
+            return Err(format!("\"{key}\" is not a key of the attachment storage"));
+        }
+        let part = self.path_of(&format!(".{key}.part"))?;
+        let target = self.path_of(key)?;
+        fs::write(&part, bytes).map_err(|error| error.to_string())?;
+        fs::rename(&part, &target).map_err(|error| {
+            let _ = fs::remove_file(&part);
+            error.to_string()
+        })
+    }
+
+    /// Removes the file of this name. `Ok(true)` when the file existed.
+    ///
+    /// # Errors
+    ///
+    /// The name has another form, or the file cannot be removed.
+    pub fn remove(&self, name: &str) -> Result<bool, String> {
+        match fs::remove_file(self.path_of(name)?) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.to_string()),
+        }
     }
 }
 

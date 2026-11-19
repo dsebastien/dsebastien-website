@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+use crate::attachments::{FileReader, attachments_of};
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, source_of};
 use crate::configuration::Configuration;
 use crate::device::{Entry, Vault};
@@ -48,6 +49,36 @@ pub struct PublicationQueue {
     pub unchanged: Vec<String>,
 }
 
+impl PublicationQueue {
+    /// A queue with four empty lists.
+    fn empty() -> Self {
+        Self {
+            behind: 0,
+            changed: Vec::new(),
+            counts: Counts {
+                changed: 0,
+                new: 0,
+                to_remove: 0,
+                unchanged: 0,
+            },
+            new: Vec::new(),
+            technical_updates: Vec::new(),
+            to_remove: Vec::new(),
+            unchanged: Vec::new(),
+        }
+    }
+
+    /// Counts the paths of each of the four lists.
+    fn count(&mut self) {
+        self.counts = Counts {
+            changed: self.changed.len(),
+            new: self.new.len(),
+            to_remove: self.to_remove.len(),
+            unchanged: self.unchanged.len(),
+        };
+    }
+}
+
 /// What the scan knows of one note. The text itself is not kept.
 pub struct ScannedNote {
     /// The hash of the text as the scan read it. A later read with another
@@ -68,11 +99,13 @@ pub struct Scan {
     pub notes: BTreeMap<String, ScannedNote>,
     /// The notes of the scan that the ignore property excludes.
     pub ignored: BTreeSet<String>,
-    /// The notes of the scan and of the folders of the deny list, by their
+    /// The files of the scan and of the folders of the deny list, by their
     /// names: what a link is resolved against.
     pub index: LinkIndex,
-    /// The notes that a guard excludes: a link to one of them gives no item.
+    /// The files that a guard excludes: a link to one of them gives no item.
     pub guarded: BTreeSet<String>,
+    /// The files that the notes link to, each one read one time per run.
+    pub files: FileReader,
     /// The names of the notes in the folders of the deny list, in small
     /// letters. No file of those folders is read.
     pub denied_names: BTreeSet<String>,
@@ -90,10 +123,16 @@ impl Scan {
     }
 }
 
-/// The vault paths of the notes of the vault. The caller gets them in the
-/// order of the canonical form through the map that it fills.
-fn scan_vault(vault: &Vault, configuration: &Configuration) -> Result<Vec<String>, String> {
+/// The vault paths of the files of the vault, outside the folders of the deny
+/// list: its notes, and its other files, which a note can link to. The caller
+/// gets the notes in the order of the canonical form through the map that it
+/// fills.
+fn scan_vault(
+    vault: &Vault,
+    configuration: &Configuration,
+) -> Result<(Vec<String>, Vec<String>), String> {
     let mut notes = Vec::new();
+    let mut others = Vec::new();
     let mut folders = vec![String::new()];
     while let Some(folder) = folders.pop() {
         for (name, kind) in vault.list(&folder)? {
@@ -119,17 +158,20 @@ fn scan_vault(vault: &Vault, configuration: &Configuration) -> Result<Vec<String
                 let is_note = path.ends_with(".md");
                 if is_note {
                     notes.push(path);
+                } else {
+                    others.push(path);
                 }
             }
         }
     }
-    Ok(notes)
+    Ok((notes, others))
 }
 
-/// The vault paths of the notes in the folders of the deny list. The tool lists
-/// those folders for two reasons: to know that a published note moved into one
-/// of them, and to know that a link leads to a note under that guard. It reads
-/// none of their files, and it writes none of these paths.
+/// The vault paths of the files in the folders of the deny list, notes and
+/// other files. The tool lists those folders for two reasons: to know that a
+/// published note moved into one of them, and to know that a link leads to a
+/// file under that guard. It reads none of their files, and it writes none of
+/// these paths.
 fn scan_denied(vault: &Vault, configuration: &Configuration) -> Result<Vec<String>, String> {
     let mut notes = Vec::new();
     let mut folders = configuration.deny_list.clone();
@@ -142,12 +184,7 @@ fn scan_denied(vault: &Vault, configuration: &Configuration) -> Result<Vec<Strin
             if kind == Entry::Folder {
                 folders.push(path);
             } else {
-                // Letter case is never ignored for the end of a name.
-                #[allow(clippy::case_sensitive_file_extension_comparisons)]
-                let is_note = path.ends_with(".md");
-                if is_note {
-                    notes.push(path);
-                }
+                notes.push(path);
             }
         }
     }
@@ -173,7 +210,8 @@ pub fn compute_queue(
     // The link paths of the published notes: their links are computed again
     // at each scan.
     let mut link_paths: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for path in scan_vault(vault, &configuration)? {
+    let (scanned, others) = scan_vault(vault, &configuration)?;
+    for path in scanned {
         let text = vault
             .read(&path)
             .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?;
@@ -202,32 +240,27 @@ pub fn compute_queue(
         );
     }
 
-    // A link that Obsidian leads to a note under a guard must not lead to
-    // another note of the same name. So the notes of the deny list folders
+    // A link that Obsidian leads to a file under a guard must not lead to
+    // another file of the same name. So the files of the deny list folders
     // are candidates too, by their paths alone, and such a target gives no
     // item.
     let denied = scan_denied(vault, &configuration)?;
-    let index = LinkIndex::new(notes.keys().chain(denied.iter()));
+    let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
     let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
-    // The links that a published note has now, from its link paths.
-    let links_now = |path: &String| {
+    let files = FileReader::default();
+    // True when the cleaning step gives another result for a published note:
+    // it has another version, or a target was made, moved or removed, or a
+    // file was added, changed, moved or removed, or a guard now excludes one.
+    let is_technical_update = |path: &String, entry: &ManifestEntry| -> Result<bool, String> {
+        if entry.cleaning_version != CLEANING_VERSION {
+            return Ok(true);
+        }
         let link_paths = link_paths.get(path).map_or(&[][..], Vec::as_slice);
-        resolve_links(link_paths, path, &index, &guarded)
+        let targets = resolve_links(link_paths, path, &index, &guarded);
+        Ok(!same_links(&targets.links, &entry.links)
+            || attachments_of(&targets.files, vault, &files)? != entry.attachments)
     };
-    let mut queue = PublicationQueue {
-        behind: 0,
-        changed: Vec::new(),
-        counts: Counts {
-            changed: 0,
-            new: 0,
-            to_remove: 0,
-            unchanged: 0,
-        },
-        new: Vec::new(),
-        technical_updates: Vec::new(),
-        to_remove: Vec::new(),
-        unchanged: Vec::new(),
-    };
+    let mut queue = PublicationQueue::empty();
     // Both maps give their paths in the order of the code points, so each list
     // is sorted as it is filled.
     for (path, entry) in &manifest {
@@ -242,17 +275,14 @@ pub fn compute_queue(
             Some(note) if note.source_hash != entry.source_hash => {
                 queue.changed.push(path.clone());
             }
-            // The cleaning step would give another result: it has another
-            // version, or a target was made, moved or removed, or a guard now
-            // excludes it.
-            Some(_)
-                if entry.cleaning_version != CLEANING_VERSION
-                    || !same_links(&links_now(path), &entry.links) =>
-            {
-                queue.changed.push(path.clone());
-                queue.technical_updates.push(path.clone());
+            Some(_) => {
+                if is_technical_update(path, entry)? {
+                    queue.changed.push(path.clone());
+                    queue.technical_updates.push(path.clone());
+                } else {
+                    queue.unchanged.push(path.clone());
+                }
             }
-            Some(_) => queue.unchanged.push(path.clone()),
         }
     }
     for path in notes.keys() {
@@ -263,14 +293,14 @@ pub fn compute_queue(
             queue.new.push(path.clone());
         }
     }
-    queue.counts = Counts {
-        changed: queue.changed.len(),
-        new: queue.new.len(),
-        to_remove: queue.to_remove.len(),
-        unchanged: queue.unchanged.len(),
-    };
+    queue.count();
+    // The notes of the folders of the deny list, by their names: a published
+    // note that is missing may have moved there. Letter case is never ignored
+    // for the end of a name.
+    #[allow(clippy::case_sensitive_file_extension_comparisons)]
     let denied_names = denied
         .iter()
+        .filter(|path| path.ends_with(".md"))
         .map(|path| path.rsplit('/').next().unwrap_or(path).to_lowercase())
         .collect();
     Ok(Scan {
@@ -279,6 +309,7 @@ pub fn compute_queue(
         ignored,
         index,
         guarded,
+        files,
         denied_names,
         manifest,
         configuration,

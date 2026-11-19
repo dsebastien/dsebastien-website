@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
     copyFixtureVault,
     gitEnvironment,
@@ -41,7 +41,11 @@ const NOTES = [
     '10 Garden/Herb bed/Thyme.md',
     '10 Garden/Seed swap day.md',
     '10 Garden/Watering schedule.md',
-    '20 Library/20.02 Recipes/Recipes.md'
+    '20 Library/20.02 Recipes/Recipes.md',
+    // Notes with attachments: an image that two notes use, and an image in a
+    // folder of the deny list, which no implementation may upload.
+    '10 Garden/Garden plan.md',
+    '10 Garden/Tool shed tour.md'
 ]
 
 const MARK = String.fromCharCode(0xfeff)
@@ -142,6 +146,8 @@ interface Result {
     store: Record<string, string>
     /** The files of the vault. Attachments are compared as their bytes in hexadecimal. */
     vault: Record<string, string>
+    /** The files of the attachment storage, by their names, as their bytes in hexadecimal. */
+    storage: Record<string, string>
 }
 
 async function filesOf(folder: string): Promise<Record<string, string>> {
@@ -162,19 +168,43 @@ async function filesOf(folder: string): Promise<Record<string, string>> {
     return Object.fromEntries(Object.entries(files).sort(([one], [two]) => (one < two ? -1 : 1)))
 }
 
+/** The files of the attachment storage of a copy, by their names, as their bytes in hexadecimal. */
+async function storageFilesOf(copy: string): Promise<Record<string, string>> {
+    const files: Record<string, string> = {}
+    for (const entry of await readdir(storageOf(copy), { withFileTypes: true })) {
+        files[entry.name] = entry.isFile()
+            ? (await Bun.file(join(storageOf(copy), entry.name)).bytes()).toHex()
+            : 'not a file'
+    }
+    return Object.fromEntries(Object.entries(files).sort(([one], [two]) => (one < two ? -1 : 1)))
+}
+
 async function resultOf(vault: string, copy: string): Promise<Result> {
     const plans = await filesOf(join(copy, '.git', 'vault-publish', 'plans'))
     return {
         plans: Object.values(plans).sort(),
         store: await filesOf(copy),
-        vault: await filesOf(vault)
+        vault: await filesOf(vault),
+        storage: await storageFilesOf(copy)
     }
+}
+
+/**
+ * The attachment storage of the test of a copy: `makeTestStores` makes it
+ * next to the copy, in the folder of the test.
+ */
+function storageOf(copy: string): string {
+    return join(dirname(copy), 'attachment-storage')
 }
 
 type Implementation = (vault: string, copy: string, include: readonly string[]) => Promise<void>
 
 const typescript: Implementation = async (vault, copy, include) => {
-    const device = nodeDevice({ vault, contentStore: copy })
+    const device = nodeDevice({
+        vault,
+        contentStore: copy,
+        attachmentStorage: storageOf(copy)
+    })
     const planned = await plan(device, { include })
     await publish(device, planned.id, { time: TIME, device: DEVICE, face: 'command-line' })
 }
@@ -194,6 +224,8 @@ const rust: Implementation = async (vault, copy, include) => {
     const published = await runRustProgram(program, [
         'publish',
         ...places,
+        '--attachment-storage',
+        storageOf(copy),
         '--plan',
         String(id),
         '--time',
@@ -236,6 +268,12 @@ describe('parity of a first publication', () => {
 
     test('both implementations leave the same vault', () => {
         expect(fromRust.vault).toEqual(fromTypeScript.vault)
+    })
+
+    test('both implementations fill the same attachment storage', () => {
+        expect(fromRust.storage).toEqual(fromTypeScript.storage)
+        // The image of the garden plan, and not the key of the locked shed.
+        expect(Object.keys(fromTypeScript.storage)).toEqual([IMAGE_KEY])
     })
 
     // The comparison must have something to compare.
@@ -292,8 +330,10 @@ describe('parity of a first publication', () => {
             '10 Garden/Bean trellis.md',
             '10 Garden/Drip irrigation.md',
             '10 Garden/Frost dates explained.md',
+            '10 Garden/Garden plan.md',
             '10 Garden/Herb bed/Thyme.md',
             '10 Garden/Seed swap day.md',
+            '10 Garden/Tool shed tour.md',
             '10 Garden/Watering schedule.md',
             '10 Garden/～ Pond.md',
             '10 Garden/🌱 Seedlings.md',
@@ -332,7 +372,11 @@ function reportLists(report: Record<string, unknown>): string {
 }
 
 function typescriptTool(vault: string, copy: string): Tool {
-    const device = nodeDevice({ vault, contentStore: copy })
+    const device = nodeDevice({
+        vault,
+        contentStore: copy,
+        attachmentStorage: storageOf(copy)
+    })
     return {
         status: async () => toCanonicalJson(await status(device)),
         async publish(selection, time) {
@@ -365,7 +409,16 @@ function rustTool(vault: string, copy: string): Tool {
                 ])
             ) as { id: string; plan: Record<string, CanonicalValue> }
             const report = JSON.parse(
-                await run('publish', ['--plan', planned.id, '--time', time, '--device', DEVICE])
+                await run('publish', [
+                    '--attachment-storage',
+                    storageOf(copy),
+                    '--plan',
+                    planned.id,
+                    '--time',
+                    time,
+                    '--device',
+                    DEVICE
+                ])
             ) as Record<string, unknown>
             return { plan: toCanonicalJson(planned.plan), report: reportLists(report) }
         }
@@ -380,6 +433,15 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
     }
 }
 
+const IMAGE = 'Attachments/garden-plan.png'
+const IMAGE_KEY = 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33'
+/** A PNG of 32 by 24 pixels: its first chunk only, which is all that the tool reads. */
+const REDRAWN = Uint8Array.fromHex(
+    '89504e470d0a1a0a0000000d49484452000000200000001808020000000000000000'
+)
+const REDRAWN_KEY = 'f4ce26a633c530efc831188f555500004d8f10597a9a70e4ad518868e2e8fdca'
+const PLAN = '10 Garden/Garden plan.md'
+const TOUR = '10 Garden/Tool shed tour.md'
 const EDITED = '10 Garden/Frost dates explained.md'
 const EDITED_WINDOWS = 'Crafted/Windows line ends.md'
 const HELD = 'Welcome.md'
@@ -420,6 +482,9 @@ async function change(vault: string, copy: string): Promise<void> {
     await rename(join(vault, MOVED), join(vault, MOVED_TO))
     // The author makes a note that a published note names in a link.
     await writeFile(join(vault, TARGET), 'Another name of the barrel\n')
+
+    // The author draws the plan of the garden again: a larger image.
+    await writeFile(join(vault, IMAGE), REDRAWN)
 
     // Another device puts the folder of a published note on the deny list.
     await writeFile(
@@ -503,12 +568,27 @@ describe('parity of the publication queue', () => {
         expect(fromRust.left.vault).toEqual(fromTypeScript.left.vault)
     })
 
+    test('both implementations leave the same attachment storage', () => {
+        expect(fromRust.left.storage).toEqual(fromTypeScript.left.storage)
+        expect(Object.keys(fromTypeScript.left.storage)).toEqual([REDRAWN_KEY])
+    })
+
     // The comparison must have something to compare. The expected values are stated by hand.
     test('the queue has a note in each list', () => {
         const queue = JSON.parse(fromRust.queueBefore) as Record<string, string[]>
-        expect(queue['changed']).toEqual([LINKING, EDITED, TECHNICAL, LINKS, EDITED_WINDOWS, HELD])
-        // An older version of the cleaning step, a target that was made, and a target that is missing.
-        expect(queue['technicalUpdates']).toEqual([LINKING, TECHNICAL, LINKS])
+        expect(queue['changed']).toEqual([
+            LINKING,
+            EDITED,
+            PLAN,
+            TOUR,
+            TECHNICAL,
+            LINKS,
+            EDITED_WINDOWS,
+            HELD
+        ])
+        // An older version of the cleaning step, a target that was made, a
+        // target that is missing, and an image that changed.
+        expect(queue['technicalUpdates']).toEqual([LINKING, PLAN, TOUR, TECHNICAL, LINKS])
         expect(queue['toRemove']).toEqual([MISSING, MOVED, GUARDED, DENIED])
         expect(queue['new']).toContain(NEW)
         expect(queue['new']).toContain(TARGET)
@@ -524,11 +604,21 @@ describe('parity of the publication queue', () => {
             forcedRemove: [MOVED, GUARDED, DENIED],
             publish: [NEW],
             remove: [UNPUBLISHED],
-            update: [LINKING, EDITED, TECHNICAL, LINKS, EDITED_WINDOWS]
+            update: [LINKING, EDITED, PLAN, TOUR, TECHNICAL, LINKS, EDITED_WINDOWS]
         })
         const report = JSON.parse(fromRust.publication.report) as Record<string, string[]>
         expect(report['published']).toEqual([NEW])
-        expect(report['updated']).toEqual([LINKING, EDITED, TECHNICAL, LINKS, EDITED_WINDOWS])
+        expect(report['updated']).toEqual([
+            LINKING,
+            EDITED,
+            PLAN,
+            TOUR,
+            TECHNICAL,
+            LINKS,
+            EDITED_WINDOWS
+        ])
+        expect(report['attachmentsUploaded']).toEqual([REDRAWN_KEY])
+        expect(report['attachmentsDeleted']).toEqual([IMAGE_KEY])
         expect(report['removed']).toEqual([UNPUBLISHED])
         expect(report['forcedRemoved']).toEqual([MOVED, GUARDED, DENIED])
         expect(report['skipped']).toEqual([HELD])
@@ -641,7 +731,14 @@ describe('parity of an empty queue', () => {
 describe('parity of an empty plan', () => {
     test('both implementations store the same plan and change nothing', async () => {
         const fromTypeScript = await run(async (vault, copy) => {
-            await plan(nodeDevice({ vault, contentStore: copy }), { include: [] })
+            await plan(
+                nodeDevice({
+                    vault,
+                    contentStore: copy,
+                    attachmentStorage: storageOf(copy)
+                }),
+                { include: [] }
+            )
         }, [])
         const fromRust = await run(async (vault, copy) => {
             const planned = await runRustProgram(program, [
@@ -710,7 +807,14 @@ describe('parity of the guards', () => {
             }
         }
         const typescriptPlan: Implementation = async (vault, copy, include) => {
-            await plan(nodeDevice({ vault, contentStore: copy }), { include })
+            await plan(
+                nodeDevice({
+                    vault,
+                    contentStore: copy,
+                    attachmentStorage: storageOf(copy)
+                }),
+                { include }
+            )
         }
 
         const fromTypeScript = await outcome(typescriptPlan)

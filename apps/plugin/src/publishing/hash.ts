@@ -9,3 +9,8 @@ export function sha256Hex(text: string): string {
 export function contentHash(text: string): string {
     return `sha256:${sha256Hex(text)}`
 }
+
+/** The hash of bytes, as they are, in the form of the manifest. */
+export function bytesHash(bytes: Uint8Array): string {
+    return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
+}

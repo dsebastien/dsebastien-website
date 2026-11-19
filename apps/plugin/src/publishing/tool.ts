@@ -1,3 +1,5 @@
+import { attachmentsOf, keyOf } from './attachments.ts'
+import type { Attachment } from './attachments.ts'
 import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
 import { linksOf } from './links.ts'
@@ -5,12 +7,12 @@ import { CONFIGURATION_FILE, parseConfiguration } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
 import { hasFlowProperties, namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
-import { contentHash, sha256Hex } from './hash.ts'
+import { bytesHash, contentHash, sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
 import type { NoteLink } from './links.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
-import { compareCodePoints } from './order.ts'
+import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import type { Device } from './ports.ts'
@@ -44,6 +46,10 @@ export interface Run {
 /** What a publication did. Every list of paths is sorted by path. */
 // A type alias, not an interface: the canonical form takes any object of data.
 export type PublicationReport = {
+    /** The keys of the files that the cleanup deleted from the attachment storage. */
+    readonly attachmentsDeleted: readonly string[]
+    /** The keys of the files that the publication uploaded to the attachment storage. */
+    readonly attachmentsUploaded: readonly string[]
     /** The notes of the plan that were left out, with the reason. */
     readonly failed: readonly { readonly path: string; readonly reason: string }[]
     /** The notes that were removed because a guard excludes them. They left the manifest. */
@@ -169,11 +175,12 @@ export async function status(device: Device): Promise<PublicationQueue> {
     return { ...state.scan.queue, behind: state.behind }
 }
 
-/** The source, the cleaned note and the links of one note of a plan. */
+/** The source, the cleaned note, the links and the attachments of one note of a plan. */
 interface NoteTexts {
     readonly source: string
     readonly cleaned: string
     readonly links: readonly NoteLink[]
+    readonly attachments: readonly Attachment[]
 }
 
 /** A plan with everything that its publication needs. */
@@ -195,6 +202,7 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
     const plan = computePlan(scan, selection)
     const texts = new Map<string, NoteTexts>()
     const notes: {
+        attachments: readonly Attachment[]
         cleanedHash: string
         links: readonly NoteLink[]
         path: string
@@ -208,9 +216,11 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
         }
         const source = sourceOf(text)
         const cleaned = cleanNote(source)
-        const links = linksOf(source, path, scan.index, scan.guarded)
-        texts.set(path, { source, cleaned, links })
+        const { links, files } = linksOf(source, path, scan.index, scan.guarded)
+        const attachments = await attachmentsOf(files, scan.files)
+        texts.set(path, { source, cleaned, links, attachments })
         notes.push({
+            attachments,
             cleanedHash: contentHash(cleaned),
             links,
             path,
@@ -360,6 +370,7 @@ function entryOf(
     time: string
 ): ManifestEntry {
     const hashes = {
+        attachments: texts.attachments,
         cleanedHash: contentHash(texts.cleaned),
         cleaningVersion: CLEANING_VERSION,
         links: texts.links,
@@ -367,7 +378,6 @@ function entryOf(
     }
     if (before === undefined) {
         return {
-            attachments: [],
             ...hashes,
             firstPublished: time,
             formerPaths: [],
@@ -454,23 +464,169 @@ async function correctState(
     return { propertyRemoved, propertySet, warnings }
 }
 
+/** The keys of the files of the attachment storage that the published notes of a manifest use. */
+function usedKeys(manifest: ReadonlyMap<string, ManifestEntry>): Set<string> {
+    const keys = new Set<string>()
+    for (const entry of manifest.values()) {
+        if (entry.state === 'published') {
+            for (const attachment of entry.attachments) {
+                keys.add(keyOf(attachment.hash))
+            }
+        }
+    }
+    return keys
+}
+
+/** The uploads of one publication to the attachment storage (PUB-39). */
+class Uploads {
+    readonly #device: Device
+    #present: Set<string> | undefined
+    /** The keys that this run uploaded, in the order of the uploads. */
+    readonly uploaded: string[] = []
+
+    constructor(device: Device) {
+        this.#device = device
+    }
+
+    /** Lists the storage one time, before the first upload. */
+    async start(): Promise<void> {
+        this.#present = new Set(await this.#device.attachments.list())
+    }
+
+    /**
+     * Uploads each attachment whose key the storage does not have yet. The
+     * bytes are read from the vault again, and must have the hash of the
+     * record: a file that changed since the plan is not uploaded.
+     */
+    async upload(attachments: readonly Attachment[]): Promise<void> {
+        const present = this.#present
+        if (present === undefined) {
+            throw new Error('the attachment storage was not listed')
+        }
+        for (const attachment of attachments) {
+            const key = keyOf(attachment.hash)
+            if (present.has(key)) {
+                continue
+            }
+            const bytes = await this.#device.vault.readBytes(attachment.path)
+            if (bytes === undefined || bytesHash(bytes) !== attachment.hash) {
+                throw new Error(
+                    `the file "${attachment.path}" changed since the plan, and it is not uploaded`
+                )
+            }
+            await this.#device.attachments.put(key, bytes)
+            present.add(key)
+            this.uploaded.push(key)
+        }
+    }
+
+    /**
+     * Deletes the uploads of this run that no published entry of the manifest
+     * lists (PUB-93). Every upload is tried. The result is the keys that
+     * could not be deleted.
+     */
+    async takeBack(manifest: ReadonlyMap<string, ManifestEntry>): Promise<string[]> {
+        const used = usedKeys(manifest)
+        const stayed: string[] = []
+        for (const key of this.uploaded) {
+            if (used.has(key)) {
+                continue
+            }
+            try {
+                await this.#device.attachments.remove(key)
+            } catch {
+                stayed.push(key)
+            }
+        }
+        return stayed
+    }
+}
+
+/**
+ * Cleans the attachment storage: every file whose name is not the key of an
+ * attachment of a published entry goes (PUB-82, PUB-84, PUB-93). It reads no
+ * file of the storage. A deletion that fails gives a warning, and the next
+ * publication tries again.
+ */
+async function cleanStorage(
+    device: Device,
+    manifest: ReadonlyMap<string, ManifestEntry>
+): Promise<{
+    readonly deleted: string[]
+    readonly warnings: { path: string; message: string }[]
+}> {
+    const used = usedKeys(manifest)
+    const deleted: string[] = []
+    const warnings: { path: string; message: string }[] = []
+    let names: string[]
+    try {
+        names = await device.attachments.list()
+    } catch (error) {
+        warnings.push({
+            path: '',
+            message: `the attachment storage could not be listed, and it is cleaned at the next publication: ${messageOf(error)}`
+        })
+        return { deleted, warnings }
+    }
+    for (const name of sortByCodePoint(names)) {
+        if (used.has(name)) {
+            continue
+        }
+        try {
+            if (await device.attachments.remove(name)) {
+                deleted.push(name)
+            }
+        } catch (error) {
+            warnings.push({
+                path: name,
+                message: `the file could not be deleted from the attachment storage, and the next publication tries again: ${messageOf(error)}`
+            })
+        }
+    }
+    return { deleted, warnings }
+}
+
+/** What the writes of a plan did. */
+interface Written {
+    readonly report: Omit<
+        PublicationReport,
+        | 'attachmentsDeleted'
+        | 'attachmentsUploaded'
+        | 'propertyRemoved'
+        | 'propertySet'
+        | 'warnings'
+    >
+    /** The paths of the content store that changed. */
+    readonly written: readonly string[]
+    /** The manifest after the writes, by the vault path of each note. */
+    readonly manifest: ReadonlyMap<string, ManifestEntry>
+}
+
+/** The files of one note to write or to remove, and its entry after the write. */
+interface Unit {
+    readonly files: readonly StoreFile[]
+    readonly entry: ManifestEntry
+    /** The attachments to upload before the files are written. */
+    readonly attachments: readonly Attachment[]
+}
+
 /**
  * Writes the files of a plan into the copy, and commits and pushes them. The
  * forced removals come first: when one fails, the whole publication stops. A
- * note whose files cannot be written is left out and reported (PUB-26).
+ * note whose uploads or files fail is left out and reported (PUB-26).
  */
 async function writeAll(
     device: Device,
     journal: Journal,
+    uploads: Uploads,
     computed: Computed,
     run: Run
-): Promise<{
-    readonly report: Omit<PublicationReport, 'propertyRemoved' | 'propertySet' | 'warnings'>
-    readonly written: readonly string[]
-}> {
+): Promise<Written> {
     const { scan, texts } = computed
     const lists = computed.plan
     const written: string[] = []
+    const manifest = new Map(scan.manifest)
+    await uploads.start()
     // The forced removals come first, and they follow the takedown rule: the
     // note leaves the manifest (PUB-21, PUB-84). When one fails, the whole
     // publication stops: no note is published while a note under a guard
@@ -486,6 +642,7 @@ async function writeAll(
                     written.push(file)
                 }
             }
+            manifest.delete(path)
         } catch (error) {
             throw new Stop(
                 `a guard excludes "${path}", and it could not be removed from the content store: ${messageOf(error)}`,
@@ -495,13 +652,13 @@ async function writeAll(
     }
     const failed: { path: string; reason: string }[] = []
     const done = { published: [] as string[], updated: [] as string[], removed: [] as string[] }
-    const apply = async (
-        path: string,
-        list: string[],
-        files: () => readonly StoreFile[]
-    ): Promise<void> => {
+    const apply = async (path: string, list: string[], unit: () => Unit): Promise<void> => {
         try {
-            written.push(...(await applyUnit(journal, files())))
+            const { files, entry, attachments } = unit()
+            // The uploads come first: a note whose file is not in the storage is never published.
+            await uploads.upload(attachments)
+            written.push(...(await applyUnit(journal, files)))
+            manifest.set(path, entry)
             list.push(path)
         } catch (error) {
             if (error instanceof Stop) {
@@ -511,22 +668,26 @@ async function writeAll(
             failed.push({ path, reason: messageOf(error) })
         }
     }
-    const noteFiles = (path: string): readonly StoreFile[] => {
+    const noteUnit = (path: string): Unit => {
         const noteTexts = texts.get(path)
         if (noteTexts === undefined) {
             throw new Error('the plan has no text for the note')
         }
         const entry = entryOf(path, noteTexts, scan.manifest.get(path), run.time)
-        return [
-            { path: `${NOTES_FOLDER}/${path}`, text: noteTexts.cleaned },
-            { path: manifestFile(entry.id), text: toCanonicalJson(entry) }
-        ]
+        return {
+            files: [
+                { path: `${NOTES_FOLDER}/${path}`, text: noteTexts.cleaned },
+                { path: manifestFile(entry.id), text: toCanonicalJson(entry) }
+            ],
+            entry,
+            attachments: noteTexts.attachments
+        }
     }
     for (const path of lists.publish) {
-        await apply(path, done.published, () => noteFiles(path))
+        await apply(path, done.published, () => noteUnit(path))
     }
     for (const path of lists.update) {
-        await apply(path, done.updated, () => noteFiles(path))
+        await apply(path, done.updated, () => noteUnit(path))
     }
     for (const path of lists.remove) {
         await apply(path, done.removed, () => {
@@ -535,10 +696,14 @@ async function writeAll(
                 throw new Error('the note has no manifest entry')
             }
             const unpublished: ManifestEntry = { ...entry, state: 'unpublished' }
-            return [
-                { path: `${NOTES_FOLDER}/${path}`, text: undefined },
-                { path: manifestFile(entry.id), text: toCanonicalJson(unpublished) }
-            ]
+            return {
+                files: [
+                    { path: `${NOTES_FOLDER}/${path}`, text: undefined },
+                    { path: manifestFile(entry.id), text: toCanonicalJson(unpublished) }
+                ],
+                entry: unpublished,
+                attachments: []
+            }
         })
     }
 
@@ -556,7 +721,7 @@ async function writeAll(
             written
         )
     }
-    return { report, written }
+    return { report, written, manifest }
 }
 
 /**
@@ -564,10 +729,12 @@ async function writeAll(
  *
  * It computes the record of the plan again: when the new record is not the
  * stored one, the plan is stale and nothing is published. The forced
- * removals come first: when one fails, nothing is published. Then the cleaned
- * notes and the manifest entries go to the content store in one commit, which
- * is pushed. A note whose files cannot be written is left out and reported.
- * Only after the push, the state property is corrected in the vault.
+ * removals come first: when one fails, nothing is published. Then the
+ * attachments go to the attachment storage, and the cleaned notes and the
+ * manifest entries go to the content store in one commit, which is pushed. A
+ * note whose uploads or files fail is left out and reported. Only after the
+ * push, the state property is corrected in the vault. Then every file of the
+ * attachment storage that no published note uses is deleted.
  */
 export async function publish(given: Device, id: string, run: Run): Promise<PublicationReport> {
     const device = forRun(given)
@@ -595,39 +762,55 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
             `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
         )
     }
+    const { scan } = current
     const journal = new Journal(device.store)
-    let outcome: Awaited<ReturnType<typeof writeAll>>
+    const uploads = new Uploads(device)
+    let outcome: Written
     try {
-        outcome = await writeAll(device, journal, current, run)
+        outcome = await writeAll(device, journal, uploads, current, run)
     } catch (error) {
-        // Files that stay in the copy would be read as published at the next run.
+        // Files that stay in the copy would be read as published at the next
+        // run, and an upload that stays would be public with no entry.
         const stayed = await journal.putAllBack()
-        throw new Error(
-            `${messageOf(error)}. Nothing is published, ${
-                stayed.length === 0
-                    ? 'and the files of the copy are as they were before'
-                    : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next run would read them as published: put them back before the next publication`
-            }`,
-            { cause: error }
+        const kept = await uploads.takeBack(scan.manifest)
+        const files =
+            stayed.length === 0
+                ? 'and the files of the copy are as they were before'
+                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next run would read them as published: put them back before the next publication`
+        const storage =
+            kept.length === 0
+                ? ''
+                : `. These uploads could not be deleted from the attachment storage, and the next publication deletes them: ${kept.join(', ')}`
+        throw new Error(`${messageOf(error)}. Nothing is published, ${files}${storage}`, {
+            cause: error
+        })
+    }
+    const { report, written, manifest } = outcome
+    let correction: Pick<PublicationReport, 'propertyRemoved' | 'propertySet' | 'warnings'> = {
+        propertyRemoved: [],
+        propertySet: [],
+        warnings: []
+    }
+    // With nothing to commit there is no push, and without a push no property
+    // is corrected.
+    if (written.length > 0) {
+        // The push succeeded: the manifest of the copy is the manifest of the
+        // content store. The vault now says the same.
+        const published = new Set(
+            [...manifest].filter(([, entry]) => entry.state === 'published').map(([path]) => path)
+        )
+        correction = await correctState(device, scan, published)
+    }
+    // The copy follows the content store: the run fetched it and was not
+    // behind, and a push, when there was one, succeeded.
+    const cleanup = await cleanStorage(device, manifest)
+    return {
+        ...report,
+        attachmentsDeleted: cleanup.deleted,
+        attachmentsUploaded: sortByCodePoint(uploads.uploaded),
+        ...correction,
+        warnings: [...correction.warnings, ...cleanup.warnings].sort((one, two) =>
+            compareCodePoints(one.path, two.path)
         )
     }
-    const { report, written } = outcome
-    if (written.length === 0) {
-        // Nothing to commit, so no push: without a push, no property is corrected.
-        return { ...report, propertyRemoved: [], propertySet: [], warnings: [] }
-    }
-    const { scan } = current
-
-    // The push succeeded: the manifest of the copy is the manifest of the
-    // content store. The vault now says the same.
-    const published = new Set(
-        [...scan.manifest].filter(([, entry]) => entry.state === 'published').map(([path]) => path)
-    )
-    for (const path of report.published) {
-        published.add(path)
-    }
-    for (const path of [...report.removed, ...report.forcedRemoved]) {
-        published.delete(path)
-    }
-    return { ...report, ...(await correctState(device, scan, published)) }
 }

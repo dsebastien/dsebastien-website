@@ -18,3 +18,13 @@ pub fn sha256_hex(text: &str) -> String {
 pub fn content_hash(text: &str) -> String {
     format!("sha256:{}", sha256_hex(text))
 }
+
+/// The hash of bytes, as they are, in the form of the manifest.
+pub fn bytes_hash(bytes: &[u8]) -> String {
+    let mut hex = String::from("sha256:");
+    for byte in Sha256::digest(bytes) {
+        // Writing to a `String` cannot fail.
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}

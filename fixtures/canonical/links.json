@@ -1,5 +1,5 @@
 {
-    "about": "Shared cases of the links of a note (documentation/Canonical Form.md, section \"The links of a note\"). The TypeScript tests and the Rust tests read this file and must get what each case states. \"linkPaths\": a source text and the link paths that it must give, each one time, in the order of the code points. \"targets\": a list of the notes of a scan, and for a link path in the note \"from\" the vault path of its target, or null when it has none. \"links\": a source text with the notes of a vault and the ones that a guard excludes (\"ignored\"), and the list that the manifest entry must hold. Every name is invented, and every expected value is written by hand.",
+    "about": "Shared cases of the links of a note (documentation/Canonical Form.md, sections \"The links of a note\" and \"The attachments of a note\"). The TypeScript tests and the Rust tests read this file and must get what each case states. \"linkPaths\": a source text and the link paths that it must give, each one time, in the order of the code points. \"targets\": a list of the files of a scan, notes and other files, and for a link path in the note \"from\" the vault path of its target, or null when it has none. \"links\": a source text with the files of a vault and the ones that a guard excludes (\"guarded\"), the links to notes that the list \"links\" of the manifest entry must hold, and the links whose target is an attachment (\"attachments\", without the hash and the size of the file). Every name is invented, and every expected value is written by hand.",
     "linkPaths": [
         {
             "name": "a wikilink, and a wikilink with a link text",
@@ -113,10 +113,13 @@
         }
     ],
     "targets": {
-        "notes": [
+        "files": [
             "A/Garden/Herbs/Dill.md",
+            "Attachments/plan.png",
             "Deep/Garden/Herbs/Sage.md",
             "East/Fern.md",
+            "Garden/Bread.jpg",
+            "Garden/Herbs/Draft.MD",
             "Garden/Herbs/Mint.md",
             "Garden/Herbs/Thyme.md",
             "Garden/Index.md",
@@ -125,7 +128,11 @@
             "Index.md",
             "Kitchen/Mint.md",
             "Kitchen/Recipes/Bread v2.1.md",
+            "Kitchen/Recipes/Bread.jpg",
             "Kitchen/Recipes/Élan.md",
+            "Notes/plan.png.md",
+            "Photo",
+            "Photo.md",
             "West/Fern.md",
             "ab/Reed.md",
             "abc/Moss.md",
@@ -325,14 +332,75 @@
                 "from": "Index.md",
                 "link": "Reed",
                 "target": "ab/Reed.md"
+            },
+            {
+                "name": "a file that is not a note comes first: the link leads to the file, not to the note whose name has .md after it",
+                "from": "Index.md",
+                "link": "plan.png",
+                "target": "Attachments/plan.png"
+            },
+            {
+                "name": "the note whose name has .md after the name of a file, by its full name",
+                "from": "Index.md",
+                "link": "plan.png.md",
+                "target": "Notes/plan.png.md"
+            },
+            {
+                "name": "a file in another letter case",
+                "from": "Index.md",
+                "link": "PLAN.PNG",
+                "target": "Attachments/plan.png"
+            },
+            {
+                "name": "a name that two files have, from the root: the shortest path",
+                "from": "Index.md",
+                "link": "Bread.jpg",
+                "target": "Garden/Bread.jpg"
+            },
+            {
+                "name": "a name that two files have, from a folder above one of them: the file below the folder",
+                "from": "Kitchen/Mint.md",
+                "link": "Bread.jpg",
+                "target": "Kitchen/Recipes/Bread.jpg"
+            },
+            {
+                "name": "a file by its path from the root",
+                "from": "Kitchen/Mint.md",
+                "link": "Garden/Bread.jpg",
+                "target": "Garden/Bread.jpg"
+            },
+            {
+                "name": "a file whose name has no end comes before the note of that name",
+                "from": "Index.md",
+                "link": "Photo",
+                "target": "Photo"
+            },
+            {
+                "name": "the note of that name, with its end",
+                "from": "Index.md",
+                "link": "Photo.md",
+                "target": "Photo.md"
+            },
+            {
+                "name": "a name that ends in .md in capital letters leads to that file, which is not a note",
+                "from": "Index.md",
+                "link": "Draft.MD",
+                "target": "Garden/Herbs/Draft.MD"
+            },
+            {
+                "name": "the name of a file with a path that no file has",
+                "from": "Index.md",
+                "link": "Kitchen/plan.png",
+                "target": null
             }
         ]
     },
     "links": [
         {
             "name": "one item per link path that has a target, sorted by the link path",
-            "notes": ["Alpha.md", "Folder/Beta.md", "From.md"],
-            "ignored": [],
+            "files": ["Alpha.md", "Folder/Beta.md", "From.md"],
+            "guarded": [],
+            "attachments": [],
             "from": "From.md",
             "text": "[[beta]] [[Alpha]] [again](Alpha.md) [[Beta|b]] [[Nothing]] ![[Alpha#Part]]\n",
             "links": [
@@ -344,8 +412,9 @@
         },
         {
             "name": "a target that a guard excludes gives no item, and it still takes the link from a note with the same name",
-            "notes": ["Alpha.md", "Far/Away/Secret.md", "From.md", "Secret.md"],
-            "ignored": ["Secret.md"],
+            "files": ["Alpha.md", "Far/Away/Secret.md", "From.md", "Secret.md"],
+            "guarded": ["Secret.md"],
+            "attachments": [],
             "from": "From.md",
             "text": "[[Secret]] and [[Alpha]] and [[Away/Secret]]\n",
             "links": [
@@ -355,11 +424,51 @@
         },
         {
             "name": "a note can link to itself by its name",
-            "notes": ["From.md"],
-            "ignored": [],
+            "files": ["From.md"],
+            "guarded": [],
+            "attachments": [],
             "from": "From.md",
             "text": "[[From]] [[#Part]]\n",
             "links": [{ "link": "From", "path": "From.md" }]
+        },
+        {
+            "name": "a link to a file that is not a note is an attachment; a file under a guard and a name that ends in .md in capital letters give nothing",
+            "files": [
+                "Alpha.md",
+                "Attachments/plan.png",
+                "Drafts/Draft.MD",
+                "From.md",
+                "Kitchen/board.canvas",
+                "Locked/key.png",
+                "Notes/plan.png.md"
+            ],
+            "guarded": ["Locked/key.png"],
+            "attachments": [
+                {
+                    "link": "Attachments/plan.png",
+                    "path": "Attachments/plan.png"
+                },
+                {
+                    "link": "board.canvas",
+                    "path": "Kitchen/board.canvas"
+                },
+                {
+                    "link": "plan.png",
+                    "path": "Attachments/plan.png"
+                }
+            ],
+            "from": "From.md",
+            "text": "![[plan.png]] ![[key.png]] [[Draft.MD]] ![plan](Attachments/plan.png) [[board.canvas]] [[Alpha]] [[plan.png.md]] ![[plan.png|300]]\n",
+            "links": [
+                {
+                    "link": "Alpha",
+                    "path": "Alpha.md"
+                },
+                {
+                    "link": "plan.png.md",
+                    "path": "Notes/plan.png.md"
+                }
+            ]
         }
     ]
 }

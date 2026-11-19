@@ -53,7 +53,7 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore })
+    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
     const planned = await plan(device, { include: [NOTE] })
     await publish(device, planned.id, {
         time: '2031-04-01T08:00:00Z',

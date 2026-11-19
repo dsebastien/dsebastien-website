@@ -29,6 +29,8 @@ const SCENARIOS = fileURLToPath(
 
 /** The lists of paths of a publication report. */
 interface ReportLists {
+    attachmentsDeleted: readonly string[]
+    attachmentsUploaded: readonly string[]
     failed: readonly string[]
     forcedRemoved: readonly string[]
     propertyRemoved: readonly string[]
@@ -40,22 +42,30 @@ interface ReportLists {
     warnings: readonly string[]
 }
 
+/** A file of a scenario: a text, or bytes in hexadecimal. */
+type FileContent = string | { bytes: string }
+
 type Files = Record<string, string | null>
 
 type Step = { why: string } & (
-    | { do: 'write'; files: Record<string, string> }
+    | { do: 'write'; files: Record<string, FileContent> }
     | { do: 'delete'; paths: string[] }
     | { do: 'store'; files: Record<string, string> }
     | { do: 'status'; queue: PublicationQueue }
     | { do: 'plan'; selection: Selection; plan?: PublicationPlan; refused?: true }
     | { do: 'publish'; selection: Selection; time: string; report: ReportLists }
-    | { do: 'expect'; vault: Files; store: Files }
+    | {
+          do: 'expect'
+          vault: Files
+          store: Files
+          attachmentStorage?: Record<string, FileContent>
+      }
 )
 
 interface Scenario {
     name: string
     denyList: string[]
-    vault: Record<string, string>
+    vault: Record<string, FileContent>
     steps: Step[]
 }
 
@@ -80,11 +90,34 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
     return output.trimEnd()
 }
 
-async function writeFiles(folder: string, files: Record<string, string>): Promise<void> {
-    for (const [path, text] of Object.entries(files)) {
+async function writeFiles(folder: string, files: Record<string, FileContent>): Promise<void> {
+    for (const [path, content] of Object.entries(files)) {
         await mkdir(dirname(join(folder, path)), { recursive: true })
-        await writeFile(join(folder, path), text)
+        await writeFile(
+            join(folder, path),
+            typeof content === 'string' ? content : Buffer.from(content.bytes, 'hex')
+        )
     }
+}
+
+/** Every file of the attachment storage, by its name, as a scenario writes it. */
+async function storageOf(folder: string): Promise<Record<string, FileContent>> {
+    const files: Record<string, FileContent> = {}
+    for (const name of await readdir(folder)) {
+        const bytes = await Bun.file(join(folder, name)).bytes()
+        let text: string | undefined
+        try {
+            text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+        } catch {
+            text = undefined
+        }
+        // A text with a control character other than a line end is written as bytes.
+        files[name] =
+            text !== undefined && !Array.from(bytes).some((byte) => byte < 0x20 && byte !== 0x0a)
+                ? text
+                : { bytes: bytes.toHex() }
+    }
+    return files
 }
 
 /** Commits every change of the copy and pushes it, as another device would. */
@@ -123,7 +156,11 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
             await pushToStore(copy, {
                 'configuration.json': JSON.stringify({ denyList: scenario.denyList })
             })
-            const device = nodeDevice({ vault, contentStore: copy })
+            const device = nodeDevice({
+                vault,
+                contentStore: copy,
+                attachmentStorage: stores.attachmentStorage
+            })
 
             for (const [index, step] of scenario.steps.entries()) {
                 const label = `step ${String(index + 1)}: ${step.why}`
@@ -164,6 +201,11 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     }
                     for (const [path, text] of Object.entries(step.store)) {
                         expect(await textOf(join(copy, path)), `${label}: ${path}`).toBe(text)
+                    }
+                    if (step.attachmentStorage !== undefined) {
+                        expect(await storageOf(stores.attachmentStorage), label).toEqual(
+                            step.attachmentStorage
+                        )
                     }
                 }
             }
@@ -216,7 +258,15 @@ interface Setup {
 async function setUp(stores: TestStores): Promise<Setup> {
     const vault = await copyFixtureVault(stores)
     const copy = await makeContentStoreCopy(stores)
-    return { vault, copy, device: nodeDevice({ vault, contentStore: copy }) }
+    return {
+        vault,
+        copy,
+        device: nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+    }
 }
 
 async function publishNotes(setup: Setup, selection: Selection, run: Run = RUN) {
@@ -333,7 +383,11 @@ describe('status of the fixture vault', () => {
         }
         const copy = await makeContentStoreCopy(stores)
         await pushToStore(copy, { 'configuration.json': JSON.stringify({ denyList: [] }) })
-        const device = nodeDevice({ vault, contentStore: copy })
+        const device = nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
 
         const start = performance.now()
         const queue = await status(device)
@@ -1050,7 +1104,8 @@ describe('git commands of a publication', () => {
         const setup = await setUp(stores)
         const device = nodeDevice({
             vault: setup.vault,
-            contentStore: relative(process.cwd(), setup.copy)
+            contentStore: relative(process.cwd(), setup.copy),
+            attachmentStorage: stores.attachmentStorage
         })
         let planned = await plan(device, { include: [NOTE, 'Welcome.md'] })
         await publish(device, planned.id, RUN)
@@ -1152,7 +1207,11 @@ describe('commit that fails', () => {
         // A clone of a content store that has no commit and no configuration.
         const copy = await makeContentStoreCopyOf(stores, 'copy')
         await refuseCommits(copy)
-        const device = nodeDevice({ vault, contentStore: copy })
+        const device = nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
         const planned = await plan(device, { include: ['Welcome.md'] })
 
         expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('commit')
@@ -1200,7 +1259,11 @@ describe('commit that fails', () => {
         await mkdir(join(copy, 'notes'))
         await writeFile(join(copy, 'notes', 'Welcome.md'), 'A text that was here before\n')
         await refuseCommits(copy)
-        const device = nodeDevice({ vault, contentStore: copy })
+        const device = nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
         const before = await filesOf(copy)
         const planned = await plan(device, { include: ['Welcome.md'] })
 
@@ -1305,7 +1368,11 @@ describe('commit that fails', () => {
             await chmod(join(hooks, 'post-commit'), 0o755)
             await chmod(join(hooks, 'reference-transaction'), 0o755)
             await git(copy, 'remote', 'set-url', '--push', 'origin', join(stores.root, 'nowhere'))
-            const device = nodeDevice({ vault, contentStore: copy })
+            const device = nodeDevice({
+                vault,
+                contentStore: copy,
+                attachmentStorage: stores.attachmentStorage
+            })
             const planned = await plan(device, { include: ['Welcome.md'] })
 
             expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('refused')
@@ -1336,8 +1403,16 @@ describe('commit that fails', () => {
         const vault = await copyFixtureVault(stores)
         const first = await makeContentStoreCopyOf(stores, 'first')
         const second = await makeContentStoreCopyOf(stores, 'second')
-        const firstDevice = nodeDevice({ vault, contentStore: first })
-        const secondDevice = nodeDevice({ vault, contentStore: second })
+        const firstDevice = nodeDevice({
+            vault,
+            contentStore: first,
+            attachmentStorage: stores.attachmentStorage
+        })
+        const secondDevice = nodeDevice({
+            vault,
+            contentStore: second,
+            attachmentStorage: stores.attachmentStorage
+        })
         const planned = await plan(secondDevice, { include: ['Welcome.md'] })
         await publish(firstDevice, (await plan(firstDevice, { include: ['Welcome.md'] })).id, RUN)
 
@@ -1353,7 +1428,11 @@ describe('commit that fails', () => {
         await using stores = await makeTestStores()
         const vault = await copyFixtureVault(stores)
         const copy = await makeContentStoreCopyOf(stores, 'copy')
-        const device = nodeDevice({ vault, contentStore: copy })
+        const device = nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
         const planned = await plan(device, { include: ['Welcome.md'] })
 
         const report = await publish(device, planned.id, RUN)
@@ -1799,8 +1878,16 @@ describe('copy that is behind the content store', () => {
         const vault = await copyFixtureVault(stores)
         const first = await makeContentStoreCopyOf(stores, 'first')
         const second = await makeContentStoreCopyOf(stores, 'second')
-        const firstDevice = nodeDevice({ vault, contentStore: first })
-        const secondDevice = nodeDevice({ vault, contentStore: second })
+        const firstDevice = nodeDevice({
+            vault,
+            contentStore: first,
+            attachmentStorage: stores.attachmentStorage
+        })
+        const secondDevice = nodeDevice({
+            vault,
+            contentStore: second,
+            attachmentStorage: stores.attachmentStorage
+        })
         const waiting = await plan(secondDevice, { include: ['Welcome.md'] })
         await publish(firstDevice, (await plan(firstDevice, { include: [NOTE] })).id, RUN)
         await writeFile(
@@ -1835,8 +1922,16 @@ describe('copy that is behind the content store', () => {
         const vault = await copyFixtureVault(stores)
         const first = await makeContentStoreCopyOf(stores, 'first')
         const second = await makeContentStoreCopyOf(stores, 'second')
-        const firstDevice = nodeDevice({ vault, contentStore: first })
-        const secondDevice = nodeDevice({ vault, contentStore: second })
+        const firstDevice = nodeDevice({
+            vault,
+            contentStore: first,
+            attachmentStorage: stores.attachmentStorage
+        })
+        const secondDevice = nodeDevice({
+            vault,
+            contentStore: second,
+            attachmentStorage: stores.attachmentStorage
+        })
         await publish(firstDevice, (await plan(firstDevice, { include: [NOTE] })).id, RUN)
         await git(second, 'pull', '--quiet', '--ff-only', 'origin', 'main')
         await git(second, 'config', ...setting)
@@ -1855,15 +1950,28 @@ describe('copy that is behind the content store', () => {
         const vault = await copyFixtureVault(stores)
         const first = await makeContentStoreCopyOf(stores, 'first')
         await publish(
-            nodeDevice({ vault, contentStore: first }),
-            (await plan(nodeDevice({ vault, contentStore: first }), { include: [NOTE] })).id,
+            nodeDevice({ vault, contentStore: first, attachmentStorage: stores.attachmentStorage }),
+            (
+                await plan(
+                    nodeDevice({
+                        vault,
+                        contentStore: first,
+                        attachmentStorage: stores.attachmentStorage
+                    }),
+                    { include: [NOTE] }
+                )
+            ).id,
             RUN
         )
         const fresh = join(stores.root, 'fresh')
         await mkdir(fresh)
         await git(fresh, 'init', '--quiet', '--initial-branch=main')
         await git(fresh, 'remote', 'add', 'origin', stores.contentStore)
-        const device = nodeDevice({ vault, contentStore: fresh })
+        const device = nodeDevice({
+            vault,
+            contentStore: fresh,
+            attachmentStorage: stores.attachmentStorage
+        })
 
         expect(await rejectionOf(plan(device, { include: ['Welcome.md'] }))).toContain(
             'git pull --ff-only origin main'

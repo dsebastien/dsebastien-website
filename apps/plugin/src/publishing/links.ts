@@ -289,19 +289,19 @@ function folderOf(path: string): string {
     return slash === -1 ? '' : path.slice(0, slash)
 }
 
-/** A note of the scan, with its path in small letters. */
+/** A file of the scan, with its path in small letters. */
 interface Candidate {
     readonly path: string
     readonly lower: string
 }
 
-/** The notes of a scan, by their names: what a link path is resolved against. */
+/** The files of a scan, notes and other files, by their names: what a link path is resolved against. */
 export class LinkIndex {
-    /** The notes by their name in small letters. The notes of one name are in the order of the code points of their paths. */
+    /** The files by their name in small letters. The files of one name are in the order of the code points of their paths. */
     readonly #byName = new Map<string, Candidate[]>()
 
-    constructor(notes: Iterable<string>) {
-        for (const path of sortByCodePoint([...notes])) {
+    constructor(files: Iterable<string>) {
+        for (const path of sortByCodePoint([...files])) {
             const lower = path.toLowerCase()
             const name = nameOf(lower)
             const candidates = this.#byName.get(name)
@@ -314,13 +314,15 @@ export class LinkIndex {
     }
 
     /**
-     * The vault path of the note that a link path leads to, from the note that
-     * holds the link. `undefined` when the link path has no target.
+     * The vault path of the file that a link path leads to, from the note that
+     * holds the link: a note or another file. `undefined` when the link path
+     * has no target.
      */
     targetOf(linkPath: string, from: string): string | undefined {
-        // Step 1: the candidates have the name of the link path.
+        // Step 1: the candidates have the name of the link path. A file that
+        // is not a note comes first, as in Obsidian.
         let wanted = linkPath.toLowerCase()
-        let candidates = wanted.endsWith('.md') ? this.#byName.get(nameOf(wanted)) : undefined
+        let candidates = this.#byName.get(nameOf(wanted))
         if (candidates === undefined) {
             // The end is added before the small letters are made.
             wanted = `${linkPath}.md`.toLowerCase()
@@ -329,7 +331,7 @@ export class LinkIndex {
         if (candidates === undefined) {
             return undefined
         }
-        // Step 2: a name alone that one note has.
+        // Step 2: a name alone that one file has.
         if (!wanted.includes('/') && candidates.length === 1) {
             return candidates[0]?.path
         }
@@ -380,35 +382,51 @@ export class LinkIndex {
     }
 }
 
+/** The targets of the links of a note, each list sorted by the link path. */
+export interface Targets {
+    /** The list `links` of the manifest entry: the links that lead to a note. */
+    readonly links: NoteLink[]
+    /** The links that lead to a file that is not a note: the attachments of the note, without their bytes. */
+    readonly files: NoteLink[]
+}
+
 /**
- * The list `links` of the manifest entry of a note: one item per link path
- * that leads to a note, sorted by the link path. A target that a guard
- * excludes gives no item.
+ * The targets of the links of a note: one item per link path that has a
+ * target, sorted by the link path. A target that a guard excludes gives no
+ * item, and a file whose name ends in `.md` in another letter case gives
+ * none: it is not a note, and as an attachment it would pass the guard of
+ * the ignore property.
  */
 export function linksOf(
     source: string,
     from: string,
     index: LinkIndex,
     guarded: ReadonlySet<string>
-): NoteLink[] {
+): Targets {
     return linksOfPaths(linkPathsOf(source), from, index, guarded)
 }
 
-/** The list `links` of a note whose link paths are known. */
+/** The targets of the links of a note whose link paths are known. */
 export function linksOfPaths(
     linkPaths: readonly string[],
     from: string,
     index: LinkIndex,
     guarded: ReadonlySet<string>
-): NoteLink[] {
+): Targets {
     const links: NoteLink[] = []
+    const files: NoteLink[] = []
     for (const link of linkPaths) {
         const path = index.targetOf(link, from)
-        if (path !== undefined && !guarded.has(path)) {
+        if (path === undefined || guarded.has(path)) {
+            continue
+        }
+        if (path.endsWith('.md')) {
             links.push({ link, path })
+        } else if (!path.toLowerCase().endsWith('.md')) {
+            files.push({ link, path })
         }
     }
-    return links
+    return { links, files }
 }
 
 /** True when two lists of links say the same. */

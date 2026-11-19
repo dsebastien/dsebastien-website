@@ -5,7 +5,7 @@ use crate::frontmatter::{without_marks, without_property};
 
 /// The version of the cleaning step. A new version makes a technical update of
 /// every note (PUB-24).
-pub const CLEANING_VERSION: u64 = 2;
+pub const CLEANING_VERSION: u64 = 3;
 
 /// The property that records in the vault that a note is published. Only the
 /// tool writes it.

@@ -49,7 +49,7 @@ The last frost date is the average day of the last frost in spring. Tender plant
 const MANIFEST_ENTRY = `{
   "attachments": [],
   "cleanedHash": "${NOTE_HASH}",
-  "cleaningVersion": 2,
+  "cleaningVersion": 3,
   "firstPublished": "${TIME}",
   "formerPaths": [],
   "id": "${NOTE_ID}",
@@ -82,6 +82,7 @@ const PLAN_RECORD = `{
     "manifest": "${EMPTY_MANIFEST_HASH}",
     "notes": [
       {
+        "attachments": [],
         "cleanedHash": "${NOTE_HASH}",
         "links": [],
         "path": "${NOTE}",
@@ -102,7 +103,16 @@ interface Setup {
 async function setUp(stores: TestStores): Promise<Setup> {
     const vault = await copyFixtureVault(stores)
     const copy = await makeContentStoreCopy(stores)
-    return { stores, vault, copy, device: nodeDevice({ vault, contentStore: copy }) }
+    return {
+        stores,
+        vault,
+        copy,
+        device: nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+    }
 }
 
 /**
@@ -469,7 +479,11 @@ describe('guards of a plan', () => {
         const setup = await setUp(stores)
         const inside = join(setup.copy, 'inside')
         await mkdir(inside)
-        const device = nodeDevice({ vault: setup.vault, contentStore: inside })
+        const device = nodeDevice({
+            vault: setup.vault,
+            contentStore: inside,
+            attachmentStorage: stores.attachmentStorage
+        })
 
         expect(await rejectionOf(plan(device, { include: [NOTE] }))).toContain('git repository')
     })
@@ -638,5 +652,176 @@ describe('publication of a note with Windows line ends', () => {
                 'updated: 2031-03-07T07:02\r\npublic_note: true\r\n'
             )
         )
+    })
+})
+
+// The attachments (issue 35): only the files that published notes use go to
+// the attachment storage, by their content hash, never a file of a deny list
+// folder, and a failed run leaves no file there that the manifest does not
+// list (SEAM-02 of the spec). The Rust twin is `cli/tests/publication.rs`.
+describe('attachments of a publication', () => {
+    const PLAN = '10 Garden/Garden plan.md'
+    const TOUR = '10 Garden/Tool shed tour.md'
+    const IMAGE = 'Attachments/garden-plan.png'
+    const IMAGE_KEY = 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33'
+    const DENIED_KEY = '86571f2b883d23bc5c95dc18aa3cef6077451c6f13a52c6f44373b667503c3a1'
+    const PLAN_ID = 'd3bc99e6071c5b92'
+
+    async function publishNotes(
+        setup: Setup,
+        selection: { include?: string[]; remove?: string[] }
+    ): Promise<Awaited<ReturnType<typeof publish>>> {
+        const planned = await plan(setup.device, {
+            include: selection.include ?? [],
+            remove: selection.remove ?? []
+        })
+        return await publish(setup.device, planned.id, RUN)
+    }
+
+    /** The names of the files of the attachment storage, sorted. */
+    async function storage(stores: TestStores): Promise<string[]> {
+        const entries = await readdir(stores.attachmentStorage, { withFileTypes: true })
+        return entries
+            .filter((entry) => entry.isFile())
+            .map((entry) => entry.name)
+            .sort()
+    }
+
+    async function addIgnore(vault: string, note: string): Promise<void> {
+        const text = await Bun.file(join(vault, note)).text()
+        await writeFile(join(vault, note), text.replace('---\n', '---\npublish_ignore: true\n'))
+    }
+
+    test('uploads only the files that the published notes use, under the hash of their bytes', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+
+        const report = await publishNotes(setup, { include: [PLAN, TOUR] })
+
+        expect(report.published).toEqual([PLAN, TOUR])
+        expect(report.attachmentsUploaded).toEqual([IMAGE_KEY])
+        expect(await storage(stores)).toEqual([IMAGE_KEY])
+        expect(await Bun.file(join(stores.attachmentStorage, IMAGE_KEY)).bytes()).toEqual(
+            await Bun.file(join(setup.vault, IMAGE)).bytes()
+        )
+    })
+
+    test('lists the attachment in the manifest entry, with its hash, its size and the size of the image', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+
+        await publishNotes(setup, { include: [PLAN] })
+
+        const entry: unknown = JSON.parse(
+            await Bun.file(join(setup.copy, 'manifest', `${PLAN_ID}.json`)).text()
+        )
+        expect(entry).toMatchObject({
+            path: PLAN,
+            attachments: [
+                {
+                    hash: `sha256:${IMAGE_KEY}`,
+                    height: 12,
+                    link: 'garden-plan.png',
+                    path: IMAGE,
+                    size: 78,
+                    width: 16
+                }
+            ]
+        })
+    })
+
+    // GATE-42: the tour embeds the key of the locked shed.
+    test('never uploads a file of a deny list folder, and writes none of its paths', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+
+        await publishNotes(setup, { include: [TOUR] })
+
+        expect(await storage(stores)).toEqual([IMAGE_KEY])
+        // The cleaned note keeps the embed as the author wrote it. No entry
+        // names the file under the guard.
+        const files = Object.keys(await picture(setup.copy))
+        const entries = files.filter((file) => file.startsWith('manifest/'))
+        expect(entries.length).toBe(1)
+        for (const file of entries) {
+            const text = await Bun.file(join(setup.copy, file)).text()
+            expect(text, file).not.toContain('Locked Shed')
+            expect(text, file).not.toContain(DENIED_KEY)
+        }
+        expect(files.filter((file) => file.includes('Locked Shed'))).toEqual([])
+    })
+
+    test('a forced removal takes out the files that no other published note uses', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [PLAN, TOUR] })
+
+        await addIgnore(setup.vault, TOUR)
+        const first = await publishNotes(setup, {})
+        expect(first.forcedRemoved).toEqual([TOUR])
+        expect(first.attachmentsDeleted).toEqual([])
+        expect(await storage(stores)).toEqual([IMAGE_KEY])
+
+        await addIgnore(setup.vault, PLAN)
+        const second = await publishNotes(setup, {})
+        expect(second.forcedRemoved).toEqual([PLAN])
+        expect(second.attachmentsDeleted).toEqual([IMAGE_KEY])
+        expect(await storage(stores)).toEqual([])
+    })
+
+    test('an unpublish takes out the files of the note', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [PLAN] })
+
+        const report = await publishNotes(setup, { remove: [PLAN] })
+
+        expect(report.removed).toEqual([PLAN])
+        expect(report.attachmentsDeleted).toEqual([IMAGE_KEY])
+        expect(await storage(stores)).toEqual([])
+    })
+
+    test('after a refused push, the storage holds no file that the manifest does not list', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await refusePushes(stores.contentStore)
+        const planned = await plan(setup.device, { include: [PLAN, TOUR] })
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('refused')
+
+        expect(await storage(stores)).toEqual([])
+    })
+
+    test('a note whose upload fails is left out, and the other notes are published', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        // A folder in the place of the file: the upload cannot write it.
+        await mkdir(join(stores.attachmentStorage, IMAGE_KEY))
+
+        const report = await publishNotes(setup, { include: [NOTE, PLAN] })
+
+        expect(report.published).toEqual([NOTE])
+        expect(report.failed.map((entry) => entry.path)).toEqual([PLAN])
+        expect(report.attachmentsUploaded).toEqual([])
+        expect(await storage(stores)).toEqual([])
+        expect(await exists(join(setup.copy, 'notes', PLAN))).toBe(false)
+
+        // The next publication takes the note.
+        await rm(join(stores.attachmentStorage, IMAGE_KEY), { recursive: true })
+        const next = await publishNotes(setup, { include: [PLAN] })
+        expect(next.published).toEqual([PLAN])
+        expect(await storage(stores)).toEqual([IMAGE_KEY])
+    })
+
+    test('a file that no published note uses leaves the storage at the next publication', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        // An upload that an earlier run could not delete.
+        await writeFile(join(stores.attachmentStorage, DENIED_KEY), 'Left by an earlier run\n')
+
+        const report = await publishNotes(setup, { include: [NOTE] })
+
+        expect(report.attachmentsDeleted).toEqual([DENIED_KEY])
+        expect(await storage(stores)).toEqual([])
     })
 })

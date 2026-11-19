@@ -145,13 +145,13 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - `cli/`: the Rust command line program of the publishing tool, a member of the Cargo workspace at the root (`Cargo.toml`). It holds the Rust implementation of the publishing logic.
 - `parity/`: the parity tests. They run both implementations and compare their output byte by byte.
 - `packages/`: TypeScript code that more than one app uses. Each package is a Bun workspace.
-    - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, `makeTestStores()`, and for a test of a publication `copyFixtureVault()`, `makeContentStoreCopy()` and `refusePushes()` (a content store that refuses every push: `plan` and `publish` fetch first, so a push of another device before the run stops it before its push).
+    - `packages/testing/`: test support for TypeScript. The paths of the fixture vault, `makeTestStores()` (a content store and an attachment storage), and for a test of a publication `copyFixtureVault()`, `makeContentStoreCopy()` and `refusePushes()` (a content store that refuses every push: `plan` and `publish` fetch first, so a push of another device before the run stops it before its push).
     - `packages/resolver/`: the URL function and the resolver, in plain TypeScript. The build, the plain server and later the edge use them. No other code writes or reads a URL of a note.
 - `fixtures/`: the test data, invented. It is at the root because no implementation owns it: the TypeScript tests and the Rust tests read the same files.
     - `fixtures/vault/`: the fixture vault.
     - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.
     - `fixtures/catalog.json`: the fixture catalog. It says which feature or trap each file of the fixture vault serves.
-    - `fixtures/canonical/`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them: `cases.json` (data), `properties.json` (the properties of a note), `links.json` (the links of a note), `queue.json` (scenarios of the publication queue).
+    - `fixtures/canonical/`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them: `cases.json` (data), `properties.json` (the properties of a note), `links.json` (the links of a note), `images.json` (the size of an image), `queue.json` (scenarios of the publication queue).
     - `fixtures/README.md`: the rules, and how to add a note.
 - `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
 - `scripts/`: tooling of the repository and its guard tests.
@@ -199,6 +199,7 @@ bun run rust:test
 - The parity tests in `parity/` build the Rust program with cargo, so `bun run test` needs the Rust toolchain.
 - A test of a publication works on a copy of the fixture vault and on a copy of the content store, both inside the folder of the test. The expected texts of the two implementations are the same, with hashes that were computed with another tool.
 - A rule of link resolution gets a case in `fixtures/canonical/links.json` before the second implementation is written. Both test suites read every case (`apps/plugin/src/publishing/links.spec.ts`, `cli/src/links.rs`). The build reads a link with the functions of the TypeScript logic, on the text that the Markdown processor gives it.
+- A rule of the size of an image gets a case in `fixtures/canonical/images.json` before the second implementation is written (`apps/plugin/src/publishing/images.spec.ts`, `cli/src/images.rs`).
 - A rule of the publication queue gets a step in a scenario of `fixtures/canonical/queue.json` before the second implementation is written. Both test suites run every scenario (`apps/plugin/src/publishing/queue.spec.ts`, `cli/tests/queue.rs`). A scenario has its own small invented vault, so a new note of the fixture vault changes no scenario.
 - The test of the note page publishes a note with the tool, builds the site of that content store and asks the local server: it covers the whole path.
 - The guards (deny list, `publish_ignore`), the parity of the two implementations, the URL contract and the `products-light.json` shape have tests that block a release.

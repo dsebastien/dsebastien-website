@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Every expected value is written by hand. The hashes were computed with sha256sum.",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Every expected value is written by hand. The hashes were computed with sha256sum.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -59,6 +59,8 @@
                     },
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -83,7 +85,7 @@
                         "notes/Alpha.md": "---\ntags: a\n---\nAlpha\n",
                         "notes/Beta.md": "Beta\n",
                         "notes/Folder/Gamma.md": "Gamma\n",
-                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:8fb30066670fb936738d90f02d4ef7bf05562d4208525d749b3624ed3bfd966b\",\n  \"state\": \"published\"\n}\n",
                         "notes/Folder/Ignored.md": null,
                         "notes/Locked/Secret.md": null,
                         "notes/.hidden/Draft.md": null
@@ -478,6 +480,8 @@
                     },
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -500,9 +504,9 @@
                         "notes/Alpha.md": "---\ntags: a\n---\nAlpha, second version\n",
                         "notes/Beta.md": null,
                         "notes/Delta.md": "Delta\n",
-                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"state\": \"published\"\n}\n",
-                        "manifest/94e2c97499374edd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"state\": \"unpublished\"\n}\n",
-                        "manifest/626c2442e3f32d3a.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"626c2442e3f32d3a\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Delta.md\",\n  \"sourceHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:e6acd16272fab1865411f9cf53e6c89e22acbbac1531ced1e24d4151d31ed7fc\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/94e2c97499374edd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"state\": \"unpublished\"\n}\n",
+                        "manifest/626c2442e3f32d3a.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"626c2442e3f32d3a\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Delta.md\",\n  \"sourceHash\": \"sha256:35fdd08e5ddf9a985136e0d8e7e07fdda0daad164d0330871ae4bcae9fa930f7\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -541,6 +545,8 @@
                     },
                     "time": "2031-05-03T10:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -656,6 +662,8 @@
                     },
                     "time": "2031-05-04T11:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": ["Folder/Gamma.md"],
                         "propertyRemoved": ["Folder/Gamma.md"],
@@ -753,6 +761,8 @@
                     },
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -784,6 +794,8 @@
                     },
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": ["Ignored.md", "Windows.md", "Wrong.md"],
@@ -848,6 +860,8 @@
                     },
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -878,6 +892,8 @@
                     },
                     "time": "2031-05-03T10:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": ["Other.md"],
@@ -897,7 +913,7 @@
                     },
                     "store": {
                         "notes/Other.md": null,
-                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"unpublished\"\n}\n"
+                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"unpublished\"\n}\n"
                     }
                 },
                 {
@@ -928,6 +944,8 @@
                     },
                     "time": "2031-05-04T11:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -945,7 +963,7 @@
                     "vault": {},
                     "store": {
                         "notes/Other.md": "Other\n",
-                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-04T11:00:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/d84b8094d90ad681.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-04T11:00:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"published\"\n}\n"
                     }
                 }
             ]
@@ -968,6 +986,8 @@
                     },
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1021,6 +1041,8 @@
                     },
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1039,8 +1061,8 @@
                     "store": {
                         "notes/Note.md": "Text\n",
                         "notes/Edited.md": "Two\n",
-                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n",
-                        "manifest/9ae7ed34618de0b5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"9ae7ed34618de0b5\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Edited.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/c0567c932f8a8769.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/9ae7ed34618de0b5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"9ae7ed34618de0b5\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Edited.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -1101,6 +1123,8 @@
                     },
                     "time": "2031-05-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1148,6 +1172,8 @@
                     },
                     "time": "2031-05-02T09:30:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": ["Nested.md", "Open.md"],
                         "propertyRemoved": [],
@@ -1236,6 +1262,8 @@
                     },
                     "time": "2031-06-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1393,6 +1421,8 @@
                     },
                     "time": "2031-06-02T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": ["Marked.md", "Moves.md", "Private/Diary.md"],
                         "propertyRemoved": ["Marked.md"],
@@ -1421,9 +1451,9 @@
                         "manifest/243ba59c19e2bf5b.json": null,
                         "manifest/442fcacd5e36e565.json": null,
                         "notes/Lost.md": "Lost\n",
-                        "manifest/e9c9059c0dc2c64b.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e9c9059c0dc2c64b\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Lost.md\",\n  \"sourceHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/e9c9059c0dc2c64b.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e9c9059c0dc2c64b\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Lost.md\",\n  \"sourceHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"state\": \"published\"\n}\n",
                         "notes/Keep.md": "Keep\n",
-                        "manifest/119452f1e00662e5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:3588ef6202c5f548f83be05a6ab0e55a4e2d3c0219956b903b2ae782ca658d96\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"119452f1e00662e5\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Keep.md\",\n  \"sourceHash\": \"sha256:3588ef6202c5f548f83be05a6ab0e55a4e2d3c0219956b903b2ae782ca658d96\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/119452f1e00662e5.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:3588ef6202c5f548f83be05a6ab0e55a4e2d3c0219956b903b2ae782ca658d96\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"119452f1e00662e5\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Keep.md\",\n  \"sourceHash\": \"sha256:3588ef6202c5f548f83be05a6ab0e55a4e2d3c0219956b903b2ae782ca658d96\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -1479,6 +1509,8 @@
                     },
                     "time": "2031-06-03T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1496,7 +1528,7 @@
                     "vault": {},
                     "store": {
                         "notes/Marked.md": "Marked\n",
-                        "manifest/e5aec6303a01cd4e.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:680bd2a70b3940acc1373673d1efe911f7d243de9a1ec8ab54ee6e817d5da4e6\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-03T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e5aec6303a01cd4e\",\n  \"lastPublished\": \"2031-06-03T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Marked.md\",\n  \"sourceHash\": \"sha256:680bd2a70b3940acc1373673d1efe911f7d243de9a1ec8ab54ee6e817d5da4e6\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/e5aec6303a01cd4e.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:680bd2a70b3940acc1373673d1efe911f7d243de9a1ec8ab54ee6e817d5da4e6\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-03T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e5aec6303a01cd4e\",\n  \"lastPublished\": \"2031-06-03T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Marked.md\",\n  \"sourceHash\": \"sha256:680bd2a70b3940acc1373673d1efe911f7d243de9a1ec8ab54ee6e817d5da4e6\",\n  \"state\": \"published\"\n}\n",
                         "manifest/5505d23a3d0785f8.json": null
                     }
                 }
@@ -1524,6 +1556,8 @@
                     },
                     "time": "2031-06-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1541,7 +1575,7 @@
                     "vault": {},
                     "store": {
                         "notes/Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
-                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n",
                         "notes/Leaf.md": null
                     }
                 },
@@ -1555,6 +1589,8 @@
                     },
                     "time": "2031-06-02T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1589,8 +1625,8 @@
                     "why": "the entry of the note with the links is the one of its publication",
                     "vault": {},
                     "store": {
-                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n",
-                        "manifest/cf849639740656fd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:22e360ed279dc575a229f60fb128364506ff343b7b0cf1b83d3810ec21a62bd5\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-02T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf849639740656fd\",\n  \"lastPublished\": \"2031-06-02T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Leaf.md\",\n  \"sourceHash\": \"sha256:22e360ed279dc575a229f60fb128364506ff343b7b0cf1b83d3810ec21a62bd5\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/cf849639740656fd.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:22e360ed279dc575a229f60fb128364506ff343b7b0cf1b83d3810ec21a62bd5\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-02T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"cf849639740656fd\",\n  \"lastPublished\": \"2031-06-02T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Leaf.md\",\n  \"sourceHash\": \"sha256:22e360ed279dc575a229f60fb128364506ff343b7b0cf1b83d3810ec21a62bd5\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -1629,6 +1665,8 @@
                     },
                     "time": "2031-06-03T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1646,7 +1684,7 @@
                     "vault": {},
                     "store": {
                         "notes/Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
-                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hidden\",\n      \"path\": \"Hidden.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Later\",\n      \"path\": \"Later.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hidden\",\n      \"path\": \"Hidden.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Later\",\n      \"path\": \"Later.md\"\n    },\n    {\n      \"link\": \"Leaf\",\n      \"path\": \"Leaf.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
@@ -1717,6 +1755,8 @@
                     },
                     "time": "2031-06-04T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": ["Leaf.md"],
                         "propertyRemoved": ["Leaf.md"],
@@ -1738,7 +1778,7 @@
                         "notes/Leaf.md": null,
                         "manifest/cf849639740656fd.json": null,
                         "notes/Hub.md": "---\nrelated: \"[[Leaf]]\"\n---\n[[Leaf|a leaf]] ![[Folder/Deep#Part]] [as Markdown](Folder/Deep.md) [[Later]] [[Secret]] [[Hidden]] [[Hub]]\n",
-                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 2,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hidden\",\n      \"path\": \"Hidden.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Later\",\n      \"path\": \"Later.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/0a0cc460ba472f68.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"0a0cc460ba472f68\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Folder/Deep\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Folder/Deep.md\",\n      \"path\": \"Folder/Deep.md\"\n    },\n    {\n      \"link\": \"Hidden\",\n      \"path\": \"Hidden.md\"\n    },\n    {\n      \"link\": \"Hub\",\n      \"path\": \"Hub.md\"\n    },\n    {\n      \"link\": \"Later\",\n      \"path\": \"Later.md\"\n    }\n  ],\n  \"path\": \"Hub.md\",\n  \"sourceHash\": \"sha256:291ccef9099514fa7fdbaf1b2706b9909801484c4ab37a92c61777accf03b517\",\n  \"state\": \"published\"\n}\n"
                     }
                 }
             ]
@@ -1791,6 +1831,8 @@
                     },
                     "time": "2031-07-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1844,6 +1886,8 @@
                     },
                     "time": "2031-07-02T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
@@ -1875,6 +1919,8 @@
                     },
                     "time": "2031-08-01T08:00:00Z",
                     "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": ["Mid.md"],
@@ -1914,6 +1960,340 @@
                         "unchanged": ["Two.md"],
                         "behind": 0
                     }
+                }
+            ]
+        },
+        {
+            "name": "the attachments of a note",
+            "denyList": ["Locked"],
+            "vault": {
+                "Notes/Plan.md": "# Plan\n\n![[plan.png]]\n\nThe [map](../Images/map.pdf) of the plots.\n",
+                "Notes/Shed.md": "# Shed\n\n![[plan.png]] and ![[key.png]]\n",
+                "Images/plan.png": {
+                    "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                },
+                "Images/map.pdf": "%PDF-1.4\nAn invented map\n",
+                "Locked/key.png": "An invented key\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "the two notes are candidates; the files that they link to are not notes",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the first publication uploads each file that the notes use one time, and nothing of the folder of the deny list",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168",
+                            "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "published": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "each entry lists the files of its note, with the size of an image; the storage holds each file under its key",
+                    "vault": {},
+                    "store": {
+                        "manifest/1e82c8e2a992d3fb.json": "{\n  \"attachments\": [\n    {\n      \"hash\": \"sha256:454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168\",\n      \"link\": \"../Images/map.pdf\",\n      \"path\": \"Images/map.pdf\",\n      \"size\": 25\n    },\n    {\n      \"hash\": \"sha256:6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e\",\n      \"height\": 12,\n      \"link\": \"plan.png\",\n      \"path\": \"Images/plan.png\",\n      \"size\": 33,\n      \"width\": 16\n    }\n  ],\n  \"cleanedHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"1e82c8e2a992d3fb\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Plan.md\",\n  \"sourceHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/eabb2536ff9d281d.json": "{\n  \"attachments\": [\n    {\n      \"hash\": \"sha256:6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e\",\n      \"height\": 12,\n      \"link\": \"plan.png\",\n      \"path\": \"Images/plan.png\",\n      \"size\": 33,\n      \"width\": 16\n    }\n  ],\n  \"cleanedHash\": \"sha256:888ac6ee58928bf4e114d03200d2c59eb2a49dca26e76bd5a8bd5a70582236b8\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"eabb2536ff9d281d\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Shed.md\",\n  \"sourceHash\": \"sha256:888ac6ee58928bf4e114d03200d2c59eb2a49dca26e76bd5a8bd5a70582236b8\",\n  \"state\": \"published\"\n}\n"
+                    },
+                    "attachmentStorage": {
+                        "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e": {
+                            "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                        },
+                        "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168": "%PDF-1.4\nAn invented map\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "nothing changed",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author draws the plan again, in a larger size",
+                    "files": {
+                        "Images/plan.png": {
+                            "bytes": "89504e470d0a1a0a0000000d494844520000002000000018080200000000000000"
+                        }
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "each published note that uses the image is a technical update",
+                    "queue": {
+                        "changed": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "counts": {
+                            "changed": 2,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": [],
+                        "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the new image is uploaded, and the old one leaves the storage",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e"
+                        ],
+                        "attachmentsUploaded": [
+                            "90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entries have the new hash and the new size, and a technical update does not move the dates",
+                    "vault": {},
+                    "store": {
+                        "manifest/1e82c8e2a992d3fb.json": "{\n  \"attachments\": [\n    {\n      \"hash\": \"sha256:454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168\",\n      \"link\": \"../Images/map.pdf\",\n      \"path\": \"Images/map.pdf\",\n      \"size\": 25\n    },\n    {\n      \"hash\": \"sha256:90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19\",\n      \"height\": 24,\n      \"link\": \"plan.png\",\n      \"path\": \"Images/plan.png\",\n      \"size\": 33,\n      \"width\": 32\n    }\n  ],\n  \"cleanedHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"1e82c8e2a992d3fb\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Plan.md\",\n  \"sourceHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"state\": \"published\"\n}\n"
+                    },
+                    "attachmentStorage": {
+                        "90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19": {
+                            "bytes": "89504e470d0a1a0a0000000d494844520000002000000018080200000000000000"
+                        },
+                        "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168": "%PDF-1.4\nAn invented map\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the author moves the image into another folder",
+                    "paths": ["Images/plan.png"]
+                },
+                {
+                    "do": "write",
+                    "why": "the image in its new folder",
+                    "files": {
+                        "Other/plan.png": {
+                            "bytes": "89504e470d0a1a0a0000000d494844520000002000000018080200000000000000"
+                        }
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the link leads to the new path: a technical update",
+                    "queue": {
+                        "changed": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "counts": {
+                            "changed": 2,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": [],
+                        "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the same bytes are not uploaded again",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry has the new path",
+                    "vault": {},
+                    "store": {
+                        "manifest/eabb2536ff9d281d.json": "{\n  \"attachments\": [\n    {\n      \"hash\": \"sha256:90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19\",\n      \"height\": 24,\n      \"link\": \"plan.png\",\n      \"path\": \"Other/plan.png\",\n      \"size\": 33,\n      \"width\": 32\n    }\n  ],\n  \"cleanedHash\": \"sha256:888ac6ee58928bf4e114d03200d2c59eb2a49dca26e76bd5a8bd5a70582236b8\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"eabb2536ff9d281d\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Shed.md\",\n  \"sourceHash\": \"sha256:888ac6ee58928bf4e114d03200d2c59eb2a49dca26e76bd5a8bd5a70582236b8\",\n  \"state\": \"published\"\n}\n"
+                    },
+                    "attachmentStorage": {
+                        "90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19": {
+                            "bytes": "89504e470d0a1a0a0000000d494844520000002000000018080200000000000000"
+                        },
+                        "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168": "%PDF-1.4\nAn invented map\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the author moves the image into the folder of the deny list",
+                    "paths": ["Other/plan.png"]
+                },
+                {
+                    "do": "write",
+                    "why": "the image under the guard",
+                    "files": {
+                        "Locked/plan.png": {
+                            "bytes": "89504e470d0a1a0a0000000d494844520000002000000018080200000000000000"
+                        }
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a file under a guard is no attachment: a technical update",
+                    "queue": {
+                        "changed": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "counts": {
+                            "changed": 2,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": [],
+                        "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the image leaves the storage",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-04T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "no entry holds a path of the folder of the deny list",
+                    "vault": {},
+                    "store": {
+                        "manifest/1e82c8e2a992d3fb.json": "{\n  \"attachments\": [\n    {\n      \"hash\": \"sha256:454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168\",\n      \"link\": \"../Images/map.pdf\",\n      \"path\": \"Images/map.pdf\",\n      \"size\": 25\n    }\n  ],\n  \"cleanedHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"1e82c8e2a992d3fb\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Plan.md\",\n  \"sourceHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/eabb2536ff9d281d.json": "{\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:888ac6ee58928bf4e114d03200d2c59eb2a49dca26e76bd5a8bd5a70582236b8\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"eabb2536ff9d281d\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Shed.md\",\n  \"sourceHash\": \"sha256:888ac6ee58928bf4e114d03200d2c59eb2a49dca26e76bd5a8bd5a70582236b8\",\n  \"state\": \"published\"\n}\n"
+                    },
+                    "attachmentStorage": {
+                        "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168": "%PDF-1.4\nAn invented map\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "an unpublished note uses no file of the storage",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Notes/Plan.md"]
+                    },
+                    "time": "2031-06-05T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Notes/Plan.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Notes/Plan.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry keeps its attachments, and the storage is empty",
+                    "vault": {},
+                    "store": {
+                        "manifest/1e82c8e2a992d3fb.json": "{\n  \"attachments\": [\n    {\n      \"hash\": \"sha256:454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168\",\n      \"link\": \"../Images/map.pdf\",\n      \"path\": \"Images/map.pdf\",\n      \"size\": 25\n    }\n  ],\n  \"cleanedHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"cleaningVersion\": 3,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"1e82c8e2a992d3fb\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Plan.md\",\n  \"sourceHash\": \"sha256:f3dfce1f2169570581ad5d268ccacf3401a1322fd8ff1412a78e1529382e56aa\",\n  \"state\": \"unpublished\"\n}\n",
+                        "notes/Notes/Plan.md": null
+                    },
+                    "attachmentStorage": {}
                 }
             ]
         }

@@ -23,6 +23,12 @@ export interface Vault {
      * file of the vault. It throws when the file is not valid UTF-8.
      */
     read(path: string): Promise<string | undefined>
+    /**
+     * The bytes of the file with exactly this vault path, as they are: the
+     * same rules as `read`, for a file that is not a note. `undefined` when
+     * the vault has no such file. It throws when the file cannot be read.
+     */
+    readBytes(path: string): Promise<Uint8Array | undefined>
     /** True when the vault has a folder with exactly this vault path, which is not a symbolic link. */
     hasFolder(path: string): Promise<boolean>
     write(path: string, text: string): Promise<void>
@@ -75,6 +81,20 @@ export interface ContentStore {
     commitAndPush(message: string, paths: readonly string[]): Promise<void>
 }
 
+/**
+ * The attachment storage: an object storage on the host, a folder on a device
+ * and in the tests. Its files are named by their keys: the 64 hexadecimal
+ * digits of the SHA-256 of their bytes.
+ */
+export interface AttachmentStorage {
+    /** The names of the files of the storage, in any order. A folder and a symbolic link are not files of it. */
+    list(): Promise<string[]>
+    /** Stores the bytes under the key. The file is complete or does not exist: never a part of it. */
+    put(key: string, bytes: Uint8Array): Promise<void>
+    /** Removes the file of this name. True when the file existed. */
+    remove(name: string): Promise<boolean>
+}
+
 /** The plans of this device. They are stored outside the vault and outside the content of the store. */
 export interface PlanStore {
     save(id: string, record: string): Promise<void>
@@ -85,5 +105,6 @@ export interface PlanStore {
 export interface Device {
     readonly vault: Vault
     readonly store: ContentStore
+    readonly attachments: AttachmentStorage
     readonly plans: PlanStore
 }

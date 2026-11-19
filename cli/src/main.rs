@@ -5,6 +5,7 @@
 //! input, both write the same bytes in the canonical form
 //! (`documentation/Canonical Form.md`).
 
+mod attachments;
 mod canonical;
 mod clean;
 mod configuration;
@@ -12,6 +13,7 @@ mod device;
 mod frontmatter;
 mod guards;
 mod hash;
+mod images;
 mod json;
 mod links;
 mod manifest;
@@ -27,7 +29,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand};
 
-use device::{ContentStore, Vault};
+use device::{AttachmentStorage, ContentStore, Vault};
 use plan::Selection;
 use tool::{Device, Outcome, Run};
 
@@ -95,14 +97,22 @@ enum Command {
 
     /// Applies exactly one plan, by its id: the published notes that a guard
     /// excludes leave the content store first, the cleaned notes and the
-    /// manifest go to the content store in one commit, the commit is pushed,
-    /// and the `public_note` property of the notes of the vault is corrected.
+    /// manifest go to the content store in one commit after the upload of
+    /// their attachments, the commit is pushed, the `public_note` property of
+    /// the notes of the vault is corrected, and the files of the attachment
+    /// storage that no published note uses are deleted.
     /// It writes the publication report. It ends with an error when a note of
     /// the plan was left out, and it publishes nothing when a forced removal
     /// fails.
     Publish {
         #[command(flatten)]
         places: Places,
+
+        /// The folder of the attachment storage. The publication uploads the
+        /// attachments of its notes to it, and deletes every file that no
+        /// published note uses.
+        #[arg(long, value_name = "FOLDER")]
+        attachment_storage: PathBuf,
 
         /// The id that the `plan` command gave.
         #[arg(long, value_name = "ID")]
@@ -133,6 +143,16 @@ fn device(places: &Places) -> Result<Device, String> {
         vault: Vault::new(&places.vault),
         store: ContentStore::new(&places.content_store),
     })
+}
+
+fn storage(folder: &Path) -> Result<AttachmentStorage, String> {
+    if !folder.is_dir() {
+        return Err(format!(
+            "the attachment storage is not a folder: {}",
+            folder.display()
+        ));
+    }
+    Ok(AttachmentStorage::new(folder))
 }
 
 /// The time of the clock in the canonical form: UTC, cut to the second. The
@@ -260,11 +280,13 @@ fn run(command: Command) -> Result<Outcome, String> {
         }
         Command::Publish {
             places,
+            attachment_storage,
             plan,
             time,
             device: name,
         } => tool::publish(
             &device(&places)?,
+            &storage(&attachment_storage)?,
             &plan,
             &Run {
                 time: &time.unwrap_or_else(now),

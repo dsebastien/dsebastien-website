@@ -36,7 +36,7 @@ The last frost date is the average day of the last frost in spring. Tender plant
 const MANIFEST_ENTRY: &str = r#"{
   "attachments": [],
   "cleanedHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b",
-  "cleaningVersion": 2,
+  "cleaningVersion": 3,
   "firstPublished": "2031-04-01T08:00:00Z",
   "formerPaths": [],
   "id": "203d446940c02032",
@@ -69,6 +69,7 @@ const PLAN_RECORD: &str = r#"{
     "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "notes": [
       {
+        "attachments": [],
         "cleanedHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b",
         "links": [],
         "path": "10 Garden/Frost dates explained.md",
@@ -111,12 +112,19 @@ fn errors_of(output: &Output) -> String {
 
 impl Setup {
     fn run(&self, command: &str, arguments: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        let mut program = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+        program
             .arg(command)
             .arg("--vault")
             .arg(&self.vault)
             .arg("--content-store")
-            .arg(&self.copy)
+            .arg(&self.copy);
+        if command == "publish" {
+            program
+                .arg("--attachment-storage")
+                .arg(self.stores.attachment_storage());
+        }
+        program
             .args(arguments)
             .output()
             .expect("the program starts")

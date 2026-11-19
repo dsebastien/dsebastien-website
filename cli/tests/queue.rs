@@ -50,13 +50,44 @@ fn json_of(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("the output is JSON")
 }
 
+/// The bytes of a file of a scenario: a text, or `{"bytes": ...}` with its
+/// bytes in hexadecimal.
+fn bytes_of(content: &Value) -> Vec<u8> {
+    if let Some(text) = content.as_str() {
+        return text.as_bytes().to_vec();
+    }
+    let hex = content["bytes"]
+        .as_str()
+        .expect("a file has a text or its bytes");
+    (0..hex.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("the bytes are hexadecimal"))
+        .collect()
+}
+
 fn write_files(folder: &Path, files: &Value) {
     for (path, content) in files.as_object().expect("the files are an object") {
         let file = folder.join(path);
         fs::create_dir_all(file.parent().expect("a file has a folder"))
             .expect("the folder can be made");
-        fs::write(file, content.as_str().expect("a file has a text")).expect("the file is written");
+        fs::write(file, bytes_of(content)).expect("the file is written");
     }
+}
+
+/// Every file of the attachment storage, by its name, with its bytes.
+fn storage_of(folder: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut files: Vec<(String, Vec<u8>)> = fs::read_dir(folder)
+        .expect("the storage can be listed")
+        .map(|entry| {
+            let entry = entry.expect("the entry can be read");
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                fs::read(entry.path()).expect("the file can be read"),
+            )
+        })
+        .collect();
+    files.sort();
+    files
 }
 
 /// Commits every change of the copy and pushes it, as another device would.
@@ -154,12 +185,19 @@ impl Setup {
     }
 
     fn run(&self, command: &str, arguments: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        let mut program = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+        program
             .arg(command)
             .arg("--vault")
             .arg(&self.vault)
             .arg("--content-store")
-            .arg(&self.copy)
+            .arg(&self.copy);
+        if command == "publish" {
+            program
+                .arg("--attachment-storage")
+                .arg(self.stores.attachment_storage());
+        }
+        program
             .args(arguments)
             .output()
             .expect("the program starts")
@@ -291,6 +329,18 @@ fn run_step(setup: &Setup, step: &Value, label: &str) {
                 for (path, expected) in step[key].as_object().expect("the files are an object") {
                     assert_eq!(&text_of(&folder.join(path)), expected, "{label}: {path}");
                 }
+            }
+            if let Some(storage) = step["attachmentStorage"].as_object() {
+                let mut expected: Vec<(String, Vec<u8>)> = storage
+                    .iter()
+                    .map(|(key, content)| (key.clone(), bytes_of(content)))
+                    .collect();
+                expected.sort();
+                assert_eq!(
+                    storage_of(setup.stores.attachment_storage()),
+                    expected,
+                    "{label}"
+                );
             }
         }
         other => panic!("{label}: the step \"{other}\" is not known"),
@@ -1249,6 +1299,8 @@ fn a_copy_of_the_content_store_in_a_relative_folder_takes_new_notes_and_updates(
             time,
             "--device",
             "garden-shed",
+            "--attachment-storage",
+            text(setup.stores.attachment_storage()),
         ]);
         assert!(output.status.success(), "{}", errors_of(&output));
         json_of(&output)

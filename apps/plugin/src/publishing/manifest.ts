@@ -1,3 +1,5 @@
+import { isAttachmentList } from './attachments.ts'
+import type { Attachment } from './attachments.ts'
 import { isVaultPath } from './configuration.ts'
 import { sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
@@ -15,8 +17,8 @@ export const NOTES_FOLDER = 'notes'
 
 // A type alias, not an interface: the canonical form takes any object of data.
 export type ManifestEntry = {
-    /** The attachments of the note. A later slice fills it. */
-    readonly attachments: readonly string[]
+    /** The links of the note that lead to a file that is not a note, with the facts of the file, sorted by their link path. */
+    readonly attachments: readonly Attachment[]
     readonly cleanedHash: string
     readonly cleaningVersion: number
     /** The time of the run of the first publication. */
@@ -94,7 +96,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
     const { attachments, cleanedHash, cleaningVersion, firstPublished, formerPaths } = value
     const { id, lastPublished, links, path, sourceHash, state } = value
     if (
-        !isTextList(attachments) ||
+        !isAttachmentList(attachments, isVaultPath) ||
         typeof cleanedHash !== 'string' ||
         typeof cleaningVersion !== 'number' ||
         !Number.isSafeInteger(cleaningVersion) ||
@@ -113,7 +115,14 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         throw new Error(`${file} is not a manifest entry`)
     }
     return {
-        attachments,
+        attachments: attachments.map((item) => ({
+            hash: item.hash,
+            ...(item.height === undefined ? {} : { height: item.height }),
+            link: item.link,
+            path: item.path,
+            size: item.size,
+            ...(item.width === undefined ? {} : { width: item.width })
+        })),
         cleanedHash,
         cleaningVersion,
         firstPublished,
