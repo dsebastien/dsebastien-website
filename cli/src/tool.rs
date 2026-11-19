@@ -143,8 +143,6 @@ fn refuse_when_locked(device: &Device) -> Result<(), String> {
     }
 }
 
-/// Runs the work with the lock of the device (TOOL-09, PUB-27), and removes
-/// the lock at its end.
 /// The message of a run whose lock was removed while it ran.
 const LOCK_LOST: &str = "the lock of this publication was removed while it ran (unlock while a publication runs), and another run can have taken the copy. This run stops here and corrects no property: make a new plan when no other run runs";
 
@@ -524,7 +522,9 @@ struct StoreFile {
 /// have no commit, and a file of it can be in no commit.
 struct Backup<'a> {
     store: &'a ContentStore,
-    before: BTreeMap<String, Option<String>>,
+    /// The text of each file before the run (`None` for no file), or `Err`
+    /// for a file that could not be read as text before its removal.
+    before: BTreeMap<String, Result<Option<String>, ()>>,
 }
 
 impl<'a> Backup<'a> {
@@ -539,10 +539,31 @@ impl<'a> Backup<'a> {
     /// file changed.
     fn apply(&mut self, file: &StoreFile) -> Result<bool, String> {
         if !self.before.contains_key(&file.path) {
-            let text = self.store.read(&file.path)?;
+            let text = match self.store.read(&file.path) {
+                Ok(text) => Ok(text),
+                // A removal needs no text: a cleaned note under a guard that
+                // is not valid UTF-8, or a link, must still leave the store.
+                // An undo leaves such a file to the run journal, and the next
+                // run puts it back from git.
+                Err(_) if file.text.is_none() => Err(()),
+                Err(error) => return Err(error),
+            };
             self.before.insert(file.path.clone(), text);
         }
         match &file.text {
+            // A file that already has the text is no change: the commit must
+            // hold exactly the paths that changed. A copy that converts line
+            // ends writes the files of its commit with Windows line ends.
+            Some(text)
+                if self
+                    .before
+                    .get(&file.path)
+                    .and_then(|before| before.as_ref().ok())
+                    .and_then(Option::as_ref)
+                    .is_some_and(|before| before.replace("\r\n", "\n") == *text) =>
+            {
+                Ok(false)
+            }
             Some(text) => self.store.write(&file.path, text).map(|()| true),
             None => self.store.remove(&file.path),
         }
@@ -557,8 +578,9 @@ impl<'a> Backup<'a> {
                 continue;
             };
             let result = match text {
-                Some(text) => self.store.write(path, text),
-                None => self.store.remove(path).map(|_| ()),
+                Ok(Some(text)) => self.store.write(path, text),
+                Ok(None) => self.store.remove(path).map(|_| ()),
+                Err(()) => Err(String::new()),
             };
             if result.is_ok() {
                 self.before.remove(path);
@@ -1121,10 +1143,6 @@ struct Done {
     removed: Vec<String>,
 }
 
-/// Writes the files of a plan into the copy, and commits and pushes them.
-/// The forced removals come first: when one fails, the whole publication
-/// stops. A note whose uploads or files fail is left out and reported
-/// (PUB-26).
 /// What the commit of a publication needs besides the run.
 struct Commit<'a> {
     /// The id of the plan, for the message of the commit.
@@ -1133,6 +1151,10 @@ struct Commit<'a> {
     own_lock: &'a dyn Fn() -> Result<(), String>,
 }
 
+/// Writes the files of a plan into the copy, and commits and pushes them.
+/// The forced removals come first: when one fails, the whole publication
+/// stops. A note whose uploads or files fail is left out and reported
+/// (PUB-26).
 fn write_all(
     device: &Device,
     journal: &mut Backup,
@@ -1349,6 +1371,9 @@ fn apply(
         &Commit { plan: id, own_lock },
     ) {
         Ok(written) => written,
+        // Another run took the copy: this run touches nothing of it any more,
+        // or it would put its files back over the work of the other run.
+        Err(error) if error == LOCK_LOST => return Err(error),
         Err(error) => {
             // Files that stay in the copy would be read as published at the
             // next run, and an upload that stays would be public with no
@@ -1358,7 +1383,7 @@ fn apply(
             // A file that could not be put back, or a commit that git could
             // not take back, stays in the journal, so the next run puts it
             // back.
-            if error != LOCK_LOST && stayed.is_empty() && device.store.head() == head {
+            if stayed.is_empty() && device.store.head() == head {
                 settle(owed)?;
             }
             let files = if stayed.is_empty() {

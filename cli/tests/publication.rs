@@ -1021,3 +1021,71 @@ fn a_folder_that_is_not_a_copy_of_the_content_store_gets_no_file_of_the_tool() {
         0
     );
 }
+
+/// The note with the ignore property: a guard now excludes it.
+const IGNORED_NOTE: &str = "---\npublish_ignore: true\n---\nPrivate now.\n";
+
+/// The corrections after the second review of issue 36: another run puts a
+/// file of the run back during the commit. The commit then misses a forced
+/// removal, and it must never be pushed.
+#[cfg(unix)]
+#[test]
+fn a_commit_that_does_not_hold_exactly_the_files_of_the_run_is_never_pushed() {
+    use std::os::unix::fs::PermissionsExt;
+    let setup = set_up();
+    setup.publish(NOTE);
+    fs::write(setup.vault.join(NOTE), IGNORED_NOTE).expect("the note can be written");
+    let output = setup.run("plan", &[]);
+    assert!(output.status.success(), "{}", errors_of(&output));
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+    assert_eq!(plan["plan"]["forcedRemove"], serde_json::json!([NOTE]));
+    let id = plan["id"].as_str().expect("the plan has an id");
+    let remote = text(setup.stores.content_store());
+    let before = git(&["--git-dir", remote, "rev-parse", "main"]);
+    let hooks = setup.copy.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("the folder can be made");
+    let hook = hooks.join("pre-commit");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\ngit checkout HEAD -- \"notes/{NOTE}\"\n"),
+    )
+    .expect("the hook is written");
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("the hook can run");
+
+    let output = setup.run("publish", &["--plan", id, "--time", TIME]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("does not hold exactly its files"),
+        "{}",
+        errors_of(&output)
+    );
+    assert_eq!(git(&["--git-dir", remote, "rev-parse", "main"]), before);
+    assert_eq!(git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]), before);
+}
+
+/// A cleaned note that git skips is not compared by git status: its removal
+/// would stage nothing.
+#[test]
+fn a_cleaned_note_that_git_skips_stops_the_run() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    git(&[
+        "-C",
+        text(&setup.copy),
+        "update-index",
+        "--skip-worktree",
+        "--",
+        &format!("notes/{NOTE}"),
+    ]);
+    fs::remove_file(setup.copy.join("notes").join(NOTE)).expect("the note can be removed");
+
+    let output = setup.run("status", &[]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("--no-skip-worktree"),
+        "{}",
+        errors_of(&output)
+    );
+}

@@ -185,7 +185,6 @@ async function refuseWhenLocked(device: Device): Promise<void> {
     }
 }
 
-/** Runs the work with the lock of the device (TOOL-09, PUB-27), and removes the lock at its end. */
 /** The lock of a run was removed while the run ran, and another run can have taken the copy. */
 class LockLost extends Error {}
 
@@ -442,9 +441,13 @@ interface StoreFile {
  * failure puts them back from here, not from a commit of the copy: a copy can
  * have no commit, and a file of it can be in no commit.
  */
+/** The mark of a file whose text could not be read before its removal. */
+const UNKNOWN = Symbol('unknown')
+
 class Backup {
     readonly #store: Device['store']
-    readonly #before = new Map<string, string | undefined>()
+    /** The text of each file before the run, `undefined` for no file, `UNKNOWN` for a file that cannot be read as text. */
+    readonly #before = new Map<string, string | undefined | typeof UNKNOWN>()
 
     constructor(store: Device['store']) {
         this.#store = store
@@ -453,10 +456,30 @@ class Backup {
     /** Writes a file, or removes it when there is no text. True when the file changed. */
     async apply(file: StoreFile): Promise<boolean> {
         if (!this.#before.has(file.path)) {
-            this.#before.set(file.path, await this.#store.read(file.path))
+            let before: string | undefined | typeof UNKNOWN
+            try {
+                before = await this.#store.read(file.path)
+            } catch (error) {
+                // A removal needs no text: a cleaned note under a guard that
+                // is not valid UTF-8, or a link, must still leave the store.
+                // An undo leaves such a file to the run journal, and the next
+                // run puts it back from git.
+                if (file.text !== undefined) {
+                    throw error
+                }
+                before = UNKNOWN
+            }
+            this.#before.set(file.path, before)
         }
         if (file.text === undefined) {
             return await this.#store.remove(file.path)
+        }
+        // A file that already has the text is no change: the commit must hold
+        // exactly the paths that changed. A copy that converts line ends
+        // writes the files of its commit with Windows line ends.
+        const before = this.#before.get(file.path)
+        if (typeof before === 'string' && before.replaceAll('\r\n', '\n') === file.text) {
+            return false
         }
         await this.#store.write(file.path, file.text)
         return true
@@ -473,6 +496,10 @@ class Backup {
                 continue
             }
             const text = this.#before.get(path)
+            if (text === UNKNOWN) {
+                failed.push(path)
+                continue
+            }
             try {
                 if (text === undefined) {
                     await this.#store.remove(path)
@@ -1096,6 +1123,11 @@ async function apply(
     try {
         outcome = await writeAll(device, journal, uploads, current, { ...run, plan: id, ownLock })
     } catch (error) {
+        // Another run took the copy: this run touches nothing of it any more,
+        // or it would put its files back over the work of the other run.
+        if (error instanceof LockLost) {
+            throw error
+        }
         // Files that stay in the copy would be read as published at the next
         // run, and an upload that stays would be public with no entry.
         const stayed = await journal.putAllBack()

@@ -1888,47 +1888,73 @@ describe('forced removal', () => {
         ).toEqual([])
     })
 
-    // PUB-21: if a forced removal fails, the whole publication stops. Here
-    // the cleaned note of the second removal is not valid UTF-8 in the
-    // content store (another device pushed it), so the tool cannot keep its
-    // text to put it back: that fails on every system, with no change of a
-    // permission, on a copy that is the files of its last commit.
-    test('that fails stops the whole publication, and every file is put back', async () => {
+    // A removal needs no text (issue 36): a cleaned note under a guard that
+    // is not valid UTF-8 in the content store (another device pushed it)
+    // still leaves the store.
+    test('removes a cleaned note that is not valid UTF-8', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
-        await publishNotes(setup, { include: [NOTE, SECOND] })
+        await publishNotes(setup, { include: [NOTE] })
         await writeFile(join(setup.vault, NOTE), IGNORED)
-        await writeFile(join(setup.vault, SECOND), IGNORED)
         await writeFile(join(setup.copy, 'notes', NOTE), Uint8Array.from([0xff, 0xfe, 0x0a]))
         await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'Another device')
         await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
-        const planned = await plan(setup.device, { include: ['Welcome.md'] })
-        expect(planned.plan.forcedRemove).toEqual([SECOND, NOTE])
-        const before = {
-            vault: await picture(setup.vault),
-            commit: await git(setup.copy, 'rev-parse', 'HEAD'),
-            manifest: (await readdir(join(setup.copy, 'manifest'))).sort()
-        }
 
-        const message = await rejectionOf(
-            publish(setup.device, planned.id, { ...RUN, time: LATER })
-        )
+        const report = await publishNotes(setup, { include: [] }, { ...RUN, time: LATER })
 
-        expect(message).toContain(NOTE)
-        expect(message).toContain('guard')
-        expect(message).toContain('Nothing is published')
-        expect(await git(setup.copy, 'rev-parse', 'HEAD')).toBe(before.commit)
-        expect(await git(stores.contentStore, 'rev-parse', 'main')).toBe(before.commit)
-        // The first removal was put back, and no other note was published.
-        expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(true)
-        expect((await readdir(join(setup.copy, 'manifest'))).sort()).toEqual(before.manifest)
-        expect(await git(setup.copy, 'status', '--porcelain', '--', 'manifest')).toBe('')
-        expect(await Bun.file(join(setup.copy, 'notes/Welcome.md')).exists()).toBe(false)
-        // Without a push, no property is corrected.
-        expect(await picture(setup.vault)).toEqual(before.vault)
-        // Both notes still wait for their removal.
-        expect((await status(setup.device)).toRemove).toEqual([SECOND, NOTE])
+        expect(report.forcedRemoved).toEqual([NOTE])
+        expect(
+            await git(stores.contentStore, 'ls-tree', '-r', '--name-only', 'main')
+        ).not.toContain(`notes/${NOTE}`)
     })
+
+    // PUB-21: if a forced removal fails, the whole publication stops. Here
+    // the folder of the cleaned note of the second removal cannot be written,
+    // so its removal fails, and the first removal is put back.
+    test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+        'that fails stops the whole publication, and every file is put back',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            await publishNotes(setup, { include: [SECOND, 'Welcome.md'] })
+            await writeFile(join(setup.vault, SECOND), IGNORED)
+            await writeFile(join(setup.vault, 'Welcome.md'), IGNORED)
+            const planned = await plan(setup.device, { include: [NOTE] })
+            expect(planned.plan.forcedRemove).toEqual([SECOND, 'Welcome.md'])
+            const before = {
+                vault: await picture(setup.vault),
+                commit: await git(setup.copy, 'rev-parse', 'HEAD'),
+                manifest: (await readdir(join(setup.copy, 'manifest'))).sort()
+            }
+            const notes = join(setup.copy, 'notes')
+            await chmod(notes, 0o555)
+            let message: string
+            try {
+                message = await rejectionOf(
+                    publish(setup.device, planned.id, { ...RUN, time: LATER })
+                )
+            } finally {
+                await chmod(notes, 0o755)
+            }
+
+            expect(message).toContain('Welcome.md')
+            expect(message).toContain('guard')
+            expect(message).toContain('Nothing is published')
+            expect(await git(setup.copy, 'rev-parse', 'HEAD')).toBe(before.commit)
+            expect(await git(stores.contentStore, 'rev-parse', 'main')).toBe(before.commit)
+            // The first removal was put back, and no other note was published.
+            expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(true)
+            expect((await readdir(join(setup.copy, 'manifest'))).sort()).toEqual(before.manifest)
+            expect(await git(setup.copy, 'status', '--porcelain', '--', 'manifest', 'notes')).toBe(
+                ''
+            )
+            expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(false)
+            // Without a push, no property is corrected.
+            expect(await picture(setup.vault)).toEqual(before.vault)
+            // Both notes still wait for their removal.
+            expect((await status(setup.device)).toRemove).toEqual([SECOND, 'Welcome.md'])
+        }
+    )
 })
 
 // Each device has its own copy of the content store (issue 70). A copy that

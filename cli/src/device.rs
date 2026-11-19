@@ -10,6 +10,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
 use serde_json::{Value, json};
@@ -1043,12 +1044,14 @@ impl ContentStore {
         // Takes the commit back, when there is one, and unstages the paths of
         // the publication. Every step runs, also when one fails. The result
         // is what failed.
-        let undo = |committed: bool| -> Vec<String> {
+        // The branch goes back only when it is still at the commit of this
+        // publication: another run can have moved it.
+        let undo = |made: Option<&str>| -> Vec<String> {
             let mut failures = Vec::new();
-            if committed {
+            if let Some(made) = made {
                 let moved = match &before {
-                    Some(before) => self.git_output(&["update-ref", "HEAD", before]),
-                    None => self.git_output(&["update-ref", "-d", "HEAD"]),
+                    Some(before) => self.git_output(&["update-ref", "HEAD", before, made]),
+                    None => self.git_output(&["update-ref", "-d", "HEAD", made]),
                 };
                 failures.extend(moved.err());
             }
@@ -1104,21 +1107,76 @@ impl ContentStore {
         if let Err(error) = committed {
             return Err(failed(
                 format!("the commit into the copy of the content store failed: {error}"),
-                undo(false),
+                undo(None),
             ));
         }
         crash_point("commit");
+        let made = self.head().unwrap_or_default();
+        // The commit holds exactly the files that changed, on top of the
+        // commit before the run: another run that changed the copy in the
+        // middle (after an unlock) can never get a commit through that misses
+        // a forced removal.
+        if !self.holds_exactly(&made, before.as_deref(), &paths) {
+            return Err(failed(
+                "the commit of this publication does not hold exactly its files on top of the commit before it: another run changed the copy during the publication. Nothing is pushed".to_owned(),
+                undo(Some(&made)),
+            ));
+        }
         // Never with force: when another device pushed first, git refuses.
+        // The commit of this run, by its hash: another run can have moved the
+        // branch of the copy.
         if self
-            .git_output(&["push", "--quiet", "origin", "HEAD:main"])
+            .git_output(&[
+                "push",
+                "--quiet",
+                "origin",
+                &format!("{made}:refs/heads/main"),
+            ])
             .is_ok()
         {
             return Ok(());
         }
         Err(failed(
             "the push to the content store was refused".to_owned(),
-            undo(true),
+            undo(Some(&made)),
         ))
+    }
+
+    /// True when the commit changes exactly these paths, and its only parent
+    /// is `before` (or it has no parent, when there was no commit before).
+    fn holds_exactly(&self, made: &str, before: Option<&str>, paths: &[&str]) -> bool {
+        if made.is_empty() {
+            return false;
+        }
+        let parents: Vec<String> = self
+            .git_output(&["rev-list", "--parents", "--max-count=1", made])
+            .map_or_else(
+                // A commit whose parents cannot be read is never on top.
+                |_| vec![String::new()],
+                |line| line.split_whitespace().skip(1).map(str::to_owned).collect(),
+            );
+        let on_top = match before {
+            Some(before) => parents.len() == 1 && parents[0] == before,
+            None => parents.is_empty(),
+        };
+        let Ok(changed) = self.git_output(&[
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "-z",
+            "--root",
+            "--no-renames",
+            made,
+        ]) else {
+            return false;
+        };
+        let changed: BTreeSet<&str> = changed
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .collect();
+        let wanted: BTreeSet<&str> = paths.iter().copied().collect();
+        on_top && changed == wanted
     }
 
     /// Runs a git command on a list of paths. The paths go to the standard
@@ -1165,6 +1223,9 @@ impl ContentStore {
         }
         let mut content = holder.clone();
         content["process"] = json!(std::process::id());
+        // A token that no other run has: two runs of one process, in the same
+        // second, never hold the same text.
+        content["token"] = json!(lock_token());
         let text = to_canonical_json(&content).map_err(|error| error.to_string())?;
         // One create, never a test and then a write: two runs that start at
         // the same moment cannot both take the lock.
@@ -1400,6 +1461,25 @@ fn ways_out(different: &[(&str, &str)]) -> String {
     format!("{}. Only the tool writes the manifest", ways.join(". "))
 }
 
+/// The number of writes of this process: each one has a hidden file of its
+/// own.
+static WRITES: AtomicU64 = AtomicU64::new(0);
+
+/// A token for a lock that no other run has: the time in nanoseconds, the
+/// process and a count of this process. The logic reads no clock: this is the
+/// device.
+fn lock_token() -> String {
+    static LOCKS: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |time| time.as_nanos());
+    format!(
+        "{nanos:x}-{:x}-{:x}",
+        std::process::id(),
+        LOCKS.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
 /// The text of a file, or `None` when it does not exist.
 fn read_if_there(path: &Path) -> Result<Option<String>, String> {
     match fs::read_to_string(path) {
@@ -1425,7 +1505,10 @@ fn write_whole(path: &Path, text: &str) -> Result<(), String> {
     }
     let folder = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(folder).map_err(failed)?;
-    let temporary = folder.join(".vault-publish.tmp");
+    // A hidden file of its own for each write of each process: two runs that
+    // write into one folder never share one.
+    let write = WRITES.fetch_add(1, Ordering::Relaxed) + 1;
+    let temporary = folder.join(format!(".vault-publish-{}-{write}.tmp", std::process::id()));
     fs::write(&temporary, text).map_err(failed)?;
     fs::rename(&temporary, path).map_err(|error| {
         let _ = fs::remove_file(&temporary);

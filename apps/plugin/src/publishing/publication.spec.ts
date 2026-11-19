@@ -11,7 +11,7 @@ import {
     type TestStores
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
-import { plan, publish, status } from './tool.ts'
+import { plan, publish, status, unlock } from './tool.ts'
 import type { Device } from './ports.ts'
 
 // The first slice (issue 31): one invented note goes through the plan, the
@@ -23,6 +23,7 @@ import type { Device } from './ports.ts'
 // The expected hashes were computed with `sha256sum`, not with this code.
 
 const NOTE = '10 Garden/Frost dates explained.md'
+const SECOND = '10 Garden/Compost basics.md'
 const TIME = '2031-04-01T08:00:00Z'
 const RUN = { time: TIME, device: 'garden-shed', face: 'plugin' } as const
 const NOTE_ID = '203d446940c02032'
@@ -32,6 +33,9 @@ const NOTE_HASH = 'sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad
 const CONFIGURATION_HASH = 'sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12'
 const EMPTY_MANIFEST_HASH =
     'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+
+/** The note with the ignore property: a guard now excludes it. */
+const IGNORED_NOTE = '---\npublish_ignore: true\n---\nPrivate now.\n'
 
 const NOTE_TEXT = `---
 tags:
@@ -965,7 +969,7 @@ describe('failure cases after the first review', () => {
         }
     )
 
-    test('a publication whose lock another run took before its commit puts its files back', async () => {
+    test('a publication whose lock another run took before its commit leaves the copy to that run and pushes nothing', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         const lock = join(setup.copy, '.git', 'vault-publish', 'lock')
@@ -988,9 +992,111 @@ describe('failure cases after the first review', () => {
 
         expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('lock')
 
-        expect(await exists(join(setup.copy, 'notes', NOTE))).toBe(false)
+        // The other run owns the copy now: this run puts nothing back over its work.
+        expect(await exists(join(setup.copy, 'notes', NOTE))).toBe(true)
         expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(remote)
         expect(await Bun.file(lock).text()).toBe(OTHER_LOCK)
+    })
+
+    // The case of the second review: the author runs unlock while publication
+    // A runs, and publication B takes the copy. A must not put the files of a
+    // forced removal back between the removal of B and its commit.
+    test('a publication that lost its lock never undoes the forced removal of the run that took the copy', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        await writeFile(join(setup.vault, NOTE), IGNORED_NOTE)
+        const later = { ...RUN, time: '2031-04-02T09:00:00Z' }
+        const planned = await plan(setup.device, { include: [SECOND] })
+        expect(planned.plan.forcedRemove).toEqual([NOTE])
+        const a = Promise.withResolvers<undefined>()
+        const aWaits = Promise.withResolvers<undefined>()
+        const first: Device = {
+            ...setup.device,
+            store: {
+                ...setup.device.store,
+                async write(path, text) {
+                    await setup.device.store.write(path, text)
+                    aWaits.resolve(undefined)
+                    await a.promise
+                }
+            }
+        }
+        const b = Promise.withResolvers<undefined>()
+        const bWaits = Promise.withResolvers<undefined>()
+        const second: Device = {
+            ...setup.device,
+            store: {
+                ...setup.device.store,
+                async commitAndPush(message, paths) {
+                    bWaits.resolve(undefined)
+                    await b.promise
+                    await setup.device.store.commitAndPush(message, paths)
+                }
+            }
+        }
+
+        const runA = rejectionOf(publish(first, planned.id, RUN))
+        await aWaits.promise
+        expect(await unlock(setup.device)).toBe(true)
+        const runB = publish(second, planned.id, later)
+        await bWaits.promise
+        a.resolve(undefined)
+        expect(await runA).toContain('lock')
+        b.resolve(undefined)
+        const report = await runB
+
+        expect(report.forcedRemoved).toEqual([NOTE])
+        expect(report.published).toEqual([SECOND])
+        // The cleaned note under the guard left the content store.
+        const files = await git(
+            '--git-dir',
+            stores.contentStore,
+            'ls-tree',
+            '-r',
+            '--name-only',
+            'main'
+        )
+        expect(files.split('\n')).not.toContain(`notes/${NOTE}`)
+        expect(files.split('\n')).toContain(`notes/${SECOND}`)
+    })
+
+    // Another run puts a file of the run back during the commit: the commit
+    // then misses a forced removal, and it must never be pushed.
+    test.skipIf(process.platform === 'win32')(
+        'a commit that does not hold exactly the files of the run is never pushed',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+            await writeFile(join(setup.vault, NOTE), IGNORED_NOTE)
+            const planned = await plan(setup.device, { include: [] })
+            expect(planned.plan.forcedRemove).toEqual([NOTE])
+            const remote = await git('--git-dir', stores.contentStore, 'rev-parse', 'main')
+            const hook = join(setup.copy, '.git', 'hooks', 'pre-commit')
+            await mkdir(join(setup.copy, '.git', 'hooks'), { recursive: true })
+            await writeFile(hook, `#!/bin/sh\ngit checkout HEAD -- "notes/${NOTE}"\n`)
+            await chmod(hook, 0o755)
+
+            expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain(
+                'does not hold exactly its files'
+            )
+
+            expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(remote)
+            expect(await git('-C', setup.copy, 'rev-parse', 'HEAD')).toBe(remote)
+        }
+    )
+
+    // A cleaned note that git skips is not compared by git status: its
+    // removal would stage nothing.
+    test('a cleaned note that git skips stops the run', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        await git('-C', setup.copy, 'update-index', '--skip-worktree', '--', `notes/${NOTE}`)
+        await rm(join(setup.copy, 'notes', NOTE))
+
+        expect(await rejectionOf(status(setup.device))).toContain('--no-skip-worktree')
     })
 
     // A cleaned note that the copy lost would else stay in the content store

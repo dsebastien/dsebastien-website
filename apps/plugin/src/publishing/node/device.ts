@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import {
     lstat,
     mkdir,
@@ -60,6 +61,9 @@ async function writeText(path: string, text: string): Promise<void> {
  * name that starts with a dot is not part of the vault for the scan and for
  * Obsidian.
  */
+/** The number of writes of this process: each one has a hidden file of its own. */
+let writes = 0
+
 async function writeWhole(path: string, text: string): Promise<void> {
     // A rename would replace a file that the author made read only: no write
     // bit for anyone, as Rust reads it (`Permissions::readonly`).
@@ -68,7 +72,11 @@ async function writeWhole(path: string, text: string): Promise<void> {
         throw new Error(`${path} cannot be written: it is read only`)
     }
     await mkdir(dirname(path), { recursive: true })
-    const temporary = join(dirname(path), '.vault-publish.tmp')
+    writes += 1
+    const temporary = join(
+        dirname(path),
+        `.vault-publish-${String(process.pid)}-${String(writes)}.tmp`
+    )
     await writeFile(temporary, text, 'utf8')
     try {
         await rename(temporary, path)
@@ -888,6 +896,8 @@ function gitContentStore(folder: string): ContentStore {
              * of the publication: the other staged work of the copy stays. Every
              * step runs, also when one fails. The result is what failed.
              */
+            // The commit that this publication made, once it exists.
+            let made: string | undefined = undefined
             const undo = async (committed: boolean): Promise<string[]> => {
                 const failures: string[] = []
                 const step = async (action: () => Promise<unknown>): Promise<void> => {
@@ -897,11 +907,14 @@ function gitContentStore(folder: string): ContentStore {
                         failures.push(error instanceof Error ? error.message.trim() : 'git failed')
                     }
                 }
-                if (committed) {
+                // The branch goes back only when it is still at the commit of
+                // this publication: another run can have moved it.
+                if (committed && made !== undefined) {
+                    const commit = made
                     await step(() =>
                         before === undefined
-                            ? git('update-ref', '-d', 'HEAD')
-                            : git('update-ref', 'HEAD', before)
+                            ? git('update-ref', '-d', 'HEAD', commit)
+                            : git('update-ref', 'HEAD', before, commit)
                     )
                 }
                 await step(() =>
@@ -938,9 +951,51 @@ function gitContentStore(folder: string): ContentStore {
                     await undo(false)
                 )
             }
+            made = await headOf()
+            // The commit holds exactly the files that changed, on top of the
+            // commit before the run: another run that changed the copy in the
+            // middle (after an unlock) can never get a commit through that
+            // misses a forced removal.
+            const parents =
+                made === undefined
+                    ? []
+                    : (await git('rev-list', '--parents', '--max-count=1', made))
+                          .split(' ')
+                          .slice(1)
+            const changed =
+                made === undefined
+                    ? []
+                    : (
+                          await gitRaw(
+                              'diff-tree',
+                              '--no-commit-id',
+                              '--name-only',
+                              '-r',
+                              '-z',
+                              '--root',
+                              '--no-renames',
+                              made
+                          )
+                      )
+                          .split('\0')
+                          .filter((path) => path !== '')
+                          .sort(compareCodePoints)
+            const wanted = [...new Set(paths)].sort(compareCodePoints)
+            const onTop =
+                before === undefined
+                    ? parents.length === 0
+                    : parents.length === 1 && parents[0] === before
+            if (made === undefined || !onTop || changed.join('\0') !== wanted.join('\0')) {
+                throw failed(
+                    'the commit of this publication does not hold exactly its files on top of the commit before it: another run changed the copy during the publication. Nothing is pushed',
+                    await undo(true)
+                )
+            }
             try {
-                // Never with force: when another device pushed first, git refuses.
-                await git('push', '--quiet', 'origin', 'HEAD:main')
+                // Never with force: when another device pushed first, git
+                // refuses. The commit of this run, by its hash: another run can
+                // have moved the branch of the copy.
+                await git('push', '--quiet', 'origin', `${made}:refs/heads/main`)
             } catch {
                 throw failed('the push to the content store was refused', await undo(true))
             }
@@ -1042,7 +1097,9 @@ function folderLocalStore(contentStore: string): LocalStore {
                 )
             }
             await mkdir(folder, { recursive: true })
-            const text = toCanonicalJson({ ...holder, process: process.pid })
+            // A token that no other run has: two runs of one process, in the
+            // same second, never hold the same text.
+            const text = toCanonicalJson({ ...holder, process: process.pid, token: randomUUID() })
             try {
                 // One create, never a test and then a write: two runs that
                 // start at the same moment cannot both take the lock.

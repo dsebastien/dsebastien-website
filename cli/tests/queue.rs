@@ -2475,38 +2475,67 @@ fn a_forced_removal_does_not_take_a_published_note_whose_file_is_only_missing() 
     );
 }
 
-/// PUB-21: if a forced removal fails, the whole publication stops. Here the
-/// cleaned note of the second removal is not valid UTF-8 in the content store
-/// (another device pushed it), so the tool cannot keep its text to put it
-/// back: that fails on every system, with no change of a permission, on a
-/// copy that is the files of its last commit.
+/// A removal needs no text (issue 36): a cleaned note under a guard that is
+/// not valid UTF-8 in the content store (another device pushed it) still
+/// leaves the store.
 #[test]
-fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put_back() {
+fn a_forced_removal_removes_a_cleaned_note_that_is_not_valid_utf_8() {
     let setup = Setup::fixture();
-    setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
+    setup.publish(&json!({ "include": [NOTE] }), TIME);
     fs::write(setup.vault.join(NOTE), IGNORED).expect("the file is written");
-    fs::write(setup.vault.join(SECOND), IGNORED).expect("the file is written");
     fs::write(setup.copy.join("notes").join(NOTE), [0xff, 0xfe, 0x0a])
         .expect("the file is written");
     setup.git(&["commit", "--quiet", "--all", "--message", "Another device"]);
     setup.git(&["push", "--quiet", "origin", "HEAD:main"]);
-    let planned = setup.plan(&json!({ "include": ["Welcome.md"] }));
+
+    let report = setup.publish(&json!({ "include": [] }), LATER);
+
+    assert_eq!(paths(&report["forcedRemoved"]), [NOTE]);
+    let files = git(&[
+        "--git-dir",
+        text(setup.stores.content_store()),
+        "ls-tree",
+        "-r",
+        "--name-only",
+        "main",
+    ]);
+    assert!(!files.contains(&format!("notes/{NOTE}")), "{files}");
+}
+
+/// PUB-21: if a forced removal fails, the whole publication stops. Here the
+/// folder of the cleaned note of the second removal cannot be written, so its
+/// removal fails, and the first removal is put back.
+#[cfg(unix)]
+#[test]
+fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let setup = Setup::fixture();
+    setup.publish(&json!({ "include": [SECOND, "Welcome.md"] }), TIME);
+    fs::write(setup.vault.join(SECOND), IGNORED).expect("the file is written");
+    fs::write(setup.vault.join("Welcome.md"), IGNORED).expect("the file is written");
+    let planned = setup.plan(&json!({ "include": [NOTE] }));
     assert!(planned.status.success(), "{}", errors_of(&planned));
     let planned = json_of(&planned);
-    assert_eq!(paths(&planned["plan"]["forcedRemove"]), [SECOND, NOTE]);
+    assert_eq!(
+        paths(&planned["plan"]["forcedRemove"]),
+        [SECOND, "Welcome.md"]
+    );
     let id = planned["id"].as_str().expect("the plan has an id");
     let before = (
         picture(&setup.vault),
         setup.git(&["rev-parse", "HEAD"]),
         manifest_files(&setup.copy),
     );
+    let notes = setup.copy.join("notes");
+    fs::set_permissions(&notes, fs::Permissions::from_mode(0o555)).expect("the mode is set");
 
     let output = setup.publish_plan(id, LATER);
+    fs::set_permissions(&notes, fs::Permissions::from_mode(0o755)).expect("the mode is set");
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     let message = errors_of(&output);
-    assert!(message.contains(NOTE), "{message}");
+    assert!(message.contains("Welcome.md"), "{message}");
     assert!(message.contains("guard"), "{message}");
     assert!(message.contains("Nothing is published"), "{message}");
     assert_eq!(setup.git(&["rev-parse", "HEAD"]), before.1);
@@ -2522,12 +2551,15 @@ fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put
     // The first removal was put back, and no other note was published.
     assert!(setup.copy.join("notes").join(SECOND).exists());
     assert_eq!(manifest_files(&setup.copy), before.2);
-    assert_eq!(setup.git(&["status", "--porcelain", "--", "manifest"]), "");
-    assert!(!setup.copy.join("notes").join("Welcome.md").exists());
+    assert_eq!(
+        setup.git(&["status", "--porcelain", "--", "manifest", "notes"]),
+        ""
+    );
+    assert!(!setup.copy.join("notes").join(NOTE).exists());
     // Without a push, no property is corrected.
     assert_eq!(picture(&setup.vault), before.0);
     // Both notes still wait for their removal.
-    assert_eq!(paths(&setup.status()["toRemove"]), [SECOND, NOTE]);
+    assert_eq!(paths(&setup.status()["toRemove"]), [SECOND, "Welcome.md"]);
 }
 
 /// Another device of the same author: a clone of the content store of the
