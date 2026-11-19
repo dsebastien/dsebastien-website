@@ -447,7 +447,7 @@ An alias is another name of a note: a URL with the alias leads to the note (URL-
 1. Only closed properties are read (rule 2 of the properties). A note without them has no alias.
 2. A property of the note itself (rule 4 of the properties) whose key is exactly `aliases` (rule 3, the letter case as written) holds aliases. No other key is read: not `alias`, not `Aliases`. When two properties name the key, both are read.
 3. The value of the property:
-    - Empty, or a comment (it starts with `#`): the items are the next lines of the property that start with a hyphen after optional spaces and tabs, and with a space, a tab or nothing after that hyphen. An item is the text after the hyphen. Every other line of the property is skipped.
+    - Empty, or a comment (it starts with `#`, a rule added before any content store outside the tests had version 4): the items are the next lines of the property that start with a hyphen after optional spaces and tabs, and with a space, a tab or nothing after that hyphen. An item is the text after the hyphen. Every other line of the property is skipped.
     - Starts with `[` and ends with `]`: a list in the flow form. The text between them is cut at each comma, and each piece is an item. A piece that starts with a quote, after spaces and tabs, goes on to its closing quote first: a comma inside it does not cut. In double quotes, a backslash takes the next character with it. In single quotes, `''` is no closing quote.
     - Any other value: one item.
 4. An item, without the spaces and the tabs around it:

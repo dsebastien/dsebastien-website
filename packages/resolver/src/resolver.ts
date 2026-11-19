@@ -39,7 +39,8 @@ export type Resolution =
 /**
  * How long a client keeps a redirect: a variant of the syntax, a file name
  * alone, an alias (decision R47). A variant is kept one hour only: after a
- * rename in letter case, a redirect that a browser kept would else loop.
+ * rename in letter case, a redirect that a browser kept loops for that hour
+ * at most.
  */
 const CACHE = {
     variant: 'public, max-age=3600',
