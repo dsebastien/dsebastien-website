@@ -302,7 +302,9 @@ export async function startServer(options: {
         port: options.port,
         // Any failure gives a plain 500 with no detail, never the error page
         // of Bun with the paths of the machine (NAV-20).
-        error() {
+        error(error) {
+            // The detail goes to the log of the machine, never to the answer.
+            console.error(error)
             return serverError()
         },
         fetch(request) {

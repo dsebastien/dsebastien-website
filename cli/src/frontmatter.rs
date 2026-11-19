@@ -370,7 +370,15 @@ fn unescape_double(text: &str) -> Option<String> {
 /// One alias from one item of the property. `None` when the item gives no
 /// alias.
 fn alias_of_item(item: &str) -> Option<String> {
-    let text = trim(item);
+    let mut text = trim(item);
+    // A comment after the closing quote is cut first, as YAML does.
+    if text.starts_with(['"', '\'']) {
+        let end = end_of_quoted(text.as_bytes(), 0);
+        let rest = text[end..].trim_start_matches([' ', '\t']);
+        if rest.len() < text.len() - end && rest.starts_with('#') {
+            text = &text[..end];
+        }
+    }
     let quoted = |quote: char| text.len() >= 2 && text.starts_with(quote) && text.ends_with(quote);
     let alias = if quoted('"') {
         unescape_double(&text[1..text.len() - 1])?

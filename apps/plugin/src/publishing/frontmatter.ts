@@ -332,7 +332,14 @@ function unescapeDouble(text: string): string | undefined {
 
 /** One alias from one item of the property. `undefined` when the item gives no alias. */
 function aliasOfItem(item: string): string | undefined {
-    const text = trim(item)
+    let text = trim(item)
+    // A comment after the closing quote is cut first, as YAML does.
+    if (text.startsWith('"') || text.startsWith("'")) {
+        const end = endOfQuoted(text, 0)
+        if (/^[ \t]+#/u.test(text.slice(end))) {
+            text = text.slice(0, end)
+        }
+    }
     let alias: string | undefined
     if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
         alias = unescapeDouble(text.slice(1, -1))

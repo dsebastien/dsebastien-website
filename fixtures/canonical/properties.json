@@ -692,6 +692,12 @@
             "reserved": []
         },
         {
+            "name": "a comment after an item in quotes",
+            "note": "---\naliases:\n  - \"One\" # a comment\n  - 'Two'\t# a comment\n  - \"Three # not a comment\"\n  - \"Four\" and more\n---\nText\n",
+            "aliases": ["\"Four\" and more", "One", "Three # not a comment", "Two"],
+            "reserved": []
+        },
+        {
             "name": "a comment line inside the list does not end it",
             "note": "---\naliases:\n# the old names\n  - One\n#\n  # indented\n  - Two\ntags:\n  - Three\n---\nText\n",
             "aliases": ["One", "Two"],
