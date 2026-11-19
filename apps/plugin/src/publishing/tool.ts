@@ -464,18 +464,30 @@ async function correctState(
     return { propertyRemoved, propertySet, warnings }
 }
 
-/** The keys of the files of the attachment storage that the published notes of a manifest use. */
-function usedKeys(manifest: ReadonlyMap<string, ManifestEntry>): Set<string> {
+/**
+ * The keys of the files of the attachment storage that the published notes of
+ * a manifest use. An attachment whose file is under a guard now is used by no
+ * note, also when an entry that the plan held still lists it.
+ */
+function usedKeys(
+    manifest: ReadonlyMap<string, ManifestEntry>,
+    isGuarded: (path: string) => boolean
+): Set<string> {
     const keys = new Set<string>()
     for (const entry of manifest.values()) {
         if (entry.state === 'published') {
             for (const attachment of entry.attachments) {
-                keys.add(keyOf(attachment.hash))
+                if (!isGuarded(attachment.path)) {
+                    keys.add(keyOf(attachment.hash))
+                }
             }
         }
     }
     return keys
 }
+
+/** The form of the name of a file of the attachment storage: a key, or a key that is being written. */
+const STORAGE_NAME = /^(?:[0-9a-f]{64}|\.[0-9a-f]{64}\.part)$/
 
 /** The uploads of one publication to the attachment storage (PUB-39). */
 class Uploads {
@@ -488,23 +500,19 @@ class Uploads {
         this.#device = device
     }
 
-    /** Lists the storage one time, before the first upload. */
-    async start(): Promise<void> {
-        this.#present = new Set(await this.#device.attachments.list())
-    }
-
     /**
      * Uploads each attachment whose key the storage does not have yet. The
      * bytes are read from the vault again, and must have the hash of the
      * record: a file that changed since the plan is not uploaded.
      */
     async upload(attachments: readonly Attachment[]): Promise<void> {
-        const present = this.#present
-        if (present === undefined) {
-            throw new Error('the attachment storage was not listed')
-        }
         for (const attachment of attachments) {
             const key = keyOf(attachment.hash)
+            // The storage is listed one time, before the first upload: a
+            // publication with no upload, a takedown for example, never
+            // needs the storage.
+            this.#present ??= new Set(await this.#device.attachments.list())
+            const present = this.#present
             if (present.has(key)) {
                 continue
             }
@@ -525,8 +533,11 @@ class Uploads {
      * lists (PUB-93). Every upload is tried. The result is the keys that
      * could not be deleted.
      */
-    async takeBack(manifest: ReadonlyMap<string, ManifestEntry>): Promise<string[]> {
-        const used = usedKeys(manifest)
+    async takeBack(
+        manifest: ReadonlyMap<string, ManifestEntry>,
+        isGuarded: (path: string) => boolean
+    ): Promise<string[]> {
+        const used = usedKeys(manifest, isGuarded)
         const stayed: string[] = []
         for (const key of this.uploaded) {
             if (used.has(key)) {
@@ -545,17 +556,20 @@ class Uploads {
 /**
  * Cleans the attachment storage: every file whose name is not the key of an
  * attachment of a published entry goes (PUB-82, PUB-84, PUB-93). It reads no
- * file of the storage. A deletion that fails gives a warning, and the next
+ * file of the storage. A name that is not in the form of a key is not a file
+ * of the storage: it stays, with a warning, so a folder given by mistake
+ * loses no file. A deletion that fails gives a warning, and the next
  * publication tries again.
  */
 async function cleanStorage(
     device: Device,
-    manifest: ReadonlyMap<string, ManifestEntry>
+    manifest: ReadonlyMap<string, ManifestEntry>,
+    isGuarded: (path: string) => boolean
 ): Promise<{
     readonly deleted: string[]
     readonly warnings: { path: string; message: string }[]
 }> {
-    const used = usedKeys(manifest)
+    const used = usedKeys(manifest, isGuarded)
     const deleted: string[] = []
     const warnings: { path: string; message: string }[] = []
     let names: string[]
@@ -570,6 +584,14 @@ async function cleanStorage(
     }
     for (const name of sortByCodePoint(names)) {
         if (used.has(name)) {
+            continue
+        }
+        if (!STORAGE_NAME.test(name)) {
+            warnings.push({
+                path: name,
+                message:
+                    'the attachment storage holds a file whose name is not a key, and the tool leaves it: is the folder of the storage the right one?'
+            })
             continue
         }
         try {
@@ -626,7 +648,6 @@ async function writeAll(
     const lists = computed.plan
     const written: string[] = []
     const manifest = new Map(scan.manifest)
-    await uploads.start()
     // The forced removals come first, and they follow the takedown rule: the
     // note leaves the manifest (PUB-21, PUB-84). When one fails, the whole
     // publication stops: no note is published while a note under a guard
@@ -772,7 +793,7 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
         // Files that stay in the copy would be read as published at the next
         // run, and an upload that stays would be public with no entry.
         const stayed = await journal.putAllBack()
-        const kept = await uploads.takeBack(scan.manifest)
+        const kept = await uploads.takeBack(scan.manifest, scan.isGuardedFile)
         const files =
             stayed.length === 0
                 ? 'and the files of the copy are as they were before'
@@ -803,7 +824,7 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
     }
     // The copy follows the content store: the run fetched it and was not
     // behind, and a push, when there was one, succeeded.
-    const cleanup = await cleanStorage(device, manifest)
+    const cleanup = await cleanStorage(device, manifest, scan.isGuardedFile)
     return {
         ...report,
         attachmentsDeleted: cleanup.deleted,

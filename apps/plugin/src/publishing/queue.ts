@@ -70,6 +70,14 @@ export interface Scan {
     readonly files: FileReader
     /** The names of the notes in the folders of the deny list, in small letters. No file of those folders is read. */
     readonly deniedNames: ReadonlySet<string>
+    /**
+     * True when a file that is not a note is under a guard now: it is in a
+     * folder of the deny list, or it is missing from the scan and a file of
+     * its name is in such a folder (it may have moved there: names only, so
+     * it fails closed). An attachment of an old manifest entry that comes
+     * under a guard leaves the attachment storage, whatever the plan holds.
+     */
+    readonly isGuardedFile: (path: string) => boolean
     /** Every entry of the manifest, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
     readonly configuration: Configuration
@@ -192,6 +200,10 @@ export async function computeQueue(input: {
     const index = new LinkIndex([...notes.keys(), ...scanned.others, ...denied])
     const guarded = new Set([...ignored, ...denied])
     const files = new FileReader(input.vault)
+    const others = new Set(scanned.others)
+    const deniedFileNames = new Set(
+        denied.map((path) => path.slice(path.lastIndexOf('/') + 1).toLowerCase())
+    )
     const lists = {
         changed: [] as string[],
         new: [] as string[],
@@ -257,6 +269,13 @@ export async function computeQueue(input: {
                 .filter((path) => path.endsWith('.md'))
                 .map((path) => path.slice(path.lastIndexOf('/') + 1).toLowerCase())
         ),
+        isGuardedFile: (path) => {
+            const lower = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
+            return (
+                input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`)) ||
+                (!others.has(path) && deniedFileNames.has(lower))
+            )
+        },
         manifest: input.manifest,
         configuration: input.configuration
     }

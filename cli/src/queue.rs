@@ -109,12 +109,31 @@ pub struct Scan {
     /// The names of the notes in the folders of the deny list, in small
     /// letters. No file of those folders is read.
     pub denied_names: BTreeSet<String>,
+    /// The other files of the scan: the files that are not notes.
+    pub others: BTreeSet<String>,
+    /// The names of every file in the folders of the deny list, in small
+    /// letters.
+    pub denied_file_names: BTreeSet<String>,
     /// Every entry of the manifest, by the vault path of its note.
     pub manifest: BTreeMap<String, ManifestEntry>,
     pub configuration: Configuration,
 }
 
 impl Scan {
+    /// True when a file that is not a note is under a guard now: it is in a
+    /// folder of the deny list, or it is missing from the scan and a file of
+    /// its name is in such a folder (it may have moved there: names only, so
+    /// it fails closed). An attachment of an old manifest entry that comes
+    /// under a guard leaves the attachment storage, whatever the plan holds.
+    pub fn is_guarded_file(&self, path: &str) -> bool {
+        let name = path.rsplit('/').next().unwrap_or(path).to_lowercase();
+        self.configuration
+            .deny_list
+            .iter()
+            .any(|folder| path.starts_with(&format!("{folder}/")))
+            || (!self.others.contains(path) && self.denied_file_names.contains(&name))
+    }
+
     /// True when the note has a manifest entry whose state is `published`.
     pub fn is_published(&self, path: &str) -> bool {
         self.manifest
@@ -311,6 +330,11 @@ pub fn compute_queue(
         guarded,
         files,
         denied_names,
+        others: others.into_iter().collect(),
+        denied_file_names: denied
+            .iter()
+            .map(|path| path.rsplit('/').next().unwrap_or(path).to_lowercase())
+            .collect(),
         manifest,
         configuration,
     })

@@ -2296,6 +2296,176 @@
                     "attachmentStorage": {}
                 }
             ]
+        },
+        {
+            "name": "an attachment that comes under a guard leaves the storage, also when its note is held",
+            "denyList": ["Locked"],
+            "vault": {
+                "Pub/A.md": "![[img.png]]\n",
+                "Pub/img.png": "An invented image\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the note and its image are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Pub/A.md"],
+                        "remove": []
+                    },
+                    "time": "2031-07-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Pub/A.md"],
+                        "published": ["Pub/A.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the author moves the image into the folder of the deny list, to make it private",
+                    "paths": ["Pub/img.png"]
+                },
+                {
+                    "do": "write",
+                    "why": "the image under the guard",
+                    "files": {
+                        "Locked/img.png": "An invented image\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note is a technical update",
+                    "queue": {
+                        "changed": ["Pub/A.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "new": [],
+                        "technicalUpdates": ["Pub/A.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the author holds the note: its old entry still lists the image, and the image leaves the storage all the same",
+                    "selection": {
+                        "hold": ["Pub/A.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-07-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Pub/A.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "no file under a guard stays in the storage",
+                    "vault": {},
+                    "store": {},
+                    "attachmentStorage": {}
+                },
+                {
+                    "do": "write",
+                    "why": "a new note with an image in another folder",
+                    "files": {
+                        "Pub/B.md": "![[b.png]]\n",
+                        "Pics/b.png": "Another invented image\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the second note and its image are published",
+                    "selection": {
+                        "hold": ["Pub/A.md"],
+                        "include": ["Pub/B.md"],
+                        "remove": []
+                    },
+                    "time": "2031-07-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "8562e21c2aa4b56f3f17978bed50d566fbb5abd8729e05ad1761f2e71c024a23"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Pub/B.md"],
+                        "published": ["Pub/B.md"],
+                        "removed": [],
+                        "skipped": ["Pub/A.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "another device puts the folder of the image on the deny list",
+                    "files": {
+                        "configuration.json": "{\"denyList\":[\"Locked\",\"Pics\"]}"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the image of a folder that joined the deny list leaves the storage, also when its note is held",
+                    "selection": {
+                        "hold": ["Pub/A.md", "Pub/B.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-07-04T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "8562e21c2aa4b56f3f17978bed50d566fbb5abd8729e05ad1761f2e71c024a23"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Pub/A.md", "Pub/B.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the storage is empty",
+                    "vault": {},
+                    "store": {},
+                    "attachmentStorage": {}
+                }
+            ]
         }
     ]
 }

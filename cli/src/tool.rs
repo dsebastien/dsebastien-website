@@ -502,21 +502,37 @@ fn removal_unit(path: &str, scan: &Scan) -> Result<Unit, String> {
 }
 
 /// The keys of the files of the attachment storage that the published notes
-/// of a manifest use.
-fn used_keys(manifest: &BTreeMap<String, ManifestEntry>) -> BTreeSet<String> {
+/// of a manifest use. An attachment whose file is under a guard now is used
+/// by no note, also when an entry that the plan held still lists it.
+fn used_keys(manifest: &BTreeMap<String, ManifestEntry>, scan: &Scan) -> BTreeSet<String> {
     manifest
         .values()
         .filter(|entry| entry.state == State::Published)
         .flat_map(|entry| &entry.attachments)
+        .filter(|attachment| !scan.is_guarded_file(&attachment.path))
         .map(|attachment| key_of(&attachment.hash).to_owned())
         .collect()
+}
+
+/// True when a name has the form of a file of the attachment storage: a key,
+/// or a key that is being written (`.<key>.part`).
+fn is_storage_name(name: &str) -> bool {
+    let key = name
+        .strip_prefix('.')
+        .and_then(|rest| rest.strip_suffix(".part"))
+        .unwrap_or(name);
+    key.len() == 64
+        && key
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// The uploads of one publication to the attachment storage (PUB-39).
 struct Uploads<'a> {
     vault: &'a Vault,
     storage: &'a AttachmentStorage,
-    present: BTreeSet<String>,
+    /// The keys of the storage, listed before the first upload.
+    present: Option<BTreeSet<String>>,
     /// The keys that this run uploaded, in the order of the uploads.
     uploaded: Vec<String>,
 }
@@ -526,15 +542,9 @@ impl<'a> Uploads<'a> {
         Self {
             vault,
             storage,
-            present: BTreeSet::new(),
+            present: None,
             uploaded: Vec::new(),
         }
-    }
-
-    /// Lists the storage one time, before the first upload.
-    fn start(&mut self) -> Result<(), String> {
-        self.present = self.storage.list()?.into_iter().collect();
-        Ok(())
     }
 
     /// Uploads each attachment whose key the storage does not have yet. The
@@ -543,7 +553,17 @@ impl<'a> Uploads<'a> {
     fn upload(&mut self, attachments: &[Attachment]) -> Result<(), String> {
         for attachment in attachments {
             let key = key_of(&attachment.hash);
-            if self.present.contains(key) {
+            // The storage is listed one time, before the first upload: a
+            // publication with no upload, a takedown for example, never needs
+            // the storage.
+            if self.present.is_none() {
+                self.present = Some(self.storage.list()?.into_iter().collect());
+            }
+            if self
+                .present
+                .as_ref()
+                .is_some_and(|present| present.contains(key))
+            {
                 continue;
             }
             let bytes = self.vault.read_bytes(&attachment.path)?;
@@ -554,7 +574,9 @@ impl<'a> Uploads<'a> {
                 ));
             };
             self.storage.put(key, &bytes)?;
-            self.present.insert(key.to_owned());
+            if let Some(present) = self.present.as_mut() {
+                present.insert(key.to_owned());
+            }
             self.uploaded.push(key.to_owned());
         }
         Ok(())
@@ -563,8 +585,8 @@ impl<'a> Uploads<'a> {
     /// Deletes the uploads of this run that no published entry of the
     /// manifest lists (PUB-93). Every upload is tried. The result is the keys
     /// that could not be deleted.
-    fn take_back(&self, manifest: &BTreeMap<String, ManifestEntry>) -> Vec<String> {
-        let used = used_keys(manifest);
+    fn take_back(&self, manifest: &BTreeMap<String, ManifestEntry>, scan: &Scan) -> Vec<String> {
+        let used = used_keys(manifest, scan);
         self.uploaded
             .iter()
             .filter(|key| !used.contains(*key) && self.storage.remove(key).is_err())
@@ -581,13 +603,16 @@ struct Cleanup {
 
 /// Cleans the attachment storage: every file whose name is not the key of an
 /// attachment of a published entry goes (PUB-82, PUB-84, PUB-93). It reads no
-/// file of the storage. A deletion that fails gives a warning, and the next
-/// publication tries again.
+/// file of the storage. A name that is not in the form of a key is not a file
+/// of the storage: it stays, with a warning, so a folder given by mistake loses
+/// no file. A deletion that fails gives a warning, and the next publication
+/// tries again.
 fn clean_storage(
     storage: &AttachmentStorage,
     manifest: &BTreeMap<String, ManifestEntry>,
+    scan: &Scan,
 ) -> Cleanup {
-    let used = used_keys(manifest);
+    let used = used_keys(manifest, scan);
     let mut cleanup = Cleanup {
         deleted: Vec::new(),
         warnings: Vec::new(),
@@ -605,6 +630,13 @@ fn clean_storage(
     sort_by_code_point(&mut names);
     for name in names {
         if used.contains(&name) {
+            continue;
+        }
+        if !is_storage_name(&name) {
+            cleanup.warnings.push(json!({
+                "message": "the attachment storage holds a file whose name is not a key, and the tool leaves it: is the folder of the storage the right one?",
+                "path": name,
+            }));
             continue;
         }
         match storage.remove(&name) {
@@ -795,7 +827,6 @@ fn write_all(
     let Computed {
         plan, scan, texts, ..
     } = computed;
-    uploads.start()?;
     // The forced removals come first, and they are no unit of one note: a
     // failure stops the whole publication.
     let mut paths = remove_forced(journal, plan, scan)?;
@@ -918,7 +949,7 @@ pub fn publish(
             // next run, and an upload that stays would be public with no
             // entry.
             let stayed = journal.put_all_back();
-            let kept = uploads.take_back(&current.scan.manifest);
+            let kept = uploads.take_back(&current.scan.manifest, &current.scan);
             let files = if stayed.is_empty() {
                 "and the files of the copy are as they were before".to_owned()
             } else {
@@ -954,7 +985,7 @@ pub fn publish(
     }
     // The copy follows the content store: the run fetched it and was not
     // behind, and a push, when there was one, succeeded.
-    let cleanup = clean_storage(storage, &written.manifest);
+    let cleanup = clean_storage(storage, &written.manifest, &current.scan);
     let mut uploaded = uploads.uploaded.clone();
     sort_by_code_point(&mut uploaded);
     let mut warnings = correction.warnings;

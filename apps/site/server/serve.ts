@@ -122,14 +122,20 @@ async function attachmentResponse(request: Request, file: string, name: string):
         return notFound()
     }
     const size = blob.size
+    const type =
+        ATTACHMENT_TYPES[name.slice(name.lastIndexOf('.') + 1).toLowerCase()] ??
+        'application/octet-stream'
     const headers: Record<string, string> = {
         'accept-ranges': 'bytes',
         'cache-control': 'public, max-age=31536000, immutable',
-        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-        'content-type':
-            ATTACHMENT_TYPES[name.slice(name.lastIndexOf('.') + 1).toLowerCase()] ??
-            'application/octet-stream',
+        'content-type': type,
         'x-content-type-options': 'nosniff'
+    }
+    // An SVG or any other file opened alone runs no script. The viewer of a
+    // browser refuses a PDF in a sandbox, and it runs the PDF apart anyway.
+    if (type !== 'application/pdf') {
+        headers['content-security-policy'] =
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     }
     const range = rangeOf(request.headers.get('range'), size)
     if (range === null) {

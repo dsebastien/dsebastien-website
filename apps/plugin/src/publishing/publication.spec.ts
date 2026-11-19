@@ -813,6 +813,37 @@ describe('attachments of a publication', () => {
         expect(await storage(stores)).toEqual([IMAGE_KEY])
     })
 
+    // A takedown must never wait for the storage (business rules 4 and 16).
+    test('a forced removal with no upload needs no attachment storage', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publishNotes(setup, { include: [NOTE] })
+        await addIgnore(setup.vault, NOTE)
+        await rm(stores.attachmentStorage, { recursive: true })
+
+        const report = await publishNotes(setup, {})
+
+        expect(report.forcedRemoved).toEqual([NOTE])
+        expect(report.warnings.map((warning) => warning.path)).toEqual([''])
+        expect(await exists(join(setup.copy, 'notes', NOTE))).toBe(false)
+    })
+
+    test('a folder of the storage that holds other files loses none of them', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(stores.attachmentStorage, 'Inbox.md'), 'A note of the author\n')
+        await writeFile(join(stores.attachmentStorage, `${IMAGE_KEY}.png`), 'Not a key\n')
+
+        const report = await publishNotes(setup, { include: [NOTE] })
+
+        expect(report.attachmentsDeleted).toEqual([])
+        expect(report.warnings.map((warning) => warning.path)).toEqual([
+            'Inbox.md',
+            `${IMAGE_KEY}.png`
+        ])
+        expect(await storage(stores)).toEqual(['Inbox.md', `${IMAGE_KEY}.png`])
+    })
+
     test('a file that no published note uses leaves the storage at the next publication', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)

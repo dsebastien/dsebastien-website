@@ -264,6 +264,69 @@ fn a_note_whose_upload_fails_is_left_out_and_the_other_notes_are_published() {
     assert_eq!(setup.storage(), [IMAGE_KEY]);
 }
 
+/// A takedown must never wait for the storage (business rules 4 and 16).
+#[test]
+fn a_forced_removal_with_no_upload_goes_on_when_the_storage_cannot_be_listed() {
+    let setup = set_up();
+    setup.publish(&[NOTE], &[]);
+    setup.add_ignore(NOTE);
+    let id = setup.plan(&[], &[]);
+    let storage = setup.stores.attachment_storage();
+    // A storage that cannot be listed: the folder loses its rights, on a
+    // system that has them.
+    if !make_unlistable(storage) {
+        return;
+    }
+
+    let output = setup.apply(&id);
+    make_listable(storage);
+
+    let report: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|_| panic!("the report is JSON: {}", errors_of(&output)));
+    assert_eq!(paths(&report["forcedRemoved"]), [NOTE]);
+    assert_eq!(paths(&report["warnings"]), [""]);
+    assert!(!setup.copy.join("notes").join(NOTE).exists());
+}
+
+#[cfg(unix)]
+fn make_unlistable(folder: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(folder, fs::Permissions::from_mode(0o000))
+        .expect("the rights can be changed");
+    // A user with every right (root) can still list it: the test then proves nothing.
+    fs::read_dir(folder).is_err()
+}
+
+#[cfg(not(unix))]
+fn make_unlistable(_folder: &Path) -> bool {
+    false
+}
+
+#[cfg(unix)]
+fn make_listable(folder: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(folder, fs::Permissions::from_mode(0o755))
+        .expect("the rights can be changed");
+}
+
+#[cfg(not(unix))]
+fn make_listable(_folder: &Path) {}
+
+#[test]
+fn a_folder_of_the_storage_that_holds_other_files_loses_none_of_them() {
+    let setup = set_up();
+    let storage = setup.stores.attachment_storage();
+    let other = format!("{IMAGE_KEY}.png");
+    fs::write(storage.join("Inbox.md"), "A note of the author\n").expect("the file is written");
+    fs::write(storage.join(&other), "Not a key\n").expect("the file is written");
+
+    let report = setup.publish(&[NOTE], &[]);
+
+    assert_eq!(paths(&report["attachmentsDeleted"]), Vec::<String>::new());
+    assert_eq!(paths(&report["warnings"]), ["Inbox.md", other.as_str()]);
+    assert_eq!(setup.storage(), ["Inbox.md", other.as_str()]);
+}
+
 #[test]
 fn a_file_that_no_published_note_uses_leaves_the_storage_at_the_next_publication() {
     let setup = set_up();
