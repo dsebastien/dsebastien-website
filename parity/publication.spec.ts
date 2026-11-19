@@ -3,15 +3,17 @@ import { mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises
 import { dirname, join } from 'node:path'
 import {
     copyFixtureVault,
+    crashingStore,
     gitEnvironment,
     makeContentStoreCopy,
-    makeTestStores
+    makeTestStores,
+    rejectionOf
 } from '@dsebastien-website/testing'
 import { toCanonicalJson } from '../apps/plugin/src/publishing/canonical.ts'
 import type { CanonicalValue } from '../apps/plugin/src/publishing/canonical.ts'
 import { nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import type { Selection } from '../apps/plugin/src/publishing/plan.ts'
-import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
+import { plan, publish, status, unlock } from '../apps/plugin/src/publishing/tool.ts'
 import { buildRustProgram, runRustProgram } from './harness.ts'
 
 // The parity rule (ADR 0009, TEST-03 of the spec): for the same input, the
@@ -197,21 +199,26 @@ function storageOf(copy: string): string {
     return join(dirname(copy), 'attachment-storage')
 }
 
-type Implementation = (vault: string, copy: string, include: readonly string[]) => Promise<void>
+type Implementation = (
+    vault: string,
+    copy: string,
+    include: readonly string[],
+    time?: string
+) => Promise<void>
 
-const typescript: Implementation = async (vault, copy, include) => {
+const typescript: Implementation = async (vault, copy, include, time = TIME) => {
     const device = nodeDevice({
         vault,
         contentStore: copy,
         attachmentStorage: storageOf(copy)
     })
     const planned = await plan(device, { include })
-    await publish(device, planned.id, { time: TIME, device: DEVICE, face: 'command-line' })
+    await publish(device, planned.id, { time, device: DEVICE, face: 'command-line' })
 }
 
 let program: string
 
-const rust: Implementation = async (vault, copy, include) => {
+const rust: Implementation = async (vault, copy, include, time = TIME) => {
     const places = ['--vault', vault, '--content-store', copy]
     const planned = await runRustProgram(program, [
         'plan',
@@ -229,7 +236,7 @@ const rust: Implementation = async (vault, copy, include) => {
         '--plan',
         String(id),
         '--time',
-        TIME
+        time
     ])
     expect(published.stderr).toBe('')
 }
@@ -723,7 +730,7 @@ describe('parity of an empty queue', () => {
 
         expect(await queueOf(rustTool)).toBe(fromTypeScript)
         expect(fromTypeScript).toBe(
-            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "new": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": []\n}\n'
+            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "new": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": []\n}\n'
         )
     }, 120_000)
 })
@@ -824,5 +831,100 @@ describe('parity of the guards', () => {
         expect(Object.values(fromTypeScript)).toEqual(
             [...refused, NOT_UTF8, 'Welcome.md'].map(() => false)
         )
+    }, 120_000)
+})
+
+// A run that stops halfway (issue 36): each implementation must put back what
+// the other one left, and see the lock of the other one. One implementation
+// stops after its commit, before its push, as after a power cut; the other one
+// sees its lock, removes it, puts the copy back and publishes the same
+// selection. Both crossings must leave the same files, and the same files as
+// a run that never stopped.
+describe('parity of a publication that stops halfway', () => {
+    const FIRST = ['Welcome.md', '10 Garden/Bean trellis.md']
+    const SECOND = ['10 Garden/Frost dates explained.md', '10 Garden/Garden plan.md']
+    const EDITED = '10 Garden/Bean trellis.md'
+
+    type Stopper = 'typescript' | 'rust' | 'none'
+
+    /** What the second implementation said while the lock of the first one was there. */
+    interface Crossing extends Result {
+        lockedPlan: string
+        unlocked: string
+    }
+
+    async function crossing(stopper: Stopper): Promise<Crossing> {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const copy = await makeContentStoreCopy(stores)
+        const device = nodeDevice({ vault, contentStore: copy, attachmentStorage: storageOf(copy) })
+        const run = { time: TIME, device: DEVICE, face: 'command-line' } as const
+        const first = await plan(device, { include: FIRST })
+        await publish(device, first.id, run)
+        await writeFile(
+            join(vault, EDITED),
+            `${await Bun.file(join(vault, EDITED)).text()}\nMore\n`
+        )
+        const later = { ...run, time: '2031-04-02T09:00:00Z' }
+        const places = ['--vault', vault, '--content-store', copy]
+        const include = SECOND.flatMap((path) => ['--include', path])
+        let lockedPlan = ''
+        let unlocked = ''
+        if (stopper === 'typescript') {
+            const planned = await plan(device, { include: SECOND })
+            const stopped = crashingStore(device.store, copy, 'commit')
+            void publish({ ...device, store: stopped.store }, planned.id, later)
+            await stopped.reached
+            lockedPlan = (await runRustProgram(program, ['plan', ...places, ...include])).stderr
+            unlocked = new TextDecoder().decode(
+                (await runRustProgram(program, ['unlock', '--content-store', copy])).stdout
+            )
+            await rust(vault, copy, SECOND, later.time)
+        } else if (stopper === 'rust') {
+            const planned = await runRustProgram(program, ['plan', ...places, ...include])
+            const { id } = JSON.parse(new TextDecoder().decode(planned.stdout)) as { id: string }
+            const stopped = await runRustProgram(
+                program,
+                [
+                    'publish',
+                    ...places,
+                    '--attachment-storage',
+                    storageOf(copy),
+                    '--plan',
+                    id,
+                    '--time',
+                    later.time
+                ],
+                { DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH: 'commit' }
+            )
+            expect(stopped.exitCode).not.toBe(0)
+            lockedPlan = await rejectionOf(plan(device, { include: SECOND }))
+            unlocked = String(await unlock(device))
+            await typescript(vault, copy, SECOND, later.time)
+        } else {
+            await typescript(vault, copy, SECOND, later.time)
+        }
+        return { ...(await resultOf(vault, copy)), lockedPlan, unlocked }
+    }
+
+    test('each implementation sees the lock of the other, puts its run back and publishes the same files', async () => {
+        const stoppedInTypeScript = await crossing('typescript')
+        const stoppedInRust = await crossing('rust')
+        const neverStopped = await crossing('none')
+
+        expect(stoppedInTypeScript.lockedPlan).toContain('unlock')
+        expect(stoppedInRust.lockedPlan).toContain('unlock')
+        expect(stoppedInTypeScript.unlocked).toBe('{\n  "removed": true\n}\n')
+        expect(stoppedInRust.unlocked).toBe('true')
+        for (const crossed of [stoppedInTypeScript, stoppedInRust]) {
+            expect(crossed.store).toEqual(neverStopped.store)
+            expect(crossed.vault).toEqual(neverStopped.vault)
+            expect(crossed.storage).toEqual(neverStopped.storage)
+        }
+        // The comparison has something to compare: the notes of both runs.
+        expect(Object.keys(neverStopped.store).filter((path) => path.startsWith('notes/'))).toEqual(
+            [...FIRST, ...SECOND].map((path) => `notes/${path}`).sort()
+        )
+        expect(Object.keys(neverStopped.storage)).toEqual([IMAGE_KEY])
     }, 120_000)
 })

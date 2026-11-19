@@ -2,7 +2,7 @@ import { attachmentsOf, FileReader, sameAttachments } from './attachments.ts'
 import { CLEANING_VERSION, sourceOf, STATE_PROPERTY } from './clean.ts'
 import type { Configuration } from './configuration.ts'
 import { removeProperty, setProperty } from './frontmatter.ts'
-import { guardOf } from './guards.ts'
+import { guardOf, guardOfPath } from './guards.ts'
 import { contentHash } from './hash.ts'
 import { LinkIndex, linkPathsOf, linksOfPaths, sameLinks } from './links.ts'
 import type { ManifestEntry } from './manifest.ts'
@@ -35,6 +35,11 @@ export type QueueLists = {
         readonly toRemove: number
         readonly unchanged: number
     }
+    /**
+     * The notes of `toRemove` whose file this device does not have and that no
+     * guard excludes: missing from this vault. Never selected by default (PUB-95).
+     */
+    readonly missing: readonly string[]
     /** The candidates. */
     readonly new: readonly string[]
     /** The notes of `changed` that the author did not edit: the cleaning step gives another result. */
@@ -68,8 +73,6 @@ export interface Scan {
     readonly guarded: ReadonlySet<string>
     /** The files that the notes link to, each one read one time per run. */
     readonly files: FileReader
-    /** The names of the notes in the folders of the deny list, in small letters. No file of those folders is read. */
-    readonly deniedNames: ReadonlySet<string>
     /**
      * True when the file of an attachment of a manifest entry is under a
      * guard now: its path is in a folder of the deny list, or a file of its
@@ -253,6 +256,19 @@ export async function computeQueue(input: {
             lists.new.push(path)
         }
     }
+    // The notes of the folders of the deny list, by their names: a published
+    // note that is missing may have moved there.
+    const deniedNames = new Set([...deniedFileNames].filter((name) => name.endsWith('.md')))
+    // A published note waits for its removal under a guard when its path is in
+    // a folder of the deny list, it has the ignore property, or its file is
+    // missing and a note of its name is in a folder of the deny list (it moved
+    // there). Every other one is only missing from this vault.
+    const missing = lists.toRemove.filter(
+        (path) =>
+            guardOfPath(path, input.configuration) === undefined &&
+            !ignored.has(path) &&
+            !deniedNames.has(path.slice(path.lastIndexOf('/') + 1).toLowerCase())
+    )
     const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
         counts: {
@@ -261,6 +277,7 @@ export async function computeQueue(input: {
             toRemove: lists.toRemove.length,
             unchanged: lists.unchanged.length
         },
+        missing: sortByCodePoint(missing),
         new: sortByCodePoint(lists.new),
         technicalUpdates: sortByCodePoint(lists.technicalUpdates),
         toRemove: sortByCodePoint(lists.toRemove),
@@ -273,9 +290,6 @@ export async function computeQueue(input: {
         index,
         guarded,
         files,
-        // The notes of the folders of the deny list, by their names: a
-        // published note that is missing may have moved there.
-        deniedNames: new Set([...deniedFileNames].filter((name) => name.endsWith('.md'))),
         isGuardedFile: async (path, hash) => {
             if (input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
                 return true

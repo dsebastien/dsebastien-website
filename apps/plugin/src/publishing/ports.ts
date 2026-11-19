@@ -31,6 +31,11 @@ export interface Vault {
     readBytes(path: string): Promise<Uint8Array | undefined>
     /** True when the vault has a folder with exactly this vault path, which is not a symbolic link. */
     hasFolder(path: string): Promise<boolean>
+    /**
+     * Writes the text of a note. A stop of the process during the write never
+     * leaves the note empty or half written: the text goes into a hidden file
+     * of the same folder first, which is then renamed.
+     */
     write(path: string, text: string): Promise<void>
     /**
      * The vault for one run of the tool (`status`, `plan`, `publish`). It lists
@@ -42,18 +47,47 @@ export interface Vault {
     forRun(): Vault
 }
 
+/**
+ * How a check of the copy reaches the content store: `none` reads no network
+ * (`status`), `try` fetches and uses the last fetch when the content store
+ * cannot be reached (`plan`), `must` fetches and throws when it cannot
+ * (`publish`).
+ */
+export type Fetch = 'none' | 'try' | 'must'
+
+/** What a check of the copy found. */
+export interface Verified {
+    /** The number of commits of the branch `main` of the content store, at the last fetch, that the copy does not have. */
+    readonly behind: number
+    /** False when the check tried to fetch and the content store could not be reached. */
+    readonly reached: boolean
+}
+
+/** What the copy did with the files of a publication that stopped halfway. */
+export type Recovery = 'pushed' | 'undone'
+
 /** The copy of the content store on this device. */
 export interface ContentStore {
     /**
      * Throws when the folder is not the root of its own git repository, or
      * when the copy has commits that the content store does not have: a
      * publication that git could not take back would else be pushed later.
-     * With `fetch`, it fetches the content store first, and throws when the
-     * content store cannot be reached. It gives the number of commits of the
-     * branch `main` of the content store, at the last fetch, that the copy
-     * does not have.
+     * It fetches the content store first unless `fetch` is `none`.
      */
-    verify(fetch: boolean): Promise<number>
+    verify(fetch: Fetch): Promise<Verified>
+    /** The commit of the copy, or `undefined` when the copy has no commit. */
+    head(): Promise<string | undefined>
+    /**
+     * Puts back what a publication that stopped halfway left, by the rules of
+     * the run journal (`documentation/Canonical Form.md`, "Failure cases"):
+     * `head` is the commit before the run, and `paths` are the files that the
+     * run could write. `pushed` when the commit of the run arrived in the
+     * content store: nothing is put back. `undone` when the copy is back at
+     * `head`, with each path as `head` has it. Throws when the copy has
+     * another commit, or when the tool must know whether the push arrived and
+     * the content store cannot be reached.
+     */
+    recover(head: string | undefined, paths: readonly string[]): Promise<Recovery>
     /**
      * The text of a file, by its path in the content store. `undefined` only
      * when there is no such file. It throws when the file cannot be read or is
@@ -95,10 +129,41 @@ export interface AttachmentStorage {
     remove(name: string): Promise<boolean>
 }
 
-/** The plans of this device. They are stored outside the vault and outside the content of the store. */
-export interface PlanStore {
+/**
+ * Who holds the lock of the device: a publication, with its device, its face
+ * and its time, or a plan while it puts the copy back.
+ */
+export type LockHolder =
+    | {
+          readonly command: 'publish'
+          readonly device: string
+          readonly face: string
+          readonly time: string
+      }
+    | { readonly command: 'plan' }
+
+/**
+ * The files of this device: the plans, the lock and the run journal. They are
+ * stored outside the vault and outside the content of the store.
+ */
+export interface LocalStore {
     save(id: string, record: string): Promise<void>
     load(id: string): Promise<string | undefined>
+    /**
+     * Takes the lock of the device for a run, in one create: the file is made
+     * only when no lock exists, with the holder and the id of the process.
+     * `undefined` when the lock was taken, else the text of the lock that is
+     * there.
+     */
+    lock(holder: LockHolder): Promise<string | undefined>
+    /** The text of the lock, or `undefined` when no lock exists. */
+    readLock(): Promise<string | undefined>
+    /** Removes the lock. True when a lock existed. */
+    unlock(): Promise<boolean>
+    saveJournal(text: string): Promise<void>
+    /** The text of the run journal, or `undefined` when there is none. */
+    loadJournal(): Promise<string | undefined>
+    removeJournal(): Promise<void>
 }
 
 /** Everything that a publication needs on one device. */
@@ -106,5 +171,5 @@ export interface Device {
     readonly vault: Vault
     readonly store: ContentStore
     readonly attachments: AttachmentStorage
-    readonly plans: PlanStore
+    readonly local: LocalStore
 }

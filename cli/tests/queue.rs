@@ -185,13 +185,22 @@ impl Setup {
     }
 
     fn run(&self, command: &str, arguments: &[&str]) -> Output {
+        self.run_with(command, arguments, None)
+    }
+
+    /// Runs a command. With a crash point, the run stops there, as after a
+    /// power cut: the switch exists only in a debug build of the program.
+    fn run_with(&self, command: &str, arguments: &[&str], crash: Option<&str>) -> Output {
         let mut program = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
-        program
-            .arg(command)
-            .arg("--vault")
-            .arg(&self.vault)
-            .arg("--content-store")
-            .arg(&self.copy);
+        program.arg(command);
+        // The lock is a file of the copy: `unlock` needs no vault.
+        if command != "unlock" {
+            program.arg("--vault").arg(&self.vault);
+        }
+        program.arg("--content-store").arg(&self.copy);
+        if let Some(point) = crash {
+            program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", point);
+        }
         if command == "publish" {
             program
                 .arg("--attachment-storage")
@@ -298,6 +307,13 @@ fn report_lists(report: &Value) -> Value {
     lists
 }
 
+/// The command stopped with an error and wrote nothing to its output.
+fn assert_refused(output: &Output, label: &str) {
+    assert_eq!(output.status.code(), Some(1), "{label}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "", "{label}");
+    assert!(errors_of(output).starts_with("error: "), "{label}");
+}
+
 fn run_step(setup: &Setup, step: &Value, label: &str) {
     match step["do"].as_str().expect("a step says what it does") {
         "write" => write_files(&setup.vault, &step["files"]),
@@ -307,17 +323,59 @@ fn run_step(setup: &Setup, step: &Value, label: &str) {
             }
         }
         "store" => push_to_store(&setup.copy, &step["files"]),
+        "status" if step["refused"] == json!(true) => {
+            assert_refused(&setup.run("status", &[]), label);
+        }
         "status" => assert_eq!(setup.status(), step["queue"], "{label}"),
         "plan" => {
             let output = setup.plan(&step["selection"]);
             if step["refused"] == json!(true) {
-                assert_eq!(output.status.code(), Some(1), "{label}");
-                assert_eq!(String::from_utf8_lossy(&output.stdout), "", "{label}");
-                assert!(errors_of(&output).starts_with("error: "), "{label}");
+                assert_refused(&output, label);
             } else {
                 assert!(output.status.success(), "{label}: {}", errors_of(&output));
                 assert_eq!(json_of(&output)["plan"], step["plan"], "{label}");
+                let offline = step.get("offline").cloned().unwrap_or(json!(false));
+                assert_eq!(json_of(&output)["offline"], offline, "{label}");
             }
+        }
+        "crash" => {
+            let time = step["time"].as_str().expect("a publication has a time");
+            let point = step["at"].as_str().expect("a crash has a point");
+            let id = setup.plan_id(&step["selection"]);
+            let output = setup.run_with(
+                "publish",
+                &["--plan", &id, "--time", time, "--device", "garden-shed"],
+                Some(point),
+            );
+            assert!(!output.status.success(), "{label}: the run did not stop");
+        }
+        "unlock" => {
+            let output = setup.run("unlock", &[]);
+            assert!(output.status.success(), "{label}: {}", errors_of(&output));
+            assert_eq!(json_of(&output), json!({ "removed": true }), "{label}");
+        }
+        "offline" => {
+            let unreachable = setup.stores.root().join("unreachable");
+            setup.git(&["remote", "set-url", "origin", text(&unreachable)]);
+        }
+        "online" => {
+            setup.git(&[
+                "remote",
+                "set-url",
+                "origin",
+                text(setup.stores.content_store()),
+            ]);
+        }
+        "lose" => {
+            for key in paths(&step["keys"]) {
+                fs::remove_file(setup.stores.attachment_storage().join(key))
+                    .expect("the file of the storage can be removed");
+            }
+        }
+        "publish" if step["refused"] == json!(true) => {
+            let time = step["time"].as_str().expect("a publication has a time");
+            let id = setup.plan_id(&step["selection"]);
+            assert_refused(&setup.publish_plan(&id, time), label);
         }
         "publish" => {
             let time = step["time"].as_str().expect("a publication has a time");
@@ -372,7 +430,8 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
     assert_eq!(
         kinds,
         [
-            "delete", "expect", "plan", "publish", "status", "store", "write"
+            "crash", "delete", "expect", "lose", "offline", "online", "plan", "publish", "status",
+            "store", "unlock", "write"
         ]
     );
 }
@@ -410,7 +469,7 @@ fn the_status_of_an_empty_vault_is_the_empty_queue() {
     assert_eq!(errors_of(&output), "");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"new\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": []\n}\n"
+        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"new\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": []\n}\n"
     );
 }
 
@@ -1555,11 +1614,20 @@ fn a_commit_that_git_cannot_take_back_stops_the_next_run() {
     assert_eq!(setup.git(&["diff", "--cached", "--name-only", &before]), "");
     assert!(!setup.copy.join("notes").join(NOTE).exists());
     fs::remove_file(hooks.join("reference-transaction")).expect("the hook can be removed");
-    for command in ["status", "plan"] {
-        let output = setup.run(command, &[]);
-        assert_eq!(output.status.code(), Some(1), "{command}");
-        assert!(errors_of(&output).contains("does not have"), "{command}");
-    }
+    // The journal of the run is still there: status writes nothing, and the
+    // next plan takes the commit back, which the content store never got
+    // (R46).
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("stopped halfway"),
+        "{}",
+        errors_of(&output)
+    );
+    let output = setup.plan(&json!({ "include": [NOTE] }));
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(json_of(&output)["plan"]["publish"], json!([NOTE]));
+    assert_eq!(setup.git(&["rev-parse", "HEAD"]), before);
 }
 
 /// The hooks that make git refuse to move a branch after the first commit:
@@ -1612,10 +1680,27 @@ fn a_first_commit_that_git_cannot_take_back_stops_the_next_run() {
     let output = setup.run("status", &[]);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        errors_of(&output).contains("does not have"),
+        errors_of(&output).contains("stopped halfway"),
         "{}",
         errors_of(&output)
     );
+    // The next plan takes the first commit back: the copy has no commit
+    // again.
+    let output = setup.plan(&json!({ "include": ["Welcome.md"] }));
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(json_of(&output)["plan"]["publish"], json!(["Welcome.md"]));
+    let head = Command::new("git")
+        .args([
+            "-C",
+            text(&setup.copy),
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "HEAD",
+        ])
+        .output()
+        .expect("git starts");
+    assert!(!head.status.success());
 }
 
 /// A commit of the copy that the content store has on another branch is not
@@ -2564,7 +2649,8 @@ fn a_copy_that_never_fetched_stops_plan_until_the_pull() {
 }
 
 #[test]
-fn status_needs_no_network_and_plan_stops_when_the_content_store_cannot_be_reached() {
+fn status_needs_no_network_a_plan_uses_the_last_fetch_and_publish_stops_when_the_content_store_cannot_be_reached()
+ {
     let setup = Setup::fixture();
     setup.publish(&json!({ "include": [NOTE] }), TIME);
     let store = setup.stores.content_store().to_path_buf();
@@ -2572,14 +2658,71 @@ fn status_needs_no_network_and_plan_stops_when_the_content_store_cannot_be_reach
     fs::rename(&store, &away).expect("the store can be moved");
 
     let queue = setup.status();
-    let output = setup.plan(&json!({ "include": [SECOND] }));
+    let planned = setup.plan(&json!({ "include": [SECOND] }));
+    let id = json_of(&planned)["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let published = setup.publish_plan(&id, LATER);
     fs::rename(&away, &store).expect("the store can be moved back");
 
     assert_eq!(paths(&queue["unchanged"]), [NOTE]);
-    assert_eq!(output.status.code(), Some(1));
+    assert!(planned.status.success(), "{}", errors_of(&planned));
+    assert_eq!(json_of(&planned)["offline"], json!(true));
+    assert_eq!(json_of(&planned)["plan"]["publish"], json!([SECOND]));
+    assert!(errors_of(&planned).contains("cannot be reached"));
+    assert_eq!(published.status.code(), Some(1));
     assert!(
-        errors_of(&output).contains("cannot be reached"),
+        errors_of(&published).contains("cannot be reached"),
         "{}",
-        errors_of(&output)
+        errors_of(&published)
     );
+    assert_eq!(
+        paths(&setup.publish(&json!({ "include": [SECOND] }), LATER)["published"]),
+        [SECOND]
+    );
+}
+
+/// The lock of the device (issue 36, TOOL-09): one publication at a time on a
+/// device, for every face. A lock with no journal is a publication that runs
+/// and has not written yet: status, plan and publish all wait.
+#[test]
+fn a_lock_stops_status_plan_and_publish_and_unlock_removes_it() {
+    let setup = Setup::fixture();
+    let id = setup.plan_id(&json!({ "include": [NOTE] }));
+    let lock = setup.copy.join(".git").join("vault-publish").join("lock");
+    fs::write(
+        &lock,
+        "{\n  \"command\": \"publish\",\n  \"process\": 1\n}\n",
+    )
+    .expect("the lock can be written");
+
+    for output in [
+        setup.run("status", &[]),
+        setup.plan(&json!({ "include": [NOTE] })),
+        setup.publish_plan(&id, TIME),
+    ] {
+        assert_refused(&output, "a lock");
+        assert!(
+            errors_of(&output).contains("unlock"),
+            "{}",
+            errors_of(&output)
+        );
+    }
+    // A refused run leaves the lock of the other run.
+    assert!(lock.exists());
+
+    assert_eq!(
+        json_of(&setup.run("unlock", &[])),
+        json!({ "removed": true })
+    );
+    assert_eq!(
+        json_of(&setup.run("unlock", &[])),
+        json!({ "removed": false })
+    );
+    let output = setup.publish_plan(&id, TIME);
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(paths(&json_of(&output)["published"]), [NOTE]);
+    // A publication removes its own lock at its end.
+    assert!(!lock.exists());
 }

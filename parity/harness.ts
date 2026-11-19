@@ -68,9 +68,21 @@ export interface RustRun {
     stderr: string
 }
 
-/** Runs the Rust program with the arguments. */
-export async function runRustProgram(program: string, args: readonly string[]): Promise<RustRun> {
-    const child = Bun.spawn([program, ...args], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' })
+/**
+ * Runs the Rust program with the arguments. `environment` adds variables, for
+ * example the crash switch of its debug build.
+ */
+export async function runRustProgram(
+    program: string,
+    args: readonly string[],
+    environment: Record<string, string> = {}
+): Promise<RustRun> {
+    const child = Bun.spawn([program, ...args], {
+        cwd: ROOT,
+        env: { ...process.env, ...environment },
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
     const [stdout, stderr] = await Promise.all([
         new Response(child.stdout).bytes(),
         new Response(child.stderr).text()

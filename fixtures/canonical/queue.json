@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Every expected value is written by hand. The hashes were computed with sha256sum.",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\" or a \"publish\" with \"refused\" states that the command stops. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -27,6 +27,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -102,6 +103,7 @@
                             "toRemove": 0,
                             "unchanged": 3
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -133,6 +135,7 @@
                             "toRemove": 1,
                             "unchanged": 1
                         },
+                        "missing": ["Beta.md"],
                         "new": ["Delta.md"],
                         "technicalUpdates": [],
                         "toRemove": ["Beta.md"],
@@ -520,6 +523,7 @@
                             "toRemove": 0,
                             "unchanged": 3
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -580,6 +584,7 @@
                             "toRemove": 0,
                             "unchanged": 2
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -605,6 +610,7 @@
                             "toRemove": 1,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": ["Folder/Gamma.md"],
@@ -697,6 +703,7 @@
                             "toRemove": 0,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -729,6 +736,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": ["Other.md", "Published.md", "Windows.md", "Wrong.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -843,6 +851,7 @@
                             "toRemove": 0,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": ["Other.md", "Windows.md", "Wrong.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -927,6 +936,7 @@
                             "toRemove": 0,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": ["Other.md", "Windows.md", "Wrong.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1024,6 +1034,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": ["Note.md"],
                         "toRemove": [],
@@ -1076,6 +1087,7 @@
                             "toRemove": 0,
                             "unchanged": 2
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1106,6 +1118,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": ["Nested.md", "Open.md", "Other.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1155,6 +1168,7 @@
                             "toRemove": 2,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": ["Other.md"],
                         "technicalUpdates": [],
                         "toRemove": ["Nested.md", "Open.md"],
@@ -1210,6 +1224,7 @@
                             "toRemove": 0,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1319,6 +1334,7 @@
                             "toRemove": 4,
                             "unchanged": 0
                         },
+                        "missing": ["Lost.md"],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
@@ -1467,6 +1483,7 @@
                             "toRemove": 1,
                             "unchanged": 0
                         },
+                        "missing": ["Lost.md"],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md"],
@@ -1492,6 +1509,7 @@
                             "toRemove": 1,
                             "unchanged": 0
                         },
+                        "missing": ["Lost.md"],
                         "new": ["Marked.md"],
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md"],
@@ -1613,6 +1631,7 @@
                             "toRemove": 0,
                             "unchanged": 2
                         },
+                        "missing": [],
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1648,6 +1667,7 @@
                             "toRemove": 0,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": [],
@@ -1698,6 +1718,7 @@
                             "toRemove": 0,
                             "unchanged": 2
                         },
+                        "missing": [],
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1723,6 +1744,7 @@
                             "toRemove": 1,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": ["Folder/Deep.md", "Folder/Sub/Secret.md", "Hidden.md", "Later.md"],
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": ["Leaf.md"],
@@ -1804,6 +1826,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": ["Block.md", "Flow.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1869,6 +1892,7 @@
                             "toRemove": 0,
                             "unchanged": 2
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1954,6 +1978,7 @@
                             "toRemove": 0,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": ["Mid.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -1988,6 +2013,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": ["Notes/Plan.md", "Notes/Shed.md"],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -2047,6 +2073,7 @@
                             "toRemove": 0,
                             "unchanged": 2
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": [],
                         "toRemove": [],
@@ -2074,6 +2101,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
                         "toRemove": [],
@@ -2147,6 +2175,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
                         "toRemove": [],
@@ -2216,6 +2245,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
                         "toRemove": [],
@@ -2354,6 +2384,7 @@
                             "toRemove": 0,
                             "unchanged": 0
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": ["Pub/A.md"],
                         "toRemove": [],
@@ -2533,6 +2564,7 @@
                             "toRemove": 0,
                             "unchanged": 1
                         },
+                        "missing": [],
                         "new": [],
                         "technicalUpdates": ["Pub/A.md", "Pub/C.md"],
                         "toRemove": [],
@@ -2573,6 +2605,687 @@
                     "store": {},
                     "attachmentStorage": {
                         "61eedc1aa70bd38adc2eedfebb6b1601bffd23007ca16a5ba1d629b683514388": "A public photo\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a publication that stops before its commit gives the same result when it is run again",
+            "denyList": [],
+            "vault": {
+                "Keep.md": "Keep\n",
+                "Hide.md": "Hide\n",
+                "Edit.md": "Edit\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "three notes are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Keep.md", "Hide.md", "Edit.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Edit.md", "Hide.md", "Keep.md"],
+                        "published": ["Edit.md", "Hide.md", "Keep.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "one note gets the ignore property, one is edited, and one is new",
+                    "files": {
+                        "Hide.md": "---\npublish_ignore: true\n---\nHide\n",
+                        "Edit.md": "Edit\nMore\n",
+                        "New.md": "New\n"
+                    }
+                },
+                {
+                    "do": "crash",
+                    "why": "the publication stops after its writes into the copy, before its commit",
+                    "selection": {
+                        "hold": [],
+                        "include": ["New.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "at": "write"
+                },
+                {
+                    "do": "expect",
+                    "why": "the copy holds the files of the run that stopped: the forced removal and the new note",
+                    "vault": {
+                        "New.md": "New\n"
+                    },
+                    "store": {
+                        "notes/Hide.md": null,
+                        "notes/New.md": "New\n",
+                        "notes/Edit.md": "Edit\nMore\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the lock of the run is still there, so the queue is not read",
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "no plan while the lock is there",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock of the run that stopped"
+                },
+                {
+                    "do": "status",
+                    "why": "the journal says that a publication stopped halfway: status writes nothing, so it stops",
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan puts the copy back first, and the note under the guard is still a forced removal",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Hide.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Edit.md"]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the copy is the content store again: the note under the guard is still there, and the new note is not",
+                    "vault": {},
+                    "store": {
+                        "notes/Hide.md": "Hide\n",
+                        "notes/New.md": null,
+                        "notes/Edit.md": "Edit\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the queue is the queue before the run that stopped",
+                    "queue": {
+                        "changed": ["Edit.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["New.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Hide.md"],
+                        "unchanged": ["Keep.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the same selection gives the result of a run that never stopped",
+                    "selection": {
+                        "hold": [],
+                        "include": ["New.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": ["Hide.md"],
+                        "propertyRemoved": [],
+                        "propertySet": ["Edit.md", "New.md"],
+                        "published": ["New.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Edit.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note under the guard left the content store, and the new note is published",
+                    "vault": {
+                        "New.md": "---\npublic_note: true\n---\nNew\n",
+                        "Edit.md": "---\npublic_note: true\n---\nEdit\nMore\n",
+                        "Hide.md": "---\npublish_ignore: true\n---\nHide\n"
+                    },
+                    "store": {
+                        "notes/Hide.md": null,
+                        "notes/New.md": "New\n",
+                        "notes/Edit.md": "Edit\nMore\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "nothing waits",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 3
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Edit.md", "Keep.md", "New.md"],
+                        "behind": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a publication that stops after its commit, before its push",
+            "denyList": [],
+            "vault": {
+                "One.md": "One\n",
+                "Two.md": "Two\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "one note is published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["One.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["One.md"],
+                        "published": ["One.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "crash",
+                    "why": "the publication of the second note stops after its commit",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "at": "commit"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "offline",
+                    "why": "the content store cannot be reached"
+                },
+                {
+                    "do": "plan",
+                    "why": "without a network the tool cannot know if the push arrived, so it puts nothing back and stops",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "online",
+                    "why": "the network is back"
+                },
+                {
+                    "do": "plan",
+                    "why": "the push did not arrive: the commit is taken back, and the note is a candidate again",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": ["Two.md"],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the copy is the content store again",
+                    "vault": {
+                        "Two.md": "Two\n"
+                    },
+                    "store": {
+                        "notes/Two.md": null,
+                        "notes/One.md": "One\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the same selection publishes the note, with no forced push",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Two.md"],
+                        "published": ["Two.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "both notes are published",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["One.md", "Two.md"],
+                        "behind": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a publication that stops after its push, before the correction of the property",
+            "denyList": [],
+            "vault": {
+                "One.md": "One\n",
+                "Two.md": "Two\n"
+            },
+            "steps": [
+                {
+                    "do": "crash",
+                    "why": "the publication stops just after its push",
+                    "selection": {
+                        "hold": [],
+                        "include": ["One.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "at": "push"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "expect",
+                    "why": "the note is published, and its property is not corrected yet",
+                    "vault": {
+                        "One.md": "One\n"
+                    },
+                    "store": {
+                        "notes/One.md": "One\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "status reads no network, so it cannot know that the push arrived, and it stops",
+                    "refused": true
+                },
+                {
+                    "do": "plan",
+                    "why": "the push arrived: nothing is put back, and nothing waits",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the queue sees the published note",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["Two.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["One.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a publication with nothing to commit corrects the property that the stopped run owed",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["One.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the published note has its property",
+                    "vault": {
+                        "One.md": "---\npublic_note: true\n---\nOne\n",
+                        "Two.md": "Two\n"
+                    },
+                    "store": {}
+                },
+                {
+                    "do": "publish",
+                    "why": "the correction was owed one time only",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T10:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "without a network, a plan can be computed and a publication is refused",
+            "denyList": [],
+            "vault": {
+                "One.md": "One\n",
+                "Two.md": "Two\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "one note is published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["One.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["One.md"],
+                        "published": ["One.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "offline",
+                    "why": "the content store cannot be reached"
+                },
+                {
+                    "do": "status",
+                    "why": "status reads no network",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["Two.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["One.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan uses the last fetch, and says so",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": ["Two.md"],
+                        "remove": [],
+                        "update": []
+                    },
+                    "offline": true
+                },
+                {
+                    "do": "publish",
+                    "why": "a publication without a network is refused",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "refused": true
+                },
+                {
+                    "do": "expect",
+                    "why": "nothing changed",
+                    "vault": {
+                        "Two.md": "Two\n"
+                    },
+                    "store": {
+                        "notes/Two.md": null
+                    }
+                },
+                {
+                    "do": "online",
+                    "why": "the network is back"
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication works again",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Two.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Two.md"],
+                        "published": ["Two.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a file that is missing from the attachment storage is uploaded again",
+            "denyList": [],
+            "vault": {
+                "A.md": "![[one.png]]\n",
+                "B.md": "![[two.png]]\n",
+                "one.png": "One image\n",
+                "two.png": "Two image\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "two notes with one file each",
+                    "selection": {
+                        "hold": [],
+                        "include": ["A.md", "B.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "04548991059afa4fdf8ec9d7ece4359bb77a4e7892e49490aa55a06f4b8aa237",
+                            "2184ece48d7866e4ebb37fc36cd7bf5114aef80fbee312de2373236f098acc21"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md", "B.md"],
+                        "published": ["A.md", "B.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "lose",
+                    "why": "the cleanup of another device deletes both files",
+                    "keys": [
+                        "2184ece48d7866e4ebb37fc36cd7bf5114aef80fbee312de2373236f098acc21",
+                        "04548991059afa4fdf8ec9d7ece4359bb77a4e7892e49490aa55a06f4b8aa237"
+                    ]
+                },
+                {
+                    "do": "delete",
+                    "why": "the file of the second note leaves the vault",
+                    "paths": ["two.png"]
+                },
+                {
+                    "do": "publish",
+                    "why": "a publication that holds the second note uploads the file of the first one again, and warns for both",
+                    "selection": {
+                        "hold": ["B.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "2184ece48d7866e4ebb37fc36cd7bf5114aef80fbee312de2373236f098acc21"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["B.md"],
+                        "updated": [],
+                        "warnings": ["one.png", "two.png"]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the file that the vault still has is in the storage again",
+                    "vault": {},
+                    "store": {},
+                    "attachmentStorage": {
+                        "2184ece48d7866e4ebb37fc36cd7bf5114aef80fbee312de2373236f098acc21": "One image\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "nothing is missing that the vault has: no upload, one warning",
+                    "selection": {
+                        "hold": ["B.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T10:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["B.md"],
+                        "updated": [],
+                        "warnings": ["two.png"]
                     }
                 }
             ]

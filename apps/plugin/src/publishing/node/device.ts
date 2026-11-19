@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process'
+import { constants } from 'node:fs'
 import {
+    access,
     lstat,
     mkdir,
     readdir,
@@ -10,14 +12,15 @@ import {
     unlink,
     writeFile
 } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
+import { toCanonicalJson } from '../canonical.ts'
 import { compareCodePoints } from '../order.ts'
 import type {
     AttachmentStorage,
     ContentStore,
     Device,
-    PlanStore,
+    LocalStore,
     Vault,
     VaultEntry
 } from '../ports.ts'
@@ -50,6 +53,33 @@ function codeOf(error: unknown): string {
 async function writeText(path: string, text: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, text, 'utf8')
+}
+
+/**
+ * Writes a file in two steps: the text goes into a hidden file of the same
+ * folder, which is then renamed to the name of the file. A stop of the
+ * process during the write never leaves the file empty or half written. A
+ * name that starts with a dot is not part of the vault for the scan and for
+ * Obsidian.
+ */
+async function writeWhole(path: string, text: string): Promise<void> {
+    // A rename would replace a file that the author made read only.
+    try {
+        await access(path, constants.W_OK)
+    } catch (error) {
+        if (codeOf(error) !== 'ENOENT') {
+            throw new Error(`${path} cannot be written: ${codeOf(error)}`, { cause: error })
+        }
+    }
+    await mkdir(dirname(path), { recursive: true })
+    const temporary = join(dirname(path), `.${basename(path)}.vault-publish`)
+    await writeFile(temporary, text, 'utf8')
+    try {
+        await rename(temporary, path)
+    } catch (error) {
+        await rm(temporary, { force: true })
+        throw error
+    }
 }
 
 /** The files and the folders of one folder, by name. A symbolic link is neither. */
@@ -152,7 +182,7 @@ function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): 
         },
         readBytes: bytesOf,
         hasFolder: async (path) => (await exactEntry(path)) === 'folder',
-        write: (path, text) => writeText(join(folder, path), text),
+        write: (path, text) => writeWhole(join(folder, path), text),
         forRun: () => folderVault(folder, new Map())
     }
 }
@@ -234,6 +264,9 @@ function waysOut(different: readonly { code: string; path: string }[]): string {
     return `${ways.join('. ')}. Only the tool writes the manifest`
 }
 
+/** The content store cannot be reached: no network, or no such repository. */
+class Unreachable extends Error {}
+
 function gitContentStore(folder: string): ContentStore {
     /** Runs git in the copy. The input goes to its standard input. */
     const gitWith = async (
@@ -259,6 +292,52 @@ function gitContentStore(folder: string): ContentStore {
     }
     const gitRaw = (...args: string[]): Promise<string> => gitWith(args, '')
     const git = async (...args: string[]): Promise<string> => (await gitRaw(...args)).trim()
+    /** The commit of the copy, or `undefined` when it has none. */
+    const headOf = (): Promise<string | undefined> =>
+        git('rev-parse', '--verify', '--quiet', 'HEAD').then(
+            (head) => head,
+            () => undefined
+        )
+    /**
+     * Fetches the branch `main` of the content store. The fetch names the
+     * branch: the fetch setting of the copy could else leave origin/main as it
+     * was (a setting removed or changed by hand), and a copy that is behind
+     * would look up to date. A content store with no branch yet has nothing to
+     * fetch. It throws `Unreachable` when the content store cannot be reached.
+     */
+    const fetchMain = async (): Promise<void> => {
+        let remote: string
+        try {
+            remote = await git('ls-remote', '--quiet', 'origin', 'refs/heads/main')
+            if (remote !== '') {
+                await gitRaw(
+                    'fetch',
+                    '--quiet',
+                    'origin',
+                    '+refs/heads/main:refs/remotes/origin/main'
+                )
+            }
+        } catch (error) {
+            throw new Unreachable(
+                `the content store cannot be reached (git fetch origin failed: ${error instanceof Error ? error.message.trim() : 'git failed'}). A publication fetches it first, so that a copy that is behind is never used: ${folder}`,
+                { cause: error }
+            )
+        }
+        const known = await git(
+            'rev-parse',
+            '--verify',
+            '--quiet',
+            'refs/remotes/origin/main'
+        ).then(
+            () => true,
+            () => false
+        )
+        if (remote === '' && known) {
+            throw new Error(
+                `the content store has no branch main, but the copy knows one (refs/remotes/origin/main). Nothing can be published until the copy is corrected by hand: ${folder}`
+            )
+        }
+    }
     /**
      * What a push of the copy would change in the content store: each file
      * with its code (`A`, `M`, `D`, `T`), sorted by path. The commits alone do
@@ -361,6 +440,7 @@ function gitContentStore(folder: string): ContentStore {
     }
     return {
         async verify(fetch) {
+            let reached = true
             let top: string
             try {
                 top = await git('rev-parse', '--show-toplevel')
@@ -378,33 +458,16 @@ function gitContentStore(folder: string): ContentStore {
                     () => true,
                     () => false
                 )
-            if (fetch) {
-                // The fetch names the branch: the fetch setting of the copy
-                // could else leave origin/main as it was (a setting removed or
-                // changed by hand), and a copy that is behind would look up
-                // to date. A content store with no branch yet has nothing to
-                // fetch.
-                let remote: string
+            if (fetch !== 'none') {
                 try {
-                    remote = await git('ls-remote', '--quiet', 'origin', 'refs/heads/main')
-                    if (remote !== '') {
-                        await gitRaw(
-                            'fetch',
-                            '--quiet',
-                            'origin',
-                            '+refs/heads/main:refs/remotes/origin/main'
-                        )
-                    }
+                    await fetchMain()
                 } catch (error) {
-                    throw new Error(
-                        `the content store cannot be reached (git fetch origin failed: ${error instanceof Error ? error.message.trim() : 'git failed'}). A plan and a publication fetch it first, so that a copy that is behind is never used: ${folder}`,
-                        { cause: error }
-                    )
-                }
-                if (remote === '' && (await exists('refs/remotes/origin/main'))) {
-                    throw new Error(
-                        `the content store has no branch main, but the copy knows one (refs/remotes/origin/main). Nothing can be published until the copy is corrected by hand: ${folder}`
-                    )
+                    // Without a network a plan uses the last fetch (PERF-16):
+                    // its publication fetches again.
+                    if (fetch === 'must' || !(error instanceof Unreachable)) {
+                        throw error
+                    }
+                    reached = false
                 }
             }
             // How far the copy is behind the content store, at the last fetch.
@@ -591,7 +654,82 @@ function gitContentStore(folder: string): ContentStore {
                         )}. Nothing can be published until the copy is corrected. ${waysOut(different)}: ${folder}`
                 )
             }
-            return behind
+            return { behind, reached }
+        },
+        async head() {
+            return await headOf()
+        },
+        async recover(head, paths) {
+            const now = await headOf()
+            if (now !== head) {
+                // The run made its commit: its first parent is the commit
+                // before the run, or it is the first commit of the copy.
+                const parents =
+                    now === undefined
+                        ? []
+                        : (await git('rev-list', '--parents', '--max-count=1', now))
+                              .split(' ')
+                              .slice(1)
+                if (
+                    now === undefined ||
+                    (head === undefined ? parents.length > 0 : parents[0] !== head)
+                ) {
+                    throw new Error(
+                        `a publication stopped halfway, and the copy of the content store has another commit since. Correct the copy by hand (git fetch origin, then git reset --hard origin/main when the copy holds no other work), then remove .git/vault-publish/journal.json: ${folder}`
+                    )
+                }
+                try {
+                    await fetchMain()
+                } catch (error) {
+                    throw new Error(
+                        `a publication stopped halfway after its commit, and the tool must reach the content store to know whether its push arrived: ${error instanceof Error ? error.message : 'git failed'}`,
+                        { cause: error }
+                    )
+                }
+                const pushed = await git(
+                    'merge-base',
+                    '--is-ancestor',
+                    now,
+                    'refs/remotes/origin/main'
+                ).then(
+                    () => true,
+                    () => false
+                )
+                if (pushed) {
+                    return 'pushed'
+                }
+                // The tool never pushes an old commit: it can be older than a
+                // guard that the author added since.
+                await (head === undefined
+                    ? git('update-ref', '-d', 'HEAD')
+                    : git('update-ref', 'HEAD', head))
+            }
+            // Each path as the commit before the run has it.
+            const inHead = new Set(
+                head === undefined
+                    ? []
+                    : (await gitRaw('ls-tree', '-r', '-z', '--name-only', '--full-tree', head))
+                          .split('\0')
+                          .filter((path) => path !== '')
+            )
+            const back = paths.filter((path) => inHead.has(path))
+            const gone = paths.filter((path) => !inHead.has(path))
+            if (head !== undefined && back.length > 0) {
+                await gitOnPaths(['checkout', head], back)
+            }
+            for (const path of gone) {
+                await refuseLinks(path)
+                await rm(join(folder, path), { force: true })
+            }
+            if (gone.length > 0) {
+                await gitOnPaths(['rm', '--quiet', '--cached', '--ignore-unmatch'], gone)
+            }
+            if (head === undefined && (await gitRaw('ls-files', '-z')) === '') {
+                // A fresh clone of an empty content store has no index. An
+                // index with no entry would stop a later pull.
+                await rm(join(folder, '.git', 'index'), { force: true })
+            }
+            return 'undone'
         },
         async read(path) {
             await refuseLinks(path)
@@ -779,17 +917,69 @@ function folderAttachmentStorage(folder: string): AttachmentStorage {
     }
 }
 
-/** The plans are in the git folder of the copy: on the device, never in a commit, never in the vault. */
-function folderPlanStore(contentStore: string): PlanStore {
-    const folder = join(contentStore, '.git', 'vault-publish', 'plans')
+/** The text of a file, or `undefined` when it does not exist. */
+async function textOrNothing(path: string): Promise<string | undefined> {
+    try {
+        return await readFile(path, 'utf8')
+    } catch (error) {
+        if (codeOf(error) === 'ENOENT') {
+            return undefined
+        }
+        throw error
+    }
+}
+
+/**
+ * The plans, the lock and the run journal are in the git folder of the copy:
+ * on the device, never in a commit, never in the vault.
+ */
+function folderLocalStore(contentStore: string): LocalStore {
+    const folder = join(contentStore, '.git', 'vault-publish')
+    const plans = join(folder, 'plans')
+    const lockFile = join(folder, 'lock')
+    const journalFile = join(folder, 'journal.json')
     return {
-        save: (id, record) => writeText(join(folder, `${id}.json`), record),
+        save: (id, record) => writeText(join(plans, `${id}.json`), record),
         async load(id) {
             try {
-                return await readFile(join(folder, `${id}.json`), 'utf8')
+                return await readFile(join(plans, `${id}.json`), 'utf8')
             } catch {
                 return undefined
             }
+        },
+        async lock(holder) {
+            await mkdir(folder, { recursive: true })
+            try {
+                // One create, never a test and then a write: two runs that
+                // start at the same moment cannot both take the lock.
+                await writeFile(lockFile, toCanonicalJson({ ...holder, process: process.pid }), {
+                    encoding: 'utf8',
+                    flag: 'wx'
+                })
+                return undefined
+            } catch (error) {
+                if (codeOf(error) !== 'EEXIST') {
+                    throw error
+                }
+                return (await textOrNothing(lockFile)) ?? 'a lock that went away'
+            }
+        },
+        readLock: () => textOrNothing(lockFile),
+        async unlock() {
+            try {
+                await unlink(lockFile)
+                return true
+            } catch (error) {
+                if (codeOf(error) === 'ENOENT') {
+                    return false
+                }
+                throw error
+            }
+        },
+        saveJournal: (text) => writeWhole(journalFile, text),
+        loadJournal: () => textOrNothing(journalFile),
+        async removeJournal() {
+            await rm(journalFile, { force: true })
         }
     }
 }
@@ -810,6 +1000,6 @@ export function nodeDevice(options: {
         vault: folderVault(options.vault),
         store: gitContentStore(options.contentStore),
         attachments: folderAttachmentStorage(options.attachmentStorage),
-        plans: folderPlanStore(options.contentStore)
+        local: folderLocalStore(options.contentStore)
     }
 }

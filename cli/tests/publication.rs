@@ -735,6 +735,142 @@ fn a_refused_push_leaves_the_vault_the_copy_and_the_content_store_as_they_were()
     assert_eq!(git(&["--git-dir", remote, "rev-parse", "main"]), before.3);
 }
 
+/// Another device pushes between the fetch of the publication and its push
+/// (issue 36, PUB-94, PUB-97). The author pulls, and the next run publishes on
+/// top of the other device, with no forced push.
+#[test]
+fn a_push_that_another_device_made_first_is_refused_and_after_a_pull_the_next_run_publishes() {
+    let setup = set_up();
+    let remote = text(setup.stores.content_store());
+    let other = setup.stores.root().join("other-device");
+    git(&["clone", "--quiet", remote, text(&other)]);
+    let in_other = |arguments: &[&str]| {
+        let mut all = vec!["-C", text(&other)];
+        all.extend_from_slice(arguments);
+        git(&all)
+    };
+    in_other(&["config", "user.name", "Test"]);
+    in_other(&["config", "user.email", "test@example.invalid"]);
+    in_other(&["config", "commit.gpgsign", "false"]);
+    fs::create_dir_all(other.join("notes")).expect("the folder can be made");
+    fs::write(
+        other.join("notes").join("Elsewhere.md"),
+        "A note of another device\n",
+    )
+    .expect("the file can be written");
+    in_other(&["add", "--", "notes/Elsewhere.md"]);
+    in_other(&[
+        "commit",
+        "--quiet",
+        "--message",
+        "A publication of another device",
+    ]);
+    let theirs = in_other(&["rev-parse", "HEAD"]);
+    // The other device pushes when this one is about to push.
+    let hooks = setup.copy.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("the folder can be made");
+    let hook = hooks.join("pre-push");
+    fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\nenv -i PATH=\"$PATH\" HOME=\"$HOME\" git -C \"{}\" push --quiet origin HEAD:main\n",
+            text(&other).replace('\\', "/")
+        ),
+    )
+    .expect("the hook is written");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("the hook can run");
+    }
+    let id = setup.plan(NOTE);
+    let before = (
+        picture(&setup.vault),
+        git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]),
+    );
+
+    let output = setup.run("publish", &["--plan", &id, "--time", TIME]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("refused"),
+        "{}",
+        errors_of(&output)
+    );
+    // Nothing is published and no property is corrected.
+    assert_eq!(git(&["--git-dir", remote, "rev-parse", "main"]), theirs);
+    assert_eq!(picture(&setup.vault), before.0);
+    assert_eq!(
+        git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]),
+        before.1
+    );
+    let output = setup.run("plan", &["--include", NOTE]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("git pull --ff-only origin main"));
+
+    fs::remove_file(&hook).expect("the hook can be removed");
+    git(&[
+        "-C",
+        text(&setup.copy),
+        "pull",
+        "--quiet",
+        "--ff-only",
+        "origin",
+        "main",
+    ]);
+    setup.publish(NOTE);
+
+    // On top of the commit of the other device: no forced push took it back.
+    git(&[
+        "--git-dir",
+        remote,
+        "merge-base",
+        "--is-ancestor",
+        &theirs,
+        "main",
+    ]);
+    assert_eq!(
+        git(&["--git-dir", remote, "show", &format!("main:notes/{NOTE}")]),
+        NOTE_TEXT.trim_end()
+    );
+    assert!(read(&setup.vault.join(NOTE)).contains("public_note: true"));
+}
+
+/// A write of the tool into a note (issue 36): the new text goes into a hidden
+/// file of the same folder, which is then renamed. A stop of the process
+/// during the write never leaves the note empty or half written.
+#[cfg(unix)]
+#[test]
+fn the_write_of_a_note_replaces_it_in_one_rename_and_leaves_no_other_file() {
+    use std::os::unix::fs::MetadataExt;
+    let setup = set_up();
+    let note = setup.vault.join(NOTE);
+    let before = fs::metadata(&note).expect("the note exists").ino();
+    let names = |folder: &Path| {
+        let mut names: Vec<String> = fs::read_dir(folder)
+            .expect("the folder can be listed")
+            .map(|entry| {
+                entry
+                    .expect("the entry can be read")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    };
+    let folder = names(&setup.vault.join("10 Garden"));
+
+    setup.publish(NOTE);
+
+    // Another file, renamed over the old one: a write into the same file
+    // keeps its number.
+    assert_ne!(fs::metadata(&note).expect("the note exists").ino(), before);
+    assert!(read(&note).contains("public_note: true"));
+    assert_eq!(names(&setup.vault.join("10 Garden")), folder);
+}
+
 #[test]
 fn a_note_with_windows_line_ends_keeps_them_in_the_vault_and_loses_them_in_the_store() {
     let setup = set_up();

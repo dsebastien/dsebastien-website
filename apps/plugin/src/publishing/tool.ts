@@ -3,7 +3,7 @@ import type { Attachment } from './attachments.ts'
 import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
 import { linksOf } from './links.ts'
-import { CONFIGURATION_FILE, parseConfiguration } from './configuration.ts'
+import { CONFIGURATION_FILE, isVaultPath, parseConfiguration } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
 import { hasFlowProperties, namesInProperties, removeProperty, setProperty } from './frontmatter.ts'
 import { IGNORE_PROPERTY } from './guards.ts'
@@ -15,7 +15,7 @@ import type { ManifestEntry } from './manifest.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
-import type { Device } from './ports.ts'
+import type { Device, Fetch, LockHolder } from './ports.ts'
 import { computeQueue } from './queue.ts'
 import type { PublicationQueue, Scan } from './queue.ts'
 
@@ -27,6 +27,8 @@ import type { PublicationQueue, Scan } from './queue.ts'
 export interface StoredPlan {
     readonly id: string
     readonly plan: PublicationPlan
+    /** True when the content store could not be reached and the plan uses the last fetch (PERF-16). */
+    readonly offline: boolean
 }
 
 /** The faces of the tool that can start a publication. */
@@ -136,18 +138,21 @@ interface State {
     readonly configurationHash: string
     /** The number of commits of the content store, at the last fetch, that the copy does not have. */
     readonly behind: number
+    /** False when the run tried to fetch and the content store could not be reached. */
+    readonly reached: boolean
 }
 
 /**
  * Checks the content store, reads the configuration and the manifest, and
- * scans the vault. With `fetch` (for `plan` and `publish`), it fetches the
+ * scans the vault. With a fetch (for `plan` and `publish`), it fetches the
  * content store first and stops when the copy is behind it: a copy that did
  * not pull reads an older manifest, and a note that came under a guard since
- * would stay live (issue 70).
+ * would stay live (issue 70). A copy that was behind at the last fetch stops
+ * a plan also without a network.
  */
-async function readState(device: Device, fetch: boolean): Promise<State> {
-    const behind = await device.store.verify(fetch)
-    if (fetch && behind > 0) {
+async function readState(device: Device, fetch: Fetch): Promise<State> {
+    const { behind, reached } = await device.store.verify(fetch)
+    if (fetch !== 'none' && behind > 0) {
         throw new Error(
             `the copy of the content store is ${String(behind)} commit(s) behind the content store: another device published since the last pull. Nothing can be planned or published until the copy is up to date: pull first (git pull --ff-only origin main)`
         )
@@ -157,7 +162,8 @@ async function readState(device: Device, fetch: boolean): Promise<State> {
     return {
         scan: await computeQueue({ vault: device.vault, manifest, configuration }),
         configurationHash: hash,
-        behind
+        behind,
+        reached
     }
 }
 
@@ -166,12 +172,137 @@ function forRun(device: Device): Device {
     return { ...device, vault: device.vault.forRun() }
 }
 
+/** What the lock of the device holds, for a message: one line. */
+function lockMessage(text: string): string {
+    return `a publication runs on this device, or one stopped halfway (the lock holds ${text.replace(/\s+/gu, ' ').trim()}). When no publication runs, remove the lock with the unlock command: the next plan or publish then puts the copy back`
+}
+
+/** Stops when the lock of the device is taken: the files of the copy can be half written. */
+async function refuseWhenLocked(device: Device): Promise<void> {
+    const text = await device.local.readLock()
+    if (text !== undefined) {
+        throw new Error(lockMessage(text))
+    }
+}
+
+/** Runs the work with the lock of the device (TOOL-09, PUB-27), and removes the lock at its end. */
+async function withLock<T>(device: Device, holder: LockHolder, work: () => Promise<T>): Promise<T> {
+    const held = await device.local.lock(holder)
+    if (held !== undefined) {
+        throw new Error(lockMessage(held))
+    }
+    try {
+        return await work()
+    } finally {
+        await device.local.unlock()
+    }
+}
+
+/**
+ * Removes the lock of the device that a run left when it stopped halfway. The
+ * next plan or publish puts the copy back. True when a lock was there.
+ */
+export async function unlock(device: Device): Promise<boolean> {
+    return await device.local.unlock()
+}
+
+/** The run journal of a publication (`documentation/Canonical Form.md`, "Failure cases"). */
+type RunJournal =
+    | {
+          readonly step: 'write'
+          /** True when an earlier publication stopped after its push, and its correction is owed. */
+          readonly correctionOwed: boolean
+          /** The commit of the copy before the run, or `undefined` when the copy had no commit. */
+          readonly head: string | undefined
+          /** The paths of the content store that the run can write or remove. */
+          readonly paths: readonly string[]
+          readonly plan: string
+      }
+    | { readonly step: 'correct' }
+
+function journalText(journal: RunJournal): string {
+    if (journal.step === 'correct') {
+        return toCanonicalJson({ step: 'correct' })
+    }
+    const { head, ...rest } = journal
+    return toCanonicalJson(head === undefined ? rest : { ...rest, head })
+}
+
+/** True when the path is a path of a note or of a manifest entry in the content store. */
+function isStorePath(path: string): boolean {
+    return (
+        isVaultPath(path) &&
+        (path.startsWith(`${NOTES_FOLDER}/`) ||
+            (path.startsWith(`${MANIFEST_FOLDER}/`) && path.split('/').length === 2))
+    )
+}
+
+/** Reads the run journal of the device. It throws when the journal is not one. */
+async function readJournal(device: Device): Promise<RunJournal | undefined> {
+    const text = await device.local.loadJournal()
+    if (text === undefined) {
+        return undefined
+    }
+    let value: unknown
+    try {
+        value = parseJson(text)
+    } catch {
+        value = undefined
+    }
+    if (isRecord(value)) {
+        const { correctionOwed, head, paths, plan, step } = value
+        if (step === 'correct' && Object.keys(value).length === 1) {
+            return { step }
+        }
+        if (
+            step === 'write' &&
+            typeof correctionOwed === 'boolean' &&
+            (head === undefined || (typeof head === 'string' && /^[0-9a-f]{40,64}$/u.test(head))) &&
+            isTextList(paths) &&
+            paths.every(isStorePath) &&
+            typeof plan === 'string'
+        ) {
+            return { step, correctionOwed, head, paths, plan }
+        }
+    }
+    throw new Error(
+        'the run journal of this device cannot be read (.git/vault-publish/journal.json of the copy): correct the copy by hand, then remove the journal'
+    )
+}
+
+/**
+ * Puts back what a publication that stopped halfway left (R46). The result is
+ * the journal after it: none, or `correct` when the correction of the
+ * property is owed.
+ */
+async function recover(device: Device): Promise<RunJournal | undefined> {
+    const journal = await readJournal(device)
+    if (journal?.step !== 'write') {
+        return journal
+    }
+    const result = await device.store.recover(journal.head, journal.paths)
+    if (result === 'pushed' || journal.correctionOwed) {
+        const after: RunJournal = { step: 'correct' }
+        await device.local.saveJournal(journalText(after))
+        return after
+    }
+    await device.local.removeJournal()
+    return undefined
+}
+
 /**
  * The publication queue: the four lists of what waits for a publication. It
  * writes nothing into the vault and nothing into the content store.
  */
-export async function status(device: Device): Promise<PublicationQueue> {
-    const state = await readState(forRun(device), false)
+export async function status(given: Device): Promise<PublicationQueue> {
+    const device = forRun(given)
+    await refuseWhenLocked(device)
+    if ((await readJournal(device))?.step === 'write') {
+        throw new Error(
+            'a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan or publish puts it back'
+        )
+    }
+    const state = await readState(device, 'none')
     return { ...state.scan.queue, behind: state.behind }
 }
 
@@ -186,6 +317,8 @@ interface NoteTexts {
 /** A plan with everything that its publication needs. */
 interface Computed {
     readonly plan: PublicationPlan
+    /** False when the content store could not be reached and the plan uses the last fetch. */
+    readonly reached: boolean
     /** The record of the plan, in the canonical form. */
     readonly record: string
     readonly scan: Scan
@@ -197,8 +330,12 @@ interface Computed {
  * Computes the plan of a selection and its record: the plan, the selection,
  * and the state that the plan was computed from, in the canonical form.
  */
-async function recordFor(device: Device, selection: NormalSelection): Promise<Computed> {
-    const { scan, configurationHash } = await readState(device, true)
+async function recordFor(
+    device: Device,
+    selection: NormalSelection,
+    fetch: Fetch
+): Promise<Computed> {
+    const { scan, configurationHash, reached } = await readState(device, fetch)
     const plan = computePlan(scan, selection)
     const texts = new Map<string, NoteTexts>()
     const notes: {
@@ -234,7 +371,7 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
         selection,
         state: { configuration: configurationHash, manifest: await manifestHash(device), notes }
     })
-    return { plan, record, scan, texts }
+    return { plan, reached, record, scan, texts }
 }
 
 /**
@@ -243,11 +380,17 @@ async function recordFor(device: Device, selection: NormalSelection): Promise<Co
  */
 export async function plan(given: Device, selection: Selection): Promise<StoredPlan> {
     const device = forRun(given)
-    const { plan: computed, record } = await recordFor(device, normalSelection(selection))
+    await refuseWhenLocked(device)
+    // A publication that stopped halfway left files in the copy: they are put
+    // back first, with the lock, so that no publication starts in the middle.
+    if ((await readJournal(device))?.step === 'write') {
+        await withLock(device, { command: 'plan' }, () => recover(device))
+    }
+    const computed = await recordFor(device, normalSelection(selection), 'try')
     // The id names the record. It is outside the parity rule (TOOL-30).
-    const id = sha256Hex(record).slice(0, 16)
-    await device.plans.save(id, record)
-    return { id, plan: computed }
+    const id = sha256Hex(computed.record).slice(0, 16)
+    await device.local.save(id, computed.record)
+    return { id, plan: computed.plan, offline: !computed.reached }
 }
 
 /** Reads the selection of a stored record. It throws when the record is not one. */
@@ -279,7 +422,7 @@ interface StoreFile {
  * failure puts them back from here, not from a commit of the copy: a copy can
  * have no commit, and a file of it can be in no commit.
  */
-class Journal {
+class Backup {
     readonly #store: Device['store']
     readonly #before = new Map<string, string | undefined>()
 
@@ -341,7 +484,7 @@ class Stop extends Error {}
  *
  * @returns the paths that changed
  */
-async function applyUnit(journal: Journal, files: readonly StoreFile[]): Promise<string[]> {
+async function applyUnit(journal: Backup, files: readonly StoreFile[]): Promise<string[]> {
     const changed: string[] = []
     try {
         for (const file of files) {
@@ -567,6 +710,7 @@ async function cleanStorage(
     isGuarded: Scan['isGuardedFile']
 ): Promise<{
     readonly deleted: string[]
+    readonly uploaded: string[]
     readonly warnings: { path: string; message: string }[]
 }> {
     const used = await usedKeys(manifest, isGuarded)
@@ -580,7 +724,7 @@ async function cleanStorage(
             path: '',
             message: `the attachment storage could not be listed, and it is cleaned at the next publication: ${messageOf(error)}`
         })
-        return { deleted, warnings }
+        return { deleted, uploaded: [], warnings }
     }
     for (const name of sortByCodePoint(names)) {
         if (used.has(name)) {
@@ -605,7 +749,95 @@ async function cleanStorage(
             })
         }
     }
-    return { deleted, warnings }
+    const repaired = await repairStorage(device, manifest, isGuarded, new Set(names))
+    return { deleted, uploaded: repaired.uploaded, warnings: [...warnings, ...repaired.warnings] }
+}
+
+/**
+ * Uploads again every file that a published entry uses and that the storage
+ * does not have (R46): the cleanup of another device can delete an upload
+ * that this device made before its push. The bytes come from the vault path
+ * of an attachment with that key, and must have its hash. The attachments are
+ * tried in the order of the paths of the notes, then in the order of each
+ * list. A file under a guard now is never uploaded again.
+ */
+async function repairStorage(
+    device: Device,
+    manifest: ReadonlyMap<string, ManifestEntry>,
+    isGuarded: Scan['isGuardedFile'],
+    present: ReadonlySet<string>
+): Promise<{
+    readonly uploaded: string[]
+    readonly warnings: { path: string; message: string }[]
+}> {
+    const wanted = new Map<string, Attachment[]>()
+    const entries = [...manifest].sort(([one], [two]) => compareCodePoints(one, two))
+    for (const [, entry] of entries) {
+        if (entry.state !== 'published') {
+            continue
+        }
+        for (const attachment of entry.attachments) {
+            const key = keyOf(attachment.hash)
+            if (present.has(key) || (await isGuarded(attachment.path, attachment.hash))) {
+                continue
+            }
+            wanted.set(key, [...(wanted.get(key) ?? []), attachment])
+        }
+    }
+    const uploaded: string[] = []
+    const warnings: { path: string; message: string }[] = []
+    for (const key of sortByCodePoint([...wanted.keys()])) {
+        const attachments = wanted.get(key) ?? []
+        let found: { path: string; bytes: Uint8Array } | undefined
+        for (const attachment of attachments) {
+            let bytes: Uint8Array | undefined
+            try {
+                bytes = await device.vault.readBytes(attachment.path)
+            } catch {
+                bytes = undefined
+            }
+            if (bytes !== undefined && bytesHash(bytes) === attachment.hash) {
+                found = { path: attachment.path, bytes }
+                break
+            }
+        }
+        if (found === undefined) {
+            warnings.push({
+                path: attachments[0]?.path ?? '',
+                message:
+                    'the file is missing from the attachment storage, and the vault does not have its bytes any more: its note shows it as missing until its next update'
+            })
+            continue
+        }
+        try {
+            await device.attachments.put(key, found.bytes)
+            uploaded.push(key)
+            warnings.push({
+                path: found.path,
+                message:
+                    'the file was missing from the attachment storage (the cleanup of another device can delete it), and it is uploaded again'
+            })
+        } catch (error) {
+            warnings.push({
+                path: found.path,
+                message: `the file is missing from the attachment storage, and it could not be uploaded again: ${messageOf(error)}`
+            })
+        }
+    }
+    return { uploaded, warnings }
+}
+
+/**
+ * Every path of the content store that the publication of a plan can write or
+ * remove: the cleaned note and the manifest entry of each of its notes.
+ */
+function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[] {
+    const paths = new Set<string>()
+    for (const path of [...plan.forcedRemove, ...plan.publish, ...plan.update, ...plan.remove]) {
+        paths.add(`${NOTES_FOLDER}/${path}`)
+        paths.add(manifestFile(scan.manifest.get(path)?.id ?? noteId(path, time)))
+    }
+    return sortByCodePoint([...paths])
 }
 
 /** What the writes of a plan did. */
@@ -639,7 +871,7 @@ interface Unit {
  */
 async function writeAll(
     device: Device,
-    journal: Journal,
+    journal: Backup,
     uploads: Uploads,
     computed: Computed,
     run: Run
@@ -730,7 +962,12 @@ async function writeAll(
 
     const planned = new Set([...lists.update, ...lists.remove])
     const skipped = scan.queue.changed.filter((path) => !planned.has(path))
-    const report = { failed, forcedRemoved: lists.forcedRemove, ...done, skipped }
+    const report = {
+        failed: failed.sort((one, two) => compareCodePoints(one.path, two.path)),
+        forcedRemoved: lists.forcedRemove,
+        ...done,
+        skipped
+    }
     if (written.length > 0) {
         await device.store.commitAndPush(
             [
@@ -773,18 +1010,49 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
     if (!PLAN_ID.test(id)) {
         throw new Error(`"${id}" is not the id of a plan: an id is 16 hexadecimal digits`)
     }
-    const record = await device.plans.load(id)
+    const holder: LockHolder = {
+        command: 'publish',
+        device: run.device,
+        face: run.face,
+        time: run.time
+    }
+    return await withLock(device, holder, () => apply(device, id, run))
+}
+
+/** The publication of a plan, with the lock of the device. */
+async function apply(device: Device, id: string, run: Run): Promise<PublicationReport> {
+    // A publication that stopped halfway is put back first. When it stopped
+    // after its push, the correction of the property is owed.
+    const owed = (await recover(device))?.step === 'correct'
+    const record = await device.local.load(id)
     if (record === undefined) {
         throw new Error(`there is no plan with the id ${id} on this device`)
     }
-    const current = await recordFor(device, selectionOf(record, id))
+    const current = await recordFor(device, selectionOf(record, id), 'must')
     if (current.record !== record) {
         throw new Error(
             `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
         )
     }
     const { scan } = current
-    const journal = new Journal(device.store)
+    // The journal comes before the first write into the copy: a run that
+    // stops halfway is put back by the next one.
+    const paths = storePathsOf(current.plan, scan, run.time)
+    const head = await device.store.head()
+    if (paths.length > 0) {
+        await device.local.saveJournal(
+            journalText({ step: 'write', correctionOwed: owed, head, paths, plan: id })
+        )
+    }
+    /** The journal after the run: `correct` while a correction is owed, else none. */
+    const settle = async (correct: boolean): Promise<void> => {
+        if (correct) {
+            await device.local.saveJournal(journalText({ step: 'correct' }))
+        } else if (paths.length > 0) {
+            await device.local.removeJournal()
+        }
+    }
+    const journal = new Backup(device.store)
     const uploads = new Uploads(device)
     let outcome: Written
     try {
@@ -794,10 +1062,15 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
         // run, and an upload that stays would be public with no entry.
         const stayed = await journal.putAllBack()
         const kept = await uploads.takeBack(scan.manifest, scan.isGuardedFile)
+        // A file that could not be put back, or a commit that git could not
+        // take back, stays in the journal, so the next run puts it back.
+        if (stayed.length === 0 && (await device.store.head()) === head) {
+            await settle(owed)
+        }
         const files =
             stayed.length === 0
                 ? 'and the files of the copy are as they were before'
-                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next run would read them as published: put them back before the next publication`
+                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan or publish puts them back`
         const storage =
             kept.length === 0
                 ? ''
@@ -807,14 +1080,17 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
         })
     }
     const { report, written, manifest } = outcome
+    // With nothing to commit there is no push, and without a push no property
+    // is corrected, unless an earlier run pushed and stopped before its
+    // correction.
+    const correct = written.length > 0 || owed
+    await settle(correct)
     let correction: Pick<PublicationReport, 'propertyRemoved' | 'propertySet' | 'warnings'> = {
         propertyRemoved: [],
         propertySet: [],
         warnings: []
     }
-    // With nothing to commit there is no push, and without a push no property
-    // is corrected.
-    if (written.length > 0) {
+    if (correct) {
         // The push succeeded: the manifest of the copy is the manifest of the
         // content store. The vault now says the same.
         const published = new Set(
@@ -825,10 +1101,13 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
     // The copy follows the content store: the run fetched it and was not
     // behind, and a push, when there was one, succeeded.
     const cleanup = await cleanStorage(device, manifest, scan.isGuardedFile)
+    if (correct) {
+        await device.local.removeJournal()
+    }
     return {
         ...report,
         attachmentsDeleted: cleanup.deleted,
-        attachmentsUploaded: sortByCodePoint(uploads.uploaded),
+        attachmentsUploaded: sortByCodePoint([...uploads.uploaded, ...cleanup.uploaded]),
         ...correction,
         warnings: [...correction.warnings, ...cleanup.warnings].sort((one, two) =>
             compareCodePoints(one.path, two.path)

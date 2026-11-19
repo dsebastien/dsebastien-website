@@ -11,8 +11,8 @@ use crate::attachments::attachments_of;
 use crate::attachments::{Attachment, key_of};
 use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
-use crate::configuration::{CONFIGURATION_FILE, Configuration, parse_configuration};
-use crate::device::{AttachmentStorage, ContentStore, Vault};
+use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
+use crate::device::{AttachmentStorage, ContentStore, Fetch, Recovery, Vault, crash_point};
 use crate::frontmatter::{has_flow_properties, names_in_properties, remove_property, set_property};
 use crate::guards::IGNORE_PROPERTY;
 use crate::hash::{bytes_hash, content_hash, sha256_hex};
@@ -96,16 +96,21 @@ fn manifest_hash(device: &Device) -> Result<String, String> {
 struct DeviceState {
     scan: Scan,
     configuration_hash: String,
+    /// False when the run tried to fetch and the content store could not be
+    /// reached.
+    reached: bool,
 }
 
 /// Checks the content store, reads the configuration and the manifest, and
-/// scans the vault. With `fetch` (for `plan` and `publish`), it fetches the
+/// scans the vault. With a fetch (for `plan` and `publish`), it fetches the
 /// content store first and stops when the copy is behind it: a copy that did
 /// not pull reads an older manifest, and a note that came under a guard since
-/// would stay live (issue 70).
-fn read_state(device: &Device, fetch: bool) -> Result<DeviceState, String> {
-    let behind = device.store.verify(fetch)?;
-    if fetch && behind > 0 {
+/// would stay live (issue 70). A copy that was behind at the last fetch stops
+/// a plan also without a network.
+fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
+    let verified = device.store.verify(fetch)?;
+    let behind = verified.behind;
+    if fetch != Fetch::None && behind > 0 {
         return Err(format!(
             "the copy of the content store is {behind} commit(s) behind the content store: another device published since the last pull. Nothing can be planned or published until the copy is up to date: pull first (git pull --ff-only origin main)"
         ));
@@ -117,7 +122,181 @@ fn read_state(device: &Device, fetch: bool) -> Result<DeviceState, String> {
     Ok(DeviceState {
         scan,
         configuration_hash,
+        reached: verified.reached,
     })
+}
+
+/// What the lock of the device holds, for a message: one line.
+fn lock_message(text: &str) -> String {
+    format!(
+        "a publication runs on this device, or one stopped halfway (the lock holds {}). When no publication runs, remove the lock with the unlock command: the next plan or publish then puts the copy back",
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
+    )
+}
+
+/// `Err` when the lock of the device is taken: the files of the copy can be
+/// half written.
+fn refuse_when_locked(device: &Device) -> Result<(), String> {
+    match device.store.read_lock()? {
+        Some(text) => Err(lock_message(&text)),
+        None => Ok(()),
+    }
+}
+
+/// Runs the work with the lock of the device (TOOL-09, PUB-27), and removes
+/// the lock at its end.
+fn with_lock<T>(
+    device: &Device,
+    holder: &Value,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    if let Some(held) = device.store.lock(holder)? {
+        return Err(lock_message(&held));
+    }
+    let result = work();
+    let unlocked = device.store.unlock();
+    let value = result?;
+    unlocked?;
+    Ok(value)
+}
+
+/// Removes the lock of the device that a run left when it stopped halfway.
+/// The next plan or publish puts the copy back. The result says whether a
+/// lock was there, in the canonical form.
+///
+/// # Errors
+///
+/// The lock cannot be removed.
+pub fn unlock(store: &ContentStore) -> Result<String, String> {
+    canonical(&json!({ "removed": store.unlock()? }))
+}
+
+/// The run journal of a publication (`documentation/Canonical Form.md`,
+/// "Failure cases").
+enum RunJournal {
+    Write {
+        /// True when an earlier publication stopped after its push, and its
+        /// correction is owed.
+        correction_owed: bool,
+        /// The commit of the copy before the run, or `None` when the copy had
+        /// no commit.
+        head: Option<String>,
+        /// The paths of the content store that the run can write or remove.
+        paths: Vec<String>,
+        plan: String,
+    },
+    Correct,
+}
+
+fn journal_text(journal: &RunJournal) -> Result<String, String> {
+    match journal {
+        RunJournal::Correct => canonical(&json!({ "step": "correct" })),
+        RunJournal::Write {
+            correction_owed,
+            head,
+            paths,
+            plan,
+        } => {
+            let mut value = json!({
+                "correctionOwed": correction_owed,
+                "paths": paths,
+                "plan": plan,
+                "step": "write",
+            });
+            if let Some(head) = head {
+                value["head"] = json!(head);
+            }
+            canonical(&value)
+        }
+    }
+}
+
+/// True when the path is a path of a note or of a manifest entry in the
+/// content store.
+fn is_store_path(path: &str) -> bool {
+    is_vault_path(path)
+        && (path.starts_with(&format!("{NOTES_FOLDER}/"))
+            || (path.starts_with(&format!("{MANIFEST_FOLDER}/")) && path.split('/').count() == 2))
+}
+
+/// True when the text is the hash of a commit.
+fn is_commit(text: &str) -> bool {
+    (40..=64).contains(&text.len())
+        && text
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Reads the run journal of the device.
+fn read_journal(device: &Device) -> Result<Option<RunJournal>, String> {
+    let Some(text) = device.store.load_journal()? else {
+        return Ok(None);
+    };
+    let unreadable = || {
+        "the run journal of this device cannot be read (.git/vault-publish/journal.json of the copy): correct the copy by hand, then remove the journal".to_owned()
+    };
+    let value = parse_json(&text).map_err(|_| unreadable())?;
+    let object = value.as_object().ok_or_else(unreadable)?;
+    if value["step"] == "correct" && object.len() == 1 {
+        return Ok(Some(RunJournal::Correct));
+    }
+    let head = match object.get("head") {
+        None => None,
+        Some(Value::String(head)) if is_commit(head) => Some(head.clone()),
+        Some(_) => return Err(unreadable()),
+    };
+    let paths: Option<Vec<String>> = value["paths"].as_array().and_then(|list| {
+        list.iter()
+            .map(|path| {
+                path.as_str()
+                    .filter(|path| is_store_path(path))
+                    .map(str::to_owned)
+            })
+            .collect()
+    });
+    match (
+        value["step"].as_str(),
+        value["correctionOwed"].as_bool(),
+        paths,
+        value["plan"].as_str(),
+    ) {
+        (Some("write"), Some(correction_owed), Some(paths), Some(plan)) => {
+            Ok(Some(RunJournal::Write {
+                correction_owed,
+                head,
+                paths,
+                plan: plan.to_owned(),
+            }))
+        }
+        _ => Err(unreadable()),
+    }
+}
+
+/// Puts back what a publication that stopped halfway left (R46). The result
+/// is true when the correction of the property is owed: the journal is then
+/// `correct`.
+fn recover(device: &Device) -> Result<bool, String> {
+    match read_journal(device)? {
+        None => Ok(false),
+        Some(RunJournal::Correct) => Ok(true),
+        Some(RunJournal::Write {
+            correction_owed,
+            head,
+            paths,
+            ..
+        }) => {
+            let result = device.store.recover(head.as_deref(), &paths)?;
+            if result == Recovery::Pushed || correction_owed {
+                device
+                    .store
+                    .save_journal(&journal_text(&RunJournal::Correct)?)?;
+                Ok(true)
+            } else {
+                device.store.remove_journal()?;
+                Ok(false)
+            }
+        }
+    }
 }
 
 /// The publication queue: the four lists of what waits for a publication, in
@@ -129,7 +308,11 @@ fn read_state(device: &Device, fetch: bool) -> Result<DeviceState, String> {
 /// The content store, the configuration or the manifest cannot be trusted, or
 /// a note cannot be read.
 pub fn status(device: &Device) -> Result<String, String> {
-    canonical(&to_value(&read_state(device, false)?.scan.queue)?)
+    refuse_when_locked(device)?;
+    if matches!(read_journal(device)?, Some(RunJournal::Write { .. })) {
+        return Err("a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan or publish puts it back".to_owned());
+    }
+    canonical(&to_value(&read_state(device, Fetch::None)?.scan.queue)?)
 }
 
 /// The source, the cleaned note, the links and the attachments of one note of
@@ -144,6 +327,9 @@ struct NoteTexts {
 /// A plan with everything that its publication needs.
 struct Computed {
     plan: PublicationPlan,
+    /// False when the content store could not be reached and the plan uses
+    /// the last fetch.
+    reached: bool,
     /// The record of the plan, in the canonical form.
     record: String,
     scan: Scan,
@@ -154,11 +340,12 @@ struct Computed {
 
 /// Computes the plan of a selection and its record: the plan, the selection,
 /// and the state that the plan was computed from, in the canonical form.
-fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String> {
+fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Computed, String> {
     let DeviceState {
         scan,
         configuration_hash,
-    } = read_state(device, true)?;
+        reached,
+    } = read_state(device, fetch)?;
     let plan = compute_plan(&scan, selection)?;
     let mut texts = BTreeMap::new();
     for path in plan.publish().iter().chain(plan.update()) {
@@ -205,6 +392,7 @@ fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String
     }))?;
     Ok(Computed {
         plan,
+        reached,
         record,
         scan,
         texts,
@@ -219,11 +407,22 @@ fn record_for(device: &Device, selection: &Selection) -> Result<Computed, String
 ///
 /// The selection cannot become a plan, or the plan cannot be stored.
 pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
-    let computed = record_for(device, selection)?;
+    refuse_when_locked(device)?;
+    // A publication that stopped halfway left files in the copy: they are
+    // put back first, with the lock, so that no publication starts in the
+    // middle.
+    if matches!(read_journal(device)?, Some(RunJournal::Write { .. })) {
+        with_lock(device, &json!({ "command": "plan" }), || recover(device))?;
+    }
+    let computed = record_for(device, selection, Fetch::Try)?;
     // The id names the record. It is outside the parity rule (TOOL-30).
     let id = sha256_hex(&computed.record)[..16].to_owned();
     device.store.save_plan(&id, &computed.record)?;
-    canonical(&json!({ "id": id, "plan": to_value(&computed.plan)? }))
+    canonical(&json!({
+        "id": id,
+        "offline": !computed.reached,
+        "plan": to_value(&computed.plan)?,
+    }))
 }
 
 /// Reads the selection of a stored record.
@@ -308,12 +507,12 @@ struct StoreFile {
 /// The files of the copy as they were before a publication touched them. A
 /// failure puts them back from here, not from a commit of the copy: a copy can
 /// have no commit, and a file of it can be in no commit.
-struct Journal<'a> {
+struct Backup<'a> {
     store: &'a ContentStore,
     before: BTreeMap<String, Option<String>>,
 }
 
-impl<'a> Journal<'a> {
+impl<'a> Backup<'a> {
     fn new(store: &'a ContentStore) -> Self {
         Self {
             store,
@@ -375,7 +574,7 @@ enum Failure {
 /// they cannot be put back, the whole publication stops: a file that stayed
 /// would be read as published at the next run. The result is the paths that
 /// changed.
-fn apply_unit(journal: &mut Journal, files: &[StoreFile]) -> Result<Vec<String>, Failure> {
+fn apply_unit(journal: &mut Backup, files: &[StoreFile]) -> Result<Vec<String>, Failure> {
     let mut changed = Vec::new();
     for file in files {
         match journal.apply(file) {
@@ -602,6 +801,8 @@ impl<'a> Uploads<'a> {
 /// What the cleanup of the attachment storage did.
 struct Cleanup {
     deleted: Vec<String>,
+    /// The keys that the cleanup uploaded again.
+    uploaded: Vec<String>,
     warnings: Vec<Value>,
 }
 
@@ -620,6 +821,7 @@ fn clean_storage(
     let used = used_keys(manifest, scan, vault);
     let mut cleanup = Cleanup {
         deleted: Vec::new(),
+        uploaded: Vec::new(),
         warnings: Vec::new(),
     };
     let mut names = match storage.list() {
@@ -633,6 +835,7 @@ fn clean_storage(
         }
     };
     sort_by_code_point(&mut names);
+    let present: BTreeSet<String> = names.iter().cloned().collect();
     for name in names {
         if used.contains(&name) {
             continue;
@@ -653,7 +856,92 @@ fn clean_storage(
             })),
         }
     }
+    repair_storage(storage, manifest, scan, vault, &present, &mut cleanup);
     cleanup
+}
+
+/// Uploads again every file that a published entry uses and that the storage
+/// does not have (R46): the cleanup of another device can delete an upload
+/// that this device made before its push. The bytes come from the vault path
+/// of an attachment with that key, and must have its hash. The attachments
+/// are tried in the order of the paths of the notes, then in the order of
+/// each list. A file under a guard now is never uploaded again.
+fn repair_storage(
+    storage: &AttachmentStorage,
+    manifest: &BTreeMap<String, ManifestEntry>,
+    scan: &Scan,
+    vault: &Vault,
+    present: &BTreeSet<String>,
+    cleanup: &mut Cleanup,
+) {
+    // The map gives the keys in the order of the code points.
+    let mut wanted: BTreeMap<&str, Vec<&Attachment>> = BTreeMap::new();
+    for entry in manifest
+        .values()
+        .filter(|entry| entry.state == State::Published)
+    {
+        for attachment in &entry.attachments {
+            let key = key_of(&attachment.hash);
+            if present.contains(key)
+                || scan.is_guarded_file(vault, &attachment.path, &attachment.hash)
+            {
+                continue;
+            }
+            wanted.entry(key).or_default().push(attachment);
+        }
+    }
+    for (key, attachments) in wanted {
+        let found = attachments.iter().find_map(|attachment| {
+            vault
+                .read_bytes(&attachment.path)
+                .ok()
+                .flatten()
+                .filter(|bytes| bytes_hash(bytes) == attachment.hash)
+                .map(|bytes| (attachment.path.as_str(), bytes))
+        });
+        let Some((path, bytes)) = found else {
+            cleanup.warnings.push(json!({
+                "message": "the file is missing from the attachment storage, and the vault does not have its bytes any more: its note shows it as missing until its next update",
+                "path": attachments.first().map_or("", |attachment| attachment.path.as_str()),
+            }));
+            continue;
+        };
+        match storage.put(key, &bytes) {
+            Ok(()) => {
+                cleanup.uploaded.push(key.to_owned());
+                cleanup.warnings.push(json!({
+                    "message": "the file was missing from the attachment storage (the cleanup of another device can delete it), and it is uploaded again",
+                    "path": path,
+                }));
+            }
+            Err(error) => cleanup.warnings.push(json!({
+                "message": format!("the file is missing from the attachment storage, and it could not be uploaded again: {error}"),
+                "path": path,
+            })),
+        }
+    }
+}
+
+/// Every path of the content store that the publication of a plan can write
+/// or remove: the cleaned note and the manifest entry of each of its notes.
+fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String> {
+    let mut paths = BTreeSet::new();
+    for path in plan
+        .forced_remove()
+        .iter()
+        .chain(plan.publish())
+        .chain(plan.update())
+        .chain(plan.remove())
+    {
+        paths.insert(format!("{NOTES_FOLDER}/{path}"));
+        let id = scan
+            .manifest
+            .get(path)
+            .map_or_else(|| note_id(path, time), |entry| entry.id.clone());
+        paths.insert(manifest_file(&id));
+    }
+    // The set gives its texts in the order of the code points.
+    paths.into_iter().collect()
 }
 
 /// Applies the forced removals of a plan: the cleaned note and the manifest
@@ -663,7 +951,7 @@ fn clean_storage(
 /// When one removal fails, the error goes to the caller, which puts every
 /// file back: no note is published while a note under a guard stays live.
 fn remove_forced(
-    journal: &mut Journal,
+    journal: &mut Backup,
     plan: &PublicationPlan,
     scan: &Scan,
 ) -> Result<Vec<String>, String> {
@@ -824,7 +1112,7 @@ struct Done {
 /// (PUB-26).
 fn write_all(
     device: &Device,
-    journal: &mut Journal,
+    journal: &mut Backup,
     uploads: &mut Uploads,
     computed: &Computed,
     run: &Run,
@@ -886,6 +1174,7 @@ fn write_all(
         .cloned()
         .collect();
     if !paths.is_empty() {
+        crash_point("write");
         device.store.commit_and_push(
             &format!(
                 "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}",
@@ -900,6 +1189,8 @@ fn write_all(
             &paths,
         )?;
     }
+    // Sorted by path, like every list of the report. A stable sort.
+    failed.sort_by(|one: &Value, two: &Value| one["path"].as_str().cmp(&two["path"].as_str()));
     Ok(Written {
         failed,
         published: done.published,
@@ -913,20 +1204,24 @@ fn write_all(
 
 /// Applies exactly one plan, by its id.
 ///
-/// It computes the record of the plan again: when the new record is not the
-/// stored one, the plan is stale and nothing is published. The forced
-/// removals come first: when one fails, nothing is published. Then the
-/// attachments go to the attachment storage, and the cleaned notes and the
-/// manifest entries go to the content store in one commit, which is pushed. A
-/// note whose uploads or files fail is left out and reported. Only after the
-/// push, the state property is corrected in the vault. Then every file of the
-/// attachment storage that no published note uses is deleted. The result is
-/// the report of the publication, in the canonical form.
+/// It takes the lock of the device, and puts back what a publication that
+/// stopped halfway left. It computes the record of the plan again: when the
+/// new record is not the stored one, the plan is stale and nothing is
+/// published. The run journal is written before the first write into the
+/// copy. The forced removals come first: when one fails, nothing is
+/// published. Then the attachments go to the attachment storage, and the
+/// cleaned notes and the manifest entries go to the content store in one
+/// commit, which is pushed. A note whose uploads or files fail is left out and
+/// reported. Only after the push, the state property is corrected in the
+/// vault. Then every file of the attachment storage that no published note
+/// uses is deleted, and every file that one uses and that is missing is
+/// uploaded again. The result is the report of the publication, in the
+/// canonical form.
 ///
 /// # Errors
 ///
-/// An input of the run is wrong, the plan is unknown or stale, a forced
-/// removal failed, or the commit or the push failed.
+/// An input of the run is wrong, the lock is taken, the plan is unknown or
+/// stale, a forced removal failed, or the commit or the push failed.
 pub fn publish(
     device: &Device,
     storage: &AttachmentStorage,
@@ -934,18 +1229,64 @@ pub fn publish(
     run: &Run,
 ) -> Result<Outcome, String> {
     check_inputs(id, run)?;
+    let holder = json!({
+        "command": "publish",
+        "device": run.device,
+        "face": run.face,
+        "time": run.time,
+    });
+    with_lock(device, &holder, || apply(device, storage, id, run))
+}
+
+/// The publication of a plan, with the lock of the device.
+fn apply(
+    device: &Device,
+    storage: &AttachmentStorage,
+    id: &str,
+    run: &Run,
+) -> Result<Outcome, String> {
+    // A publication that stopped halfway is put back first. When it stopped
+    // after its push, the correction of the property is owed.
+    let owed = recover(device)?;
     let record = device
         .store
         .load_plan(id)
         .ok_or_else(|| format!("there is no plan with the id {id} on this device"))?;
-    let current = record_for(device, &selection_of(&record, id)?)?;
+    let current = record_for(device, &selection_of(&record, id)?, Fetch::Must)?;
     if current.record != record {
         return Err(format!(
             "the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan"
         ));
     }
+    // The journal comes before the first write into the copy: a run that
+    // stops halfway is put back by the next one.
+    let paths = store_paths_of(&current.plan, &current.scan, run.time);
+    let head = device.store.head();
+    if !paths.is_empty() {
+        device
+            .store
+            .save_journal(&journal_text(&RunJournal::Write {
+                correction_owed: owed,
+                head: head.clone(),
+                paths: paths.clone(),
+                plan: id.to_owned(),
+            })?)?;
+    }
+    // The journal after the run: `correct` while a correction is owed, else
+    // none.
+    let settle = |correct: bool| -> Result<(), String> {
+        if correct {
+            device
+                .store
+                .save_journal(&journal_text(&RunJournal::Correct)?)
+        } else if paths.is_empty() {
+            Ok(())
+        } else {
+            device.store.remove_journal()
+        }
+    };
 
-    let mut journal = Journal::new(&device.store);
+    let mut journal = Backup::new(&device.store);
     let mut uploads = Uploads::new(&device.vault, storage);
     let written = match write_all(device, &mut journal, &mut uploads, &current, run) {
         Ok(written) => written,
@@ -955,11 +1296,17 @@ pub fn publish(
             // entry.
             let stayed = journal.put_all_back();
             let kept = uploads.take_back(&current.scan.manifest, &current.scan);
+            // A file that could not be put back, or a commit that git could
+            // not take back, stays in the journal, so the next run puts it
+            // back.
+            if stayed.is_empty() && device.store.head() == head {
+                settle(owed)?;
+            }
             let files = if stayed.is_empty() {
                 "and the files of the copy are as they were before".to_owned()
             } else {
                 format!(
-                    "and these files of the copy could not be put back: {}. The next run would read them as published: put them back before the next publication",
+                    "and these files of the copy could not be put back: {}. The next plan or publish puts them back",
                     stayed.join(", ")
                 )
             };
@@ -974,10 +1321,14 @@ pub fn publish(
             return Err(format!("{error}. Nothing is published, {files}{storage}"));
         }
     };
-    let mut correction = Correction::default();
+    crash_point("push");
     // With nothing to commit there is no push, and without a push no property
-    // is corrected.
-    if !written.paths.is_empty() {
+    // is corrected, unless an earlier run pushed and stopped before its
+    // correction.
+    let correct = !written.paths.is_empty() || owed;
+    settle(correct)?;
+    let mut correction = Correction::default();
+    if correct {
         // The push succeeded: the manifest of the copy is the manifest of the
         // content store. The vault now says the same.
         let now_published: BTreeSet<String> = written
@@ -991,7 +1342,28 @@ pub fn publish(
     // The copy follows the content store: the run fetched it and was not
     // behind, and a push, when there was one, succeeded.
     let cleanup = clean_storage(storage, &written.manifest, &current.scan, &device.vault);
-    let mut uploaded = uploads.uploaded.clone();
+    if correct {
+        device.store.remove_journal()?;
+    }
+    report_of(
+        &written,
+        &current.plan,
+        &uploads.uploaded,
+        correction,
+        cleanup,
+    )
+}
+
+/// The report of a publication, in the canonical form.
+fn report_of(
+    written: &Written,
+    plan: &PublicationPlan,
+    uploads: &[String],
+    correction: Correction,
+    cleanup: Cleanup,
+) -> Result<Outcome, String> {
+    let mut uploaded = uploads.to_vec();
+    uploaded.extend(cleanup.uploaded);
     sort_by_code_point(&mut uploaded);
     let mut warnings = correction.warnings;
     warnings.extend(cleanup.warnings);
@@ -1001,7 +1373,7 @@ pub fn publish(
         "attachmentsDeleted": cleanup.deleted,
         "attachmentsUploaded": uploaded,
         "failed": written.failed,
-        "forcedRemoved": current.plan.forced_remove(),
+        "forcedRemoved": plan.forced_remove(),
         "propertyRemoved": correction.property_removed,
         "propertySet": correction.property_set,
         "published": written.published,

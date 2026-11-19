@@ -86,6 +86,16 @@ The record of each published note: identity, path, former paths, dates and state
 **Rename journal**:
 The record of the renames and moves of notes that wait for the next publication.
 
+**Run journal**:
+The record that a publication writes on its device before its first write into the copy of the content store. When the run stops halfway, the next run reads it to put the copy back.
+_Avoid_: rename journal (another record)
+
+**Lock of the device**:
+The mark that a publication runs on a device. One publication at a time per device; between devices, the refused push is the lock.
+
+**Missing from this vault**:
+A published note whose file this device does not have, and that no guard excludes. It is never selected by default.
+
 **Deny list**:
 The vault folders whose notes can never be published. It lives in the configuration of the publishing tool.
 _Avoid_: block list, ignore list, excluded folders

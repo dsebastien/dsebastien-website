@@ -118,17 +118,10 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const changed = new Set(queue.changed)
     const waiting = new Set(queue.toRemove)
     const unchanged = new Set(queue.unchanged)
-    // A published note is a forced removal when a guard excludes it: its path
-    // is in a folder of the deny list, it has the ignore property, or its file
-    // is missing and a note of its name is in a folder of the deny list (it
-    // moved there). A note whose file is only missing is not one. Every path
-    // of this list of the queue that has no ignore property is a missing file.
-    const forced = queue.toRemove.filter(
-        (path) =>
-            guardOfPath(path, scan.configuration) !== undefined ||
-            scan.ignored.has(path) ||
-            scan.deniedNames.has(path.slice(path.lastIndexOf('/') + 1).toLowerCase())
-    )
+    // A published note is a forced removal when a guard excludes it. A note
+    // whose file is only missing from this vault is not one (PUB-95).
+    const onlyMissing = new Set(queue.missing)
+    const forced = queue.toRemove.filter((path) => !onlyMissing.has(path))
     const underGuard = new Set(forced)
     for (const path of selection.include) {
         if (waiting.has(path)) {

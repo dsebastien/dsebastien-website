@@ -150,24 +150,13 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
 
     // Each list of the queue is sorted, so a binary search finds a path.
     let within = |list: &[String], path: &String| list.binary_search(path).is_ok();
-    // A published note is a forced removal when a guard excludes it: its path
-    // is in a folder of the deny list, it has the ignore property, or its file
-    // is missing and a note of its name is in a folder of the deny list (it
-    // moved there). A note whose file is only missing is not one. Every path
-    // of this list of the queue that has no ignore property is a missing file.
-    // The list is sorted, as the list of the queue is.
-    let moved_under_guard = |path: &String| {
-        let name = path.rsplit('/').next().unwrap_or(path);
-        scan.denied_names.contains(&name.to_lowercase())
-    };
+    // A published note is a forced removal when a guard excludes it. A note
+    // whose file is only missing from this vault is not one (PUB-95). The list
+    // is sorted, as the lists of the queue are.
     let forced: Vec<String> = queue
         .to_remove
         .iter()
-        .filter(|path| {
-            in_deny_list(path, &scan.configuration)
-                || scan.ignored.contains(*path)
-                || moved_under_guard(path)
-        })
+        .filter(|path| !within(&queue.missing, path))
         .cloned()
         .collect();
     for path in &selection.include {

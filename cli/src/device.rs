@@ -12,6 +12,62 @@ use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::thread;
 
+use serde_json::{Value, json};
+
+use crate::canonical::to_canonical_json;
+
+/// How a check of the copy reaches the content store: `None` reads no
+/// network (`status`), `Try` fetches and uses the last fetch when the content
+/// store cannot be reached (`plan`), `Must` fetches and fails when it cannot
+/// (`publish`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fetch {
+    None,
+    Try,
+    Must,
+}
+
+/// What a check of the copy found.
+pub struct Verified {
+    /// The number of commits of the branch `main` of the content store, at
+    /// the last fetch, that the copy does not have.
+    pub behind: u64,
+    /// False when the check tried to fetch and the content store could not be
+    /// reached.
+    pub reached: bool,
+}
+
+/// What the copy did with the files of a publication that stopped halfway.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Recovery {
+    /// The commit of the run arrived in the content store.
+    Pushed,
+    /// The copy is back at the commit before the run.
+    Undone,
+}
+
+/// Why a fetch failed.
+enum FetchFailure {
+    /// The content store cannot be reached: no network, or no such
+    /// repository.
+    Unreachable(String),
+    /// The copy cannot be trusted.
+    Other(String),
+}
+
+/// A test switch: a debug build of the program stops at this point when the
+/// environment names it, as after a power cut (issue 36). A release build has
+/// no such switch.
+pub fn crash_point(point: &str) {
+    #[cfg(debug_assertions)]
+    if env::var_os("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH").is_some_and(|value| value == point) {
+        eprintln!("test switch: the run stops at \"{point}\"");
+        std::process::exit(99);
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = point;
+}
+
 /// What a folder holds at exactly one path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Entry {
@@ -174,11 +230,15 @@ impl Vault {
         self.exact_entry(path) == Some(Entry::Folder)
     }
 
+    /// Writes the text of a note. A stop of the process during the write
+    /// never leaves the note empty or half written: the text goes into a
+    /// hidden file of the same folder first, which is then renamed.
+    ///
     /// # Errors
     ///
-    /// The file cannot be written.
+    /// The file is read only, or cannot be written.
     pub fn write(&self, path: &str, text: &str) -> Result<(), String> {
-        write_text(&self.folder.join(path), text)
+        write_whole(&self.folder.join(path), text)
     }
 }
 
@@ -284,7 +344,7 @@ impl ContentStore {
     /// The folder is not the root of its own git repository: git would else
     /// work on the repository that holds the folder. Or the copy has commits
     /// that the content store does not have.
-    pub fn verify(&self, fetch: bool) -> Result<u64, String> {
+    pub fn verify(&self, fetch: Fetch) -> Result<Verified, String> {
         let top = self.git_output(&["rev-parse", "--show-toplevel"]).ok();
         let same = top.is_some_and(|top| {
             match (fs::canonicalize(top.trim()), fs::canonicalize(&self.folder)) {
@@ -298,8 +358,17 @@ impl ContentStore {
                 self.folder.display()
             ));
         }
-        if fetch {
-            self.fetch_main()?;
+        let mut reached = true;
+        if fetch != Fetch::None {
+            match self.fetch_main() {
+                Ok(()) => {}
+                // Without a network a plan uses the last fetch (PERF-16): its
+                // publication fetches again.
+                Err(FetchFailure::Unreachable(_)) if fetch == Fetch::Try => reached = false,
+                Err(FetchFailure::Unreachable(error) | FetchFailure::Other(error)) => {
+                    return Err(error);
+                }
+            }
         }
         // How far the copy is behind the content store, at the last fetch.
         let exists = |name: &str| {
@@ -336,7 +405,116 @@ impl ContentStore {
         };
         self.check_history(has_main, no_commit)?;
         self.check_files()?;
-        Ok(behind)
+        Ok(Verified { behind, reached })
+    }
+
+    /// The commit of the copy, or `None` when the copy has no commit.
+    pub fn head(&self) -> Option<String> {
+        self.git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
+            .ok()
+            .map(|head| head.trim().to_owned())
+    }
+
+    /// Puts back what a publication that stopped halfway left, by the rules
+    /// of the run journal (`documentation/Canonical Form.md`, "Failure
+    /// cases"): `head` is the commit before the run, and `paths` are the files
+    /// that the run could write.
+    ///
+    /// # Errors
+    ///
+    /// The copy has another commit, or the tool must know whether the push
+    /// arrived and the content store cannot be reached, or git fails.
+    pub fn recover(&self, head: Option<&str>, paths: &[String]) -> Result<Recovery, String> {
+        let now = self.head();
+        if now.as_deref() != head {
+            // The run made its commit: its first parent is the commit before
+            // the run, or it is the first commit of the copy.
+            let parents = match &now {
+                Some(now) => self
+                    .git_output(&["rev-list", "--parents", "--max-count=1", now])?
+                    .split_whitespace()
+                    .skip(1)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>(),
+                None => Vec::new(),
+            };
+            let made_by_the_run = match head {
+                Some(head) => parents.first().map(String::as_str) == Some(head),
+                None => parents.is_empty(),
+            };
+            let Some(now) = now.filter(|_| made_by_the_run) else {
+                return Err(format!(
+                    "a publication stopped halfway, and the copy of the content store has another commit since. Correct the copy by hand (git fetch origin, then git reset --hard origin/main when the copy holds no other work), then remove .git/vault-publish/journal.json: {}",
+                    self.folder.display()
+                ));
+            };
+            self.fetch_main().map_err(|(FetchFailure::Unreachable(error) | FetchFailure::Other(error))| {
+                format!(
+                    "a publication stopped halfway after its commit, and the tool must reach the content store to know whether its push arrived: {error}"
+                )
+            })?;
+            let pushed = self
+                .git_output(&[
+                    "merge-base",
+                    "--is-ancestor",
+                    &now,
+                    "refs/remotes/origin/main",
+                ])
+                .is_ok();
+            if pushed {
+                return Ok(Recovery::Pushed);
+            }
+            // The tool never pushes an old commit: it can be older than a
+            // guard that the author added since.
+            match head {
+                Some(head) => self.git_output(&["update-ref", "HEAD", head])?,
+                None => self.git_output(&["update-ref", "-d", "HEAD"])?,
+            };
+        }
+        // Each path as the commit before the run has it.
+        let in_head: Vec<String> = match head {
+            Some(head) => self
+                .git_output(&["ls-tree", "-r", "-z", "--name-only", "--full-tree", head])?
+                .split('\0')
+                .filter(|path| !path.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            None => Vec::new(),
+        };
+        let (back, gone): (Vec<&str>, Vec<&str>) = paths
+            .iter()
+            .map(String::as_str)
+            .partition(|path| in_head.iter().any(|known| known == path));
+        if let Some(head) = head
+            && !back.is_empty()
+        {
+            self.git_on_paths(&["checkout", head], &back)?;
+        }
+        for path in &gone {
+            self.refuse_links(path)?;
+            match fs::remove_file(self.folder.join(path)) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(format!(
+                        "{path} of the content store cannot be removed: {error}"
+                    ));
+                }
+            }
+        }
+        if !gone.is_empty() {
+            self.git_on_paths(&["rm", "--quiet", "--cached", "--ignore-unmatch"], &gone)?;
+        }
+        if head.is_none() && self.git_output(&["ls-files", "-z"])?.is_empty() {
+            // A fresh clone of an empty content store has no index. An index
+            // with no entry would stop a later pull.
+            match fs::remove_file(self.folder.join(".git").join("index")) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("the empty index cannot be removed: {error}")),
+            }
+        }
+        Ok(Recovery::Undone)
     }
 
     /// Fetches the branch `main` of the content store into
@@ -344,13 +522,13 @@ impl ContentStore {
     /// setting of the copy could else leave that ref as it was (a setting
     /// removed or changed by hand), and a copy that is behind would look up to
     /// date. A content store with no branch yet has nothing to fetch.
-    fn fetch_main(&self) -> Result<(), String> {
+    fn fetch_main(&self) -> Result<(), FetchFailure> {
         let failed = |error: String| {
-            format!(
-                "the content store cannot be reached (git fetch origin failed: {}). A plan and a publication fetch it first, so that a copy that is behind is never used: {}",
+            FetchFailure::Unreachable(format!(
+                "the content store cannot be reached (git fetch origin failed: {}). A publication fetches it first, so that a copy that is behind is never used: {}",
                 error.trim(),
                 self.folder.display()
-            )
+            ))
         };
         let remote = self
             .git_output(&["ls-remote", "--quiet", "origin", "refs/heads/main"])
@@ -372,10 +550,10 @@ impl ContentStore {
             ])
             .is_ok()
         {
-            return Err(format!(
+            return Err(FetchFailure::Other(format!(
                 "the content store has no branch main, but the copy knows one (refs/remotes/origin/main). Nothing can be published until the copy is corrected by hand: {}",
                 self.folder.display()
-            ));
+            )));
         }
         Ok(())
     }
@@ -847,6 +1025,7 @@ impl ContentStore {
                 undo(false),
             ));
         }
+        crash_point("commit");
         // Never with force: when another device pushed first, git refuses.
         if self
             .git_output(&["push", "--quiet", "origin", "HEAD:main"])
@@ -870,14 +1049,100 @@ impl ContentStore {
         self.git_with(&all, paths.join("\0").as_bytes()).map(|_| ())
     }
 
-    /// The plans are in the git folder of the copy: on the device, never in a
-    /// commit, never in the vault.
+    /// The plans, the lock and the run journal are in the git folder of the
+    /// copy: on the device, never in a commit, never in the vault.
+    fn local_file(&self, name: &str) -> PathBuf {
+        self.folder.join(".git").join("vault-publish").join(name)
+    }
+
     fn plan_file(&self, id: &str) -> PathBuf {
-        self.folder
-            .join(".git")
-            .join("vault-publish")
-            .join("plans")
-            .join(format!("{id}.json"))
+        self.local_file("plans").join(format!("{id}.json"))
+    }
+
+    /// Takes the lock of the device for a run, in one create: the file is
+    /// made only when no lock exists, with the holder and the id of the
+    /// process. `Ok(None)` when the lock was taken, else the text of the lock
+    /// that is there.
+    ///
+    /// # Errors
+    ///
+    /// The lock cannot be made or read.
+    pub fn lock(&self, holder: &Value) -> Result<Option<String>, String> {
+        let path = self.local_file("lock");
+        let failed =
+            |error: std::io::Error| format!("the lock of the device cannot be made: {error}");
+        if let Some(folder) = path.parent() {
+            fs::create_dir_all(folder).map_err(failed)?;
+        }
+        let mut content = holder.clone();
+        content["process"] = json!(std::process::id());
+        let text = to_canonical_json(&content).map_err(|error| error.to_string())?;
+        // One create, never a test and then a write: two runs that start at
+        // the same moment cannot both take the lock.
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                file.write_all(text.as_bytes()).map_err(failed)?;
+                Ok(None)
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(Some(
+                self.read_lock()?
+                    .unwrap_or_else(|| "a lock that went away".to_owned()),
+            )),
+            Err(error) => Err(failed(error)),
+        }
+    }
+
+    /// The text of the lock, or `None` when no lock exists.
+    ///
+    /// # Errors
+    ///
+    /// The lock exists and cannot be read.
+    pub fn read_lock(&self) -> Result<Option<String>, String> {
+        read_if_there(&self.local_file("lock"))
+    }
+
+    /// Removes the lock. `Ok(true)` when a lock existed.
+    ///
+    /// # Errors
+    ///
+    /// The lock exists and cannot be removed.
+    pub fn unlock(&self) -> Result<bool, String> {
+        match fs::remove_file(self.local_file("lock")) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(format!("the lock of the device cannot be removed: {error}")),
+        }
+    }
+
+    /// # Errors
+    ///
+    /// The journal cannot be written.
+    pub fn save_journal(&self, text: &str) -> Result<(), String> {
+        write_whole(&self.local_file("journal.json"), text)
+    }
+
+    /// The text of the run journal, or `None` when there is none.
+    ///
+    /// # Errors
+    ///
+    /// The journal exists and cannot be read.
+    pub fn load_journal(&self) -> Result<Option<String>, String> {
+        read_if_there(&self.local_file("journal.json"))
+    }
+
+    /// # Errors
+    ///
+    /// The journal exists and cannot be removed.
+    pub fn remove_journal(&self) -> Result<(), String> {
+        match fs::remove_file(self.local_file("journal.json")) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("the run journal cannot be removed: {error}")),
+        }
     }
 
     /// # Errors
@@ -1020,6 +1285,42 @@ fn ways_out(different: &[(&str, &str)]) -> String {
         ways.push("Put the manifest back with git checkout HEAD -- manifest");
     }
     format!("{}. Only the tool writes the manifest", ways.join(". "))
+}
+
+/// The text of a file, or `None` when it does not exist.
+fn read_if_there(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("{} cannot be read: {error}", path.display())),
+    }
+}
+
+/// Writes a file in two steps: the text goes into a hidden file of the same
+/// folder, which is then renamed to the name of the file. A stop of the
+/// process during the write never leaves the file empty or half written. A
+/// name that starts with a dot is not part of the vault for the scan and for
+/// Obsidian. A rename would replace a file that the author made read only, so
+/// such a file is refused.
+fn write_whole(path: &Path, text: &str) -> Result<(), String> {
+    let failed = |error: std::io::Error| format!("{} cannot be written: {error}", path.display());
+    if fs::metadata(path).is_ok_and(|metadata| metadata.permissions().readonly()) {
+        return Err(format!(
+            "{} cannot be written: it is read only",
+            path.display()
+        ));
+    }
+    let folder = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(folder).map_err(failed)?;
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    let temporary = folder.join(format!(".{name}.vault-publish"));
+    fs::write(&temporary, text).map_err(failed)?;
+    fs::rename(&temporary, path).map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        failed(error)
+    })
 }
 
 fn write_text(path: &Path, text: &str) -> Result<(), String> {

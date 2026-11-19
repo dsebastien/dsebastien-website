@@ -4,7 +4,9 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     copyFixtureVault,
+    crashingStore,
     gitEnvironment,
+    type CrashPoint,
     makeContentStoreCopy,
     makeTestStores,
     refusePushes,
@@ -15,7 +17,7 @@ import { nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
 import type { Device } from './ports.ts'
 import type { PublicationQueue } from './queue.ts'
-import { plan, publish, status } from './tool.ts'
+import { plan, publish, status, unlock } from './tool.ts'
 import type { Run } from './tool.ts'
 
 // The publication queue (issue 33): the four lists, the selection, the plan,
@@ -51,9 +53,22 @@ type Step = { why: string } & (
     | { do: 'write'; files: Record<string, FileContent> }
     | { do: 'delete'; paths: string[] }
     | { do: 'store'; files: Record<string, string> }
-    | { do: 'status'; queue: PublicationQueue }
-    | { do: 'plan'; selection: Selection; plan?: PublicationPlan; refused?: true }
-    | { do: 'publish'; selection: Selection; time: string; report: ReportLists }
+    | { do: 'status'; queue: PublicationQueue; refused?: never }
+    | { do: 'status'; refused: true }
+    | {
+          do: 'plan'
+          selection: Selection
+          plan?: PublicationPlan
+          refused?: true
+          offline?: true
+      }
+    | { do: 'publish'; selection: Selection; time: string; report: ReportLists; refused?: never }
+    | { do: 'publish'; selection: Selection; time: string; refused: true }
+    | { do: 'crash'; selection: Selection; time: string; at: CrashPoint }
+    | { do: 'unlock' }
+    | { do: 'offline' }
+    | { do: 'online' }
+    | { do: 'lose'; keys: string[] }
     | {
           do: 'expect'
           vault: Files
@@ -162,6 +177,8 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                 attachmentStorage: stores.attachmentStorage
             })
 
+            // The address of the content store, for the steps "offline" and "online".
+            const address = await git(copy, 'remote', 'get-url', 'origin')
             for (const [index, step] of scenario.steps.entries()) {
                 const label = `step ${String(index + 1)}: ${step.why}`
                 if (step.do === 'write') {
@@ -173,15 +190,44 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                 } else if (step.do === 'store') {
                     await pushToStore(copy, step.files)
                 } else if (step.do === 'status') {
-                    expect(await status(device), label).toEqual(step.queue)
+                    if (step.refused === true) {
+                        expect(await rejectionOf(status(device)), label).not.toBe('')
+                    } else {
+                        expect(await status(device), label).toEqual(step.queue)
+                    }
                 } else if (step.do === 'plan') {
                     if (step.refused === true) {
                         expect(await rejectionOf(plan(device, step.selection)), label).not.toBe('')
                     } else {
-                        expect((await plan(device, step.selection)).plan, label).toEqual(
+                        const planned = await plan(device, step.selection)
+                        expect(planned.plan, label).toEqual(
                             step.plan ?? { forcedRemove: [], publish: [], update: [], remove: [] }
                         )
+                        expect(planned.offline, label).toBe(step.offline ?? false)
                     }
+                } else if (step.do === 'crash') {
+                    const planned = await plan(device, step.selection)
+                    const stopped = crashingStore(device.store, copy, step.at)
+                    void publish({ ...device, store: stopped.store }, planned.id, {
+                        time: step.time,
+                        device: 'garden-shed',
+                        face: 'plugin'
+                    })
+                    await stopped.reached
+                } else if (step.do === 'unlock') {
+                    expect(await unlock(device), label).toBe(true)
+                } else if (step.do === 'offline') {
+                    await git(copy, 'remote', 'set-url', 'origin', join(stores.root, 'unreachable'))
+                } else if (step.do === 'online') {
+                    await git(copy, 'remote', 'set-url', 'origin', address)
+                } else if (step.do === 'lose') {
+                    for (const key of step.keys) {
+                        await rm(join(stores.attachmentStorage, key))
+                    }
+                } else if (step.do === 'publish' && step.refused === true) {
+                    const planned = await plan(device, step.selection)
+                    const run: Run = { time: step.time, device: 'garden-shed', face: 'plugin' }
+                    expect(await rejectionOf(publish(device, planned.id, run)), label).not.toBe('')
                 } else if (step.do === 'publish') {
                     const planned = await plan(device, step.selection)
                     const report = await publish(device, planned.id, {
@@ -219,12 +265,17 @@ describe('shared scenarios of the publication queue', () => {
             scenarios.flatMap((scenario) => scenario.steps.map((step) => step.do))
         )
         expect([...kinds].sort()).toEqual([
+            'crash',
             'delete',
             'expect',
+            'lose',
+            'offline',
+            'online',
             'plan',
             'publish',
             'status',
             'store',
+            'unlock',
             'write'
         ])
         expect(scenarios.length).toBeGreaterThanOrEqual(3)
@@ -1343,10 +1394,12 @@ describe('commit that fails', () => {
             expect(await git(setup.copy, 'diff', '--cached', '--name-only', before)).toBe('')
             expect(await Bun.file(join(setup.copy, 'notes', NOTE)).exists()).toBe(false)
             await rm(join(hooks, 'reference-transaction'))
-            expect(await rejectionOf(status(setup.device))).toContain('does not have')
-            expect(await rejectionOf(plan(setup.device, { include: [] }))).toContain(
-                'does not have'
-            )
+            // The journal of the run is still there: status writes nothing,
+            // and the next plan takes the commit back, which the content
+            // store never got (R46).
+            expect(await rejectionOf(status(setup.device))).toContain('stopped halfway')
+            expect((await plan(setup.device, { include: [NOTE] })).plan.publish).toEqual([NOTE])
+            expect(await git(setup.copy, 'rev-parse', 'HEAD')).toBe(before)
         }
     )
 
@@ -1378,7 +1431,14 @@ describe('commit that fails', () => {
             expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('refused')
 
             await rm(join(hooks, 'reference-transaction'))
-            expect(await rejectionOf(status(device))).toContain('does not have')
+            expect(await rejectionOf(status(device))).toContain('stopped halfway')
+            // The next plan takes the first commit back: the copy has no commit again.
+            expect((await plan(device, { include: ['Welcome.md'] })).plan.publish).toEqual([
+                'Welcome.md'
+            ])
+            expect(
+                await rejectionOf(git(copy, 'rev-parse', '--verify', '--quiet', 'HEAD'))
+            ).not.toBe('')
         }
     )
 
@@ -1981,16 +2041,46 @@ describe('copy that is behind the content store', () => {
         expect((await status(device)).unchanged).toEqual([NOTE])
     })
 
-    test('status needs no network, and plan stops when the content store cannot be reached', async () => {
+    test('status needs no network, a plan uses the last fetch, and publish stops when the content store cannot be reached', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         await publishNotes(setup, { include: [NOTE] })
         await rename(stores.contentStore, `${stores.contentStore}.away`)
 
         expect((await status(setup.device)).unchanged).toEqual([NOTE])
-        expect(await rejectionOf(plan(setup.device, { include: [SECOND] }))).toContain(
+        const planned = await plan(setup.device, { include: [SECOND] })
+        expect(planned).toMatchObject({ offline: true, plan: { publish: [SECOND] } })
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain(
             'cannot be reached'
         )
         await rename(`${stores.contentStore}.away`, stores.contentStore)
+        expect(await publishNotes(setup, { include: [SECOND] })).toMatchObject({
+            published: [SECOND]
+        })
+    })
+})
+
+// The lock of the device (issue 36, TOOL-09): one publication at a time on a
+// device, for every face. A lock with no journal is a publication that runs
+// and has not written yet: status, plan and publish all wait.
+describe('lock of the device', () => {
+    test('a lock stops status, plan and publish, and unlock removes it', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const lock = join(setup.copy, '.git', 'vault-publish', 'lock')
+        await writeFile(lock, '{\n  "command": "publish",\n  "process": 1\n}\n')
+
+        expect(await rejectionOf(status(setup.device))).toContain('unlock')
+        expect(await rejectionOf(plan(setup.device, { include: [NOTE] }))).toContain('unlock')
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('unlock')
+        // A refused run leaves the lock of the other run.
+        expect(await Bun.file(lock).exists()).toBe(true)
+
+        expect(await unlock(setup.device)).toBe(true)
+        expect(await unlock(setup.device)).toBe(false)
+        expect((await publish(setup.device, planned.id, RUN)).published).toEqual([NOTE])
+        // A publication removes its own lock at its end.
+        expect(await Bun.file(lock).exists()).toBe(false)
     })
 })

@@ -128,6 +128,16 @@ enum Command {
         #[arg(long, value_name = "NAME")]
         device: Option<String>,
     },
+
+    /// Removes the lock of this device that a publication left when it
+    /// stopped halfway (a crash, a power cut). Run it only when no
+    /// publication runs. The next plan or publish puts the copy of the
+    /// content store back. It writes whether a lock was there.
+    Unlock {
+        /// The folder of the copy of the content store on this device.
+        #[arg(long)]
+        content_store: PathBuf,
+    },
 }
 
 fn device(places: &Places) -> Result<Device, String> {
@@ -254,6 +264,20 @@ fn warn_when_behind(queue: &str) {
     }
 }
 
+/// A plan without a network uses the last fetch (PERF-16): it says so on the
+/// error output too.
+fn warn_when_offline(plan: &str) {
+    let offline = json::parse_json(plan)
+        .ok()
+        .and_then(|plan| plan.get("offline").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false);
+    if offline {
+        eprintln!(
+            "warning: the content store cannot be reached, so the plan uses the last fetch: the copy may be behind. The publication fetches first"
+        );
+    }
+}
+
 fn run(command: Command) -> Result<Outcome, String> {
     let done = |output: String| Outcome { output, failed: 0 };
     match command {
@@ -273,7 +297,18 @@ fn run(command: Command) -> Result<Outcome, String> {
                 Some(file) => selection_from_file(&file)?,
                 None => Selection::new(&include, &hold, &remove),
             };
-            tool::plan(&device(&places)?, &selection).map(done)
+            let output = tool::plan(&device(&places)?, &selection)?;
+            warn_when_offline(&output);
+            Ok(done(output))
+        }
+        Command::Unlock { content_store } => {
+            if !content_store.is_dir() {
+                return Err(format!(
+                    "the content store is not a folder: {}",
+                    content_store.display()
+                ));
+            }
+            tool::unlock(&ContentStore::new(&content_store)).map(done)
         }
         Command::Publish {
             places,

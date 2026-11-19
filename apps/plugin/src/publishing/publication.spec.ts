@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -633,6 +633,84 @@ describe('commit of a publication', () => {
         expect(await git('-C', setup.copy, 'status', '--porcelain')).toBe('')
         expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(before.remote)
     })
+
+    // Another device pushes between the fetch of the publication and its push
+    // (issue 36, PUB-94, PUB-97). The author pulls, and the next run publishes
+    // on top of the other device, with no forced push.
+    test('a push that another device made first is refused, and after a pull the next run publishes with no forced push', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const other = join(stores.root, 'other-device')
+        await git('clone', '--quiet', stores.contentStore, other)
+        await git('-C', other, 'config', 'user.name', 'Test')
+        await git('-C', other, 'config', 'user.email', 'test@example.invalid')
+        await git('-C', other, 'config', 'commit.gpgsign', 'false')
+        await mkdir(join(other, 'notes'))
+        await writeFile(join(other, 'notes', 'Elsewhere.md'), 'A note of another device\n')
+        await git('-C', other, 'add', '--', 'notes/Elsewhere.md')
+        await git('-C', other, 'commit', '--quiet', '--message', 'A publication of another device')
+        const theirs = await git('-C', other, 'rev-parse', 'HEAD')
+        // The other device pushes when this one is about to push.
+        const hook = join(setup.copy, '.git', 'hooks', 'pre-push')
+        await mkdir(join(setup.copy, '.git', 'hooks'), { recursive: true })
+        await writeFile(
+            hook,
+            `#!/bin/sh\nenv -i PATH="$PATH" HOME="$HOME" git -C "${other}" push --quiet origin HEAD:main\n`
+        )
+        await chmod(hook, 0o755)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const before = {
+            vault: await picture(setup.vault),
+            head: await git('-C', setup.copy, 'rev-parse', 'HEAD')
+        }
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('refused')
+
+        // Nothing is published and no property is corrected.
+        expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(theirs)
+        expect(await picture(setup.vault)).toEqual(before.vault)
+        expect(await git('-C', setup.copy, 'rev-parse', 'HEAD')).toBe(before.head)
+        expect(await rejectionOf(plan(setup.device, { include: [NOTE] }))).toContain(
+            'git pull --ff-only origin main'
+        )
+
+        await rm(hook)
+        await git('-C', setup.copy, 'pull', '--quiet', '--ff-only', 'origin', 'main')
+        const again = await plan(setup.device, { include: [NOTE] })
+        const report = await publish(setup.device, again.id, RUN)
+
+        expect(report.published).toEqual([NOTE])
+        expect(report.propertySet).toEqual([NOTE])
+        // On top of the commit of the other device: no forced push took it back.
+        await git('--git-dir', stores.contentStore, 'merge-base', '--is-ancestor', theirs, 'main')
+        expect(await git('--git-dir', stores.contentStore, 'show', `main:notes/${NOTE}`)).toBe(
+            NOTE_TEXT.trimEnd()
+        )
+    })
+})
+
+// A write of the tool into a note (issue 36): the new text goes into a hidden
+// file of the same folder, which is then renamed. A stop of the process during
+// the write never leaves the note empty or half written.
+describe('write of a note', () => {
+    test.skipIf(process.platform === 'win32')(
+        'replaces the note in one rename and leaves no other file',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const note = join(setup.vault, NOTE)
+            const before = await stat(note)
+            const folder = (await readdir(join(setup.vault, '10 Garden'))).sort()
+
+            const planned = await plan(setup.device, { include: [NOTE] })
+            await publish(setup.device, planned.id, RUN)
+
+            // Another file, renamed over the old one: a write into the same file keeps its number.
+            expect((await stat(note)).ino).not.toBe(before.ino)
+            expect(await Bun.file(note).text()).toContain('public_note: true')
+            expect((await readdir(join(setup.vault, '10 Garden'))).sort()).toEqual(folder)
+        }
+    )
 })
 
 describe('publication of a note with Windows line ends', () => {

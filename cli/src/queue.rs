@@ -12,7 +12,7 @@ use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, source_of};
 use crate::configuration::Configuration;
 use crate::device::{Entry, Vault};
 use crate::frontmatter::{remove_property, set_property};
-use crate::guards::guard_of;
+use crate::guards::{guard_of, in_deny_list};
 use crate::hash::content_hash;
 use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
@@ -39,6 +39,10 @@ pub struct PublicationQueue {
     /// content.
     pub changed: Vec<String>,
     counts: Counts,
+    /// The notes of `to_remove` whose file this device does not have and that
+    /// no guard excludes: missing from this vault. Never selected by default
+    /// (PUB-95).
+    pub missing: Vec<String>,
     /// The candidates.
     pub new: Vec<String>,
     /// The notes of `changed` that the author did not edit: the cleaning step
@@ -61,6 +65,7 @@ impl PublicationQueue {
                 to_remove: 0,
                 unchanged: 0,
             },
+            missing: Vec::new(),
             new: Vec::new(),
             technical_updates: Vec::new(),
             to_remove: Vec::new(),
@@ -106,9 +111,6 @@ pub struct Scan {
     pub guarded: BTreeSet<String>,
     /// The files that the notes link to, each one read one time per run.
     pub files: FileReader,
-    /// The names of the notes in the folders of the deny list, in small
-    /// letters. No file of those folders is read.
-    pub denied_names: BTreeSet<String>,
     /// The other files of the scan: the files that are not notes.
     pub others: BTreeSet<String>,
     /// The names of every file in the folders of the deny list, in small
@@ -341,13 +343,25 @@ pub fn compute_queue(
         }
     }
     queue.count();
-    // The notes of the folders of the deny list, by their names in small
-    // letters, hidden ones included: a published note that is missing may
-    // have moved there.
-    #[allow(clippy::case_sensitive_file_extension_comparisons)]
-    let denied_names = denied_file_names
+    // A published note waits for its removal under a guard when its path is
+    // in a folder of the deny list, it has the ignore property, or its file is
+    // missing and a note of its name is in a folder of the deny list (it moved
+    // there: the names in small letters, hidden ones included). Every other
+    // one is only missing from this vault. The list stays sorted.
+    let moved_under_guard = |path: &String| {
+        let name = path.rsplit('/').next().unwrap_or(path).to_lowercase();
+        #[allow(clippy::case_sensitive_file_extension_comparisons)]
+        let is_note = name.ends_with(".md");
+        is_note && denied_file_names.contains(&name)
+    };
+    queue.missing = queue
+        .to_remove
         .iter()
-        .filter(|name| name.ends_with(".md"))
+        .filter(|path| {
+            !in_deny_list(path, &configuration)
+                && !ignored.contains(*path)
+                && !moved_under_guard(path)
+        })
         .cloned()
         .collect();
     Ok(Scan {
@@ -357,7 +371,6 @@ pub fn compute_queue(
         index,
         guarded,
         files,
-        denied_names,
         others: others.into_iter().collect(),
         denied_file_names,
         manifest,
