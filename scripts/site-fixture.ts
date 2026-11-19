@@ -5,7 +5,8 @@ import { parseArgs } from 'node:util'
 import { copyFixtureVault, makeContentStoreCopy, makeTestStores } from '@dsebastien-website/testing'
 import { nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
-import { startServer } from '../apps/site/server/serve.ts'
+import type { Subprocess } from 'bun'
+import { startServer, type Server } from '../apps/site/server/serve.ts'
 
 // The site of the invented fixture vault, to click through on this machine:
 // the publishing tool publishes every new note of a copy of the fixture vault
@@ -28,10 +29,28 @@ const cache = join(SITE, '.cache')
 await mkdir(cache, { recursive: true })
 const outDir = await mkdtemp(join(cache, 'site-fixture-'))
 
-async function cleanUp(): Promise<void> {
-    await rm(outDir, { recursive: true, force: true })
-    await stores.remove()
+let build: Subprocess | undefined
+let server: Server | undefined
+let stopping = false
+
+/** Stops the build and the server, and removes the folders of this run: one time only, at any step. */
+async function stop(code: number): Promise<never> {
+    if (!stopping) {
+        stopping = true
+        build?.kill()
+        try {
+            await server?.stop()
+        } finally {
+            await rm(outDir, { recursive: true, force: true })
+            await stores.remove()
+        }
+    }
+    process.exit(code)
 }
+
+// From the start, so that a stop during the publication or the build cleans up too.
+process.on('SIGINT', () => void stop(0))
+process.on('SIGTERM', () => void stop(0))
 
 try {
     const vault = await copyFixtureVault(stores)
@@ -49,31 +68,25 @@ try {
         console.error(`  warning: ${warning.path}: ${warning.message}`)
     }
 
-    const build = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
+    build = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
         env: { ...process.env, CONTENT_STORE: contentStore },
         stdout: 'ignore',
         stderr: 'inherit'
     })
-    if ((await build.exited) !== 0) {
+    const built = await build.exited
+    build = undefined
+    if (built !== 0) {
         throw new Error('the build of the site failed')
     }
 
-    const server = await startServer({
+    server = await startServer({
         dist: outDir,
         port: Number(values.port),
         attachments: stores.attachmentStorage
     })
     console.error(`The site of the fixture vault is on ${server.url} (Ctrl+C stops it).`)
-    const stop = (): void => {
-        void server
-            .stop()
-            .then(cleanUp)
-            .finally(() => process.exit(0))
-    }
-    process.on('SIGINT', stop)
-    process.on('SIGTERM', stop)
 } catch (error) {
-    await cleanUp()
-    throw error
+    console.error(error)
+    await stop(1)
 }

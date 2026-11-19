@@ -246,6 +246,9 @@ describe('page of a note whose link targets are not published', () => {
         expect(html).toContain('<span class="not-published">Winter plan (draft)#Beds</span>')
         expect(html).toContain('<span class="not-published">Seed library rules</span>')
         expect(noteOf(html)).not.toContain('<a ')
+        // Nowhere on the page, also outside the text of the note.
+        expect(html).not.toContain('Winter+plan')
+        expect(html).not.toContain('Seed+library')
     })
 
     // The tool does not read a reference link, so it never has a target. It

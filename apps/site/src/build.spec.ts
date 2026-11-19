@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
+import { modeScript, modeSwitchScript } from './mode.ts'
 
 // Acceptance criterion of issue 16: an empty Astro and Tailwind site builds.
 // The test runs the build script of the site and reads the files of the output.
@@ -49,17 +51,43 @@ afterAll(async () => {
     }
 })
 
+/** Every script of a page, as its text. A script with an attribute or a source is given whole, so that it never equals a script of the mode. */
+function scriptsOf(html: string): string[] {
+    return [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gu)].map(
+        ([whole, attributes = '', text = '']) => (attributes.trim() === '' ? text : whole)
+    )
+}
+
+/** The text of each class attribute of a page, cut in classes. */
+function classesOf(html: string): Set<string> {
+    return new Set(
+        [...html.matchAll(/\sclass="([^"]*)"/gu)]
+            .flatMap(([, list = '']) => list.split(/\s+/u))
+            .filter((name) => name !== '')
+    )
+}
+
+/** A class name as a CSS selector writes it. */
+function selectorOf(name: string): string {
+    return `.${name.replace(/[^\w-]/gu, (character) => `\\${character}`)}`
+}
+
 describe('build of the empty site', () => {
     test('completes', () => {
         expect(exitCode).toBe(0)
     })
 
-    test('writes the home page as plain HTML, with inline scripts only', async () => {
+    test('writes the home page as plain HTML, with the two scripts of the mode only', async () => {
         const html = await readOutput('index.html')
         expect(html).toContain('<html lang="en"')
         expect(html).toContain('<h1')
-        // The scripts of the mode are inline: no script file to load.
-        expect(html).not.toMatch(/<script[^>]* src=/u)
+        // The head script holds the function as the build writes it: the
+        // tests below run it. The switch script is the same text.
+        const [head = '', ...rest] = scriptsOf(html)
+        expect(rest).toEqual([modeSwitchScript])
+        expect(head).toContain('localStorage.getItem("mode")')
+        expect(head.startsWith('{')).toBe(true)
+        expect(modeScript.startsWith('{')).toBe(true)
     })
 
     test('compiles the Tailwind classes that the home page uses', async () => {
@@ -88,9 +116,39 @@ describe('design base', () => {
         expect(html).toContain('data-theme="dark"')
     })
 
-    test('has a switch of the mode and a skip link (DES-11)', async () => {
+    // The head runs the built script: a stored choice, then the system, then dark.
+    test.each([
+        ['a stored choice', 'light', false, 'light'],
+        ['the system', null, true, 'light'],
+        ['the default, also when the storage refuses to be read', 'throws', false, 'dark']
+    ] as const)(
+        'runs the built script of the head with %s',
+        async (_name, stored, prefersLight, mode) => {
+            const [head = ''] = scriptsOf(await readOutput('index.html'))
+            const dataset: Record<string, string> = {}
+            runInNewContext(head, {
+                localStorage: {
+                    getItem: () => {
+                        if (stored === 'throws') {
+                            throw new Error('the storage is off')
+                        }
+                        return stored
+                    }
+                },
+                matchMedia: (query: string) => ({
+                    matches: query === '(prefers-color-scheme: light)' && prefersLight
+                }),
+                document: { documentElement: { dataset } }
+            })
+            expect(dataset['theme']).toBe(mode)
+        }
+    )
+
+    test('has a switch of the mode, hidden until its script runs, and a skip link (DES-11)', async () => {
         const html = await readOutput('index.html')
-        expect(html).toContain('data-mode-switch')
+        expect(html).toMatch(/<button[^>]*data-mode-switch[^>]*hidden/u)
+        const css = await readStylesheets()
+        expect(css).toMatch(/\[hidden\][^{]*\{[^}]*display:none/u)
         expect(html).toMatch(/<a [^>]*href="#content"[^>]*>Skip to the content<\/a>/u)
         expect(html).toContain('id="content"')
     })
@@ -117,6 +175,15 @@ describe('design base', () => {
         const css = await readStylesheets()
         expect(css).toMatch(/\.note-text h1\{[^}]*font-weight/u)
         expect(css).toMatch(/\.note-text a\[href\]\{[^}]*text-decoration-line:underline/u)
+    })
+
+    // A class with no rule is a token or a utility that compiles to nothing.
+    test.each([['index.html'], ['404.html']])('has a rule for each class of %s', async (file) => {
+        const css = await readStylesheets()
+        const missing = [...classesOf(await readOutput(file))].filter(
+            (name) => !css.includes(selectorOf(name))
+        )
+        expect(missing).toEqual([])
     })
 
     test('shows a hand cursor on buttons and on what a click opens', async () => {

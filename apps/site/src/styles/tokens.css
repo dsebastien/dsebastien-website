@@ -30,6 +30,7 @@
     --color-primary: var(--theme-primary);
     --color-muted: var(--theme-muted);
     --color-secondary: var(--theme-secondary);
+    --color-secondary-hover: var(--theme-secondary-hover);
     --color-secondary-text: var(--theme-secondary-text);
     --color-on-secondary: var(--theme-on-secondary);
 
@@ -55,6 +56,10 @@
     --shadow-raised: var(--theme-shadow-raised);
 
     --ease-standard: var(--theme-ease-standard);
+
+    /* Every transition of Tailwind takes the motion tokens, so the rule below stops it too. */
+    --default-transition-duration: var(--duration-quick);
+    --default-transition-timing-function: var(--theme-ease-standard);
 }
 
 :root {

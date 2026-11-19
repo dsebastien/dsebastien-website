@@ -6,7 +6,10 @@
  * Contrast (WCAG 2.2), measured on the background and on the surface:
  * dark   primary 10.5 and 9.1, muted 6.1 and 5.3, link 10.5 and 9.1, focus 10.5
  * light  primary 15.9 and 17.1, muted 6.1 and 6.6, link 5.6 and 6.0, focus 5.6
- * The signature magenta is for fills, borders and decoration only.
+ * `apps/site/src/design.spec.ts` checks every pair on every surface.
+ * The signature magenta is for fills, borders and decoration only. In the dark
+ * mode a link has the text color and a lighter pink underline (3.5:1 or more
+ * on every surface); the signature pink is 2.9:1 there.
  */
 
 :root,
@@ -21,11 +24,12 @@
     --theme-primary: #ffffff;
     --theme-muted: #c3c6c9;
     --theme-secondary: #e5007d;
+    --theme-secondary-hover: #c7006c;
     --theme-secondary-text: #ff1493;
     --theme-on-secondary: #ffffff;
 
     --theme-link: #ffffff;
-    --theme-link-decoration: #ff1493;
+    --theme-link-decoration: #ff85c2;
     --theme-focus: #ffffff;
 
     --theme-border: rgb(255 255 255 / 0.12);
@@ -42,13 +46,14 @@
     color-scheme: light;
     --theme-background: #f5f7fa;
     --theme-surface: #ffffff;
-    --theme-surface-elevated: #ffffff;
-    --theme-well: #eceff3;
+    --theme-surface-elevated: #eef1f5;
+    --theme-well: #e6eaf0;
     --theme-overlay: rgb(26 26 46 / 0.4);
 
     --theme-primary: #1a1a2e;
     --theme-muted: #5c5c6b;
     --theme-secondary: #d10070;
+    --theme-secondary-hover: #ad005a;
     --theme-secondary-text: #c20066;
     --theme-on-secondary: #ffffff;
 

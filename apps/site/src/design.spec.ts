@@ -8,18 +8,24 @@ import { fileURLToPath } from 'node:url'
 const SOURCE = fileURLToPath(new URL('.', import.meta.url))
 const THEME = join(SOURCE, 'styles', 'themes', 'knowii.css')
 
-/** The files of the site that hold markup or styles, except the theme files, which hold the values. */
+/** The files of the site that hold markup or styles, except the theme files, which hold the values, and the contract. */
 async function componentFiles(): Promise<string[]> {
     const files = await readdir(SOURCE, { recursive: true })
-    return files
-        .filter((file) => /\.(astro|css|ts)$/u.test(file))
-        .filter((file) => !file.startsWith(join('styles', 'themes')))
-        .filter((file) => !file.endsWith('.spec.ts'))
-        .map((file) => join(SOURCE, file))
+    return (
+        files
+            .filter((file) => /\.(astro|css|ts)$/u.test(file))
+            .filter((file) => !file.startsWith(join('styles', 'themes')))
+            // The contract maps each token to the variable of a theme.
+            .filter((file) => file !== join('styles', 'tokens.css'))
+            .filter((file) => !file.endsWith('.spec.ts'))
+            .map((file) => join(SOURCE, file))
+    )
 }
 
 const PALETTE =
     'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose'
+
+const NAMED_COLORS = `white|black|${PALETTE}`
 
 /** Raw values that a component must not hold: each gets a name for the message. */
 const RAW = [
@@ -28,12 +34,29 @@ const RAW = [
     [
         'a color of the Tailwind palette',
         new RegExp(
-            `\\b(?:bg|text|border|from|to|via|fill|stroke|ring|outline|decoration|divide|shadow|accent|caret|placeholder)-(?:white|black|(?:${PALETTE})-\\d{2,3})\\b`,
+            `\\b(?:bg|text|border(?:-[trblxyse])?|from|to|via|fill|stroke|ring(?:-offset)?|outline|decoration|divide|shadow|accent|caret|placeholder)-(?:white|black|(?:${PALETTE})-\\d{2,3})\\b`,
             'u'
         )
     ],
-    ['a font family', /font-family\s*:/u],
-    ['a radius', /border-radius\s*:|\brounded-(?:xs|sm|md|lg|xl|2xl|3xl|4xl|none|full)\b/u]
+    [
+        'a named color in an attribute or a style',
+        new RegExp(
+            `(?:\\b(?:fill|stroke|color)\\s*=\\s*['"]|(?:color|background(?:-color)?|fill|stroke|border(?:-color)?)\\s*:\\s*)(?:${NAMED_COLORS})\\b`,
+            'iu'
+        )
+    ],
+    [
+        // A length such as `decoration-[3px]` is no color: only a radius must be a token.
+        'an arbitrary value of a token utility',
+        /\b(?:(?:bg|text|border(?:-[trblxyse])?|ring(?:-offset)?|fill|stroke|outline|decoration|divide|shadow|accent|caret|font|ease|duration)-(?:\[(?![\d.]+(?:px|rem|em|ch|%)?\])|\()|rounded(?:-[trblse]{1,2})?-[[(])/u
+    ],
+    ['a variable of a theme outside the theme', /var\(--theme-|--theme-[a-z-]+\)/u],
+    ['a font family', /font-family\s*:|\bfont\s*:/u],
+    [
+        'a radius',
+        /border-radius\s*:|\brounded(?:-(?:t|r|b|l|s|e|tl|tr|br|bl|ss|se|ee|es))?(?:-(?:xs|sm|md|lg|xl|2xl|3xl|4xl|none|full))?(?=[\s'"`]|$)/u
+    ],
+    ['a motion value', /\b(?:duration-\d+|ease-(?:linear|in|out|in-out))\b/u]
 ] as const
 
 describe('tokens only', () => {
@@ -60,19 +83,34 @@ describe('tokens only', () => {
         ["class='text-gray-500'", 'a color of the Tailwind palette'],
         ["class='bg-white'", 'a color of the Tailwind palette'],
         ['font-family: Arial', 'a font family'],
-        ["class='rounded-lg'", 'a radius']
+        ["class='rounded-lg'", 'a radius'],
+        ["class='rounded'", 'a radius'],
+        ["class='rounded-t-lg'", 'a radius'],
+        ["style='color: white'", 'a named color in an attribute or a style'],
+        ["fill='white'", 'a named color in an attribute or a style'],
+        ["class='text-[red]'", 'an arbitrary value of a token utility'],
+        ["class='rounded-[6px]'", 'an arbitrary value of a token utility'],
+        ['class="font-[\'Inter\']"', 'an arbitrary value of a token utility'],
+        ["class='bg-(--theme-secondary)'", 'an arbitrary value of a token utility'],
+        ["class='border-t-red-500'", 'a color of the Tailwind palette'],
+        ["class='ring-offset-white'", 'a color of the Tailwind palette'],
+        ["style='font: 12px Arial'", 'a font family'],
+        ["class='duration-300 ease-in-out'", 'a motion value']
     ])('sees %s', (line, name) => {
         expect(
             RAW.filter(([, pattern]) => pattern.test(line)).map(([raw]): string => raw)
         ).toContain(name)
     })
 
-    test.each([["href='#content'"], ["class='rounded-card bg-surface text-primary'"], ['#{id}']])(
-        'lets %s pass',
-        (line) => {
-            expect(RAW.filter(([, pattern]) => pattern.test(line))).toEqual([])
-        }
-    )
+    test.each([
+        ["href='#content'"],
+        ["class='rounded-card bg-surface text-primary'"],
+        ["class='rounded-control rounded-pill decoration-[3px] max-w-[72ch]'"],
+        ['#{id}'],
+        ["class='font-semibold text-muted'"]
+    ])('lets %s pass', (line) => {
+        expect(RAW.filter(([, pattern]) => pattern.test(line))).toEqual([])
+    })
 })
 
 /** The values of the theme in one mode, from the block whose selector is given. */
@@ -110,8 +148,27 @@ const PAIRS = [
         SURFACES.map((surface) => [text, surface, 4.5] as const)
     ),
     ...SURFACES.map((surface) => ['focus', surface, 3] as const),
-    ['on-secondary', 'secondary', 4.5] as const
+    // The underline marks a link: a part of the interface, 3:1 (WCAG 1.4.11).
+    ...SURFACES.map((surface) => ['link-decoration', surface, 3] as const),
+    ['on-secondary', 'secondary', 4.5] as const,
+    ['on-secondary', 'secondary-hover', 4.5] as const
 ]
+
+describe('token contract', () => {
+    // Tailwind writes only the variables that the markup uses, so the built
+    // CSS cannot show a missing reset: the contract must hold it.
+    test('switches off the default palette, fonts, radii and shadows of Tailwind', async () => {
+        const tokens = await readFile(join(SOURCE, 'styles', 'tokens.css'), 'utf8')
+        for (const reset of [
+            '--color-*: initial',
+            '--font-*: initial',
+            '--radius-*: initial',
+            '--shadow-*: initial'
+        ]) {
+            expect(tokens).toContain(reset)
+        }
+    })
+})
 
 describe('contrast of the theme knowii', () => {
     test.each([

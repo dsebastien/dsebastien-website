@@ -26,6 +26,11 @@
         cursor: not-allowed;
     }
 
+    /* The sticky header never hides the target of a link or the focus (WCAG 2.4.11). */
+    html {
+        scroll-padding-top: 5rem;
+    }
+
     :focus-visible {
         @apply outline-2 outline-offset-2 outline-focus;
     }
@@ -86,11 +91,11 @@
     }
 
     .button {
-        @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-[filter];
+        @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-colors;
     }
 
     .button:hover {
-        filter: brightness(1.1);
+        @apply bg-secondary-hover;
     }
 
     .button-quiet {
@@ -152,8 +157,22 @@
         @apply border-l-4 border-secondary py-1 pl-5 text-muted italic;
     }
 
-    .note-text code {
+    /* Code in a line. A block of code is below. */
+    .note-text :not(pre) > code {
         @apply rounded-control bg-well px-1.5 py-0.5 font-mono text-base;
+    }
+
+    /* A block of code: the colors of the theme, until the rendering slice
+       (issue 45) gives the highlighter colors from the tokens. The highlighter
+       writes its own colors into the markup, so they are replaced here. */
+    .note-text pre {
+        @apply overflow-x-auto rounded-card border border-border p-4 font-mono text-base leading-7;
+        background-color: var(--color-well) !important;
+    }
+
+    .note-text pre,
+    .note-text pre * {
+        color: var(--color-primary) !important;
     }
 
     /* Text for screen readers only. */

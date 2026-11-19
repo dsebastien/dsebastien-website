@@ -1,12 +1,14 @@
 ---
 // The switch of the mode (NAV-01, MODE-01). The icon shows the mode that a
-// click gives: a sun in the dark mode, a moon in the light mode.
+// click gives: a sun in the dark mode, a moon in the light mode. It is
+// hidden until its script runs: without JavaScript it could do nothing.
 ---
 
 <button
     type='button'
     class='button-quiet h-9 w-9 p-0'
     data-mode-switch
+    hidden
     aria-label='Switch the mode'
 >
     <svg

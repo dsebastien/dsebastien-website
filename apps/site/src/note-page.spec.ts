@@ -11,6 +11,7 @@ import {
 import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
+import { modeScript, modeSwitchScript } from './mode.ts'
 
 // The first slice (issue 31), from the content store to a served page: the
 // build makes one page from a published note, and a plain local server serves
@@ -112,17 +113,17 @@ describe('build of a content store with one published note', () => {
     })
 
     // The page works without JavaScript (PAGE-01): its only scripts are the
-    // two inline scripts of the mode (MODE-01), and it loads no script file.
+    // two inline scripts of the mode (MODE-01), with no attribute.
     test('makes a page without JavaScript, but for the mode', async () => {
         const html = await readOutput(NOTE_FILE)
-        expect(html).not.toMatch(/<script[^>]* src=/u)
-        const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gu)].map(
-            ([, text = '']) => text
+        const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gu)].map(
+            ([whole, attributes = '', text = '']) => (attributes.trim() === '' ? text : whole)
         )
-        expect(scripts.length).toBe(2)
-        for (const script of scripts) {
-            expect(script).toContain('prefers-color-scheme: light')
-        }
+        const [head = '', ...rest] = scripts
+        expect(rest).toEqual([modeSwitchScript])
+        // The head script holds the function as the build writes it (its run is tested in build.spec.ts).
+        expect(head).toContain('localStorage.getItem("mode")')
+        expect(modeScript).toContain('localStorage.getItem("mode")')
     })
 
     test('does not write the properties of the note as text of the page', async () => {
