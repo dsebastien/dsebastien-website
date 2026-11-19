@@ -376,6 +376,9 @@ fn alias_of_item(item: &str) -> Option<String> {
         unescape_double(&text[1..text.len() - 1])?
     } else if quoted('\'') {
         text[1..text.len() - 1].replace("''", "'")
+    } else if text.starts_with('#') {
+        // A comment: YAML reads `- # c` as an empty item.
+        return None;
     } else {
         let bytes = text.as_bytes();
         let comment = (1..bytes.len()).find(|at| bytes[*at] == b'#' && is_blank(bytes[at - 1]));
@@ -459,9 +462,11 @@ pub fn aliases_of(source: &str) -> Aliases {
         };
         // A value that starts with `#` is a comment: the items follow.
         if value.is_empty() || value.starts_with('#') {
+            // A blank line or a comment line of YAML does not end the list.
             items.extend(
                 lines[index + 1..]
                     .iter()
+                    .filter(|next| !next.is_empty() && !next.starts_with('#'))
                     .take_while(|next| continues(next))
                     .filter_map(|next| list_item_of(next)),
             );

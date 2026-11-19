@@ -686,6 +686,30 @@
             "reserved": []
         },
         {
+            "name": "an item that is a comment gives no alias",
+            "note": "---\naliases:\n  - # the old name\n  - #hashtag\n  -\t# a tab\n  - One\n  - \"# in quotes\"\n  - '#'\n---\nText\n",
+            "aliases": ["#", "# in quotes", "One"],
+            "reserved": []
+        },
+        {
+            "name": "a comment line inside the list does not end it",
+            "note": "---\naliases:\n# the old names\n  - One\n#\n  # indented\n  - Two\ntags:\n  - Three\n---\nText\n",
+            "aliases": ["One", "Two"],
+            "reserved": []
+        },
+        {
+            "name": "a blank line inside the list does not end it",
+            "note": "---\naliases:\n\n  - One\n\n\n  - Two\n\ntags:\n  - Three\n---\nText\n",
+            "aliases": ["One", "Two"],
+            "reserved": []
+        },
+        {
+            "name": "a comment line or a blank line inside the list, with Windows line ends",
+            "note": "---\r\naliases:\r\n\r\n# a comment\r\n  - One\r\n---\r\nText\r\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
             "name": "an item without a space after the hyphen is not an item",
             "note": "---\naliases:\n  -One\n  - Two\n---\nText\n",
             "aliases": ["Two"],

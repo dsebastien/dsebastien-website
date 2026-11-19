@@ -72,9 +72,10 @@ const CRAFTED: Record<string, string> = {
     'Crafted/Ignore is false.md': '---\npublish_ignore: false\n---\nText\n',
     // Aliases in hard forms (issue 43): quotes with escapes, a comma inside
     // quotes, a comment, a reserved alias, a name in another Unicode form,
-    // the key two times and Windows line ends.
+    // the key two times and Windows line ends. Issue 80: an item that is a
+    // comment, and a comment line and a blank line inside the list.
     'Crafted/Aliases.md':
-        '---\r\naliases:\r\n  - "Say \\"hi\\""\r\n  - \'It\'\'s\'\r\n  - llms.txt\r\n  - One # a comment\r\n  - Cafe\u0301\r\ntags: a\r\naliases: [Two, "Three, four", \'Five\']\r\n---\r\nText\r\n',
+        '---\r\naliases:\r\n  - "Say \\"hi\\""\r\n  - \'It\'\'s\'\r\n# a comment line\r\n\r\n  - llms.txt\r\n  - # an empty item\r\n  - One # a comment\r\n  - Cafe\u0301\r\ntags: a\r\naliases: [Two, "Three, four", \'Five\']\r\n---\r\nText\r\n',
     // Properties in the flow form of YAML: the tool never writes into them.
     'Crafted/Flow form.md': '---\n{ "tags": ["a"] }\n---\nText\n',
     // Links in hard forms: another letter case, a table, paths from the folder

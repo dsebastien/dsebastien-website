@@ -4,7 +4,7 @@ import { marksOf, withoutProperty } from './frontmatter.ts'
 // spec). The Rust twin is `cli/src/clean.rs`.
 
 /** The version of the cleaning step. A new version makes a technical update of every note (PUB-24). */
-export const CLEANING_VERSION = 4
+export const CLEANING_VERSION = 5
 
 /** The property that records in the vault that a note is published. Only the tool writes it. */
 export const STATE_PROPERTY = 'public_note'

@@ -54,7 +54,7 @@ const MANIFEST_ENTRY = `{
   "aliases": [],
   "attachments": [],
   "cleanedHash": "${NOTE_HASH}",
-  "cleaningVersion": 4,
+  "cleaningVersion": 5,
   "firstPublished": "${TIME}",
   "formerPaths": [],
   "id": "${NOTE_ID}",

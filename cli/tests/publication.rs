@@ -37,7 +37,7 @@ const MANIFEST_ENTRY: &str = r#"{
   "aliases": [],
   "attachments": [],
   "cleanedHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b",
-  "cleaningVersion": 4,
+  "cleaningVersion": 5,
   "firstPublished": "2031-04-01T08:00:00Z",
   "formerPaths": [],
   "id": "203d446940c02032",

@@ -338,6 +338,9 @@ function aliasOfItem(item: string): string | undefined {
         alias = unescapeDouble(text.slice(1, -1))
     } else if (text.length >= 2 && text.startsWith("'") && text.endsWith("'")) {
         alias = text.slice(1, -1).replaceAll("''", "'")
+    } else if (text.startsWith('#')) {
+        // A comment: YAML reads `- # c` as an empty item.
+        alias = undefined
     } else {
         const comment = /[ \t]#/u.exec(text)
         alias = trim(comment === null ? text : text.slice(0, comment.index))
@@ -410,6 +413,10 @@ export function aliasesOf(source: string): Aliases {
         if (value === '' || value.startsWith('#')) {
             for (let next = index + 1; next < lines.length; next += 1) {
                 const text = lines[next] ?? ''
+                // A blank line or a comment line of YAML does not end the list.
+                if (text === '' || text.startsWith('#')) {
+                    continue
+                }
                 if (!continues(text)) {
                     break
                 }
