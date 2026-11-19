@@ -271,15 +271,9 @@ fn a_forced_removal_with_no_upload_goes_on_when_the_storage_cannot_be_listed() {
     setup.publish(&[NOTE], &[]);
     setup.add_ignore(NOTE);
     let id = setup.plan(&[], &[]);
-    let storage = setup.stores.attachment_storage();
-    // A storage that cannot be listed: the folder loses its rights, on a
-    // system that has them.
-    if !make_unlistable(storage) {
-        return;
-    }
+    fs::remove_dir_all(setup.stores.attachment_storage()).expect("the storage can be removed");
 
     let output = setup.apply(&id);
-    make_listable(storage);
 
     let report: Value = serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|_| panic!("the report is JSON: {}", errors_of(&output)));
@@ -287,30 +281,6 @@ fn a_forced_removal_with_no_upload_goes_on_when_the_storage_cannot_be_listed() {
     assert_eq!(paths(&report["warnings"]), [""]);
     assert!(!setup.copy.join("notes").join(NOTE).exists());
 }
-
-#[cfg(unix)]
-fn make_unlistable(folder: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(folder, fs::Permissions::from_mode(0o000))
-        .expect("the rights can be changed");
-    // A user with every right (root) can still list it: the test then proves nothing.
-    fs::read_dir(folder).is_err()
-}
-
-#[cfg(not(unix))]
-fn make_unlistable(_folder: &Path) -> bool {
-    false
-}
-
-#[cfg(unix)]
-fn make_listable(folder: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(folder, fs::Permissions::from_mode(0o755))
-        .expect("the rights can be changed");
-}
-
-#[cfg(not(unix))]
-fn make_listable(_folder: &Path) {}
 
 #[test]
 fn a_folder_of_the_storage_that_holds_other_files_loses_none_of_them() {
@@ -344,9 +314,9 @@ fn a_file_that_no_published_note_uses_leaves_the_storage_at_the_next_publication
 }
 
 #[test]
-fn publish_needs_the_folder_of_the_attachment_storage() {
+fn a_note_whose_storage_is_missing_is_left_out() {
     let setup = set_up();
-    let id = setup.plan(&[NOTE], &[]);
+    let id = setup.plan(&[NOTE, PLAN], &[]);
     let missing: &Path = &setup.stores.root().join("no-storage");
 
     let output = setup.run(&[
@@ -359,6 +329,9 @@ fn publish_needs_the_folder_of_the_attachment_storage() {
         text(missing),
     ]);
 
-    assert_eq!(output.status.code(), Some(1));
-    assert!(errors_of(&output).contains("attachment storage"));
+    assert_eq!(output.status.code(), Some(1), "a note was left out");
+    let report: Value = serde_json::from_slice(&output.stdout).expect("the report is JSON");
+    assert_eq!(paths(&report["published"]), [NOTE]);
+    assert_eq!(paths(&report["failed"]), [PLAN]);
+    assert!(!missing.exists());
 }

@@ -2466,6 +2466,116 @@
                     "attachmentStorage": {}
                 }
             ]
+        },
+        {
+            "name": "an attachment under a guard leaves the storage, also when a new file takes its path or it moves into a hidden folder",
+            "denyList": ["Locked"],
+            "vault": {
+                "Pub/A.md": "![[img.png]]\n",
+                "Pub/C.md": "![[pic.png]]\n",
+                "Pub/D.md": "![[photo.png]]\n",
+                "Pub/img.png": "The private image\n",
+                "Pub/pic.png": "An image that goes into a hidden folder\n",
+                "Pub/photo.png": "A public photo\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "three notes and their images are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Pub/A.md", "Pub/C.md", "Pub/D.md"],
+                        "remove": []
+                    },
+                    "time": "2031-08-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "43ccfb55f7c5398c50b4f52a575ce83f907cf2dee9c6f48eb09bd66ce7feb8ab",
+                            "599f23d1e3ce28703587b5b3e103567a1963cd70ab7c35562103be7c6d5300d0",
+                            "61eedc1aa70bd38adc2eedfebb6b1601bffd23007ca16a5ba1d629b683514388"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Pub/A.md", "Pub/C.md", "Pub/D.md"],
+                        "published": ["Pub/A.md", "Pub/C.md", "Pub/D.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the author moves two images under the guard",
+                    "paths": ["Pub/img.png", "Pub/pic.png"]
+                },
+                {
+                    "do": "write",
+                    "why": "one image goes into the folder of the deny list and a new file takes its old path; one goes into a hidden folder of the deny list; a file of the deny list has the name of a public photo",
+                    "files": {
+                        "Locked/img.png": "The private image\n",
+                        "Pub/img.png": "A new image at the old path\n",
+                        "Locked/.stash/pic.png": "An image that goes into a hidden folder\n",
+                        "Locked/PHOTO.png": "Another photo of the same name\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the two notes whose images moved are technical updates; the photo stays as it was",
+                    "queue": {
+                        "changed": ["Pub/A.md", "Pub/C.md"],
+                        "counts": {
+                            "changed": 2,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "new": [],
+                        "technicalUpdates": ["Pub/A.md", "Pub/C.md"],
+                        "toRemove": [],
+                        "unchanged": ["Pub/D.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the author holds the two notes: both moved images leave the storage, and the public photo stays",
+                    "selection": {
+                        "hold": ["Pub/A.md", "Pub/C.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-08-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "43ccfb55f7c5398c50b4f52a575ce83f907cf2dee9c6f48eb09bd66ce7feb8ab",
+                            "599f23d1e3ce28703587b5b3e103567a1963cd70ab7c35562103be7c6d5300d0"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Pub/A.md", "Pub/C.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "only the photo of the published note that did not change is in the storage",
+                    "vault": {},
+                    "store": {},
+                    "attachmentStorage": {
+                        "61eedc1aa70bd38adc2eedfebb6b1601bffd23007ca16a5ba1d629b683514388": "A public photo\n"
+                    }
+                }
+            ]
         }
     ]
 }

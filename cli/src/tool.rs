@@ -504,12 +504,16 @@ fn removal_unit(path: &str, scan: &Scan) -> Result<Unit, String> {
 /// The keys of the files of the attachment storage that the published notes
 /// of a manifest use. An attachment whose file is under a guard now is used
 /// by no note, also when an entry that the plan held still lists it.
-fn used_keys(manifest: &BTreeMap<String, ManifestEntry>, scan: &Scan) -> BTreeSet<String> {
+fn used_keys(
+    manifest: &BTreeMap<String, ManifestEntry>,
+    scan: &Scan,
+    vault: &Vault,
+) -> BTreeSet<String> {
     manifest
         .values()
         .filter(|entry| entry.state == State::Published)
         .flat_map(|entry| &entry.attachments)
-        .filter(|attachment| !scan.is_guarded_file(&attachment.path))
+        .filter(|attachment| !scan.is_guarded_file(vault, &attachment.path, &attachment.hash))
         .map(|attachment| key_of(&attachment.hash).to_owned())
         .collect()
 }
@@ -586,7 +590,7 @@ impl<'a> Uploads<'a> {
     /// manifest lists (PUB-93). Every upload is tried. The result is the keys
     /// that could not be deleted.
     fn take_back(&self, manifest: &BTreeMap<String, ManifestEntry>, scan: &Scan) -> Vec<String> {
-        let used = used_keys(manifest, scan);
+        let used = used_keys(manifest, scan, self.vault);
         self.uploaded
             .iter()
             .filter(|key| !used.contains(*key) && self.storage.remove(key).is_err())
@@ -611,8 +615,9 @@ fn clean_storage(
     storage: &AttachmentStorage,
     manifest: &BTreeMap<String, ManifestEntry>,
     scan: &Scan,
+    vault: &Vault,
 ) -> Cleanup {
-    let used = used_keys(manifest, scan);
+    let used = used_keys(manifest, scan, vault);
     let mut cleanup = Cleanup {
         deleted: Vec::new(),
         warnings: Vec::new(),
@@ -985,7 +990,7 @@ pub fn publish(
     }
     // The copy follows the content store: the run fetched it and was not
     // behind, and a push, when there was one, succeeded.
-    let cleanup = clean_storage(storage, &written.manifest, &current.scan);
+    let cleanup = clean_storage(storage, &written.manifest, &current.scan, &device.vault);
     let mut uploaded = uploads.uploaded.clone();
     sort_by_code_point(&mut uploaded);
     let mut warnings = correction.warnings;

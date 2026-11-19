@@ -469,15 +469,15 @@ async function correctState(
  * a manifest use. An attachment whose file is under a guard now is used by no
  * note, also when an entry that the plan held still lists it.
  */
-function usedKeys(
+async function usedKeys(
     manifest: ReadonlyMap<string, ManifestEntry>,
-    isGuarded: (path: string) => boolean
-): Set<string> {
+    isGuarded: Scan['isGuardedFile']
+): Promise<Set<string>> {
     const keys = new Set<string>()
     for (const entry of manifest.values()) {
         if (entry.state === 'published') {
             for (const attachment of entry.attachments) {
-                if (!isGuarded(attachment.path)) {
+                if (!(await isGuarded(attachment.path, attachment.hash))) {
                     keys.add(keyOf(attachment.hash))
                 }
             }
@@ -535,9 +535,9 @@ class Uploads {
      */
     async takeBack(
         manifest: ReadonlyMap<string, ManifestEntry>,
-        isGuarded: (path: string) => boolean
+        isGuarded: Scan['isGuardedFile']
     ): Promise<string[]> {
-        const used = usedKeys(manifest, isGuarded)
+        const used = await usedKeys(manifest, isGuarded)
         const stayed: string[] = []
         for (const key of this.uploaded) {
             if (used.has(key)) {
@@ -564,12 +564,12 @@ class Uploads {
 async function cleanStorage(
     device: Device,
     manifest: ReadonlyMap<string, ManifestEntry>,
-    isGuarded: (path: string) => boolean
+    isGuarded: Scan['isGuardedFile']
 ): Promise<{
     readonly deleted: string[]
     readonly warnings: { path: string; message: string }[]
 }> {
-    const used = usedKeys(manifest, isGuarded)
+    const used = await usedKeys(manifest, isGuarded)
     const deleted: string[] = []
     const warnings: { path: string; message: string }[] = []
     let names: string[]

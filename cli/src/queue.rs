@@ -112,7 +112,7 @@ pub struct Scan {
     /// The other files of the scan: the files that are not notes.
     pub others: BTreeSet<String>,
     /// The names of every file in the folders of the deny list, in small
-    /// letters.
+    /// letters, hidden ones included.
     pub denied_file_names: BTreeSet<String>,
     /// Every entry of the manifest, by the vault path of its note.
     pub manifest: BTreeMap<String, ManifestEntry>,
@@ -120,18 +120,32 @@ pub struct Scan {
 }
 
 impl Scan {
-    /// True when a file that is not a note is under a guard now: it is in a
-    /// folder of the deny list, or it is missing from the scan and a file of
-    /// its name is in such a folder (it may have moved there: names only, so
-    /// it fails closed). An attachment of an old manifest entry that comes
-    /// under a guard leaves the attachment storage, whatever the plan holds.
-    pub fn is_guarded_file(&self, path: &str) -> bool {
-        let name = path.rsplit('/').next().unwrap_or(path).to_lowercase();
-        self.configuration
+    /// True when the file of an attachment of a manifest entry is under a
+    /// guard now: its path is in a folder of the deny list, or a file of its
+    /// name is in such a folder, hidden names included, and the scan has no
+    /// file at its path with the hash of the entry (the file may have moved
+    /// there, and another file may have its old path: names only, so it fails
+    /// closed). Such an attachment leaves the attachment storage, whatever the
+    /// plan holds.
+    pub fn is_guarded_file(&self, vault: &Vault, path: &str, hash: &str) -> bool {
+        if self
+            .configuration
             .deny_list
             .iter()
             .any(|folder| path.starts_with(&format!("{folder}/")))
-            || (!self.others.contains(path) && self.denied_file_names.contains(&name))
+        {
+            return true;
+        }
+        let name = path.rsplit('/').next().unwrap_or(path).to_lowercase();
+        if !self.denied_file_names.contains(&name) {
+            return false;
+        }
+        // A file that cannot be read now is taken for a moved one.
+        !self.others.contains(path)
+            || self
+                .files
+                .facts(vault, path)
+                .map_or(true, |facts| facts.hash != hash)
     }
 
     /// True when the note has a manifest entry whose state is `published`.
@@ -191,23 +205,37 @@ fn scan_vault(
 /// published note moved into one of them, and to know that a link leads to a
 /// file under that guard. It reads none of their files, and it writes none of
 /// these paths.
-fn scan_denied(vault: &Vault, configuration: &Configuration) -> Result<Vec<String>, String> {
-    let mut notes = Vec::new();
-    let mut folders = configuration.deny_list.clone();
-    while let Some(folder) = folders.pop() {
+///
+/// It also gives the name of every file of those folders, in small letters,
+/// also below a name that starts with a dot or that is not valid Unicode: a
+/// file moved there is still under the guard. Obsidian does not show them, so
+/// they are no candidates of a link.
+fn scan_denied(
+    vault: &Vault,
+    configuration: &Configuration,
+) -> Result<(Vec<String>, BTreeSet<String>), String> {
+    let mut files = Vec::new();
+    let mut names = BTreeSet::new();
+    let mut folders: Vec<(String, bool)> = configuration
+        .deny_list
+        .iter()
+        .map(|folder| (folder.clone(), false))
+        .collect();
+    while let Some((folder, hidden)) = folders.pop() {
         for (name, kind) in vault.list(&folder)? {
-            if name.starts_with('.') || name.contains('\u{fffd}') {
-                continue;
-            }
+            let hidden = hidden || name.starts_with('.') || name.contains('\u{fffd}');
             let path = format!("{folder}/{name}");
             if kind == Entry::Folder {
-                folders.push(path);
+                folders.push((path, hidden));
             } else {
-                notes.push(path);
+                names.insert(name.to_lowercase());
+                if !hidden {
+                    files.push(path);
+                }
             }
         }
     }
-    Ok(notes)
+    Ok((files, names))
 }
 
 /// Scans the vault and fills the four lists of the queue. The state property
@@ -263,7 +291,7 @@ pub fn compute_queue(
     // another file of the same name. So the files of the deny list folders
     // are candidates too, by their paths alone, and such a target gives no
     // item.
-    let denied = scan_denied(vault, &configuration)?;
+    let (denied, denied_file_names) = scan_denied(vault, &configuration)?;
     let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
     let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
     let files = FileReader::default();
@@ -313,14 +341,14 @@ pub fn compute_queue(
         }
     }
     queue.count();
-    // The notes of the folders of the deny list, by their names: a published
-    // note that is missing may have moved there. Letter case is never ignored
-    // for the end of a name.
+    // The notes of the folders of the deny list, by their names in small
+    // letters, hidden ones included: a published note that is missing may
+    // have moved there.
     #[allow(clippy::case_sensitive_file_extension_comparisons)]
-    let denied_names = denied
+    let denied_names = denied_file_names
         .iter()
-        .filter(|path| path.ends_with(".md"))
-        .map(|path| path.rsplit('/').next().unwrap_or(path).to_lowercase())
+        .filter(|name| name.ends_with(".md"))
+        .cloned()
         .collect();
     Ok(Scan {
         queue,
@@ -331,10 +359,7 @@ pub fn compute_queue(
         files,
         denied_names,
         others: others.into_iter().collect(),
-        denied_file_names: denied
-            .iter()
-            .map(|path| path.rsplit('/').next().unwrap_or(path).to_lowercase())
-            .collect(),
+        denied_file_names,
         manifest,
         configuration,
     })

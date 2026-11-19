@@ -145,14 +145,11 @@ fn device(places: &Places) -> Result<Device, String> {
     })
 }
 
-fn storage(folder: &Path) -> Result<AttachmentStorage, String> {
-    if !folder.is_dir() {
-        return Err(format!(
-            "the attachment storage is not a folder: {}",
-            folder.display()
-        ));
-    }
-    Ok(AttachmentStorage::new(folder))
+/// The attachment storage. It is not checked here: a publication with no
+/// upload, a takedown for example, never needs it. A note whose upload fails
+/// is left out and reported.
+fn storage(folder: &Path) -> AttachmentStorage {
+    AttachmentStorage::new(folder)
 }
 
 /// The time of the clock in the canonical form: UTC, cut to the second. The
@@ -286,7 +283,7 @@ fn run(command: Command) -> Result<Outcome, String> {
             device: name,
         } => tool::publish(
             &device(&places)?,
-            &storage(&attachment_storage)?,
+            &storage(&attachment_storage),
             &plan,
             &Run {
                 time: &time.unwrap_or_else(now),

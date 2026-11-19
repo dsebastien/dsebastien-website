@@ -71,13 +71,15 @@ export interface Scan {
     /** The names of the notes in the folders of the deny list, in small letters. No file of those folders is read. */
     readonly deniedNames: ReadonlySet<string>
     /**
-     * True when a file that is not a note is under a guard now: it is in a
-     * folder of the deny list, or it is missing from the scan and a file of
-     * its name is in such a folder (it may have moved there: names only, so
-     * it fails closed). An attachment of an old manifest entry that comes
-     * under a guard leaves the attachment storage, whatever the plan holds.
+     * True when the file of an attachment of a manifest entry is under a
+     * guard now: its path is in a folder of the deny list, or a file of its
+     * name is in such a folder, hidden names included, and the scan has no
+     * file at its path with the hash of the entry (the file may have moved
+     * there, and another file may have its old path: names only, so it fails
+     * closed). Such an attachment leaves the attachment storage, whatever the
+     * plan holds.
      */
-    readonly isGuardedFile: (path: string) => boolean
+    readonly isGuardedFile: (path: string, hash: string) => Promise<boolean>
     /** Every entry of the manifest, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
     readonly configuration: Configuration
@@ -128,23 +130,32 @@ export async function scanVault(vault: Vault, configuration: Configuration): Pro
  * file under that guard. It reads none of their files, and it writes none of
  * these paths.
  */
-export async function scanDenied(vault: Vault, configuration: Configuration): Promise<string[]> {
-    const notes: string[] = []
-    const folders = [...configuration.denyList]
-    for (let folder = folders.pop(); folder !== undefined; folder = folders.pop()) {
-        for (const entry of await vault.list(folder)) {
-            if (entry.name.startsWith('.') || entry.name.includes(REPLACEMENT)) {
-                continue
-            }
-            const path = `${folder}/${entry.name}`
+export async function scanDenied(
+    vault: Vault,
+    configuration: Configuration
+): Promise<{ readonly files: string[]; readonly names: Set<string> }> {
+    const files: string[] = []
+    // Every name, also below a name that starts with a dot or that is not
+    // valid Unicode: a file moved there is still under the guard. Obsidian
+    // does not show them, so they are no candidates of a link.
+    const names = new Set<string>()
+    const folders = configuration.denyList.map((folder) => ({ folder, hidden: false }))
+    for (let next = folders.pop(); next !== undefined; next = folders.pop()) {
+        for (const entry of await vault.list(next.folder)) {
+            const hidden =
+                next.hidden || entry.name.startsWith('.') || entry.name.includes(REPLACEMENT)
+            const path = `${next.folder}/${entry.name}`
             if (entry.kind === 'folder') {
-                folders.push(path)
+                folders.push({ folder: path, hidden })
             } else {
-                notes.push(path)
+                names.add(entry.name.toLowerCase())
+                if (!hidden) {
+                    files.push(path)
+                }
             }
         }
     }
-    return notes
+    return { files, names }
 }
 
 /**
@@ -196,14 +207,14 @@ export async function computeQueue(input: {
     // A link that Obsidian leads to a file under a guard must not lead to
     // another file of the same name. So the files of the deny list folders
     // are candidates too, by their paths alone, and such a target gives no item.
-    const denied = await scanDenied(input.vault, input.configuration)
+    const { files: denied, names: deniedFileNames } = await scanDenied(
+        input.vault,
+        input.configuration
+    )
     const index = new LinkIndex([...notes.keys(), ...scanned.others, ...denied])
     const guarded = new Set([...ignored, ...denied])
     const files = new FileReader(input.vault)
     const others = new Set(scanned.others)
-    const deniedFileNames = new Set(
-        denied.map((path) => path.slice(path.lastIndexOf('/') + 1).toLowerCase())
-    )
     const lists = {
         changed: [] as string[],
         new: [] as string[],
@@ -264,17 +275,23 @@ export async function computeQueue(input: {
         files,
         // The notes of the folders of the deny list, by their names: a
         // published note that is missing may have moved there.
-        deniedNames: new Set(
-            denied
-                .filter((path) => path.endsWith('.md'))
-                .map((path) => path.slice(path.lastIndexOf('/') + 1).toLowerCase())
-        ),
-        isGuardedFile: (path) => {
-            const lower = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
-            return (
-                input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`)) ||
-                (!others.has(path) && deniedFileNames.has(lower))
-            )
+        deniedNames: new Set([...deniedFileNames].filter((name) => name.endsWith('.md'))),
+        isGuardedFile: async (path, hash) => {
+            if (input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
+                return true
+            }
+            if (!deniedFileNames.has(path.slice(path.lastIndexOf('/') + 1).toLowerCase())) {
+                return false
+            }
+            if (!others.has(path)) {
+                return true
+            }
+            // A file that cannot be read now is taken for a moved one.
+            try {
+                return (await files.facts(path)).hash !== hash
+            } catch {
+                return true
+            }
         },
         manifest: input.manifest,
         configuration: input.configuration
