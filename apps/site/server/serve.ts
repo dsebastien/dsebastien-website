@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises'
 import { join, resolve as resolvePath } from 'node:path'
 import { parseArgs } from 'node:util'
-import { resolve, type ResolverMap } from '@dsebastien-website/resolver'
+import { resolve, type ResolverMap, type SiteFile } from '@dsebastien-website/resolver'
 
 // The plain server (MOD-09 and HOST-02 of the spec): it serves the output of
 // the build through the resolver, as the edge does on the real host. It is
@@ -23,24 +23,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** The form of a key of the attachment storage. It names a file of the storage. */
 const ATTACHMENT_KEY = /^[0-9a-f]{64}$/
 
+/** True when every value of the record passes the check. */
+function everyValue(value: unknown, check: (item: unknown) => boolean): boolean {
+    return isRecord(value) && Object.values(value).every(check)
+}
+
+const isText = (value: unknown): value is string => typeof value === 'string'
+const isTextList = (value: unknown): boolean => Array.isArray(value) && value.every(isText)
+const isSiteFile = (value: unknown): value is SiteFile =>
+    isRecord(value) &&
+    isText(value['file']) &&
+    (value['type'] === 'markdown' || value['type'] === 'text')
+
 async function readResolverMap(dist: string): Promise<ResolverMap> {
     const map: unknown = await Bun.file(join(dist, RESOLVER_MAP)).json()
-    const pages = isRecord(map) ? map['pages'] : undefined
-    const attachments = isRecord(map) ? (map['attachments'] ?? {}) : undefined
     if (
-        !isRecord(pages) ||
-        !Object.values(pages).every((file) => typeof file === 'string') ||
-        !isRecord(attachments) ||
-        !Object.values(attachments).every(
+        !isRecord(map) ||
+        !everyValue(map['pages'], isText) ||
+        !everyValue(map['files'] ?? {}, isSiteFile) ||
+        !everyValue(
+            map['attachments'] ?? {},
             (key) => typeof key === 'string' && ATTACHMENT_KEY.test(key)
-        )
+        ) ||
+        !everyValue(map['folded'] ?? {}, isText) ||
+        !everyValue(map['names'] ?? {}, isTextList) ||
+        !everyValue(map['aliases'] ?? {}, isTextList) ||
+        !everyValue(map['choices'] ?? {}, isText) ||
+        !(map['notFound'] === undefined || isText(map['notFound']))
     ) {
         throw new Error(`${RESOLVER_MAP} is not a resolver map`)
     }
-    return {
-        pages: pages as Record<string, string>,
-        attachments: attachments as Record<string, string>
-    }
+    // Checked above, member by member.
+    return map as unknown as ResolverMap
 }
 
 /** The folder of the style sheets and of the other files that the pages load. Astro names each file with a hash. */
@@ -159,8 +173,47 @@ async function attachmentResponse(request: Request, file: string, name: string):
 function notFound(): Response {
     return new Response('Not found\n', {
         status: 404,
-        headers: { 'content-type': 'text/plain; charset=utf-8' }
+        headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
     })
+}
+
+/** The kinds of the files of the site that are not pages. */
+const FILE_TYPES: Record<SiteFile['type'], string> = {
+    markdown: 'text/markdown; charset=utf-8',
+    text: 'text/plain; charset=utf-8'
+}
+
+/**
+ * A file of the output of the build: a page or another file of the site. It
+ * has a tag of its size and of its time, and it answers 304 when the request
+ * names that tag (URL-18). A client checks it again at each use, so a new
+ * publication shows at once.
+ */
+async function siteFileResponse(
+    request: Request,
+    file: string,
+    type: string,
+    status = 200
+): Promise<Response> {
+    const blob = Bun.file(file)
+    if (!(await blob.exists())) {
+        return notFound()
+    }
+    const tag = `"${blob.size.toString(16)}-${blob.lastModified.toString(16)}"`
+    const headers: Record<string, string> = {
+        'content-type': type,
+        'cache-control': status === 200 ? 'public, max-age=0, must-revalidate' : 'no-store',
+        'etag': tag
+    }
+    const wanted = request.headers.get('if-none-match')
+    if (
+        status === 200 &&
+        wanted !== null &&
+        wanted.split(',').some((item) => item.trim() === tag)
+    ) {
+        return new Response(null, { status: 304, headers })
+    }
+    return new Response(blob, { status, headers })
 }
 
 /**
@@ -216,21 +269,55 @@ export async function startServer(options: {
         port: options.port,
         fetch(request) {
             // The path is read as it is requested, with its percent-encoding.
-            const { pathname } = new URL(request.url)
-            const resolution = resolve(pathname, map)
-            if (resolution.kind === 'not-found') {
-                return assets.get(pathname) ?? notFound()
+            const { pathname, search } = new URL(request.url)
+            // A file of the build comes first: an alias or a variant never hides it.
+            const asset = assets.get(pathname)
+            if (asset !== undefined) {
+                return asset
             }
-            if (resolution.kind === 'attachment') {
-                // The file comes from the key of the resolver map, never from the request.
-                return storage === undefined
-                    ? notFound()
-                    : attachmentResponse(request, join(storage, resolution.key), resolution.name)
+            const resolution = resolve(pathname, map, search)
+            // Each file comes from the resolver map or from the list of the
+            // assets, never from the request.
+            switch (resolution.kind) {
+                case 'not-found': {
+                    return resolution.file === undefined
+                        ? notFound()
+                        : siteFileResponse(
+                              request,
+                              join(dist, resolution.file),
+                              'text/html; charset=utf-8',
+                              404
+                          )
+                }
+                case 'attachment':
+                    return storage === undefined
+                        ? notFound()
+                        : attachmentResponse(
+                              request,
+                              join(storage, resolution.key),
+                              resolution.name
+                          )
+                case 'redirect':
+                    return new Response(null, {
+                        status: resolution.status,
+                        headers: {
+                            'location': resolution.location,
+                            'cache-control': resolution.cacheControl
+                        }
+                    })
+                case 'file':
+                    return siteFileResponse(
+                        request,
+                        join(dist, resolution.file),
+                        FILE_TYPES[resolution.type]
+                    )
+                case 'page':
+                    return siteFileResponse(
+                        request,
+                        join(dist, resolution.file),
+                        'text/html; charset=utf-8'
+                    )
             }
-            // The file comes from the resolver map, never from the request.
-            return new Response(Bun.file(join(dist, resolution.file)), {
-                headers: { 'content-type': 'text/html; charset=utf-8' }
-            })
         }
     })
     return {

@@ -1,18 +1,8 @@
 ---
-import '../styles/global.css'
+import Page from '../layouts/Page.astro'
 ---
 
-<!doctype html>
-<html lang='en'>
-    <head>
-        <meta charset='utf-8' />
-        <meta name='viewport' content='width=device-width, initial-scale=1' />
-        <title>Notes</title>
-    </head>
-    <body>
-        <main class='mx-auto max-w-prose p-8'>
-            <h1 class='text-2xl font-bold'>Notes</h1>
-            <p>This site is empty. The first note comes with the first slice.</p>
-        </main>
-    </body>
-</html>
+<Page title='Notes' path='/'>
+    <h1 class='text-2xl font-bold'>Notes</h1>
+    <p>The home page comes with its slice.</p>
+</Page>

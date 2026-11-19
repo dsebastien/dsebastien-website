@@ -2,8 +2,8 @@
 import type { GetStaticPaths } from 'astro'
 import { getCollection } from 'astro:content'
 import { readPublishedNotes } from '../../../content-store.ts'
+import Page from '../../../layouts/Page.astro'
 import { withLinkState } from '../../../note-links.ts'
-import '../../../styles/global.css'
 
 // The page of a published note. Its file has the identity of the note as its
 // name, which is plain ASCII on every system and on every host. The resolver
@@ -37,16 +37,6 @@ const html = withLinkState(
 )
 ---
 
-<!doctype html>
-<html lang='en'>
-    <head>
-        <meta charset='utf-8' />
-        <meta name='viewport' content='width=device-width, initial-scale=1' />
-        <title>{title}</title>
-    </head>
-    <body>
-        <main class='mx-auto max-w-prose p-8'>
-            <article set:html={html} />
-        </main>
-    </body>
-</html>
+<Page title={title} path={note.path}>
+    <article set:html={html} />
+</Page>

@@ -128,9 +128,25 @@ describe('build of a content store with one published note', () => {
 
     test('writes the resolver map: the canonical path of the note leads to its page', async () => {
         const map: unknown = JSON.parse(await readOutput('-/resolver-map.json'))
+        // The folder of the note has no folder note, so it gets a generated
+        // list. The name of its file is the SHA-256 of "10 Garden", computed
+        // with sha256sum.
         expect(map).toEqual({
-            pages: { '/': 'index.html', [NOTE_URL]: NOTE_FILE },
-            attachments: {}
+            pages: {
+                '/': 'index.html',
+                [NOTE_URL]: NOTE_FILE,
+                '/10+Garden': '-/folder/e824100b642854a7.html'
+            },
+            files: {
+                '/robots.txt': { file: 'robots.txt', type: 'text' },
+                [`/-/md${NOTE_URL}.md`]: { file: `-/md/${NOTE_ID}.md`, type: 'markdown' }
+            },
+            attachments: {},
+            folded: { '10 garden/frost dates explained': NOTE_URL, '10 garden': '/10+Garden' },
+            names: { 'frost dates explained': [NOTE_URL] },
+            aliases: {},
+            choices: {},
+            notFound: '404.html'
         })
     })
 })

@@ -8,15 +8,38 @@
  * Each segment of the vault path is percent-encoded, then `%20` is written as
  * `+`. So a space is `+`, and a literal `+` is `%2B` (URL-01).
  *
- * The slice of the URL contract checks this encoding against every URL that
- * the site has today. Until then it is a first version.
+ * The research of 2026-11-17 measured this encoding on the site of today
+ * (`documentation/research/2026-11-17-current-state.md`, section 1.6). The
+ * slice of the first redirect list (issue 44) checks it against every URL
+ * that the search engines know.
  */
 export function canonicalPath(vaultPath: string): string {
     if (!vaultPath.endsWith('.md')) {
         throw new Error(`"${vaultPath}" is not the vault path of a note`)
     }
-    const segments = vaultPath.slice(0, -'.md'.length).split('/')
-    return `/${segments.map((segment) => encodeURIComponent(segment).replaceAll('%20', '+')).join('/')}`
+    return `/${encodedSegments(vaultPath.slice(0, -'.md'.length))}`
+}
+
+/** Each segment of a path percent-encoded, then `%20` written as `+`. */
+function encodedSegments(path: string): string {
+    return path
+        .split('/')
+        .map((segment) => encodeURIComponent(segment).replaceAll('%20', '+'))
+        .join('/')
+}
+
+/**
+ * The canonical path of a folder, from its vault path: the encoding of
+ * `canonicalPath`. It shows the list of the folder, or leads to its folder
+ * note (URL-16).
+ */
+export function folderPath(vaultPath: string): string {
+    return `/${encodedSegments(vaultPath)}`
+}
+
+/** The path of the Markdown of a note (URL-10): `/-/md/`, its canonical path, and `.md`. */
+export function markdownPath(vaultPath: string): string {
+    return `/-/md${canonicalPath(vaultPath)}.md`
 }
 
 /** The form of the hash of an attachment in the manifest. */

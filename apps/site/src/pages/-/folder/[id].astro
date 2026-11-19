@@ -1,0 +1,63 @@
+---
+import type { GetStaticPaths } from 'astro'
+import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
+import { readPublishedNotes } from '../../../content-store.ts'
+import Page from '../../../layouts/Page.astro'
+import { folderId, folderLinkOf, listedFoldersOf } from '../../../site-files.ts'
+import { foldersOf } from '@dsebastien-website/resolver'
+
+// The generated list of a folder without a published folder note (URL-16 of
+// the spec): its published notes and the folders inside it. The design comes
+// with the navigation slice.
+export const getStaticPaths = (async () => {
+    const notes = await readPublishedNotes()
+    const all = new Map(
+        foldersOf(notes.map((note) => ({ path: note.vaultPath, aliases: note.aliases }))).map(
+            (folder) => [folder.path, folder]
+        )
+    )
+    const titles = new Map(notes.map((note) => [note.vaultPath, note.title]))
+    return listedFoldersOf(notes).map((folder) => ({
+        params: { id: folderId(folder.path) },
+        props: {
+            name: folder.path.slice(folder.path.lastIndexOf('/') + 1),
+            path: folderPath(folder.path),
+            notes: folder.notes.map((path) => ({
+                href: canonicalPath(path),
+                title: titles.get(path) ?? path
+            })),
+            folders: folder.folders.map((path) => {
+                const inside = all.get(path)
+                return {
+                    href: inside === undefined ? folderPath(path) : folderLinkOf(inside),
+                    title: path.slice(path.lastIndexOf('/') + 1)
+                }
+            })
+        }
+    }))
+}) satisfies GetStaticPaths
+
+const { name, path, notes, folders } = Astro.props
+---
+
+<Page title={name} path={path}>
+    <h1 class='text-2xl font-bold'>{name}</h1>
+    {folders.length > 0 && (
+        <ul>
+            {folders.map((folder) => (
+                <li>
+                    <a href={folder.href}>{folder.title}</a>
+                </li>
+            ))}
+        </ul>
+    )}
+    {notes.length > 0 && (
+        <ul>
+            {notes.map((note) => (
+                <li>
+                    <a href={note.href}>{note.title}</a>
+                </li>
+            ))}
+        </ul>
+    )}
+</Page>

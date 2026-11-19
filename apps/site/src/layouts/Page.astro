@@ -1,0 +1,30 @@
+---
+import '../styles/global.css'
+
+// The frame of every page of the site. The canonical link names the canonical
+// URL of the page, so a URL with a query shows the same page with a clean
+// canonical link (URL-12 of the spec).
+interface Props {
+    title: string
+    /** The canonical path of the page. The "not found" page has none. */
+    path?: string
+}
+
+const { title, path } = Astro.props
+const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
+---
+
+<!doctype html>
+<html lang='en'>
+    <head>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <title>{title}</title>
+        {canonical !== undefined && <link rel='canonical' href={canonical} />}
+    </head>
+    <body>
+        <main class='mx-auto max-w-prose p-8'>
+            <slot />
+        </main>
+    </body>
+</html>

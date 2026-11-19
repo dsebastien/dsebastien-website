@@ -35,6 +35,10 @@ export interface PublishedNote {
     path: string
     /** The file of the page of the note, relative to the output of the build. */
     file: string
+    /** The file of the Markdown of the note, relative to the output of the build (URL-10). */
+    markdownFile: string
+    /** The aliases of the note that get a URL. */
+    aliases: string[]
     /** The title of the page. A first version: the file name of the note. */
     title: string
     /** The links of the note that lead to a note: the link path as the note writes it, and the vault path of its target. */
@@ -59,6 +63,11 @@ export interface PublishedAttachment {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** True when the value is a list of texts. */
+function isTextList(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
 /** True when the value is the list `links` of a manifest entry. */
@@ -136,6 +145,7 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             !NOTE_ID.test(entry['id']) ||
             typeof entry['path'] !== 'string' ||
             !isLinkList(entry['links']) ||
+            !isTextList(entry['aliases']) ||
             !isAttachmentList(entry['attachments'])
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
@@ -152,6 +162,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             vaultPath,
             path: canonicalPath(vaultPath),
             file: `-/note/${entry['id']}.html`,
+            markdownFile: `-/md/${entry['id']}.md`,
+            aliases: [...entry['aliases']],
             title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, ''),
             links: entry['links'].map((item) => ({ link: item.link, path: item.path })),
             attachments: entry['attachments'].map((item) => ({
@@ -170,4 +182,9 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
     return [...notes.values()].sort((one, two) =>
         one.vaultPath < two.vaultPath ? -1 : one.vaultPath > two.vaultPath ? 1 : 0
     )
+}
+
+/** The text of the cleaned note of a published note, as the content store holds it. */
+export async function readCleanedNote(vaultPath: string): Promise<string> {
+    return await readFile(join(notesFolder(), vaultPath), 'utf8')
 }

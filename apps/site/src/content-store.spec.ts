@@ -71,7 +71,12 @@ describe('published notes of a content store', () => {
                     }
                 ]
             },
-            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: '10 Garden/Compost basics.md' }
+            'a.json': {
+                ...ENTRY,
+                id: 'aaaaaaaaaaaaaaaa',
+                path: '10 Garden/Compost basics.md',
+                aliases: ['Composting']
+            }
         })
 
         expect(await readPublishedNotes()).toEqual([
@@ -80,6 +85,8 @@ describe('published notes of a content store', () => {
                 vaultPath: '10 Garden/Compost basics.md',
                 path: '/10+Garden/Compost+basics',
                 file: '-/note/aaaaaaaaaaaaaaaa.html',
+                markdownFile: '-/md/aaaaaaaaaaaaaaaa.md',
+                aliases: ['Composting'],
                 title: 'Compost basics',
                 links: [],
                 attachments: []
@@ -89,6 +96,8 @@ describe('published notes of a content store', () => {
                 vaultPath: 'Welcome.md',
                 path: '/Welcome',
                 file: '-/note/bbbbbbbbbbbbbbbb.html',
+                markdownFile: '-/md/bbbbbbbbbbbbbbbb.md',
+                aliases: [],
                 title: 'Welcome',
                 links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }],
                 attachments: [

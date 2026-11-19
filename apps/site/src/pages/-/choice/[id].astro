@@ -1,0 +1,38 @@
+---
+import type { GetStaticPaths } from 'astro'
+import { canonicalPath } from '@dsebastien-website/resolver'
+import { readPublishedNotes } from '../../../content-store.ts'
+import Page from '../../../layouts/Page.astro'
+import { choiceId, choiceListsOf } from '../../../site-files.ts'
+
+// The "not found" page of a file name or an alias of several notes (URL-04 of
+// the spec): it names those notes. The resolver answers it with 404.
+export const getStaticPaths = (async () => {
+    const notes = await readPublishedNotes()
+    const titles = new Map(notes.map((note) => [note.vaultPath, note.title]))
+    return choiceListsOf(notes).map((paths) => ({
+        params: { id: choiceId(paths) },
+        props: {
+            notes: paths.map((path) => ({
+                href: canonicalPath(path),
+                title: titles.get(path) ?? path,
+                path
+            }))
+        }
+    }))
+}) satisfies GetStaticPaths
+
+const { notes } = Astro.props
+---
+
+<Page title='Not found'>
+    <h1 class='text-2xl font-bold'>Not found</h1>
+    <p>This name leads to more than one note:</p>
+    <ul>
+        {notes.map((note) => (
+            <li>
+                <a href={note.href}>{note.title}</a> ({note.path})
+            </li>
+        ))}
+    </ul>
+</Page>

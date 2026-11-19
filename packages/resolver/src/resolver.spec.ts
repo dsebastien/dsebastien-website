@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { resolve, type ResolverMap } from './resolver.ts'
+import { fileURLToPath } from 'node:url'
+import { foldedForm, resolve, type ResolverMap } from './resolver.ts'
 
 // The resolver (MOD-05 of the spec): a pure function that turns a requested
 // path into the page to serve, or "not found". The first slice knows the
-// canonical path of a published note. The variants, the redirects and "gone"
-// come with the slice of the URL contract.
+// canonical path of a published note. The variants and the redirects are in
+// the URL table (`table.spec.ts`), and "gone" comes with issue 38.
 const MAP: ResolverMap = {
     pages: { '/10+Garden/Frost+dates+explained': '-/note/203d446940c02032.html' }
 }
@@ -18,14 +19,17 @@ describe('resolver', () => {
     })
 
     test('does not find a path that no note has', () => {
-        expect(resolve('/10+Garden/No+such+note', MAP)).toEqual({ kind: 'not-found' })
-        expect(resolve('/', MAP)).toEqual({ kind: 'not-found' })
+        expect(resolve('/10+Garden/No+such+note', MAP)).toEqual({
+            kind: 'not-found',
+            suggestions: []
+        })
+        expect(resolve('/', MAP)).toEqual({ kind: 'not-found', suggestions: [] })
     })
 
     // A name of a note can be the name of a member of every object.
     test('does not find a path that is a name of the language', () => {
-        expect(resolve('constructor', MAP)).toEqual({ kind: 'not-found' })
-        expect(resolve('__proto__', MAP)).toEqual({ kind: 'not-found' })
+        expect(resolve('constructor', MAP)).toEqual({ kind: 'not-found', suggestions: [] })
+        expect(resolve('__proto__', MAP)).toEqual({ kind: 'not-found', suggestions: [] })
     })
 })
 
@@ -45,8 +49,27 @@ describe('resolver of attachments', () => {
     })
 
     test('does not find the key with another name, or a name of the language', () => {
-        expect(resolve(`/-/attachments/${KEY}/other.png`, WITH)).toEqual({ kind: 'not-found' })
-        expect(resolve(`/-/attachments/${KEY}`, WITH)).toEqual({ kind: 'not-found' })
-        expect(resolve('constructor', WITH)).toEqual({ kind: 'not-found' })
+        expect(resolve(`/-/attachments/${KEY}/other.png`, WITH)).toEqual({
+            kind: 'not-found',
+            suggestions: []
+        })
+        expect(resolve(`/-/attachments/${KEY}`, WITH)).toEqual({
+            kind: 'not-found',
+            suggestions: []
+        })
+        expect(resolve('constructor', WITH)).toEqual({ kind: 'not-found', suggestions: [] })
+    })
+})
+
+// The resolver folds a request as the publishing tool folds two paths to stop
+// a plan: both read the shared cases of the root names.
+const NAMES = fileURLToPath(new URL('../../../fixtures/canonical/names.json', import.meta.url))
+const { folded } = (await Bun.file(NAMES).json()) as {
+    folded: { name: string; one: string; two: string; equal: boolean }[]
+}
+
+describe('folded form of the resolver', () => {
+    test.each(folded.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
+        expect(foldedForm(entry.one) === foldedForm(entry.two)).toBe(entry.equal)
     })
 })

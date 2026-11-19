@@ -134,6 +134,15 @@ The function that turns a requested path into a canonical URL, a redirect, or "n
 **Resolver map**:
 What the build writes for the resolver: which canonical path leads to which page.
 
+**Alias**:
+Another name of a note, from its `aliases` property. A URL with the alias leads to the note.
+
+**Folded form**:
+A text in the composed Unicode form, then in small letters. Two texts with one folded form are one URL.
+
+**Reserved root name**:
+A name that the site answers at its root itself (`robots.txt`, a sitemap, `-`). No note may take one.
+
 **URL contract**:
 The rules that say which URL each note has and which other URLs lead to it.
 
