@@ -36,9 +36,13 @@ export type Resolution =
     | { kind: 'redirect'; status: 301 | 302; location: string; cacheControl: string }
     | { kind: 'not-found'; suggestions: string[]; file?: string }
 
-/** How long a client keeps a redirect: a variant of the syntax, a file name alone, an alias (decision R47). */
+/**
+ * How long a client keeps a redirect: a variant of the syntax, a file name
+ * alone, an alias (decision R47). A variant is kept one hour only: after a
+ * rename in letter case, a redirect that a browser kept would else loop.
+ */
 const CACHE = {
-    variant: 'public, max-age=86400',
+    variant: 'public, max-age=3600',
     name: 'public, max-age=3600',
     alias: 'no-store'
 } as const

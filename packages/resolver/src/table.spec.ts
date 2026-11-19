@@ -14,6 +14,7 @@ interface Case {
     request: string
     status: number
     page?: string
+    canonical?: string
     file?: string
     location?: string
     cacheControl?: string
@@ -37,7 +38,8 @@ const FILES: SiteFiles = {
     page: (path) => `page:${path}`,
     markdown: (path) => `markdown:${path}`,
     folder: (path) => `folder:${path}`,
-    choice: (paths) => `choice:${paths.join('|')}`
+    // The name only: the expected file comes from the canonical paths of the table.
+    choice: (paths) => `choice:${paths.map(canonicalPath).join('|')}`
 }
 
 const map = resolverMapOf(table.notes, FILES)
@@ -48,8 +50,8 @@ function expected(entry: Case): Resolution {
         const suggestions = entry.suggestions ?? []
         return {
             kind: 'not-found',
-            suggestions: suggestions.map(canonicalPath),
-            file: suggestions.length > 1 ? FILES.choice(suggestions) : FILES.notFound
+            suggestions,
+            file: suggestions.length > 1 ? `choice:${suggestions.join('|')}` : FILES.notFound
         }
     }
     if (entry.location !== undefined) {
@@ -78,6 +80,19 @@ describe('URL table of the site', () => {
         const path = at < 0 ? entry.request : entry.request.slice(0, at)
         const query = at < 0 ? '' : entry.request.slice(at)
         expect(resolve(path, map, query)).toEqual(expected(entry))
+    })
+
+    // URL-05: a redirect target never redirects. Every variant reaches a
+    // page with status 200 in one hop.
+    test.each(
+        table.cases
+            .filter((entry) => entry.location !== undefined)
+            .map((entry) => [entry.name, entry] as const)
+    )('the target of "%s" is a page', (_name, entry) => {
+        const location = entry.location ?? ''
+        const at = location.indexOf('?')
+        const resolution = resolve(at < 0 ? location : location.slice(0, at), map)
+        expect(resolution.kind).toBe('page')
     })
 
     test('the table has a case of each kind', () => {

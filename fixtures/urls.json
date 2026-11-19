@@ -1,5 +1,5 @@
 {
-    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them. Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`), the redirect (`location`, `cacheControl`) or the suggestions of the not found page (vault paths, sorted). The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test.",
+    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them. Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`), the redirect (`location`, `cacheControl`) or the suggestions of the not found page (the canonical paths of the notes, sorted by vault path). A page case also states its canonical path. The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test.",
     "notes": [
         {
             "path": "Welcome.md",
@@ -79,191 +79,211 @@
             "name": "the home page",
             "request": "/",
             "status": 200,
-            "page": "home"
+            "page": "home",
+            "canonical": "/"
         },
         {
             "name": "the canonical URL of Welcome.md",
             "request": "/Welcome",
             "status": 200,
-            "page": "note:Welcome.md"
+            "page": "note:Welcome.md",
+            "canonical": "/Welcome"
         },
         {
             "name": "the canonical URL of 10 Garden/Compost basics.md",
             "request": "/10+Garden/Compost+basics",
             "status": 200,
-            "page": "note:10 Garden/Compost basics.md"
+            "page": "note:10 Garden/Compost basics.md",
+            "canonical": "/10+Garden/Compost+basics"
         },
         {
             "name": "the canonical URL of 10 Garden/Wormery.md",
             "request": "/10+Garden/Wormery",
             "status": 200,
-            "page": "note:10 Garden/Wormery.md"
+            "page": "note:10 Garden/Wormery.md",
+            "canonical": "/10+Garden/Wormery"
         },
         {
             "name": "the canonical URL of 10 Garden/Drip irrigation.md",
             "request": "/10+Garden/Drip+irrigation",
             "status": 200,
-            "page": "note:10 Garden/Drip irrigation.md"
+            "page": "note:10 Garden/Drip irrigation.md",
+            "canonical": "/10+Garden/Drip+irrigation"
         },
         {
             "name": "the canonical URL of 10 Garden/Watering schedule.md",
             "request": "/10+Garden/Watering+schedule",
             "status": 200,
-            "page": "note:10 Garden/Watering schedule.md"
+            "page": "note:10 Garden/Watering schedule.md",
+            "canonical": "/10+Garden/Watering+schedule"
         },
         {
             "name": "the canonical URL of 10 Garden/Herb bed/Herb bed.md",
             "request": "/10+Garden/Herb+bed/Herb+bed",
             "status": 200,
-            "page": "note:10 Garden/Herb bed/Herb bed.md"
+            "page": "note:10 Garden/Herb bed/Herb bed.md",
+            "canonical": "/10+Garden/Herb+bed/Herb+bed"
         },
         {
             "name": "the canonical URL of 10 Garden/Herb bed/Mint.md",
             "request": "/10+Garden/Herb+bed/Mint",
             "status": 200,
-            "page": "note:10 Garden/Herb bed/Mint.md"
+            "page": "note:10 Garden/Herb bed/Mint.md",
+            "canonical": "/10+Garden/Herb+bed/Mint"
         },
         {
             "name": "the canonical URL of 10 Garden/Herb bed/Thyme.md",
             "request": "/10+Garden/Herb+bed/Thyme",
             "status": 200,
-            "page": "note:10 Garden/Herb bed/Thyme.md"
+            "page": "note:10 Garden/Herb bed/Thyme.md",
+            "canonical": "/10+Garden/Herb+bed/Thyme"
         },
         {
             "name": "the canonical URL of 20 Library/20.02 Recipes/Mint.md",
             "request": "/20+Library/20.02+Recipes/Mint",
             "status": 200,
-            "page": "note:20 Library/20.02 Recipes/Mint.md"
+            "page": "note:20 Library/20.02 Recipes/Mint.md",
+            "canonical": "/20+Library/20.02+Recipes/Mint"
         },
         {
             "name": "the canonical URL of 20 Library/20.02 Recipes/Recipes.md",
             "request": "/20+Library/20.02+Recipes/Recipes",
             "status": 200,
-            "page": "note:20 Library/20.02 Recipes/Recipes.md"
+            "page": "note:20 Library/20.02 Recipes/Recipes.md",
+            "canonical": "/20+Library/20.02+Recipes/Recipes"
         },
         {
             "name": "the canonical URL of 20 Library/20.02 Recipes/Salt + pepper crust.md",
             "request": "/20+Library/20.02+Recipes/Salt+%2B+pepper+crust",
             "status": 200,
-            "page": "note:20 Library/20.02 Recipes/Salt + pepper crust.md"
+            "page": "note:20 Library/20.02 Recipes/Salt + pepper crust.md",
+            "canonical": "/20+Library/20.02+Recipes/Salt+%2B+pepper+crust"
         },
         {
             "name": "the canonical URL of 20 Library/20.02 Recipes/100% rye bread.md",
             "request": "/20+Library/20.02+Recipes/100%25+rye+bread",
             "status": 200,
-            "page": "note:20 Library/20.02 Recipes/100% rye bread.md"
+            "page": "note:20 Library/20.02 Recipes/100% rye bread.md",
+            "canonical": "/20+Library/20.02+Recipes/100%25+rye+bread"
         },
         {
             "name": "the canonical URL of 20 Library/20.02 Recipes/Bread & butter pickles.md",
             "request": "/20+Library/20.02+Recipes/Bread+%26+butter+pickles",
             "status": 200,
-            "page": "note:20 Library/20.02 Recipes/Bread & butter pickles.md"
+            "page": "note:20 Library/20.02 Recipes/Bread & butter pickles.md",
+            "canonical": "/20+Library/20.02+Recipes/Bread+%26+butter+pickles"
         },
         {
             "name": "the canonical URL of 20 Library/20.02 Recipes/Crème brûlée à l'érable.md",
             "request": "/20+Library/20.02+Recipes/Cr%C3%A8me+br%C3%BBl%C3%A9e+%C3%A0+l'%C3%A9rable",
             "status": 200,
-            "page": "note:20 Library/20.02 Recipes/Crème brûlée à l'érable.md"
+            "page": "note:20 Library/20.02 Recipes/Crème brûlée à l'érable.md",
+            "canonical": "/20+Library/20.02+Recipes/Cr%C3%A8me+br%C3%BBl%C3%A9e+%C3%A0+l'%C3%A9rable"
         },
         {
             "name": "the canonical URL of 20 Library/20.02 Recipes/Sourdough v2.1 notes.md",
             "request": "/20+Library/20.02+Recipes/Sourdough+v2.1+notes",
             "status": 200,
-            "page": "note:20 Library/20.02 Recipes/Sourdough v2.1 notes.md"
+            "page": "note:20 Library/20.02 Recipes/Sourdough v2.1 notes.md",
+            "canonical": "/20+Library/20.02+Recipes/Sourdough+v2.1+notes"
         },
         {
             "name": "the canonical URL of 20 Library/Sprout.js.md",
             "request": "/20+Library/Sprout.js",
             "status": 200,
-            "page": "note:20 Library/Sprout.js.md"
+            "page": "note:20 Library/Sprout.js.md",
+            "canonical": "/20+Library/Sprout.js"
         },
         {
             "name": "the canonical URL of 10 Garden/日本の庭.md",
             "request": "/10+Garden/%E6%97%A5%E6%9C%AC%E3%81%AE%E5%BA%AD",
             "status": 200,
-            "page": "note:10 Garden/日本の庭.md"
+            "page": "note:10 Garden/日本の庭.md",
+            "canonical": "/10+Garden/%E6%97%A5%E6%9C%AC%E3%81%AE%E5%BA%AD"
         },
         {
             "name": "the canonical URL of 10 Garden/🌱 Seedlings.md",
             "request": "/10+Garden/%F0%9F%8C%B1+Seedlings",
             "status": 200,
-            "page": "note:10 Garden/🌱 Seedlings.md"
+            "page": "note:10 Garden/🌱 Seedlings.md",
+            "canonical": "/10+Garden/%F0%9F%8C%B1+Seedlings"
         },
         {
             "name": "a query keeps the page",
             "request": "/Welcome?ref=dsebastien.net",
             "status": 200,
-            "page": "note:Welcome.md"
+            "page": "note:Welcome.md",
+            "canonical": "/Welcome"
         },
         {
             "name": "small letters",
             "request": "/welcome",
             "status": 301,
             "location": "/Welcome",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "capital letters",
             "request": "/WELCOME",
             "status": 301,
             "location": "/Welcome",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a slash at the end",
             "request": "/Welcome/",
             "status": 301,
             "location": "/Welcome",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a Markdown suffix",
             "request": "/Welcome.md",
             "status": 301,
             "location": "/Welcome",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a Markdown suffix in capital letters",
             "request": "/Welcome.MD",
             "status": 301,
             "location": "/Welcome",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a Markdown suffix and a slash",
             "request": "/Welcome.md/",
             "status": 301,
             "location": "/Welcome",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a variant keeps its query",
             "request": "/welcome?ref=dsebastien.net",
             "status": 301,
             "location": "/Welcome?ref=dsebastien.net",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "%20 for the spaces",
             "request": "/10%20Garden/Compost%20basics",
             "status": 301,
             "location": "/10+Garden/Compost+basics",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "%2B for the spaces, read only when the literal reading finds nothing",
             "request": "/10%2BGarden/Compost%2Bbasics",
             "status": 301,
             "location": "/10+Garden/Compost+basics",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "the path in small letters",
             "request": "/10+garden/compost+basics",
             "status": 301,
             "location": "/10+Garden/Compost+basics",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "the file name alone",
@@ -311,13 +331,13 @@
             "name": "an alias of two notes",
             "request": "/Watering",
             "status": 404,
-            "suggestions": ["10 Garden/Drip irrigation.md", "10 Garden/Watering schedule.md"]
+            "suggestions": ["/10+Garden/Drip+irrigation", "/10+Garden/Watering+schedule"]
         },
         {
             "name": "a file name of two notes",
             "request": "/Mint",
             "status": 404,
-            "suggestions": ["10 Garden/Herb bed/Mint.md", "20 Library/20.02 Recipes/Mint.md"]
+            "suggestions": ["/10+Garden/Herb+bed/Mint", "/20+Library/20.02+Recipes/Mint"]
         },
         {
             "name": "a literal plus as %2B, the file name alone",
@@ -372,7 +392,7 @@
             "request": "/20+Library/20.02+Recipes/Cre%CC%80me+bru%CC%82le%CC%81e+a%CC%80+l'e%CC%81rable",
             "status": 301,
             "location": "/20+Library/20.02+Recipes/Cr%C3%A8me+br%C3%BBl%C3%A9e+%C3%A0+l'%C3%A9rable",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "capital letters outside ASCII",
@@ -427,41 +447,43 @@
             "name": "a folder without a folder note shows its list",
             "request": "/10+Garden",
             "status": 200,
-            "page": "folder:10 Garden"
+            "page": "folder:10 Garden",
+            "canonical": "/10+Garden"
         },
         {
             "name": "a folder inside a folder",
             "request": "/20+Library/20.02+Recipes",
             "status": 200,
-            "page": "folder:20 Library/20.02 Recipes"
+            "page": "folder:20 Library/20.02 Recipes",
+            "canonical": "/20+Library/20.02+Recipes"
         },
         {
             "name": "a folder in small letters",
             "request": "/10+garden",
             "status": 301,
             "location": "/10+Garden",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a folder with a slash at the end",
             "request": "/10+Garden/",
             "status": 301,
             "location": "/10+Garden",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a folder with a folder note leads to the note",
             "request": "/10+Garden/Herb+bed",
             "status": 301,
             "location": "/10+Garden/Herb+bed/Herb+bed",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a folder with a folder note, in small letters with a slash",
             "request": "/10+garden/herb+bed/",
             "status": 301,
             "location": "/10+Garden/Herb+bed/Herb+bed",
-            "cacheControl": "public, max-age=86400"
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "the Markdown of a note",

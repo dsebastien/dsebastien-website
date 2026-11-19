@@ -406,7 +406,8 @@ export function aliasesOf(source: string): Aliases {
         if (value === undefined) {
             continue
         }
-        if (value === '') {
+        // A value that starts with `#` is a comment: the items follow.
+        if (value === '' || value.startsWith('#')) {
             for (let next = index + 1; next < lines.length; next += 1) {
                 const text = lines[next] ?? ''
                 if (!continues(text)) {

@@ -177,6 +177,14 @@ function notFound(): Response {
     })
 }
 
+/** The answer when the release lacks a file that the resolver map names. */
+function serverError(): Response {
+    return new Response('Server error\n', {
+        status: 500,
+        headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
+    })
+}
+
 /** The kinds of the files of the site that are not pages. */
 const FILE_TYPES: Record<SiteFile['type'], string> = {
     markdown: 'text/markdown; charset=utf-8',
@@ -197,7 +205,9 @@ async function siteFileResponse(
 ): Promise<Response> {
     const blob = Bun.file(file)
     if (!(await blob.exists())) {
-        return notFound()
+        // The map names the file, so the release lacks it: a failure of the
+        // release, never a page "not found" that a cache keeps (URL-33).
+        return serverError()
     }
     const tag = `"${blob.size.toString(16)}-${blob.lastModified.toString(16)}"`
     const headers: Record<string, string> = {

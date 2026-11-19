@@ -362,7 +362,7 @@ A cleaned note is Markdown text, in the encoding of this document.
 5. Version 4 also reads the aliases of the note (URL-02 of the spec). It still changes no character of the text. The result is the list `aliases` of the manifest entry. The section "The aliases of a note" has the rules.
 6. The ticket that adds a rule to the cleaning step writes it here before the second implementation is written, and raises the version.
 
-No content store was written with version 1 outside the tests, so the tool reads no manifest entry without `links`.
+No content store was written with version 1 outside the tests, so the tool reads no manifest entry without `links`. In the same way, no store was written with version 3 or earlier outside the tests, so the tool reads no manifest entry without `aliases`.
 
 ## The links of a note
 
@@ -447,7 +447,7 @@ An alias is another name of a note: a URL with the alias leads to the note (URL-
 1. Only closed properties are read (rule 2 of the properties). A note without them has no alias.
 2. A property of the note itself (rule 4 of the properties) whose key is exactly `aliases` (rule 3, the letter case as written) holds aliases. No other key is read: not `alias`, not `Aliases`. When two properties name the key, both are read.
 3. The value of the property:
-    - Empty: the items are the next lines of the property that start with a hyphen after optional spaces and tabs, and with a space, a tab or nothing after that hyphen. An item is the text after the hyphen. Every other line of the property is skipped.
+    - Empty, or a comment (it starts with `#`): the items are the next lines of the property that start with a hyphen after optional spaces and tabs, and with a space, a tab or nothing after that hyphen. An item is the text after the hyphen. Every other line of the property is skipped.
     - Starts with `[` and ends with `]`: a list in the flow form. The text between them is cut at each comma, and each piece is an item. A piece that starts with a quote, after spaces and tabs, goes on to its closing quote first: a comma inside it does not cut. In double quotes, a backslash takes the next character with it. In single quotes, `''` is no closing quote.
     - Any other value: one item.
 4. An item, without the spaces and the tabs around it:
@@ -458,6 +458,8 @@ An alias is another name of a note: a URL with the alias leads to the note (URL-
 5. A reserved alias gives no alias: an alias whose first part (the text before its first slash, or the whole alias when it has none) is a reserved root name (see "The root names of the site"). The reserved file of the site always wins over the alias. The publication of the note goes on, and the report has a warning for each reserved alias of each note that it publishes or updates, with the vault path of the note as its `path` (decision of the author, R47).
 6. The list `aliases` of the manifest entry holds each alias of the note one time, sorted in the order of the code points. The warnings name each reserved alias one time, in the same order.
 
+These rules are not YAML, and both implementations follow them in the same way. A list in the flow form with a comment after it (`[a, b] # c`) or over two lines gives one plain item, `[a, b]` or `[a,`. Obsidian writes neither, and the published notes of the author have none.
+
 The shared cases are in the list `aliases` of `fixtures/canonical/properties.json`.
 
 ## The root names of the site
@@ -465,11 +467,11 @@ The shared cases are in the list `aliases` of `fixtures/canonical/properties.jso
 The site answers some names at its root itself: `robots.txt`, the sitemaps, `llms.txt`, the files of the search engines, `/-/` (URL-08 and URL-09 of the spec). A note must never take one of them.
 
 1. A root name is reserved when, with its ASCII capital letters in small letters, it is `-`, it starts with `.`, or it ends in `.html`, `.ico`, `.json`, `.txt` or `.xml`. That covers the files that the spec names (`robots.txt`, `sitemap.xml`, `sitemap-*.xml`, `llms.txt`, the key file of IndexNow, the files of the search engines, `.well-known/`) and the ones that a later slice adds.
-2. The folded form of a text: the text in the composed Unicode form (NFC), then in small letters (`toLowerCase` in TypeScript, `to_lowercase` in Rust). Two texts that have one folded form are one URL for the resolver, which ignores the letter case and the Unicode form of a request.
+2. The folded form of a text: the text in the composed Unicode form (NFC), then in small letters (`toLowerCase` in TypeScript, `to_lowercase` in Rust). Two texts that have one folded form are one URL for the resolver, which ignores the letter case and the Unicode form of a request. The two languages take their small letters from different versions of Unicode: the review of issue 43 found 20 code points (among them U+A7DD, U+AB6C, U+AB6D and code points between U+1DF40 and U+1DF7E) that only Rust changes. On a name with such a letter, the two implementations can disagree on a stop. GitHub issue 73 holds that gap. The published notes of the author have no such name.
 3. A plan that publishes a note (its list `publish` is not empty) stops, with a message that names the note:
     - when the file name of a note of `publish` (without `.md`) or the first folder of its path is a reserved root name;
     - when two different texts among the published notes after the plan have one folded form. The texts are the vault path of each note without `.md`, and each folder of those paths. The published notes after the plan are the published entries of the manifest, without the notes of `forcedRemove` and of `remove`, with the notes of `publish`. A note and a folder with the same text are not two texts: the note wins (URL-16 of the spec).
-4. A plan without a new note never stops on these rules, so a forced removal is never blocked by them. A published note passed them when it was published, and an update does not change its path.
+4. A plan without a new note never stops on these rules, so a plan without paths always applies its forced removals. A plan that includes a new note that breaks a rule stops with its forced removals: the next plan without that note applies them, as with every other refusal of a selection. A published note of a store written with this version passed the rules when it was published, and an update does not change its path. No content store was written with an earlier version outside the tests.
 5. Two notes with one file name in two folders are allowed. The URL with the file name alone then leads to no note, and the "not found" page names both (decision of the author, R47).
 
 The shared cases are in `fixtures/canonical/names.json` (`reserved`: a name and whether it is reserved; `folded`: two texts and whether they have one folded form). The queue scenarios hold plans that stop on these rules.

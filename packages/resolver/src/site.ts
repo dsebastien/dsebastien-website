@@ -170,12 +170,20 @@ export function resolverMapOf(
     const siteFiles: Record<string, { file: string; type: 'markdown' | 'text' }> = {
         '/robots.txt': { file: files.robots, type: 'text' }
     }
-    const folded: Record<string, string> = {}
+    // A map, not an object: a text such as "constructor" or "__proto__" is a
+    // key like any other.
+    const folded = new Map<string, string>()
+    const fold = (text: string, path: string): void => {
+        const key = foldedForm(text)
+        if (!folded.has(key)) {
+            folded.set(key, path)
+        }
+    }
     for (const note of ordered) {
         const path = canonicalPath(note.path)
         pages[path] = files.page(note.path)
         siteFiles[markdownPath(note.path)] = { file: files.markdown(note.path), type: 'markdown' }
-        folded[foldedForm(note.path.slice(0, -'.md'.length))] ??= path
+        fold(note.path.slice(0, -'.md'.length), path)
     }
     // A note and a folder with the same text: the note wins (URL-16).
     for (const folder of foldersOf(ordered)) {
@@ -184,7 +192,7 @@ export function resolverMapOf(
         if (folder.note === undefined) {
             pages[target] ??= files.folder(folder.path)
         }
-        folded[foldedForm(folder.path)] ??= target
+        fold(folder.path, target)
     }
     const { names, aliases } = namesAndAliases(ordered)
     const urls = (map: Map<string, string[]>): Record<string, string[]> =>
@@ -197,7 +205,7 @@ export function resolverMapOf(
         pages,
         files: siteFiles,
         attachments,
-        folded,
+        folded: Object.fromEntries(folded),
         names: urls(names),
         aliases: urls(aliases),
         choices,

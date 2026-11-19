@@ -27,6 +27,7 @@ interface Case {
     request: string
     status: number
     page?: string
+    canonical?: string
     file?: string
     location?: string
     cacheControl?: string
@@ -146,7 +147,7 @@ describe('URL table over HTTP', () => {
             if (entry.status === 404) {
                 expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
                 for (const path of entry.suggestions ?? []) {
-                    expect(body).toContain(`href="${canonicalPath(path)}"`)
+                    expect(body).toContain(`href="${path}"`)
                 }
                 return
             }
@@ -163,12 +164,9 @@ describe('URL table over HTTP', () => {
                 }
                 return
             }
-            const [kind = '', path = ''] = (entry.page ?? '').split(/:(.*)/su)
-            const canonical =
-                kind === 'note' ? canonicalPath(path) : kind === 'folder' ? folderPath(path) : '/'
             expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
             // A query gives the same page, with a clean canonical link (URL-12).
-            expect(canonicalLinkOf(body)).toBe(`${ORIGIN}${canonical}`)
+            expect(canonicalLinkOf(body)).toBe(`${ORIGIN}${entry.canonical ?? ''}`)
         }
     )
 })
@@ -206,6 +204,21 @@ describe('plain local server', () => {
 
     test('keeps no answer for a path that no note has', async () => {
         const response = await get('/Nothing+here')
+        expect(response.headers.get('cache-control')).toBe('no-store')
+    })
+})
+
+// URL-33: a file that the resolver map names and that the output of the build
+// does not have is a failure of the release, never "not found". It runs last:
+// it removes a file of the build.
+describe('plain local server with a broken release', () => {
+    test('answers 500 when a file of the map is missing', async () => {
+        if (outDir === undefined) {
+            throw new Error('the output folder does not exist')
+        }
+        await rm(join(outDir, 'robots.txt'))
+        const response = await get('/robots.txt')
+        expect(response.status).toBe(500)
         expect(response.headers.get('cache-control')).toBe('no-store')
     })
 })

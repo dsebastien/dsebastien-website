@@ -626,6 +626,12 @@
             "reserved": []
         },
         {
+            "name": "a comment after the key",
+            "note": "---\naliases: # the other names\n  - One\n---\nText\n",
+            "aliases": ["One"],
+            "reserved": []
+        },
+        {
             "name": "an empty property",
             "note": "---\naliases:\ntags: a\n---\nText\n",
             "aliases": [],

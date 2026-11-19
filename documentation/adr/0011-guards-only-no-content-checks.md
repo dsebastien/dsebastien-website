@@ -5,3 +5,5 @@ The earlier plans had a privacy gate: automatic checks on each note before a pub
 Considered: the full gate of spec v2, and a silent cleaning step that removes comments and hides the titles of notes in deny list folders. Rejected for now: the author selects every note himself, a measurement found no secret in the public notes, and the checks add work, noise and time to the part of a publication that must be fast.
 
 Consequence: what is public today in the same way stays public (titles of notes that are not published as plain link text, comments in the raw Markdown, metadata in images). The checks are kept as an idea in issue 15. The business rules 2 to 5 and 15 are rewritten.
+
+Added on 2026-11-19 (issue 43, R47): the raw Markdown of a note (`/-/md/<path>.md`) is its cleaned note, so it shows every property and every link path as the author wrote it, also the path of a note under a guard behind a link label. The author keeps it so. When a later step filters the page of a note (an allow list of properties, a check of issue 15), it filters the raw Markdown in the same way (business rule 18).

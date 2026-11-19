@@ -457,7 +457,8 @@ pub fn aliases_of(source: &str) -> Aliases {
         let Some(value) = value_of(line, ALIASES, false, false) else {
             continue;
         };
-        if value.is_empty() {
+        // A value that starts with `#` is a comment: the items follow.
+        if value.is_empty() || value.starts_with('#') {
             items.extend(
                 lines[index + 1..]
                     .iter()
