@@ -899,3 +899,125 @@ fn a_note_whose_name_starts_with_a_hyphen_can_be_included() {
 
     assert!(output.status.success(), "{}", errors_of(&output));
 }
+
+/// The lock of another run: the author ran unlock while a publication ran.
+const OTHER_LOCK: &str = "{\n  \"command\": \"plan\",\n  \"process\": 1\n}\n";
+
+/// The corrections after the first review of issue 36: a publication whose
+/// lock another run took after its commit corrects no property and keeps that
+/// lock.
+#[cfg(unix)]
+#[test]
+fn a_publication_whose_lock_another_run_took_corrects_no_property_and_keeps_that_lock() {
+    use std::os::unix::fs::PermissionsExt;
+    let setup = set_up();
+    let hooks = setup.copy.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("the folder can be made");
+    let hook = hooks.join("pre-commit");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\nprintf '%s' '{OTHER_LOCK}' > .git/vault-publish/lock\n"),
+    )
+    .expect("the hook is written");
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("the hook can run");
+    let id = setup.plan(NOTE);
+    let vault = picture(&setup.vault);
+
+    let output = setup.run("publish", &["--plan", &id, "--time", TIME]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("lock"),
+        "{}",
+        errors_of(&output)
+    );
+    assert_eq!(picture(&setup.vault), vault);
+    assert_eq!(
+        read(&setup.copy.join(".git").join("vault-publish").join("lock")),
+        OTHER_LOCK
+    );
+}
+
+/// A cleaned note that the copy lost would stay in the content store after
+/// its forced removal: the removal stages only what it removes.
+#[test]
+fn a_cleaned_note_that_is_missing_from_the_copy_stops_the_run() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    fs::remove_file(setup.copy.join("notes").join(NOTE)).expect("the note can be removed");
+
+    for output in [setup.run("status", &[]), setup.run("plan", &[])] {
+        assert_eq!(output.status.code(), Some(1));
+        let message = errors_of(&output);
+        assert!(message.contains(&format!("notes/{NOTE}")), "{message}");
+        assert!(message.contains("git checkout HEAD -- notes"), "{message}");
+    }
+}
+
+#[test]
+fn a_publication_of_a_stale_plan_cleans_the_attachment_storage_before_it_stops() {
+    let setup = set_up();
+    // An upload of a run that stopped halfway: no published note uses it.
+    let left = setup.stores.attachment_storage().join("a".repeat(64));
+    fs::write(&left, "An upload of a run that stopped\n").expect("the file can be written");
+    let id = setup.plan(NOTE);
+    fs::write(
+        setup.vault.join(NOTE),
+        format!("{NOTE_TEXT}\nAn edit after the plan.\n"),
+    )
+    .expect("the note can be written");
+
+    let output = setup.run("publish", &["--plan", &id, "--time", TIME]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("stale"),
+        "{}",
+        errors_of(&output)
+    );
+    assert!(!left.exists());
+}
+
+#[test]
+fn a_folder_that_is_not_a_copy_of_the_content_store_gets_no_file_of_the_tool() {
+    let setup = set_up();
+    let id = setup.plan(NOTE);
+    let folder = setup.stores.root().join("not-a-copy");
+    fs::create_dir(&folder).expect("the folder can be made");
+    let run = |arguments: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+            .args(arguments)
+            .arg("--vault")
+            .arg(&setup.vault)
+            .arg("--content-store")
+            .arg(&folder)
+            .output()
+            .expect("the program starts")
+    };
+
+    let published = run(&[
+        "publish",
+        "--attachment-storage",
+        text(setup.stores.attachment_storage()),
+        "--plan",
+        &id,
+        "--time",
+        TIME,
+    ]);
+    let planned = run(&["plan", "--include", NOTE]);
+
+    for output in [published, planned] {
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            errors_of(&output).contains("not the root"),
+            "{}",
+            errors_of(&output)
+        );
+    }
+    assert_eq!(
+        fs::read_dir(&folder)
+            .expect("the folder can be listed")
+            .count(),
+        0
+    );
+}

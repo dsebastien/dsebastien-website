@@ -54,16 +54,17 @@ type Step = { why: string } & (
     | { do: 'delete'; paths: string[] }
     | { do: 'store'; files: Record<string, string> }
     | { do: 'status'; queue: PublicationQueue; refused?: never }
-    | { do: 'status'; refused: true }
+    | { do: 'status'; refused: true; says?: string }
     | {
           do: 'plan'
           selection: Selection
           plan?: PublicationPlan
           refused?: true
+          says?: string
           offline?: true
       }
     | { do: 'publish'; selection: Selection; time: string; report: ReportLists; refused?: never }
-    | { do: 'publish'; selection: Selection; time: string; refused: true }
+    | { do: 'publish'; selection: Selection; time: string; refused: true; says?: string }
     | { do: 'crash'; selection: Selection; time: string; at: CrashPoint }
     | { do: 'unlock' }
     | { do: 'offline' }
@@ -191,13 +192,15 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     await pushToStore(copy, step.files)
                 } else if (step.do === 'status') {
                     if (step.refused === true) {
-                        expect(await rejectionOf(status(device)), label).not.toBe('')
+                        expect(await rejectionOf(status(device)), label).toContain(step.says ?? '')
                     } else {
                         expect(await status(device), label).toEqual(step.queue)
                     }
                 } else if (step.do === 'plan') {
                     if (step.refused === true) {
-                        expect(await rejectionOf(plan(device, step.selection)), label).not.toBe('')
+                        expect(await rejectionOf(plan(device, step.selection)), label).toContain(
+                            step.says ?? ''
+                        )
                     } else {
                         const planned = await plan(device, step.selection)
                         expect(planned.plan, label).toEqual(
@@ -227,7 +230,9 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                 } else if (step.do === 'publish' && step.refused === true) {
                     const planned = await plan(device, step.selection)
                     const run: Run = { time: step.time, device: 'garden-shed', face: 'plugin' }
-                    expect(await rejectionOf(publish(device, planned.id, run)), label).not.toBe('')
+                    expect(await rejectionOf(publish(device, planned.id, run)), label).toContain(
+                        step.says ?? ''
+                    )
                 } else if (step.do === 'publish') {
                     const planned = await plan(device, step.selection)
                     const report = await publish(device, planned.id, {
@@ -1087,8 +1092,8 @@ describe('commit of a publication of the queue', () => {
             { time: LATER, device: 'garden-shed', face: 'mcp-server' }
         )
 
-        expect(await git(setup.copy, 'log', '-1', '--format=%B')).toBe(
-            'Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped\n\nDevice: garden-shed\nFace: mcp-server'
+        expect(await git(setup.copy, 'log', '-1', '--format=%B')).toMatch(
+            /^Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped\n\nDevice: garden-shed\nFace: mcp-server\nPlan: [0-9a-f]{16}$/u
         )
         // One commit, and the content store has it.
         expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('3')
@@ -1883,21 +1888,20 @@ describe('forced removal', () => {
         ).toEqual([])
     })
 
-    // PUB-21: if a forced removal fails, the whole publication stops. Here a
-    // folder is in the place of the cleaned note of the second removal.
+    // PUB-21: if a forced removal fails, the whole publication stops. Here
+    // the cleaned note of the second removal is not valid UTF-8 in the
+    // content store (another device pushed it), so the tool cannot keep its
+    // text to put it back: that fails on every system, with no change of a
+    // permission, on a copy that is the files of its last commit.
     test('that fails stops the whole publication, and every file is put back', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         await publishNotes(setup, { include: [NOTE, SECOND] })
         await writeFile(join(setup.vault, NOTE), IGNORED)
         await writeFile(join(setup.vault, SECOND), IGNORED)
-        const blocked = join(setup.copy, 'notes', NOTE)
-        await rm(blocked)
-        await mkdir(blocked)
-        await writeFile(
-            join(blocked, 'in the way'),
-            'A file in a folder that stands for the note\n'
-        )
+        await writeFile(join(setup.copy, 'notes', NOTE), Uint8Array.from([0xff, 0xfe, 0x0a]))
+        await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'Another device')
+        await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
         const planned = await plan(setup.device, { include: ['Welcome.md'] })
         expect(planned.plan.forcedRemove).toEqual([SECOND, NOTE])
         const before = {

@@ -12,7 +12,7 @@ use crate::attachments::{Attachment, key_of};
 use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
-use crate::device::{AttachmentStorage, ContentStore, Fetch, Recovery, Vault, crash_point};
+use crate::device::{AttachmentStorage, ContentStore, Fetch, Lock, Recovery, Vault, crash_point};
 use crate::frontmatter::{has_flow_properties, names_in_properties, remove_property, set_property};
 use crate::guards::IGNORE_PROPERTY;
 use crate::hash::{bytes_hash, content_hash, sha256_hex};
@@ -145,18 +145,33 @@ fn refuse_when_locked(device: &Device) -> Result<(), String> {
 
 /// Runs the work with the lock of the device (TOOL-09, PUB-27), and removes
 /// the lock at its end.
+/// The message of a run whose lock was removed while it ran.
+const LOCK_LOST: &str = "the lock of this publication was removed while it ran (unlock while a publication runs), and another run can have taken the copy. This run stops here and corrects no property: make a new plan when no other run runs";
+
+/// Runs the work with the lock of the device (TOOL-09, PUB-27), and removes
+/// the lock at its end when it is still the lock of this run. The work gets a
+/// check that fails with `LOCK_LOST` when the lock is not its own any more:
+/// the author ran unlock while it ran.
 fn with_lock<T>(
     device: &Device,
     holder: &Value,
-    work: impl FnOnce() -> Result<T, String>,
+    work: impl FnOnce(&dyn Fn() -> Result<(), String>) -> Result<T, String>,
 ) -> Result<T, String> {
-    if let Some(held) = device.store.lock(holder)? {
-        return Err(lock_message(&held));
-    }
-    let result = work();
-    let unlocked = device.store.unlock();
+    let text = match device.store.lock(holder)? {
+        Lock::Taken(text) => text,
+        Lock::Held(text) => return Err(lock_message(&text)),
+    };
+    let own_lock = || -> Result<(), String> {
+        if device.store.read_lock()?.as_deref() == Some(text.as_str()) {
+            Ok(())
+        } else {
+            Err(LOCK_LOST.to_owned())
+        }
+    };
+    let result = work(&own_lock);
+    let released = device.store.release(&text);
     let value = result?;
-    unlocked?;
+    released?;
     Ok(value)
 }
 
@@ -283,9 +298,9 @@ fn recover(device: &Device) -> Result<bool, String> {
             correction_owed,
             head,
             paths,
-            ..
+            plan,
         }) => {
-            let result = device.store.recover(head.as_deref(), &paths)?;
+            let result = device.store.recover(head.as_deref(), &paths, &plan)?;
             if result == Recovery::Pushed || correction_owed {
                 device
                     .store
@@ -412,7 +427,7 @@ pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
     // put back first, with the lock, so that no publication starts in the
     // middle.
     if matches!(read_journal(device)?, Some(RunJournal::Write { .. })) {
-        with_lock(device, &json!({ "command": "plan" }), || recover(device))?;
+        with_lock(device, &json!({ "command": "plan" }), |_| recover(device))?;
     }
     let computed = record_for(device, selection, Fetch::Try)?;
     // The id names the record. It is outside the parity rule (TOOL-30).
@@ -1110,12 +1125,21 @@ struct Done {
 /// The forced removals come first: when one fails, the whole publication
 /// stops. A note whose uploads or files fail is left out and reported
 /// (PUB-26).
+/// What the commit of a publication needs besides the run.
+struct Commit<'a> {
+    /// The id of the plan, for the message of the commit.
+    plan: &'a str,
+    /// Fails when the lock of the run is not its own any more.
+    own_lock: &'a dyn Fn() -> Result<(), String>,
+}
+
 fn write_all(
     device: &Device,
     journal: &mut Backup,
     uploads: &mut Uploads,
     computed: &Computed,
     run: &Run,
+    commit: &Commit,
 ) -> Result<Written, String> {
     let Computed {
         plan, scan, texts, ..
@@ -1175,16 +1199,20 @@ fn write_all(
         .collect();
     if !paths.is_empty() {
         crash_point("write");
+        (commit.own_lock)()?;
+        // The recovery of a run that stopped halfway finds its commit by the
+        // line `Plan:`.
         device.store.commit_and_push(
             &format!(
-                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}",
+                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}\nPlan: {}",
                 done.published.len(),
                 done.updated.len(),
                 done.removed.len(),
                 plan.forced_remove().len(),
                 skipped.len(),
                 run.device,
-                run.face
+                run.face,
+                commit.plan
             ),
             &paths,
         )?;
@@ -1235,7 +1263,33 @@ pub fn publish(
         "face": run.face,
         "time": run.time,
     });
-    with_lock(device, &holder, || apply(device, storage, id, run))
+    with_lock(device, &holder, |own_lock| {
+        apply(device, storage, id, run, own_lock)
+    })
+}
+
+/// `Err` when the plan is stale. The run fetched and the copy follows the
+/// content store, so the storage is cleaned first: a file that came under a
+/// guard leaves it also when the plan is stale.
+fn refuse_stale(
+    device: &Device,
+    storage: &AttachmentStorage,
+    current: &Computed,
+    record: &str,
+    id: &str,
+) -> Result<(), String> {
+    if current.record == record {
+        return Ok(());
+    }
+    clean_storage(
+        storage,
+        &current.scan.manifest,
+        &current.scan,
+        &device.vault,
+    );
+    Err(format!(
+        "the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan"
+    ))
 }
 
 /// The publication of a plan, with the lock of the device.
@@ -1244,6 +1298,7 @@ fn apply(
     storage: &AttachmentStorage,
     id: &str,
     run: &Run,
+    own_lock: &dyn Fn() -> Result<(), String>,
 ) -> Result<Outcome, String> {
     // A publication that stopped halfway is put back first. When it stopped
     // after its push, the correction of the property is owed.
@@ -1253,15 +1308,12 @@ fn apply(
         .load_plan(id)
         .ok_or_else(|| format!("there is no plan with the id {id} on this device"))?;
     let current = record_for(device, &selection_of(&record, id)?, Fetch::Must)?;
-    if current.record != record {
-        return Err(format!(
-            "the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan"
-        ));
-    }
+    refuse_stale(device, storage, &current, &record, id)?;
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
     let paths = store_paths_of(&current.plan, &current.scan, run.time);
     let head = device.store.head();
+    own_lock()?;
     if !paths.is_empty() {
         device
             .store
@@ -1288,7 +1340,14 @@ fn apply(
 
     let mut journal = Backup::new(&device.store);
     let mut uploads = Uploads::new(&device.vault, storage);
-    let written = match write_all(device, &mut journal, &mut uploads, &current, run) {
+    let written = match write_all(
+        device,
+        &mut journal,
+        &mut uploads,
+        &current,
+        run,
+        &Commit { plan: id, own_lock },
+    ) {
         Ok(written) => written,
         Err(error) => {
             // Files that stay in the copy would be read as published at the
@@ -1299,7 +1358,7 @@ fn apply(
             // A file that could not be put back, or a commit that git could
             // not take back, stays in the journal, so the next run puts it
             // back.
-            if stayed.is_empty() && device.store.head() == head {
+            if error != LOCK_LOST && stayed.is_empty() && device.store.head() == head {
                 settle(owed)?;
             }
             let files = if stayed.is_empty() {
@@ -1322,6 +1381,9 @@ fn apply(
         }
     };
     crash_point("push");
+    // The push arrived, but when another run took the copy, this run changes
+    // nothing more: the other run owns the journal.
+    own_lock()?;
     // With nothing to commit there is no push, and without a push no property
     // is corrected, unless an earlier run pushed and stopped before its
     // correction.

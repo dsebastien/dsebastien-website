@@ -11,7 +11,7 @@ import {
     type TestStores
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
-import { plan, publish } from './tool.ts'
+import { plan, publish, status } from './tool.ts'
 import type { Device } from './ports.ts'
 
 // The first slice (issue 31): one invented note goes through the plan, the
@@ -932,5 +932,113 @@ describe('attachments of a publication', () => {
 
         expect(report.attachmentsDeleted).toEqual([DENIED_KEY])
         expect(await storage(stores)).toEqual([])
+    })
+})
+
+// The corrections after the first review of issue 36.
+describe('failure cases after the first review', () => {
+    const OTHER_LOCK = '{\n  "command": "plan",\n  "process": 1\n}\n'
+
+    // The author runs unlock while a publication runs, and another run takes
+    // the copy. The publication stops: it never claims what the other run
+    // can have taken back, and it never removes the lock of the other run.
+    test.skipIf(process.platform === 'win32')(
+        'a publication whose lock another run took after its commit corrects no property and keeps that lock',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const lock = join(setup.copy, '.git', 'vault-publish', 'lock')
+            const hook = join(setup.copy, '.git', 'hooks', 'pre-commit')
+            await mkdir(join(setup.copy, '.git', 'hooks'), { recursive: true })
+            await writeFile(
+                hook,
+                `#!/bin/sh\nprintf '%s' '${OTHER_LOCK}' > .git/vault-publish/lock\n`
+            )
+            await chmod(hook, 0o755)
+            const planned = await plan(setup.device, { include: [NOTE] })
+            const vault = await picture(setup.vault)
+
+            expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('lock')
+
+            expect(await picture(setup.vault)).toEqual(vault)
+            expect(await Bun.file(lock).text()).toBe(OTHER_LOCK)
+        }
+    )
+
+    test('a publication whose lock another run took before its commit puts its files back', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const lock = join(setup.copy, '.git', 'vault-publish', 'lock')
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const remote = await git('--git-dir', stores.contentStore, 'rev-parse', 'main')
+        let taken = false
+        const device: Device = {
+            ...setup.device,
+            store: {
+                ...setup.device.store,
+                async write(path, text) {
+                    await setup.device.store.write(path, text)
+                    if (!taken) {
+                        taken = true
+                        await writeFile(lock, OTHER_LOCK)
+                    }
+                }
+            }
+        }
+
+        expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('lock')
+
+        expect(await exists(join(setup.copy, 'notes', NOTE))).toBe(false)
+        expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(remote)
+        expect(await Bun.file(lock).text()).toBe(OTHER_LOCK)
+    })
+
+    // A cleaned note that the copy lost would else stay in the content store
+    // after its forced removal: the removal stages only what it removes.
+    test('a cleaned note that is missing from the copy stops the run', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await publish(setup.device, planned.id, RUN)
+        await rm(join(setup.copy, 'notes', NOTE))
+
+        for (const message of [
+            await rejectionOf(status(setup.device)),
+            await rejectionOf(plan(setup.device, { include: [] }))
+        ]) {
+            expect(message).toContain(`notes/${NOTE}`)
+            expect(message).toContain('git checkout HEAD -- notes')
+        }
+    })
+
+    test('a publication of a stale plan cleans the attachment storage before it stops', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        // An upload of a run that stopped halfway: no published note uses it.
+        const left = join(stores.attachmentStorage, 'a'.repeat(64))
+        await writeFile(left, 'An upload of a run that stopped\n')
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(join(setup.vault, NOTE), `${NOTE_TEXT}\nAn edit after the plan.\n`)
+
+        expect(await rejectionOf(publish(setup.device, planned.id, RUN))).toContain('stale')
+
+        expect(await exists(left)).toBe(false)
+    })
+
+    test('a folder that is not a copy of the content store gets no file of the tool', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const folder = join(stores.root, 'not-a-copy')
+        await mkdir(folder)
+        const device = nodeDevice({
+            vault: setup.vault,
+            contentStore: folder,
+            attachmentStorage: stores.attachmentStorage
+        })
+
+        expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('not the root')
+        expect(await rejectionOf(plan(device, { include: [NOTE] }))).toContain('not the root')
+        expect(await readdir(folder)).toEqual([])
     })
 })

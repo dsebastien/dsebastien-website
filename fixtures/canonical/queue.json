@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\" or a \"publish\" with \"refused\" states that the command stops. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum.",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\" or a \"publish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -2676,7 +2676,8 @@
                 {
                     "do": "status",
                     "why": "the lock of the run is still there, so the queue is not read",
-                    "refused": true
+                    "refused": true,
+                    "says": "unlock"
                 },
                 {
                     "do": "plan",
@@ -2686,7 +2687,8 @@
                         "include": [],
                         "remove": []
                     },
-                    "refused": true
+                    "refused": true,
+                    "says": "unlock"
                 },
                 {
                     "do": "unlock",
@@ -2695,7 +2697,8 @@
                 {
                     "do": "status",
                     "why": "the journal says that a publication stopped halfway: status writes nothing, so it stops",
-                    "refused": true
+                    "refused": true,
+                    "says": "stopped halfway"
                 },
                 {
                     "do": "plan",
@@ -2857,7 +2860,8 @@
                         "include": ["Two.md"],
                         "remove": []
                     },
-                    "refused": true
+                    "refused": true,
+                    "says": "push arrived"
                 },
                 {
                     "do": "online",
@@ -2969,7 +2973,8 @@
                 {
                     "do": "status",
                     "why": "status reads no network, so it cannot know that the push arrived, and it stops",
-                    "refused": true
+                    "refused": true,
+                    "says": "stopped halfway"
                 },
                 {
                     "do": "plan",
@@ -3141,7 +3146,8 @@
                         "remove": []
                     },
                     "time": "2031-06-02T09:00:00Z",
-                    "refused": true
+                    "refused": true,
+                    "says": "cannot be reached"
                 },
                 {
                     "do": "expect",
@@ -3286,6 +3292,194 @@
                         "skipped": ["B.md"],
                         "updated": [],
                         "warnings": ["two.png"]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a pull after a run that stopped halfway",
+            "denyList": [],
+            "vault": {
+                "Keep.md": "Keep\n",
+                "Hide.md": "Hide\n",
+                "One.md": "One\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "two notes are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Keep.md", "Hide.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Hide.md", "Keep.md"],
+                        "published": ["Hide.md", "Keep.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a published note gets the ignore property",
+                    "files": {
+                        "Hide.md": "---\npublish_ignore: true\n---\nHide\n"
+                    }
+                },
+                {
+                    "do": "crash",
+                    "why": "the forced removal stops after its writes, before its commit",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "at": "write"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "store",
+                    "why": "the author pulls a commit of another device whose parent is the commit before the run, and which changes only a path of the run",
+                    "files": {
+                        "notes/Hide.md": "Hide, from another device\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "that commit does not name the plan of the run, so it is not the commit of the run: the files are put back as it has them, and the note under the guard is still a forced removal",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Hide.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the copy has the files of the note under the guard again",
+                    "vault": {},
+                    "store": {
+                        "notes/Hide.md": "Hide, from another device\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the forced removal is done",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": ["Hide.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note under the guard left the content store",
+                    "vault": {},
+                    "store": {
+                        "notes/Hide.md": null,
+                        "notes/Keep.md": "Keep\n"
+                    }
+                },
+                {
+                    "do": "crash",
+                    "why": "a publication stops just after its push",
+                    "selection": {
+                        "hold": [],
+                        "include": ["One.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T10:00:00Z",
+                    "at": "push"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "store",
+                    "why": "the author pulls a later commit of another device",
+                    "files": {
+                        "notes/Later.md": "A later note of another device\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the commit of the run is in the history and arrived: nothing is put back",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the correction that the stopped run owed is made",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T11:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["One.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note has its property",
+                    "vault": {
+                        "One.md": "---\npublic_note: true\n---\nOne\n"
+                    },
+                    "store": {
+                        "notes/One.md": "One\n"
                     }
                 }
             ]

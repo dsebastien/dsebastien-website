@@ -3,7 +3,7 @@
 //! is `apps/plugin/src/publishing/node/device.ts`.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
 use std::io::{ErrorKind, Write};
@@ -35,6 +35,14 @@ pub struct Verified {
     /// False when the check tried to fetch and the content store could not be
     /// reached.
     pub reached: bool,
+}
+
+/// The lock of the device, as `lock` found it.
+pub enum Lock {
+    /// The run took the lock, with this text.
+    Taken(String),
+    /// Another run holds the lock, with this text.
+    Held(String),
 }
 
 /// What the copy did with the files of a publication that stopped halfway.
@@ -345,19 +353,7 @@ impl ContentStore {
     /// work on the repository that holds the folder. Or the copy has commits
     /// that the content store does not have.
     pub fn verify(&self, fetch: Fetch) -> Result<Verified, String> {
-        let top = self.git_output(&["rev-parse", "--show-toplevel"]).ok();
-        let same = top.is_some_and(|top| {
-            match (fs::canonicalize(top.trim()), fs::canonicalize(&self.folder)) {
-                (Ok(top), Ok(folder)) => top == folder,
-                _ => false,
-            }
-        });
-        if !same {
-            return Err(format!(
-                "the copy of the content store is not the root of a git repository: {}",
-                self.folder.display()
-            ));
-        }
+        self.check_root()?;
         let mut reached = true;
         if fetch != Fetch::None {
             match self.fetch_main() {
@@ -408,6 +404,26 @@ impl ContentStore {
         Ok(Verified { behind, reached })
     }
 
+    /// `Err` when the folder is not the root of its own git repository: git
+    /// would else work on the repository that holds it.
+    fn check_root(&self) -> Result<(), String> {
+        let top = self.git_output(&["rev-parse", "--show-toplevel"]).ok();
+        let same = top.is_some_and(|top| {
+            match (fs::canonicalize(top.trim()), fs::canonicalize(&self.folder)) {
+                (Ok(top), Ok(folder)) => top == folder,
+                _ => false,
+            }
+        });
+        if same {
+            Ok(())
+        } else {
+            Err(format!(
+                "the copy of the content store is not the root of a git repository: {}",
+                self.folder.display()
+            ))
+        }
+    }
+
     /// The commit of the copy, or `None` when the copy has no commit.
     pub fn head(&self) -> Option<String> {
         self.git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
@@ -417,78 +433,125 @@ impl ContentStore {
 
     /// Puts back what a publication that stopped halfway left, by the rules
     /// of the run journal (`documentation/Canonical Form.md`, "Failure
-    /// cases"): `head` is the commit before the run, and `paths` are the files
-    /// that the run could write.
+    /// cases"): `head` is the commit before the run, `paths` are the files
+    /// that the run could write, and `plan` is the id of its plan, which the
+    /// message of its commit names.
     ///
     /// # Errors
     ///
-    /// The copy has another commit, or the tool must know whether the push
+    /// The copy is not the root of its own git repository, its history
+    /// cannot be put back by the rules, the tool must know whether the push
     /// arrived and the content store cannot be reached, or git fails.
-    pub fn recover(&self, head: Option<&str>, paths: &[String]) -> Result<Recovery, String> {
+    pub fn recover(
+        &self,
+        head: Option<&str>,
+        paths: &[String],
+        plan: &str,
+    ) -> Result<Recovery, String> {
+        self.check_root()?;
         let now = self.head();
-        if now.as_deref() != head {
-            // The run made its commit: its first parent is the commit before
-            // the run, or it is the first commit of the copy.
-            let parents = match &now {
-                Some(now) => self
-                    .git_output(&["rev-list", "--parents", "--max-count=1", now])?
-                    .split_whitespace()
-                    .skip(1)
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>(),
-                None => Vec::new(),
-            };
-            let made_by_the_run = match head {
-                Some(head) => parents.first().map(String::as_str) == Some(head),
-                None => parents.is_empty(),
-            };
-            let Some(now) = now.filter(|_| made_by_the_run) else {
-                return Err(format!(
-                    "a publication stopped halfway, and the copy of the content store has another commit since. Correct the copy by hand (git fetch origin, then git reset --hard origin/main when the copy holds no other work), then remove .git/vault-publish/journal.json: {}",
-                    self.folder.display()
-                ));
-            };
-            self.fetch_main().map_err(|(FetchFailure::Unreachable(error) | FetchFailure::Other(error))| {
-                format!(
-                    "a publication stopped halfway after its commit, and the tool must reach the content store to know whether its push arrived: {error}"
-                )
-            })?;
-            let pushed = self
-                .git_output(&[
-                    "merge-base",
-                    "--is-ancestor",
-                    &now,
-                    "refs/remotes/origin/main",
-                ])
-                .is_ok();
-            if pushed {
-                return Ok(Recovery::Pushed);
-            }
-            // The tool never pushes an old commit: it can be older than a
-            // guard that the author added since.
-            match head {
-                Some(head) => self.git_output(&["update-ref", "HEAD", head])?,
-                None => self.git_output(&["update-ref", "-d", "HEAD"])?,
-            };
+        if now.as_deref() == head {
+            self.put_back(head, paths)?;
+            return Ok(Recovery::Undone);
         }
-        // Each path as the commit before the run has it.
-        let in_head: Vec<String> = match head {
-            Some(head) => self
-                .git_output(&["ls-tree", "-r", "-z", "--name-only", "--full-tree", head])?
+        let by_hand = || {
+            format!(
+                "a publication stopped halfway, and the history of the copy of the content store cannot be put back by the tool. Correct the copy by hand (git fetch origin, then git reset --hard origin/main when the copy holds no other work), then remove .git/vault-publish/journal.json: {}",
+                self.folder.display()
+            )
+        };
+        let Some(now) = now else {
+            return Err(by_hand());
+        };
+        if let Some(head) = head
+            && self
+                .git_output(&["merge-base", "--is-ancestor", head, &now])
+                .is_err()
+        {
+            return Err(by_hand());
+        }
+        // The commit of the run: the first commit after head on the line of
+        // first parents, when it names the plan and changes only paths of the
+        // journal. A commit of another device is never taken for it.
+        let range = head.map_or_else(|| now.clone(), |head| format!("{head}..{now}"));
+        let line = self.git_output(&["rev-list", "--first-parent", "--reverse", &range])?;
+        let first = line.lines().next().map(str::to_owned);
+        let of_the_run = match &first {
+            Some(first) => {
+                let message = self.git_output(&["log", "-1", "--format=%B", first])?;
+                let changed = self.git_output(&[
+                    "diff-tree",
+                    "--no-commit-id",
+                    "--name-only",
+                    "-r",
+                    "-z",
+                    "--root",
+                    "--no-renames",
+                    first,
+                ])?;
+                let journal: BTreeSet<&str> = paths.iter().map(String::as_str).collect();
+                message.lines().any(|line| line == format!("Plan: {plan}"))
+                    && changed
+                        .split('\0')
+                        .filter(|path| !path.is_empty())
+                        .all(|path| journal.contains(path))
+            }
+            None => false,
+        };
+        let Some(first) = first.filter(|_| of_the_run) else {
+            // The run made no commit, and other commits came after head.
+            self.put_back(Some(&now), paths)?;
+            return Ok(Recovery::Undone);
+        };
+        self.fetch_main().map_err(|(FetchFailure::Unreachable(error) | FetchFailure::Other(error))| {
+            format!(
+                "a publication stopped halfway after its commit, and the tool must reach the content store to know whether its push arrived: {error}"
+            )
+        })?;
+        let pushed = self
+            .git_output(&[
+                "merge-base",
+                "--is-ancestor",
+                &first,
+                "refs/remotes/origin/main",
+            ])
+            .is_ok();
+        if pushed {
+            return Ok(Recovery::Pushed);
+        }
+        if first != now {
+            return Err(by_hand());
+        }
+        // The tool never pushes an old commit: it can be older than a guard
+        // that the author added since.
+        match head {
+            Some(head) => self.git_output(&["update-ref", "HEAD", head])?,
+            None => self.git_output(&["update-ref", "-d", "HEAD"])?,
+        };
+        self.put_back(head, paths)?;
+        Ok(Recovery::Undone)
+    }
+
+    /// Puts each path back as this commit has it, in the work tree and in the
+    /// index. A path that the commit does not have is removed from both.
+    fn put_back(&self, commit: Option<&str>, paths: &[String]) -> Result<(), String> {
+        let in_commit: BTreeSet<String> = match commit {
+            Some(commit) => self
+                .git_output(&["ls-tree", "-r", "-z", "--name-only", "--full-tree", commit])?
                 .split('\0')
                 .filter(|path| !path.is_empty())
                 .map(str::to_owned)
                 .collect(),
-            None => Vec::new(),
+            None => BTreeSet::new(),
         };
         let (back, gone): (Vec<&str>, Vec<&str>) = paths
             .iter()
             .map(String::as_str)
-            .partition(|path| in_head.iter().any(|known| known == path));
-        if let Some(head) = head
+            .partition(|path| in_commit.contains(*path));
+        if let Some(commit) = commit
             && !back.is_empty()
         {
-            self.git_on_paths(&["checkout", head], &back)?;
+            self.git_on_paths(&["checkout", commit], &back)?;
         }
         for path in &gone {
             self.refuse_links(path)?;
@@ -505,7 +568,7 @@ impl ContentStore {
         if !gone.is_empty() {
             self.git_on_paths(&["rm", "--quiet", "--cached", "--ignore-unmatch"], &gone)?;
         }
-        if head.is_none() && self.git_output(&["ls-files", "-z"])?.is_empty() {
+        if commit.is_none() && self.git_output(&["ls-files", "-z"])?.is_empty() {
             // A fresh clone of an empty content store has no index. An index
             // with no entry would stop a later pull.
             match fs::remove_file(self.folder.join(".git").join("index")) {
@@ -514,7 +577,7 @@ impl ContentStore {
                 Err(error) => return Err(format!("the empty index cannot be removed: {error}")),
             }
         }
-        Ok(Recovery::Undone)
+        Ok(())
     }
 
     /// Fetches the branch `main` of the content store into
@@ -699,6 +762,23 @@ impl ContentStore {
             ],
             &[],
         )?;
+        // The cleaned notes that the last commit has: one that the copy
+        // removed or edited would stay in the content store, because a removal
+        // stages only what it removes. A file that the commit does not have is
+        // never committed, so it is not compared.
+        let notes = self.git_with_options(
+            COMPARE_OPTIONS,
+            &[
+                "status",
+                "--no-renames",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=no",
+                "--",
+                "notes",
+            ],
+            &[],
+        )?;
         let flags = self.git_output(&[
             "ls-files",
             "-v",
@@ -706,6 +786,7 @@ impl ContentStore {
             "--",
             "configuration.json",
             "manifest",
+            "notes",
         ])?;
         let edited = self.edited_files()?;
         let different: Vec<(&str, &str)> = edited
@@ -714,6 +795,7 @@ impl ContentStore {
             .chain(
                 changes
                     .split('\0')
+                    .chain(notes.split('\0'))
                     .filter(|entry| entry.len() > 3)
                     .map(|entry| (&entry[..2], &entry[3..]))
                     .chain(
@@ -1067,7 +1149,14 @@ impl ContentStore {
     /// # Errors
     ///
     /// The lock cannot be made or read.
-    pub fn lock(&self, holder: &Value) -> Result<Option<String>, String> {
+    pub fn lock(&self, holder: &Value) -> Result<Lock, String> {
+        // A folder that is not a copy gets no `.git` folder.
+        if !fs::symlink_metadata(self.folder.join(".git")).is_ok_and(|metadata| metadata.is_dir()) {
+            return Err(format!(
+                "the copy of the content store is not the root of a git repository: {}",
+                self.folder.display()
+            ));
+        }
         let path = self.local_file("lock");
         let failed =
             |error: std::io::Error| format!("the lock of the device cannot be made: {error}");
@@ -1086,9 +1175,9 @@ impl ContentStore {
         {
             Ok(mut file) => {
                 file.write_all(text.as_bytes()).map_err(failed)?;
-                Ok(None)
+                Ok(Lock::Taken(text))
             }
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(Some(
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(Lock::Held(
                 self.read_lock()?
                     .unwrap_or_else(|| "a lock that went away".to_owned()),
             )),
@@ -1103,6 +1192,19 @@ impl ContentStore {
     /// The lock exists and cannot be read.
     pub fn read_lock(&self) -> Result<Option<String>, String> {
         read_if_there(&self.local_file("lock"))
+    }
+
+    /// Removes the lock only when it still holds this text: a run never
+    /// removes the lock of another run.
+    ///
+    /// # Errors
+    ///
+    /// The lock cannot be read or removed.
+    pub fn release(&self, text: &str) -> Result<(), String> {
+        if self.read_lock()?.as_deref() == Some(text) {
+            self.unlock()?;
+        }
+        Ok(())
     }
 
     /// Removes the lock. `Ok(true)` when a lock existed.
@@ -1267,9 +1369,20 @@ fn ways_out(different: &[(&str, &str)]) -> String {
             "When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
         });
     }
+    let notes: Vec<&str> = different
+        .iter()
+        .filter(|(_, path)| path.starts_with("notes/"))
+        .map(|(code, _)| *code)
+        .collect();
+    if notes.contains(&"skipped") {
+        ways.push("Let git compare the cleaned notes again (git update-index --no-skip-worktree --no-assume-unchanged on the files that it skips)");
+    }
+    if notes.iter().any(|code| *code != "skipped") {
+        ways.push("Put the cleaned notes back with git checkout HEAD -- notes: a cleaned note that the copy lost would stay in the content store after its removal");
+    }
     let manifest: Vec<&str> = different
         .iter()
-        .filter(|(_, path)| *path != "configuration.json")
+        .filter(|(_, path)| *path != "configuration.json" && !path.starts_with("notes/"))
         .map(|(code, _)| *code)
         .collect();
     if manifest.contains(&"skipped") {
@@ -1312,10 +1425,7 @@ fn write_whole(path: &Path, text: &str) -> Result<(), String> {
     }
     let folder = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(folder).map_err(failed)?;
-    let name = path
-        .file_name()
-        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    let temporary = folder.join(format!(".{name}.vault-publish"));
+    let temporary = folder.join(".vault-publish.tmp");
     fs::write(&temporary, text).map_err(failed)?;
     fs::rename(&temporary, path).map_err(|error| {
         let _ = fs::remove_file(&temporary);

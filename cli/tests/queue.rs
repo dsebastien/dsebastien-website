@@ -314,6 +314,18 @@ fn assert_refused(output: &Output, label: &str) {
     assert!(errors_of(output).starts_with("error: "), "{label}");
 }
 
+/// The command stopped, and its message has what the step says.
+fn assert_refused_saying(output: &Output, step: &Value, label: &str) {
+    assert_refused(output, label);
+    if let Some(says) = step["says"].as_str() {
+        assert!(
+            errors_of(output).contains(says),
+            "{label}: {}",
+            errors_of(output)
+        );
+    }
+}
+
 fn run_step(setup: &Setup, step: &Value, label: &str) {
     match step["do"].as_str().expect("a step says what it does") {
         "write" => write_files(&setup.vault, &step["files"]),
@@ -324,13 +336,13 @@ fn run_step(setup: &Setup, step: &Value, label: &str) {
         }
         "store" => push_to_store(&setup.copy, &step["files"]),
         "status" if step["refused"] == json!(true) => {
-            assert_refused(&setup.run("status", &[]), label);
+            assert_refused_saying(&setup.run("status", &[]), step, label);
         }
         "status" => assert_eq!(setup.status(), step["queue"], "{label}"),
         "plan" => {
             let output = setup.plan(&step["selection"]);
             if step["refused"] == json!(true) {
-                assert_refused(&output, label);
+                assert_refused_saying(&output, step, label);
             } else {
                 assert!(output.status.success(), "{label}: {}", errors_of(&output));
                 assert_eq!(json_of(&output)["plan"], step["plan"], "{label}");
@@ -375,7 +387,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str) {
         "publish" if step["refused"] == json!(true) => {
             let time = step["time"].as_str().expect("a publication has a time");
             let id = setup.plan_id(&step["selection"]);
-            assert_refused(&setup.publish_plan(&id, time), label);
+            assert_refused_saying(&setup.publish_plan(&id, time), step, label);
         }
         "publish" => {
             let time = step["time"].as_str().expect("a publication has a time");
@@ -1911,9 +1923,20 @@ fn the_commit_has_a_message_with_the_counts_the_device_and_the_face() {
         LATER,
     );
 
+    let message = setup.git(&["log", "-1", "--format=%B"]);
+    let (counts, plan) = message
+        .split_once("\nPlan: ")
+        .expect("the message names the plan");
     assert_eq!(
-        setup.git(&["log", "-1", "--format=%B"]),
+        counts,
         "Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped\n\nDevice: garden-shed\nFace: command-line"
+    );
+    assert!(
+        plan.len() == 16
+            && plan
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')),
+        "{plan}"
     );
     // One commit, and the content store has it.
     assert_eq!(setup.git(&["rev-list", "--count", "HEAD"]), "3");
@@ -1984,7 +2007,10 @@ fn the_commit_names_the_host_when_no_device_is_given() {
         .find_map(|line| line.strip_prefix("Device: "))
         .expect("the message names the device");
     assert_ne!(device.trim(), "");
-    assert!(message.ends_with("\nFace: command-line"));
+    assert!(
+        message.contains("\nFace: command-line\nPlan: "),
+        "{message}"
+    );
 }
 
 /// A note name can hold the characters of a git pattern.
@@ -2449,23 +2475,21 @@ fn a_forced_removal_does_not_take_a_published_note_whose_file_is_only_missing() 
     );
 }
 
-/// PUB-21: if a forced removal fails, the whole publication stops. Here a
-/// folder is in the place of the cleaned note of the second removal: that
-/// fails on every system, with no change of a permission.
+/// PUB-21: if a forced removal fails, the whole publication stops. Here the
+/// cleaned note of the second removal is not valid UTF-8 in the content store
+/// (another device pushed it), so the tool cannot keep its text to put it
+/// back: that fails on every system, with no change of a permission, on a
+/// copy that is the files of its last commit.
 #[test]
 fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put_back() {
     let setup = Setup::fixture();
     setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
     fs::write(setup.vault.join(NOTE), IGNORED).expect("the file is written");
     fs::write(setup.vault.join(SECOND), IGNORED).expect("the file is written");
-    let blocked = setup.copy.join("notes").join(NOTE);
-    fs::remove_file(&blocked).expect("the cleaned note can be removed");
-    fs::create_dir(&blocked).expect("the folder can be made");
-    fs::write(
-        blocked.join("in the way"),
-        "A file in a folder that stands for the note\n",
-    )
-    .expect("the file is written");
+    fs::write(setup.copy.join("notes").join(NOTE), [0xff, 0xfe, 0x0a])
+        .expect("the file is written");
+    setup.git(&["commit", "--quiet", "--all", "--message", "Another device"]);
+    setup.git(&["push", "--quiet", "origin", "HEAD:main"]);
     let planned = setup.plan(&json!({ "include": ["Welcome.md"] }));
     assert!(planned.status.success(), "{}", errors_of(&planned));
     let planned = json_of(&planned);

@@ -80,14 +80,16 @@ export interface ContentStore {
     /**
      * Puts back what a publication that stopped halfway left, by the rules of
      * the run journal (`documentation/Canonical Form.md`, "Failure cases"):
-     * `head` is the commit before the run, and `paths` are the files that the
-     * run could write. `pushed` when the commit of the run arrived in the
-     * content store: nothing is put back. `undone` when the copy is back at
-     * `head`, with each path as `head` has it. Throws when the copy has
-     * another commit, or when the tool must know whether the push arrived and
-     * the content store cannot be reached.
+     * `head` is the commit before the run, `paths` are the files that the run
+     * could write, and `plan` is the id of its plan, which the message of its
+     * commit names. `pushed` when the commit of the run arrived in the content
+     * store: nothing is put back. `undone` when each path is as the last
+     * commit has it, and a commit of the run that did not arrive is taken
+     * back. Throws when the copy is not the root of its own git repository,
+     * when its history cannot be put back by the rules, or when the tool must
+     * know whether the push arrived and the content store cannot be reached.
      */
-    recover(head: string | undefined, paths: readonly string[]): Promise<Recovery>
+    recover(head: string | undefined, paths: readonly string[], plan: string): Promise<Recovery>
     /**
      * The text of a file, by its path in the content store. `undefined` only
      * when there is no such file. It throws when the file cannot be read or is
@@ -152,10 +154,13 @@ export interface LocalStore {
     /**
      * Takes the lock of the device for a run, in one create: the file is made
      * only when no lock exists, with the holder and the id of the process.
-     * `undefined` when the lock was taken, else the text of the lock that is
-     * there.
+     * `taken` with the text that it wrote, or not `taken` with the text of the
+     * lock that is there. It throws when the folder is not a copy: it makes
+     * no `.git` folder.
      */
-    lock(holder: LockHolder): Promise<string | undefined>
+    lock(holder: LockHolder): Promise<{ readonly taken: boolean; readonly text: string }>
+    /** Removes the lock only when it still holds this text: a run never removes the lock of another run. */
+    release(text: string): Promise<void>
     /** The text of the lock, or `undefined` when no lock exists. */
     readLock(): Promise<string | undefined>
     /** Removes the lock. True when a lock existed. */

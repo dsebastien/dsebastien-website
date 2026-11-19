@@ -186,15 +186,35 @@ async function refuseWhenLocked(device: Device): Promise<void> {
 }
 
 /** Runs the work with the lock of the device (TOOL-09, PUB-27), and removes the lock at its end. */
-async function withLock<T>(device: Device, holder: LockHolder, work: () => Promise<T>): Promise<T> {
-    const held = await device.local.lock(holder)
-    if (held !== undefined) {
-        throw new Error(lockMessage(held))
+/** The lock of a run was removed while the run ran, and another run can have taken the copy. */
+class LockLost extends Error {}
+
+/**
+ * Runs the work with the lock of the device (TOOL-09, PUB-27), and removes the
+ * lock at its end when it is still the lock of this run. The work gets a
+ * check that throws `LockLost` when the lock is not its own any more: the
+ * author ran unlock while it ran.
+ */
+async function withLock<T>(
+    device: Device,
+    holder: LockHolder,
+    work: (ownLock: () => Promise<void>) => Promise<T>
+): Promise<T> {
+    const lock = await device.local.lock(holder)
+    if (!lock.taken) {
+        throw new Error(lockMessage(lock.text))
+    }
+    const ownLock = async (): Promise<void> => {
+        if ((await device.local.readLock()) !== lock.text) {
+            throw new LockLost(
+                'the lock of this publication was removed while it ran (unlock while a publication runs), and another run can have taken the copy. This run stops here and corrects no property: make a new plan when no other run runs'
+            )
+        }
     }
     try {
-        return await work()
+        return await work(ownLock)
     } finally {
-        await device.local.unlock()
+        await device.local.release(lock.text)
     }
 }
 
@@ -280,7 +300,7 @@ async function recover(device: Device): Promise<RunJournal | undefined> {
     if (journal?.step !== 'write') {
         return journal
     }
-    const result = await device.store.recover(journal.head, journal.paths)
+    const result = await device.store.recover(journal.head, journal.paths, journal.plan)
     if (result === 'pushed' || journal.correctionOwed) {
         const after: RunJournal = { step: 'correct' }
         await device.local.saveJournal(journalText(after))
@@ -874,7 +894,12 @@ async function writeAll(
     journal: Backup,
     uploads: Uploads,
     computed: Computed,
-    run: Run
+    run: Run & {
+        /** The id of the plan, for the message of the commit. */
+        readonly plan: string
+        /** Throws when the lock of the run is not its own any more. */
+        readonly ownLock: () => Promise<void>
+    }
 ): Promise<Written> {
     const { scan, texts } = computed
     const lists = computed.plan
@@ -969,12 +994,15 @@ async function writeAll(
         skipped
     }
     if (written.length > 0) {
+        await run.ownLock()
         await device.store.commitAndPush(
             [
                 `Publish: ${String(done.published.length)} new, ${String(done.updated.length)} updated, ${String(done.removed.length)} removed, ${String(lists.forcedRemove.length)} forced, ${String(skipped.length)} skipped`,
                 '',
                 `Device: ${run.device}`,
-                `Face: ${run.face}`
+                `Face: ${run.face}`,
+                // The recovery of a run that stopped halfway finds its commit by this line.
+                `Plan: ${run.plan}`
             ].join('\n'),
             written
         )
@@ -1016,11 +1044,16 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
         face: run.face,
         time: run.time
     }
-    return await withLock(device, holder, () => apply(device, id, run))
+    return await withLock(device, holder, (ownLock) => apply(device, id, run, ownLock))
 }
 
 /** The publication of a plan, with the lock of the device. */
-async function apply(device: Device, id: string, run: Run): Promise<PublicationReport> {
+async function apply(
+    device: Device,
+    id: string,
+    run: Run,
+    ownLock: () => Promise<void>
+): Promise<PublicationReport> {
     // A publication that stopped halfway is put back first. When it stopped
     // after its push, the correction of the property is owed.
     const owed = (await recover(device))?.step === 'correct'
@@ -1029,16 +1062,21 @@ async function apply(device: Device, id: string, run: Run): Promise<PublicationR
         throw new Error(`there is no plan with the id ${id} on this device`)
     }
     const current = await recordFor(device, selectionOf(record, id), 'must')
+    const { scan } = current
     if (current.record !== record) {
+        // The run fetched and the copy follows the content store: the
+        // storage can be cleaned, so a file that came under a guard leaves it
+        // also when the plan is stale.
+        await cleanStorage(device, scan.manifest, scan.isGuardedFile)
         throw new Error(
             `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
         )
     }
-    const { scan } = current
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
     const paths = storePathsOf(current.plan, scan, run.time)
     const head = await device.store.head()
+    await ownLock()
     if (paths.length > 0) {
         await device.local.saveJournal(
             journalText({ step: 'write', correctionOwed: owed, head, paths, plan: id })
@@ -1056,15 +1094,20 @@ async function apply(device: Device, id: string, run: Run): Promise<PublicationR
     const uploads = new Uploads(device)
     let outcome: Written
     try {
-        outcome = await writeAll(device, journal, uploads, current, run)
+        outcome = await writeAll(device, journal, uploads, current, { ...run, plan: id, ownLock })
     } catch (error) {
         // Files that stay in the copy would be read as published at the next
         // run, and an upload that stays would be public with no entry.
         const stayed = await journal.putAllBack()
         const kept = await uploads.takeBack(scan.manifest, scan.isGuardedFile)
         // A file that could not be put back, or a commit that git could not
-        // take back, stays in the journal, so the next run puts it back.
-        if (stayed.length === 0 && (await device.store.head()) === head) {
+        // take back, stays in the journal, so the next run puts it back. The
+        // journal of another run that took the copy is never touched.
+        if (
+            !(error instanceof LockLost) &&
+            stayed.length === 0 &&
+            (await device.store.head()) === head
+        ) {
             await settle(owed)
         }
         const files =
@@ -1080,6 +1123,9 @@ async function apply(device: Device, id: string, run: Run): Promise<PublicationR
         })
     }
     const { report, written, manifest } = outcome
+    // The push arrived, but when another run took the copy, this run changes
+    // nothing more: the other run owns the journal.
+    await ownLock()
     // With nothing to commit there is no push, and without a push no property
     // is corrected, unless an earlier run pushed and stopped before its
     // correction.

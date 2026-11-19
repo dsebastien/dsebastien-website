@@ -1,7 +1,5 @@
 import { execFile } from 'node:child_process'
-import { constants } from 'node:fs'
 import {
-    access,
     lstat,
     mkdir,
     readdir,
@@ -12,7 +10,7 @@ import {
     unlink,
     writeFile
 } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { toCanonicalJson } from '../canonical.ts'
 import { compareCodePoints } from '../order.ts'
@@ -63,16 +61,14 @@ async function writeText(path: string, text: string): Promise<void> {
  * Obsidian.
  */
 async function writeWhole(path: string, text: string): Promise<void> {
-    // A rename would replace a file that the author made read only.
-    try {
-        await access(path, constants.W_OK)
-    } catch (error) {
-        if (codeOf(error) !== 'ENOENT') {
-            throw new Error(`${path} cannot be written: ${codeOf(error)}`, { cause: error })
-        }
+    // A rename would replace a file that the author made read only: no write
+    // bit for anyone, as Rust reads it (`Permissions::readonly`).
+    const stats = await lstat(path).catch(() => undefined)
+    if (stats !== undefined && (stats.mode & 0o222) === 0) {
+        throw new Error(`${path} cannot be written: it is read only`)
     }
     await mkdir(dirname(path), { recursive: true })
-    const temporary = join(dirname(path), `.${basename(path)}.vault-publish`)
+    const temporary = join(dirname(path), '.vault-publish.tmp')
     await writeFile(temporary, text, 'utf8')
     try {
         await rename(temporary, path)
@@ -249,7 +245,20 @@ function waysOut(different: readonly { code: string; path: string }[]): string {
                         : 'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
         )
     }
-    const manifest = different.filter((entry) => entry.path !== 'configuration.json')
+    const manifest = different.filter(
+        (entry) => !['configuration.json'].includes(entry.path) && !entry.path.startsWith('notes/')
+    )
+    const notes = different.filter((entry) => entry.path.startsWith('notes/'))
+    if (notes.some((entry) => entry.code === 'skipped')) {
+        ways.push(
+            'Let git compare the cleaned notes again (git update-index --no-skip-worktree --no-assume-unchanged on the files that it skips)'
+        )
+    }
+    if (notes.some((entry) => entry.code !== 'skipped')) {
+        ways.push(
+            'Put the cleaned notes back with git checkout HEAD -- notes: a cleaned note that the copy lost would stay in the content store after its removal'
+        )
+    }
     if (manifest.some((entry) => entry.code === 'skipped')) {
         ways.push(
             'Let git compare the files of the manifest again (git update-index --no-skip-worktree --no-assume-unchanged on the files that it skips)'
@@ -292,6 +301,20 @@ function gitContentStore(folder: string): ContentStore {
     }
     const gitRaw = (...args: string[]): Promise<string> => gitWith(args, '')
     const git = async (...args: string[]): Promise<string> => (await gitRaw(...args)).trim()
+    /** Throws when the folder is not the root of its own git repository: git would else work on the repository that holds it. */
+    const checkRoot = async (): Promise<void> => {
+        let top: string
+        try {
+            top = await git('rev-parse', '--show-toplevel')
+        } catch {
+            top = ''
+        }
+        if (top === '' || (await realpath(top)) !== (await realpath(folder))) {
+            throw new Error(
+                `the copy of the content store is not the root of a git repository: ${folder}`
+            )
+        }
+    }
     /** The commit of the copy, or `undefined` when it has none. */
     const headOf = (): Promise<string | undefined> =>
         git('rev-parse', '--verify', '--quiet', 'HEAD').then(
@@ -441,18 +464,7 @@ function gitContentStore(folder: string): ContentStore {
     return {
         async verify(fetch) {
             let reached = true
-            let top: string
-            try {
-                top = await git('rev-parse', '--show-toplevel')
-            } catch {
-                top = ''
-            }
-            // Git would else work on the repository that holds the folder.
-            if (top === '' || (await realpath(top)) !== (await realpath(folder))) {
-                throw new Error(
-                    `the copy of the content store is not the root of a git repository: ${folder}`
-                )
-            }
+            await checkRoot()
             const exists = (ref: string): Promise<boolean> =>
                 git('rev-parse', '--verify', '--quiet', ref).then(
                     () => true,
@@ -566,13 +578,31 @@ function gitContentStore(folder: string): ContentStore {
                 '',
                 COMPARE_OPTIONS
             )
+            // The cleaned notes that the last commit has: one that the copy
+            // removed or edited would stay in the content store, because a
+            // removal stages only what it removes. A file that the commit
+            // does not have is never committed, so it is not compared.
+            const notes = await gitWith(
+                [
+                    'status',
+                    '--no-renames',
+                    '--porcelain=v1',
+                    '-z',
+                    '--untracked-files=no',
+                    '--',
+                    'notes'
+                ],
+                '',
+                COMPARE_OPTIONS
+            )
             const flags = await gitRaw(
                 'ls-files',
                 '-v',
                 '-z',
                 '--',
                 'configuration.json',
-                'manifest'
+                'manifest',
+                'notes'
             )
             // Git status trusts the stat data of a file: an edit of the same
             // size in the same second can look unchanged. So the text of each
@@ -634,7 +664,7 @@ function gitContentStore(folder: string): ContentStore {
             }
             const different = [
                 ...edited.map((path) => ({ code: ' M', path })),
-                ...changes
+                ...`${changes}${notes}`
                     .split('\0')
                     .filter((entry) => entry.length > 3)
                     .map((entry) => ({ code: entry.slice(0, 2), path: entry.slice(3) })),
@@ -659,76 +689,132 @@ function gitContentStore(folder: string): ContentStore {
         async head() {
             return await headOf()
         },
-        async recover(head, paths) {
+        async recover(head, paths, plan) {
+            await checkRoot()
             const now = await headOf()
-            if (now !== head) {
-                // The run made its commit: its first parent is the commit
-                // before the run, or it is the first commit of the copy.
-                const parents =
-                    now === undefined
+            const journal = new Set(paths)
+            /** Puts each path of the journal back as this commit has it, in the work tree and in the index. */
+            const putBack = async (commit: string | undefined): Promise<void> => {
+                const inCommit = new Set(
+                    commit === undefined
                         ? []
-                        : (await git('rev-list', '--parents', '--max-count=1', now))
-                              .split(' ')
-                              .slice(1)
-                if (
-                    now === undefined ||
-                    (head === undefined ? parents.length > 0 : parents[0] !== head)
-                ) {
-                    throw new Error(
-                        `a publication stopped halfway, and the copy of the content store has another commit since. Correct the copy by hand (git fetch origin, then git reset --hard origin/main when the copy holds no other work), then remove .git/vault-publish/journal.json: ${folder}`
-                    )
+                        : (
+                              await gitRaw(
+                                  'ls-tree',
+                                  '-r',
+                                  '-z',
+                                  '--name-only',
+                                  '--full-tree',
+                                  commit
+                              )
+                          )
+                              .split('\0')
+                              .filter((path) => path !== '')
+                )
+                const back = paths.filter((path) => inCommit.has(path))
+                const gone = paths.filter((path) => !inCommit.has(path))
+                if (commit !== undefined && back.length > 0) {
+                    await gitOnPaths(['checkout', commit], back)
                 }
-                try {
-                    await fetchMain()
-                } catch (error) {
-                    throw new Error(
-                        `a publication stopped halfway after its commit, and the tool must reach the content store to know whether its push arrived: ${error instanceof Error ? error.message : 'git failed'}`,
-                        { cause: error }
-                    )
+                for (const path of gone) {
+                    await refuseLinks(path)
+                    await rm(join(folder, path), { force: true })
                 }
-                const pushed = await git(
-                    'merge-base',
-                    '--is-ancestor',
-                    now,
-                    'refs/remotes/origin/main'
-                ).then(
+                if (gone.length > 0) {
+                    await gitOnPaths(['rm', '--quiet', '--cached', '--ignore-unmatch'], gone)
+                }
+                if (commit === undefined && (await gitRaw('ls-files', '-z')) === '') {
+                    // A fresh clone of an empty content store has no index. An
+                    // index with no entry would stop a later pull.
+                    await rm(join(folder, '.git', 'index'), { force: true })
+                }
+            }
+            if (now === head) {
+                await putBack(head)
+                return 'undone'
+            }
+            const byHand = `a publication stopped halfway, and the history of the copy of the content store cannot be put back by the tool. Correct the copy by hand (git fetch origin, then git reset --hard origin/main when the copy holds no other work), then remove .git/vault-publish/journal.json: ${folder}`
+            if (now === undefined) {
+                throw new Error(byHand)
+            }
+            if (head !== undefined) {
+                const known = await git('merge-base', '--is-ancestor', head, now).then(
                     () => true,
                     () => false
                 )
-                if (pushed) {
-                    return 'pushed'
+                if (!known) {
+                    throw new Error(byHand)
                 }
-                // The tool never pushes an old commit: it can be older than a
-                // guard that the author added since.
-                await (head === undefined
-                    ? git('update-ref', '-d', 'HEAD')
-                    : git('update-ref', 'HEAD', head))
             }
-            // Each path as the commit before the run has it.
-            const inHead = new Set(
-                head === undefined
-                    ? []
-                    : (await gitRaw('ls-tree', '-r', '-z', '--name-only', '--full-tree', head))
-                          .split('\0')
-                          .filter((path) => path !== '')
+            // The commit of the run: the first commit after head on the line
+            // of first parents, when it names the plan and changes only paths
+            // of the journal. A commit of another device is never taken for it.
+            const line = (
+                await git(
+                    'rev-list',
+                    '--first-parent',
+                    '--reverse',
+                    head === undefined ? now : `${head}..${now}`
+                )
             )
-            const back = paths.filter((path) => inHead.has(path))
-            const gone = paths.filter((path) => !inHead.has(path))
-            if (head !== undefined && back.length > 0) {
-                await gitOnPaths(['checkout', head], back)
+                .split('\n')
+                .filter((commit) => commit !== '')
+            const first = line[0]
+            let ofTheRun = false
+            if (first !== undefined) {
+                const message = await git('log', '-1', '--format=%B', first)
+                const changed = (
+                    await gitRaw(
+                        'diff-tree',
+                        '--no-commit-id',
+                        '--name-only',
+                        '-r',
+                        '-z',
+                        '--root',
+                        '--no-renames',
+                        first
+                    )
+                )
+                    .split('\0')
+                    .filter((path) => path !== '')
+                ofTheRun =
+                    message.split('\n').includes(`Plan: ${plan}`) &&
+                    changed.every((path) => journal.has(path))
             }
-            for (const path of gone) {
-                await refuseLinks(path)
-                await rm(join(folder, path), { force: true })
+            if (!ofTheRun || first === undefined) {
+                // The run made no commit, and other commits came after head.
+                await putBack(now)
+                return 'undone'
             }
-            if (gone.length > 0) {
-                await gitOnPaths(['rm', '--quiet', '--cached', '--ignore-unmatch'], gone)
+            try {
+                await fetchMain()
+            } catch (error) {
+                throw new Error(
+                    `a publication stopped halfway after its commit, and the tool must reach the content store to know whether its push arrived: ${error instanceof Error ? error.message : 'git failed'}`,
+                    { cause: error }
+                )
             }
-            if (head === undefined && (await gitRaw('ls-files', '-z')) === '') {
-                // A fresh clone of an empty content store has no index. An
-                // index with no entry would stop a later pull.
-                await rm(join(folder, '.git', 'index'), { force: true })
+            const pushed = await git(
+                'merge-base',
+                '--is-ancestor',
+                first,
+                'refs/remotes/origin/main'
+            ).then(
+                () => true,
+                () => false
+            )
+            if (pushed) {
+                return 'pushed'
             }
+            if (first !== now) {
+                throw new Error(byHand)
+            }
+            // The tool never pushes an old commit: it can be older than a
+            // guard that the author added since.
+            await (head === undefined
+                ? git('update-ref', '-d', 'HEAD')
+                : git('update-ref', 'HEAD', head))
+            await putBack(head)
             return 'undone'
         },
         async read(path) {
@@ -948,20 +1034,33 @@ function folderLocalStore(contentStore: string): LocalStore {
             }
         },
         async lock(holder) {
+            // A folder that is not a copy gets no `.git` folder.
+            const git = await lstat(join(contentStore, '.git')).catch(() => undefined)
+            if (git?.isDirectory() !== true) {
+                throw new Error(
+                    `the copy of the content store is not the root of a git repository: ${contentStore}`
+                )
+            }
             await mkdir(folder, { recursive: true })
+            const text = toCanonicalJson({ ...holder, process: process.pid })
             try {
                 // One create, never a test and then a write: two runs that
                 // start at the same moment cannot both take the lock.
-                await writeFile(lockFile, toCanonicalJson({ ...holder, process: process.pid }), {
-                    encoding: 'utf8',
-                    flag: 'wx'
-                })
-                return undefined
+                await writeFile(lockFile, text, { encoding: 'utf8', flag: 'wx' })
+                return { taken: true, text }
             } catch (error) {
                 if (codeOf(error) !== 'EEXIST') {
                     throw error
                 }
-                return (await textOrNothing(lockFile)) ?? 'a lock that went away'
+                return {
+                    taken: false,
+                    text: (await textOrNothing(lockFile)) ?? 'a lock that went away'
+                }
+            }
+        },
+        async release(text) {
+            if ((await textOrNothing(lockFile)) === text) {
+                await rm(lockFile, { force: true })
             }
         },
         readLock: () => textOrNothing(lockFile),
