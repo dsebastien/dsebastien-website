@@ -9,6 +9,7 @@ Test data of the repository. Everything here is invented. Nothing comes from a r
 - `canonical/properties.json`: the shared cases of the rules for the properties of a note, the aliases included.
 - `canonical/names.json`: the shared cases of the root names of the site: which names are reserved, and which two texts are one URL.
 - `canonical/links.json`: the shared cases of the links of a note: the link paths of a text, the target of a link path in a list of notes, and the list that a manifest entry holds.
+- `markdown-forms.json`: the forms of Obsidian Markdown of issue 12 (issue 26). Each form names an invented note of `vault/` and checks on the HTML that a conversion gives for that note alone. `packages/testing` reads it (`readMarkdownForms`, `checkHtml`). The notes are in `vault/50 Field guide/`, beside older notes that already held a form.
 - `canonical/queue.json`: the shared scenarios of the publication queue. Each scenario has its own small invented vault, written inside the file, so that a new note of the fixture vault changes no scenario.
 
 ## Rules

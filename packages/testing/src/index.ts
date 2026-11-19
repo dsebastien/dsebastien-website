@@ -10,3 +10,10 @@ export {
 export { gitEnvironment, makeTestStores, rejectionOf, type TestStores } from './test-stores.ts'
 export { copyFixtureVault, makeContentStoreCopy, refusePushes } from './publication-setup.ts'
 export { crashingStore, type CrashPoint } from './crash.ts'
+export {
+    MARKDOWN_FORMS,
+    checkHtml,
+    readMarkdownForms,
+    type FormCheck,
+    type MarkdownForm
+} from './markdown-forms.ts'

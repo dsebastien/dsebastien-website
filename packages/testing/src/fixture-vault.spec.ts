@@ -7,6 +7,7 @@ import {
     listFixtureVaultFiles,
     readFixtureCatalog
 } from './fixture-vault.ts'
+import { readMarkdownForms } from './markdown-forms.ts'
 
 // Acceptance criteria 1 and 2 of issue 17: a fixture vault with invented notes
 // for the features and traps of spec 18.4, and its own invented configuration
@@ -501,6 +502,31 @@ describe('first set of notes (spec 18.4)', () => {
         },
         'root-note': (notes) => {
             expect(notes.map((note) => note.folder)).toEqual([''])
+        },
+        'markdown-forms': async (notes) => {
+            // Each file serves a form of issue 12: it is the note of a form, or
+            // a note or a file that the note of a form links to or embeds. No
+            // file of the corpus is in a deny list folder.
+            const formNotes = new Set((await readMarkdownForms()).map((form) => form.note))
+            const targets = new Set(
+                notes
+                    .filter((note) => formNotes.has(note.path))
+                    .flatMap((note) => links(note.body).map((link) => link.target))
+            )
+            for (const note of notes) {
+                expect(formNotes.has(note.path) || targets.has(note.name), note.path).toBe(true)
+                expect(note.denied, note.path).toBe(false)
+            }
+            // Every note of the corpus folder is a part of the entry.
+            const folder = notes[0]?.path.split('/')[0] ?? ''
+            for (const path of formNotes) {
+                if (path.startsWith(`${folder}/`)) {
+                    expect(
+                        notes.map((note) => note.path),
+                        path
+                    ).toContain(path)
+                }
+            }
         },
         'links-to-hard-names': async (notes) => {
             const [note] = take(notes, 1)

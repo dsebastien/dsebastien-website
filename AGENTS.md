@@ -155,6 +155,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
     - `fixtures/configuration.json`: the invented configuration of the publishing tool, with its deny list.
     - `fixtures/catalog.json`: the fixture catalog. It says which feature or trap each file of the fixture vault serves.
     - `fixtures/canonical/`: the shared cases of the canonical form. The TypeScript and the Rust tests both read them: `cases.json` (data), `properties.json` (the properties of a note), `links.json` (the links of a note), `images.json` (the size of an image), `names.json` (the root names of the site), `queue.json` (scenarios of the publication queue).
+    - `fixtures/markdown-forms.json`: the corpus of the Markdown forms (issue 26): per form of Obsidian Markdown, its invented note and checks on the HTML of a conversion. `readMarkdownForms()` and `checkHtml()` of `packages/testing` read and run it. The rendering slice (issue 45) runs it on the site.
     - `fixtures/README.md`: the rules, and how to add a note.
 - `cli/tests/support/mod.rs`: test support for Rust, the twin of `packages/testing`.
 - `scripts/`: tooling of the repository and its guard tests. `bun run site:fixture [--port 4322]` publishes every new note of a copy of the fixture vault into a local content store, builds the site and serves it with the plain local server, to click through the site with invented notes. It never reads the real vault, and it removes its folders when it stops.

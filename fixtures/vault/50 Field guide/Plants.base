@@ -1,0 +1,6 @@
+filters:
+  and:
+    - file.inFolder("10 Garden")
+views:
+  - type: table
+    name: Plants
