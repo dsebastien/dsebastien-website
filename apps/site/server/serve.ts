@@ -60,38 +60,44 @@ async function readResolverMap(dist: string): Promise<ResolverMap> {
 /** The folder of the style sheets and of the other files that the pages load. Astro names each file with a hash. */
 const ASSETS = '_astro'
 
-const CONTENT_TYPES: Record<string, string> = {
-    css: 'text/css; charset=utf-8',
-    js: 'text/javascript; charset=utf-8',
-    svg: 'image/svg+xml',
-    png: 'image/png',
-    webp: 'image/webp',
-    woff2: 'font/woff2'
-}
+// The kinds of files are maps, not objects: the end of a name such as
+// `constructor` is a key like any other.
+const CONTENT_TYPES = new Map(
+    Object.entries({
+        css: 'text/css; charset=utf-8',
+        js: 'text/javascript; charset=utf-8',
+        svg: 'image/svg+xml',
+        png: 'image/png',
+        webp: 'image/webp',
+        woff2: 'font/woff2'
+    })
+)
 
 /** The kinds of the attachments, by the end of their names. Every other file is plain bytes. */
-const ATTACHMENT_TYPES: Record<string, string> = {
-    '3gp': 'video/3gpp',
-    'avif': 'image/avif',
-    'bmp': 'image/bmp',
-    'flac': 'audio/flac',
-    'gif': 'image/gif',
-    'jpeg': 'image/jpeg',
-    'jpg': 'image/jpeg',
-    'm4a': 'audio/mp4',
-    'mkv': 'video/x-matroska',
-    'mov': 'video/quicktime',
-    'mp3': 'audio/mpeg',
-    'mp4': 'video/mp4',
-    'ogg': 'audio/ogg',
-    'ogv': 'video/ogg',
-    'pdf': 'application/pdf',
-    'png': 'image/png',
-    'svg': 'image/svg+xml',
-    'wav': 'audio/wav',
-    'webm': 'video/webm',
-    'webp': 'image/webp'
-}
+const ATTACHMENT_TYPES = new Map(
+    Object.entries({
+        '3gp': 'video/3gpp',
+        'avif': 'image/avif',
+        'bmp': 'image/bmp',
+        'flac': 'audio/flac',
+        'gif': 'image/gif',
+        'jpeg': 'image/jpeg',
+        'jpg': 'image/jpeg',
+        'm4a': 'audio/mp4',
+        'mkv': 'video/x-matroska',
+        'mov': 'video/quicktime',
+        'mp3': 'audio/mpeg',
+        'mp4': 'video/mp4',
+        'ogg': 'audio/ogg',
+        'ogv': 'video/ogg',
+        'pdf': 'application/pdf',
+        'png': 'image/png',
+        'svg': 'image/svg+xml',
+        'wav': 'audio/wav',
+        'webm': 'video/webm',
+        'webp': 'image/webp'
+    })
+)
 
 /**
  * The part of a file that a range request asks for, as the first and the
@@ -133,11 +139,13 @@ function rangeOf(
 async function attachmentResponse(request: Request, file: string, name: string): Promise<Response> {
     const blob = Bun.file(file)
     if (!(await blob.exists())) {
-        return notFound()
+        // The map names the file, so the storage lacks it: a failure of the
+        // release, never "not found" that a cache keeps (URL-33).
+        return serverError()
     }
     const size = blob.size
     const type =
-        ATTACHMENT_TYPES[name.slice(name.lastIndexOf('.') + 1).toLowerCase()] ??
+        ATTACHMENT_TYPES.get(name.slice(name.lastIndexOf('.') + 1).toLowerCase()) ??
         'application/octet-stream'
     const headers: Record<string, string> = {
         'accept-ranges': 'bytes',
@@ -177,7 +185,10 @@ function notFound(): Response {
     })
 }
 
-/** The answer when the release lacks a file that the resolver map names. */
+/**
+ * The answer when the release lacks a file that the resolver map names, and
+ * for every other failure: no detail of the failure (NAV-20).
+ */
 function serverError(): Response {
     return new Response('Server error\n', {
         status: 500,
@@ -231,7 +242,9 @@ async function siteFileResponse(
  * from the output of the build one time: the server gives a file of that list
  * and nothing else, so a request can never name a file itself.
  */
-async function readAssets(dist: string): Promise<{ get(path: string): Response | undefined }> {
+async function readAssets(
+    dist: string
+): Promise<{ get(path: string): Promise<Response> | undefined }> {
     let names: string[]
     try {
         names = await readdir(join(dist, ASSETS))
@@ -245,8 +258,18 @@ async function readAssets(dist: string): Promise<{ get(path: string): Response |
             if (file === undefined) {
                 return undefined
             }
-            const type = CONTENT_TYPES[file.split('.').at(-1) ?? ''] ?? 'application/octet-stream'
-            return new Response(Bun.file(file), { headers: { 'content-type': type } })
+            const type =
+                CONTENT_TYPES.get(file.split('.').at(-1) ?? '') ?? 'application/octet-stream'
+            const blob = Bun.file(file)
+            // A file of the list that is gone since the start is a failure
+            // of the release (URL-33).
+            return blob
+                .exists()
+                .then((exists) =>
+                    exists
+                        ? new Response(blob, { headers: { 'content-type': type } })
+                        : serverError()
+                )
         }
     }
 }
@@ -277,6 +300,11 @@ export async function startServer(options: {
     const server = Bun.serve({
         hostname: '127.0.0.1',
         port: options.port,
+        // Any failure gives a plain 500 with no detail, never the error page
+        // of Bun with the paths of the machine (NAV-20).
+        error() {
+            return serverError()
+        },
         fetch(request) {
             // The path is read as it is requested, with its percent-encoding.
             const { pathname, search } = new URL(request.url)

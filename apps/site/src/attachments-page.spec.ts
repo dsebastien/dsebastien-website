@@ -37,6 +37,11 @@ const IMAGE_URL = `/-/attachments/${IMAGE_KEY}/garden-plan.png`
 const VIDEO_KEY = 'a1feacf0d812ba4d0b0e463ed45bbd583cea1de55c54693116754b30b5794745'
 const VIDEO_URL = `/-/attachments/${VIDEO_KEY}/pond.mp4`
 const DENIED_KEY = '86571f2b883d23bc5c95dc18aa3cef6077451c6f13a52c6f44373b667503c3a1'
+/** A file whose kind is the name of a member of every object (issue 80). */
+const ODD = 'Attachments/shed.constructor'
+const ODD_BYTES = 'Invented bytes of a file with an odd name.\n'
+const ODD_KEY = 'fc39dee91a025660efc6ef902ba1695ddfe24e3192e57c95081c3a010d28f5e2'
+const ODD_URL = `/-/attachments/${ODD_KEY}/shed.constructor`
 
 let stores: TestStores | undefined
 let vault = ''
@@ -66,9 +71,10 @@ beforeAll(async () => {
     stores = await makeTestStores()
     vault = await copyFixtureVault(stores)
     await writeFile(join(vault, VIDEO), VIDEO_BYTES)
+    await writeFile(join(vault, ODD), ODD_BYTES)
     await writeFile(
         join(vault, POND),
-        '# Pond video\n\n![[pond.mp4]]\n\n![The plan of the plots](../Attachments/garden-plan.png)\n'
+        '# Pond video\n\n![[pond.mp4]]\n\n![The plan of the plots](../Attachments/garden-plan.png)\n\n[[shed.constructor]]\n'
     )
     const contentStore = await makeContentStoreCopy(stores)
     const device = nodeDevice({
@@ -143,10 +149,16 @@ describe('build of notes with attachments', () => {
         const map = JSON.parse(await readOutput('-/resolver-map.json')) as {
             attachments: Record<string, string>
         }
-        expect(map.attachments).toEqual({ [IMAGE_URL]: IMAGE_KEY, [VIDEO_URL]: VIDEO_KEY })
+        expect(map.attachments).toEqual({
+            [IMAGE_URL]: IMAGE_KEY,
+            [ODD_URL]: ODD_KEY,
+            [VIDEO_URL]: VIDEO_KEY
+        })
         const files = await readdir(outputPath(), { recursive: true })
         expect(
-            files.filter((file) => file.includes(IMAGE_KEY) || file.includes(VIDEO_KEY))
+            files.filter((file) =>
+                [IMAGE_KEY, ODD_KEY, VIDEO_KEY].some((key) => file.includes(key))
+            )
         ).toEqual([])
     })
 })
@@ -207,6 +219,16 @@ describe('plain local server of attachments', () => {
         expect(response.headers.get('x-content-type-options')).toBe('nosniff')
     })
 
+    // The kind comes from the end of the name, which can be the name of a
+    // member of every object.
+    test('answers a file of an unknown kind as plain bytes, also a kind named constructor', async () => {
+        const response = await fetch(`${serverUrl()}${ODD_URL}`)
+
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('application/octet-stream')
+        expect(await response.text()).toBe(ODD_BYTES)
+    })
+
     test('answers 404 for a file that no page uses, and for a path that names a file itself', async () => {
         for (const path of [
             `/-/attachments/${DENIED_KEY}/shed-key.png`,
@@ -217,5 +239,23 @@ describe('plain local server of attachments', () => {
             const response = await fetch(`${serverUrl()}${path}`)
             expect(response.status, path).toBe(404)
         }
+    })
+})
+
+// URL-33: an attachment that the resolver map names and that the attachment
+// storage lacks is a failure of the release, never "not found" (R46: a cleanup
+// of another device can delete an upload). It runs last: it removes a file of
+// the storage.
+describe('plain local server of attachments with a broken storage', () => {
+    test('answers 500 with no detail when the storage lacks a file of the map', async () => {
+        if (stores === undefined) {
+            throw new Error('the stores do not exist')
+        }
+        await rm(join(stores.attachmentStorage, VIDEO_KEY))
+        const response = await fetch(`${serverUrl()}${VIDEO_URL}`)
+
+        expect(response.status).toBe(500)
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        expect(await response.text()).toBe('Server error\n')
     })
 })
