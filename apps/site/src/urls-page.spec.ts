@@ -141,6 +141,13 @@ describe('URL table over HTTP', () => {
             if (entry.location !== undefined) {
                 expect(response.headers.get('location')).toBe(entry.location)
                 expect(response.headers.get('cache-control')).toBe(entry.cacheControl ?? '')
+                // URL-05: the target is a page, reached in one hop, with a
+                // clean canonical link.
+                const target = await get(entry.location)
+                expect(target.status).toBe(200)
+                expect(canonicalLinkOf(await target.text())).toBe(
+                    `${ORIGIN}${entry.location.split('?')[0] ?? ''}`
+                )
                 return
             }
             const body = await response.text()
@@ -209,16 +216,53 @@ describe('plain local server', () => {
 })
 
 // URL-33: a file that the resolver map names and that the output of the build
-// does not have is a failure of the release, never "not found". It runs last:
-// it removes a file of the build.
+// does not have is a failure of the release, never "not found". The answer
+// names no file and no folder (NAV-20). It runs last: it removes files of the
+// build.
 describe('plain local server with a broken release', () => {
-    test('answers 500 when a file of the map is missing', async () => {
+    function output(): string {
         if (outDir === undefined) {
             throw new Error('the output folder does not exist')
         }
-        await rm(join(outDir, 'robots.txt'))
-        const response = await get('/robots.txt')
-        expect(response.status).toBe(500)
-        expect(response.headers.get('cache-control')).toBe('no-store')
+        return outDir
+    }
+
+    async function expectServerError(path: string): Promise<void> {
+        const response = await get(path)
+        expect(response.status, path).toBe(500)
+        expect(response.headers.get('cache-control'), path).toBe('no-store')
+        expect(await response.text(), path).toBe('Server error\n')
+    }
+
+    test('answers 500 when a file of the map is missing', async () => {
+        await rm(join(output(), 'robots.txt'))
+        await expectServerError('/robots.txt')
+    })
+
+    test('answers 500 when a page, the "not found" page or a page of choices is missing', async () => {
+        // The build output is test data of this test: the cast is the boundary.
+        const map = (await Bun.file(join(output(), '-', 'resolver-map.json')).json()) as {
+            pages: Record<string, string>
+            choices: Record<string, string>
+            notFound: string
+        }
+        const choices = table.cases.find((entry) => entry.name === 'an alias of two notes')
+        const choice = map.choices[(choices?.suggestions ?? []).join('\n')]
+        const page = map.pages['/Welcome']
+        expect(choice).toBeDefined()
+        expect(page).toBeDefined()
+        for (const file of [page, map.notFound, choice]) {
+            await rm(join(output(), file ?? ''))
+        }
+        await expectServerError('/Welcome')
+        await expectServerError('/Nothing+here')
+        await expectServerError(choices?.request ?? '')
+    })
+
+    test('answers 500 with no detail when a file that the pages load is missing', async () => {
+        const [name] = await readdir(join(output(), '_astro'))
+        expect(name).toBeDefined()
+        await rm(join(output(), '_astro', name ?? ''))
+        await expectServerError(`/_astro/${name ?? ''}`)
     })
 })

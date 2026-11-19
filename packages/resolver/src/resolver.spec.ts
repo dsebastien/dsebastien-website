@@ -111,4 +111,28 @@ describe('resolver of names of the language', () => {
             cacheControl: 'public, max-age=3600'
         })
     })
+
+    // No folder of that name hides the file name or the alias (issue 80).
+    const mapOf = (notes: { path: string; aliases: string[] }[]): ResolverMap =>
+        JSON.parse(JSON.stringify(resolverMapOf(notes, files))) as ResolverMap
+
+    test('a file name __proto__ leads to its note', () => {
+        const names = mapOf([{ path: 'Other/__proto__.md', aliases: [] }])
+        expect(resolve('/__proto__', names)).toEqual({
+            kind: 'redirect',
+            status: 301,
+            location: '/Other/__proto__',
+            cacheControl: 'public, max-age=3600'
+        })
+    })
+
+    test('an alias __proto__ leads to its note', () => {
+        const aliases = mapOf([{ path: 'Other/Inside.md', aliases: ['__proto__'] }])
+        expect(resolve('/__Proto__', aliases)).toEqual({
+            kind: 'redirect',
+            status: 302,
+            location: '/Other/Inside',
+            cacheControl: 'no-store'
+        })
+    })
 })
