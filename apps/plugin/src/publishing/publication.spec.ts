@@ -1157,8 +1157,23 @@ describe('failure cases after the first review', () => {
 
         const message = await rejectionOf(publish(setup.device, planned.id, RUN))
 
-        expect(message).toContain('stale')
-        expect(message).not.toContain('warnings')
+        expect(message).toBe(
+            `the plan ${planned.id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
+        )
+    })
+
+    test('a name of the storage with a line break gives one line in the refusal', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(stores.attachmentStorage, 'x\n- fake: injected'), 'Odd\n')
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(join(setup.vault, NOTE), `${NOTE_TEXT}\nAn edit after the plan.\n`)
+
+        const message = await rejectionOf(publish(setup.device, planned.id, RUN))
+
+        expect(message.split('\n').filter((line) => line.startsWith('- '))).toEqual([
+            '- x\\n- fake: injected: the attachment storage holds a file whose name is not a key, and the tool leaves it: is the folder of the storage the right one?'
+        ])
     })
 
     test('a folder that is not a copy of the content store gets no file of the tool', async () => {

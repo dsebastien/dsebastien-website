@@ -1020,9 +1020,48 @@ fn the_refusal_of_a_stale_plan_whose_cleanup_gave_no_warning_names_none() {
 
     let output = setup.run("publish", &["--plan", &id, "--time", TIME]);
 
+    assert_eq!(output.status.code(), Some(1));
     let errors = errors_of(&output);
-    assert!(errors.contains("stale"), "{errors}");
-    assert!(!errors.contains("warnings"), "{errors}");
+    assert!(
+        errors.contains(&format!("the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan")),
+        "{errors}"
+    );
+    assert!(!errors.contains("The cleanup"), "{errors}");
+    assert!(!errors.contains("\n- "), "{errors}");
+}
+
+#[test]
+fn a_name_of_the_storage_with_a_line_break_gives_one_line_in_the_refusal() {
+    let setup = set_up();
+    fs::write(
+        setup
+            .stores
+            .attachment_storage()
+            .join("x\n- fake: injected"),
+        "Odd\n",
+    )
+    .expect("the file can be written");
+    let id = setup.plan(NOTE);
+    fs::write(
+        setup.vault.join(NOTE),
+        format!("{NOTE_TEXT}\nAn edit after the plan.\n"),
+    )
+    .expect("the note can be written");
+
+    let output = setup.run("publish", &["--plan", &id, "--time", TIME]);
+
+    let errors = errors_of(&output);
+    let lines: Vec<&str> = errors
+        .lines()
+        .filter(|line| line.starts_with("- "))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "- x\\n- fake: injected: the attachment storage holds a file whose name is not a key, and the tool leaves it: is the folder of the storage the right one?"
+        ],
+        "{errors}"
+    );
 }
 
 #[test]

@@ -1109,8 +1109,9 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
  */
 function warningLines(warnings: readonly { path: string; message: string }[]): string {
     if (warnings.length === 0) return ''
+    // A line break of a name of the storage is written as \\n: one warning, one line.
     const lines = warnings.map(({ path, message }) =>
-        path === '' ? `- ${message}` : `- ${path}: ${message}`
+        path === '' ? `- ${message}` : `- ${path.replaceAll('\n', '\\n')}: ${message}`
     )
     return `\nThe cleanup of the attachment storage gave these warnings:\n${lines.join('\n')}`
 }

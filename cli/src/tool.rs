@@ -1311,7 +1311,9 @@ fn warning_lines(warnings: &[Value]) -> String {
             if path.is_empty() {
                 format!("- {message}")
             } else {
-                format!("- {path}: {message}")
+                // A line break of a name of the storage is written as \\n: one
+                // warning, one line.
+                format!("- {}: {message}", path.replace('\n', "\\n"))
             }
         })
         .collect();
