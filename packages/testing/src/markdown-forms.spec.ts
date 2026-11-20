@@ -276,6 +276,37 @@ describe('checkHtml', () => {
         ).toEqual([])
     })
 
+    // Second review of issue 85.
+    test('reads the name of a foreign element as written, and an escaped id or class as written', async () => {
+        expect(
+            await checkHtml(
+                '<svg><foreignObject><p>x</p></foreignObject><clipPath></clipPath></svg>',
+                [
+                    { has: 'foreignObject', count: 1 },
+                    { has: 'svg foreignObject p', count: 1 },
+                    { has: 'clipPath', count: 1 }
+                ]
+            )
+        ).toEqual([])
+        expect(await checkHtml('<h2 id="1Abc">x</h2>', [{ has: '#\\31 Abc', count: 1 }])).toEqual(
+            []
+        )
+    })
+
+    test('reads no link, no target and no id of a hidden element', async () => {
+        expect(
+            await checkHtml(
+                '<h2 id="a">A</h2><p><a href="#a">A</a></p><template><a href="#nope">z</a><h2 id="a">copy</h2></template>',
+                [{ anchorsResolve: 'a[href^="#"]', target: 'h2', nth: 1 }, { distinctIds: 'h2' }]
+            )
+        ).toEqual([])
+        expect(
+            await checkHtml('<p><a href="#t">x</a></p><noscript id="t"></noscript>', [
+                { anchorsResolve: 'p a' }
+            ])
+        ).toEqual(['"p a" links to "#t", which is no id of the page'])
+    })
+
     test('reads the type of a field in any letter case, as a browser does', async () => {
         expect(
             await checkHtml('<input TYPE="Checkbox" CHECKED>', [

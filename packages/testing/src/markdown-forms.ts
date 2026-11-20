@@ -34,8 +34,10 @@ export const MARKDOWN_FORMS = join(FIXTURES, 'markdown-forms.json')
  * as it does in a browser with no script. The fragment is read as the content
  * of the note body (a row with no table is no row). An element inside a
  * `template` or a `noscript` is a match with no text, and its id is no link
- * target. The selectors run on that tree (`hast-util-select`); the name of an
- * element is read in any letter case, and so is the `type` of a field. A
+ * target, nor is the hidden element itself. The selectors run on that tree
+ * (`hast-util-select`); the name of an HTML element is read in any letter
+ * case, a foreign one as written, and the `type` of a field in small
+ * letters (a value with capitals in a selector of `type` matches nothing). A
  * limit: `width` and `height` are read as numbers (`300.0` matches `300`).
  * A text split by an
  * inline element (`LINK: <a>url</a>`) or by two blocks
@@ -319,16 +321,28 @@ const BODY = (() => {
 })()
 
 /**
- * A selector with the name of each element in small letters, as a browser
- * reads it in HTML; a class, an id and a quoted value keep their letters.
+ * A selector whose names of elements match in any letter case, as a browser
+ * reads a name for an HTML element: a name with capitals becomes
+ * `:is(Name, name)`, so a foreign element (`foreignObject`) still matches as
+ * written. A class, an id, an escape and a quoted value keep their letters.
  */
 function withSmallNames(selector: string): string {
     let result = ''
     let quote: string | undefined
     let bracket = 0
+    let escaped = false
     for (let index = 0; index < selector.length; index += 1) {
         const char = selector[index] ?? ''
-        if (quote !== undefined) {
+        const startsName = !escaped && /^$|[\s,>+~(]$/u.test(selector.slice(index - 1, index))
+        escaped = false
+        if (char === '\\') {
+            // An escape: a hex number and the space after it, or one character.
+            const hex = /^[0-9a-fA-F]{1,6} ?/u.exec(selector.slice(index + 1))?.[0]
+            const taken = hex ?? selector.slice(index + 1, index + 2)
+            result += char + taken
+            index += taken.length
+            escaped = true
+        } else if (quote !== undefined) {
             if (char === quote) quote = undefined
             result += char
         } else if (char === '"' || char === "'") {
@@ -340,13 +354,9 @@ function withSmallNames(selector: string): string {
         } else if (char === ']') {
             bracket -= 1
             result += char
-        } else if (
-            bracket === 0 &&
-            /[A-Za-z]/u.test(char) &&
-            /^$|[\s,>+~(]$/u.test(selector.slice(index - 1, index))
-        ) {
+        } else if (bracket === 0 && startsName && /[A-Za-z]/u.test(char)) {
             const name = /^[A-Za-z][\w-]*/u.exec(selector.slice(index))?.[0] ?? char
-            result += name.toLowerCase()
+            result += name === name.toLowerCase() ? name : `:is(${name}, ${name.toLowerCase()})`
             index += name.length - 1
         } else {
             result += char
@@ -399,8 +409,9 @@ function read(html: string, selector?: string): Reading {
                 const match = byElement.get(child)
                 if (match !== undefined) {
                     match.parent = around
-                    match.hidden = hidden
-                    if (hidden) match.text = ''
+                    // A hidden element is no place a reader sees, nor what it holds.
+                    match.hidden = hidden || HIDDEN_TEXT.has(child.tagName)
+                    if (match.hidden) match.text = ''
                 }
                 visit(child, match ?? around, hidden || HIDDEN_TEXT.has(child.tagName))
             }
@@ -451,11 +462,14 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
             (await matches(html, '[id]')).filter((match) => !match.hidden).map((match) => match.id)
         )
         const fragments = (await matches(html, check.anchorsResolve))
+            .filter((match) => !match.hidden)
             .map((match) => match.href)
             .filter((href): href is string => href?.startsWith('#') === true)
         // Read before any return, so a target selector that does not parse
         // throws on every page.
-        const targets = check.target === undefined ? [] : await matches(html, check.target)
+        const targets = (
+            check.target === undefined ? [] : await matches(html, check.target)
+        ).filter((match) => !match.hidden)
         if (fragments.length === 0) {
             return `no element matches "${check.anchorsResolve}" with a link to a fragment`
         }
@@ -485,7 +499,8 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
     }
     if ('distinctIds' in check) {
         const seen = new Set<string>()
-        for (const { id } of await matches(html, check.distinctIds)) {
+        const shown = (await matches(html, check.distinctIds)).filter((match) => !match.hidden)
+        for (const { id } of shown) {
             if (id === null || id === '') return `an element of "${check.distinctIds}" has no id`
             if (seen.has(id)) return `two elements of "${check.distinctIds}" have the id "${id}"`
             seen.add(id)

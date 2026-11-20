@@ -653,7 +653,7 @@
                     "count": 0
                 },
                 {
-                    "has": "[src*=\"youtube\"], [src*=\"ytimg\"], [srcset*=\"youtube\"], [srcset*=\"ytimg\"], [poster*=\"youtube\"], [poster*=\"ytimg\"], [data*=\"youtube\"]",
+                    "has": "[src*=\"youtube\"], [src*=\"ytimg\"], [srcset*=\"youtube\"], [srcset*=\"ytimg\"], [poster*=\"youtube\"], [poster*=\"ytimg\"], [data*=\"youtube\"], [data*=\"ytimg\"], [style*=\"youtube\"], [style*=\"ytimg\"]",
                     "count": 0
                 }
             ]
