@@ -119,9 +119,10 @@ describe('build of notes with attachments', () => {
         expect(exitCode).toBe(0)
     })
 
+    // The first image of a page loads at once with a high priority (PERF-25, issue 47).
     test('shows an image with its width and its height', async () => {
         expect(await readOutput(PLAN_FILE)).toContain(
-            `<img src="${IMAGE_URL}" alt="garden-plan.png" width="16" height="12" loading="lazy" decoding="async">`
+            `<img src="${IMAGE_URL}" alt="garden-plan.png" width="16" height="12" decoding="async" fetchpriority="high">`
         )
     })
 
@@ -141,7 +142,7 @@ describe('build of notes with attachments', () => {
 
     test('shows a Markdown image with its alternative text and its size', async () => {
         expect(await readOutput(POND_FILE)).toContain(
-            `<img src="${IMAGE_URL}" alt="The plan of the plots" width="16" height="12" loading="lazy" decoding="async">`
+            `<img src="${IMAGE_URL}" alt="The plan of the plots" width="16" height="12" decoding="async" fetchpriority="high">`
         )
     })
 

@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'astro/config'
+import { notePageBudget } from './src/budgets.ts'
 import { markdownProcessor } from './src/rendering/markup.ts'
 
 export default defineConfig({
@@ -15,6 +16,8 @@ export default defineConfig({
         processor: markdownProcessor(),
         syntaxHighlight: false
     },
+    // A note page above the HTML budget gives a warning, not a stop (R57).
+    integrations: [notePageBudget()],
     vite: {
         plugins: [tailwindcss()]
     }
