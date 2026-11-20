@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
+    backlinksPath,
     canonicalPath,
     choicesOf,
     folderPath,
@@ -56,15 +57,31 @@ function siteNotesOf(notes: readonly PublishedNote[]): { path: string; aliases: 
     return notes.map((note) => ({ path: note.vaultPath, aliases: note.aliases }))
 }
 
-/** The resolver map of the site of these published notes. */
-export function resolverMapFor(notes: readonly PublishedNote[]): ResolverMap {
+/** The file of the page with every backlink of a note, from the identity of the note. */
+export function backlinksFile(id: string): string {
+    return `-/backlinks/${id}.html`
+}
+
+/**
+ * The resolver map of the site of these published notes.
+ *
+ * @param withBacklinksPage the notes that have a page with every backlink
+ */
+export function resolverMapFor(
+    notes: readonly PublishedNote[],
+    withBacklinksPage: readonly PublishedNote[] = []
+): ResolverMap {
     const attachments: Record<string, string> = {}
     for (const note of notes) {
         for (const file of note.attachments) {
             attachments[file.url] = file.key
         }
     }
-    return resolverMapOf(siteNotesOf(notes), siteFilesOf(notes), attachments)
+    const generated: Record<string, string> = {}
+    for (const note of withBacklinksPage) {
+        generated[backlinksPath(note.id)] = backlinksFile(note.id)
+    }
+    return resolverMapOf(siteNotesOf(notes), siteFilesOf(notes), attachments, generated)
 }
 
 /** The folders that get a generated list: the folders without a published folder note (URL-16). */

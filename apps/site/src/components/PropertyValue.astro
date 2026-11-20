@@ -1,0 +1,32 @@
+---
+import type { Scalar } from '../properties.ts'
+
+// One value of the properties panel (issue 48, PAGE-02): a text with its
+// links, a number, a truth value, a date or an object as JSON.
+interface Props {
+    value: Scalar
+}
+
+const { value } = Astro.props
+---
+
+{value.kind === 'text' &&
+    value.pieces.map((piece) =>
+        piece.kind === 'link' || piece.kind === 'tag' ? (
+            <a class='link' href={piece.href}>
+                {piece.text}
+            </a>
+        ) : piece.kind === 'external' ? (
+            <a class='link' href={piece.href} target='_blank' rel='noopener noreferrer'>
+                {piece.text}
+            </a>
+        ) : piece.kind === 'not-published' ? (
+            <span class='not-published'>{piece.text}</span>
+        ) : (
+            piece.text
+        )
+    )}
+{value.kind === 'number' && <span class='font-mono'>{value.text}</span>}
+{value.kind === 'boolean' && value.text}
+{value.kind === 'date' && <time datetime={value.datetime}>{value.text}</time>}
+{value.kind === 'json' && <pre class='properties-json'>{value.text}</pre>}

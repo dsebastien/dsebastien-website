@@ -2,7 +2,9 @@ import type { Element, ElementContent, Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { toHtml } from 'hast-util-to-html'
 import { toText } from 'hast-util-to-text'
+import type { PropertyLink } from '../properties.ts'
 import { headingFor, type Heading } from './anchors.ts'
+import { linkContextsOf, type LinkContext } from './backlinks.ts'
 import { decode, MARK } from './mark.ts'
 
 // The page step (BUILD-04, BUILD-05, REN-01, REN-04 of the spec): the markup
@@ -20,6 +22,10 @@ import { decode, MARK } from './mark.ts'
 // - A link or an embed of an attachment leads to its hashed URL: an image, the
 //   player of the browser for a video and a sound, a link for every other file.
 // - A block of link cards keeps the cards that can show (CARD-01 to CARD-09).
+//
+// The pages of a build are also its link index (MOD-06, BUILD-05): they say
+// which published notes link to a note, with the sentence around each link
+// (PAGE-03), and where a link path of a property leads to (PAGE-02).
 
 /** A link of a note that leads to an attachment, as the page shows it. */
 export interface FileLink {
@@ -42,7 +48,36 @@ export interface SiteNote {
     readonly links: ReadonlyMap<string, string>
     /** The links of the note to attachments, from its manifest entry, by their link path. */
     readonly files: ReadonlyMap<string, FileLink>
+    /** The links of the properties of the note to notes: the markup holds no property. */
+    readonly propertyLinks?: readonly PropertyLink[]
 }
+
+/** A published note that links to a note. */
+export interface Backlink {
+    /** The vault path of the note that links. */
+    vaultPath: string
+    /** The canonical path of its page. */
+    path: string
+    /** The sentence around each of its links to the note: `BACKLINK_CONTEXTS` at most, each one time. */
+    contexts: LinkContext[]
+}
+
+/** How many sentences a backlink shows, at most. */
+export const BACKLINK_CONTEXTS = 3
+
+/** A heading of the outline of a note page. */
+export interface OutlineItem {
+    /** How many levels the heading is below the highest level of the outline. */
+    depth: number
+    text: string
+    id: string
+}
+
+/** How many headings a note needs for an outline (PAGE-04). */
+export const OUTLINE_MINIMUM = 3
+
+/** The lowest level of a heading of the outline. */
+const OUTLINE_LEVELS = 3
 
 /** How many notes an embed shows inside each other, at most. Past it, an embed is a link. */
 export const EMBED_DEPTH = 4
@@ -112,9 +147,51 @@ function embedOfFile(file: FileLink, shown: string): Element {
 /** The body of the page of a note. */
 export interface NotePage {
     /** The H1 at the top of the note, which the title band shows. */
-    heading?: { text: string; id?: string }
+    heading?: NoteHeading
     /** The HTML of the body, without that H1. */
     html: string
+    /** The outline of the body, when the note has enough headings (PAGE-04). */
+    outline?: OutlineItem[]
+}
+
+/** The H1 at the top of a note. */
+export interface NoteHeading {
+    text: string
+    id?: string
+}
+
+/** The H1 at the top of these nodes: the first node that is not white space. */
+function topHeading(nodes: readonly Root['children'][number][]): Element | undefined {
+    const first = nodes.find((node) => node.type !== 'text' || node.value.trim() !== '')
+    return first?.type === 'element' && first.tagName === 'h1' ? first : undefined
+}
+
+function headingOf(element: Element): NoteHeading {
+    const id = element.properties['id']
+    return { text: toText(element), ...(typeof id === 'string' ? { id } : {}) }
+}
+
+/**
+ * The outline of a body: its headings of levels 1 to 3 that have an id. Only
+ * a heading of the note itself is an item: a heading of an embed, of a quote
+ * or of a callout is inside another element. `undefined` when the note has
+ * too few headings.
+ */
+function outlineOf(nodes: readonly Root['children'][number][]): OutlineItem[] | undefined {
+    const headings: { level: number; text: string; id: string }[] = []
+    for (const node of nodes) {
+        if (node.type !== 'element') continue
+        const level = /^h([1-6])$/u.exec(node.tagName)
+        const id = node.properties['id']
+        if (level !== null && Number(level[1]) <= OUTLINE_LEVELS && typeof id === 'string') {
+            headings.push({ level: Number(level[1]), text: toText(node), id })
+        }
+    }
+    if (headings.length < OUTLINE_MINIMUM) {
+        return undefined
+    }
+    const top = Math.min(...headings.map((heading) => heading.level))
+    return headings.map(({ level, text, id }) => ({ depth: level - top, text, id }))
 }
 
 /** The first image of these nodes, in the order of the document. */
@@ -336,6 +413,8 @@ function hostOf(url: string): string {
 export class SitePages {
     readonly #notes = new Map<string, SiteNote>()
     readonly #read = new Map<string, ReadNote>()
+    /** The backlinks of each note of the build by its vault path, made at the first question. */
+    #backlinks: Map<string, Backlink[]> | undefined
     /** The number of embeds of the page being made: the prefix of the ids of a diagram in one. */
     #embeds = 0
 
@@ -358,11 +437,8 @@ export class SitePages {
      */
     page(vaultPath: string): NotePage {
         const tree = this.#tree(vaultPath)
-        const first = tree.children.find((node) => node.type !== 'text' || node.value.trim() !== '')
-        let heading: NotePage['heading']
-        if (first?.type === 'element' && first.tagName === 'h1') {
-            const id = first.properties['id']
-            heading = { text: toText(first), ...(typeof id === 'string' ? { id } : {}) }
+        const first = topHeading(tree.children)
+        if (first !== undefined) {
             tree.children.splice(tree.children.indexOf(first), 1)
         }
         const image = firstImage(tree.children)
@@ -370,15 +446,112 @@ export class SitePages {
             delete image.properties['loading']
             image.properties['fetchPriority'] = 'high'
         }
-        const html = toHtml(tree)
-        return heading === undefined ? { html } : { heading, html }
+        const outline = outlineOf(tree.children)
+        return {
+            ...(first === undefined ? {} : { heading: headingOf(first) }),
+            html: toHtml(tree),
+            ...(outline === undefined ? {} : { outline })
+        }
     }
 
-    #tree(vaultPath: string): Root {
+    /**
+     * The H1 at the top of a published note, which the title band of its page
+     * shows: the display title of the note in a list reads it (IDX-03).
+     */
+    heading(vaultPath: string): NoteHeading | undefined {
+        const first = topHeading(this.#published(vaultPath).tree.children)
+        return first === undefined ? undefined : headingOf(first)
+    }
+
+    /**
+     * Where a link path of a published note leads to, with the heading or the
+     * block after `#`: the page of a published note, the hashed URL of an
+     * attachment, or a place of the note itself for an empty link path.
+     * `undefined` when the target is not published or does not exist
+     * (business rule 5). A property of the note reads its links here.
+     */
+    linkOf(vaultPath: string, linkPath: string, fragment: string): string | undefined {
+        const note = this.#published(vaultPath)
+        if (linkPath === '') {
+            const href = this.#fragmentOf(note, fragment)
+            return href === '' ? undefined : href
+        }
+        const file = note.files.get(linkPath)
+        if (file !== undefined) {
+            return file.url
+        }
+        const target = this.#targetOf(note, linkPath)
+        return target === undefined
+            ? undefined
+            : `${target.path}${this.#fragmentOf(target, fragment)}`
+    }
+
+    /**
+     * The published notes that link to a published note, in the order of the
+     * notes of the build, each with the sentence around its links (PAGE-03).
+     * A link of the text, an embed and a link of a property count; a note is
+     * no backlink of itself.
+     */
+    backlinks(vaultPath: string): readonly Backlink[] {
+        this.#published(vaultPath)
+        this.#backlinks ??= this.#readBacklinks()
+        return this.#backlinks.get(vaultPath) ?? []
+    }
+
+    #readBacklinks(): Map<string, Backlink[]> {
+        const all = new Map<string, Backlink[]>()
+        for (const vaultPath of this.#notes.keys()) {
+            const note = this.#published(vaultPath)
+            const found = new Map<string, Backlink>()
+            const add = (linkPath: string, context: LinkContext): void => {
+                if (note.files.has(linkPath)) return
+                const target = this.#targetOf(note, linkPath)
+                if (target === undefined || target.vaultPath === vaultPath) return
+                let backlink = found.get(target.vaultPath)
+                if (backlink === undefined) {
+                    backlink = { vaultPath, path: note.path, contexts: [] }
+                    found.set(target.vaultPath, backlink)
+                }
+                const known = backlink.contexts.some(
+                    (other) =>
+                        other.before === context.before &&
+                        other.link === context.link &&
+                        other.after === context.after
+                )
+                if (!known && backlink.contexts.length < BACKLINK_CONTEXTS) {
+                    backlink.contexts.push(context)
+                }
+            }
+            for (const { linkPath, ...context } of linkContextsOf(note.tree)) {
+                add(linkPath, context)
+            }
+            for (const link of note.propertyLinks ?? []) {
+                add(link.linkPath, { before: `${link.name}: `, link: link.text, after: '' })
+            }
+            for (const [target, backlink] of found) {
+                all.set(target, [...(all.get(target) ?? []), backlink])
+            }
+        }
+        return all
+    }
+
+    /** A published note of the build, read. */
+    #published(vaultPath: string): ReadNote {
         const note = this.#readNote(vaultPath)
         if (note === undefined) {
             throw new Error(`the note "${vaultPath}" is not published`)
         }
+        return note
+    }
+
+    /** The published note that a link path of a note leads to. */
+    #targetOf(note: ReadNote, linkPath: string): ReadNote | undefined {
+        const vaultPath = note.links.get(linkPath)
+        return vaultPath === undefined ? undefined : this.#readNote(vaultPath)
+    }
+
+    #tree(vaultPath: string): Root {
+        const note = this.#published(vaultPath)
         this.#embeds = 0
         const tree = structuredClone(note.tree)
         tree.children = this.#transform(tree.children as ElementContent[], note, [vaultPath])

@@ -716,3 +716,263 @@ describe('page of a note', () => {
         expect(pages.render('Self.md')).toBe('<h1 id="self">Self</h1>')
     })
 })
+
+// The outline of a note page (issue 48, PAGE-04, R59): the headings of levels
+// 1 to 3 of the note itself, from three headings.
+describe('outline of a page', () => {
+    const outlineOf = (markup: string, ...others: SiteNote[]): unknown =>
+        new SitePages([note('Self.md', markup, LINKS), ...others]).page('Self.md').outline
+
+    test('lists the headings of levels 1 to 3 with their ids, and their depth below the highest level', () => {
+        expect(
+            outlineOf(
+                '<h1 id="self">Self</h1><h2 id="soil">Soil <em>and</em> water</h2><h3 id="clay">Clay</h3><h4 id="deep">Deep</h4><h2 id="light">Light</h2>'
+            )
+        ).toEqual([
+            { depth: 0, text: 'Soil and water', id: 'soil' },
+            { depth: 1, text: 'Clay', id: 'clay' },
+            { depth: 0, text: 'Light', id: 'light' }
+        ])
+    })
+
+    test('a note with fewer than three headings has no outline', () => {
+        expect(
+            outlineOf('<h1 id="self">Self</h1><h2 id="soil">Soil</h2><h2 id="light">Light</h2>')
+        ).toBeUndefined()
+    })
+
+    test('the H1 of the title band is no item, and a later H1 is one', () => {
+        expect(
+            outlineOf(
+                '<h1 id="self">Self</h1><h1 id="part-one">Part one</h1><h2 id="soil">Soil</h2><h1 id="part-two">Part two</h1>'
+            )
+        ).toEqual([
+            { depth: 0, text: 'Part one', id: 'part-one' },
+            { depth: 1, text: 'Soil', id: 'soil' },
+            { depth: 0, text: 'Part two', id: 'part-two' }
+        ])
+    })
+
+    test('the headings of an embed, of a quote and of a callout are no items', () => {
+        const guide = note(
+            'Guide.md',
+            '<h1 id="guide">Guide</h1><h2 id="spring">Spring</h2><h2 id="summer">Summer</h2><h2 id="autumn">Autumn</h2>'
+        )
+
+        expect(
+            outlineOf(
+                '<h2 id="one">One</h2><p><note-link data-link="Guide" data-embed="">Guide</note-link></p><blockquote><h2 id="quoted">Quoted</h2></blockquote><h2 id="two">Two</h2>',
+                guide
+            )
+        ).toBeUndefined()
+    })
+})
+
+// The link of a property (issue 48, PAGE-02): where a link path of a note
+// leads to, in the state of the build.
+describe('link of a property', () => {
+    const KEY = 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33'
+    const pages = new SitePages([
+        note(
+            'Self.md',
+            '<h1 id="self">Self</h1><h2 id="soil">Soil</h2>',
+            { ...LINKS, 'Barrel alias': 'Rain barrel.md' },
+            { 'cover.png': { url: `/-/attachments/${KEY}/cover.png`, name: 'cover.png' } }
+        ),
+        note(
+            'Rain barrel.md',
+            '<h1 id="rain-barrel">Rain barrel</h1><h2 id="cleaning">Cleaning</h2><p id="^full">Full.</p>'
+        )
+    ])
+
+    test('leads to the page of a published note, with the id of its heading or of its block', () => {
+        expect(pages.linkOf('Self.md', 'Rain barrel', '')).toBe('/Rain+barrel')
+        expect(pages.linkOf('Self.md', 'Barrel alias', 'CLEANING')).toBe('/Rain+barrel#cleaning')
+        expect(pages.linkOf('Self.md', 'Rain barrel', '^full')).toBe('/Rain+barrel#%5Efull')
+        expect(pages.linkOf('Self.md', 'Rain barrel', 'No such heading')).toBe('/Rain+barrel')
+    })
+
+    test('leads nowhere for a note that is not published, and for a link path with no target', () => {
+        expect(pages.linkOf('Self.md', 'Frost dates', '')).toBeUndefined()
+        expect(pages.linkOf('Self.md', 'Nothing', '')).toBeUndefined()
+    })
+
+    test('leads to the hashed URL of an attachment', () => {
+        expect(pages.linkOf('Self.md', 'cover.png', '')).toBe(`/-/attachments/${KEY}/cover.png`)
+    })
+
+    test('leads to a heading of the note itself, and nowhere when the note has no such heading', () => {
+        expect(pages.linkOf('Self.md', '', 'Soil')).toBe('#soil')
+        expect(pages.linkOf('Self.md', '', 'Water')).toBeUndefined()
+    })
+})
+
+// The H1 at the top of a note (IDX-03): the display title of a note in a list
+// reads it, with no page made.
+describe('first heading of a note', () => {
+    test('is the H1 at the top of the note, as the title band of its page shows it', () => {
+        const pages = new SitePages([
+            note('Self.md', '\n<h1 id="compost">Compost <em>basics</em></h1>\n<p>Turn it.</p>'),
+            note('Plain.md', '<p>Intro.</p><h1 id="later">Later</h1>')
+        ])
+
+        expect(pages.heading('Self.md')).toEqual({ text: 'Compost basics', id: 'compost' })
+        expect(pages.heading('Plain.md')).toBeUndefined()
+    })
+})
+
+// The backlinks of a note (issue 48, PAGE-03, MOD-06): the published notes
+// that link to it, each with the sentence around its links.
+describe('backlinks of a note', () => {
+    const mark = (linkPath: string, shown = linkPath, more = ''): string =>
+        `<note-link data-link="${encodeURIComponent(linkPath)}"${more}>${shown}</note-link>`
+    const BARREL_LINKS = { 'Rain barrel': 'Rain barrel.md', 'Water butt': 'Rain barrel.md' }
+
+    test('lists each note that links to the note, with the sentence around the link', () => {
+        const pages = new SitePages([
+            BARREL,
+            note(
+                'Drip.md',
+                `<p>Lines first. It takes water from the ${mark('Rain barrel', 'barrel')} by the shed. Done.</p>`,
+                BARREL_LINKS
+            ),
+            note('Compost.md', '<p>No link here.</p>', BARREL_LINKS)
+        ])
+
+        expect(pages.backlinks('Rain barrel.md')).toEqual([
+            {
+                vaultPath: 'Drip.md',
+                path: '/Drip',
+                contexts: [
+                    { before: 'It takes water from the ', link: 'barrel', after: ' by the shed.' }
+                ]
+            }
+        ])
+        expect(pages.backlinks('Drip.md')).toEqual([])
+    })
+
+    test('a note is one backlink with a sentence per link: three at most, each one time', () => {
+        const pages = new SitePages([
+            BARREL,
+            note(
+                'Drip.md',
+                [
+                    `<p>One ${mark('Rain barrel')}.</p>`,
+                    `<p>One ${mark('Rain barrel')}.</p>`,
+                    `<p>Two ${mark('Water butt')}.</p>`,
+                    `<p>Three ${mark('Rain barrel')}.</p>`,
+                    `<p>Four ${mark('Rain barrel')}.</p>`
+                ].join(''),
+                BARREL_LINKS
+            )
+        ])
+
+        expect(pages.backlinks('Rain barrel.md')).toEqual([
+            {
+                vaultPath: 'Drip.md',
+                path: '/Drip',
+                contexts: [
+                    { before: 'One ', link: 'Rain barrel', after: '.' },
+                    { before: 'Two ', link: 'Water butt', after: '.' },
+                    { before: 'Three ', link: 'Rain barrel', after: '.' }
+                ]
+            }
+        ])
+    })
+
+    test('an embed and a link to a heading are backlinks of the note', () => {
+        const pages = new SitePages([
+            BARREL,
+            note('Embed.md', `<p>${mark('Rain barrel', 'Rain barrel', ' data-embed=""')}</p>`, {
+                ...BARREL_LINKS
+            }),
+            note(
+                'Heading.md',
+                `<p>See ${mark('Rain barrel', 'the cleaning', ' data-fragment="Cleaning"')}.</p>`,
+                BARREL_LINKS
+            )
+        ])
+
+        expect(pages.backlinks('Rain barrel.md').map((backlink) => backlink.vaultPath)).toEqual([
+            'Embed.md',
+            'Heading.md'
+        ])
+    })
+
+    test('a link of a property is a backlink, with the name of the property as its context', () => {
+        const pages = new SitePages([
+            BARREL,
+            {
+                ...note('Film.md', `<p>Also ${mark('Rain barrel')} here.</p>`, BARREL_LINKS),
+                propertyLinks: [
+                    { name: 'Seen At', linkPath: 'Rain barrel', text: 'the barrel' },
+                    { name: 'Directors', linkPath: 'Nobody', text: 'Nobody' }
+                ]
+            }
+        ])
+
+        expect(pages.backlinks('Rain barrel.md')).toEqual([
+            {
+                vaultPath: 'Film.md',
+                path: '/Film',
+                contexts: [
+                    { before: 'Also ', link: 'Rain barrel', after: ' here.' },
+                    { before: 'Seen At: ', link: 'the barrel', after: '' }
+                ]
+            }
+        ])
+    })
+
+    test('a note is no backlink of itself, and a link of an embedded note is no link of the note that embeds it', () => {
+        const pages = new SitePages([
+            note('Rain barrel.md', `<p>Me: ${mark('Rain barrel')}.</p>`, BARREL_LINKS),
+            note('Inner.md', `<p>To the ${mark('Rain barrel')}.</p>`, BARREL_LINKS),
+            note('Outer.md', `<p>${mark('Inner', 'Inner', ' data-embed=""')}</p>`, {
+                Inner: 'Inner.md'
+            })
+        ])
+
+        expect(pages.backlinks('Rain barrel.md').map((backlink) => backlink.vaultPath)).toEqual([
+            'Inner.md'
+        ])
+        expect(pages.backlinks('Inner.md').map((backlink) => backlink.vaultPath)).toEqual([
+            'Outer.md'
+        ])
+    })
+
+    test('a link to an attachment, to a note that is not published or with no target is no backlink', () => {
+        const pages = new SitePages([
+            BARREL,
+            note(
+                'Drip.md',
+                `<p>${mark('Rain barrel')} ${mark('Frost dates')} ${mark('Nothing')}</p>`,
+                { ...LINKS },
+                {
+                    'Rain barrel': {
+                        url: '/-/attachments/x/rain-barrel.pdf',
+                        name: 'Rain barrel.pdf'
+                    }
+                }
+            )
+        ])
+
+        expect(pages.backlinks('Rain barrel.md')).toEqual([])
+    })
+
+    test('the backlinks are in the order of the notes of the build', () => {
+        const pages = new SitePages([
+            note('Zinnia.md', `<p>${mark('Rain barrel')}</p>`, BARREL_LINKS),
+            BARREL,
+            note('Aster.md', `<p>${mark('Rain barrel')}</p>`, BARREL_LINKS)
+        ])
+
+        expect(pages.backlinks('Rain barrel.md').map((backlink) => backlink.vaultPath)).toEqual([
+            'Zinnia.md',
+            'Aster.md'
+        ])
+    })
+
+    test('is refused for a note that is not published', () => {
+        expect(() => new SitePages([BARREL]).backlinks('Frost dates.md')).toThrow('not published')
+    })
+})

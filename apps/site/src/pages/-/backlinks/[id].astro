@@ -1,0 +1,36 @@
+---
+import type { GetStaticPaths } from 'astro'
+import Backlinks from '../../../components/Backlinks.astro'
+import Page from '../../../layouts/Page.astro'
+import { publishedSite } from '../../../published-site.ts'
+
+// The page with every backlink of a note (issue 48, PAGE-03, R59): a note
+// page holds a limited number of backlinks (PERF-20), so a note with more has
+// them all here, and large link data stays out of its page (PERF-26). A
+// generated page is not indexed (IDX-23), and its links are followed.
+export const getStaticPaths = (async () => {
+    const site = await publishedSite()
+    return site.notesWithBacklinksPage().map((note) => ({
+        params: { id: note.id },
+        props: { note, site }
+    }))
+}) satisfies GetStaticPaths
+
+const { note, site } = Astro.props
+const title = site.headerOf(note.vaultPath).title
+const backlinks = site.backlinksOf(note.vaultPath)
+---
+
+<Page title={`Notes that link to ${title}`}>
+    <meta slot='head' name='robots' content='noindex, follow' />
+    <h1 class='text-3xl font-bold tracking-tight break-words'>
+        Notes that link to{' '}
+        <a class='link' href={note.path} data-backlinks-of>
+            {title}
+        </a>
+    </h1>
+    <p class='mt-2 text-muted'>{backlinks.length} notes, the newest update first.</p>
+    <div class='mt-8 max-w-[72ch]' data-backlinks>
+        <Backlinks backlinks={backlinks} />
+    </div>
+</Page>

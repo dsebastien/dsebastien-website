@@ -13,6 +13,7 @@ import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 import { modeScript, modeSwitchScript } from './mode.ts'
+import { propertiesScript } from './properties-panel.ts'
 import { oldAnchorScript } from './rendering/anchors.ts'
 
 // The first slice (issue 31), from the content store to a served page: the
@@ -149,14 +150,17 @@ describe('build of a content store with one published note', () => {
     })
 
     // The page works without JavaScript (PAGE-01): its only scripts are the
-    // two inline scripts of the mode (MODE-01) and the one that reads an old
-    // heading anchor (URL-14), with no attribute.
-    test('makes a page without JavaScript, but for the mode and the old anchors', async () => {
+    // two inline scripts of the mode (MODE-01), the one of the properties
+    // panel, which is a folding block without it (PAGE-02), and the one that
+    // reads an old heading anchor (URL-14), with no attribute.
+    test('makes a page without JavaScript, but for the mode, the properties panel and the old anchors', async () => {
         const html = await readOutput(NOTE_FILE)
         const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gu)].map(
             ([whole, attributes = '', text = '']) => (attributes.trim() === '' ? text : whole)
         )
-        const [head = '', ...rest] = scripts
+        const [head = '', panel, ...rest] = scripts
+        // The script of the panel as the build wrote it (its run is tested in properties-panel.spec.ts).
+        expect(panel).toBe(propertiesScript)
         expect(rest).toHaveLength(2)
         expect(rest[1]).toBe(modeSwitchScript)
         // The script of the old anchors holds a function as the build writes it
@@ -189,10 +193,13 @@ describe('build of a content store with one published note', () => {
         expect(modeScript).toContain('localStorage.getItem("mode")')
     })
 
-    test('does not write the properties of the note as text of the page', async () => {
+    // The properties are in the panel of the page (issue 48), never in the text of the note.
+    test('does not write the properties of the note as text of the note', async () => {
         const html = await readOutput(NOTE_FILE)
-        expect(html).not.toContain('ai_generated')
-        expect(html).not.toContain('type/note')
+        const text = /<article\b[^>]*data-note-body[^>]*>([\s\S]*?)<\/article>/u.exec(html)?.[1]
+        expect(text).toContain('The last frost date')
+        expect(text).not.toContain('ai_generated')
+        expect(text).not.toContain('type/note')
     })
 
     // The vault has more than 40 files. Only what the content store holds is built.

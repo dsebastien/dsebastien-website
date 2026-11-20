@@ -37,6 +37,7 @@
         "@astrojs/check": "0.9.12",
         "@dsebastien-website/testing": "workspace:*",
         "@types/hast": "3.0.5",
-        "@types/mdast": "4.0.4"
+        "@types/mdast": "4.0.4",
+        "hast-util-select": "6.0.4"
     }
 }

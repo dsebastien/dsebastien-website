@@ -1,0 +1,46 @@
+---
+import PropertyValue from './PropertyValue.astro'
+import type { Property } from '../properties.ts'
+import { PROPERTIES_SHORTCUT, propertiesScript } from '../properties-panel.ts'
+
+// The properties panel of a note page (issue 48, PAGE-02, R59): a folding
+// block, closed in the HTML, that works with no script. Its script keeps the
+// choice of the reader and gives it a key. It runs right after the panel, so a
+// panel that a stored choice opens is open before the text of the note shows.
+interface Props {
+    properties: readonly Property[]
+}
+
+const { properties } = Astro.props
+---
+
+<details class='fold group' data-properties>
+    <summary class='fold-summary' aria-keyshortcuts={PROPERTIES_SHORTCUT}>
+        <span>Properties</span>
+        <span class='ml-auto flex items-center gap-3 text-muted' aria-hidden='true'>
+            <kbd class='key hidden xl:inline-block'>{PROPERTIES_SHORTCUT}</kbd>
+            <span class='transition-transform group-open:rotate-180'>▾</span>
+        </span>
+    </summary>
+    <dl class='properties-list'>
+        {properties.map((property) => (
+            <div class='properties-row' data-property={property.key}>
+                <dt class='text-muted'>{property.name}</dt>
+                <dd class='min-w-0 break-words'>
+                    {property.value.kind === 'list' ? (
+                        <ul class='flex flex-wrap gap-1.5'>
+                            {property.value.items.map((item) => (
+                                <li class='properties-item'>
+                                    <PropertyValue value={item} />
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <PropertyValue value={property.value} />
+                    )}
+                </dd>
+            </div>
+        ))}
+    </dl>
+</details>
+<script is:inline set:html={propertiesScript} />

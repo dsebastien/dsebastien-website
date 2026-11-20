@@ -1,0 +1,30 @@
+---
+import type { ShownBacklink } from '../backlink-list.ts'
+
+// The backlinks of a note (issue 48, PAGE-03): each note that links to it,
+// with the sentence around each link and the text of the link marked. The
+// budget check of a note page counts the elements marked `data-backlink`
+// (R57).
+interface Props {
+    backlinks: readonly ShownBacklink[]
+}
+
+const { backlinks } = Astro.props
+---
+
+<ul class='space-y-3'>
+    {backlinks.map((backlink) => (
+        <li class='card p-4' data-backlink>
+            <a class='link font-semibold break-words' href={backlink.href}>
+                {backlink.title}
+            </a>
+            {backlink.contexts.map((context) => (
+                <p class='backlink-context' data-backlink-context>
+                    {context.before}
+                    <mark>{context.link}</mark>
+                    {context.after}
+                </p>
+            ))}
+        </li>
+    ))}
+</ul>

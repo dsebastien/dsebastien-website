@@ -1,62 +1,45 @@
 ---
 import type { GetStaticPaths } from 'astro'
-import { getCollection } from 'astro:content'
+import { backlinksPath } from '@dsebastien-website/resolver'
 import latinFont from '@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2?url'
-import { readPublishedNotes } from '../../../content-store.ts'
+import { BACKLINKS_ON_PAGE } from '../../../backlink-list.ts'
+import Backlinks from '../../../components/Backlinks.astro'
+import Outline from '../../../components/Outline.astro'
+import Properties from '../../../components/Properties.astro'
 import Page from '../../../layouts/Page.astro'
-import { noteHeader } from '../../../note-header.ts'
+import { propertiesOf } from '../../../properties.ts'
+import { publishedSite } from '../../../published-site.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
 import { languageOf } from '../../../rendering/language.ts'
-import { SitePages } from '../../../rendering/page.ts'
 
-// The page of a published note (issue 47), in variant B of the mockups (R49):
-// a title band with the title, the type badge and the dates, then the text of
-// the note. Its file has the identity of the note as its name, which is plain
-// ASCII on every system and on every host. The resolver leads the canonical
-// URL of the note to this file.
+// The page of a published note, in variant B of the mockups (R49): a title
+// band with the title, the type badge and the dates (issue 47), then three
+// columns on a wide screen: the outline in the left rail, the text and the
+// backlinks, and the properties panel in the right rail (issue 48, R59). On a
+// small screen the panel and the outline are folding blocks above the text.
+// Its file has the identity of the note as its name, which is plain ASCII on
+// every system and on every host. The resolver leads the canonical URL of the
+// note to this file.
 export const getStaticPaths = (async () => {
-    const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
-    const notes = await readPublishedNotes()
-    const site = notes.map((note) => {
-        const entry = entries.get(note.vaultPath)
-        if (entry === undefined) {
-            throw new Error(`the content store has no cleaned note for "${note.vaultPath}"`)
-        }
-        if (entry.rendered === undefined) {
-            throw new Error(`the note "${note.vaultPath}" has no markup`)
-        }
-        return { note, entry, markup: entry.rendered.html }
-    })
-    // The pages of this build (BUILD-05): the markup of each note, which Astro
-    // keeps between two builds, with its links and its embeds in the state of
-    // this build.
-    const pages = new SitePages(
-        site.map(({ note, markup }) => ({
-            vaultPath: note.vaultPath,
-            path: note.path,
-            markup,
-            links: new Map(note.links.map((link) => [link.link, link.path])),
-            files: new Map(note.attachments.map((file) => [file.link, file]))
-        }))
-    )
-    return site.map(({ note, entry }) => ({
-        params: { id: note.id },
-        props: { note, properties: entry.data, language: languageOf(entry.data), pages }
-    }))
+    const site = await publishedSite()
+    return site.notes.map((note) => ({ params: { id: note.id }, props: { note, site } }))
 }) satisfies GetStaticPaths
 
-const { note, properties, language, pages } = Astro.props
-const body = pages.page(note.vaultPath)
-const header = noteHeader({
-    fileName: note.title,
-    properties,
-    ...(body.heading === undefined ? {} : { firstHeading: body.heading.text }),
-    firstPublished: note.firstPublished,
-    lastPublished: note.lastPublished
-})
+const { note, site } = Astro.props
+const data = site.propertiesOf(note.vaultPath)
+const body = site.pages.page(note.vaultPath)
+const header = site.headerOf(note.vaultPath)
+// Every property of the note is public (business rule 14). A link of a
+// property is a link when its target is published (business rule 5).
+const properties = propertiesOf(data, (linkPath, fragment) =>
+    site.pages.linkOf(note.vaultPath, linkPath, fragment)
+)
+// The note page holds the first backlinks only (PAGE-03, PERF-20, PERF-26).
+const backlinks = site.backlinksOf(note.vaultPath)
+const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
 ---
 
-<Page title={header.title} path={note.path} lang={language} bare>
+<Page title={header.title} path={note.path} lang={languageOf(data)} bare>
     {/* `data-heading` keeps the text of the H1 of the note, which an old hash names (URL-14). */}
     {/* The text of the page uses this file: a late font moves the text (PERF-20, R57). */}
     <link slot='head' rel='preload' href={latinFont} as='font' type='font/woff2' crossorigin />
@@ -81,8 +64,60 @@ const header = noteHeader({
             </p>
         </div>
     </div>
-    <div class='mx-auto w-full max-w-7xl px-4 py-10 sm:px-6'>
-        <article class='note-text max-w-[72ch]' data-note-body set:html={body.html} />
+    <div class='note-layout'>
+        {body.outline !== undefined && (
+            <nav class='note-outline' aria-label='On this page' data-outline='rail'>
+                <div class='rail'>
+                    <p class='section-title'>On this page</p>
+                    <Outline items={body.outline} />
+                </div>
+            </nav>
+        )}
+        {properties.length > 0 && (
+            <aside class='note-properties' aria-label='Properties'>
+                <div class='rail'>
+                    <Properties properties={properties} />
+                </div>
+            </aside>
+        )}
+        <div class='note-main'>
+            {body.outline !== undefined && (
+                <details class='fold group mb-8 lg:hidden' data-outline='fold'>
+                    <summary class='fold-summary'>
+                        <span>On this page</span>
+                        <span
+                            class='ml-auto text-muted transition-transform group-open:rotate-180'
+                            aria-hidden='true'
+                        >
+                            ▾
+                        </span>
+                    </summary>
+                    <nav class='border-t border-border px-2 py-3' aria-label='On this page'>
+                        <Outline items={body.outline} />
+                    </nav>
+                </details>
+            )}
+            <article class='note-text max-w-[72ch]' data-note-body set:html={body.html} />
+            {backlinks.length > 0 && (
+                <section
+                    class='mt-12 max-w-[72ch]'
+                    aria-label='Notes that link here'
+                    data-backlinks
+                >
+                    <h2 class='section-title'>
+                        Notes that link here <span class='ml-1'>{backlinks.length}</span>
+                    </h2>
+                    <Backlinks backlinks={shown} />
+                    {backlinks.length > shown.length && (
+                        <p class='mt-4'>
+                            <a class='link' href={backlinksPath(note.id)}>
+                                All {backlinks.length} notes that link here
+                            </a>
+                        </p>
+                    )}
+                </section>
+            )}
+        </div>
     </div>
     <script is:inline set:html={oldAnchorScript} />
 </Page>

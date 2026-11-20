@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     BUDGET_SAMPLE,
+    BUDGET_SAMPLE_BACKLINKS,
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
@@ -12,7 +13,7 @@ import {
 } from '@dsebastien-website/testing'
 import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
-import { checkNotePage, type PageCheck } from './budgets.ts'
+import { checkNotePage, PAGE_BUDGET, type PageCheck } from './budgets.ts'
 
 // The budgets of the note page in CI (issue 47, PERF-20, PERF-22, R57): the
 // tool publishes every note of a copy of the fixture vault, which holds a
@@ -107,5 +108,43 @@ describe('budgets of the note page', () => {
         expect(media?.measure.images.count).toBe(4)
         expect(media?.measure.images.first).toEndWith('/cover.png')
         expect(hub?.measure.html).toBeGreaterThan(0)
+    })
+
+    // PAGE-03, PERF-20, PERF-26 (issue 48): the page of a note with very many
+    // backlinks holds the number of its budget, and a page of its own holds
+    // them all, so the large link data is not in the HTML of the note page.
+    test('the hub note holds the backlinks of its budget, and a page of its own holds them all', async () => {
+        const file = sampleFiles[BUDGET_SAMPLE.hub] ?? ''
+        const id = file.replace(/\.html$/u, '')
+        const dist = outDir ?? ''
+        const count = (html: string): number =>
+            html.match(/<li\b[^>]*\sdata-backlink\b/gu)?.length ?? 0
+
+        expect(checks.get(file)?.measure.backlinks).toBe(PAGE_BUDGET.backlinks)
+        const page = await readFile(join(dist, '-', 'note', file), 'utf8')
+        expect(count(page)).toBe(50)
+        expect(page).toContain(
+            `Notes that link here <span class="ml-1">${String(BUDGET_SAMPLE_BACKLINKS)}</span>`
+        )
+        expect(page).toMatch(
+            new RegExp(
+                `<a class="link" href="/-/backlinks/${id}"[^>]*>\\s*All ${String(BUDGET_SAMPLE_BACKLINKS)} notes that link here\\s*</a>`,
+                'u'
+            )
+        )
+
+        // Only the hub note has more backlinks than a note page holds.
+        expect(await readdir(join(dist, '-', 'backlinks'))).toEqual([file])
+        const all = await readFile(join(dist, '-', 'backlinks', file), 'utf8')
+        expect(count(all)).toBe(BUDGET_SAMPLE_BACKLINKS)
+        expect(all).toContain('<meta name="robots" content="noindex, follow">')
+        expect(all).not.toContain('rel="canonical"')
+        expect(all).toMatch(
+            /<a class="link" href="\/95\+Budget\+sample\/Hub\+note"[^>]*>Hub note<\/a>/u
+        )
+        const map = JSON.parse(await readFile(join(dist, '-', 'resolver-map.json'), 'utf8')) as {
+            pages: Record<string, string>
+        }
+        expect(map.pages[`/-/backlinks/${id}`]).toBe(`-/backlinks/${file}`)
     })
 })

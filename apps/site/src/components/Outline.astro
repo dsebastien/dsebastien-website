@@ -1,0 +1,27 @@
+---
+import type { OutlineItem } from '../rendering/page.ts'
+
+// The items of the outline of a note page (issue 48, PAGE-04): a link to each
+// heading, set in by its depth. The rail and the folding block both show it.
+interface Props {
+    items: readonly OutlineItem[]
+}
+
+const { items } = Astro.props
+---
+
+<ol class='space-y-1 text-sm'>
+    {items.map((item) => (
+        <li>
+            <a
+                href={`#${encodeURIComponent(item.id)}`}
+                class:list={[
+                    'block rounded-control py-1.5 pr-3 break-words text-muted hover:bg-surface hover:text-primary',
+                    item.depth === 0 ? 'pl-3' : item.depth === 1 ? 'pl-6' : 'pl-9'
+                ]}
+            >
+                {item.text}
+            </a>
+        </li>
+    ))}
+</ol>

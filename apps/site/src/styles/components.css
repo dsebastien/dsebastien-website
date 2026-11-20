@@ -114,6 +114,81 @@
         @apply mb-4 text-sm font-semibold tracking-widest text-muted uppercase;
     }
 
+    /* A key of the keyboard, as a hint. */
+    .key {
+        @apply rounded-control border border-border-strong px-1.5 font-mono text-xs text-muted;
+    }
+
+    /* A folding block: the properties panel and the outline of a small screen
+       (issue 48). It is a `details` element, so it works with no script. */
+    .fold {
+        @apply card;
+    }
+
+    .fold-summary {
+        @apply flex items-center gap-3 px-5 py-3 font-semibold;
+    }
+
+    /* Safari draws its own marker also for a summary that is a flex box. */
+    .fold-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    /* The layout of a note page under its title band (variant B, R49, R59):
+       one column on a small screen, the outline in a left rail from `lg`, the
+       properties panel in a right rail from `xl`. The panel comes before the
+       text in the page, so on one column it is above the text (PAGE-02). */
+    .note-layout {
+        @apply mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-8 px-4 py-10 sm:px-6 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[13rem_minmax(0,1fr)_18rem];
+    }
+
+    .note-outline {
+        @apply hidden lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:block xl:row-span-1;
+    }
+
+    .note-properties {
+        @apply lg:col-start-2 xl:col-start-3 xl:row-start-1;
+    }
+
+    .note-main {
+        @apply min-w-0 lg:col-start-2 xl:row-start-1;
+    }
+
+    /* What a rail holds stays in view while the text scrolls, and scrolls by itself when it is long. */
+    .note-outline > .rail {
+        @apply sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto;
+    }
+
+    .note-properties > .rail {
+        @apply xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto;
+    }
+
+    /* The rows of the properties panel: the name beside the value, and above it in the narrow right rail. */
+    .properties-list {
+        @apply space-y-2 border-t border-border px-5 py-4 text-sm xl:space-y-3;
+    }
+
+    .properties-row {
+        @apply grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 xl:block;
+    }
+
+    .properties-item {
+        @apply rounded-pill bg-well px-2.5 py-0.5;
+    }
+
+    .properties-json {
+        @apply overflow-x-auto rounded-control bg-well p-2 font-mono text-xs;
+    }
+
+    /* The sentence around a backlink: the text of the link stands out. */
+    .backlink-context {
+        @apply mt-1 text-muted;
+    }
+
+    .backlink-context mark {
+        @apply bg-transparent font-semibold text-primary;
+    }
+
     /* The text of a note. */
     .note-text {
         @apply text-lg leading-8;
@@ -127,6 +202,11 @@
 
     .note-text > * + * {
         @apply mt-5;
+    }
+
+    /* The text starts at the top of its column, level with the rails beside it. */
+    .note-text > :first-child {
+        @apply mt-0;
     }
 
     .note-text h1 {
