@@ -225,6 +225,7 @@
             "no element matches \"a[href*=\"compost\" i][href*=\"basics\" i]\"",
             "no element matches \"a[href*=\"rain\" i][href*=\"barrel\" i]\"",
             "no element matches \"a[href*=\"thyme\" i]\"",
+            "no element matches \"a[href*=\"frost\" i][href*=\"dates\" i]\"",
             "the text holds \"LINK: https://garden.example/soil\"",
             "the text holds \"LINK https://garden.example/seeds\"",
             "the text holds \"LINKS: https://garden.example/bees\"",
