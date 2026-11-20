@@ -845,7 +845,7 @@ impl ContentStore {
                 }
                 named.into_iter().take(5).collect::<Vec<_>>().join(", ")
             },
-            ways_out(&different),
+            ways_out(&different, &self.folder),
             self.folder.display()
         ))
     }
@@ -1425,7 +1425,36 @@ const COMPARE_OPTIONS: &[&str] = &[
 /// of its last commit, each with its code of `git status` or `skipped`. A
 /// change of the deny list is work of the author: it is committed, never
 /// thrown away. Only the tool writes the manifest.
-fn ways_out(different: &[(&str, &str)]) -> String {
+/// Why git can fail to write a path of the copy on some system (issue 76),
+/// or `None`: a name that Windows refuses, or a path longer than the 260
+/// characters that Windows allows when git does not use long paths.
+fn unwritable_cause(path: &str, folder: &Path) -> Option<&'static str> {
+    let refused = |part: &str| {
+        let base = part.split('.').next().unwrap_or(part).to_ascii_lowercase();
+        let reserved = ["con", "prn", "aux", "nul"].contains(&base.as_str())
+            || ((base.starts_with("com") || base.starts_with("lpt"))
+                && base.chars().count() == 4
+                && base.chars().last().is_some_and(|last| {
+                    last.is_ascii_digit() || "\u{b9}\u{b2}\u{b3}".contains(last)
+                }));
+        reserved
+            || part
+                .chars()
+                .any(|letter| "<>:\"|?*\\".contains(letter) || u32::from(letter) < 0x20)
+            || part.ends_with('.')
+            || part.ends_with(' ')
+    };
+    if path.split('/').any(refused) {
+        return Some("a name that Windows refuses");
+    }
+    let full = format!("{}/{path}", folder.display());
+    if full.encode_utf16().count() >= 260 {
+        return Some("a path longer than Windows allows");
+    }
+    None
+}
+
+fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
     let mut ways = Vec::new();
     // `skipped` first, because no `git add` stages a file that git skips, then
     // the code of git status, then the edit that only the hash shows.
@@ -1462,8 +1491,27 @@ fn ways_out(different: &[(&str, &str)]) -> String {
     if notes.contains(&"skipped") {
         ways.push("Let git compare the cleaned notes again (git update-index --no-skip-worktree --no-assume-unchanged on the files that it skips)");
     }
+    let mut unwritable_way = None;
     if notes.iter().any(|code| *code != "skipped") {
         ways.push("Put the cleaned notes back with git checkout HEAD -- notes: a cleaned note that the copy lost would stay in the content store after its removal");
+        let unwritable: Vec<String> = different
+            .iter()
+            .filter(|(code, path)| path.starts_with("notes/") && code.contains('D'))
+            .filter_map(|(_, path)| {
+                unwritable_cause(path, folder).map(|cause| format!("{path} ({cause})"))
+            })
+            .collect();
+        let named = if unwritable.is_empty() {
+            String::new()
+        } else {
+            format!(" Such paths here: {}.", unwritable.join(", "))
+        };
+        unwritable_way = Some(format!(
+            "When git checkout fails, git cannot write that path on this system, so the file looks deleted:{named} For a long path on Windows, run git config core.longpaths true in the copy, then git checkout again. For a name that Windows refuses, or two notes whose names differ only in letter case on a system that ignores letter case, rename the note in the vault and publish the rename from a device that can write the path"
+        ));
+    }
+    if let Some(way) = &unwritable_way {
+        ways.push(way);
     }
     let manifest: Vec<&str> = different
         .iter()

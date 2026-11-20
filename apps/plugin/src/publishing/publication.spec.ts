@@ -1172,6 +1172,30 @@ describe('failure cases after the first review', () => {
         expect(await rejectionOf(status(setup.device))).toContain('--no-skip-worktree')
     })
 
+    // Issue 76: git cannot write some paths on some systems, so they look
+    // deleted. The message says why and what to do.
+    test('a missing cleaned note whose path git cannot write on some systems gets the cause in the message', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const reserved = '10 Garden/CON.md'
+        const long = `${'L'.repeat(150)}/${'x'.repeat(150)}.md`
+        await mkdir(join(setup.vault, 'L'.repeat(150)))
+        for (const path of [reserved, long]) {
+            await writeFile(join(setup.vault, path), '# Odd\n\nA note.\n')
+        }
+        const planned = await plan(setup.device, { include: [reserved, long] })
+        await publish(setup.device, planned.id, RUN)
+        await rm(join(setup.copy, 'notes', reserved))
+        await rm(join(setup.copy, 'notes', long))
+
+        const message = await rejectionOf(status(setup.device))
+
+        expect(message).toContain(`notes/${reserved} (a name that Windows refuses)`)
+        expect(message).toContain(`notes/${long} (a path longer than Windows allows)`)
+        expect(message).toContain('git config core.longpaths true')
+        expect(message).toContain('rename the note in the vault')
+    })
+
     // A cleaned note that the copy lost would else stay in the content store
     // after its forced removal: the removal stages only what it removes.
     test('a cleaned note that is missing from the copy stops the run', async () => {

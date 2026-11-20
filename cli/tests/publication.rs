@@ -1329,3 +1329,43 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
         journal
     );
 }
+
+/// Issue 76: git cannot write some paths on some systems, so they look
+/// deleted. The message says why and what to do.
+#[test]
+fn a_missing_cleaned_note_whose_path_git_cannot_write_on_some_systems_gets_the_cause() {
+    let setup = set_up();
+    let reserved = "10 Garden/CON.md";
+    let long = format!("{}/{}.md", "L".repeat(150), "x".repeat(150));
+    fs::create_dir(setup.vault.join("L".repeat(150))).expect("the folder can be made");
+    for path in [reserved, long.as_str()] {
+        fs::write(setup.vault.join(path), "# Odd\n\nA note.\n").expect("the note can be written");
+    }
+    let output = setup.run("plan", &["--include", reserved, "--include", &long]);
+    assert!(output.status.success(), "{}", errors_of(&output));
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
+    let id = plan["id"].as_str().expect("the plan has an id").to_owned();
+    let published = setup.run("publish", &["--plan", &id, "--time", TIME]);
+    assert!(published.status.success(), "{}", errors_of(&published));
+    fs::remove_file(setup.copy.join("notes").join(reserved)).expect("the note can be removed");
+    fs::remove_file(setup.copy.join("notes").join(&long)).expect("the note can be removed");
+
+    let message = errors_of(&setup.run("status", &[]));
+
+    assert!(
+        message.contains(&format!("notes/{reserved} (a name that Windows refuses)")),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("notes/{long} (a path longer than Windows allows)")),
+        "{message}"
+    );
+    assert!(
+        message.contains("git config core.longpaths true"),
+        "{message}"
+    );
+    assert!(
+        message.contains("rename the note in the vault"),
+        "{message}"
+    );
+}

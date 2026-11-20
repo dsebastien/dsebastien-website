@@ -235,7 +235,37 @@ function configurationCode(
     )
 }
 
-function waysOut(different: readonly { code: string; path: string }[]): string {
+/** Names that Windows refuses for a file or a folder, whatever their end. */
+const WINDOWS_NAMES =
+    /^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/iu
+
+/**
+ * Why git can fail to write a path of the copy on some system (issue 76), or
+ * `undefined`: a name that Windows refuses, or a path longer than the 260
+ * characters that Windows allows when git does not use long paths.
+ */
+function unwritableCause(path: string, folder: string): string | undefined {
+    const parts = path.split('/')
+    if (
+        parts.some(
+            (part) =>
+                WINDOWS_NAMES.test(part) ||
+                /[<>:"|?*\\]/u.test(part) ||
+                Array.from(part, (letter) => letter.codePointAt(0) ?? 0).some(
+                    (code) => code < 0x20
+                ) ||
+                /[. ]$/u.test(part)
+        )
+    ) {
+        return 'a name that Windows refuses'
+    }
+    if (`${folder}/${path}`.length >= 260) {
+        return 'a path longer than Windows allows'
+    }
+    return undefined
+}
+
+function waysOut(different: readonly { code: string; path: string }[], folder: string): string {
     const ways: string[] = []
     const configuration = configurationCode(different)
     if (configuration !== undefined) {
@@ -265,6 +295,16 @@ function waysOut(different: readonly { code: string; path: string }[]): string {
     if (notes.some((entry) => entry.code !== 'skipped')) {
         ways.push(
             'Put the cleaned notes back with git checkout HEAD -- notes: a cleaned note that the copy lost would stay in the content store after its removal'
+        )
+        const unwritable = notes
+            .filter((entry) => entry.code.includes('D'))
+            .flatMap((entry) => {
+                const cause = unwritableCause(entry.path, folder)
+                return cause === undefined ? [] : [`${entry.path} (${cause})`]
+            })
+        const named = unwritable.length === 0 ? '' : ` Such paths here: ${unwritable.join(', ')}.`
+        ways.push(
+            `When git checkout fails, git cannot write that path on this system, so the file looks deleted:${named} For a long path on Windows, run git config core.longpaths true in the copy, then git checkout again. For a name that Windows refuses, or two notes whose names differ only in letter case on a system that ignores letter case, rename the note in the vault and publish the rename from a device that can write the path`
         )
     }
     if (manifest.some((entry) => entry.code === 'skipped')) {
@@ -689,7 +729,7 @@ function gitContentStore(folder: string): ContentStore {
                         .slice(0, 5)
                         .join(
                             ', '
-                        )}. Nothing can be published until the copy is corrected. ${waysOut(different)}: ${folder}`
+                        )}. Nothing can be published until the copy is corrected. ${waysOut(different, folder)}: ${folder}`
                 )
             }
             return { behind, reached }
