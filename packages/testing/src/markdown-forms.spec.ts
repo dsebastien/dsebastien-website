@@ -225,11 +225,86 @@ describe('checkHtml', () => {
         ])
     })
 
-    test('reports a failure, not a crash, for an entity that names no character', async () => {
+    // Issue 85: the reader builds the tree that a browser builds, with no
+    // script (a noscript holds elements), foreign content and every implied end.
+    test('counts an element inside a noscript, and reads no text of it', async () => {
+        const html =
+            '<noscript><iframe src="https://www.youtube-nocookie.com/embed/x"></iframe><p>LINK: x</p></noscript><p>Tour</p>'
         expect(
-            await checkHtml('<p>&#x110000; and &#xe9;</p>', [
-                { has: 'p', text: '&#x110000; and é' }
+            await checkHtml(html, [
+                { has: 'iframe', count: 0 },
+                { has: '[src*="youtube"]', count: 0 },
+                { lacksText: 'LINK' }
             ])
+        ).toEqual([
+            '"iframe" matches 1 elements, not 0',
+            '"[src*="youtube"]" matches 1 elements, not 0'
+        ])
+        expect(
+            await checkHtml('<noscript><a href="/tour">Tour</a></noscript>', [
+                { has: 'a[href="/tour"]', count: 1 }
+            ])
+        ).toEqual([])
+    })
+
+    test('keeps the elements of foreign content inside an open paragraph', async () => {
+        const html =
+            '<p>Flow: <svg><foreignObject><div><p>Sprout</p></div></foreignObject></svg></p>'
+        expect(await checkHtml(html, [{ has: 'svg', text: 'Sprout', count: 1 }])).toEqual([])
+        expect(
+            await checkHtml('<p>x <math><mi>a</mi><mtext><div>b</div></mtext></math></p>', [
+                { has: 'math', text: 'b', count: 1 }
+            ])
+        ).toEqual([])
+    })
+
+    test('closes elements by the other rules of the HTML standard', async () => {
+        // A row closes an open caption.
+        expect(
+            await checkHtml('<table><caption>Plan<tr><td>Peas</table>', [
+                { has: 'caption', text: 'Peas', count: 0 },
+                { has: 'caption', text: 'Plan', count: 1 }
+            ])
+        ).toEqual([])
+        // A list item closes a paragraph in button scope; so does a center.
+        expect(
+            await checkHtml('<ul><li><p>a<li>b</ul><p>c<center>d</center>', [
+                { has: 'p', text: 'b', count: 0 },
+                { has: 'p', text: 'd', count: 0 },
+                { has: 'li', count: 2 }
+            ])
+        ).toEqual([])
+        // An end tag of a paragraph that is not open makes an empty one.
+        expect(await checkHtml('<div></p></div>', [{ has: 'p', count: 1 }])).toEqual([])
+    })
+
+    test('closes the cells and the row before an implied body, and a paragraph at the end of its item or cell', async () => {
+        expect(
+            await checkHtml('<table><tr><td>a<tbody><tr><td>b</table>', [
+                { has: 'tr', count: 2 },
+                { has: 'td', text: 'a b', count: 0 },
+                { has: 'tbody', count: 2 }
+            ])
+        ).toEqual([])
+        expect(
+            await checkHtml('<ul><li><p>a</li><li>b</li></ul>', [
+                { has: 'p', count: 1 },
+                { has: 'p', text: 'b', count: 0 }
+            ])
+        ).toEqual([])
+        // A paragraph inside a cell stops at the cell: the next cell is no part of it.
+        expect(
+            await checkHtml('<table><tr><td><p>a<td>b</table>', [
+                { has: 'p', text: 'b', count: 0 },
+                { has: 'td', count: 2 }
+            ])
+        ).toEqual([])
+    })
+
+    // A browser reads an entity that names no character as U+FFFD (issue 85).
+    test('reads an entity that names no character as a browser does, with no crash', async () => {
+        expect(
+            await checkHtml('<p>&#x110000; and &#xe9;</p>', [{ has: 'p', text: '\uFFFD and é' }])
         ).toEqual([])
     })
 

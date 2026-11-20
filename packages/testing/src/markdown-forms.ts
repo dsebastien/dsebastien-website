@@ -1,4 +1,8 @@
 import { join } from 'node:path'
+import type { Element, Root, RootContent } from 'hast'
+import { fromParse5 } from 'hast-util-from-parse5'
+import { selectAll } from 'hast-util-select'
+import { parseFragment } from 'parse5'
 import { FIXTURES } from './fixture-vault.ts'
 
 // The corpus of the Markdown forms (issue 26). Each form of issue 12 has an
@@ -22,8 +26,11 @@ export const MARKDOWN_FORMS = join(FIXTURES, 'markdown-forms.json')
  * attribute, no comment, no script, no style, no title, no template, no
  * fallback of a script or a frame), a space at each edge of a block element
  * (`p`, `li`, `br`, a heading, a cell and the like), entities read, white
- * space folded. An element whose end tag the HTML leaves out (`<li>a<li>b`,
- * `<td>a<td>b`, `<p>a<div>`) is closed as a browser does. A text split by an
+ * space folded. The HTML is read into the tree that a browser builds with no
+ * script (the parser of the HTML standard, parse5, issue 85): an element
+ * whose end tag the HTML leaves out (`<li>a<li>b`, `<p>a<div>`), foreign
+ * content (SVG, MathML) and the elements of a `noscript` are as in a browser.
+ * The selectors run on that tree (`hast-util-select`). A text split by an
  * inline element (`LINK: <a>url</a>`) or by two blocks
  * (`<p>LINK:</p><ul><li>url`) is found.
  *
@@ -240,67 +247,11 @@ const BLOCK_ELEMENTS = new Set([
 // the fallbacks of a script and a frame, and a template.
 const HIDDEN_TEXT = new Set(['iframe', 'noscript', 'script', 'style', 'template', 'title'])
 
-// The start tags that close an open element whose end tag the HTML leaves
-// out, as a browser does (the rules of the HTML standard, in short): the
-// element, and where the search for it stops.
-const BLOCK_STARTS_CLOSE_P = [
-    'address',
-    'article',
-    'aside',
-    'blockquote',
-    'details',
-    'dialog',
-    'div',
-    'dl',
-    'fieldset',
-    'figcaption',
-    'figure',
-    'footer',
-    'form',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'header',
-    'hgroup',
-    'hr',
-    'main',
-    'menu',
-    'nav',
-    'ol',
-    'p',
-    'pre',
-    'section',
-    'summary',
-    'table',
-    'ul'
-]
-const P_SCOPE = ['button', 'caption', 'html', 'object', 'table', 'td', 'template', 'th']
-const TABLE_SCOPE = ['html', 'table', 'template']
-const IMPLIED_ENDS: Record<string, { closes: string[]; stops: string[] }> = {
-    li: { closes: ['li'], stops: ['menu', 'ol', 'ul', ...P_SCOPE] },
-    dt: { closes: ['dd', 'dt'], stops: ['dl', ...P_SCOPE] },
-    dd: { closes: ['dd', 'dt'], stops: ['dl', ...P_SCOPE] },
-    td: { closes: ['td', 'th'], stops: ['tr', ...TABLE_SCOPE] },
-    th: { closes: ['td', 'th'], stops: ['tr', ...TABLE_SCOPE] },
-    tr: { closes: ['td', 'th', 'tr'], stops: ['tbody', 'tfoot', 'thead', ...TABLE_SCOPE] },
-    tbody: { closes: ['tbody', 'td', 'tfoot', 'th', 'thead', 'tr'], stops: TABLE_SCOPE },
-    thead: { closes: ['tbody', 'td', 'tfoot', 'th', 'thead', 'tr'], stops: TABLE_SCOPE },
-    tfoot: { closes: ['tbody', 'td', 'tfoot', 'th', 'thead', 'tr'], stops: TABLE_SCOPE },
-    option: { closes: ['option'], stops: ['datalist', 'optgroup', 'select'] },
-    optgroup: { closes: ['optgroup', 'option'], stops: ['datalist', 'select'] },
-    ...Object.fromEntries(
-        BLOCK_STARTS_CLOSE_P.map((tag) => [tag, { closes: ['p'], stops: P_SCOPE }])
-    )
-}
-
 interface Match {
     id: string | null
     href: string | null
     text: string
-    /** The nearest open match around this one. */
+    /** The nearest match around this one. */
     parent: Match | undefined
 }
 
@@ -311,121 +262,85 @@ interface Reading {
     text: string
 }
 
-/** An element that the reader holds open. */
-interface Open {
-    tag: string
-    match: Match | undefined
-    block: boolean
-    hidden: boolean
-    closed: boolean
+/**
+ * The tree of a fragment of HTML, as a browser builds it with no script: the
+ * HTML parser of the standard (parse5), so every end tag that the HTML leaves
+ * out, foreign content (SVG, MathML) and the content of a `noscript` (with no
+ * script, it holds elements) are read as in a browser. The content of a
+ * `template` is moved into it, so an element there is still a match.
+ */
+function treeOf(html: string): Root {
+    const tree = fromParse5(parseFragment(html, { scriptingEnabled: false })) as Root
+    const lift = (node: Root | Element): void => {
+        for (const child of node.children) {
+            if (child.type !== 'element') continue
+            if (child.tagName === 'template' && child.content !== undefined) {
+                child.children = child.content.children.filter(
+                    (item): item is Element['children'][number] => item.type !== 'doctype'
+                )
+            }
+            lift(child)
+        }
+    }
+    lift(tree)
+    return tree
+}
+
+/** The text of a node as a reader sees it: a space at each edge of a block element, nothing of a hidden element. */
+function textOfNode(node: Root | RootContent): string {
+    if (node.type === 'text') return node.value
+    if (node.type !== 'element' && node.type !== 'root') return ''
+    if (node.type === 'element' && HIDDEN_TEXT.has(node.tagName)) return ''
+    const inner = node.children.map((child) => textOfNode(child)).join('')
+    return node.type === 'element' && BLOCK_ELEMENTS.has(node.tagName) ? ` ${inner} ` : inner
 }
 
 /**
  * Reads the text of the page and of each element that the selector matches:
  * the text nodes only (no markup, no attribute, no comment, nothing that a
- * reader does not see), a space at each edge of a block element, entities
- * read, white space folded. An element whose end tag the HTML leaves out
- * (`<li>a<li>b`, `<td>a<td>b`, `<p>a<div>`) is closed as a browser does. An
- * element inside a hidden one (`template`, `noscript`) is still a match, so a
- * check that counts zero scripts or frames sees it.
+ * reader does not see), a space at each edge of a block element, white space
+ * folded. The tree is the one of a browser (`treeOf`). An element inside a
+ * hidden one (`template`, `noscript`) is still a match, so a check that counts
+ * zero scripts or frames sees it.
  */
-async function read(html: string, selector?: string): Promise<Reading> {
+function read(html: string, selector?: string): Reading {
+    const tree = treeOf(html)
     const found: Match[] = []
-    const open: Match[] = []
-    const stack: Open[] = []
-    let page = ''
-    let hidden = 0
-    // The rewriter runs the handlers of one element in the order they were
-    // added, and keeps only the last end tag handler of an element: the
-    // selector handler marks the match, and the handler of every element
-    // opens and closes it. The rewriter closes no element by itself: it
-    // gives the end tags of left out ones late, at the end tag of a parent.
-    let matched: Match | undefined
-    const add = (text: string): void => {
-        if (hidden > 0) return
-        page += text
-        for (const match of open) match.text += text
-    }
-    const close = (entry: Open): void => {
-        if (entry.closed) return
-        entry.closed = true
-        stack.splice(stack.lastIndexOf(entry), 1)
-        if (entry.hidden) hidden -= 1
-        if (entry.match !== undefined) open.splice(open.lastIndexOf(entry.match), 1)
-        if (entry.block) add(' ')
-    }
-    const closeImplied = (tag: string): void => {
-        const rule = IMPLIED_ENDS[tag]
-        if (rule === undefined) return
-        // The outermost element that the tag closes, before the search
-        // stops: a new row closes the open cell and the open row.
-        let from: number | undefined
-        for (let index = stack.length - 1; index >= 0; index -= 1) {
-            const entry = stack[index]
-            if (entry === undefined || rule.stops.includes(entry.tag)) break
-            if (rule.closes.includes(entry.tag)) from = index
-        }
-        if (from === undefined) return
-        for (const above of stack.slice(from).reverse()) close(above)
-    }
-    let rewriter = new HTMLRewriter()
     if (selector !== undefined) {
-        rewriter = rewriter.on(selector, {
-            element(element) {
-                matched = {
-                    id: element.getAttribute('id'),
-                    href: element.getAttribute('href'),
-                    text: '',
-                    parent: undefined
-                }
+        const elements = selectAll(selector, tree)
+        const byElement = new Map<Element, Match>()
+        for (const element of elements) {
+            const id = element.properties['id']
+            const href = element.properties['href']
+            const match: Match = {
+                id: typeof id === 'string' ? id : null,
+                href: typeof href === 'string' ? href : null,
+                text: fold(textOfNode(element)),
+                parent: undefined
             }
-        })
+            byElement.set(element, match)
+            found.push(match)
+        }
+        // The nearest match around each match.
+        const visit = (node: Root | Element, around: Match | undefined): void => {
+            for (const child of node.children) {
+                if (child.type !== 'element') continue
+                const match = byElement.get(child)
+                if (match !== undefined) match.parent = around
+                visit(child, match ?? around)
+            }
+        }
+        visit(tree, undefined)
     }
-    rewriter = rewriter
-        .on('*', {
-            element(element) {
-                const tag = element.tagName.toLowerCase()
-                closeImplied(tag)
-                const match = matched
-                matched = undefined
-                if (match !== undefined) {
-                    match.parent = open.at(-1)
-                    found.push(match)
-                }
-                const block = BLOCK_ELEMENTS.has(tag)
-                if (block) add(' ')
-                if (!element.canHaveContent) return
-                const entry: Open = {
-                    tag,
-                    match,
-                    block,
-                    hidden: HIDDEN_TEXT.has(tag),
-                    closed: false
-                }
-                stack.push(entry)
-                if (match !== undefined) open.push(match)
-                if (entry.hidden) hidden += 1
-                element.onEndTag(() => {
-                    close(entry)
-                })
-            }
-        })
-        .onDocument({
-            text(chunk) {
-                add(chunk.text)
-            }
-        })
-    await rewriter.transform(new Response(html)).text()
-    for (const match of found) match.text = fold(readEntities(match.text))
-    return { matches: found, text: fold(readEntities(page)) }
+    return { matches: found, text: fold(textOfNode(tree)) }
 }
 
 async function matches(html: string, selector: string): Promise<Match[]> {
-    return (await read(html, selector)).matches
+    return Promise.resolve(read(html, selector).matches)
 }
 
 async function textOf(html: string): Promise<string> {
-    return (await read(html)).text
+    return Promise.resolve(read(html).text)
 }
 
 async function failureOf(html: string, check: FormCheck): Promise<string | undefined> {
