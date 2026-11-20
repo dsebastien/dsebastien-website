@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import type { Element, Root, RootContent } from 'hast'
 import { fromParse5 } from 'hast-util-from-parse5'
 import { selectAll } from 'hast-util-select'
-import { parseFragment } from 'parse5'
+import { parse, parseFragment, type DefaultTreeAdapterMap } from 'parse5'
 import { FIXTURES } from './fixture-vault.ts'
 
 // The corpus of the Markdown forms (issue 26). Each form of issue 12 has an
@@ -30,7 +30,14 @@ export const MARKDOWN_FORMS = join(FIXTURES, 'markdown-forms.json')
  * script (the parser of the HTML standard, parse5, issue 85): an element
  * whose end tag the HTML leaves out (`<li>a<li>b`, `<p>a<div>`), foreign
  * content (SVG, MathML) and the elements of a `noscript` are as in a browser.
- * The selectors run on that tree (`hast-util-select`). A text split by an
+ * With no script, an element inside a `noscript` closes an open paragraph
+ * as it does in a browser with no script. The fragment is read as the content
+ * of the note body (a row with no table is no row). An element inside a
+ * `template` or a `noscript` is a match with no text, and its id is no link
+ * target. The selectors run on that tree (`hast-util-select`); the name of an
+ * element is read in any letter case, and so is the `type` of a field. A
+ * limit: `width` and `height` are read as numbers (`300.0` matches `300`).
+ * A text split by an
  * inline element (`LINK: <a>url</a>`) or by two blocks
  * (`<p>LINK:</p><ul><li>url`) is found.
  *
@@ -248,6 +255,8 @@ const BLOCK_ELEMENTS = new Set([
 const HIDDEN_TEXT = new Set(['iframe', 'noscript', 'script', 'style', 'template', 'title'])
 
 interface Match {
+    /** True inside an element whose content a reader does not see (`template`, `noscript`). */
+    hidden: boolean
     id: string | null
     href: string | null
     text: string
@@ -270,10 +279,13 @@ interface Reading {
  * `template` is moved into it, so an element there is still a match.
  */
 function treeOf(html: string): Root {
-    const tree = fromParse5(parseFragment(html, { scriptingEnabled: false })) as Root
+    const tree = fromParse5(parseFragment(BODY, html, { scriptingEnabled: false })) as Root
     const lift = (node: Root | Element): void => {
         for (const child of node.children) {
             if (child.type !== 'element') continue
+            // HTML reads the type of a field in any letter case.
+            const type = child.properties['type']
+            if (typeof type === 'string') child.properties['type'] = type.toLowerCase()
             if (child.tagName === 'template' && child.content !== undefined) {
                 child.children = child.content.children.filter(
                     (item): item is Element['children'][number] => item.type !== 'doctype'
@@ -284,6 +296,63 @@ function treeOf(html: string): Root {
     }
     lift(tree)
     return tree
+}
+
+/** The element whose content a note body is: the fragment is read as its content, as in the page. */
+const BODY = (() => {
+    const document = parse('<article></article>')
+    const find = (
+        node: DefaultTreeAdapterMap['parentNode']
+    ): DefaultTreeAdapterMap['element'] | undefined => {
+        for (const child of node.childNodes) {
+            if ('tagName' in child) {
+                if (child.tagName === 'article') return child
+                const inner = find(child)
+                if (inner !== undefined) return inner
+            }
+        }
+        return undefined
+    }
+    const article = find(document)
+    if (article === undefined) throw new Error('parse5 gave no article')
+    return article
+})()
+
+/**
+ * A selector with the name of each element in small letters, as a browser
+ * reads it in HTML; a class, an id and a quoted value keep their letters.
+ */
+function withSmallNames(selector: string): string {
+    let result = ''
+    let quote: string | undefined
+    let bracket = 0
+    for (let index = 0; index < selector.length; index += 1) {
+        const char = selector[index] ?? ''
+        if (quote !== undefined) {
+            if (char === quote) quote = undefined
+            result += char
+        } else if (char === '"' || char === "'") {
+            quote = char
+            result += char
+        } else if (char === '[') {
+            bracket += 1
+            result += char
+        } else if (char === ']') {
+            bracket -= 1
+            result += char
+        } else if (
+            bracket === 0 &&
+            /[A-Za-z]/u.test(char) &&
+            /^$|[\s,>+~(]$/u.test(selector.slice(index - 1, index))
+        ) {
+            const name = /^[A-Za-z][\w-]*/u.exec(selector.slice(index))?.[0] ?? char
+            result += name.toLowerCase()
+            index += name.length - 1
+        } else {
+            result += char
+        }
+    }
+    return result
 }
 
 /** The text of a node as a reader sees it: a space at each edge of a block element, nothing of a hidden element. */
@@ -307,12 +376,13 @@ function read(html: string, selector?: string): Reading {
     const tree = treeOf(html)
     const found: Match[] = []
     if (selector !== undefined) {
-        const elements = selectAll(selector, tree)
+        const elements = selectAll(withSmallNames(selector), tree)
         const byElement = new Map<Element, Match>()
         for (const element of elements) {
             const id = element.properties['id']
             const href = element.properties['href']
             const match: Match = {
+                hidden: false,
                 id: typeof id === 'string' ? id : null,
                 href: typeof href === 'string' ? href : null,
                 text: fold(textOfNode(element)),
@@ -321,16 +391,21 @@ function read(html: string, selector?: string): Reading {
             byElement.set(element, match)
             found.push(match)
         }
-        // The nearest match around each match.
-        const visit = (node: Root | Element, around: Match | undefined): void => {
+        // The nearest match around each match, and whether a reader sees it:
+        // the text of a match inside a hidden element is empty.
+        const visit = (node: Root | Element, around: Match | undefined, hidden: boolean): void => {
             for (const child of node.children) {
                 if (child.type !== 'element') continue
                 const match = byElement.get(child)
-                if (match !== undefined) match.parent = around
-                visit(child, match ?? around)
+                if (match !== undefined) {
+                    match.parent = around
+                    match.hidden = hidden
+                    if (hidden) match.text = ''
+                }
+                visit(child, match ?? around, hidden || HIDDEN_TEXT.has(child.tagName))
             }
         }
-        visit(tree, undefined)
+        visit(tree, undefined, false)
     }
     return { matches: found, text: fold(textOfNode(tree)) }
 }
@@ -371,7 +446,10 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
         return present ? `the text holds "${check.lacksText}"` : undefined
     }
     if ('anchorsResolve' in check) {
-        const ids = new Set((await matches(html, '[id]')).map((match) => match.id))
+        // A reader cannot scroll to an element that it does not see.
+        const ids = new Set(
+            (await matches(html, '[id]')).filter((match) => !match.hidden).map((match) => match.id)
+        )
         const fragments = (await matches(html, check.anchorsResolve))
             .map((match) => match.href)
             .filter((href): href is string => href?.startsWith('#') === true)

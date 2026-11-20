@@ -653,7 +653,7 @@
                     "count": 0
                 },
                 {
-                    "has": "[src*=\"youtube\"], [src*=\"ytimg\"]",
+                    "has": "[src*=\"youtube\"], [src*=\"ytimg\"], [srcset*=\"youtube\"], [srcset*=\"ytimg\"], [poster*=\"youtube\"], [poster*=\"ytimg\"], [data*=\"youtube\"]",
                     "count": 0
                 }
             ]
@@ -1041,7 +1041,7 @@
                     "count": 0
                 },
                 {
-                    "has": "[onclick]",
+                    "has": "[onclick], [onmouseover], [onerror], [onload], [onfocus], [ontoggle]",
                     "count": 0
                 },
                 {

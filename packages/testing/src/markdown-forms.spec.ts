@@ -247,6 +247,52 @@ describe('checkHtml', () => {
         ).toEqual([])
     })
 
+    // First review of issue 85.
+    test('gives a match inside a template or a noscript no text, and its ids are no link targets', async () => {
+        const checks = [{ has: 'a', text: 'Compost basics' }]
+        expect(
+            await checkHtml('<template><a href="/c">Compost basics</a></template>', checks)
+        ).toEqual(['no element matches "a" with the text "Compost basics"'])
+        expect(
+            await checkHtml('<noscript><a href="/c">Compost basics</a></noscript>', checks)
+        ).toEqual(['no element matches "a" with the text "Compost basics"'])
+        expect(
+            await checkHtml(
+                '<p><a href="#x">Harvest</a></p><template><h2 id="x">H</h2></template>',
+                [{ anchorsResolve: 'p a[href^="#"]' }]
+            )
+        ).toEqual(['"p a[href^="#"]" links to "#x", which is no id of the page'])
+    })
+
+    test('reads the name of an element in a selector in any letter case, as a browser does', async () => {
+        expect(await checkHtml('<iframe src="y"></iframe>', [{ has: 'IFRAME', count: 0 }])).toEqual(
+            ['"IFRAME" matches 1 elements, not 0']
+        )
+        expect(
+            await checkHtml('<p class="A">x</p>', [
+                { has: 'P.A', count: 1 },
+                { has: 'p.a', count: 0 }
+            ])
+        ).toEqual([])
+    })
+
+    test('reads the type of a field in any letter case, as a browser does', async () => {
+        expect(
+            await checkHtml('<input TYPE="Checkbox" CHECKED>', [
+                { has: 'input[type="checkbox"][checked]', count: 1 }
+            ])
+        ).toEqual([])
+    })
+
+    test('reads a fragment as the body of a note: a row with no table is no row', async () => {
+        expect(
+            await checkHtml('<tr><td>worms</td></tr>', [
+                { has: 'td', count: 0 },
+                { hasText: 'worms' }
+            ])
+        ).toEqual([])
+    })
+
     test('keeps the elements of foreign content inside an open paragraph', async () => {
         const html =
             '<p>Flow: <svg><foreignObject><div><p>Sprout</p></div></foreignObject></svg></p>'
@@ -271,6 +317,8 @@ describe('checkHtml', () => {
             await checkHtml('<ul><li><p>a<li>b</ul><p>c<center>d</center>', [
                 { has: 'p', text: 'b', count: 0 },
                 { has: 'p', text: 'd', count: 0 },
+                { has: 'p', text: 'a', count: 1 },
+                { has: 'p', text: 'c', count: 1 },
                 { has: 'li', count: 2 }
             ])
         ).toEqual([])
@@ -296,6 +344,7 @@ describe('checkHtml', () => {
         expect(
             await checkHtml('<table><tr><td><p>a<td>b</table>', [
                 { has: 'p', text: 'b', count: 0 },
+                { has: 'p', text: 'a', count: 1 },
                 { has: 'td', count: 2 }
             ])
         ).toEqual([])
