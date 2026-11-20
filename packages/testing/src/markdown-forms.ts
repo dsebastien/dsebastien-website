@@ -13,30 +13,42 @@ export const MARKDOWN_FORMS = join(FIXTURES, 'markdown-forms.json')
 /**
  * One check on the HTML of a note.
  *
+ * A text is read as a reader sees it: the text nodes only (no markup, no
+ * attribute, no comment, no script, no style), a space at each edge of a block
+ * element (`p`, `li`, `br`, a heading, a cell and the like), entities read,
+ * white space folded. A text split by an inline element (`LINK: <a>url</a>`)
+ * or by two blocks (`<p>LINK:</p><ul><li>url`) is found.
+ *
  * - `has`: a CSS selector (a list with commas is a list of alternatives). At
  *   least one element matches, or exactly `count`. With `text`, only the
- *   elements whose text (descendants included, entities read, white space
- *   folded) holds that text are counted, and of nested ones only the deepest:
- *   a list item that holds the text through an inner item does not count.
- *   The rewriter of Bun closes no element by itself, so an end tag that the
- *   HTML leaves out (`<p>One<p>Two`) nests the next element.
+ *   elements whose text (descendants included) holds that text count. Of
+ *   nested matches only the deepest counts, with or without a text: a list
+ *   item that holds the text through an inner item does not count, and two
+ *   alternatives that mark one callout (`<div data-callout-fold><details>`)
+ *   count once. The rewriter of Bun closes no element by itself, so an end
+ *   tag that the HTML leaves out (`<p>One<p>Two`) nests the next element: use
+ *   `hasText` to count a text.
  * - `lacks`: a text that must not be anywhere in the HTML, markup and comments
  *   included, before and after the entities are read.
- * - `lacksText`: a text that must not be in the text of the page: the text
- *   nodes only (no markup, no attribute, no comment), entities read, white
- *   space folded. A text split by an element (`LINK: <a>url</a>`) is found.
+ * - `hasText`: a text that the text of the page holds at least once, or
+ *   exactly `count` times (occurrences that do not overlap). The markup does
+ *   not matter, so a missing end tag cannot hide a repeated text.
+ * - `lacksText`: a text that must not be in the text of the page.
  * - `distinctIds`: every element that the selector matches has an id, and no
  *   two have the same one.
  * - `anchorsResolve`: at least one element that the selector matches links to
  *   a fragment (`href` that starts with `#`), and each such fragment, read as
- *   a URL, is the id of an element of the page.
+ *   a URL, is the id of an element of the page. With `target` and `nth`, it is
+ *   the id of element `nth` (1 is the first) of the elements that `target`
+ *   matches, in the order of the page: the heading that a link must reach.
  */
 export type FormCheck =
     | { has: string; text?: string; count?: number }
     | { lacks: string }
+    | { hasText: string; count?: number }
     | { lacksText: string }
     | { distinctIds: string }
-    | { anchorsResolve: string }
+    | { anchorsResolve: string; target?: string; nth?: number }
 
 /** One form of issue 12: the note that holds it, and what its HTML must show. */
 export interface MarkdownForm {
@@ -64,22 +76,35 @@ function toCheck(value: unknown, form: string): FormCheck {
     }
     if (!isRecord(value)) return fail()
     const keys = Object.keys(value).sort().join(',')
-    const { has, text, count, lacks, lacksText, distinctIds, anchorsResolve } = value
+    const {
+        has,
+        text,
+        count,
+        lacks,
+        hasText,
+        lacksText,
+        distinctIds,
+        anchorsResolve,
+        target,
+        nth
+    } = value
+    const validCount =
+        count === undefined || (Number.isInteger(count) && typeof count === 'number' && count >= 0)
     if (typeof has === 'string') {
         const allowed = ['count', 'has', 'text']
         if (!Object.keys(value).every((key) => allowed.includes(key))) return fail()
         if (text !== undefined && typeof text !== 'string') return fail()
-        if (
-            count !== undefined &&
-            !(Number.isInteger(count) && typeof count === 'number' && count >= 0)
-        ) {
-            return fail()
-        }
+        if (!validCount) return fail()
         return {
             has,
             ...(typeof text === 'string' ? { text } : {}),
             ...(typeof count === 'number' ? { count } : {})
         }
+    }
+    if (typeof hasText === 'string') {
+        if (!['hasText', 'count,hasText'].includes(keys) || hasText.trim() === '') return fail()
+        if (!validCount) return fail()
+        return { hasText, ...(typeof count === 'number' ? { count } : {}) }
     }
     if (keys === 'lacks' && typeof lacks === 'string' && lacks !== '') return { lacks }
     if (keys === 'lacksText' && typeof lacksText === 'string' && lacksText !== '') {
@@ -87,6 +112,16 @@ function toCheck(value: unknown, form: string): FormCheck {
     }
     if (keys === 'distinctIds' && typeof distinctIds === 'string') return { distinctIds }
     if (keys === 'anchorsResolve' && typeof anchorsResolve === 'string') return { anchorsResolve }
+    if (
+        keys === 'anchorsResolve,nth,target' &&
+        typeof anchorsResolve === 'string' &&
+        typeof target === 'string' &&
+        typeof nth === 'number' &&
+        Number.isInteger(nth) &&
+        nth >= 1
+    ) {
+        return { anchorsResolve, target, nth }
+    }
     return fail()
 }
 
@@ -149,6 +184,56 @@ function fold(text: string): string {
     return text.replace(/\s+/g, ' ').trim()
 }
 
+// The text of a page reads as a reader sees it: a block element starts and
+// ends a word, an inline element does not.
+const BLOCK_ELEMENTS = new Set([
+    'address',
+    'article',
+    'aside',
+    'blockquote',
+    'br',
+    'caption',
+    'dd',
+    'details',
+    'dialog',
+    'div',
+    'dl',
+    'dt',
+    'fieldset',
+    'figcaption',
+    'figure',
+    'footer',
+    'form',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'header',
+    'hgroup',
+    'hr',
+    'li',
+    'main',
+    'nav',
+    'ol',
+    'p',
+    'pre',
+    'section',
+    'summary',
+    'table',
+    'tbody',
+    'td',
+    'tfoot',
+    'th',
+    'thead',
+    'tr',
+    'ul'
+])
+
+// Elements whose text is code, not text of the page.
+const HIDDEN_TEXT = new Set(['script', 'style'])
+
 interface Match {
     id: string | null
     href: string | null
@@ -157,50 +242,107 @@ interface Match {
     parent: Match | undefined
 }
 
-/** Every element that the selector matches, with its id and its text. */
-async function matches(html: string, selector: string): Promise<Match[]> {
-    const found: Match[] = []
-    const open: Match[] = []
-    const rewriter = new HTMLRewriter().on(selector, {
-        element(element) {
-            const match: Match = {
-                id: element.getAttribute('id'),
-                href: element.getAttribute('href'),
-                text: '',
-                parent: open.at(-1)
-            }
-            found.push(match)
-            if (!element.canHaveContent) return
-            open.push(match)
-            element.onEndTag(() => {
-                open.splice(open.lastIndexOf(match), 1)
-            })
-        },
-        text(chunk) {
-            for (const match of open) match.text += chunk.text
-        }
-    })
-    await rewriter.transform(new Response(html)).text()
-    for (const match of found) match.text = fold(readEntities(match.text))
-    return found
+interface Reading {
+    /** Every element that the selector matches, in the order of the page. */
+    matches: Match[]
+    /** The text of the whole page. */
+    text: string
 }
 
-/** The text nodes of the whole HTML, entities read and white space folded. */
-async function textOf(html: string): Promise<string> {
-    let text = ''
-    const rewriter = new HTMLRewriter().onDocument({
-        text(chunk) {
-            text += chunk.text
-        }
-    })
+/**
+ * Reads the text of the page and of each element that the selector matches:
+ * the text nodes only (no markup, no attribute, no comment, no script, no
+ * style), a space at each edge of a block element, entities read, white space
+ * folded.
+ */
+async function read(html: string, selector?: string): Promise<Reading> {
+    const found: Match[] = []
+    const open: Match[] = []
+    let page = ''
+    let hidden = 0
+    // The rewriter runs the handlers of one element in the order they were
+    // added, and keeps only the last end tag handler of an element: the
+    // selector handler marks the match, and the handler of every element
+    // opens and closes it.
+    let matched: Match | undefined
+    const add = (text: string): void => {
+        if (hidden > 0) return
+        page += text
+        for (const match of open) match.text += text
+    }
+    let rewriter = new HTMLRewriter()
+    if (selector !== undefined) {
+        rewriter = rewriter.on(selector, {
+            element(element) {
+                matched = {
+                    id: element.getAttribute('id'),
+                    href: element.getAttribute('href'),
+                    text: '',
+                    parent: open.at(-1)
+                }
+                found.push(matched)
+            }
+        })
+    }
+    rewriter = rewriter
+        .on('*', {
+            element(element) {
+                const match = matched
+                matched = undefined
+                const tag = element.tagName.toLowerCase()
+                const block = BLOCK_ELEMENTS.has(tag)
+                const code = HIDDEN_TEXT.has(tag)
+                if (block) add(' ')
+                if (!element.canHaveContent) return
+                if (match !== undefined) open.push(match)
+                if (code) hidden += 1
+                element.onEndTag(() => {
+                    if (code) hidden -= 1
+                    if (match !== undefined) open.splice(open.lastIndexOf(match), 1)
+                    if (block) add(' ')
+                })
+            }
+        })
+        .onDocument({
+            text(chunk) {
+                add(chunk.text)
+            }
+        })
     await rewriter.transform(new Response(html)).text()
-    return fold(readEntities(text))
+    for (const match of found) match.text = fold(readEntities(match.text))
+    return { matches: found, text: fold(readEntities(page)) }
+}
+
+async function matches(html: string, selector: string): Promise<Match[]> {
+    return (await read(html, selector)).matches
+}
+
+async function textOf(html: string): Promise<string> {
+    return (await read(html)).text
 }
 
 async function failureOf(html: string, check: FormCheck): Promise<string | undefined> {
     if ('lacks' in check) {
         const present = html.includes(check.lacks) || readEntities(html).includes(check.lacks)
         return present ? `the HTML holds "${check.lacks}"` : undefined
+    }
+    if ('hasText' in check) {
+        const text = await textOf(html)
+        const wanted = fold(check.hasText)
+        let times = 0
+        for (
+            let at = text.indexOf(wanted);
+            at !== -1;
+            at = text.indexOf(wanted, at + wanted.length)
+        ) {
+            times += 1
+        }
+        if (check.count === undefined) {
+            return times > 0 ? undefined : `the text does not hold "${check.hasText}"`
+        }
+        return times === check.count
+            ? undefined
+            : `the text holds "${check.hasText}" ${String(times)} times, not ${String(check.count)}`
     }
     if ('lacksText' in check) {
         const present = (await textOf(html)).includes(fold(check.lacksText))
@@ -214,6 +356,15 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
         if (fragments.length === 0) {
             return `no element matches "${check.anchorsResolve}" with a link to a fragment`
         }
+        let wanted: string | null | undefined
+        if (check.target !== undefined && check.nth !== undefined) {
+            const targets = await matches(html, check.target)
+            const element = targets[check.nth - 1]
+            if (element === undefined) {
+                return `"${check.target}" matches ${String(targets.length)} elements, so it has no element ${String(check.nth)}`
+            }
+            wanted = element.id
+        }
         for (const href of fragments) {
             let id = href.slice(1)
             try {
@@ -223,6 +374,9 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
             }
             if (!ids.has(id)) {
                 return `"${check.anchorsResolve}" links to "${href}", which is no id of the page`
+            }
+            if (wanted !== undefined && id !== wanted) {
+                return `"${check.anchorsResolve}" links to "${href}", which is not the id of element ${String(check.nth)} of "${String(check.target)}"`
             }
         }
         return undefined
@@ -240,15 +394,14 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
     const holding = (await matches(html, check.has)).filter(
         (match) => wanted === undefined || match.text.includes(wanted)
     )
-    // Of nested matches that hold the text, only the deepest counts.
+    // Of nested matches, only the deepest counts.
     const outer = new Set<Match>()
     for (const match of holding) {
         for (let parent = match.parent; parent !== undefined; parent = parent.parent) {
             outer.add(parent)
         }
     }
-    const counted =
-        wanted === undefined ? holding.length : holding.filter((match) => !outer.has(match)).length
+    const counted = holding.filter((match) => !outer.has(match)).length
     const withText = wanted === undefined ? '' : ` with the text "${wanted}"`
     if (check.count === undefined) {
         return counted > 0 ? undefined : `no element matches "${check.has}"${withText}`

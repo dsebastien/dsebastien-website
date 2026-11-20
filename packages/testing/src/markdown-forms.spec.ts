@@ -77,10 +77,88 @@ describe('checkHtml', () => {
         ).toEqual([])
     })
 
+    // Issue 84, point 2: a raw LINK line split over two block elements.
+    test('reads a space at the edge of a block element', async () => {
+        const html =
+            '<p>LINK:</p><ul><li><a href="https://garden.example/tools">https://garden.example/tools</a></li></ul>'
+        expect(
+            await checkHtml(html, [{ lacksText: 'LINK: https://garden.example/tools' }])
+        ).toEqual(['the text holds "LINK: https://garden.example/tools"'])
+        expect(
+            await checkHtml('<div><p>Sow</p><p>early</p></div>', [
+                { has: 'div', text: 'Sow early' }
+            ])
+        ).toEqual([])
+        expect(
+            await checkHtml('<p>Sow<br>early</p>', [
+                { lacksText: 'Sow early' },
+                { lacksText: 'Sowearly' }
+            ])
+        ).toEqual(['the text holds "Sow early"'])
+    })
+
+    test('reads no space at the edge of an inline element', async () => {
+        expect(
+            await checkHtml('<p>Sow<b>early</b></p>', [
+                { lacksText: 'Sowearly' },
+                { has: 'p', text: 'Sowearly' }
+            ])
+        ).toEqual(['the text holds "Sowearly"'])
+    })
+
+    test('reads no text of a script or a style', async () => {
+        const html =
+            '<p>Sow</p><script>const line = "LINK: x"</script><style>p::after{content:"LINK: y"}</style>'
+        expect(
+            await checkHtml(html, [
+                { lacksText: 'LINK: x' },
+                { lacksText: 'LINK: y' },
+                { has: 'p', text: 'Sow' }
+            ])
+        ).toEqual([])
+        expect(await checkHtml(`<div>${html}</div>`, [{ has: 'div', text: 'LINK' }])).toEqual([
+            'no element matches "div" with the text "LINK"'
+        ])
+    })
+
+    // Issue 84, point 1: the rewriter closes no element by itself, so in
+    // `<p>One<p>One` the outer p holds the inner one, and a count of the
+    // deepest p with the text sees one.
+    test('counts how many times a text is in the text of the page', async () => {
+        const looped = '<p>Leave one bed empty.<p>Leave one bed empty.'
+        expect(await checkHtml(looped, [{ hasText: 'Leave one bed empty.', count: 1 }])).toEqual([
+            'the text holds "Leave one bed empty." 2 times, not 1'
+        ])
+        expect(
+            await checkHtml('<p>Leave one <em>bed</em> empty.</p>', [
+                { hasText: 'Leave one bed empty.', count: 1 },
+                { hasText: 'Leave one bed empty.' }
+            ])
+        ).toEqual([])
+        expect(await checkHtml('<p>Sow</p>', [{ hasText: 'Leave one bed empty.' }])).toEqual([
+            'the text does not hold "Leave one bed empty."'
+        ])
+        expect(await checkHtml('<p>aaa</p>', [{ hasText: 'aa', count: 1 }])).toEqual([])
+    })
+
     test('counts only the deepest element that holds the text', async () => {
         const html = '<ul><li>Outer<ul><li>Inner</li></ul></li></ul>'
         expect(await checkHtml(html, [{ has: 'li', text: 'Inner', count: 1 }])).toEqual([])
         expect(await checkHtml(html, [{ has: 'li', text: 'Outer', count: 1 }])).toEqual([])
+    })
+
+    // Issue 84, point 4: two alternatives of one selector that mark the same
+    // callout, one inside the other.
+    test('counts only the deepest of nested matches, also without a text', async () => {
+        const folded = 'details:not([open]), [data-callout-fold="-"], .is-collapsible.is-collapsed'
+        const html =
+            '<div data-callout="faq" data-callout-fold="-"><details><summary>Why mulch?</summary></details></div>'
+        expect(await checkHtml(html, [{ has: folded, count: 1 }])).toEqual([])
+        expect(
+            await checkHtml('<ul><li>One</li><li>Two<ul><li>Three</li></ul></li></ul>', [
+                { has: 'li', count: 2 }
+            ])
+        ).toEqual([])
     })
 
     test('reports a failure, not a crash, for an entity that names no character', async () => {
@@ -112,6 +190,27 @@ describe('checkHtml', () => {
         expect(await checkHtml('<p>Tasks</p>', [{ anchorsResolve: 'p a' }])).toEqual([
             'no element matches "p a" with a link to a fragment'
         ])
+    })
+
+    // Issue 84, point 5: `[[#Autumn#Tasks]]` must reach the second Tasks
+    // heading, not any id.
+    test('checks that each link to a fragment reaches the named element', async () => {
+        const page =
+            '<h2 id="spring">Spring</h2><h3 id="tasks">Tasks</h3>' +
+            '<h2 id="autumn">Autumn</h2><h3 id="tasks-1">Tasks</h3>'
+        const check = { anchorsResolve: 'p a', target: 'h3', nth: 2 }
+        expect(await checkHtml(`<p><a href="#tasks-1">Tasks</a></p>${page}`, [check])).toEqual([])
+        expect(await checkHtml(`<p><a href="#tasks">Tasks</a></p>${page}`, [check])).toEqual([
+            '"p a" links to "#tasks", which is not the id of element 2 of "h3"'
+        ])
+        expect(await checkHtml(`<p><a href="#autumn">Tasks</a></p>${page}`, [check])).toEqual([
+            '"p a" links to "#autumn", which is not the id of element 2 of "h3"'
+        ])
+        expect(
+            await checkHtml(`<p><a href="#tasks-1">Tasks</a></p><h3 id="tasks-1">Tasks</h3>`, [
+                check
+            ])
+        ).toEqual(['"h3" matches 1 elements, so it has no element 2'])
     })
 
     test('checks that matched elements have distinct ids', async () => {
