@@ -75,7 +75,9 @@ describe('published notes of a content store', () => {
                 ...ENTRY,
                 id: 'aaaaaaaaaaaaaaaa',
                 path: '10 Garden/Compost basics.md',
-                aliases: ['Composting']
+                aliases: ['Composting'],
+                firstPublished: '2031-03-01T07:30:00Z',
+                lastPublished: '2031-03-20T18:05:00Z'
             }
         })
 
@@ -88,6 +90,8 @@ describe('published notes of a content store', () => {
                 markdownFile: '-/md/aaaaaaaaaaaaaaaa.md',
                 aliases: ['Composting'],
                 title: 'Compost basics',
+                firstPublished: '2031-03-01T07:30:00Z',
+                lastPublished: '2031-03-20T18:05:00Z',
                 links: [],
                 attachments: []
             },
@@ -99,6 +103,8 @@ describe('published notes of a content store', () => {
                 markdownFile: '-/md/bbbbbbbbbbbbbbbb.md',
                 aliases: [],
                 title: 'Welcome',
+                firstPublished: '2031-04-01T08:00:00Z',
+                lastPublished: '2031-04-01T08:00:00Z',
                 links: [{ link: 'Compost basics', path: '10 Garden/Compost basics.md' }],
                 attachments: [
                     {
@@ -151,6 +157,22 @@ describe('published notes of a content store', () => {
 
         expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
     })
+
+    // The page of a note shows a date of publication when the note has no date
+    // property (PAGE-05).
+    const wrongDates: [string, Record<string, unknown>][] = [
+        ['no first publication', { firstPublished: undefined }],
+        ['a last publication that is not a time', { lastPublished: 'yesterday' }]
+    ]
+    for (const [name, change] of wrongDates) {
+        test(`stop the build when an entry has ${name}`, async () => {
+            await contentStore({
+                'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Welcome.md', ...change }
+            })
+
+            expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
+        })
+    }
 
     // The page of a note reads its links from the entry.
     const wrongLinks: [string, unknown][] = [

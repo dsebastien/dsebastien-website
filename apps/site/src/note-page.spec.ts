@@ -110,6 +110,40 @@ describe('build of a content store with one published note', () => {
         )
     })
 
+    // The title band of variant B (issue 47, R58): the H1 at the top of the
+    // note becomes the title of the band, with its id, so the page has one H1.
+    test('shows the title in the band, as the only H1 of the page, with the id of the heading', async () => {
+        const html = await readOutput(NOTE_FILE)
+        expect(html.match(/<h1\b/gu)).toHaveLength(1)
+        expect(html).toMatch(
+            /<h1 id="frost-dates-explained" data-note-title[^>]*>Frost dates explained<\/h1>/u
+        )
+        expect(html.indexOf('data-note-title')).toBeLessThan(html.indexOf('data-note-body'))
+    })
+
+    test('shows the type badge and the created and updated dates of the properties of the note', async () => {
+        const html = await readOutput(NOTE_FILE)
+        expect(html).toMatch(/<span class="badge"[^>]*>Note<\/span>/u)
+        expect(html).toContain('Created <time datetime="2031-03-07">2031-03-07</time>')
+        expect(html).toContain('Updated <time datetime="2031-03-07">2031-03-07</time>')
+    })
+
+    // A late font moves the text (CLS 0.18 on mobile in issue 25): the head
+    // preloads the one font file that the style sheet uses for Latin text.
+    test('preloads the Latin font file that the style sheet uses', async () => {
+        const html = await readOutput(NOTE_FILE)
+        const preloads = [
+            ...html.matchAll(
+                /<link rel="preload" href="([^"]+)" as="font" type="font\/woff2" crossorigin\b[^>]*>/gu
+            )
+        ].map((match) => match[1] ?? '')
+        expect(preloads).toHaveLength(1)
+        const font = preloads[0] ?? ''
+        expect(font).toMatch(/noto-sans-latin-wght-normal\.[\w-]+\.woff2$/u)
+        const style = /<link rel="stylesheet" href="([^"]+)"/u.exec(html)?.[1] ?? ''
+        expect(await readOutput(style)).toContain(font)
+    })
+
     test('does not read the vault: a change after the publication is not on the page', async () => {
         expect(await readOutput(NOTE_FILE)).not.toContain('never published')
     })

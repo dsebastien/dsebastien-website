@@ -1,15 +1,19 @@
 ---
 import type { GetStaticPaths } from 'astro'
 import { getCollection } from 'astro:content'
+import latinFont from '@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2?url'
 import { readPublishedNotes } from '../../../content-store.ts'
 import Page from '../../../layouts/Page.astro'
+import { noteHeader } from '../../../note-header.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
 import { languageOf } from '../../../rendering/language.ts'
 import { SitePages } from '../../../rendering/page.ts'
 
-// The page of a published note. Its file has the identity of the note as its
-// name, which is plain ASCII on every system and on every host. The resolver
-// leads the canonical URL of the note to this file.
+// The page of a published note (issue 47), in variant B of the mockups (R49):
+// a title band with the title, the type badge and the dates, then the text of
+// the note. Its file has the identity of the note as its name, which is plain
+// ASCII on every system and on every host. The resolver leads the canonical
+// URL of the note to this file.
 export const getStaticPaths = (async () => {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
     const notes = await readPublishedNotes()
@@ -37,15 +41,46 @@ export const getStaticPaths = (async () => {
     )
     return site.map(({ note, entry }) => ({
         params: { id: note.id },
-        props: { note, language: languageOf(entry.data), pages }
+        props: { note, properties: entry.data, language: languageOf(entry.data), pages }
     }))
 }) satisfies GetStaticPaths
 
-const { note, language, pages } = Astro.props
-const html = pages.render(note.vaultPath)
+const { note, properties, language, pages } = Astro.props
+const body = pages.page(note.vaultPath)
+const header = noteHeader({
+    fileName: note.title,
+    properties,
+    ...(body.heading === undefined ? {} : { firstHeading: body.heading.text }),
+    firstPublished: note.firstPublished,
+    lastPublished: note.lastPublished
+})
 ---
 
-<Page title={note.title} path={note.path} lang={language}>
-    <article class='note-text max-w-[72ch]' data-note-body set:html={html} />
+<Page title={header.title} path={note.path} lang={language} bare>
+    {/* The text of the page uses this file: a late font moves the text (PERF-20, R57). */}
+    <link slot='head' rel='preload' href={latinFont} as='font' type='font/woff2' crossorigin />
+    <div class='border-b border-border bg-well'>
+        <div class='mx-auto max-w-7xl px-4 py-8 sm:px-6'>
+            <h1
+                id={body.heading?.id}
+                data-note-title
+                class='max-w-4xl text-3xl font-bold tracking-tight break-words sm:text-5xl'
+            >
+                {header.title}
+            </h1>
+            <p class='mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted'>
+                {header.type !== undefined && <span class='badge'>{header.type}</span>}
+                <span>
+                    Created <time datetime={header.created.datetime}>{header.created.shown}</time>
+                </span>
+                <span>
+                    Updated <time datetime={header.updated.datetime}>{header.updated.shown}</time>
+                </span>
+            </p>
+        </div>
+    </div>
+    <div class='mx-auto w-full max-w-7xl px-4 py-10 sm:px-6'>
+        <article class='note-text max-w-[72ch]' data-note-body set:html={body.html} />
+    </div>
     <script is:inline set:html={oldAnchorScript} />
 </Page>

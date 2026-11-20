@@ -136,7 +136,7 @@ export const oldAnchorScript = `{
             named.scrollIntoView()
             return
         }
-        const headings = [...document.querySelectorAll('[data-note-body] :is(h1, h2, h3, h4, h5, h6)[id]')].map(
+        const headings = [...document.querySelectorAll('[data-note-title][id], [data-note-body] :is(h1, h2, h3, h4, h5, h6)[id]')].map(
             (element) => ({ depth: Number(element.tagName.slice(1)), text: element.textContent ?? '', id: element.id })
         )
         const id = find(headings, hash)

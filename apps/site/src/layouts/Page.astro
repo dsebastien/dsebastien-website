@@ -14,9 +14,11 @@ interface Props {
     path?: string
     /** The language of the page (REN-09). English when it is not given. */
     lang?: string
+    /** True when the page lays out the width of its own parts (the note page and its title band). */
+    bare?: boolean
 }
 
-const { title, path, lang = 'en' } = Astro.props
+const { title, path, lang = 'en', bare = false } = Astro.props
 const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
 ---
 
@@ -28,13 +30,17 @@ const canonical = path === undefined ? undefined : new URL(path, Astro.site).hre
         <script is:inline set:html={modeScript} />
         <title>{title}</title>
         {canonical !== undefined && <link rel='canonical' href={canonical} />}
+        <slot name='head' />
     </head>
     <body class='flex min-h-screen flex-col'>
         <a class='skip-link' href='#content'>
             Skip to the content
         </a>
         <Header />
-        <main id='content' class='mx-auto w-full max-w-7xl flex-1 px-4 py-10 sm:px-6'>
+        <main
+            id='content'
+            class:list={['flex-1', !bare && 'mx-auto w-full max-w-7xl px-4 py-10 sm:px-6']}
+        >
             <slot />
         </main>
         <Footer />

@@ -41,6 +41,10 @@ export interface PublishedNote {
     aliases: string[]
     /** The title of the page. A first version: the file name of the note. */
     title: string
+    /** The time of the first publication of the note, in UTC (`2031-03-14T07:30:00Z`). */
+    firstPublished: string
+    /** The time of the last publication that changed the note, in UTC. */
+    lastPublished: string
     /** The links of the note that lead to a note: the link path as the note writes it, and the vault path of its target. */
     links: { link: string; path: string }[]
     /** The links of the note that lead to an attachment, with the hashed URL of the file and the size of an image. */
@@ -107,6 +111,14 @@ function isAttachmentList(
 /** The form of the hash of an attachment. Its digits name a file of the attachment storage. */
 const ATTACHMENT_HASH = /^sha256:[0-9a-f]{64}$/
 
+/** The form of a time of the manifest: UTC, to the second (canonical form, rule 9). */
+const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
+
+/** True when the value is a time of the manifest. */
+function isTime(value: unknown): value is string {
+    return typeof value === 'string' && TIME.test(value)
+}
+
 /** The form of the identity of a note. It becomes the name of a file of the site. */
 const NOTE_ID = /^[0-9a-f]{16}$/
 
@@ -146,6 +158,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             typeof entry['path'] !== 'string' ||
             !isLinkList(entry['links']) ||
             !isTextList(entry['aliases']) ||
+            !isTime(entry['firstPublished']) ||
+            !isTime(entry['lastPublished']) ||
             !isAttachmentList(entry['attachments'])
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
@@ -165,6 +179,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             markdownFile: `-/md/${entry['id']}.md`,
             aliases: [...entry['aliases']],
             title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, ''),
+            firstPublished: entry['firstPublished'],
+            lastPublished: entry['lastPublished'],
             links: entry['links'].map((item) => ({ link: item.link, path: item.path })),
             attachments: entry['attachments'].map((item) => ({
                 link: item.link,

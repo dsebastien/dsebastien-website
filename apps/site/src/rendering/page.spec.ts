@@ -175,6 +175,16 @@ describe('script of a note page for an old hash (URL-14)', () => {
     function run(hash: string): { scrolled: string | undefined; replaced: string | undefined } {
         let scrolled: string | undefined
         let replaced: string | undefined
+        // The H1 of the title band (issue 47) is outside the note body: the
+        // script finds it only through its own selector.
+        const title = {
+            tagName: 'H1',
+            textContent: 'Garden journal',
+            id: 'garden-journal',
+            scrollIntoView: () => {
+                scrolled = 'garden-journal'
+            }
+        }
         const headings = [
             ['H2', 'Panels: a review', 'panels-a-review'],
             ['H2', 'Spring', 'spring'],
@@ -193,8 +203,9 @@ describe('script of a note page for an old hash (URL-14)', () => {
             location: { hash },
             document: {
                 getElementById: (id: string) =>
-                    headings.find((heading) => heading.id === id) ?? null,
-                querySelectorAll: () => headings,
+                    [title, ...headings].find((heading) => heading.id === id) ?? null,
+                querySelectorAll: (selector: string) =>
+                    selector.includes('[data-note-title]') ? [title, ...headings] : headings,
                 getElementsByName: (name: string) =>
                     name === 'user-content-top'
                         ? [
@@ -228,6 +239,10 @@ describe('script of a note page for an old hash (URL-14)', () => {
         expect(run('#Autumn#Tasks')).toEqual({
             scrolled: 'autumn-tasks',
             replaced: '#autumn-tasks'
+        })
+        expect(run('#Garden+journal')).toEqual({
+            scrolled: 'garden-journal',
+            replaced: '#garden-journal'
         })
         // An anchor of raw HTML (`<a name="top">`) has the prefix of the allow list.
         expect(run('#top')).toEqual({ scrolled: 'user-content-top', replaced: undefined })
@@ -617,5 +632,67 @@ describe('attachments of a page', () => {
         expect(
             render('<note-link data-link="shed-key.png" data-embed="">shed-key.png</note-link>')
         ).toBe('<span class="not-published">shed-key.png</span>')
+    })
+})
+
+// The page of a note (issue 47): its body, with the H1 at its top taken out
+// for the title band (R58), and the first image loaded at once (PERF-25).
+describe('page of a note', () => {
+    const KEY = 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33'
+    const FILES: Record<string, FileLink> = {
+        'cover.png': {
+            url: `/-/attachments/${KEY}/cover.png`,
+            name: 'cover.png',
+            width: 4,
+            height: 3
+        },
+        'bed.png': { url: `/-/attachments/${KEY}/bed.png`, name: 'bed.png', width: 4, height: 3 }
+    }
+    const pageOf = (markup: string, ...others: SiteNote[]): ReturnType<SitePages['page']> =>
+        new SitePages([note('Self.md', markup, LINKS, FILES), ...others]).page('Self.md')
+    const image = (name: string): string =>
+        `<note-link data-link="${name}" data-embed="">${name}</note-link>`
+
+    test('takes the H1 at the top of the note out of the body, with its text and its id', () => {
+        expect(pageOf('\n<h1 id="compost">Compost <em>basics</em></h1>\n<p>Turn it.</p>')).toEqual({
+            heading: { text: 'Compost basics', id: 'compost' },
+            html: '\n\n<p>Turn it.</p>'
+        })
+    })
+
+    test('keeps an H1 that is not at the top, and a first heading of another level', () => {
+        expect(pageOf('<p>Intro.</p>\n<h1 id="later">Later</h1>')).toEqual({
+            html: '<p>Intro.</p>\n<h1 id="later">Later</h1>'
+        })
+        expect(pageOf('<h2 id="part">Part</h2>')).toEqual({ html: '<h2 id="part">Part</h2>' })
+    })
+
+    test('keeps the H1 of an embedded note', () => {
+        expect(
+            pageOf(
+                '<p><note-link data-link="Rain%20barrel" data-embed="">Rain barrel</note-link></p>',
+                BARREL
+            ).html
+        ).toContain('<h1>Rain barrel</h1>')
+    })
+
+    test('loads the first image at once with a high priority, and the others lazily', () => {
+        expect(pageOf(`<p>${image('cover.png')}</p>\n<p>${image('bed.png')}</p>`).html).toBe(
+            `<p><img src="/-/attachments/${KEY}/cover.png" alt="cover.png" width="4" height="3" decoding="async" fetchpriority="high"></p>\n` +
+                `<p><img src="/-/attachments/${KEY}/bed.png" alt="bed.png" width="4" height="3" loading="lazy" decoding="async"></p>`
+        )
+    })
+
+    test('gives the priority to an image of raw HTML too, when it comes first', () => {
+        expect(pageOf('<p><img src="/a.png" alt="A"></p>').html).toBe(
+            '<p><img src="/a.png" alt="A" fetchpriority="high"></p>'
+        )
+    })
+
+    test('does not change what the page step gives to an embed of the note', () => {
+        const pages = new SitePages([note('Self.md', '<h1 id="self">Self</h1>', LINKS, FILES)])
+        pages.page('Self.md')
+
+        expect(pages.render('Self.md')).toBe('<h1 id="self">Self</h1>')
     })
 })

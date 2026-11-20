@@ -109,6 +109,27 @@ function embedOfFile(file: FileLink, shown: string): Element {
     return make('a', { href: file.url }, [{ type: 'text', value: shown }])
 }
 
+/** The body of the page of a note. */
+export interface NotePage {
+    /** The H1 at the top of the note, which the title band shows. */
+    heading?: { text: string; id?: string }
+    /** The HTML of the body, without that H1. */
+    html: string
+}
+
+/** The first image of these nodes, in the order of the document. */
+function firstImage(
+    nodes: readonly (Root['children'][number] | ElementContent)[]
+): Element | undefined {
+    for (const node of nodes) {
+        if (node.type !== 'element') continue
+        if (node.tagName === 'img') return node
+        const inner = firstImage(node.children)
+        if (inner !== undefined) return inner
+    }
+    return undefined
+}
+
 /** A note of the site with its tree and its headings, read once per build. */
 interface ReadNote extends SiteNote {
     readonly tree: Root
@@ -307,8 +328,36 @@ export class SitePages {
         }
     }
 
-    /** The HTML of the body of the page of a published note. */
+    /** The HTML of the body of a published note, as the page step gives it. */
     render(vaultPath: string): string {
+        return toHtml(this.#tree(vaultPath))
+    }
+
+    /**
+     * The body of the page of a published note (issue 47). The H1 at the top
+     * of the note leaves the body: the title band shows it, with its id (R58).
+     * The first image of the page loads at once with a high priority, and the
+     * others stay lazy (PERF-25).
+     */
+    page(vaultPath: string): NotePage {
+        const tree = this.#tree(vaultPath)
+        const first = tree.children.find((node) => node.type !== 'text' || node.value.trim() !== '')
+        let heading: NotePage['heading']
+        if (first?.type === 'element' && first.tagName === 'h1') {
+            const id = first.properties['id']
+            heading = { text: toText(first), ...(typeof id === 'string' ? { id } : {}) }
+            tree.children.splice(tree.children.indexOf(first), 1)
+        }
+        const image = firstImage(tree.children)
+        if (image !== undefined) {
+            delete image.properties['loading']
+            image.properties['fetchPriority'] = 'high'
+        }
+        const html = toHtml(tree)
+        return heading === undefined ? { html } : { heading, html }
+    }
+
+    #tree(vaultPath: string): Root {
         const note = this.#readNote(vaultPath)
         if (note === undefined) {
             throw new Error(`the note "${vaultPath}" is not published`)
@@ -316,7 +365,7 @@ export class SitePages {
         this.#embeds = 0
         const tree = structuredClone(note.tree)
         tree.children = this.#transform(tree.children as ElementContent[], note, [vaultPath])
-        return toHtml(tree)
+        return tree
     }
 
     #readNote(vaultPath: string): ReadNote | undefined {
