@@ -31,6 +31,35 @@ export function smallLetterTable(): Record<string, string> {
     return table
 }
 
+/**
+ * The small letters that a newer Unicode gives and the table does not: the 20
+ * code points where `to_lowercase` of Rust 1.100.0 (Unicode 17) differs from
+ * the table. Only the guard by file name reads them, so that it fails closed
+ * on such a name (issue 73, R54).
+ */
+export const NEWER: Readonly<Record<string, string>> = {
+    'A7DD': '\u0277',
+    'A7E2': '\u027C',
+    'AB6C': '\uAB4B',
+    'AB6D': '\uAB4C',
+    '1DF40': '\u{1DF41}',
+    '1DF48': '\u{1DF49}',
+    '1DF4A': '\u{1DF4B}',
+    '1DF4D': '\u{1DF4E}',
+    '1DF51': '\u{1DF52}',
+    '1DF68': '\u{1DF69}',
+    '1DF6A': '\u{1DF6B}',
+    '1DF6C': '\u{1DF6D}',
+    '1DF6E': '\u{1DF6F}',
+    '1DF72': '\u{1DF73}',
+    '1DF74': '\u{1DF75}',
+    '1DF76': '\u{1DF77}',
+    '1DF78': '\u{1DF79}',
+    '1DF7A': '\u{1DF7B}',
+    '1DF7C': '\u{1DF7D}',
+    '1DF7E': '\u{1DF7F}'
+}
+
 /** The code points of a property of Unicode, as ranges of code points (first and last). */
 export function rangesOf(property: RegExp): [number, number][] {
     const ranges: [number, number][] = []
@@ -50,13 +79,14 @@ export function rangesOf(property: RegExp): [number, number][] {
 if (import.meta.main) {
     const table = smallLetterTable()
     const about =
-        'The small letters of each code point alone, from toLowerCase of JavaScript (Bun 1.4.4), and the code points that are cased and case-ignorable (the rule of the final sigma). Read by both implementations and the resolver. Made by scripts/small-letters.ts. See documentation/Canonical Form.md, "Small letters".'
+        'The small letters of each code point alone, from toLowerCase of JavaScript (Bun 1.4.4), the small letters of a newer Unicode for the guard by file name (newer), and the code points that are cased and case-ignorable (the rule of the final sigma). Read by both implementations and the resolver. Made by scripts/small-letters.ts. See documentation/Canonical Form.md, "Small letters".'
     await Bun.write(
         SMALL_LETTERS_FILE,
         `${JSON.stringify(
             {
                 about,
                 table,
+                newer: NEWER,
                 cased: rangesOf(/^\p{Cased}$/u),
                 caseIgnorable: rangesOf(/^\p{Case_Ignorable}$/u)
             },

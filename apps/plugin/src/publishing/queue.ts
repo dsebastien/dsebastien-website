@@ -8,7 +8,7 @@ import { LinkIndex, linkPathsOf, linksOfPaths, sameLinks } from './links.ts'
 import type { ManifestEntry } from './manifest.ts'
 import { sortByCodePoint } from './order.ts'
 import type { Vault } from './ports.ts'
-import { smallLetters } from '@dsebastien-website/resolver'
+import { guardName } from '@dsebastien-website/resolver'
 
 // The publication queue: what waits for a publication (PUB-18 of the spec).
 // The rules are in `documentation/Canonical Form.md`, sections "The notes of
@@ -152,7 +152,7 @@ export async function scanDenied(
             if (entry.kind === 'folder') {
                 folders.push({ folder: path, hidden })
             } else {
-                names.add(smallLetters(entry.name))
+                names.add(guardName(entry.name))
                 if (!hidden) {
                     files.push(path)
                 }
@@ -268,7 +268,7 @@ export async function computeQueue(input: {
         (path) =>
             guardOfPath(path, input.configuration) === undefined &&
             !ignored.has(path) &&
-            !deniedNames.has(smallLetters(path.slice(path.lastIndexOf('/') + 1)))
+            !deniedNames.has(guardName(path.slice(path.lastIndexOf('/') + 1)))
     )
     const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
@@ -295,7 +295,7 @@ export async function computeQueue(input: {
             if (input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
                 return true
             }
-            if (!deniedFileNames.has(smallLetters(path.slice(path.lastIndexOf('/') + 1)))) {
+            if (!deniedFileNames.has(guardName(path.slice(path.lastIndexOf('/') + 1)))) {
                 return false
             }
             if (!others.has(path)) {

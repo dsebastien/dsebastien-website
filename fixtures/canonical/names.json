@@ -88,7 +88,7 @@
         },
         {
             "name": "a capital I with a dot is not ASCII",
-            "text": "ROBOTS.TXTİ",
+            "text": "ROBOTS.TXT\u0130",
             "reserved": false
         }
     ],
@@ -107,14 +107,14 @@
         },
         {
             "name": "another Unicode form",
-            "one": "Café",
-            "two": "Café",
+            "one": "Caf\u00e9",
+            "two": "Cafe\u0301",
             "equal": true
         },
         {
             "name": "another Unicode form and letter case",
-            "one": "CAFÉ",
-            "two": "café",
+            "one": "CAF\u00c9",
+            "two": "cafe\u0301",
             "equal": true
         },
         {
@@ -131,26 +131,38 @@
         },
         {
             "name": "a letter outside ASCII",
-            "one": "Ångström",
-            "two": "ångström",
+            "one": "\u00c5ngstr\u00f6m",
+            "two": "\u00e5ngstr\u00f6m",
             "equal": true
         },
         {
             "name": "Greek capital letters, with the small final sigma",
-            "one": "ΟΔΟΣ",
-            "two": "οδος",
+            "one": "\u039f\u0394\u039f\u03a3",
+            "two": "\u03bf\u03b4\u03bf\u03c2",
             "equal": true
         },
         {
             "name": "a letter that a newer Unicode makes small (U+A7DD) and the letter it would give (U+0277) are two texts: the small letters come from the table (issue 73)",
-            "one": "꟝",
-            "two": "ɷ",
+            "one": "\ua7dd",
+            "two": "\u0277",
             "equal": false
         },
         {
-            "name": "a capital sigma at the end of a word is a final sigma in the folded form",
-            "one": "ΟΔΟΣ",
-            "two": "οδος",
+            "name": "a capital I with a dot gives two code points, as in JavaScript",
+            "one": "\u0130",
+            "two": "i\u0307",
+            "equal": true
+        },
+        {
+            "name": "a capital and a mark that NFC composes once in small letters: the folded form is in NFC after the small letters too",
+            "one": "J\u030c",
+            "two": "\u01f0",
+            "equal": true
+        },
+        {
+            "name": "a sigma after a cased code point outside the BMP and before U+0345, which is cased and case-ignorable, so skipped: a final sigma",
+            "one": "\ud835\udc00\u03a3\u0345",
+            "two": "\ud835\udc00\u03c2\u0345",
             "equal": true
         }
     ]

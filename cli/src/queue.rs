@@ -16,7 +16,7 @@ use crate::guards::{guard_of, in_deny_list};
 use crate::hash::content_hash;
 use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
-use crate::small_letters::small_letters;
+use crate::small_letters::guard_name;
 
 /// The number of paths of each of the four lists.
 #[derive(Debug, Serialize)]
@@ -139,7 +139,7 @@ impl Scan {
         {
             return true;
         }
-        let name = small_letters(path.rsplit('/').next().unwrap_or(path));
+        let name = guard_name(path.rsplit('/').next().unwrap_or(path));
         if !self.denied_file_names.contains(&name) {
             return false;
         }
@@ -231,7 +231,7 @@ fn scan_denied(
             if kind == Entry::Folder {
                 folders.push((path, hidden));
             } else {
-                names.insert(small_letters(&name));
+                names.insert(guard_name(&name));
                 if !hidden {
                     files.push(path);
                 }
@@ -350,7 +350,7 @@ pub fn compute_queue(
     // there: the names in small letters, hidden ones included). Every other
     // one is only missing from this vault. The list stays sorted.
     let moved_under_guard = |path: &String| {
-        let name = small_letters(path.rsplit('/').next().unwrap_or(path));
+        let name = guard_name(path.rsplit('/').next().unwrap_or(path));
         #[allow(clippy::case_sensitive_file_extension_comparisons)]
         let is_note = name.ends_with(".md");
         is_note && denied_file_names.contains(&name)

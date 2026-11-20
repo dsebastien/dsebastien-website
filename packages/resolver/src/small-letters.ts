@@ -20,30 +20,43 @@ function isRanges(value: unknown): value is Ranges {
     )
 }
 
-function read(): { table: Map<number, string>; cased: Ranges; caseIgnorable: Ranges } {
-    const data: unknown = file
-    if (typeof data !== 'object' || data === null)
-        throw new Error('the table of small letters is not valid')
-    const { table, cased, caseIgnorable } = data as Record<string, unknown>
-    if (
-        typeof table !== 'object' ||
-        table === null ||
-        !isRanges(cased) ||
-        !isRanges(caseIgnorable)
-    ) {
-        throw new Error('the table of small letters is not valid')
+function lettersOf(value: unknown, name: string): Map<number, string> {
+    if (typeof value !== 'object' || value === null) {
+        throw new Error(`the ${name} of small letters is not valid`)
     }
     const letters = new Map<number, string>()
-    for (const [code, small] of Object.entries(table)) {
+    for (const [code, small] of Object.entries(value)) {
         if (!/^[0-9A-F]{4,6}$/u.test(code) || typeof small !== 'string') {
-            throw new Error(`the table of small letters has a wrong item: ${code}`)
+            throw new Error(`the ${name} of small letters has a wrong item: ${code}`)
         }
         letters.set(Number.parseInt(code, 16), small)
     }
-    return { table: letters, cased, caseIgnorable }
+    return letters
 }
 
-const { table: TABLE, cased: CASED, caseIgnorable: CASE_IGNORABLE } = read()
+function read(): {
+    table: Map<number, string>
+    newer: Map<number, string>
+    cased: Ranges
+    caseIgnorable: Ranges
+} {
+    const data: unknown = file
+    if (typeof data !== 'object' || data === null) {
+        throw new Error('the table of small letters is not valid')
+    }
+    const { table, newer, cased, caseIgnorable } = data as Record<string, unknown>
+    if (!isRanges(cased) || !isRanges(caseIgnorable)) {
+        throw new Error('the table of small letters is not valid')
+    }
+    return {
+        table: lettersOf(table, 'table'),
+        newer: lettersOf(newer, 'list of newer letters'),
+        cased,
+        caseIgnorable
+    }
+}
+
+const { table: TABLE, newer: NEWER, cased: CASED, caseIgnorable: CASE_IGNORABLE } = read()
 
 function inRanges(ranges: Ranges, code: number): boolean {
     let low = 0
@@ -82,4 +95,17 @@ export function smallLetters(text: string): string {
         }
     })
     return result
+}
+
+/**
+ * The name of a file as the guard by file name compares it: the composed
+ * Unicode form, the small letters of the table, then the small letters that a
+ * newer Unicode gives (canonical form, "Small letters", rule 4). This fold is
+ * wider than the small letters alone, so the guard fails closed.
+ */
+export function guardName(name: string): string {
+    return Array.from(
+        smallLetters(name.normalize('NFC')),
+        (letter) => NEWER.get(letter.codePointAt(0) ?? 0) ?? letter
+    ).join('')
 }

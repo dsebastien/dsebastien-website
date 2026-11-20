@@ -60,7 +60,8 @@ const PREFIX = '/-/'
  * folded form. The shared cases of `fixtures/canonical/names.json` check it.
  */
 export function foldedForm(text: string): string {
-    return smallLetters(text.normalize('NFC'))
+    // NFC again: a small letter can make a pair that NFC composes (J and U+030C).
+    return smallLetters(text.normalize('NFC')).normalize('NFC')
 }
 
 /** The value of a key of a record, when the record has it as its own: a path such as "constructor" is no key. */

@@ -89,7 +89,7 @@
             "name": "the decoding refuses bytes that are not UTF-8, and keeps a byte order mark inside a name as a character",
             "text": "[a](long%C0%AFform.md) [b](half%ED%A0%80pair.md) [c](high%F4%90%80%80.md) [d](a%EF%BB%BFmark.md) [e](small%c3%a9.md)\n",
             "linkPaths": [
-                "a﻿mark.md",
+                "a\uFEFFmark.md",
                 "half%ED%A0%80pair.md",
                 "high%F4%90%80%80.md",
                 "long%C0%AFform.md",
@@ -98,13 +98,13 @@
         },
         {
             "name": "a no-break space of a link is a space, as in Obsidian",
-            "text": "[[Alpha one]] [[ Beta |x]] [c](Gamma%C2%A0two.md) [d](<Delta two.md>) [e](%20Epsilon.md%20)\n",
+            "text": "[[Alpha\u00a0one]] [[\u00a0Beta\u00a0|x]] [c](Gamma%C2%A0two.md) [d](<Delta\u00a0two.md>) [e](%20Epsilon.md%20)\n",
             "linkPaths": ["Alpha one", "Beta", "Delta two.md", "Epsilon.md", "Gamma two.md"]
         },
         {
             "name": "the white space at the two ends of a link is removed as Obsidian does: a hair space, a wide space and a byte order mark are white space, and the next line character (U+0085) is not",
-            "text": "[[Alpha ]] [[　Beta﻿|x]] [c](Gamma.md%E2%80%8A) [[Delta]] [[Eps ilon]]\n",
-            "linkPaths": ["Alpha", "Beta", "Delta", "Eps ilon", "Gamma.md"]
+            "text": "[[Alpha\u200a]] [[\u3000Beta\ufeff|x]] [c](Gamma.md%E2%80%8A) [[Delta\u0085]] [[Eps\u200ailon]]\n",
+            "linkPaths": ["Alpha", "Beta", "Delta\u0085", "Eps\u200ailon", "Gamma.md"]
         },
         {
             "name": "the order of the code points, not of the UTF-16 units",
@@ -130,7 +130,8 @@
             "Kitchen/Recipes/Bread v2.1.md",
             "Kitchen/Recipes/Bread.jpg",
             "Kitchen/Recipes/Élan.md",
-            "Kitchen/ɷ.md",
+            "Kitchen/\u0250.md",
+            "Kitchen/\u0277.md",
             "Notes/plan.png.md",
             "Photo",
             "Photo.md",
@@ -187,20 +188,20 @@
             {
                 "name": "a letter that a newer Unicode makes small (U+A7DD to U+0277) stays as written: the small letters come from the table of the canonical form, not from the language (issue 73)",
                 "from": "Index.md",
-                "link": "꟝",
+                "link": "\ua7dd",
                 "target": null
             },
             {
-                "name": "the small letters of the table: a letter outside ASCII in capitals finds its note",
+                "name": "the small letters of the table: a capital outside ASCII (U+2C6F) finds the note of its small letter (U+0250)",
                 "from": "Index.md",
-                "link": "ɷ",
-                "target": "Kitchen/ɷ.md"
+                "link": "\u2c6f",
+                "target": "Kitchen/\u0250.md"
             },
             {
                 "name": "the final sigma of the table: a dot is case-ignorable and the m after it is cased, so the sigma of the name is not final, as in JavaScript",
                 "from": "Index.md",
-                "link": "ΟΔΟΣ.md",
-                "target": "ΟΔΟΣ.md"
+                "link": "\u039f\u0394\u039f\u03a3.md",
+                "target": "\u039f\u0394\u039f\u03a3.md"
             },
             {
                 "name": "a name that no note has",
@@ -423,22 +424,10 @@
             "from": "From.md",
             "text": "[[beta]] [[Alpha]] [again](Alpha.md) [[Beta|b]] [[Nothing]] ![[Alpha#Part]]\n",
             "links": [
-                {
-                    "link": "Alpha",
-                    "path": "Alpha.md"
-                },
-                {
-                    "link": "Alpha.md",
-                    "path": "Alpha.md"
-                },
-                {
-                    "link": "Beta",
-                    "path": "Folder/Beta.md"
-                },
-                {
-                    "link": "beta",
-                    "path": "Folder/Beta.md"
-                }
+                { "link": "Alpha", "path": "Alpha.md" },
+                { "link": "Alpha.md", "path": "Alpha.md" },
+                { "link": "Beta", "path": "Folder/Beta.md" },
+                { "link": "beta", "path": "Folder/Beta.md" }
             ]
         },
         {
@@ -449,14 +438,8 @@
             "from": "From.md",
             "text": "[[Secret]] and [[Alpha]] and [[Away/Secret]]\n",
             "links": [
-                {
-                    "link": "Alpha",
-                    "path": "Alpha.md"
-                },
-                {
-                    "link": "Away/Secret",
-                    "path": "Far/Away/Secret.md"
-                }
+                { "link": "Alpha", "path": "Alpha.md" },
+                { "link": "Away/Secret", "path": "Far/Away/Secret.md" }
             ]
         },
         {
@@ -466,12 +449,7 @@
             "attachments": [],
             "from": "From.md",
             "text": "[[From]] [[#Part]]\n",
-            "links": [
-                {
-                    "link": "From",
-                    "path": "From.md"
-                }
-            ]
+            "links": [{ "link": "From", "path": "From.md" }]
         },
         {
             "name": "a link to a file that is not a note is an attachment; a file under a guard and a name that ends in .md in capital letters give nothing",

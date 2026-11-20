@@ -3640,20 +3640,21 @@
             ]
         },
         {
-            "name": "the guard by file name compares the small letters of the table of the canonical form (issue 73)",
+            "name": "the guard by file name compares names with a wider fold: the composed form, the small letters of the table, and the small letters of a newer Unicode (issue 73)",
             "denyList": ["Locked"],
             "vault": {
                 "ɷ.md": "Turn\n",
                 "Élan.md": "Elan\n",
+                "Café.md": "Cafe\n",
                 "Locked/Old.md": "Old\n"
             },
             "steps": [
                 {
                     "do": "publish",
-                    "why": "the first publication of two notes whose names have letters outside ASCII",
+                    "why": "the first publication of three notes whose names have letters outside ASCII",
                     "selection": {
                         "hold": [],
-                        "include": ["Élan.md", "ɷ.md"],
+                        "include": ["Café.md", "Élan.md", "ɷ.md"],
                         "remove": []
                     },
                     "time": "2031-07-01T08:00:00Z",
@@ -3663,8 +3664,8 @@
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
-                        "propertySet": ["Élan.md", "ɷ.md"],
-                        "published": ["Élan.md", "ɷ.md"],
+                        "propertySet": ["Café.md", "Élan.md", "ɷ.md"],
+                        "published": ["Café.md", "Élan.md", "ɷ.md"],
                         "removed": [],
                         "skipped": [],
                         "updated": [],
@@ -3673,27 +3674,28 @@
                 },
                 {
                     "do": "write",
-                    "why": "a private note in a folder of the deny list has the name of each published note, one in other capitals, one with U+A7DD, which a newer Unicode makes U+0277",
+                    "why": "a private note in a folder of the deny list has the name of each published note: one in other capitals, one in the decomposed Unicode form, one with U+A7DD, which a newer Unicode makes U+0277",
                     "files": {
                         "Locked/élan.md": "Private\n",
+                        "Locked/Café.md": "Private\n",
                         "Locked/꟝.md": "Private\n"
                     }
                 },
                 {
                     "do": "delete",
-                    "why": "both published notes are missing from this vault",
-                    "paths": ["Élan.md", "ɷ.md"]
+                    "why": "the three published notes are missing from this vault",
+                    "paths": ["Café.md", "Élan.md", "ɷ.md"]
                 },
                 {
                     "do": "plan",
-                    "why": "only the name that the table makes the same is a note that moved into the deny list folder: U+A7DD stays as written, so the other note is only missing",
+                    "why": "the guard fails closed: each name is the name of a note in the deny list folder under the wider fold, so all three are forced removals",
                     "selection": {
                         "hold": [],
                         "include": [],
                         "remove": []
                     },
                     "plan": {
-                        "forcedRemove": ["Élan.md"],
+                        "forcedRemove": ["Café.md", "Élan.md", "ɷ.md"],
                         "publish": [],
                         "remove": [],
                         "update": []

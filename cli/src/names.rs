@@ -28,7 +28,10 @@ pub fn first_part(text: &str) -> &str {
 /// The folded form of a text: the composed Unicode form, then small letters.
 /// Two texts with one folded form are one URL for the resolver.
 pub fn folded_form(text: &str) -> String {
+    // NFC again: a small letter can make a pair that NFC composes (J and U+030C).
     small_letters(&text.nfc().collect::<String>())
+        .nfc()
+        .collect()
 }
 
 #[cfg(test)]

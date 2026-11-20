@@ -13,5 +13,5 @@ export {
     type SiteFolder,
     type SiteNote
 } from './site.ts'
-export { smallLetters } from './small-letters.ts'
+export { guardName, smallLetters } from './small-letters.ts'
 export { attachmentPath, canonicalPath, folderPath, markdownPath } from './url.ts'

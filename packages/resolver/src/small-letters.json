@@ -1,5 +1,5 @@
 {
-    "about": "The small letters of each code point alone, from toLowerCase of JavaScript (Bun 1.4.4), and the code points that are cased and case-ignorable (the rule of the final sigma). Read by both implementations and the resolver. Made by scripts/small-letters.ts. See documentation/Canonical Form.md, \"Small letters\".",
+    "about": "The small letters of each code point alone, from toLowerCase of JavaScript (Bun 1.4.4), the small letters of a newer Unicode for the guard by file name (newer), and the code points that are cased and case-ignorable (the rule of the final sigma). Read by both implementations and the resolver. Made by scripts/small-letters.ts. See documentation/Canonical Form.md, \"Small letters\".",
     "table": {
         "2126": "ω",
         "2132": "ⅎ",
@@ -1489,6 +1489,28 @@
         "1E91F": "𞥁",
         "1E920": "𞥂",
         "1E921": "𞥃"
+    },
+    "newer": {
+        "A7DD": "ɷ",
+        "A7E2": "ɼ",
+        "AB6C": "ꭋ",
+        "AB6D": "ꭌ",
+        "1DF40": "𝽁",
+        "1DF48": "𝽉",
+        "1DF4A": "𝽋",
+        "1DF4D": "𝽎",
+        "1DF51": "𝽒",
+        "1DF68": "𝽩",
+        "1DF6A": "𝽫",
+        "1DF6C": "𝽭",
+        "1DF6E": "𝽯",
+        "1DF72": "𝽳",
+        "1DF74": "𝽵",
+        "1DF76": "𝽷",
+        "1DF78": "𝽹",
+        "1DF7A": "𝽻",
+        "1DF7C": "𝽽",
+        "1DF7E": "𝽿"
     },
     "cased": [
         [65, 90],

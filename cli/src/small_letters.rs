@@ -8,6 +8,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::OnceLock;
+use unicode_normalization::UnicodeNormalization;
 
 /// The table, made by `scripts/small-letters.ts`.
 const FILE: &str = include_str!("../../packages/resolver/src/small-letters.json");
@@ -16,6 +17,7 @@ const CAPITAL_SIGMA: char = '\u{3a3}';
 
 struct Letters {
     table: HashMap<char, String>,
+    newer: HashMap<char, String>,
     cased: Vec<(u32, u32)>,
     case_ignorable: Vec<(u32, u32)>,
 }
@@ -33,15 +35,20 @@ fn ranges(value: &Value) -> Option<Vec<(u32, u32)>> {
         .collect()
 }
 
+fn letters_of(value: &Value) -> Option<HashMap<char, String>> {
+    let mut letters = HashMap::new();
+    for (code, small) in value.as_object()? {
+        let letter = char::from_u32(u32::from_str_radix(code, 16).ok()?)?;
+        letters.insert(letter, small.as_str()?.to_owned());
+    }
+    Some(letters)
+}
+
 fn read() -> Option<Letters> {
     let file: Value = serde_json::from_str(FILE).ok()?;
-    let mut table = HashMap::new();
-    for (code, small) in file.get("table")?.as_object()? {
-        let letter = char::from_u32(u32::from_str_radix(code, 16).ok()?)?;
-        table.insert(letter, small.as_str()?.to_owned());
-    }
     Some(Letters {
-        table,
+        table: letters_of(file.get("table")?)?,
+        newer: letters_of(file.get("newer")?)?,
         cased: ranges(file.get("cased")?)?,
         case_ignorable: ranges(file.get("caseIgnorable")?)?,
     })
@@ -108,9 +115,30 @@ pub fn small_letters(text: &str) -> String {
     result
 }
 
+/// The name of a file as the guard by file name compares it: the composed
+/// Unicode form, the small letters of the table, then the small letters that a
+/// newer Unicode gives (canonical form, "Small letters", rule 4). This fold is
+/// wider than the small letters alone, so the guard fails closed.
+///
+/// # Panics
+///
+/// When the table that the program holds is not valid, which a test checks.
+pub fn guard_name(name: &str) -> String {
+    let newer = &letters().newer;
+    small_letters(&name.nfc().collect::<String>())
+        .chars()
+        .map(|letter| {
+            newer
+                .get(&letter)
+                .cloned()
+                .unwrap_or_else(|| letter.to_string())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{read, small_letters};
+    use super::{guard_name, read, small_letters};
 
     #[test]
     fn the_table_is_valid_and_gives_each_code_point_its_small_letters() {
@@ -147,6 +175,13 @@ mod tests {
         ] {
             assert_eq!(small_letters(text), small, "{text}");
         }
+    }
+
+    #[test]
+    fn the_name_for_the_guard_folds_wider() {
+        assert_eq!(guard_name("\u{A7DD}.md"), "\u{277}.md");
+        assert_eq!(guard_name("Cafe\u{301}.MD"), "caf\u{e9}.md");
+        assert_eq!(read().expect("the table is valid").newer.len(), 20);
     }
 
     #[test]

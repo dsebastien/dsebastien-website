@@ -36,5 +36,6 @@ export function firstPart(text: string): string {
  * Two texts with one folded form are one URL for the resolver.
  */
 export function foldedForm(text: string): string {
-    return smallLetters(text.normalize('NFC'))
+    // NFC again: a small letter can make a pair that NFC composes (J and U+030C).
+    return smallLetters(text.normalize('NFC')).normalize('NFC')
 }
