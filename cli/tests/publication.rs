@@ -1031,6 +1031,8 @@ fn the_refusal_of_a_stale_plan_whose_cleanup_gave_no_warning_names_none() {
     assert!(!errors.contains("\n- "), "{errors}");
 }
 
+// Windows refuses a file name with a line break.
+#[cfg(not(windows))]
 #[test]
 fn a_name_of_the_storage_with_a_line_break_gives_one_line_in_the_refusal() {
     let setup = set_up();
@@ -1332,6 +1334,8 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
 
 /// Issue 76: git cannot write some paths on some systems, so they look
 /// deleted. The message says why and what to do.
+// Windows refuses to make the file `CON.md` that the test publishes.
+#[cfg(not(windows))]
 #[test]
 fn a_missing_cleaned_note_whose_path_git_cannot_write_on_some_systems_gets_the_cause() {
     let setup = set_up();
