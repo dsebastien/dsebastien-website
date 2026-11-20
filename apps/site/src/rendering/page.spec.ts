@@ -318,6 +318,35 @@ describe('embeds of notes (REN-01)', () => {
         )
     })
 
+    test('a link into the embedded note itself, and a footnote of it, lead to that note, not to the page', () => {
+        const other = note(
+            'Other.md',
+            '<h2 id="other">Other</h2><p><note-link data-link="" data-fragment="Other">Other</note-link><sup><a href="#user-content-fn-1">1</a></sup></p>'
+        )
+        expect(
+            page(
+                '<note-link data-link="Other" data-embed="">Other</note-link>',
+                { Other: 'Other.md' },
+                other
+            )
+        ).toBe(
+            '<div class="note-embed" data-embed-of="/Other"><h2>Other</h2><p><a href="/Other#other">Other</a><sup><a href="/Other#user-content-fn-1">1</a></sup></p></div>'
+        )
+    })
+
+    test('an embed inside a paragraph splits it: a paragraph never holds a block', () => {
+        const other = note('Other.md', '<p>Inner.</p>')
+        expect(
+            page(
+                '<p>Before <note-link data-link="Other" data-embed="">Other</note-link> after.</p>',
+                { Other: 'Other.md' },
+                other
+            )
+        ).toBe(
+            '<p>Before </p><div class="note-embed" data-embed-of="/Other"><p>Inner.</p></div><p> after.</p>'
+        )
+    })
+
     test('a note that embeds itself shows a link to itself', () => {
         const self = note(
             'Self.md',
@@ -371,6 +400,54 @@ describe('link cards (CARD-01 to CARD-09)', () => {
         expect(html).toBe(
             '<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/Rain+barrel"><span class="link-card-title">The barrel</span></a></div><div class="link-card"><span class="not-published">Draft</span></div></div>'
         )
+    })
+
+    test('a card whose address is not http or https is dropped: no script and no data address', () => {
+        for (const url of [
+            'javascript:alert(1)',
+            'JavaScript:alert(1)',
+            'data:text/html,x',
+            'vbscript:x',
+            '//garden.example/x',
+            'garden.md'
+        ]) {
+            expect(
+                page(
+                    `<link-cards><link-card data-url="${encodeURI(url)}">x</link-card></link-cards>`
+                )
+            ).toBe('')
+        }
+        expect(
+            page(
+                '<link-cards><link-card data-url="javascript://youtube.com/%0Aalert(3)" data-video="">x</link-card></link-cards>'
+            )
+        ).toBe('')
+    })
+
+    test('a video card leads to https only', () => {
+        expect(
+            page(
+                '<link-cards><link-card data-url="http://www.youtube.com/watch?v=a" data-video="">v</link-card></link-cards>'
+            )
+        ).toBe('')
+        expect(
+            page(
+                '<link-cards><link-card data-url="https://www.youtube.com/watch?v=a" data-video="">v</link-card></link-cards>'
+            )
+        ).toContain('href="https://www.youtube.com/watch?v=a"')
+    })
+
+    test('a card of a note leads to its heading; a card of an attachment leads to the file', () => {
+        const guide = note('Guide.md', '<h2 id="spring">Spring</h2>')
+        const self = note(
+            'Self.md',
+            `<link-cards>${card('<note-link data-link="Guide" data-fragment="Spring">Guide</note-link>')}${card('<note-link data-link="map.pdf">The map</note-link>')}</link-cards>`,
+            { Guide: 'Guide.md' },
+            { 'map.pdf': { url: '/-/attachments/k/map.pdf', name: 'map.pdf' } }
+        )
+        const html = new SitePages([self, guide]).render('Self.md')
+        expect(html).toContain('href="/Guide#spring"')
+        expect(html).toContain('href="/-/attachments/k/map.pdf"')
     })
 
     test('a block where no card can show is removed whole (CARD-05)', () => {

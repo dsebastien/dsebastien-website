@@ -47,6 +47,10 @@
                     "text": "why squash helps"
                 },
                 {
+                    "has": "a[href$=\"squash-shade\"]",
+                    "text": "why squash helps"
+                },
+                {
                     "lacks": "[["
                 }
             ]

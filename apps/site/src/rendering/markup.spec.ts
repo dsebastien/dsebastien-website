@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { languageOf } from './language.ts'
-import { markdownProcessor } from './markup.ts'
+import { MARKUP_VERSION, markdownProcessor } from './markup.ts'
 
 // The Markdown processor of the site as one unit (issue 45): the cases that
 // the corpus of the forms does not hold. The corpus runs on the built site in
@@ -22,7 +22,7 @@ describe('allow list of the raw HTML of a note (REN-15)', () => {
     test('drops a form; a field of it stays only as a checkbox that cannot change, as on GitHub', async () => {
         expect(
             await html('<form action="https://a.example/x"><input name="q" type="text"></form>')
-        ).toBe('<input name="q" disabled type="checkbox">')
+        ).toBe('<input name="user-content-q" disabled type="checkbox">')
     })
 
     test('drops every event attribute and every javascript: address, and keeps the text', async () => {
@@ -74,5 +74,53 @@ describe('language of a note (REN-09)', () => {
         expect(languageOf({ language: 'French!' })).toBe('en')
         expect(languageOf({ language: '"><script>' })).toBe('en')
         expect(languageOf({})).toBe('en')
+    })
+})
+
+describe('cards, names and diagrams', () => {
+    test('a LINK line with a Markdown link to a note is a card of that note', async () => {
+        expect(await html('LINK: [the barrel](Rain%20barrel.md#Cleaning)')).toBe(
+            '<link-cards><link-card><note-link data-link="Rain%20barrel.md" data-fragment="Cleaning">the barrel</note-link></link-card></link-cards>'
+        )
+    })
+
+    test('a name of raw HTML gets a prefix: it cannot hide a property of the document', async () => {
+        const out = await html('<img name="querySelectorAll" src="a.png">')
+        expect(out).not.toContain('name="querySelectorAll"')
+        expect(out).toContain('name="user-content-querySelectorAll"')
+    })
+
+    test('two diagrams and a heading never share an id, and each diagram names its own title', async () => {
+        const diagram = '```mermaid\ngraph TD\n  accTitle: Garden\n  A --> B\n```'
+        const out = await html(`# A\n\n${diagram}\n\n${diagram}\n\n## Diagram 1 title`)
+        const ids = [...out.matchAll(/ id="([^"]+)"/gu)].map(([, id]) => id)
+        expect(new Set(ids).size).toBe(ids.length)
+        expect(out).toContain('aria-labelledby="diagram-1-title"')
+        expect(out).toContain('aria-labelledby="diagram-2-title"')
+    })
+})
+
+describe('cache of the markup (BUILD-04)', () => {
+    // Astro keeps the markup of a note while the options of the steps stay the
+    // same: the options name the version of the markup and of each package
+    // that writes it, so an upgrade renders every note again.
+    test('the options of the step hold the version of the markup and of the packages that write it', async () => {
+        const site = (await Bun.file(new URL('../../package.json', import.meta.url)).json()) as {
+            dependencies: Record<string, string>
+        }
+        const [, step] = markdownProcessor().options.remarkPlugins
+        const options = (
+            step as [unknown, { version: number; packages: Record<string, string> }]
+        )[1]
+        expect(options.version).toBe(MARKUP_VERSION)
+        for (const name of [
+            'pele',
+            'rehype-sanitize',
+            'temml',
+            '@quartz-community/remark-obsidian'
+        ]) {
+            expect(options.packages[name]).toBe(site.dependencies[name])
+        }
+        expect(Object.values(options.packages)).not.toContain('undefined')
     })
 })

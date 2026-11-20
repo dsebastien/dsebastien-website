@@ -152,10 +152,60 @@ function findById(nodes: readonly ElementContent[], id: string): Element | undef
     return undefined
 }
 
-function isEmbedBlock(node: ElementContent | undefined): boolean {
-    if (node?.type !== 'element') return false
+/** True for an address of the web that a card may lead to: `https`, or `http` for a card that is no video. */
+function isWebAddress(url: string, video: boolean): boolean {
+    let parsed: URL
+    try {
+        parsed = new URL(url)
+    } catch {
+        return false
+    }
+    return parsed.protocol === 'https:' || (!video && parsed.protocol === 'http:')
+}
+
+/** The links of an embedded note to a place of that note (`#…`) lead to its page, not to the page that embeds it. */
+function withOwnLinks(nodes: ElementContent[], path: string): ElementContent[] {
+    for (const node of nodes) {
+        if (node.type !== 'element') continue
+        const href = node.properties['href']
+        if (node.tagName === 'a' && typeof href === 'string' && href.startsWith('#')) {
+            node.properties['href'] = `${path}${href}`
+        }
+        withOwnLinks(node.children, path)
+    }
+    return nodes
+}
+
+/** True for what a paragraph cannot hold: an embed of a note, or a block of cards. */
+function isBlock(node: ElementContent): boolean {
+    if (node.type !== 'element') return false
     const classes = node.properties['className']
-    return Array.isArray(classes) && classes.includes('note-embed')
+    return (
+        Array.isArray(classes) && (classes.includes('note-embed') || classes.includes('link-cards'))
+    )
+}
+
+/** A paragraph, cut around the blocks that it holds, with no paragraph that holds only white space. */
+function splitParagraph(paragraph: Element): ElementContent[] {
+    if (!paragraph.children.some(isBlock)) return [paragraph]
+    const result: ElementContent[] = []
+    let run: ElementContent[] = []
+    const flush = (): void => {
+        if (run.some((child) => !(child.type === 'text' && child.value.trim() === ''))) {
+            result.push({ ...paragraph, properties: { ...paragraph.properties }, children: run })
+        }
+        run = []
+    }
+    for (const child of paragraph.children) {
+        if (isBlock(child)) {
+            flush()
+            result.push(child)
+        } else {
+            run.push(child)
+        }
+    }
+    flush()
+    return result
 }
 
 function hostOf(url: string): string {
@@ -225,22 +275,7 @@ export class SitePages {
                 result.push(...this.#cards(node, note))
             } else {
                 node.children = this.#transform(node.children, note, stack)
-                // A paragraph that holds only an embed of a note is that embed: a
-                // paragraph cannot hold a block.
-                const filled = node.children.filter(
-                    (child) => !(child.type === 'text' && child.value.trim() === '')
-                )
-                const [only] = filled
-                if (
-                    node.tagName === 'p' &&
-                    filled.length === 1 &&
-                    isEmbedBlock(only) &&
-                    only !== undefined
-                ) {
-                    result.push(only)
-                } else {
-                    result.push(node)
-                }
+                result.push(...(node.tagName === 'p' ? splitParagraph(node) : [node]))
             }
         }
         return result
@@ -257,9 +292,11 @@ export class SitePages {
             return [notPublished(inner)]
         }
         if (linkPath === '') {
-            // A link into the note itself: to its heading or its block.
+            // A link into the note itself: to its heading or its block. Inside an
+            // embed, the note is not the page: the link leads to its page.
             const href = this.#fragmentOf(note, fragment)
-            return href === '' ? inner : [make('a', { href }, inner)]
+            if (href === '') return inner
+            return [make('a', { href: stack.length > 1 ? `${note.path}${href}` : href }, inner)]
         }
         const file = note.files.get(linkPath)
         if (file !== undefined) {
@@ -306,7 +343,10 @@ export class SitePages {
             )
             part = all.slice(start, end === -1 ? undefined : end)
         }
-        const children = this.#transform(withoutIds(part), target, [...stack, target.vaultPath])
+        const children = this.#transform(withOwnLinks(withoutIds(part), target.path), target, [
+            ...stack,
+            target.vaultPath
+        ])
         return make('div', { className: ['note-embed'], dataEmbedOf: target.path }, children)
     }
 
@@ -317,7 +357,10 @@ export class SitePages {
             if (card.type !== 'element' || card.tagName !== MARK.card) continue
             const url = card.properties['dataUrl']
             if (typeof url === 'string') {
+                // The address of a card comes from the text of the note, after
+                // the allow list: only a web address may become a link.
                 const video = card.properties['dataVideo'] !== undefined
+                if (!isWebAddress(url, video)) continue
                 cards.push(this.#card(url, toText(card), video ? 'YouTube' : hostOf(url), video))
                 continue
             }
@@ -325,12 +368,23 @@ export class SitePages {
                 (child): child is Element => child.type === 'element' && child.tagName === MARK.link
             )
             const linkPath = mark === undefined ? undefined : decode(mark.properties['dataLink'])
-            if (mark === undefined || linkPath === undefined) continue
+            if (mark === undefined || linkPath === undefined || linkPath === '') continue
             const title = toText(mark)
+            const fragment = decode(mark.properties['dataFragment']) ?? ''
+            const file = note.files.get(linkPath)
             const vaultPath = note.links.get(linkPath)
             const target = vaultPath === undefined ? undefined : this.#readNote(vaultPath)
-            if (target !== undefined) {
-                cards.push(this.#card(target.path, title, '', false))
+            if (file !== undefined) {
+                cards.push(this.#card(file.url, title, '', false))
+            } else if (target !== undefined) {
+                cards.push(
+                    this.#card(
+                        `${target.path}${this.#fragmentOf(target, fragment)}`,
+                        title,
+                        '',
+                        false
+                    )
+                )
             } else if (vaultPath !== undefined) {
                 // CARD-04: a note that is not published shows its link text, and
                 // becomes a card when it goes live.

@@ -15,6 +15,7 @@ import { MARK } from './mark.ts'
 //
 // Ids are kept as they are (no `user-content-` prefix): the ids of the
 // headings, the blocks and the footnotes are the anchors of a page (URL-14).
+// A `name` gets the prefix.
 
 // The list of GitHub limits the classes of some elements (`a`, `li`, `ul`,
 // `code`) to the ones that GitHub writes. Here every element may have a class,
@@ -29,8 +30,10 @@ const base = Object.fromEntries(
 
 export const allowList: Options = {
     ...defaultSchema,
-    clobber: [],
-    clobberPrefix: '',
+    // A `name` gets the prefix, so that a note cannot hide a property of the
+    // document (`<img name="querySelectorAll">`) from the scripts of the page.
+    clobber: ['name'],
+    clobberPrefix: 'user-content-',
     strip: ['script', 'style', 'template', 'noscript', 'iframe', 'object', 'embed'],
     tagNames: [
         ...(defaultSchema.tagNames ?? []),

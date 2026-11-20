@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import {
     copyFixtureVault,
@@ -128,6 +129,26 @@ describe('build of a content store with one published note', () => {
         // (its run is tested in rendering/page.spec.ts).
         expect(rest[0]).toContain('function headingFor(headings, path)')
         expect(oldAnchorScript).toContain('function headingFor(headings, path)')
+        // The script as the build wrote it runs, and reads an old hash.
+        let scrolled = ''
+        const heading = {
+            tagName: 'H2',
+            textContent: 'Panels: a review',
+            id: 'panels-a-review',
+            scrollIntoView: () => {
+                scrolled = heading.id
+            }
+        }
+        runInNewContext(rest[0] ?? '', {
+            location: { hash: '#panels+a+review' },
+            document: {
+                getElementById: (id: string) => (id === heading.id ? heading : null),
+                querySelectorAll: () => [heading]
+            },
+            history: { replaceState: () => undefined },
+            addEventListener: () => undefined
+        })
+        expect(scrolled).toBe('panels-a-review')
         // The head script holds the function as the build writes it (its run is tested in build.spec.ts).
         expect(head).toContain('localStorage.getItem("mode")')
         expect(modeScript).toContain('localStorage.getItem("mode")')

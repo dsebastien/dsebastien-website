@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { rehypePrism, unified as astroUnified } from '@astrojs/markdown-remark'
 import remarkObsidian from '@quartz-community/remark-obsidian'
 import type { Element, ElementContent, Root as HastRoot, RootContent as HastContent } from 'hast'
@@ -32,6 +33,30 @@ import { encode, MARK } from './mark.ts'
  * (`wikilinksOf`, `linkPathOfDestination`).
  */
 export const MARKUP_VERSION = 5
+
+/**
+ * The packages that write the markup, with their versions from the site
+ * package. They are an option of a step too, so an upgrade of one of them
+ * (a fix of the allow list, of the parser, of Pele) renders every note again.
+ */
+const RENDERING_PACKAGES: Readonly<Record<string, string>> = (() => {
+    const manifest: unknown = createRequire(import.meta.url)('../../package.json')
+    const dependencies =
+        typeof manifest === 'object' && manifest !== null && 'dependencies' in manifest
+            ? (manifest.dependencies as Record<string, unknown>)
+            : {}
+    const names = [
+        '@astrojs/markdown-remark',
+        '@quartz-community/remark-obsidian',
+        'hast-util-from-html',
+        'hast-util-to-text',
+        'pele',
+        'rehype-raw',
+        'rehype-sanitize',
+        'temml'
+    ]
+    return Object.fromEntries(names.map((name) => [name, String(dependencies[name])]))
+})()
 
 /** A node of the Markdown tree, as loose as the parser and its plugins make it. */
 interface MdNode {
@@ -150,8 +175,12 @@ function cardOf(nodes: MdNode[], source: string): MdNode | undefined {
     }
     if (target.type === 'link' && typeof target['url'] === 'string') {
         const url = target['url']
-        if (destinationOf(url) !== undefined) {
-            return undefined
+        const destination = destinationOf(url)
+        if (destination !== undefined) {
+            // A Markdown link to a note or a file of the vault: a card of that target.
+            return element(MARK.card, {}, [
+                linkMark(destination.linkPath, destination.fragment, false, target.children ?? [])
+            ])
         }
         return element(MARK.card, { dataUrl: url }, [text(plainText(target))])
     }
@@ -475,10 +504,14 @@ function definitionsOf(root: MdNode): Map<string, string> {
 /**
  * The step of the Markdown tree: marks for links, embeds and link cards;
  * callouts, tags and highlights as elements; comments, Meta Bind code and live
- * queries out (REN-03, REN-14); block ids as ids. The option `version` is
- * `MARKUP_VERSION`.
+ * queries out (REN-03, REN-14); block ids as ids. The options are
+ * `MARKUP_VERSION` and the versions of the packages that write the markup:
+ * the cache of Astro is kept while they stay the same.
  */
-export function remarkNote(this: unknown, _options: { version: number }) {
+export function remarkNote(
+    this: unknown,
+    _options: { version: number; packages?: Readonly<Record<string, string>> }
+) {
     return (tree: unknown, file: { value: unknown }): void => {
         const root = tree as MdNode
         const notes: MdNode[] = []
@@ -554,9 +587,12 @@ function mathOf(tex: string, display: boolean): ElementContent[] | undefined {
 }
 
 /** A Mermaid diagram as SVG, made at build time by Pele (REN-08). Its theme comes from the classes of the site. */
-function diagramOf(source: string): ElementContent[] | undefined {
+function diagramOf(source: string, prefix: string): ElementContent[] | undefined {
     try {
-        return htmlElements(renderDiagram(source).svg, 'svg')
+        return withPrefixedIds(
+            htmlElements(renderDiagram(source, { idPrefix: prefix }).svg, 'svg'),
+            prefix
+        )
     } catch {
         // A diagram that Pele cannot read stays as its code.
         return undefined
@@ -564,12 +600,70 @@ function diagramOf(source: string): ElementContent[] | undefined {
 }
 
 /**
- * The step of the HTML tree after the allow list: ids for the headings
- * (URL-14), math, Mermaid diagrams. It runs after the allow list, because what
- * it writes is ours.
+ * The ids of a diagram, each with the prefix of the diagram, and every
+ * reference to them inside it: Pele names an element by its node (`id="A"`),
+ * so two diagrams, or a diagram and a heading, could share an id.
+ */
+function withPrefixedIds(nodes: ElementContent[], prefix: string): ElementContent[] {
+    const ids = new Set<string>()
+    const collect = (list: ElementContent[]): void => {
+        for (const node of list) {
+            if (node.type !== 'element') continue
+            const id = node.properties['id']
+            if (typeof id === 'string' && !id.startsWith(`${prefix}-`)) ids.add(id)
+            collect(node.children)
+        }
+    }
+    collect(nodes)
+    const renamed = (id: string): string => (ids.has(id) ? `${prefix}-${id}` : id)
+    const rewrite = (list: ElementContent[]): void => {
+        for (const node of list) {
+            if (node.type !== 'element') continue
+            for (const [key, value] of Object.entries(node.properties)) {
+                if (key === 'id' && typeof value === 'string') {
+                    node.properties[key] = renamed(value)
+                } else if (
+                    (key === 'ariaLabelledBy' || key === 'ariaDescribedBy') &&
+                    Array.isArray(value)
+                ) {
+                    node.properties[key] = value.map((item) => renamed(String(item)))
+                } else if (typeof value === 'string' && value.includes('#')) {
+                    node.properties[key] = value.replace(/#([^\s)"']+)/gu, (all, id: string) =>
+                        ids.has(id) ? `#${prefix}-${id}` : all
+                    )
+                }
+            }
+            rewrite(node.children)
+        }
+    }
+    rewrite(nodes)
+    return nodes
+}
+
+/**
+ * The step of the HTML tree after the allow list: math, Mermaid diagrams,
+ * then ids for the headings (URL-14), which keep clear of every id before
+ * them. It runs after the allow list, because what it writes is ours.
  */
 export function rehypeNote() {
     return (tree: HastRoot): void => {
+        let diagrams = 0
+        // From the end, so a change of a node does not move the place of one still to come.
+        for (const { node, parent, index } of elementsOf(tree).toReversed()) {
+            const [code] = node.children
+            const inPre = parent.type === 'element' && parent.tagName === 'pre'
+            if (isElement(node, 'code', 'language-math') && !inPre) {
+                const math = mathOf(rawText(node), false)
+                if (math !== undefined) parent.children.splice(index, 1, ...math)
+            } else if (isElement(node, 'pre') && isElement(code, 'code', 'language-math')) {
+                const math = mathOf(rawText(code), true)
+                if (math !== undefined) parent.children[index] = make('div', ['math-block'], math)
+            } else if (isElement(node, 'pre') && isElement(code, 'code', 'language-mermaid')) {
+                diagrams += 1
+                const svg = diagramOf(rawText(code), `diagram-${String(diagrams)}`)
+                if (svg !== undefined) parent.children[index] = make('figure', ['diagram'], svg)
+            }
+        }
         const all = elementsOf(tree)
         const headings = all.filter(
             ({ node }) => /^h[1-6]$/u.test(node.tagName) && node.properties['id'] === undefined
@@ -590,21 +684,6 @@ export function rehypeNote() {
             const id = ids[index]
             if (id !== undefined) node.properties['id'] = id
         })
-        // From the end, so a change of a node does not move the place of one still to come.
-        for (const { node, parent, index } of all.toReversed()) {
-            const [code] = node.children
-            const inPre = parent.type === 'element' && parent.tagName === 'pre'
-            if (isElement(node, 'code', 'language-math') && !inPre) {
-                const math = mathOf(rawText(node), false)
-                if (math !== undefined) parent.children.splice(index, 1, ...math)
-            } else if (isElement(node, 'pre') && isElement(code, 'code', 'language-math')) {
-                const math = mathOf(rawText(code), true)
-                if (math !== undefined) parent.children[index] = make('div', ['math-block'], math)
-            } else if (isElement(node, 'pre') && isElement(code, 'code', 'language-mermaid')) {
-                const svg = diagramOf(rawText(code))
-                if (svg !== undefined) parent.children[index] = make('figure', ['diagram'], svg)
-            }
-        }
     }
 }
 
@@ -618,7 +697,10 @@ export function markdownProcessor(): ReturnType<typeof astroUnified> {
     return astroUnified({
         smartypants: false,
         gfm: false,
-        remarkPlugins: [remarkObsidian, [remarkNote, { version: MARKUP_VERSION }]],
+        remarkPlugins: [
+            remarkObsidian,
+            [remarkNote, { version: MARKUP_VERSION, packages: RENDERING_PACKAGES }]
+        ],
         rehypePlugins: [rehypeRaw, [rehypeSanitize, allowList], rehypeNote, [rehypePrism, []]]
     })
 }
