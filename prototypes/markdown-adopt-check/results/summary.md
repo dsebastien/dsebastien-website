@@ -31,7 +31,7 @@ Written by run.ts. Cell: pass, or fail/error with failed checks of all checks.
 | callout-title           | fail (3/3)    | pass         | fail (2/3)   | fail (2/3)             | fail (3/3)            |
 | frozen-dataview-table   | fail (2/4)    | fail (2/4)   | fail (3/4)   | fail (3/4)             | pass                  |
 | frozen-dataview-list    | fail (2/4)    | fail (2/4)   | fail (3/4)   | fail (3/4)             | pass                  |
-| link-block              | fail (15/20)  | fail (14/20) | fail (14/20) | fail (14/20)           | fail (14/20)          |
+| link-block              | fail (15/27)  | fail (14/27) | fail (17/27) | fail (17/27)           | fail (14/27)          |
 | video-url-line          | fail (2/3)    | fail (3/3)   | fail (2/3)   | fail (3/3)             | fail (2/3)            |
 | meta-bind-inline        | fail (2/3)    | fail (2/3)   | fail (2/3)   | fail (2/3)             | fail (2/3)            |
 | meta-bind-block         | fail (4/4)    | fail (4/4)   | fail (4/4)   | fail (4/4)             | fail (3/4)            |
