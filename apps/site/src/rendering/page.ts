@@ -132,14 +132,51 @@ function headingsOf(tree: Root): Heading[] {
     return headings
 }
 
-function withoutIds(nodes: ElementContent[]): ElementContent[] {
+/**
+ * An embedded part with no id of its own, so the page keeps one element per
+ * id: the ids of headings, blocks and footnotes go. A diagram keeps its ids
+ * with the prefix of the embed, and every reference inside it follows, so its
+ * title and its gradients stay its own.
+ */
+function withoutIds(nodes: ElementContent[], prefix: string): ElementContent[] {
     for (const node of nodes) {
-        if (node.type === 'element') {
+        if (node.type !== 'element') continue
+        if (node.tagName === 'svg') {
+            withPrefix(node, prefix)
+        } else {
             delete node.properties['id']
-            withoutIds(node.children)
+            withoutIds(node.children, prefix)
         }
     }
     return nodes
+}
+
+/** Every id of an SVG and every reference to one inside it, with a prefix. */
+function withPrefix(svg: Element, prefix: string): void {
+    const visit = (node: Element): void => {
+        for (const [key, value] of Object.entries(node.properties)) {
+            if (key === 'id' && typeof value === 'string') {
+                node.properties[key] = `${prefix}${value}`
+            } else if (
+                (key === 'ariaLabelledBy' || key === 'ariaDescribedBy') &&
+                Array.isArray(value)
+            ) {
+                node.properties[key] = value.map((item) => `${prefix}${String(item)}`)
+            } else if (typeof value === 'string' && value.startsWith('url(#')) {
+                node.properties[key] = `url(#${prefix}${value.slice('url(#'.length)}`
+            } else if (
+                (key === 'href' || key === 'xLinkHref') &&
+                typeof value === 'string' &&
+                value.startsWith('#')
+            ) {
+                node.properties[key] = `#${prefix}${value.slice(1)}`
+            }
+        }
+        for (const child of node.children) {
+            if (child.type === 'element') visit(child)
+        }
+    }
+    visit(svg)
 }
 
 function findById(nodes: readonly ElementContent[], id: string): Element | undefined {
@@ -178,30 +215,71 @@ function withOwnLinks(nodes: ElementContent[], path: string): ElementContent[] {
 
 /** True for what a paragraph cannot hold: an embed of a note, or a block of cards. */
 function isBlock(node: ElementContent): boolean {
-    if (node.type !== 'element') return false
+    if (node.type !== 'element' || node.tagName !== 'div') return false
     const classes = node.properties['className']
     return (
         Array.isArray(classes) && (classes.includes('note-embed') || classes.includes('link-cards'))
     )
 }
 
-/** A paragraph, cut around the blocks that it holds, with no paragraph that holds only white space. */
-function splitParagraph(paragraph: Element): ElementContent[] {
-    if (!paragraph.children.some(isBlock)) return [paragraph]
+function holdsBlock(node: ElementContent): boolean {
+    return (
+        node.type === 'element' &&
+        node.children.some((child) => isBlock(child) || holdsBlock(child))
+    )
+}
+
+/** True for white space and a line break: what an edge of a piece of a paragraph drops. */
+function isEdge(node: ElementContent): boolean {
+    return (
+        (node.type === 'text' && node.value.trim() === '') ||
+        (node.type === 'element' && node.tagName === 'br')
+    )
+}
+
+/**
+ * An element, cut around the blocks that it holds at any depth (a paragraph,
+ * or the bold text inside it): the blocks come out between its pieces. A
+ * piece has no line break and no white space alone at its edges, and only the
+ * first piece keeps the id of the element (a block id).
+ */
+function cutAround(element: Element): ElementContent[] {
+    if (!holdsBlock(element)) return [element]
     const result: ElementContent[] = []
     let run: ElementContent[] = []
+    let first = true
     const flush = (): void => {
-        if (run.some((child) => !(child.type === 'text' && child.value.trim() === ''))) {
-            result.push({ ...paragraph, properties: { ...paragraph.properties }, children: run })
-        }
+        let start = 0
+        let end = run.length
+        while (start < end && isEdge(run[start] as ElementContent)) start += 1
+        while (end > start && isEdge(run[end - 1] as ElementContent)) end -= 1
+        const kept = run.slice(start, end)
+        // The white space next to a dropped line break goes with it.
+        const head = kept[0]
+        if (start > 0 && head?.type === 'text') kept[0] = { ...head, value: head.value.trimStart() }
+        const tail = kept.at(-1)
+        if (end < run.length && tail?.type === 'text')
+            kept[kept.length - 1] = { ...tail, value: tail.value.trimEnd() }
         run = []
+        if (kept.length === 0) return
+        const properties = { ...element.properties }
+        if (!first) delete properties['id']
+        first = false
+        result.push({ ...element, properties, children: kept })
     }
-    for (const child of paragraph.children) {
-        if (isBlock(child)) {
-            flush()
-            result.push(child)
-        } else {
-            run.push(child)
+    for (const child of element.children) {
+        const pieces = isBlock(child)
+            ? [child]
+            : child.type === 'element'
+              ? cutAround(child)
+              : [child]
+        for (const piece of pieces) {
+            if (isBlock(piece)) {
+                flush()
+                result.push(piece)
+            } else {
+                run.push(piece)
+            }
         }
     }
     flush()
@@ -220,6 +298,8 @@ function hostOf(url: string): string {
 export class SitePages {
     readonly #notes = new Map<string, SiteNote>()
     readonly #read = new Map<string, ReadNote>()
+    /** The number of embeds of the page being made: the prefix of the ids of a diagram in one. */
+    #embeds = 0
 
     constructor(notes: Iterable<SiteNote>) {
         for (const note of notes) {
@@ -233,6 +313,7 @@ export class SitePages {
         if (note === undefined) {
             throw new Error(`the note "${vaultPath}" is not published`)
         }
+        this.#embeds = 0
         const tree = structuredClone(note.tree)
         tree.children = this.#transform(tree.children as ElementContent[], note, [vaultPath])
         return toHtml(tree)
@@ -275,7 +356,7 @@ export class SitePages {
                 result.push(...this.#cards(node, note))
             } else {
                 node.children = this.#transform(node.children, note, stack)
-                result.push(...(node.tagName === 'p' ? splitParagraph(node) : [node]))
+                result.push(...(node.tagName === 'p' ? cutAround(node) : [node]))
             }
         }
         return result
@@ -343,10 +424,11 @@ export class SitePages {
             )
             part = all.slice(start, end === -1 ? undefined : end)
         }
-        const children = this.#transform(withOwnLinks(withoutIds(part), target.path), target, [
-            ...stack,
-            target.vaultPath
-        ])
+        const children = this.#transform(
+            withOwnLinks(withoutIds(part, `e${String((this.#embeds += 1))}-`), target.path),
+            target,
+            [...stack, target.vaultPath]
+        )
         return make('div', { className: ['note-embed'], dataEmbedOf: target.path }, children)
     }
 

@@ -32,7 +32,7 @@ import { encode, MARK } from './mark.ts'
  * change of the two functions of the publishing tool that read a link here
  * (`wikilinksOf`, `linkPathOfDestination`).
  */
-export const MARKUP_VERSION = 5
+export const MARKUP_VERSION = 6
 
 /**
  * The packages that write the markup, with their versions from the site
@@ -589,55 +589,12 @@ function mathOf(tex: string, display: boolean): ElementContent[] | undefined {
 /** A Mermaid diagram as SVG, made at build time by Pele (REN-08). Its theme comes from the classes of the site. */
 function diagramOf(source: string, prefix: string): ElementContent[] | undefined {
     try {
-        return withPrefixedIds(
-            htmlElements(renderDiagram(source, { idPrefix: prefix }).svg, 'svg'),
-            prefix
-        )
+        // Pele writes every id of a diagram with this prefix.
+        return htmlElements(renderDiagram(source, { idPrefix: prefix }).svg, 'svg')
     } catch {
         // A diagram that Pele cannot read stays as its code.
         return undefined
     }
-}
-
-/**
- * The ids of a diagram, each with the prefix of the diagram, and every
- * reference to them inside it: Pele names an element by its node (`id="A"`),
- * so two diagrams, or a diagram and a heading, could share an id.
- */
-function withPrefixedIds(nodes: ElementContent[], prefix: string): ElementContent[] {
-    const ids = new Set<string>()
-    const collect = (list: ElementContent[]): void => {
-        for (const node of list) {
-            if (node.type !== 'element') continue
-            const id = node.properties['id']
-            if (typeof id === 'string' && !id.startsWith(`${prefix}-`)) ids.add(id)
-            collect(node.children)
-        }
-    }
-    collect(nodes)
-    const renamed = (id: string): string => (ids.has(id) ? `${prefix}-${id}` : id)
-    const rewrite = (list: ElementContent[]): void => {
-        for (const node of list) {
-            if (node.type !== 'element') continue
-            for (const [key, value] of Object.entries(node.properties)) {
-                if (key === 'id' && typeof value === 'string') {
-                    node.properties[key] = renamed(value)
-                } else if (
-                    (key === 'ariaLabelledBy' || key === 'ariaDescribedBy') &&
-                    Array.isArray(value)
-                ) {
-                    node.properties[key] = value.map((item) => renamed(String(item)))
-                } else if (typeof value === 'string' && value.includes('#')) {
-                    node.properties[key] = value.replace(/#([^\s)"']+)/gu, (all, id: string) =>
-                        ids.has(id) ? `#${prefix}-${id}` : all
-                    )
-                }
-            }
-            rewrite(node.children)
-        }
-    }
-    rewrite(nodes)
-    return nodes
 }
 
 /**

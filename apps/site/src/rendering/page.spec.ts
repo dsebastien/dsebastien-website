@@ -194,7 +194,17 @@ describe('script of a note page for an old hash (URL-14)', () => {
             document: {
                 getElementById: (id: string) =>
                     headings.find((heading) => heading.id === id) ?? null,
-                querySelectorAll: () => headings
+                querySelectorAll: () => headings,
+                getElementsByName: (name: string) =>
+                    name === 'user-content-top'
+                        ? [
+                              {
+                                  scrollIntoView: () => {
+                                      scrolled = name
+                                  }
+                              }
+                          ]
+                        : []
             },
             history: {
                 replaceState: (_state: unknown, _title: string, url: string) => {
@@ -219,6 +229,8 @@ describe('script of a note page for an old hash (URL-14)', () => {
             scrolled: 'autumn-tasks',
             replaced: '#autumn-tasks'
         })
+        // An anchor of raw HTML (`<a name="top">`) has the prefix of the allow list.
+        expect(run('#top')).toEqual({ scrolled: 'user-content-top', replaced: undefined })
     })
 
     test('a hash that is an id, an unknown hash and no hash change nothing', () => {
@@ -345,6 +357,64 @@ describe('embeds of notes (REN-01)', () => {
         ).toBe(
             '<p>Before </p><div class="note-embed" data-embed-of="/Other"><p>Inner.</p></div><p> after.</p>'
         )
+    })
+
+    test('embeds on lines that follow each other leave no line break and no empty paragraph', () => {
+        const other = note('Other.md', '<p>Inner.</p>')
+        const embed = '<note-link data-link="Other" data-embed="">Other</note-link>'
+        expect(
+            page(
+                `<p>Line1<br>\n${embed}<br>\n${embed}<br>\nLine3</p>`,
+                { Other: 'Other.md' },
+                other
+            )
+        ).toBe(
+            '<p>Line1</p><div class="note-embed" data-embed-of="/Other"><p>Inner.</p></div><div class="note-embed" data-embed-of="/Other"><p>Inner.</p></div><p>Line3</p>'
+        )
+    })
+
+    test('a split paragraph keeps its block id on its first piece only', () => {
+        const other = note('Other.md', '<p>Inner.</p>')
+        expect(
+            page(
+                '<p id="^blk">Before <note-link data-link="Other" data-embed="">Other</note-link> after</p>',
+                { Other: 'Other.md' },
+                other
+            )
+        ).toBe(
+            '<p id="^blk">Before </p><div class="note-embed" data-embed-of="/Other"><p>Inner.</p></div><p> after</p>'
+        )
+    })
+
+    test('an embed inside bold text is lifted out of the paragraph, and the bold text is cut around it', () => {
+        const other = note('Other.md', '<p>Inner.</p>')
+        expect(
+            page(
+                '<p>A <strong>bold <note-link data-link="Other" data-embed="">Other</note-link> x</strong> b</p>',
+                { Other: 'Other.md' },
+                other
+            )
+        ).toBe(
+            '<p>A <strong>bold </strong></p><div class="note-embed" data-embed-of="/Other"><p>Inner.</p></div><p><strong> x</strong> b</p>'
+        )
+    })
+
+    test('a diagram in an embed keeps its own ids and its title, apart from a diagram of the page', () => {
+        const svg = (title: string): string =>
+            `<figure class="diagram"><svg class="pele" aria-labelledby="diagram-1-title"><title id="diagram-1-title">${title}</title><rect fill="url(#diagram-1-grad)"></rect><linearGradient id="diagram-1-grad"></linearGradient></svg></figure>`
+        const other = note('Other.md', svg('Embedded'))
+        const html = page(
+            `${svg('Host')}<note-link data-link="Other" data-embed="">Other</note-link>`,
+            { Other: 'Other.md' },
+            other
+        )
+        const ids = [...html.matchAll(/ id="([^"]+)"/gu)].map(([, id]) => id)
+        expect(new Set(ids).size).toBe(ids.length)
+        expect(ids).toHaveLength(4)
+        const embedded = html.slice(html.indexOf('note-embed'))
+        const label = /aria-labelledby="([^"]+)"/u.exec(embedded)?.[1] ?? ''
+        expect(embedded).toContain(`<title id="${label}">Embedded</title>`)
+        expect(embedded).toMatch(/fill="url\(#(e1-diagram-1-grad)\)".*id="\1"/u)
     })
 
     test('a note that embeds itself shows a link to itself', () => {

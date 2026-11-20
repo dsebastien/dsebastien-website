@@ -143,7 +143,8 @@ describe('build of a content store with one published note', () => {
             location: { hash: '#panels+a+review' },
             document: {
                 getElementById: (id: string) => (id === heading.id ? heading : null),
-                querySelectorAll: () => [heading]
+                querySelectorAll: () => [heading],
+                getElementsByName: () => []
             },
             history: { replaceState: () => undefined },
             addEventListener: () => undefined

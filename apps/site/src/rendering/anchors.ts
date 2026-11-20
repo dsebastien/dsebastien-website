@@ -130,6 +130,12 @@ export const oldAnchorScript = `{
             hash = decodeURIComponent(raw)
         } catch {}
         if (document.getElementById(hash) !== null) return
+        // An anchor of raw HTML of a note: the allow list gives its name a prefix.
+        const named = document.getElementsByName('user-content-' + hash)[0]
+        if (named !== undefined) {
+            named.scrollIntoView()
+            return
+        }
         const headings = [...document.querySelectorAll('[data-note-body] :is(h1, h2, h3, h4, h5, h6)[id]')].map(
             (element) => ({ depth: Number(element.tagName.slice(1)), text: element.textContent ?? '', id: element.id })
         )
