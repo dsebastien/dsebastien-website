@@ -4,6 +4,7 @@
 //! spec). The TypeScript twin is `apps/plugin/src/publishing/names.ts`.
 //! Change both in the same commit.
 
+use crate::small_letters::small_letters;
 use unicode_normalization::UnicodeNormalization;
 
 /// The ends of the names of the files that the site answers at its root.
@@ -27,7 +28,7 @@ pub fn first_part(text: &str) -> &str {
 /// The folded form of a text: the composed Unicode form, then small letters.
 /// Two texts with one folded form are one URL for the resolver.
 pub fn folded_form(text: &str) -> String {
-    text.nfc().collect::<String>().to_lowercase()
+    small_letters(&text.nfc().collect::<String>())
 }
 
 #[cfg(test)]

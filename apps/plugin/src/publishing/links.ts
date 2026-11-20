@@ -1,4 +1,5 @@
 import { sortByCodePoint } from './order.ts'
+import { smallLetters } from '@dsebastien-website/resolver'
 
 // The links of a note: which note each link leads to (PUB-87, TOOL-07 of the
 // spec). The rules are in `documentation/Canonical Form.md`, section "The
@@ -302,7 +303,7 @@ export class LinkIndex {
 
     constructor(files: Iterable<string>) {
         for (const path of sortByCodePoint([...files])) {
-            const lower = path.toLowerCase()
+            const lower = smallLetters(path)
             const name = nameOf(lower)
             const candidates = this.#byName.get(name)
             if (candidates === undefined) {
@@ -321,11 +322,11 @@ export class LinkIndex {
     targetOf(linkPath: string, from: string): string | undefined {
         // Step 1: the candidates have the name of the link path. A file that
         // is not a note comes first, as in Obsidian.
-        let wanted = linkPath.toLowerCase()
+        let wanted = smallLetters(linkPath)
         let candidates = this.#byName.get(nameOf(wanted))
         if (candidates === undefined) {
             // The end is added before the small letters are made.
-            wanted = `${linkPath}.md`.toLowerCase()
+            wanted = smallLetters(`${linkPath}.md`)
             candidates = this.#byName.get(nameOf(wanted))
         }
         if (candidates === undefined) {
@@ -336,7 +337,7 @@ export class LinkIndex {
             return candidates[0]?.path
         }
         // Step 3: a path from the folder of the note.
-        let folder = folderOf(from).toLowerCase()
+        let folder = smallLetters(folderOf(from))
         if (wanted.startsWith('./') || wanted.startsWith('../')) {
             if (wanted.startsWith('./../')) {
                 wanted = wanted.slice(2)
@@ -422,7 +423,7 @@ export function linksOfPaths(
         }
         if (path.endsWith('.md')) {
             links.push({ link, path })
-        } else if (!path.toLowerCase().endsWith('.md')) {
+        } else if (!smallLetters(path).endsWith('.md')) {
             files.push({ link, path })
         }
     }

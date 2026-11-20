@@ -27,6 +27,9 @@
     "apps/plugin": {
       "name": "@dsebastien-website/plugin",
       "version": "0.0.0",
+      "dependencies": {
+        "@dsebastien-website/resolver": "workspace:*",
+      },
       "devDependencies": {
         "obsidian": "1.14.4",
       },

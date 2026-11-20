@@ -2,6 +2,7 @@ import { bytesHash } from './hash.ts'
 import { imageSize } from './images.ts'
 import type { NoteLink } from './links.ts'
 import type { Vault } from './ports.ts'
+import { smallLetters } from '@dsebastien-website/resolver'
 
 // The attachments of a note (documentation/Canonical Form.md, sections "The
 // attachment storage" and "The attachments of a note"). The Rust twin is
@@ -147,7 +148,7 @@ export function isAttachmentList(
                 typeof link === 'string' &&
                 typeof path === 'string' &&
                 isPath(path) &&
-                !path.toLowerCase().endsWith('.md') &&
+                !smallLetters(path).endsWith('.md') &&
                 whole(size) &&
                 (size as number) >= 0 &&
                 (!sized ||

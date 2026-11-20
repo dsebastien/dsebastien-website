@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::order::sort_by_code_point;
+use crate::small_letters::small_letters;
 
 /// One link of a note that leads to a note: the link path as the note writes
 /// it, and the vault path of its target.
@@ -293,7 +294,7 @@ impl LinkIndex {
         sort_by_code_point(&mut paths);
         let mut by_name: BTreeMap<String, Vec<Candidate>> = BTreeMap::new();
         for path in paths {
-            let lower = path.to_lowercase();
+            let lower = small_letters(&path);
             by_name
                 .entry(name_of(&lower).to_owned())
                 .or_default()
@@ -308,11 +309,11 @@ impl LinkIndex {
     pub fn target_of(&self, link_path: &str, from: &str) -> Option<&str> {
         // Step 1: the candidates have the name of the link path. A file that
         // is not a note comes first, as in Obsidian.
-        let mut wanted = link_path.to_lowercase();
+        let mut wanted = small_letters(link_path);
         let mut candidates = self.by_name.get(name_of(&wanted));
         if candidates.is_none() {
             // The end is added before the small letters are made.
-            wanted = format!("{link_path}.md").to_lowercase();
+            wanted = small_letters(&format!("{link_path}.md"));
             candidates = self.by_name.get(name_of(&wanted));
         }
         let candidates = candidates?;
@@ -321,7 +322,7 @@ impl LinkIndex {
             return Some(&only.path);
         }
         // Step 3: a path from the folder of the note.
-        let mut folder = folder_of(from).to_lowercase();
+        let mut folder = small_letters(folder_of(from));
         if wanted.starts_with("./") || wanted.starts_with("../") {
             let mut rest = wanted.as_str();
             if rest.starts_with("./../") {

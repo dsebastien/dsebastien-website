@@ -88,7 +88,7 @@
         },
         {
             "name": "a capital I with a dot is not ASCII",
-            "text": "ROBOTS.TXT\u0130",
+            "text": "ROBOTS.TXTİ",
             "reserved": false
         }
     ],
@@ -107,14 +107,14 @@
         },
         {
             "name": "another Unicode form",
-            "one": "Caf\u00e9",
-            "two": "Cafe\u0301",
+            "one": "Café",
+            "two": "Café",
             "equal": true
         },
         {
             "name": "another Unicode form and letter case",
-            "one": "CAF\u00c9",
-            "two": "cafe\u0301",
+            "one": "CAFÉ",
+            "two": "café",
             "equal": true
         },
         {
@@ -131,14 +131,26 @@
         },
         {
             "name": "a letter outside ASCII",
-            "one": "\u00c5ngstr\u00f6m",
-            "two": "\u00e5ngstr\u00f6m",
+            "one": "Ångström",
+            "two": "ångström",
             "equal": true
         },
         {
             "name": "Greek capital letters, with the small final sigma",
-            "one": "\u039f\u0394\u039f\u03a3",
-            "two": "\u03bf\u03b4\u03bf\u03c2",
+            "one": "ΟΔΟΣ",
+            "two": "οδος",
+            "equal": true
+        },
+        {
+            "name": "a letter that a newer Unicode makes small (U+A7DD) and the letter it would give (U+0277) are two texts: the small letters come from the table (issue 73)",
+            "one": "꟝",
+            "two": "ɷ",
+            "equal": false
+        },
+        {
+            "name": "a capital sigma at the end of a word is a final sigma in the folded form",
+            "one": "ΟΔΟΣ",
+            "two": "οδος",
             "equal": true
         }
     ]

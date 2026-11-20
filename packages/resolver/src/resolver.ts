@@ -1,3 +1,5 @@
+import { smallLetters } from './small-letters.ts'
+
 // The resolver (MOD-05 of the spec): a pure function, in plain TypeScript, so
 // that it runs in tests, at the edge and on a plain server (HOST-02). The rules
 // are in `documentation/Configuration.md`, section "The URL contract".
@@ -58,7 +60,7 @@ const PREFIX = '/-/'
  * folded form. The shared cases of `fixtures/canonical/names.json` check it.
  */
 export function foldedForm(text: string): string {
-    return text.normalize('NFC').toLowerCase()
+    return smallLetters(text.normalize('NFC'))
 }
 
 /** The value of a key of a record, when the record has it as its own: a path such as "constructor" is no key. */
@@ -96,7 +98,7 @@ function formsOf(text: string): string[] {
         form = form.slice(0, -1)
         forms.push(form)
     }
-    if (form.toLowerCase().endsWith('.md')) {
+    if (smallLetters(form).endsWith('.md')) {
         forms.push(form.slice(0, -'.md'.length))
     }
     return [...new Set(forms)]

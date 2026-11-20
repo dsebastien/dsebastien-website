@@ -3638,6 +3638,68 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "the guard by file name compares the small letters of the table of the canonical form (issue 73)",
+            "denyList": ["Locked"],
+            "vault": {
+                "ɷ.md": "Turn\n",
+                "Élan.md": "Elan\n",
+                "Locked/Old.md": "Old\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication of two notes whose names have letters outside ASCII",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Élan.md", "ɷ.md"],
+                        "remove": []
+                    },
+                    "time": "2031-07-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Élan.md", "ɷ.md"],
+                        "published": ["Élan.md", "ɷ.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a private note in a folder of the deny list has the name of each published note, one in other capitals, one with U+A7DD, which a newer Unicode makes U+0277",
+                    "files": {
+                        "Locked/élan.md": "Private\n",
+                        "Locked/꟝.md": "Private\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "both published notes are missing from this vault",
+                    "paths": ["Élan.md", "ɷ.md"]
+                },
+                {
+                    "do": "plan",
+                    "why": "only the name that the table makes the same is a note that moved into the deny list folder: U+A7DD stays as written, so the other note is only missing",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Élan.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                }
+            ]
         }
     ]
 }

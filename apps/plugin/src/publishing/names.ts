@@ -1,3 +1,5 @@
+import { smallLetters } from '@dsebastien-website/resolver'
+
 // The root names of the site (documentation/Canonical Form.md, section "The
 // root names of the site"). The site answers some names at its root itself,
 // and a note must never take one of them (URL-08, URL-09 of the spec). The
@@ -34,5 +36,5 @@ export function firstPart(text: string): string {
  * Two texts with one folded form are one URL for the resolver.
  */
 export function foldedForm(text: string): string {
-    return text.normalize('NFC').toLowerCase()
+    return smallLetters(text.normalize('NFC'))
 }

@@ -11,5 +11,8 @@
     },
     "devDependencies": {
         "obsidian": "1.14.4"
+    },
+    "dependencies": {
+        "@dsebastien-website/resolver": "workspace:*"
     }
 }

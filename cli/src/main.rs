@@ -21,6 +21,7 @@ mod names;
 mod order;
 mod plan;
 mod queue;
+mod small_letters;
 mod tool;
 
 use std::io::{self, ErrorKind, Write};
