@@ -110,7 +110,8 @@
         "form": "embed-cycle",
         "result": "fail",
         "failures": [
-            "\"p\" with the text \"Leave one bed empty each year.\" matches 0 elements, not 1"
+            "no element matches \"p\" with the text \"Leave one bed empty each year.\"",
+            "the text holds \"Leave one bed empty each year.\" 0 times, not 1"
         ],
         "html": "<p>Change the bed of each crop every year.</p>\n<p><span class=\"article-wikilink-embed\">Soil rest</span></p>"
     },
@@ -213,6 +214,14 @@
             "the text holds \"LINK https://garden.example/seeds\"",
             "the text holds \"LINKS: https://garden.example/bees\"",
             "the text holds \"LINKS https://garden.example/ponds\"",
+            "the text holds \"LINK: A guide to mulch\"",
+            "the text holds \"LINK: Compost basics\"",
+            "the text holds \"LINK: The barrel\"",
+            "the text holds \"LINK: https://garden.example/tools\"",
+            "the text holds \"LINK Thyme\"",
+            "the text holds \"LINKS https://garden.example/hedges\"",
+            "the text holds \"LINKS: https://garden.example/spring\"",
+            "the text holds \"LINK: Greenhouse alarm code\"",
             "the HTML holds \"garden.example/comment\"",
             "the HTML holds \"Seed library rules\""
         ],
@@ -325,7 +334,7 @@
         "failures": [
             "no element matches \"svg\" with the text \"Sprout\"",
             "the HTML holds \"graph TD\"",
-            "\"[style]\" matches 4 elements, not 0"
+            "\"[style]\" matches 3 elements, not 0"
         ],
         "html": "<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"mermaid\"><code><span class=\"line\"><span style=\"color:#E1E4E8\">graph TD</span></span>\n<span class=\"line\"><span style=\"color:#E1E4E8\">    Seed --> Sprout</span></span>\n<span class=\"line\"><span style=\"color:#E1E4E8\">    Sprout --> Harvest</span></span></code></pre>"
     },
@@ -363,7 +372,7 @@
     {
         "form": "code-block",
         "result": "fail",
-        "failures": ["\"pre[style], pre [style]\" matches 6 elements, not 0"],
+        "failures": ["\"pre[style], pre [style]\" matches 5 elements, not 0"],
         "html": "<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"python\"><code><span class=\"line\"><span style=\"color:#E1E4E8\">water_beds(</span><span style=\"color:#FFAB70\">at</span><span style=\"color:#F97583\">=</span><span style=\"color:#9ECBFF\">\"dawn\"</span><span style=\"color:#E1E4E8\">)</span></span></code></pre>"
     },
     {

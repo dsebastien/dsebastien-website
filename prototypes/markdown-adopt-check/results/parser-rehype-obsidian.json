@@ -118,7 +118,8 @@
         "form": "embed-cycle",
         "result": "fail",
         "failures": [
-            "\"p\" with the text \"Leave one bed empty each year.\" matches 0 elements, not 1"
+            "no element matches \"p\" with the text \"Leave one bed empty each year.\"",
+            "the text holds \"Leave one bed empty each year.\" 0 times, not 1"
         ],
         "html": "<h1>Crop rotation</h1>\n<p>Change the bed of each crop every year.</p>\n<p>Soil rest</p>"
     },
@@ -225,6 +226,14 @@
             "the text holds \"LINK https://garden.example/seeds\"",
             "the text holds \"LINKS: https://garden.example/bees\"",
             "the text holds \"LINKS https://garden.example/ponds\"",
+            "the text holds \"LINK: A guide to mulch\"",
+            "the text holds \"LINK: Compost basics\"",
+            "the text holds \"LINK: The barrel\"",
+            "the text holds \"LINK: https://garden.example/tools\"",
+            "the text holds \"LINK Thyme\"",
+            "the text holds \"LINKS https://garden.example/hedges\"",
+            "the text holds \"LINKS: https://garden.example/spring\"",
+            "the text holds \"LINK: Greenhouse alarm code\"",
             "the HTML holds \"garden.example/html-comment\"",
             "the HTML holds \"Seed library rules\""
         ],
