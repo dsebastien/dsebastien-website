@@ -1,3 +1,5 @@
+import { smallLetters } from './small-letters.ts'
+
 // The URL function (MOD-04 of the spec): the one place that knows the
 // encoding of the canonical URL. Every output of the site uses it.
 
@@ -60,4 +62,31 @@ export function attachmentPath(hash: string, vaultPath: string): string {
     }
     const name = vaultPath.slice(vaultPath.lastIndexOf('/') + 1)
     return `/-/attachments/${key}/${encodeURIComponent(name)}`
+}
+
+/**
+ * The path of the page of a tag (NAV-04): `/-/tags/`, then the tag in small
+ * letters, one segment per level. A tag in the text of a note and a tag in its
+ * properties lead to the same page.
+ *
+ * @param tag the tag without its `#`
+ */
+export function tagPath(tag: string): string {
+    return `/-/tags/${smallLetters(tag).split('/').map(encodeURIComponent).join('/')}`
+}
+
+/** The form of the identity of a note. */
+const NOTE_ID = /^[0-9a-f]{16}$/
+
+/**
+ * The path of the page with every backlink of a note (PAGE-03): a note page
+ * holds a limited number of backlinks, and the rest are on this page.
+ *
+ * @param id the identity of the note in the manifest
+ */
+export function backlinksPath(id: string): string {
+    if (!NOTE_ID.test(id)) {
+        throw new Error(`"${id}" is not the identity of a note`)
+    }
+    return `/-/backlinks/${id}`
 }

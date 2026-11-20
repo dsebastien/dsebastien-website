@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { tagPath } from '@dsebastien-website/resolver'
 import { rehypePrism, unified as astroUnified } from '@astrojs/markdown-remark'
 import remarkObsidian from '@quartz-community/remark-obsidian'
 import type { Element, ElementContent, Root as HastRoot, RootContent as HastContent } from 'hast'
@@ -32,7 +33,7 @@ import { encode, MARK } from './mark.ts'
  * change of the two functions of the publishing tool that read a link here
  * (`wikilinksOf`, `linkPathOfDestination`).
  */
-export const MARKUP_VERSION = 6
+export const MARKUP_VERSION = 7
 
 /**
  * The packages that write the markup, with their versions from the site
@@ -404,8 +405,7 @@ function nodesOf(node: MdNode, context: Context): MdNode[] {
         }
         case 'tag': {
             const tag = node.value ?? ''
-            const href = `/-/tags/${tag.toLowerCase().split('/').map(encodeURIComponent).join('/')}`
-            return [element('a', { className: ['tag'], href }, [text(`#${tag}`)])]
+            return [element('a', { className: ['tag'], href: tagPath(tag) }, [text(`#${tag}`)])]
         }
         case 'highlight':
             return [element('mark', {}, node.children ?? [])]

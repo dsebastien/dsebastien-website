@@ -136,3 +136,47 @@ describe('resolver of names of the language', () => {
         })
     })
 })
+
+// A generated page of the build that is no note, no folder and no choice: the
+// page with every backlink of a note (issue 48).
+describe('resolver map with generated pages', () => {
+    const files: SiteFiles = {
+        home: 'index.html',
+        notFound: '404.html',
+        robots: 'robots.txt',
+        page: (path) => `page:${path}`,
+        markdown: (path) => `markdown:${path}`,
+        folder: (path) => `folder:${path}`,
+        choice: (paths) => `choice:${paths.join('|')}`
+    }
+    const notes = [{ path: 'Garden/Rain barrel.md', aliases: [] }]
+
+    test('a generated page is found at its path, and has no variant', () => {
+        const map = resolverMapOf(
+            notes,
+            files,
+            {},
+            {
+                '/-/backlinks/203d446940c02032': '-/backlinks/203d446940c02032.html'
+            }
+        )
+
+        expect(resolve('/-/backlinks/203d446940c02032', map)).toEqual({
+            kind: 'page',
+            file: '-/backlinks/203d446940c02032.html'
+        })
+        expect(resolve('/-/backlinks/203D446940C02032', map).kind).toBe('not-found')
+        expect(resolve('/-/backlinks/203d446940c02032/', map).kind).toBe('not-found')
+        expect(resolve('/Garden/Rain+barrel', map)).toEqual({
+            kind: 'page',
+            file: 'page:Garden/Rain barrel.md'
+        })
+    })
+
+    test('a generated page outside the prefix of the generated pages is refused: it could take the path of a note', () => {
+        expect(() => resolverMapOf(notes, files, {}, { '/Garden/Rain+barrel': 'x.html' })).toThrow(
+            'generated page'
+        )
+        expect(() => resolverMapOf(notes, files, {}, { '/': 'x.html' })).toThrow('generated page')
+    })
+})

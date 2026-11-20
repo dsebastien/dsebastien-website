@@ -155,18 +155,30 @@ export function choicesOf(notes: readonly SiteNote[]): string[][] {
     return [...lists.values()]
 }
 
+/** The prefix of the generated pages and files (URL-08). No note has a path under it. */
+const GENERATED = '/-/'
+
 /**
  * The resolver map of the site of these notes.
  *
  * @param attachments the key of each hashed path of an attachment that a page uses
+ * @param generated the file of each other generated page of the build, by its
+ * path under `/-/` (the page with every backlink of a note)
  */
 export function resolverMapOf(
     notes: readonly SiteNote[],
     files: SiteFiles,
-    attachments: Readonly<Record<string, string>> = {}
+    attachments: Readonly<Record<string, string>> = {},
+    generated: Readonly<Record<string, string>> = {}
 ): ResolverMap {
     const ordered = [...notes].sort((one, two) => compareCodePoints(one.path, two.path))
     const pages: Record<string, string> = { '/': files.home }
+    for (const [path, file] of Object.entries(generated)) {
+        if (!path.startsWith(GENERATED)) {
+            throw new Error(`"${path}" is not the path of a generated page`)
+        }
+        pages[path] = file
+    }
     const siteFiles: Record<string, { file: string; type: 'markdown' | 'text' }> = {
         '/robots.txt': { file: files.robots, type: 'text' }
     }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { attachmentPath, canonicalPath } from './url.ts'
+import { attachmentPath, backlinksPath, canonicalPath, tagPath } from './url.ts'
 
 // URL-01 of the spec: the canonical URL of a note is the URL that it has
 // today. Each segment of the vault path is percent-encoded, then `%20` is
@@ -62,5 +62,32 @@ describe('hashed path of an attachment', () => {
     test('is refused for a hash in another form', () => {
         expect(() => attachmentPath('sha256:../../etc', 'a.png')).toThrow('hash')
         expect(() => attachmentPath(KEY, 'a.png')).toThrow('hash')
+    })
+})
+
+// The page of a tag (NAV-04): a tag of the text of a note and a tag of its
+// properties lead to the same path, in small letters, one segment per level.
+describe('path of the page of a tag', () => {
+    test.each([
+        ['a plain tag', 'garden', '/-/tags/garden'],
+        ['a tag with levels', 'topic/water', '/-/tags/topic/water'],
+        ['capital letters', 'Topic/Water', '/-/tags/topic/water'],
+        ['a letter outside ASCII', 'ÉTÉ', '/-/tags/%C3%A9t%C3%A9'],
+        ['an underscore and a hyphen', 'type/permanent_note-v2', '/-/tags/type/permanent_note-v2']
+    ])('%s', (_case, tag, expected) => {
+        expect(tagPath(tag)).toBe(expected)
+    })
+})
+
+// The page with every backlink of a note (PAGE-03): a generated page, named
+// by the identity of the note.
+describe('path of the page with the backlinks of a note', () => {
+    test('is under the prefix of the generated pages, with the identity of the note', () => {
+        expect(backlinksPath('203d446940c02032')).toBe('/-/backlinks/203d446940c02032')
+    })
+
+    test('is refused for a text that is not the identity of a note', () => {
+        expect(() => backlinksPath('../203d446940c02032')).toThrow('identity')
+        expect(() => backlinksPath('Garden')).toThrow('identity')
     })
 })
