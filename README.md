@@ -31,6 +31,7 @@ bun run setup         # one time per clone: activates the commit hooks
 bun run dev           # the site on a local server
 bun run build         # the static site in apps/site/dist, and the plugin in apps/plugin/dist
 bun run serve         # the built site on a plain local server, through the resolver
+bun run budgets       # the time budgets of the note page in Lighthouse (needs Chrome and a quiet machine)
 bun run corpus        # an invented vault of full size in .cache/corpus, for prototypes
 bun run corpus:published --vault <folder> --list <file>   # the published notes of a vault in .cache/published
 ```

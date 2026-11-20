@@ -38,6 +38,7 @@
         "dev:plugin": "bun run --cwd apps/plugin dev",
         "serve": "bun run --cwd apps/site serve",
         "site:fixture": "bun scripts/site-fixture.ts",
+        "budgets": "bun scripts/page-budgets.ts",
         "commit:lint": "commitlint --edit",
         "corpus": "bun scripts/generate-corpus.ts",
         "corpus:published": "bun scripts/export-published.ts"
@@ -56,6 +57,7 @@
         "eslint-plugin-astro": "3.2.1",
         "globals": "17.14.0",
         "jiti": "2.7.0",
+        "lighthouse": "13.6.0",
         "prettier": "^3.6.2",
         "prettier-plugin-astro": "1.1.2",
         "typescript": "^5.9.3",

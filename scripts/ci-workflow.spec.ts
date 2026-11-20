@@ -96,6 +96,20 @@ describe('CI workflow', () => {
         expect(toolchain).toBeLessThan(steps.findIndex((step) => step['run'] === 'bun run test'))
     })
 
+    // The time budgets of the note page (issue 47, R57): Lighthouse needs
+    // Chrome, which the full Ubuntu image of GitHub has.
+    test('runs the time budgets of the note page in a job of its own, on a system with Chrome', async () => {
+        const jobs = readJobs(await readWorkflow())
+        const budgets = jobs.filter((job) =>
+            readSteps(job).some((step) => step['run'] === 'bun run budgets')
+        )
+        expect(budgets).toHaveLength(1)
+        expect(budgets[0]?.['runs-on']).toBe('ubuntu-latest')
+        expect(readSteps(budgets[0] ?? {}).some((step) => step['run'] === 'bun run test')).toBe(
+            false
+        )
+    })
+
     test('lets no job and no step fail without failing the run', async () => {
         const jobs = readJobs(await readWorkflow())
         const tolerant = [...jobs, ...jobs.flatMap(readSteps)].filter(
