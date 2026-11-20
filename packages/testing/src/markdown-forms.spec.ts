@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { checkHtml, readMarkdownForms } from './markdown-forms.ts'
-import { listFixtureVaultFiles, readFixtureCatalog } from './fixture-vault.ts'
+import { join } from 'node:path'
+import { FIXTURE_VAULT, listFixtureVaultFiles, readFixtureCatalog } from './fixture-vault.ts'
 import { rejectionOf } from './test-stores.ts'
 
 // Issue 26: the corpus of the Markdown forms. Each form of issue 12 has an
@@ -60,6 +61,34 @@ describe('checkHtml', () => {
                 { lacks: 'under the pot' }
             ])
         ).toEqual(['the HTML holds "under the pot"'])
+    })
+
+    test('fails when a text that must not appear is in the visible text, not in the markup', async () => {
+        const html =
+            '<p>LINK: <a href="https://garden.example/soil">https://garden.example/soil</a></p>'
+        expect(await checkHtml(html, [{ lacks: 'LINK: https://garden.example/soil' }])).toEqual([])
+        expect(await checkHtml(html, [{ lacksText: 'LINK: https://garden.example/soil' }])).toEqual(
+            ['the text holds "LINK: https://garden.example/soil"']
+        )
+        expect(
+            await checkHtml('<span data-block="#^squash-shade">Squash</span>', [
+                { lacksText: '^squash-shade' }
+            ])
+        ).toEqual([])
+    })
+
+    test('counts only the deepest element that holds the text', async () => {
+        const html = '<ul><li>Outer<ul><li>Inner</li></ul></li></ul>'
+        expect(await checkHtml(html, [{ has: 'li', text: 'Inner', count: 1 }])).toEqual([])
+        expect(await checkHtml(html, [{ has: 'li', text: 'Outer', count: 1 }])).toEqual([])
+    })
+
+    test('reports a failure, not a crash, for an entity that names no character', async () => {
+        expect(
+            await checkHtml('<p>&#x110000; and &#xe9;</p>', [
+                { has: 'p', text: '&#x110000; and é' }
+            ])
+        ).toEqual([])
     })
 
     test('checks that matched elements have distinct ids', async () => {
@@ -150,6 +179,15 @@ describe('the forms file', () => {
         for (const form of await readMarkdownForms()) {
             expect(files.has(form.note), form.id).toBe(true)
             expect(declared.has(form.note), form.id).toBe(true)
+        }
+    })
+
+    // A note that lost its form would make every check of the form pass or
+    // fail for the wrong reason.
+    test('names for each form a note that holds the form', async () => {
+        for (const form of await readMarkdownForms()) {
+            const text = await Bun.file(join(FIXTURE_VAULT, form.note)).text()
+            expect(new RegExp(form.source, 'mu').test(text), form.id).toBe(true)
         }
     })
 

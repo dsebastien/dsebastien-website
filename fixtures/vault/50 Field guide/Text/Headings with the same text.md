@@ -7,6 +7,8 @@ updated: 2031-04-06T07:55
 
 # Headings with the same text
 
+Jump to the [[#Autumn#Tasks]].
+
 ## Spring
 
 ### Tasks

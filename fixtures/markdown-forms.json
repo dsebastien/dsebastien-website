@@ -1,11 +1,12 @@
 {
     "version": 1,
-    "about": "The forms of issue 12, each with an invented note of the fixture vault and checks on the HTML that a conversion gives for that note alone. Read by packages/testing/src/markdown-forms.ts. A check: has (CSS selector, optional text and count), lacks (text), distinctIds (selector).",
+    "about": "The forms of issue 12, each with an invented note of the fixture vault, a pattern that the note holds (source), and checks on the HTML that a conversion gives for that note alone. Read by packages/testing/src/markdown-forms.ts. A check: has (CSS selector, optional text and count), lacks (text of the whole HTML), lacksText (text of the page only), distinctIds (selector). An attachment is checked at its URL of the site (/-/attachments/...).",
     "forms": [
         {
             "id": "wikilink-note",
             "note": "50 Field guide/Links/Link to a note.md",
             "covers": "A wikilink to a published note is a link (REN-01).",
+            "source": "\\[\\[Compost basics\\]\\]",
             "checks": [
                 {
                     "has": "a",
@@ -20,6 +21,7 @@
             "id": "wikilink-heading",
             "note": "50 Field guide/Links/Link to a heading.md",
             "covers": "A wikilink to a heading leads to that heading; without a label it shows the note and the heading, as in Obsidian (REN-01, URL-14).",
+            "source": "\\[\\[Companion planting#Three sisters\\]\\]",
             "checks": [
                 {
                     "has": "a[href*=\"#\"]",
@@ -38,6 +40,7 @@
             "id": "wikilink-block",
             "note": "50 Field guide/Links/Link to a block.md",
             "covers": "A wikilink to a block leads to that block (REN-01).",
+            "source": "\\[\\[Companion planting#\\^squash-shade\\|why squash helps\\]\\]",
             "checks": [
                 {
                     "has": "a[href*=\"#\"]",
@@ -52,6 +55,7 @@
             "id": "wikilink-alias",
             "note": "50 Field guide/Links/Link with an alias.md",
             "covers": "A wikilink with a label shows the label only (REN-01).",
+            "source": "\\[\\[Wormery\\|worm bin\\]\\]",
             "checks": [
                 {
                     "has": "a",
@@ -74,17 +78,18 @@
             "id": "wikilink-hard-names",
             "note": "50 Field guide/Links/Links to hard names.md",
             "covers": "Wikilinks to notes with a plus, a percent and an ampersand in their names are links (URL contract, issue 43).",
+            "source": "\\[\\[Salt \\+ pepper crust\\]\\].*\\[\\[100% rye bread\\]\\].*\\[\\[Bread & butter pickles\\]\\]",
             "checks": [
                 {
-                    "has": "a",
+                    "has": "a[href*=\"Salt+%2B+pepper\"]",
                     "text": "Salt + pepper crust"
                 },
                 {
-                    "has": "a",
+                    "has": "a[href*=\"100%25\"]",
                     "text": "100% rye bread"
                 },
                 {
-                    "has": "a",
+                    "has": "a[href*=\"%26\"]",
                     "text": "Bread & butter pickles"
                 },
                 {
@@ -96,6 +101,7 @@
             "id": "wikilink-unpublished",
             "note": "50 Field guide/Links/Link to an unpublished note.md",
             "covers": "A wikilink to a note that is not published is plain text, never a link (business rule 5, REN-04). The tests never select the target.",
+            "source": "\\[\\[Winter plan \\(draft\\)\\]\\]",
             "checks": [
                 {
                     "has": "a",
@@ -115,6 +121,7 @@
             "id": "wikilink-missing",
             "note": "50 Field guide/Links/Link to a missing note.md",
             "covers": "A wikilink to a note that does not exist is plain text (REN-04).",
+            "source": "\\[\\[Moon calendar\\]\\]",
             "checks": [
                 {
                     "has": "a",
@@ -134,13 +141,14 @@
             "id": "wikilink-duplicate-name",
             "note": "50 Field guide/Links/Links to a name of two notes.md",
             "covers": "A wikilink by name to a name of two notes, and one by path, are links; the link rule of the tool picks the target (Canonical Form, the links of a note).",
+            "source": "\\[\\[Mint\\]\\].*\\[\\[20 Library/20\\.02 Recipes/Mint\\|mint tea\\]\\]",
             "checks": [
                 {
-                    "has": "a",
+                    "has": "a[href*=\"Herb+bed/Mint\"]",
                     "text": "Mint"
                 },
                 {
-                    "has": "a",
+                    "has": "a[href*=\"Recipes/Mint\"]",
                     "text": "mint tea"
                 },
                 {
@@ -152,9 +160,10 @@
             "id": "wikilink-own-heading",
             "note": "50 Field guide/Links/Link to a heading of this note.md",
             "covers": "A wikilink to a heading of the note itself leads to that heading on the page.",
+            "source": "\\[\\[#Harvest\\]\\][\\s\\S]*^## Harvest$",
             "checks": [
                 {
-                    "has": "a[href^=\"#\"]",
+                    "has": "p a[href^=\"#\"]",
                     "text": "Harvest"
                 },
                 {
@@ -166,6 +175,7 @@
             "id": "markdown-link-note",
             "note": "50 Field guide/Links/Markdown links to notes.md",
             "covers": "A Markdown link to a note, encoded or in angle brackets, leads to the page of the note, not to a .md file.",
+            "source": "\\]\\(Rain%20barrel\\.md\\).*\\]\\(<Drip irrigation\\.md>\\)",
             "checks": [
                 {
                     "has": "a",
@@ -185,17 +195,18 @@
             "id": "embed-image-size",
             "note": "50 Field guide/Embeds/Image with a size.md",
             "covers": "An image embed with a width, or a width and a height, gets that size; a Markdown image takes the size after the bar (REN-01).",
+            "source": "^!\\[\\[garden-plan\\.png\\|300\\]\\]$[\\s\\S]*^!\\[\\[garden-plan\\.png\\|300x200\\]\\]$[\\s\\S]*^!\\[The plan, small\\|120\\]\\(garden-plan\\.png\\)$",
             "checks": [
                 {
-                    "has": "img[width=\"300\"]",
+                    "has": "img[src^=\"/-/attachments/\"][width=\"300\"]",
                     "count": 2
                 },
                 {
-                    "has": "img[width=\"300\"][height=\"200\"]",
+                    "has": "img[src^=\"/-/attachments/\"][width=\"300\"][height=\"200\"]",
                     "count": 1
                 },
                 {
-                    "has": "img[width=\"120\"]",
+                    "has": "img[src^=\"/-/attachments/\"][width=\"120\"]",
                     "count": 1
                 },
                 {
@@ -205,7 +216,7 @@
                     "lacks": "![["
                 },
                 {
-                    "lacks": "|300"
+                    "lacksText": "|300"
                 }
             ]
         },
@@ -213,9 +224,10 @@
             "id": "embed-image-in-link",
             "note": "50 Field guide/Embeds/Image inside a link.md",
             "covers": "A Markdown image inside a link to a file shows as an image inside one link (comment of issue 35 on issue 45).",
+            "source": "^\\[!\\[The plan\\]\\(garden-plan\\.png\\)\\]\\(seed-catalog\\.pdf\\)$",
             "checks": [
                 {
-                    "has": "a img",
+                    "has": "a[href^=\"/-/attachments/\"][href$=\"seed-catalog.pdf\"] img[src^=\"/-/attachments/\"]",
                     "count": 1
                 },
                 {
@@ -228,6 +240,7 @@
             "id": "embed-note",
             "note": "50 Field guide/Embeds/Embed of a note.md",
             "covers": "An embed of a note shows the text of that note (REN-01).",
+            "source": "^!\\[\\[Compost basics\\]\\]$",
             "checks": [
                 {
                     "has": "p",
@@ -246,6 +259,7 @@
             "id": "embed-heading",
             "note": "50 Field guide/Embeds/Embed of a heading.md",
             "covers": "An embed of a heading shows that section only (REN-01).",
+            "source": "^!\\[\\[Companion planting#Three sisters\\]\\]$",
             "checks": [
                 {
                     "has": "p",
@@ -263,6 +277,7 @@
             "id": "embed-block",
             "note": "50 Field guide/Embeds/Embed of a block.md",
             "covers": "An embed of a block shows that block only, without its id (REN-01).",
+            "source": "^!\\[\\[Companion planting#\\^squash-shade\\]\\]$",
             "checks": [
                 {
                     "has": "p",
@@ -272,7 +287,7 @@
                     "lacks": "Corn gives the beans"
                 },
                 {
-                    "lacks": "^squash-shade"
+                    "lacksText": "^squash-shade"
                 },
                 {
                     "lacks": "![["
@@ -283,6 +298,7 @@
             "id": "embed-cycle",
             "note": "50 Field guide/Crop rotation.md",
             "covers": "Two notes that embed each other show each text once: the embed has a depth limit and a cycle check (REN-01).",
+            "source": "^!\\[\\[Soil rest\\]\\]$",
             "checks": [
                 {
                     "has": "p",
@@ -299,10 +315,11 @@
         {
             "id": "embed-pdf",
             "note": "50 Field guide/Embeds/Embed of a PDF.md",
-            "covers": "An embed of a PDF is a link to the file or a frame that shows it (REN-01, R45).",
+            "covers": "An embed of a PDF is a link to the file of the attachment storage, or a frame that shows it: R45 makes every file but images, sound and video a link, which is enough for REN-01 until a slice decides a viewer.",
+            "source": "^!\\[\\[seed-catalog\\.pdf\\]\\]$",
             "checks": [
                 {
-                    "has": "a[href*=\"seed-catalog.pdf\"], iframe[src*=\"seed-catalog.pdf\"], object[data*=\"seed-catalog.pdf\"], embed[src*=\"seed-catalog.pdf\"]"
+                    "has": "a[href^=\"/-/attachments/\"][href$=\"seed-catalog.pdf\"], iframe[src^=\"/-/attachments/\"][src$=\"seed-catalog.pdf\"], object[data^=\"/-/attachments/\"][data$=\"seed-catalog.pdf\"], embed[src^=\"/-/attachments/\"][src$=\"seed-catalog.pdf\"]"
                 },
                 {
                     "lacks": "![["
@@ -313,9 +330,10 @@
             "id": "embed-audio",
             "note": "50 Field guide/Embeds/Embed of a sound.md",
             "covers": "An embed of a sound gets the player of the browser (REN-01, R45).",
+            "source": "^!\\[\\[birdsong\\.mp3\\]\\]$",
             "checks": [
                 {
-                    "has": "audio[src*=\"birdsong.mp3\"], audio source[src*=\"birdsong.mp3\"]"
+                    "has": "audio[src^=\"/-/attachments/\"][src$=\"birdsong.mp3\"], audio source[src^=\"/-/attachments/\"][src$=\"birdsong.mp3\"]"
                 },
                 {
                     "lacks": "![["
@@ -326,9 +344,10 @@
             "id": "embed-video",
             "note": "50 Field guide/Embeds/Embed of a video.md",
             "covers": "An embed of a video gets the player of the browser (REN-01, R45).",
+            "source": "^!\\[\\[seedling-timelapse\\.mp4\\]\\]$",
             "checks": [
                 {
-                    "has": "video[src*=\"seedling-timelapse.mp4\"], video source[src*=\"seedling-timelapse.mp4\"]"
+                    "has": "video[src^=\"/-/attachments/\"][src$=\"seedling-timelapse.mp4\"], video source[src^=\"/-/attachments/\"][src$=\"seedling-timelapse.mp4\"]"
                 },
                 {
                     "lacks": "![["
@@ -339,9 +358,10 @@
             "id": "embed-base",
             "note": "50 Field guide/Embeds/Embed of a base.md",
             "covers": "An embed of a base file is a link to the file: every other link to a file is a link (R45). A live base is never run (REN-14).",
+            "source": "^!\\[\\[Plants\\.base\\]\\]$",
             "checks": [
                 {
-                    "has": "a[href*=\"Plants.base\"]"
+                    "has": "a[href^=\"/-/attachments/\"][href$=\"Plants.base\"]"
                 },
                 {
                     "lacks": "file.inFolder"
@@ -355,9 +375,10 @@
             "id": "embed-canvas",
             "note": "50 Field guide/Embeds/Embed of a canvas.md",
             "covers": "An embed of a canvas is a link (REN-11, R45).",
+            "source": "^!\\[\\[Bed layout\\.canvas\\]\\]$",
             "checks": [
                 {
-                    "has": "a[href*=\".canvas\"]"
+                    "has": "a[href^=\"/-/attachments/\"][href$=\".canvas\"]"
                 },
                 {
                     "lacks": "North bed"
@@ -371,6 +392,7 @@
             "id": "callout-types",
             "note": "50 Field guide/Callouts/Every callout type.md",
             "covers": "Each type of callout, an alias of a type and a type in capitals are callouts with their type, as the reading view of Obsidian marks them (REN-01).",
+            "source": "^> \\[!warning\\]$[\\s\\S]*^> \\[!tldr\\]$[\\s\\S]*^> \\[!FAQ\\]$",
             "checks": [
                 {
                     "has": "[data-callout]",
@@ -381,14 +403,15 @@
                     "count": 1
                 },
                 {
-                    "has": "[data-callout=\"tldr\"], [data-callout=\"abstract\"]"
+                    "has": "[data-callout=\"tldr\"]",
+                    "count": 1
                 },
                 {
                     "has": "[data-callout=\"faq\"]",
                     "count": 1
                 },
                 {
-                    "lacks": "[!"
+                    "lacksText": "[!"
                 }
             ]
         },
@@ -396,10 +419,11 @@
             "id": "callout-folded",
             "note": "50 Field guide/Callouts/Folded callouts.md",
             "covers": "A callout with a minus is folded and one with a plus is open, both can be folded (REN-01).",
+            "source": "^> \\[!faq\\]- Why mulch\\?$[\\s\\S]*^> \\[!tip\\]\\+ Open by default$",
             "checks": [
                 {
-                    "has": "details, [data-callout-fold]",
-                    "count": 2
+                    "has": "details:not([open]), [data-callout-fold=\"-\"]",
+                    "count": 1
                 },
                 {
                     "has": "details[open], [data-callout-fold=\"+\"]",
@@ -410,7 +434,7 @@
                     "text": "Why mulch?"
                 },
                 {
-                    "lacks": "[!"
+                    "lacksText": "[!"
                 }
             ]
         },
@@ -418,6 +442,7 @@
             "id": "callout-nested",
             "note": "50 Field guide/Callouts/Nested callouts.md",
             "covers": "A callout inside a callout (REN-01).",
+            "source": "^> \\[!note\\] Outer$\\n^> The outer callout\\.$\\n^> > \\[!warning\\] Inner$",
             "checks": [
                 {
                     "has": "[data-callout] [data-callout]",
@@ -436,6 +461,7 @@
             "id": "callout-title",
             "note": "50 Field guide/Callouts/Callout with a title.md",
             "covers": "A callout with a title that holds Markdown (REN-01).",
+            "source": "^> \\[!info\\] Frost \\*\\*warning\\*\\* for May$",
             "checks": [
                 {
                     "has": "[data-callout]",
@@ -454,6 +480,7 @@
             "id": "frozen-dataview-table",
             "note": "50 Field guide/Queries/Frozen table.md",
             "covers": "A frozen Dataview table renders as a static table without its markers (REN-02, REN-03).",
+            "source": "^<!-- QueryToSerialize: TABLE [\\s\\S]*^\\| \\[\\[Rain barrel\\]\\] \\|[\\s\\S]*^<!-- SerializedQuery END -->$",
             "checks": [
                 {
                     "has": "table"
@@ -474,6 +501,7 @@
             "id": "frozen-dataview-list",
             "note": "10 Garden/Garden index.md",
             "covers": "A frozen Dataview list renders as a static list without its markers; its row to a note of the deny list is plain text (REN-02, REN-03, REN-04).",
+            "source": "^<!-- QueryToSerialize: LIST [\\s\\S]*^- \\[\\[Greenhouse alarm code\\]\\]$",
             "checks": [
                 {
                     "has": "li a",
@@ -495,7 +523,8 @@
         {
             "id": "link-block",
             "note": "40 Writing/Reading list.md",
-            "covers": "LINK and LINKS blocks become link cards; their raw text never shows; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08).",
+            "covers": "LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). The markup of a card is not settled yet: the cards slice adds its check.",
+            "source": "^LINK: https://garden\\.example/soil$[\\s\\S]*^LINKS$\\n^- https://garden\\.example/hedges$",
             "checks": [
                 {
                     "has": "a[href=\"https://garden.example/soil\"]"
@@ -504,10 +533,16 @@
                     "has": "a[href=\"https://garden.example/hedges\"]"
                 },
                 {
-                    "lacks": "LINK: https://garden.example/soil"
+                    "lacksText": "LINK: https://garden.example/soil"
                 },
                 {
-                    "lacks": "LINKS https://garden.example/ponds"
+                    "lacksText": "LINK https://garden.example/seeds"
+                },
+                {
+                    "lacksText": "LINKS: https://garden.example/bees"
+                },
+                {
+                    "lacksText": "LINKS https://garden.example/ponds"
                 },
                 {
                     "has": "code",
@@ -528,6 +563,7 @@
             "id": "video-url-line",
             "note": "50 Field guide/Queries/Video URL line.md",
             "covers": "A line with only a YouTube URL in image syntax becomes a video card: a link, no player and no request to the video site before a click (CARD-07, CARD-09).",
+            "source": "^!\\[\\]\\(https://www\\.youtube\\.com/watch\\?v=GardenTour1\\)$",
             "checks": [
                 {
                     "has": "a[href*=\"GardenTour1\"]"
@@ -546,6 +582,7 @@
             "id": "meta-bind-inline",
             "note": "50 Field guide/Queries/Meta Bind inline.md",
             "covers": "Inline Meta Bind code is removed for rendering (REN-03).",
+            "source": "`INPUT\\[toggle:watered\\]`.*`VIEW\\[\\{rain\\} mm\\]`",
             "checks": [
                 {
                     "lacks": "INPUT["
@@ -563,6 +600,7 @@
             "id": "meta-bind-block",
             "note": "50 Field guide/Queries/Meta Bind block.md",
             "covers": "Meta Bind code blocks are removed for rendering (REN-03).",
+            "source": "^```meta-bind-button$[\\s\\S]*^```meta-bind$",
             "checks": [
                 {
                     "lacks": "meta-bind"
@@ -583,6 +621,7 @@
             "id": "live-dataview",
             "note": "50 Field guide/Queries/Live Dataview.md",
             "covers": "A live Dataview block, a DataviewJS block and an inline query are dropped from the page (REN-14).",
+            "source": "^```dataview$[\\s\\S]*^```dataviewjs$[\\s\\S]*`= this\\.file\\.name`",
             "checks": [
                 {
                     "lacks": "FROM #topic/water"
@@ -603,6 +642,7 @@
             "id": "live-base",
             "note": "50 Field guide/Queries/Live base.md",
             "covers": "A live base block is dropped from the page (REN-14).",
+            "source": "^```base$\\n^filters:$",
             "checks": [
                 {
                     "lacks": "file.inFolder"
@@ -617,6 +657,7 @@
             "id": "comment-percent",
             "note": "50 Field guide/Text/Comments.md",
             "covers": "Obsidian comments, inline and on several lines, never reach the page; the text around them stays (REN-03).",
+            "source": "%%the spare key is under the blue pot%%[\\s\\S]*^%%$\\n^The gate code",
             "checks": [
                 {
                     "lacks": "blue pot"
@@ -645,6 +686,7 @@
             "id": "comment-html",
             "note": "50 Field guide/Text/HTML comments.md",
             "covers": "HTML comments never reach the page (REN-03).",
+            "source": "<!-- the hose leaks at the tap -->[\\s\\S]*^<!--$\\n^The neighbour borrowed the ladder\\.$",
             "checks": [
                 {
                     "lacks": "hose leaks"
@@ -665,6 +707,7 @@
             "id": "tags",
             "note": "50 Field guide/Text/Tags.md",
             "covers": "Tags in the text are tags, nested and with letters outside ASCII; a number alone and a URL fragment are not tags.",
+            "source": "#compost, #garden/soil and #légumes[\\s\\S]*#2031",
             "checks": [
                 {
                     "has": "a",
@@ -693,6 +736,7 @@
             "id": "footnotes",
             "note": "50 Field guide/Text/Footnotes.md",
             "covers": "Footnotes and inline footnotes (REN-01).",
+            "source": "\\[\\^1\\][\\s\\S]*\\^\\[Hay has seeds\\.\\][\\s\\S]*^\\[\\^1\\]: Wood chips",
             "checks": [
                 {
                     "has": "sup",
@@ -718,6 +762,7 @@
             "id": "highlights",
             "note": "50 Field guide/Text/Highlights.md",
             "covers": "Highlights (REN-01).",
+            "source": "==at dawn==.*==at noon==",
             "checks": [
                 {
                     "has": "mark",
@@ -736,6 +781,7 @@
             "id": "math-inline",
             "note": "50 Field guide/Text/Inline math.md",
             "covers": "Inline math, class-based with no inline style (REN-01, REN-06).",
+            "source": "\\$V = l \\\\times w \\\\times h\\$",
             "checks": [
                 {
                     "has": "math, .katex, mjx-container"
@@ -753,6 +799,7 @@
             "id": "math-block",
             "note": "50 Field guide/Text/Block math.md",
             "covers": "Block math, class-based with no inline style (REN-01, REN-06).",
+            "source": "^\\$\\$$\\n^A = \\\\pi r\\^2$\\n^\\$\\$$",
             "checks": [
                 {
                     "has": "math[display=\"block\"], .katex-display, mjx-container[display=\"true\"]"
@@ -770,9 +817,11 @@
             "id": "mermaid",
             "note": "50 Field guide/Text/Mermaid.md",
             "covers": "Mermaid becomes SVG at build time, with no script and no inline style (REN-06, REN-08, BUILD-09).",
+            "source": "^```mermaid$\\n^graph TD$",
             "checks": [
                 {
-                    "has": "svg"
+                    "has": "svg",
+                    "text": "Sprout"
                 },
                 {
                     "has": "script",
@@ -791,6 +840,7 @@
             "id": "table-pipe-in-link",
             "note": "50 Field guide/Text/Table with a link.md",
             "covers": "A wikilink with an escaped bar inside a table cell keeps the table at two columns (REN-01).",
+            "source": "^\\| \\[\\[Wormery\\\\\\|worms\\]\\] \\| north \\|$",
             "checks": [
                 {
                     "has": "th",
@@ -813,6 +863,7 @@
             "id": "task-list",
             "note": "50 Field guide/Text/Task list.md",
             "covers": "Task lists; any character but a space marks a task as done, as in Obsidian (REN-01).",
+            "source": "^- \\[x\\] .*\\n^- \\[ \\] .*\\n^- \\[/\\] ",
             "checks": [
                 {
                     "has": "input[type=\"checkbox\"]",
@@ -834,6 +885,7 @@
             "id": "properties",
             "note": "50 Field guide/Text/Properties.md",
             "covers": "The properties of a note are not part of its body: lists, a link, a date and an empty value never show in the converted text (the page shows them apart, issue 48).",
+            "source": "^related: .\\[\\[Compost basics\\]\\].$[\\s\\S]*^sown: 2031-04-02$\\n^harvest:$",
             "checks": [
                 {
                     "lacks": "sown:"
@@ -853,7 +905,8 @@
         {
             "id": "headings-same-text",
             "note": "50 Field guide/Text/Headings with the same text.md",
-            "covers": "Two headings with the same text get distinct, stable ids (URL-14).",
+            "covers": "Two headings with the same text get distinct, stable ids; a link to the second one names its parent heading (`#Autumn#Tasks`), the form that the current site reads (URL-14, OPEN-15).",
+            "source": "\\[\\[#Autumn#Tasks\\]\\][\\s\\S]*^### Tasks$[\\s\\S]*^### Tasks$",
             "checks": [
                 {
                     "has": "h3",
@@ -861,6 +914,10 @@
                 },
                 {
                     "distinctIds": "h1, h2, h3"
+                },
+                {
+                    "has": "p a[href^=\"#\"]",
+                    "text": "Tasks"
                 }
             ]
         },
@@ -868,6 +925,7 @@
             "id": "code-block",
             "note": "50 Field guide/Text/Code block.md",
             "covers": "A code block keeps its text and is highlighted with classes, not inline styles (REN-01, REN-06).",
+            "source": "^```python$\\n^water_beds\\(at=.dawn.\\)$\\n^```$",
             "checks": [
                 {
                     "has": "pre code",
@@ -883,6 +941,7 @@
             "id": "raw-html",
             "note": "50 Field guide/Text/Raw HTML.md",
             "covers": "Raw HTML passes through an allow list of elements: details stays, a script and an event attribute do not (REN-15).",
+            "source": "<details><summary>More about bees</summary>[\\s\\S]*onclick=[\\s\\S]*<script>",
             "checks": [
                 {
                     "has": "details summary",
