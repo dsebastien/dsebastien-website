@@ -152,6 +152,18 @@ A page that the site makes from many notes and that is not a note: home, type hu
 **Reserved prefix**:
 The path prefix under which every generated page lives, so that a generated page can never collide with a note.
 
+**Backlink**:
+A published note that links to a note. The page of the note names it, with the sentence around its link.
+
+**Link index**:
+What the build knows about the links between the published notes: for a note, where its links lead, and its backlinks.
+
+**Properties panel**:
+The folding block of a note page that shows the properties of the note.
+
+**Outline**:
+The list of the headings of a note on its page, each one a link to its heading.
+
 **Type hub**:
 The generated page that lists all published notes of one note type.
 
