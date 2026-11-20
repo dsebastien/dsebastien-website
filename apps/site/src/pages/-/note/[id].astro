@@ -3,7 +3,9 @@ import type { GetStaticPaths } from 'astro'
 import { getCollection } from 'astro:content'
 import { readPublishedNotes } from '../../../content-store.ts'
 import Page from '../../../layouts/Page.astro'
-import { withLinkState } from '../../../note-links.ts'
+import { oldAnchorScript } from '../../../rendering/anchors.ts'
+import { languageOf } from '../../../rendering/language.ts'
+import { SitePages } from '../../../rendering/page.ts'
 
 // The page of a published note. Its file has the identity of the note as its
 // name, which is plain ASCII on every system and on every host. The resolver
@@ -11,32 +13,39 @@ import { withLinkState } from '../../../note-links.ts'
 export const getStaticPaths = (async () => {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
     const notes = await readPublishedNotes()
-    // The link index of the build (BUILD-05): the canonical path of each published note.
-    const urls = new Map(notes.map((note) => [note.vaultPath, note.path]))
-    return notes.flatMap((note) => {
+    const site = notes.map((note) => {
         const entry = entries.get(note.vaultPath)
         if (entry === undefined) {
             throw new Error(`the content store has no cleaned note for "${note.vaultPath}"`)
         }
-        return [{ params: { id: note.id }, props: { entry, note, urls } }]
+        if (entry.rendered === undefined) {
+            throw new Error(`the note "${note.vaultPath}" has no markup`)
+        }
+        return { note, entry, markup: entry.rendered.html }
     })
+    // The pages of this build (BUILD-05): the markup of each note, which Astro
+    // keeps between two builds, with its links and its embeds in the state of
+    // this build.
+    const pages = new SitePages(
+        site.map(({ note, markup }) => ({
+            vaultPath: note.vaultPath,
+            path: note.path,
+            markup,
+            links: new Map(note.links.map((link) => [link.link, link.path])),
+            files: new Map(note.attachments.map((file) => [file.link, file]))
+        }))
+    )
+    return site.map(({ note, entry }) => ({
+        params: { id: note.id },
+        props: { note, language: languageOf(entry.data), pages }
+    }))
 }) satisfies GetStaticPaths
 
-const { entry, note, urls } = Astro.props
-const { title } = note
-if (entry.rendered === undefined) {
-    throw new Error(`the note "${note.vaultPath}" has no markup`)
-}
-// The markup is the same as long as the text of the note is the same. The
-// state of each link is the one of this build.
-const html = withLinkState(
-    entry.rendered.html,
-    new Map(note.links.map((link) => [link.link, link.path])),
-    (vaultPath) => urls.get(vaultPath),
-    new Map(note.attachments.map((file) => [file.link, file]))
-)
+const { note, language, pages } = Astro.props
+const html = pages.render(note.vaultPath)
 ---
 
-<Page title={title} path={note.path}>
-    <article class='note-text max-w-[72ch]' set:html={html} />
+<Page title={note.title} path={note.path} lang={language}>
+    <article class='note-text max-w-[72ch]' data-note-body set:html={html} />
+    <script is:inline set:html={oldAnchorScript} />
 </Page>

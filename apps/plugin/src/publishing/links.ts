@@ -157,7 +157,7 @@ function decode(destination: string): string {
  * One wikilink or one embed of a line. The build reads the same links as the
  * tool through this. When the result of `wikilinksOf` or of
  * `linkPathOfDestination` changes, raise `MARKUP_VERSION` in
- * `apps/site/src/note-links.ts`: the site keeps the markup of a note.
+ * `apps/site/src/rendering/markup.ts`: the site keeps the markup of a note.
  */
 export interface Wikilink {
     /** Where the link starts in the line: at its `[[`, or at the `!` of an embed. */

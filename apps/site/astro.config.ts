@@ -1,7 +1,6 @@
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'astro/config'
-import { satteri } from '@astrojs/markdown-satteri'
-import { noteLinks } from './src/note-links.ts'
+import { markdownProcessor } from './src/rendering/markup.ts'
 
 export default defineConfig({
     // The canonical host of the site: the canonical link of each page names it.
@@ -10,11 +9,11 @@ export default defineConfig({
     // decides which URL leads to which file, not the layout of the output.
     build: { format: 'file' },
     markdown: {
-        processor: satteri({
-            // A link path is read as the author wrote it: no change of quotes and dashes.
-            features: { smartPunctuation: false },
-            mdastPlugins: [noteLinks]
-        })
+        // The remark processor with the parser of Obsidian and the steps of the
+        // site (R50, `src/rendering/markup.ts`). The code is highlighted with
+        // classes by those steps, after the allow list (REN-06, REN-15).
+        processor: markdownProcessor(),
+        syntaxHighlight: false
     },
     vite: {
         plugins: [tailwindcss()]

@@ -212,7 +212,8 @@ describe('page of a note whose link targets are not published', () => {
             'The hose starts at the <span class="not-published">Rain barrel</span>.'
         )
         expect(html).toContain('<span class="not-published">the barrel</span> or the')
-        expect(html).toContain('<span class="not-published">Rain barrel#Cleaning</span>')
+        // A link to a heading shows the note and the heading, as in Obsidian.
+        expect(html).toContain('<span class="not-published">Rain barrel > Cleaning</span>')
         expect(html).toContain(
             'With the full path: <span class="not-published">10 Garden/Rain barrel</span>. As a Markdown link: <span class="not-published">the barrel</span>.'
         )
@@ -243,7 +244,7 @@ describe('page of a note whose link targets are not published', () => {
         expect(html).toContain(
             '<span class="not-published">Winter plan (draft)</span>. Its first section:'
         )
-        expect(html).toContain('<span class="not-published">Winter plan (draft)#Beds</span>')
+        expect(html).toContain('<span class="not-published">Winter plan (draft) > Beds</span>')
         expect(html).toContain('<span class="not-published">Seed library rules</span>')
         expect(noteOf(html)).not.toContain('<a ')
         // Nowhere on the page, also outside the text of the note.
@@ -301,10 +302,19 @@ describe('page of the same note after its target is published', () => {
         const html = page(1, LINKING)
         expect(html).toContain(`The hose starts at the <a href="${TARGET_URL}">Rain barrel</a>.`)
         expect(html).toContain(`<a href="${TARGET_URL}">the barrel</a> or the`)
-        expect(html).toContain(`<a href="${TARGET_URL}">Rain barrel#Cleaning</a>`)
+        expect(html).toContain(`<a href="${TARGET_URL}#cleaning">Rain barrel > Cleaning</a>`)
         expect(html).toContain(
             `With the full path: <a href="${TARGET_URL}">10 Garden/Rain barrel</a>. As a Markdown link: <a href="${TARGET_URL}">the barrel</a>.`
         )
+    })
+
+    // The embed of a heading of a published note shows that section (issue 45).
+    test('shows the embed of a heading of the target as that section', () => {
+        const html = noteOf(page(1, LINKING))
+        expect(html).toContain(
+            `<div class="note-embed" data-embed-of="${TARGET_URL}"><h2>Cleaning</h2>\n<p>Empty it in autumn and brush the inside.</p>`
+        )
+        expect(html).not.toContain('A barrel of 200 liters')
     })
 
     test('still shows the name that no note has as plain text', () => {
