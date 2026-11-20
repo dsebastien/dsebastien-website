@@ -679,7 +679,11 @@
             "source": "^```meta-bind-button$[\\s\\S]*^```meta-bind$",
             "checks": [
                 {
-                    "lacks": "meta-bind"
+                    "has": "[class*=\"meta-bind\" i], [data-language*=\"meta-bind\" i]",
+                    "count": 0
+                },
+                {
+                    "lacks": "garden:log-watering"
                 },
                 {
                     "lacks": "Log watering"
