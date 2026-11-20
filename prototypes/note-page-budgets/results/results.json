@@ -1,0 +1,1059 @@
+{
+    "markdown": {
+        "10 Notes/Long note.md": 23085,
+        "20 Library/Media note.md": 3450,
+        "10 Notes/Hub note.md": 1788
+    },
+    "runs": 5,
+    "lighthouse": "13.6.0",
+    "capped:10 Notes/Long note.md": {
+        "path": "/10+Notes/Long+note",
+        "bytes": {
+            "html": {
+                "raw": 47036,
+                "gzip": 14582,
+                "brotli": 12285
+            },
+            "noteBody": {
+                "raw": 28925,
+                "gzip": 9544,
+                "brotli": 8319
+            },
+            "shell": {
+                "raw": 18111,
+                "gzip": 4967,
+                "brotli": 4114
+            },
+            "inlineScripts": {
+                "raw": 3390,
+                "gzip": 1318,
+                "brotli": 1101
+            },
+            "styles": [
+                {
+                    "raw": 37148,
+                    "gzip": 7364,
+                    "brotli": 6468
+                }
+            ],
+            "scripts": [],
+            "elements": 489
+        },
+        "mobile": {
+            "median": {
+                "lcp": 752.0849000000001,
+                "fcp": 752.0849000000001,
+                "tbt": 0,
+                "cls": 0.1788736464860181,
+                "si": 752.0849000000001,
+                "tti": 752.2833,
+                "bytes": 137280,
+                "requests": 4
+            },
+            "max": {
+                "lcp": 753.2179000000001,
+                "cls": 0.1788736464860181,
+                "tbt": 6.478774999999985
+            },
+            "benchmark": 2217,
+            "load": 3.53,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 4,
+                    "bytes": 133570
+                },
+                "image": {
+                    "requests": 1,
+                    "bytes": 78561
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 12477
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        },
+        "desktop": {
+            "median": {
+                "lcp": 202.26479999999998,
+                "fcp": 202.26479999999998,
+                "tbt": 0,
+                "cls": 0.102045099875156,
+                "si": 230.37836232363497,
+                "tti": 202.26479999999998,
+                "bytes": 137280,
+                "requests": 4
+            },
+            "max": {
+                "lcp": 202.96475000000004,
+                "cls": 0.102045099875156,
+                "tbt": 0
+            },
+            "benchmark": 1987.5,
+            "load": 2.34,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 4,
+                    "bytes": 133589
+                },
+                "image": {
+                    "requests": 1,
+                    "bytes": 78580
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 12477
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        }
+    },
+    "capped:20 Library/Media note.md": {
+        "path": "/20+Library/Media+note",
+        "bytes": {
+            "html": {
+                "raw": 19847,
+                "gzip": 6308,
+                "brotli": 5201
+            },
+            "noteBody": {
+                "raw": 4475,
+                "gzip": 1896,
+                "brotli": 1529
+            },
+            "shell": {
+                "raw": 15372,
+                "gzip": 4441,
+                "brotli": 3634
+            },
+            "inlineScripts": {
+                "raw": 3390,
+                "gzip": 1318,
+                "brotli": 1101
+            },
+            "styles": [
+                {
+                    "raw": 37148,
+                    "gzip": 7364,
+                    "brotli": 6468
+                }
+            ],
+            "scripts": [],
+            "elements": 234
+        },
+        "mobile": {
+            "median": {
+                "lcp": 1173.0504,
+                "fcp": 782.0336,
+                "tbt": 0,
+                "cls": 0.01704143805178098,
+                "si": 782.0336,
+                "tti": 1180.5504,
+                "bytes": 194355,
+                "requests": 5
+            },
+            "max": {
+                "lcp": 1976.0426000000002,
+                "cls": 0.01704143805178098,
+                "tbt": 38
+            },
+            "benchmark": 2062,
+            "load": 1.84,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 5,
+                    "bytes": 190645
+                },
+                "image": {
+                    "requests": 1,
+                    "bytes": 142371
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 5392
+                },
+                "media": {
+                    "requests": 1,
+                    "bytes": 350
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        },
+        "desktop": {
+            "median": {
+                "lcp": 323.8601,
+                "fcp": 203.0738,
+                "tbt": 0,
+                "cls": 0.001380487738999452,
+                "si": 248.40914234553637,
+                "tti": 327.8601,
+                "bytes": 272891,
+                "requests": 6
+            },
+            "max": {
+                "lcp": 461.3133,
+                "cls": 0.001380487738999452,
+                "tbt": 0
+            },
+            "benchmark": 1800,
+            "load": 1.68,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 6,
+                    "bytes": 334646
+                },
+                "image": {
+                    "requests": 2,
+                    "bytes": 220881
+                },
+                "media": {
+                    "requests": 1,
+                    "bytes": 65841
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 5392
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        }
+    },
+    "capped:10 Notes/Hub note.md": {
+        "path": "/10+Notes/Hub+note",
+        "bytes": {
+            "html": {
+                "raw": 36309,
+                "gzip": 10058,
+                "brotli": 8498
+            },
+            "noteBody": {
+                "raw": 2746,
+                "gzip": 938,
+                "brotli": 741
+            },
+            "shell": {
+                "raw": 33563,
+                "gzip": 9280,
+                "brotli": 7838
+            },
+            "inlineScripts": {
+                "raw": 3390,
+                "gzip": 1318,
+                "brotli": 1101
+            },
+            "styles": [
+                {
+                    "raw": 37148,
+                    "gzip": 7364,
+                    "brotli": 6468
+                }
+            ],
+            "scripts": [],
+            "elements": 409
+        },
+        "mobile": {
+            "median": {
+                "lcp": 798.5450000000001,
+                "fcp": 798.5450000000001,
+                "tbt": 0,
+                "cls": 0.01669888750769423,
+                "si": 798.5450000000001,
+                "tti": 826.5209000000001,
+                "bytes": 54931,
+                "requests": 3
+            },
+            "max": {
+                "lcp": 802.6644000000001,
+                "cls": 0.01669888750769423,
+                "tbt": 21.515449999999987
+            },
+            "benchmark": 1868,
+            "load": 1.57,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 3,
+                    "bytes": 51221
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 8689
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "image": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        },
+        "desktop": {
+            "median": {
+                "lcp": 250.74810000000002,
+                "fcp": 250.74810000000002,
+                "tbt": 0,
+                "cls": 0.001720317852146925,
+                "si": 255.92125048559728,
+                "tti": 250.74810000000002,
+                "bytes": 54931,
+                "requests": 3
+            },
+            "max": {
+                "lcp": 257.0483,
+                "cls": 0.001720317852146925,
+                "tbt": 0
+            },
+            "benchmark": 1918.5,
+            "load": 3.02,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 3,
+                    "bytes": 51221
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 8689
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "image": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        }
+    },
+    "tuned:10 Notes/Long note.md": {
+        "path": "/10+Notes/Long+note",
+        "bytes": {
+            "html": {
+                "raw": 47160,
+                "gzip": 14670,
+                "brotli": 12340
+            },
+            "noteBody": {
+                "raw": 28931,
+                "gzip": 9566,
+                "brotli": 8335
+            },
+            "shell": {
+                "raw": 18229,
+                "gzip": 5029,
+                "brotli": 4182
+            },
+            "inlineScripts": {
+                "raw": 3390,
+                "gzip": 1318,
+                "brotli": 1101
+            },
+            "styles": [
+                {
+                    "raw": 37148,
+                    "gzip": 7364,
+                    "brotli": 6468
+                }
+            ],
+            "scripts": [],
+            "elements": 490
+        },
+        "mobile": {
+            "median": {
+                "lcp": 837.1165000000001,
+                "fcp": 837.1165000000001,
+                "tbt": 0,
+                "cls": 0,
+                "si": 837.1165000000001,
+                "tti": 837.1165000000001,
+                "bytes": 137335,
+                "requests": 4
+            },
+            "max": {
+                "lcp": 881.8310000000001,
+                "cls": 0,
+                "tbt": 0
+            },
+            "benchmark": 2085.5,
+            "load": 2.34,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 4,
+                    "bytes": 133625
+                },
+                "image": {
+                    "requests": 1,
+                    "bytes": 78561
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 12532
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        },
+        "desktop": {
+            "median": {
+                "lcp": 293.9868,
+                "fcp": 293.9868,
+                "tbt": 0,
+                "cls": 0,
+                "si": 293.9868,
+                "tti": 293.9868,
+                "bytes": 137335,
+                "requests": 4
+            },
+            "max": {
+                "lcp": 340.01559999999995,
+                "cls": 0,
+                "tbt": 0
+            },
+            "benchmark": 2068,
+            "load": 2.03,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 4,
+                    "bytes": 133625
+                },
+                "image": {
+                    "requests": 1,
+                    "bytes": 78561
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 12532
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        }
+    },
+    "tuned:20 Library/Media note.md": {
+        "path": "/20+Library/Media+note",
+        "bytes": {
+            "html": {
+                "raw": 19971,
+                "gzip": 6386,
+                "brotli": 5303
+            },
+            "noteBody": {
+                "raw": 4481,
+                "gzip": 1912,
+                "brotli": 1553
+            },
+            "shell": {
+                "raw": 15490,
+                "gzip": 4503,
+                "brotli": 3713
+            },
+            "inlineScripts": {
+                "raw": 3390,
+                "gzip": 1318,
+                "brotli": 1101
+            },
+            "styles": [
+                {
+                    "raw": 37148,
+                    "gzip": 7364,
+                    "brotli": 6468
+                }
+            ],
+            "scripts": [],
+            "elements": 235
+        },
+        "mobile": {
+            "median": {
+                "lcp": 1908.6965,
+                "fcp": 856.9540999999999,
+                "tbt": 0,
+                "cls": 0,
+                "si": 856.9540999999999,
+                "tti": 1908.6965,
+                "bytes": 194457,
+                "requests": 5
+            },
+            "max": {
+                "lcp": 2050.8025,
+                "cls": 0,
+                "tbt": 2.0746500000000196
+            },
+            "benchmark": 1637.5,
+            "load": 3.02,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 5,
+                    "bytes": 190747
+                },
+                "image": {
+                    "requests": 1,
+                    "bytes": 142371
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 5494
+                },
+                "media": {
+                    "requests": 1,
+                    "bytes": 350
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        },
+        "desktop": {
+            "median": {
+                "lcp": 570.0643,
+                "fcp": 310.0643,
+                "tbt": 0,
+                "cls": 0,
+                "si": 310.0643,
+                "tti": 572.0643,
+                "bytes": 272993,
+                "requests": 6
+            },
+            "max": {
+                "lcp": 583.7038,
+                "cls": 0,
+                "tbt": 0
+            },
+            "benchmark": 1682.5,
+            "load": 2.88,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 6,
+                    "bytes": 269283
+                },
+                "image": {
+                    "requests": 2,
+                    "bytes": 220907
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 5494
+                },
+                "media": {
+                    "requests": 1,
+                    "bytes": 350
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        }
+    },
+    "tuned:10 Notes/Hub note.md": {
+        "path": "/10+Notes/Hub+note",
+        "bytes": {
+            "html": {
+                "raw": 36427,
+                "gzip": 10122,
+                "brotli": 8511
+            },
+            "noteBody": {
+                "raw": 2746,
+                "gzip": 938,
+                "brotli": 741
+            },
+            "shell": {
+                "raw": 33681,
+                "gzip": 9343,
+                "brotli": 7888
+            },
+            "inlineScripts": {
+                "raw": 3390,
+                "gzip": 1318,
+                "brotli": 1101
+            },
+            "styles": [
+                {
+                    "raw": 37148,
+                    "gzip": 7364,
+                    "brotli": 6468
+                }
+            ],
+            "scripts": [],
+            "elements": 410
+        },
+        "mobile": {
+            "median": {
+                "lcp": 853.3842999999999,
+                "fcp": 853.3842999999999,
+                "tbt": 0,
+                "cls": 0,
+                "si": 853.3842999999999,
+                "tti": 853.3842999999999,
+                "bytes": 54944,
+                "requests": 3
+            },
+            "max": {
+                "lcp": 865.2516,
+                "cls": 0,
+                "tbt": 0
+            },
+            "benchmark": 1613.5,
+            "load": 2.25,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 3,
+                    "bytes": 51234
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 8702
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "image": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        },
+        "desktop": {
+            "median": {
+                "lcp": 300.7268,
+                "fcp": 300.7268,
+                "tbt": 0,
+                "cls": 0,
+                "si": 300.7268,
+                "tti": 300.7268,
+                "bytes": 54944,
+                "requests": 3
+            },
+            "max": {
+                "lcp": 312.4465,
+                "cls": 0,
+                "tbt": 0
+            },
+            "benchmark": 1883.5,
+            "load": 2.14,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 3,
+                    "bytes": 51234
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 8702
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "image": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        }
+    },
+    "uncapped:10 Notes/Hub note.md": {
+        "path": "/10+Notes/Hub+note",
+        "bytes": {
+            "html": {
+                "raw": 193128,
+                "gzip": 46714,
+                "brotli": 39157
+            },
+            "noteBody": {
+                "raw": 2746,
+                "gzip": 938,
+                "brotli": 741
+            },
+            "shell": {
+                "raw": 190382,
+                "gzip": 46013,
+                "brotli": 38535
+            },
+            "inlineScripts": {
+                "raw": 3390,
+                "gzip": 1318,
+                "brotli": 1101
+            },
+            "styles": [
+                {
+                    "raw": 37148,
+                    "gzip": 7364,
+                    "brotli": 6468
+                }
+            ],
+            "scripts": [],
+            "elements": 1724
+        },
+        "mobile": {
+            "median": {
+                "lcp": 965.2766999999999,
+                "fcp": 965.2766999999999,
+                "tbt": 29.5,
+                "cls": 0,
+                "si": 1185.2885325152436,
+                "tti": 1097.34495,
+                "bytes": 85591,
+                "requests": 3
+            },
+            "max": {
+                "lcp": 1100.9770999999998,
+                "cls": 0,
+                "tbt": 68.60504999999989
+            },
+            "benchmark": 1838,
+            "load": 2.3,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 3,
+                    "bytes": 81881
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 39349
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "image": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        },
+        "desktop": {
+            "median": {
+                "lcp": 297.1327,
+                "fcp": 297.1327,
+                "tbt": 0,
+                "cls": 0.001720317852146925,
+                "si": 531.0351804211577,
+                "tti": 311.21375,
+                "bytes": 85591,
+                "requests": 3
+            },
+            "max": {
+                "lcp": 333.28685,
+                "cls": 0.001720317852146925,
+                "tbt": 0
+            },
+            "benchmark": 1616.5,
+            "load": 2.97,
+            "lcpElement": "",
+            "byType": {
+                "total": {
+                    "requests": 3,
+                    "bytes": 81881
+                },
+                "document": {
+                    "requests": 1,
+                    "bytes": 39349
+                },
+                "font": {
+                    "requests": 1,
+                    "bytes": 35925
+                },
+                "stylesheet": {
+                    "requests": 1,
+                    "bytes": 6607
+                },
+                "image": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "media": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "script": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "other": {
+                    "requests": 0,
+                    "bytes": 0
+                },
+                "third-party": {
+                    "requests": 0,
+                    "bytes": 0
+                }
+            }
+        }
+    }
+}

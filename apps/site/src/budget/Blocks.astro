@@ -1,0 +1,206 @@
+---
+import { AD, BOOK, BOOK_FACTS, NOTE } from './sample.ts'
+
+// Blocks of the note page that both variants place: one block per call.
+interface Props {
+    block:
+        | 'breadcrumb'
+        | 'in-short'
+        | 'part-of'
+        | 'properties'
+        | 'key-facts'
+        | 'author'
+        | 'cite'
+        | 'share'
+        | 'related'
+        | 'ad'
+        | 'backlinks'
+        | 'highlights'
+    kind?: 'concept' | 'book'
+}
+
+const { block, kind = 'concept' } = Astro.props
+const note = kind === 'book' ? BOOK : NOTE
+const cite = `Sébastien Dubois. “${note.title}.” Notes, ${note.updated}. https://notes.dsebastien.net/${kind === 'book' ? 'Books/The+Quiet+Workshop' : '30+Areas/Zettelkasten+(Permanent)'}`
+---
+
+{block === 'breadcrumb' && (
+    <nav aria-label='Breadcrumb' class='text-sm text-muted'>
+        <ol class='flex flex-wrap items-center gap-1.5'>
+            {note.breadcrumb.map((item, index) => (
+                <li class='flex items-center gap-1.5'>
+                    {index > 0 && <span aria-hidden='true'>/</span>}
+                    <a class='hover:text-primary hover:underline' href={item.href}>
+                        {item.label}
+                    </a>
+                </li>
+            ))}
+        </ol>
+    </nav>
+)}
+{block === 'in-short' && (
+    <aside aria-label='In short' class='rounded-card border-l-4 border-secondary bg-surface p-5'>
+        <p class='text-sm font-semibold tracking-widest text-muted uppercase'>In short</p>
+        <p class='mt-2 text-lg'>{note.inShort}</p>
+    </aside>
+)}
+{block === 'part-of' && (
+    <div class='flex flex-wrap items-center gap-2 text-sm'>
+        <span class='text-muted'>Part of</span>
+        {note.partOf.map((map) => (
+            <a class='chip' href='#'>
+                {map}
+            </a>
+        ))}
+    </div>
+)}
+{block === 'properties' && (
+    <details class='card group'>
+        <summary class='flex cursor-pointer items-center justify-between px-5 py-3 font-semibold'>
+            Properties
+            <span class='text-muted transition-transform group-open:rotate-180' aria-hidden='true'>
+                ▾
+            </span>
+        </summary>
+        <dl class='grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 border-t border-border px-5 py-4 text-sm'>
+            {NOTE.properties.map((property) => (
+                <>
+                    <dt class='text-muted'>{property.key}</dt>
+                    <dd>{property.value}</dd>
+                </>
+            ))}
+        </dl>
+    </details>
+)}
+{block === 'key-facts' && (
+    <aside aria-label='Key facts' class='card flex gap-5 p-5'>
+        <div
+            class='flex h-36 w-24 shrink-0 items-end rounded-control bg-secondary p-2 text-xs font-bold text-on-secondary'
+            aria-hidden='true'
+        >
+            {BOOK.title}
+        </div>
+        <dl class='grid grid-cols-[6.5rem_1fr] content-start gap-x-3 gap-y-1.5 text-sm'>
+            {BOOK_FACTS.map((fact) => (
+                <>
+                    <dt class='text-muted'>{fact.key}</dt>
+                    <dd class='font-medium'>{fact.value}</dd>
+                </>
+            ))}
+        </dl>
+    </aside>
+)}
+{block === 'author' && (
+    <p class='flex items-center gap-3 text-sm'>
+        <span
+            class='flex h-9 w-9 items-center justify-center rounded-pill bg-secondary font-bold text-on-secondary'
+            aria-hidden='true'
+        >
+            S
+        </span>
+        <span>
+            By{' '}
+            <a class='link' href='#'>
+                Sébastien Dubois
+            </a>
+            <span class='text-muted'> · Notes since 2019</span>
+        </span>
+    </p>
+)}
+{block === 'cite' && (
+    <section aria-labelledby='cite-title' class='card p-5'>
+        <h2 id='cite-title' class='font-semibold'>
+            Cite this note
+        </h2>
+        <p class='mt-2 rounded-control bg-well p-3 font-mono text-sm break-words'>{cite}</p>
+        <div class='mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted'>
+            <span>
+                License:{' '}
+                <a class='link' href='#'>
+                    {NOTE.license}
+                </a>
+            </span>
+            <button type='button' class='button-quiet'>
+                Copy
+            </button>
+        </div>
+    </section>
+)}
+{block === 'share' && (
+    <div class='flex flex-wrap items-center gap-2 text-sm'>
+        <span class='mr-1 text-muted'>Share</span>
+        {['Copy link', 'Markdown', 'LinkedIn', 'Bluesky', 'Email'].map((target) => (
+            <button type='button' class='button-quiet'>
+                {target}
+            </button>
+        ))}
+    </div>
+)}
+{block === 'related' && (
+    <section aria-labelledby='related-title'>
+        <h2 id='related-title' class='section-title'>
+            Related notes
+        </h2>
+        <ul class='grid gap-3 sm:grid-cols-2'>
+            {NOTE.related.map((related) => (
+                <li>
+                    <a class='card-link h-full' href='#'>
+                        <span class='badge'>{related.type}</span>
+                        <span class='mt-2 block font-semibold'>{related.title}</span>
+                        <span class='mt-1 block text-sm text-muted'>{related.reason}</span>
+                    </a>
+                </li>
+            ))}
+        </ul>
+    </section>
+)}
+{block === 'ad' && (
+    <aside
+        aria-label='From the store'
+        class='card flex flex-col gap-4 bg-well p-5 sm:flex-row sm:items-center'
+    >
+        <div class='flex-1'>
+            <p class='text-xs font-semibold tracking-widest text-muted uppercase'>From my store</p>
+            <p class='mt-1 text-lg font-bold'>{AD.product}</p>
+            <p class='mt-1 text-muted'>{AD.pitch}</p>
+        </div>
+        <a class='button shrink-0' href='#'>
+            {AD.cta}
+        </a>
+    </aside>
+)}
+{block === 'backlinks' && (
+    <section aria-labelledby='backlinks-title'>
+        <h2 id='backlinks-title' class='section-title'>
+            Notes that link here
+        </h2>
+        <ul class='space-y-3'>
+            {NOTE.backlinks.map((backlink) => (
+                <li class='card p-4'>
+                    <a class='link font-semibold' href='#'>
+                        {backlink.title}
+                    </a>
+                    <p
+                        class='mt-1 text-muted [&_mark]:bg-transparent [&_mark]:font-semibold [&_mark]:text-primary'
+                        set:html={backlink.context}
+                    />
+                </li>
+            ))}
+        </ul>
+    </section>
+)}
+{block === 'highlights' && (
+    <div class='note-text'>
+        <h2 id='notes'>My notes</h2>
+        <p>
+            I read it in one weekend. The book is short, and each chapter ends with one habit to
+            try. The best part is about the first hour of the day.
+        </p>
+        <h2 id='highlights'>Highlights</h2>
+        {BOOK.highlights.map((line) => (
+            <blockquote>
+                <p>{line}</p>
+            </blockquote>
+        ))}
+    </div>
+)}

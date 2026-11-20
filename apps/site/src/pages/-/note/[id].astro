@@ -1,31 +1,36 @@
 ---
 import type { GetStaticPaths } from 'astro'
 import { getCollection } from 'astro:content'
+import '../../../styles/global.css'
+import Blocks from '../../../budget/Blocks.astro'
+import LocalGraph from '../../../budget/LocalGraph.astro'
+import Newsletter from '../../../budget/Newsletter.astro'
+import Footer from '../../../components/Footer.astro'
+import Header from '../../../components/Header.astro'
 import { readPublishedNotes } from '../../../content-store.ts'
-import Page from '../../../layouts/Page.astro'
+import { modeScript, modeSwitchScript } from '../../../mode.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
 import { languageOf } from '../../../rendering/language.ts'
 import { SitePages } from '../../../rendering/page.ts'
+import { backlinksOf, outlineOf, type Backlink } from '../../../budget/measure.ts'
+import latinFont from '@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2?url'
 
-// The page of a published note. Its file has the identity of the note as its
-// name, which is plain ASCII on every system and on every host. The resolver
-// leads the canonical URL of the note to this file.
+// Prototype of issue 25 (PROTO-07): the note page of variant B (R49) on the
+// real rendering of issue 45, to measure it. The blocks that have no slice
+// yet (in short, part of, properties, related, ad, cite, share, local graph,
+// newsletter) keep the invented content of the mockups, so that their weight
+// is in the page. The backlinks are real, from the manifest, with the line
+// around each link, and capped by BUDGET_BACKLINKS (PAGE-03).
 export const getStaticPaths = (async () => {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
     const notes = await readPublishedNotes()
     const site = notes.map((note) => {
         const entry = entries.get(note.vaultPath)
-        if (entry === undefined) {
-            throw new Error(`the content store has no cleaned note for "${note.vaultPath}"`)
-        }
-        if (entry.rendered === undefined) {
+        if (entry?.rendered === undefined) {
             throw new Error(`the note "${note.vaultPath}" has no markup`)
         }
         return { note, entry, markup: entry.rendered.html }
     })
-    // The pages of this build (BUILD-05): the markup of each note, which Astro
-    // keeps between two builds, with its links and its embeds in the state of
-    // this build.
     const pages = new SitePages(
         site.map(({ note, markup }) => ({
             vaultPath: note.vaultPath,
@@ -35,17 +40,148 @@ export const getStaticPaths = (async () => {
             files: new Map(note.attachments.map((file) => [file.link, file]))
         }))
     )
+    const cap = Number(process.env['BUDGET_BACKLINKS'] ?? '50')
+    const backlinks = backlinksOf(
+        site.map(({ note, entry }) => ({ note, body: entry.body ?? '' })),
+        cap
+    )
     return site.map(({ note, entry }) => ({
         params: { id: note.id },
-        props: { note, language: languageOf(entry.data), pages }
+        props: {
+            note,
+            language: languageOf(entry.data),
+            pages,
+            backlinks: backlinks.get(note.vaultPath) ?? { shown: [] as Backlink[], total: 0 }
+        }
     }))
 }) satisfies GetStaticPaths
 
-const { note, language, pages } = Astro.props
-const html = pages.render(note.vaultPath)
+const { note, language, pages, backlinks } = Astro.props
+const rendered = pages.render(note.vaultPath)
+const canonical = new URL(note.path, Astro.site).href
+// A variant of the measure (BUDGET_PRELOAD=1): the Latin font is preloaded,
+// and the first image of the note loads at once with a high priority (PERF-25).
+const preload = process.env['BUDGET_PRELOAD'] === '1'
+const html = preload
+    ? rendered.replace(/<img([^>]*?) loading="lazy"/, '<img$1 fetchpriority="high"')
+    : rendered
+const outline = outlineOf(html)
 ---
 
-<Page title={note.title} path={note.path} lang={language}>
-    <article class='note-text max-w-[72ch]' data-note-body set:html={html} />
-    <script is:inline set:html={oldAnchorScript} />
-</Page>
+<!doctype html>
+<html lang={language} data-theme='dark'>
+    <head>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <script is:inline set:html={modeScript} />
+        {preload && <link rel='preload' href={latinFont} as='font' type='font/woff2' crossorigin />}
+        <title>{note.title}</title>
+        <link rel='canonical' href={canonical} />
+    </head>
+    <body class='flex min-h-screen flex-col'>
+        <a class='skip-link' href='#content'>
+            Skip to the content
+        </a>
+        <Header />
+        <div class='border-b border-border bg-well'>
+            <div class='mx-auto max-w-7xl px-4 py-8 sm:px-6'>
+                <Blocks block='breadcrumb' />
+                <h1 class='mt-4 max-w-4xl text-3xl font-bold tracking-tight sm:text-5xl'>
+                    {note.title}
+                </h1>
+                <p class='mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted'>
+                    <span class='badge'>Note</span>
+                    <span>
+                        Created <time datetime='2024-03-02'>2024-03-02</time>
+                    </span>
+                    <span>
+                        Updated <time datetime='2026-11-18'>2026-11-18</time>
+                    </span>
+                </p>
+            </div>
+        </div>
+        <div class='mx-auto grid w-full max-w-7xl flex-1 gap-10 px-4 pt-8 sm:px-6 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[13rem_minmax(0,1fr)_18rem]'>
+            <aside class='hidden lg:block' aria-label='On this page'>
+                {outline.length > 0 && (
+                    <nav class='sticky top-24'>
+                        <p class='section-title'>On this page</p>
+                        <ol class='space-y-1 text-sm'>
+                            {outline.map((item) => (
+                                <li class:list={[item.level === 3 && 'pl-3']}>
+                                    <a
+                                        href={`#${item.id}`}
+                                        class='block rounded-control px-3 py-1.5 text-muted hover:bg-surface'
+                                    >
+                                        {item.label}
+                                    </a>
+                                </li>
+                            ))}
+                        </ol>
+                    </nav>
+                )}
+            </aside>
+            <main id='content' class='min-w-0 max-w-[72ch]'>
+                <div class='space-y-5'>
+                    <Blocks block='in-short' />
+                    <Blocks block='part-of' />
+                    <Blocks block='properties' />
+                </div>
+                <article class='note-text mt-8' data-note-body set:html={html} />
+                <div class='mt-12 space-y-12'>
+                    <div class='space-y-5 xl:hidden'>
+                        <Blocks block='author' />
+                        <Blocks block='share' />
+                        <Blocks block='cite' />
+                    </div>
+                    <Blocks block='related' />
+                    <Blocks block='ad' />
+                    {backlinks.total > 0 && (
+                        <section aria-labelledby='backlinks-title'>
+                            <h2 id='backlinks-title' class='section-title'>
+                                Notes that link here ({backlinks.total})
+                            </h2>
+                            <ul class='space-y-3'>
+                                {backlinks.shown.map((backlink) => (
+                                    <li class='card p-4'>
+                                        <a class='link font-semibold' href={backlink.path}>
+                                            {backlink.title}
+                                        </a>
+                                        <p class='mt-1 text-muted'>{backlink.context}</p>
+                                    </li>
+                                ))}
+                            </ul>
+                            {backlinks.total > backlinks.shown.length && (
+                                <p class='mt-4'>
+                                    <a class='link' href='#'>
+                                        All {backlinks.total} notes that link here
+                                    </a>
+                                </p>
+                            )}
+                        </section>
+                    )}
+                    <section aria-labelledby='graph-heading'>
+                        <h2 id='graph-heading' class='section-title'>
+                            Local graph
+                        </h2>
+                        <LocalGraph />
+                    </section>
+                    <Newsletter filled />
+                </div>
+            </main>
+            <aside class='hidden xl:block' aria-label='About this note'>
+                <div class='sticky top-24 space-y-5'>
+                    <div class='card p-5'>
+                        <Blocks block='author' />
+                    </div>
+                    <Blocks block='cite' />
+                    <div class='card p-5'>
+                        <Blocks block='share' />
+                    </div>
+                </div>
+            </aside>
+        </div>
+        <Footer />
+        <script is:inline set:html={oldAnchorScript} />
+        <script is:inline set:html={modeSwitchScript} />
+    </body>
+</html>
