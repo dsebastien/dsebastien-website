@@ -48,9 +48,11 @@
     },
     {
         "form": "wikilink-duplicate-name",
-        "result": "pass",
-        "failures": [],
-        "html": "<p>Plant <a class=\"article-wikilink\" href=\"/notes/10-garden/herb-bed/mint\">Mint</a> in a pot, and make <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/mint\">mint tea</a>.</p>"
+        "result": "fail",
+        "failures": [
+            "no element matches \"a[href*=\"herb\" i][href$=\"mint\" i]\" with the text \"Mint\""
+        ],
+        "html": "<p>Plant <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/mint\">Mint</a> in a pot, and make <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/mint\">mint tea</a>.</p>"
     },
     {
         "form": "wikilink-own-heading",
@@ -246,6 +248,7 @@
         "form": "meta-bind-block",
         "result": "fail",
         "failures": [
+            "the HTML holds \"garden:log-watering\"",
             "the HTML holds \"Log watering\"",
             "the HTML holds \"INPUT[\"",
             "\"pre\" matches 2 elements, not 0"

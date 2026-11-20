@@ -216,7 +216,8 @@
         "form": "meta-bind-block",
         "result": "fail",
         "failures": [
-            "the HTML holds \"meta-bind\"",
+            "\"[class*=\"meta-bind\" i], [data-language*=\"meta-bind\" i]\" matches 2 elements, not 0",
+            "the HTML holds \"garden:log-watering\"",
             "the HTML holds \"Log watering\"",
             "the HTML holds \"INPUT[\"",
             "\"pre\" matches 2 elements, not 0"

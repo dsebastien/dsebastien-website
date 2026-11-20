@@ -17,7 +17,10 @@
     {
         "form": "wikilink-block",
         "result": "fail",
-        "failures": ["no element matches \"a[href*=\"#\"]\" with the text \"why squash helps\""],
+        "failures": [
+            "no element matches \"a[href*=\"#\"]\" with the text \"why squash helps\"",
+            "no element matches \"a[href$=\"squash-shade\"]\" with the text \"why squash helps\""
+        ],
         "html": "<h1>Link to a block</h1>\n<p>See why squash helps.</p>"
     },
     {
@@ -263,7 +266,8 @@
         "form": "meta-bind-block",
         "result": "fail",
         "failures": [
-            "the HTML holds \"meta-bind\"",
+            "\"[class*=\"meta-bind\" i], [data-language*=\"meta-bind\" i]\" matches 2 elements, not 0",
+            "the HTML holds \"garden:log-watering\"",
             "the HTML holds \"Log watering\"",
             "the HTML holds \"INPUT[\"",
             "\"pre\" matches 2 elements, not 0"
