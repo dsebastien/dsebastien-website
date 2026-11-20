@@ -305,6 +305,7 @@ One publication at a time on a device, for every face (TOOL-09, PUB-27 of the sp
 4. A run that stops halfway (a crash, a power cut) leaves the lock. The tool never removes a lock by itself: the `unlock` command (`unlock --content-store <folder>`) removes it, and says whether a lock was there. Then the next `plan` or `publish` puts the copy back. The author runs `unlock` only when no publication runs.
 5. A publication checks that the lock is still its own before its first write into the copy, before its commit, and after its push. When it is not (the author ran `unlock` while it ran, and another run took the copy), it stops and touches the copy no more: it puts no file back (it would put them back over the work of the other run), deletes no upload, corrects no property, and never removes the journal or the lock of the other run.
 6. A check of the lock is a read at one moment, so the commit itself is checked too: see rule 5 of "A publication".
+7. The recovery of a run that stopped halfway (by `plan` or `publish`, see "The run journal") checks that the lock is still its own before each step that writes into the copy (each put back, each move of the branch) and before it writes or removes the journal (issue 75). When it is not, it stops with the message of rule 5 and changes nothing more: the journal stays for the next run.
 
 ### The run journal
 

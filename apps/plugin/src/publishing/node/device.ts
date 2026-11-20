@@ -697,12 +697,14 @@ function gitContentStore(folder: string): ContentStore {
         async head() {
             return await headOf()
         },
-        async recover(head, paths, plan) {
+        async recover(head, paths, plan, ownLock) {
             await checkRoot()
             const now = await headOf()
             const journal = new Set(paths)
             /** Puts each path of the journal back as this commit has it, in the work tree and in the index. */
             const putBack = async (commit: string | undefined): Promise<void> => {
+                // Another run can have taken the copy (issue 75): nothing more is written.
+                await ownLock()
                 const inCommit = new Set(
                     commit === undefined
                         ? []
@@ -819,6 +821,7 @@ function gitContentStore(folder: string): ContentStore {
             }
             // The tool never pushes an old commit: it can be older than a
             // guard that the author added since.
+            await ownLock()
             await (head === undefined
                 ? git('update-ref', '-d', 'HEAD')
                 : git('update-ref', 'HEAD', head))

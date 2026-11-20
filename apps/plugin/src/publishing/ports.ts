@@ -88,8 +88,15 @@ export interface ContentStore {
      * back. Throws when the copy is not the root of its own git repository,
      * when its history cannot be put back by the rules, or when the tool must
      * know whether the push arrived and the content store cannot be reached.
+     * It calls `ownLock` before each step that writes into the copy, and stops
+     * with its error when the lock of the run is not its own any more.
      */
-    recover(head: string | undefined, paths: readonly string[], plan: string): Promise<Recovery>
+    recover(
+        head: string | undefined,
+        paths: readonly string[],
+        plan: string,
+        ownLock: () => Promise<void>
+    ): Promise<Recovery>
     /**
      * The text of a file, by its path in the content store. `undefined` only
      * when there is no such file. It throws when the file cannot be read or is

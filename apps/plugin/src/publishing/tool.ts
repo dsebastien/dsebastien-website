@@ -301,12 +301,17 @@ async function readJournal(device: Device): Promise<RunJournal | undefined> {
  * the journal after it: none, or `correct` when the correction of the
  * property is owed.
  */
-async function recover(device: Device): Promise<RunJournal | undefined> {
+async function recover(
+    device: Device,
+    ownLock: () => Promise<void>
+): Promise<RunJournal | undefined> {
     const journal = await readJournal(device)
     if (journal?.step !== 'write') {
         return journal
     }
-    const result = await device.store.recover(journal.head, journal.paths, journal.plan)
+    const result = await device.store.recover(journal.head, journal.paths, journal.plan, ownLock)
+    // The journal is the one of the run only while the lock is its own (issue 75).
+    await ownLock()
     if (result === 'pushed' || journal.correctionOwed) {
         const after: RunJournal = { step: 'correct' }
         await device.local.saveJournal(journalText(after))
@@ -414,7 +419,7 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     // A publication that stopped halfway left files in the copy: they are put
     // back first, with the lock, so that no publication starts in the middle.
     if ((await readJournal(device))?.step === 'write') {
-        await withLock(device, { command: 'plan' }, () => recover(device))
+        await withLock(device, { command: 'plan' }, (ownLock) => recover(device, ownLock))
     }
     const computed = await recordFor(device, normalSelection(selection), 'try')
     // The id names the record. It is outside the parity rule (TOOL-30).
@@ -1125,7 +1130,7 @@ async function apply(
 ): Promise<PublicationReport> {
     // A publication that stopped halfway is put back first. When it stopped
     // after its push, the correction of the property is owed.
-    const owed = (await recover(device))?.step === 'correct'
+    const owed = (await recover(device, ownLock))?.step === 'correct'
     const record = await device.local.load(id)
     if (record === undefined) {
         throw new Error(`there is no plan with the id ${id} on this device`)

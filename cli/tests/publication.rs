@@ -1211,3 +1211,63 @@ fn a_publication_whose_lock_another_run_took_before_the_commit_makes_no_commit()
         head
     );
 }
+
+/// Issue 75: the recovery of a plan checks its own lock before each write.
+#[test]
+fn a_plan_whose_lock_another_run_took_during_its_recovery_changes_nothing_more() {
+    let setup = set_up();
+    let id = setup.plan(NOTE);
+    let crashed = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("publish")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .args(["--plan", &id, "--time", TIME])
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", "write")
+        .output()
+        .expect("the program starts");
+    assert_eq!(crashed.status.code(), Some(99), "{}", errors_of(&crashed));
+    // The lock is a file of the copy: `unlock` takes no vault.
+    let unlocked = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("unlock")
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .output()
+        .expect("the program starts");
+    assert!(unlocked.status.success(), "{}", errors_of(&unlocked));
+    let local = setup.copy.join(".git").join("vault-publish");
+    let journal = fs::read_to_string(local.join("journal.json")).expect("the journal exists");
+    let written = setup.copy.join("notes").join(NOTE);
+    assert!(written.exists());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("plan")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .args(["--include", NOTE])
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_STEAL_LOCK", "recover")
+        .output()
+        .expect("the program starts");
+
+    assert_eq!(output.status.code(), Some(1));
+    let errors = errors_of(&output);
+    assert!(
+        errors.contains("the lock of this publication was removed while it ran"),
+        "{errors}"
+    );
+    assert!(written.exists());
+    assert_eq!(
+        fs::read_to_string(local.join("journal.json")).expect("the journal exists"),
+        journal
+    );
+    assert!(
+        fs::read_to_string(local.join("lock"))
+            .expect("the lock of the other run exists")
+            .contains("another run")
+    );
+}

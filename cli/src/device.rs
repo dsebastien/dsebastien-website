@@ -465,10 +465,13 @@ impl ContentStore {
         head: Option<&str>,
         paths: &[String],
         plan: &str,
+        own_lock: &dyn Fn() -> Result<(), String>,
     ) -> Result<Recovery, String> {
         self.check_root()?;
+        steal_point("recover", self);
         let now = self.head();
         if now.as_deref() == head {
+            own_lock()?;
             self.put_back(head, paths)?;
             return Ok(Recovery::Undone);
         }
@@ -518,6 +521,7 @@ impl ContentStore {
         };
         let Some(first) = first.filter(|_| of_the_run) else {
             // The run made no commit, and other commits came after head.
+            own_lock()?;
             self.put_back(Some(&now), paths)?;
             return Ok(Recovery::Undone);
         };
@@ -542,6 +546,7 @@ impl ContentStore {
         }
         // The tool never pushes an old commit: it can be older than a guard
         // that the author added since.
+        own_lock()?;
         match head {
             Some(head) => self.git_output(&["update-ref", "HEAD", head])?,
             None => self.git_output(&["update-ref", "-d", "HEAD"])?,

@@ -3,6 +3,7 @@ import { chmod, mkdir, readdir, rm, stat, symlink, writeFile } from 'node:fs/pro
 import { join } from 'node:path'
 import {
     copyFixtureVault,
+    crashingStore,
     gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
@@ -970,6 +971,42 @@ describe('failure cases after the first review', () => {
             expect(await Bun.file(lock).text()).toBe(OTHER_LOCK)
         }
     )
+
+    // Issue 75: the recovery of a plan checks its own lock before each write.
+    test('a plan whose lock another run took during its recovery changes nothing more in the copy and in the journal', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        const stopped = crashingStore(setup.device.store, setup.copy, 'write')
+        void publish({ ...setup.device, store: stopped.store }, planned.id, RUN)
+        await stopped.reached
+        expect(await unlock(setup.device)).toBe(true)
+        const lock = join(setup.copy, '.git', 'vault-publish', 'lock')
+        const journal = join(setup.copy, '.git', 'vault-publish', 'journal.json')
+        const journalText = await Bun.file(journal).text()
+        const written = join(setup.copy, 'notes', NOTE)
+        expect(await Bun.file(written).exists()).toBe(true)
+        // Another run takes the copy as the recovery of the plan starts.
+        const store = setup.device.store
+        const device: Device = {
+            ...setup.device,
+            store: {
+                ...store,
+                recover: async (...args: Parameters<typeof store.recover>) => {
+                    await writeFile(lock, OTHER_LOCK)
+                    return await store.recover(...args)
+                }
+            }
+        }
+
+        expect(await rejectionOf(plan(device, { include: [NOTE] }))).toContain(
+            'the lock of this publication was removed while it ran'
+        )
+
+        expect(await Bun.file(written).exists()).toBe(true)
+        expect(await Bun.file(journal).text()).toBe(journalText)
+        expect(await Bun.file(lock).text()).toBe(OTHER_LOCK)
+    })
 
     test('a publication whose lock another run took before its commit leaves the copy to that run and pushes nothing', async () => {
         await using stores = await makeTestStores()

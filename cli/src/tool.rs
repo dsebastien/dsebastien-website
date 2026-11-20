@@ -292,7 +292,7 @@ fn read_journal(device: &Device) -> Result<Option<RunJournal>, String> {
 /// Puts back what a publication that stopped halfway left (R46). The result
 /// is true when the correction of the property is owed: the journal is then
 /// `correct`.
-fn recover(device: &Device) -> Result<bool, String> {
+fn recover(device: &Device, own_lock: &dyn Fn() -> Result<(), String>) -> Result<bool, String> {
     match read_journal(device)? {
         None => Ok(false),
         Some(RunJournal::Correct) => Ok(true),
@@ -302,7 +302,12 @@ fn recover(device: &Device) -> Result<bool, String> {
             paths,
             plan,
         }) => {
-            let result = device.store.recover(head.as_deref(), &paths, &plan)?;
+            let result = device
+                .store
+                .recover(head.as_deref(), &paths, &plan, own_lock)?;
+            // The journal is the one of the run only while the lock is its own
+            // (issue 75).
+            own_lock()?;
             if result == Recovery::Pushed || correction_owed {
                 device
                     .store
@@ -432,7 +437,9 @@ pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
     // put back first, with the lock, so that no publication starts in the
     // middle.
     if matches!(read_journal(device)?, Some(RunJournal::Write { .. })) {
-        with_lock(device, &json!({ "command": "plan" }), |_| recover(device))?;
+        with_lock(device, &json!({ "command": "plan" }), |own_lock| {
+            recover(device, own_lock)
+        })?;
     }
     let computed = record_for(device, selection, Fetch::Try)?;
     // The id names the record. It is outside the parity rule (TOOL-30).
@@ -1361,7 +1368,7 @@ fn apply(
 ) -> Result<Outcome, String> {
     // A publication that stopped halfway is put back first. When it stopped
     // after its push, the correction of the property is owed.
-    let owed = recover(device)?;
+    let owed = recover(device, own_lock)?;
     let record = device
         .store
         .load_plan(id)
