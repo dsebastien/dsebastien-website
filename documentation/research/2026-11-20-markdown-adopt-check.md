@@ -23,64 +23,67 @@ Every candidate works on the same published set: every new note of the fixture v
 
 1. Sätteri today: the site of main. The tool publishes that set, the site is built from the content store and served, and the runner reads the text of each note page. The site makes its own links and attachment URLs.
 2. Quartz v5: the transformer packages of Quartz v5 (`@quartz-community/obsidian-flavored-markdown` 2.2.0, `github-flavored-markdown` 2.1.1, `latex` 1.0.2, `syntax-highlighting` 1.0.3) on unified, in the order of the default Quartz configuration, on the note without its properties. The transformer parses with `remark-obsidian` and its legacy preset, its default: the parser that R50 keeps. After it, the link rule of this project gives each link and each file (`src` of an image, a sound, a video, a frame) its URL of the site, because the project has one resolver (ADR 0005).
-3. `astro-loader-obsidian` 0.10.0, in an Astro 5 project of its own (Astro 5.18.2), because it declares Astro 5 only. It reads a copy of the published notes with their properties and the files of the fixture vault, and makes its own links and file URLs: it takes no other resolver.
+3. Parser alone: `@quartz-community/remark-obsidian` 2.2.1 with its legacy preset, the parser that R50 keeps, with a plain rendering (`remark-rehype`), or with the small HTML plugin of the same project (`@quartz-community/rehype-obsidian` 1.3.0), then the same link rule. This is where the setup of R50 starts, before own rendering code.
+4. `astro-loader-obsidian` 0.10.0, in an Astro 5 project of its own (Astro 5.18.2), because it declares Astro 5 only. It reads a copy of the published notes with their properties and the files of the fixture vault, and makes its own links and file URLs: it takes no other resolver.
 
 ## Result per form
 
 Cell: pass, or fail with the failed checks of all checks of the form.
 
-| Form                    | Sätteri today | Quartz v5   | astro-loader-obsidian |
-| ----------------------- | ------------- | ----------- | --------------------- |
-| wikilink-note           | pass          | pass        | pass                  |
-| wikilink-heading        | fail (2/3)    | pass        | fail (1/3)            |
-| wikilink-block          | fail (1/2)    | pass        | pass                  |
-| wikilink-alias          | pass          | pass        | pass                  |
-| wikilink-hard-names     | pass          | pass        | fail (4/4)            |
-| wikilink-unpublished    | pass          | pass        | pass                  |
-| wikilink-missing        | pass          | pass        | pass                  |
-| wikilink-duplicate-name | pass          | pass        | fail (2/3)            |
-| wikilink-own-heading    | fail (1/2)    | pass        | fail (1/2)            |
-| markdown-link-note      | pass          | pass        | fail (1/3)            |
-| embed-image-size        | fail (2/6)    | pass        | fail (4/6)            |
-| embed-image-in-link     | fail (2/2)    | pass        | fail (1/2)            |
-| embed-note              | fail (2/3)    | fail (2/3)  | pass                  |
-| embed-heading           | fail (1/3)    | fail (1/3)  | pass                  |
-| embed-block             | fail (2/4)    | fail (2/4)  | fail (1/4)            |
-| embed-cycle             | fail (1/2)    | fail (1/2)  | fail (1/2)            |
-| embed-pdf               | pass          | pass        | fail (1/2)            |
-| embed-audio             | pass          | pass        | fail (1/2)            |
-| embed-video             | pass          | pass        | fail (1/2)            |
-| embed-base              | pass          | pass        | fail (1/3)            |
-| embed-canvas            | pass          | fail (1/3)  | fail (1/3)            |
-| callout-types           | fail (5/5)    | fail (2/5)  | fail (5/5)            |
-| callout-folded          | fail (4/4)    | fail (2/4)  | fail (4/4)            |
-| callout-nested          | fail (3/3)    | pass        | fail (3/3)            |
-| callout-title           | fail (3/3)    | pass        | fail (3/3)            |
-| frozen-dataview-table   | fail (2/4)    | fail (2/4)  | pass                  |
-| frozen-dataview-list    | fail (2/4)    | fail (2/4)  | pass                  |
-| link-block              | fail (7/10)   | fail (6/10) | fail (6/10)           |
-| video-url-line          | fail (2/3)    | fail (3/3)  | fail (2/3)            |
-| meta-bind-inline        | fail (2/3)    | fail (2/3)  | fail (2/3)            |
-| meta-bind-block         | fail (4/4)    | fail (4/4)  | fail (3/4)            |
-| live-dataview           | fail (4/4)    | fail (4/4)  | fail (3/4)            |
-| live-base               | fail (2/2)    | fail (2/2)  | fail (2/2)            |
-| comment-percent         | fail (3/6)    | pass        | fail (3/6)            |
-| comment-html            | fail (3/4)    | fail (3/4)  | pass                  |
-| tags                    | fail (3/5)    | fail (3/5)  | fail (2/5)            |
-| footnotes               | fail (3/5)    | pass        | fail (3/5)            |
-| highlights              | fail (3/3)    | pass        | fail (3/3)            |
-| math-inline             | fail (2/3)    | fail (1/3)  | fail (2/3)            |
-| math-block              | fail (2/3)    | fail (1/3)  | fail (2/3)            |
-| mermaid                 | fail (2/4)    | fail (2/4)  | fail (3/4)            |
-| table-pipe-in-link      | pass          | pass        | fail (1/4)            |
-| task-list               | fail (3/4)    | fail (3/4)  | fail (3/4)            |
-| properties              | pass          | pass        | pass                  |
-| headings-same-text      | fail (1/3)    | pass        | fail (1/3)            |
-| code-block              | fail (1/2)    | fail (1/2)  | fail (1/2)            |
-| raw-html                | fail (3/4)    | fail (3/4)  | fail (3/4)            |
-| **passed** (of 47)      | 14            | 24          | 11                    |
+| Form                    | Sätteri today | Quartz v5   | Parser, plain | Parser, rehype-obsidian | astro-loader-obsidian |
+| ----------------------- | ------------- | ----------- | ------------- | ----------------------- | --------------------- |
+| wikilink-note           | pass          | pass        | fail (1/2)    | fail (1/2)              | pass                  |
+| wikilink-heading        | fail (2/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (1/3)            |
+| wikilink-block          | fail (1/2)    | pass        | fail (1/2)    | fail (1/2)              | pass                  |
+| wikilink-alias          | pass          | pass        | fail (1/4)    | fail (1/4)              | pass                  |
+| wikilink-hard-names     | pass          | pass        | fail (3/4)    | fail (3/4)              | fail (2/4)            |
+| wikilink-unpublished    | pass          | pass        | pass          | pass                    | pass                  |
+| wikilink-missing        | pass          | pass        | pass          | pass                    | pass                  |
+| wikilink-duplicate-name | pass          | pass        | fail (2/3)    | fail (2/3)              | pass                  |
+| wikilink-own-heading    | fail (2/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (2/3)            |
+| markdown-link-note      | pass          | pass        | pass          | pass                    | fail (1/3)            |
+| embed-image-size        | fail (2/6)    | pass        | fail (4/6)    | fail (4/6)              | fail (4/6)            |
+| embed-image-in-link     | fail (2/2)    | pass        | pass          | pass                    | fail (1/2)            |
+| embed-note              | fail (2/3)    | fail (2/3)  | fail (2/3)    | fail (2/3)              | pass                  |
+| embed-heading           | fail (1/3)    | fail (1/3)  | fail (1/3)    | fail (1/3)              | pass                  |
+| embed-block             | fail (2/4)    | fail (2/4)  | fail (1/4)    | fail (1/4)              | fail (1/4)            |
+| embed-cycle             | fail (1/2)    | fail (1/2)  | fail (1/2)    | fail (1/2)              | fail (1/2)            |
+| embed-pdf               | pass          | pass        | fail (1/2)    | fail (1/2)              | fail (1/2)            |
+| embed-audio             | pass          | pass        | fail (1/2)    | fail (1/2)              | fail (1/2)            |
+| embed-video             | pass          | pass        | fail (1/2)    | fail (1/2)              | fail (1/2)            |
+| embed-base              | pass          | pass        | fail (1/3)    | fail (1/3)              | fail (1/3)            |
+| embed-canvas            | pass          | pass        | fail (1/3)    | fail (1/3)              | fail (1/3)            |
+| callout-types           | fail (5/5)    | fail (2/5)  | fail (4/5)    | fail (4/5)              | fail (5/5)            |
+| callout-folded          | fail (4/4)    | pass        | fail (3/4)    | fail (3/4)              | fail (4/4)            |
+| callout-nested          | fail (3/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (3/3)            |
+| callout-title           | fail (3/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (3/3)            |
+| frozen-dataview-table   | fail (2/4)    | fail (2/4)  | fail (3/4)    | fail (3/4)              | pass                  |
+| frozen-dataview-list    | fail (2/4)    | fail (2/4)  | fail (3/4)    | fail (3/4)              | pass                  |
+| link-block              | fail (7/10)   | fail (6/10) | fail (6/10)   | fail (6/10)             | fail (6/10)           |
+| video-url-line          | fail (2/3)    | fail (3/3)  | fail (2/3)    | fail (3/3)              | fail (2/3)            |
+| meta-bind-inline        | fail (2/3)    | fail (2/3)  | fail (2/3)    | fail (2/3)              | fail (2/3)            |
+| meta-bind-block         | fail (4/4)    | fail (4/4)  | fail (4/4)    | fail (4/4)              | fail (3/4)            |
+| live-dataview           | fail (4/4)    | fail (4/4)  | fail (4/4)    | fail (4/4)              | fail (3/4)            |
+| live-base               | fail (2/2)    | fail (2/2)  | fail (2/2)    | fail (2/2)              | fail (2/2)            |
+| comment-percent         | fail (3/6)    | pass        | pass          | pass                    | fail (3/6)            |
+| comment-html            | fail (3/4)    | fail (3/4)  | fail (3/4)    | fail (3/4)              | pass                  |
+| tags                    | fail (3/5)    | fail (3/5)  | fail (3/5)    | fail (3/5)              | fail (2/5)            |
+| footnotes               | fail (3/5)    | pass        | fail (2/5)    | fail (2/5)              | fail (3/5)            |
+| highlights              | fail (3/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (3/3)            |
+| math-inline             | fail (2/3)    | fail (1/3)  | fail (1/3)    | fail (1/3)              | fail (2/3)            |
+| math-block              | fail (2/3)    | fail (1/3)  | fail (1/3)    | fail (1/3)              | fail (2/3)            |
+| mermaid                 | fail (2/4)    | fail (2/4)  | fail (2/4)    | fail (2/4)              | fail (3/4)            |
+| table-pipe-in-link      | pass          | pass        | fail (1/4)    | fail (1/4)              | fail (1/4)            |
+| task-list               | fail (3/4)    | fail (3/4)  | pass          | pass                    | fail (3/4)            |
+| properties              | pass          | pass        | pass          | pass                    | pass                  |
+| headings-same-text      | fail (2/4)    | fail (1/4)  | fail (3/4)    | fail (3/4)              | fail (2/4)            |
+| code-block              | fail (1/2)    | fail (1/2)  | pass          | pass                    | fail (1/2)            |
+| raw-html                | fail (3/4)    | fail (3/4)  | fail (3/4)    | fail (3/4)              | fail (3/4)            |
+| **passed** (of 47)      | 14            | 25          | 8             | 8                       | 12                    |
 
-Every failure is quiet: no candidate stops on a form. The only error is the build of `astro-loader-obsidian`, below. The first run, before the review of the ticket, gave 15, 24 and 17: the review found checks that a wrong conversion passed (a `LINK` text split by a link, an icon taken for a diagram, a file path that nobody resolved), and the corrected corpus gives the table above.
+Every failure is quiet: no candidate stops on a form. The only error is the build of `astro-loader-obsidian`, below. The first run, before the reviews of the ticket, gave 15 (Sätteri), 24 (Quartz) and 17 (loader). The two reviews found checks that a wrong conversion passed (a `LINK` text split by a link, an icon taken for a diagram, a file path that nobody resolved, a link to a fragment that reaches no heading) or that a right one failed (the classes of a folded callout, the URL form of another site), and the corrected corpus gives the table above.
+
+The score of Quartz is the score of its full transformer: its parser and its rendering. The setup of R50 keeps the parser only, and starts at 8 of 47: the parser builds an exact tree (typed nodes for wikilinks, embeds, callouts, tags, highlights, comments and footnotes), and almost every form needs a rendering step of our own. The author confirmed R50 after he saw this column.
 
 ## What each candidate does
 
@@ -96,18 +99,18 @@ Sätteri is the fastest processor (below). Its parser has a `wikilinks` feature 
 
 ### Quartz v5 transformers
 
-The best result: 24 of 47 forms, with the link rule of this project after it. The parser, `@quartz-community/remark-obsidian` 2.2.1, is a standalone remark plugin: MIT, no runtime dependency, its own vendored copy of the remark-parse 8 fork that Obsidian uses. Its repository says that its legacy preset matches Obsidian 1.15.0 on 3,469 of 3,471 recorded cases, measured with a harness inside the app (a claim of the repository: the harness was not run here). The transformer package wraps it with the rendering.
+The best result of the full transformers: 25 of 47 forms, with the link rule of this project after it. The parser alone passes 8 (above). The parser, `@quartz-community/remark-obsidian` 2.2.1, is a standalone remark plugin: MIT, no runtime dependency, its own vendored copy of the remark-parse 8 fork that Obsidian uses. Its repository says that its legacy preset matches Obsidian 1.15.0 on 3,469 of 3,471 recorded cases, measured with a harness inside the app (a claim of the repository: the harness was not run here). The transformer package wraps it with the rendering.
 
 What it does not do, and what is own code in every option:
 
 1. Embeds of notes, headings and blocks become a placeholder (`blockquote.transclude`). Quartz fills them in its core, which is not a library.
-2. Links and file paths come out as raw vault paths. Quartz resolves them in its core. Here the link rule of this project resolved them, and every link form passed.
+2. Links and file paths come out as raw vault paths. Quartz resolves them in its core. Here the link rule of this project resolved them (also the slug form that Quartz gives to a file name, `bed-layout.canvas`), and every link form passed but the link to a repeated heading (`#Autumn#Tasks`), whose fragment reaches no heading.
 3. HTML comments and the markers of frozen queries stay in the HTML (`allowDangerousHtml`).
 4. Meta Bind code, live Dataview and live base blocks stay as code blocks.
 5. `LINK` blocks and the video URL line are not cards. The video URL line becomes an `iframe` of YouTube (against CARD-07 and CARD-09).
 6. KaTeX and Shiki write inline styles (REN-06). Mermaid stays as source for a script in the browser, or for Pele in the browser.
 7. Raw HTML is not filtered: a `<script>` passes (REN-15).
-8. Smaller differences with Obsidian: a tag shows without its `#`, the aliases `tldr` and `faq` of a callout become `abstract` and `question`, a folded callout has an empty fold mark, a custom task mark (`- [/]`) is no checkbox, and each heading gets an anchor link with an icon.
+8. Smaller differences with Obsidian: a tag shows without its `#`, the aliases `tldr` and `faq` of a callout become `abstract` and `question`, a custom task mark (`- [/]`) is no checkbox, and each heading gets an anchor link with an icon.
 
 Packaging: the LaTeX package imports `@myriaddreamin/rehype-typst` at load time, but declares it as an optional peer. Without it the import fails. The full transformer is a bundle of 1.5 MB with 17 runtime dependencies.
 
@@ -120,7 +123,7 @@ Not usable:
 3. Its default schema refuses the date form that Obsidian writes (`created: 2031-03-05T10:00`, no seconds): the build stops on every note. The runner gives it an open schema.
 4. The first build on a clean cache fails: a Markdown image named by its file name alone (`![…](garden-plan.png)`, valid in Obsidian) is not found by the image step of Astro. A second build passes on the cache of the first one. The forms were measured on the second build.
 5. It has no code for callouts, comments, highlights, math or Mermaid: its companion theme adds remark plugins for them.
-6. Its links and file URLs are its own. The file checks of the corpus ask for the URL of the attachment storage of the site, so every embed of a file fails.
+6. Its links and file URLs are its own (`/notes/10-garden/herb-bed/mint`, `/vault-copy/attachments/…`). Its link targets are right, and the link checks read the target, not the URL form. The file checks ask for the URL of the attachment storage of the site, which the loader cannot give, so every embed of a file fails.
 
 ## Speed
 
