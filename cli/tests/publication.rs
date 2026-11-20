@@ -1176,3 +1176,38 @@ fn a_cleaned_note_that_git_skips_stops_the_run() {
         errors_of(&output)
     );
 }
+
+/// Issue 78: the check of the lock just before the commit. The switch of the
+/// debug build gives the lock to another run at that moment, as when the
+/// author ran unlock and another publication took the copy.
+#[test]
+fn a_publication_whose_lock_another_run_took_before_the_commit_makes_no_commit() {
+    let setup = set_up();
+    let id = setup.plan(NOTE);
+    let head = git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("publish")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .args(["--plan", &id, "--time", TIME])
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_STEAL_LOCK", "commit")
+        .output()
+        .expect("the program starts");
+
+    assert_eq!(output.status.code(), Some(1));
+    let errors = errors_of(&output);
+    assert!(
+        errors.contains("the lock of this publication was removed while it ran"),
+        "{errors}"
+    );
+    assert_eq!(git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]), head);
+    assert_eq!(
+        git(&["-C", text(&setup.copy), "rev-parse", "origin/main"]),
+        head
+    );
+}

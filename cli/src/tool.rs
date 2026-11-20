@@ -12,7 +12,9 @@ use crate::attachments::{Attachment, key_of};
 use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
-use crate::device::{AttachmentStorage, ContentStore, Fetch, Lock, Recovery, Vault, crash_point};
+use crate::device::{
+    AttachmentStorage, ContentStore, Fetch, Lock, Recovery, Vault, crash_point, steal_point,
+};
 use crate::frontmatter::{
     Aliases, aliases_of, has_flow_properties, names_in_properties, remove_property, set_property,
 };
@@ -1228,6 +1230,7 @@ fn write_all(
         .collect();
     if !paths.is_empty() {
         crash_point("write");
+        steal_point("commit", &device.store);
         (commit.own_lock)()?;
         // The recovery of a run that stopped halfway finds its commit by the
         // line `Plan:`.

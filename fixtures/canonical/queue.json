@@ -3647,7 +3647,7 @@
                 "Élan.md": "Elan\n",
                 "Café.md": "Cafe\n",
                 "Locked/Old.md": "Old\n",
-                "j\u030c.md": "Jump\n"
+                "ǰ.md": "Jump\n"
             },
             "steps": [
                 {
@@ -3655,7 +3655,7 @@
                     "why": "the first publication of four notes whose names have letters outside ASCII",
                     "selection": {
                         "hold": [],
-                        "include": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
+                        "include": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
                         "remove": []
                     },
                     "time": "2031-07-01T08:00:00Z",
@@ -3665,8 +3665,8 @@
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
-                        "propertySet": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
-                        "published": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
+                        "propertySet": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
+                        "published": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
                         "removed": [],
                         "skipped": [],
                         "updated": [],
@@ -3678,15 +3678,15 @@
                     "why": "a private note in a folder of the deny list has the name of each published note: one in other capitals, one in the decomposed Unicode form, one with U+A7DD (a newer Unicode makes it U+0277), and one with a capital and a mark that NFC composes only in small letters",
                     "files": {
                         "Locked/élan.md": "Private\n",
-                        "Locked/Cafe\u0301.md": "Private\n",
+                        "Locked/Café.md": "Private\n",
                         "Locked/꟝.md": "Private\n",
-                        "Locked/J\u030c.md": "Private\n"
+                        "Locked/J̌.md": "Private\n"
                     }
                 },
                 {
                     "do": "delete",
                     "why": "the four published notes are missing from this vault",
-                    "paths": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"]
+                    "paths": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"]
                 },
                 {
                     "do": "plan",
@@ -3697,10 +3697,122 @@
                         "remove": []
                     },
                     "plan": {
-                        "forcedRemove": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
+                        "forcedRemove": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
                         "publish": [],
                         "remove": [],
                         "update": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a commit of another device that names the plan of a stopped run is not its commit when it changes another path (issue 78)",
+            "denyList": [],
+            "vault": {
+                "Keep.md": "Keep\n",
+                "Hide.md": "Hide\n",
+                "One.md": "One\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "two notes are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Keep.md", "Hide.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Hide.md", "Keep.md"],
+                        "published": ["Hide.md", "Keep.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a published note gets the ignore property",
+                    "files": {
+                        "Hide.md": "---\npublish_ignore: true\n---\nHide\n"
+                    }
+                },
+                {
+                    "do": "crash",
+                    "why": "the forced removal stops after its writes, before its commit",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "at": "write"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "store",
+                    "why": "the author pulls a commit of another device that names the plan of the run (plan ids have no time and no device) and that changes a path of the run and a path outside it",
+                    "files": {
+                        "notes/Hide.md": "Hide, from another device\n",
+                        "README.md": "A file of another device\n"
+                    },
+                    "message": "Publish: 0 new, 0 updated, 0 removed, 1 forced, 0 skipped\n\nDevice: shed-two\nFace: plugin\nPlan: {plan}"
+                },
+                {
+                    "do": "plan",
+                    "why": "that commit changes a path that the journal of the run does not hold, so it is not the commit of the run although it names its plan: the files are put back as it has them, and the note under the guard is still a forced removal",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Hide.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the copy keeps the commit of the other device and has the files of the note under the guard again",
+                    "vault": {},
+                    "store": {
+                        "notes/Hide.md": "Hide, from another device\n",
+                        "README.md": "A file of another device\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the forced removal is done",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": ["Hide.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
                     }
                 }
             ]

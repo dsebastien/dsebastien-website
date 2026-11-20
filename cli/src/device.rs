@@ -77,6 +77,23 @@ pub fn crash_point(point: &str) {
     let _ = point;
 }
 
+/// A switch of the debug build for the tests of the lock (issue 78): at the
+/// step `point`, the lock of the copy is given to another run, as when the
+/// author ran unlock and another publication took the copy. The release
+/// build has no switch.
+pub fn steal_point(point: &str, store: &ContentStore) {
+    #[cfg(debug_assertions)]
+    if env::var_os("DSEBASTIEN_VAULT_PUBLISH_TEST_STEAL_LOCK").is_some_and(|value| value == point) {
+        eprintln!("test switch: another run takes the lock at \"{point}\"");
+        let _ = fs::write(
+            store.local_file("lock"),
+            "{\"device\":\"another run\",\"token\":\"another\"}",
+        );
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = (point, store);
+}
+
 /// What a folder holds at exactly one path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Entry {

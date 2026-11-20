@@ -109,6 +109,11 @@ fn commit_all(copy: &Path) {
 
 /// Another device: it writes files into the content store and pushes them.
 fn push_to_store(copy: &Path, files: &Value) {
+    push_to_store_with(copy, files, "A change of another device");
+}
+
+/// A commit of another device with its own message, pushed to the content store.
+fn push_to_store_with(copy: &Path, files: &Value, message: &str) {
     write_files(copy, files);
     let run = |arguments: &[&str]| {
         let mut all = vec!["-C", text(copy)];
@@ -124,12 +129,7 @@ fn push_to_store(copy: &Path, files: &Value) {
             .map(String::as_str),
     );
     run(&add);
-    run(&[
-        "commit",
-        "--quiet",
-        "--message",
-        "A change of another device",
-    ]);
+    run(&["commit", "--quiet", "--message", message]);
     run(&["push", "--quiet", "origin", "HEAD:main"]);
 }
 
@@ -326,7 +326,7 @@ fn assert_refused_saying(output: &Output, step: &Value, label: &str) {
     }
 }
 
-fn run_step(setup: &Setup, step: &Value, label: &str) {
+fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String) {
     match step["do"].as_str().expect("a step says what it does") {
         "write" => write_files(&setup.vault, &step["files"]),
         "delete" => {
@@ -334,7 +334,15 @@ fn run_step(setup: &Setup, step: &Value, label: &str) {
                 fs::remove_file(setup.vault.join(path)).expect("the file can be removed");
             }
         }
-        "store" => push_to_store(&setup.copy, &step["files"]),
+        // `{plan}` in the message is the plan of the last run that stopped.
+        "store" => match step["message"].as_str() {
+            Some(message) => push_to_store_with(
+                &setup.copy,
+                &step["files"],
+                &message.replace("{plan}", stopped_plan),
+            ),
+            None => push_to_store(&setup.copy, &step["files"]),
+        },
         "status" if step["refused"] == json!(true) => {
             assert_refused_saying(&setup.run("status", &[]), step, label);
         }
@@ -354,6 +362,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str) {
             let time = step["time"].as_str().expect("a publication has a time");
             let point = step["at"].as_str().expect("a crash has a point");
             let id = setup.plan_id(&step["selection"]);
+            stopped_plan.clone_from(&id);
             let output = setup.run_with(
                 "publish",
                 &["--plan", &id, "--time", time, "--device", "garden-shed"],
@@ -430,9 +439,15 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
         let name = scenario["name"].as_str().expect("a scenario has a name");
         let setup = Setup::scenario(scenario);
         let steps = scenario["steps"].as_array().expect("a scenario has steps");
+        let mut stopped_plan = String::new();
         for (index, step) in steps.iter().enumerate() {
             let why = step["why"].as_str().expect("a step says why");
-            run_step(&setup, step, &format!("{name}, step {}: {why}", index + 1));
+            run_step(
+                &setup,
+                step,
+                &format!("{name}, step {}: {why}", index + 1),
+                &mut stopped_plan,
+            );
             kinds.push(step["do"].as_str().unwrap_or_default().to_owned());
         }
     }

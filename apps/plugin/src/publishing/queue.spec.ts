@@ -52,7 +52,7 @@ type Files = Record<string, string | null>
 type Step = { why: string } & (
     | { do: 'write'; files: Record<string, FileContent> }
     | { do: 'delete'; paths: string[] }
-    | { do: 'store'; files: Record<string, string> }
+    | { do: 'store'; files: Record<string, string>; message?: string }
     | { do: 'status'; queue: PublicationQueue; refused?: never }
     | { do: 'status'; refused: true; says?: string }
     | {
@@ -144,10 +144,14 @@ async function commitAll(copy: string): Promise<void> {
 }
 
 /** Another device: it writes files into the content store and pushes them. */
-async function pushToStore(copy: string, files: Record<string, string>): Promise<void> {
+async function pushToStore(
+    copy: string,
+    files: Record<string, string>,
+    message = 'A change of another device'
+): Promise<void> {
     await writeFiles(copy, files)
     await git(copy, 'add', '--', ...Object.keys(files))
-    await git(copy, 'commit', '--quiet', '--message', 'A change of another device')
+    await git(copy, 'commit', '--quiet', '--message', message)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
 
@@ -180,6 +184,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
 
             // The address of the content store, for the steps "offline" and "online".
             const address = await git(copy, 'remote', 'get-url', 'origin')
+            let stoppedPlan = ''
             for (const [index, step] of scenario.steps.entries()) {
                 const label = `step ${String(index + 1)}: ${step.why}`
                 if (step.do === 'write') {
@@ -189,7 +194,12 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         await rm(join(vault, path))
                     }
                 } else if (step.do === 'store') {
-                    await pushToStore(copy, step.files)
+                    // `{plan}` in the message is the plan of the last run that stopped.
+                    await pushToStore(
+                        copy,
+                        step.files,
+                        step.message?.replaceAll('{plan}', stoppedPlan)
+                    )
                 } else if (step.do === 'status') {
                     if (step.refused === true) {
                         expect(await rejectionOf(status(device)), label).toContain(step.says ?? '')
@@ -210,6 +220,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     }
                 } else if (step.do === 'crash') {
                     const planned = await plan(device, step.selection)
+                    stoppedPlan = planned.id
                     const stopped = crashingStore(device.store, copy, step.at)
                     void publish({ ...device, store: stopped.store }, planned.id, {
                         time: step.time,
