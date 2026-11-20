@@ -548,6 +548,27 @@
                     "has": "a[href=\"https://garden.example/tools\"]"
                 },
                 {
+                    "has": "a[href=\"https://garden.example/seeds\"]"
+                },
+                {
+                    "has": "a[href=\"https://garden.example/bees\"]"
+                },
+                {
+                    "has": "a[href=\"https://garden.example/ponds\"]"
+                },
+                {
+                    "has": "a[href=\"https://garden.example/spring\"]"
+                },
+                {
+                    "has": "a[href*=\"compost\" i][href*=\"basics\" i]"
+                },
+                {
+                    "has": "a[href*=\"rain\" i][href*=\"barrel\" i]"
+                },
+                {
+                    "has": "a[href*=\"thyme\" i]"
+                },
+                {
                     "lacksText": "LINK: https://garden.example/soil"
                 },
                 {
