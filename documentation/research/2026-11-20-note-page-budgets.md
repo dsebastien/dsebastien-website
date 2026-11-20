@@ -32,6 +32,10 @@ These block a release. CI checks them on the sample notes of each note type (PER
 
 The times are Lighthouse lab values, the median of 5 runs. Mobile is the default of Lighthouse: a simulated slow 4G network (150 ms round trip, 1.6 Mbit/s) and a CPU 4 times slower. TBT is the lab measure that stands for Interaction to Next Paint.
 
+### In CI (issue 47)
+
+The budgets above are checked on every note page of the fixture site and on a budget sample of the same shape as the measured notes (R58). The first run of `bun run budgets`, on a quiet machine, gave a mobile LCP of 0.83 s for the long note, 0.81 s for the hub note and 2.04 s for the media note (also with a JPEG cover of the same size), desktop at most 0.56 s, CLS 0 and TBT 0. The author set the mobile LCP budget of a media note to 2.2 s until the covers get responsive sizes and a modern format (issue 87), then 2.0 s again.
+
 ### The exempt page types
 
 Each exempt type keeps every budget of the note page. Its extra code and data load only after the page shows, so its LCP and its CLS are those of the note page. The extra budgets, with Brotli:
