@@ -981,6 +981,50 @@ fn a_publication_of_a_stale_plan_cleans_the_attachment_storage_before_it_stops()
     assert!(!left.exists());
 }
 
+/// Issue 77: the warnings of the cleanup of a stale plan are not lost.
+#[test]
+fn the_refusal_of_a_stale_plan_names_the_warnings_of_the_cleanup_of_the_storage() {
+    let setup = set_up();
+    fs::write(
+        setup.stores.attachment_storage().join("stray.txt"),
+        "Not an upload of the tool\n",
+    )
+    .expect("the file can be written");
+    let id = setup.plan(NOTE);
+    fs::write(
+        setup.vault.join(NOTE),
+        format!("{NOTE_TEXT}\nAn edit after the plan.\n"),
+    )
+    .expect("the note can be written");
+
+    let output = setup.run("publish", &["--plan", &id, "--time", TIME]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let errors = errors_of(&output);
+    assert!(errors.contains("stale"), "{errors}");
+    assert!(
+        errors.contains("The cleanup of the attachment storage gave these warnings:\n- stray.txt: the attachment storage holds a file whose name is not a key, and the tool leaves it: is the folder of the storage the right one?"),
+        "{errors}"
+    );
+}
+
+#[test]
+fn the_refusal_of_a_stale_plan_whose_cleanup_gave_no_warning_names_none() {
+    let setup = set_up();
+    let id = setup.plan(NOTE);
+    fs::write(
+        setup.vault.join(NOTE),
+        format!("{NOTE_TEXT}\nAn edit after the plan.\n"),
+    )
+    .expect("the note can be written");
+
+    let output = setup.run("publish", &["--plan", &id, "--time", TIME]);
+
+    let errors = errors_of(&output);
+    assert!(errors.contains("stale"), "{errors}");
+    assert!(!errors.contains("warnings"), "{errors}");
+}
+
 #[test]
 fn a_folder_that_is_not_a_copy_of_the_content_store_gets_no_file_of_the_tool() {
     let setup = set_up();

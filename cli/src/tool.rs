@@ -1297,6 +1297,30 @@ pub fn publish(
     })
 }
 
+/// The warnings of a cleanup of the attachment storage, as the end of the
+/// message of a refusal: nothing when there is none (issue 77).
+fn warning_lines(warnings: &[Value]) -> String {
+    if warnings.is_empty() {
+        return String::new();
+    }
+    let lines: Vec<String> = warnings
+        .iter()
+        .map(|warning| {
+            let path = warning["path"].as_str().unwrap_or_default();
+            let message = warning["message"].as_str().unwrap_or_default();
+            if path.is_empty() {
+                format!("- {message}")
+            } else {
+                format!("- {path}: {message}")
+            }
+        })
+        .collect();
+    format!(
+        "\nThe cleanup of the attachment storage gave these warnings:\n{}",
+        lines.join("\n")
+    )
+}
+
 /// `Err` when the plan is stale. The run fetched and the copy follows the
 /// content store, so the storage is cleaned first: a file that came under a
 /// guard leaves it also when the plan is stale.
@@ -1310,14 +1334,15 @@ fn refuse_stale(
     if current.record == record {
         return Ok(());
     }
-    clean_storage(
+    let cleanup = clean_storage(
         storage,
         &current.scan.manifest,
         &current.scan,
         &device.vault,
     );
     Err(format!(
-        "the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan"
+        "the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan{}",
+        warning_lines(&cleanup.warnings)
     ))
 }
 

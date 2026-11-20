@@ -1103,6 +1103,18 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
     return await withLock(device, holder, (ownLock) => apply(device, id, run, ownLock))
 }
 
+/**
+ * The warnings of a cleanup of the attachment storage, as the end of the
+ * message of a refusal: nothing when there is none (issue 77).
+ */
+function warningLines(warnings: readonly { path: string; message: string }[]): string {
+    if (warnings.length === 0) return ''
+    const lines = warnings.map(({ path, message }) =>
+        path === '' ? `- ${message}` : `- ${path}: ${message}`
+    )
+    return `\nThe cleanup of the attachment storage gave these warnings:\n${lines.join('\n')}`
+}
+
 /** The publication of a plan, with the lock of the device. */
 async function apply(
     device: Device,
@@ -1123,9 +1135,9 @@ async function apply(
         // The run fetched and the copy follows the content store: the
         // storage can be cleaned, so a file that came under a guard leaves it
         // also when the plan is stale.
-        await cleanStorage(device, scan.manifest, scan.isGuardedFile)
+        const cleanup = await cleanStorage(device, scan.manifest, scan.isGuardedFile)
         throw new Error(
-            `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
+            `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
     }
     // The journal comes before the first write into the copy: a run that

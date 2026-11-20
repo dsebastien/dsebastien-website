@@ -1133,6 +1133,34 @@ describe('failure cases after the first review', () => {
         expect(await exists(left)).toBe(false)
     })
 
+    // Issue 77: the warnings of the cleanup of a stale plan are not lost.
+    test('the refusal of a stale plan names the warnings of the cleanup of the storage', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await writeFile(join(stores.attachmentStorage, 'stray.txt'), 'Not an upload of the tool\n')
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(join(setup.vault, NOTE), `${NOTE_TEXT}\nAn edit after the plan.\n`)
+
+        const message = await rejectionOf(publish(setup.device, planned.id, RUN))
+
+        expect(message).toContain('stale')
+        expect(message).toContain(
+            'The cleanup of the attachment storage gave these warnings:\n- stray.txt: the attachment storage holds a file whose name is not a key, and the tool leaves it: is the folder of the storage the right one?'
+        )
+    })
+
+    test('the refusal of a stale plan whose cleanup gave no warning names none', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const planned = await plan(setup.device, { include: [NOTE] })
+        await writeFile(join(setup.vault, NOTE), `${NOTE_TEXT}\nAn edit after the plan.\n`)
+
+        const message = await rejectionOf(publish(setup.device, planned.id, RUN))
+
+        expect(message).toContain('stale')
+        expect(message).not.toContain('warnings')
+    })
+
     test('a folder that is not a copy of the content store gets no file of the tool', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
