@@ -1,0 +1,12 @@
+{
+    "name": "markdown-adopt-check-astro5",
+    "private": true,
+    "description": "Prototype of issue 26: astro-loader-obsidian needs Astro 5. run.ts of the parent folder fills vault-copy/ and builds this project.",
+    "type": "module",
+    "dependencies": {
+        "astro": "^5.12.5",
+        "astro-loader-obsidian": "0.10.0",
+        "hast-util-from-html": "*",
+        "hast-util-to-html": "*"
+    }
+}

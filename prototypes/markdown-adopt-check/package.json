@@ -1,0 +1,24 @@
+{
+    "name": "markdown-adopt-check",
+    "private": true,
+    "description": "Prototype of issue 26: runs candidate converters on the corpus of the Markdown forms. Not a workspace of the repository.",
+    "type": "module",
+    "dependencies": {
+        "@myriaddreamin/rehype-typst": "0.7",
+        "@quartz-community/github-flavored-markdown": "*",
+        "@quartz-community/latex": "*",
+        "@quartz-community/obsidian-flavored-markdown": "*",
+        "@quartz-community/rehype-obsidian": "*",
+        "@quartz-community/remark-obsidian": "*",
+        "@quartz-community/syntax-highlighting": "*",
+        "pele": "1.13.0",
+        "preact": "*",
+        "rehype-raw": "*",
+        "rehype-stringify": "*",
+        "remark-frontmatter": "*",
+        "remark-gfm": "*",
+        "remark-parse": "*",
+        "remark-rehype": "*",
+        "unified": "*"
+    }
+}

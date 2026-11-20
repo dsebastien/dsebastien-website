@@ -1,0 +1,361 @@
+[
+    {
+        "form": "wikilink-note",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>Read <a class=\"article-wikilink\" href=\"/notes/10-garden/compost-basics\">Compost basics</a> before you start.</p>"
+    },
+    {
+        "form": "wikilink-heading",
+        "result": "fail",
+        "failures": [
+            "no element matches \"a[href*=\"#\"]\" with the text \"Companion planting > Three sisters\""
+        ],
+        "html": "<p>Read <a class=\"article-wikilink\" href=\"/notes/50-field-guide/companion-planting#three-sisters\">Companion planting#Three sisters</a>, or the short form: <a class=\"article-wikilink\" href=\"/notes/50-field-guide/companion-planting#three-sisters\">the three sisters</a>.</p>"
+    },
+    {
+        "form": "wikilink-block",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>See <a class=\"article-wikilink\" href=\"/notes/50-field-guide/companion-planting#squash-shade\">why squash helps</a>.</p>"
+    },
+    {
+        "form": "wikilink-alias",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>The <a class=\"article-wikilink\" href=\"/notes/10-garden/wormery\">worm bin</a> eats kitchen waste.</p>"
+    },
+    {
+        "form": "wikilink-hard-names",
+        "result": "fail",
+        "failures": [
+            "no element matches \"a\" with the text \"Bread & butter pickles\"",
+            "the HTML holds \"[[\""
+        ],
+        "html": "<p>Bake the <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/salt--pepper-crust\">Salt + pepper crust</a>, the <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/100-rye-bread\">100% rye bread</a> and the [[Bread &#x26; butter pickles]].</p>"
+    },
+    {
+        "form": "wikilink-unpublished",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>The plan for the cold months is in <span class=\"article-wikilink\">Winter plan (draft)</span>.</p>"
+    },
+    {
+        "form": "wikilink-missing",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>The <span class=\"article-wikilink\">Moon calendar</span> is not written yet.</p>"
+    },
+    {
+        "form": "wikilink-duplicate-name",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>Plant <a class=\"article-wikilink\" href=\"/notes/10-garden/herb-bed/mint\">Mint</a> in a pot, and make <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/mint\">mint tea</a>.</p>"
+    },
+    {
+        "form": "wikilink-own-heading",
+        "result": "fail",
+        "failures": ["no element matches \"a[href^=\"#\"]\" with the text \"Harvest\""],
+        "html": "<p>Jump to <span class=\"article-wikilink\"><a class=\"article-tag\" href=\"/notes/tags/harvest\">#Harvest</a></span>.</p>\n<h2 id=\"harvest\">Harvest</h2>\n<p>Pick the beans when they snap.</p>"
+    },
+    {
+        "form": "markdown-link-note",
+        "result": "fail",
+        "failures": ["\"a[href$=\".md\"]\" matches 2 elements, not 0"],
+        "html": "<p>Fill <a href=\"Rain%20barrel.md\">the rain barrel</a> first, then check <a href=\"Drip%20irrigation.md\">the drip lines</a>.</p>"
+    },
+    {
+        "form": "embed-image-size",
+        "result": "fail",
+        "failures": [
+            "\"img[width=\"300\"]\" matches 0 elements, not 2",
+            "\"img[width=\"300\"][height=\"200\"]\" matches 0 elements, not 1",
+            "\"img[width=\"120\"]\" matches 0 elements, not 1",
+            "no element matches \"img[alt=\"The plan, small\"]\""
+        ],
+        "html": "<p><figure alt=\"garden-plan.png\" class=\"figure-image\" style=\"width: 300px; \"><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;../../Attachments/garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;garden-plan.png&#x22;,&#x22;index&#x22;:1,&#x22;width&#x22;:300,&#x22;style&#x22;:&#x22;width: 300px; &#x22;}\" /></figure></p>\n<p><figure alt=\"garden-plan.png\" class=\"figure-image\" style=\"width: 300px; height: 200px; \"><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;../../Attachments/garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;garden-plan.png&#x22;,&#x22;index&#x22;:1,&#x22;width&#x22;:300,&#x22;height&#x22;:200,&#x22;style&#x22;:&#x22;width: 300px; height: 200px; &#x22;}\" /></figure></p>\n<p><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;The plan, small|120&#x22;,&#x22;index&#x22;:0}\"></p>"
+    },
+    {
+        "form": "embed-image-in-link",
+        "result": "pass",
+        "failures": [],
+        "html": "<p><a href=\"seed-catalog.pdf\"><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;The plan&#x22;,&#x22;index&#x22;:0}\"></a></p>"
+    },
+    {
+        "form": "embed-note",
+        "result": "pass",
+        "failures": [],
+        "html": "<p><div class=\"file-embed\"><a class=\"file-embed-link\" href=\"/notes/10-garden/compost-basics\"><span>Open Link</span></a><h5 class=\"file-embed-title\">Compost basics</h5><div class=\"file-embed-content\"><p>A heap needs green matter, brown matter, air and water.</p>\n<ul>\n<li>Turn the heap every two weeks.</li>\n<li>Keep it as wet as a wrung sponge.</li>\n<li>Water it from the <a class=\"article-wikilink\" href=\"/notes/10-garden/rain-barrel\">Rain barrel</a> when the summer is dry.</li>\n</ul>\n<p>The herbs that like compost are in <a class=\"article-wikilink\" href=\"/notes/10-garden/herb-bed/herb-bed\">the herb bed</a>.</p></div></div></p>"
+    },
+    {
+        "form": "embed-heading",
+        "result": "pass",
+        "failures": [],
+        "html": "<p><div class=\"file-embed\"><a class=\"file-embed-link\" href=\"/notes/50-field-guide/companion-planting\"><span>Open Link</span></a><div class=\"file-embed-content\"><h2 id=\"three-sisters\">Three sisters</h2>\n<p>Corn gives the beans a pole to climb.</p>\n<p>Squash leaves keep the soil cool. ^squash-shade</p>\n</div></div></p>"
+    },
+    {
+        "form": "embed-block",
+        "result": "fail",
+        "failures": [
+            "no element matches \"p\" with the text \"Squash leaves keep the soil cool.\""
+        ],
+        "html": "<p><div class=\"file-embed\"><a class=\"file-embed-link\" href=\"/notes/50-field-guide/companion-planting\"><span>Open Link</span></a><div class=\"file-embed-content\"></div></div></p>"
+    },
+    {
+        "form": "embed-cycle",
+        "result": "fail",
+        "failures": [
+            "\"p\" with the text \"Leave one bed empty each year.\" matches 0 elements, not 1"
+        ],
+        "html": "<p>Change the bed of each crop every year.</p>\n<p><span class=\"article-wikilink-embed\">Soil rest</span></p>"
+    },
+    {
+        "form": "embed-pdf",
+        "result": "pass",
+        "failures": [],
+        "html": "<p><iframe class=\"iframe-embed\" src=\"/vault-copy/attachments/seed-catalog.pdf\"></iframe></p>"
+    },
+    {
+        "form": "embed-audio",
+        "result": "pass",
+        "failures": [],
+        "html": "<p><audio class=\"audio-embed\" controls src=\"/vault-copy/attachments/birdsong.mp3\"></audio></p>"
+    },
+    {
+        "form": "embed-video",
+        "result": "pass",
+        "failures": [],
+        "html": "<p><video class=\"video-embed\" controls src=\"/vault-copy/attachments/seedling-timelapse.mp4\"></video></p>"
+    },
+    {
+        "form": "embed-base",
+        "result": "fail",
+        "failures": ["no element matches \"a[href*=\"Plants.base\"]\""],
+        "html": "<p><span class=\"article-wikilink\">Plants.base</span></p>"
+    },
+    {
+        "form": "embed-canvas",
+        "result": "fail",
+        "failures": ["no element matches \"a[href*=\".canvas\"]\""],
+        "html": "<p><span class=\"article-wikilink\">Bed layout.canvas</span></p>"
+    },
+    {
+        "form": "callout-types",
+        "result": "fail",
+        "failures": [
+            "\"[data-callout]\" matches 0 elements, not 15",
+            "\"[data-callout=\"warning\"]\" matches 0 elements, not 1",
+            "no element matches \"[data-callout=\"tldr\"], [data-callout=\"abstract\"]\"",
+            "\"[data-callout=\"faq\"]\" matches 0 elements, not 1",
+            "the HTML holds \"[!\""
+        ],
+        "html": "<blockquote>\n<p>[!note]\nA callout of the type note.</p>\n</blockquote>\n<blockquote>\n<p>[!abstract]\nA callout of the type abstract.</p>\n</blockquote>\n<blockquote>\n<p>[!info]\nA callout of the type info.</p>\n</blockquote>\n<blockquote>\n<p>[!todo]\nA callout of the type todo.</p>\n</blockquote>\n<blockquote>\n<p>[!tip]\nA callout of the type tip.</p>\n</blockquote>\n<blockquote>\n<p>[!success]\nA callout of the type success.</p>\n</blockquote>\n<blockquote>\n<p>[!question]\nA callout of the type question.</p>\n</blockquote>\n<blockquote>\n<p>[!warning]\nA callout of the type warning.</p>\n</blockquote>\n<blockquote>\n<p>[!failure]\nA callout of the type failure.</p>\n</blockquote>\n<blockquote>\n<p>[!danger]\nA callout of the type danger.</p>\n</blockquote>\n<blockquote>\n<p>[!bug]\nA callout of the type bug.</p>\n</blockquote>\n<blockquote>\n<p>[!example]\nA callout of the type example.</p>\n</blockquote>\n<blockquote>\n<p>[!quote]\nA callout of the type quote.</p>\n</blockquote>\n<blockquote>\n<p>[!tldr]\nA callout of the type tldr.</p>\n</blockquote>\n<blockquote>\n<p>[!FAQ]\nA callout of the type FAQ.</p>\n</blockquote>"
+    },
+    {
+        "form": "callout-folded",
+        "result": "fail",
+        "failures": [
+            "\"details, [data-callout-fold]\" matches 0 elements, not 2",
+            "\"details[open], [data-callout-fold=\"+\"]\" matches 0 elements, not 1",
+            "no element matches \"summary, .callout-title\" with the text \"Why mulch?\"",
+            "the HTML holds \"[!\""
+        ],
+        "html": "<blockquote>\n<p>[!faq]- Why mulch?\nMulch keeps the water in the soil.</p>\n</blockquote>\n<blockquote>\n<p>[!tip]+ Open by default\nMulch in late spring.</p>\n</blockquote>"
+    },
+    {
+        "form": "callout-nested",
+        "result": "fail",
+        "failures": [
+            "\"[data-callout] [data-callout]\" matches 0 elements, not 1",
+            "no element matches \"[data-callout] [data-callout]\" with the text \"The inner callout.\"",
+            "the HTML holds \"[!\""
+        ],
+        "html": "<blockquote>\n<p>[!note] Outer\nThe outer callout.</p>\n<blockquote>\n<p>[!warning] Inner\nThe inner callout.</p>\n</blockquote>\n</blockquote>"
+    },
+    {
+        "form": "callout-title",
+        "result": "fail",
+        "failures": [
+            "no element matches \"[data-callout]\" with the text \"Frost warning for May\"",
+            "no element matches \"[data-callout] strong\" with the text \"warning\"",
+            "the HTML holds \"[!\""
+        ],
+        "html": "<blockquote>\n<p>[!info] Frost <strong>warning</strong> for May\nCover the seedlings at night.</p>\n</blockquote>"
+    },
+    {
+        "form": "frozen-dataview-table",
+        "result": "pass",
+        "failures": [],
+        "html": "\n\n<table>\n<thead>\n<tr>\n<th>File</th>\n<th>created</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a class=\"article-wikilink\" href=\"/notes/10-garden/drip-irrigation\">Drip irrigation</a></td>\n<td>2031-03-02T07:00</td>\n</tr>\n<tr>\n<td><a class=\"article-wikilink\" href=\"/notes/10-garden/rain-barrel\">Rain barrel</a></td>\n<td>2031-03-03T07:00</td>\n</tr>\n</tbody>\n</table>\n"
+    },
+    {
+        "form": "frozen-dataview-list",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>A frozen list of the notes about water:</p>\n\n\n<ul>\n<li><a class=\"article-wikilink\" href=\"/notes/10-garden/drip-irrigation\">Drip irrigation</a></li>\n<li><span class=\"article-wikilink\">Greenhouse alarm code</span></li>\n<li><a class=\"article-wikilink\" href=\"/notes/10-garden/rain-barrel\">Rain barrel</a></li>\n</ul>\n"
+    },
+    {
+        "form": "link-block",
+        "result": "fail",
+        "failures": [
+            "the HTML holds \"garden.example/comment\"",
+            "the HTML holds \"Seed library rules\""
+        ],
+        "html": "<p>Every form of a <code>LINK</code> block.</p>\n<p>One line, with a colon and a URL:</p>\n<p>LINK: <a href=\"https://garden.example/soil\">https://garden.example/soil</a></p>\n<p>One line, without a colon:</p>\n<p>LINK <a href=\"https://garden.example/seeds\">https://garden.example/seeds</a></p>\n<p>One line, with the other keyword:</p>\n<p>LINKS: <a href=\"https://garden.example/bees\">https://garden.example/bees</a></p>\n<p>One line, with the other keyword and without a colon:</p>\n<p>LINKS <a href=\"https://garden.example/ponds\">https://garden.example/ponds</a></p>\n<p>One line, with a Markdown link:</p>\n<p>LINK: <a href=\"https://garden.example/mulch\">A guide to mulch</a></p>\n<p>One line, with a link to a note:</p>\n<p>LINK: <a class=\"article-wikilink\" href=\"/notes/10-garden/compost-basics\">Compost basics</a></p>\n<p>One line, with a link to a note and a label:</p>\n<p>LINK: <a class=\"article-wikilink\" href=\"/notes/10-garden/rain-barrel\">The barrel</a></p>\n<p>A list, with a URL:</p>\n<p>LINK:</p>\n<ul>\n<li><a href=\"https://garden.example/tools\">https://garden.example/tools</a></li>\n</ul>\n<p>A list, without a colon, with a link to a note:</p>\n<p>LINK</p>\n<ul>\n<li><a class=\"article-wikilink\" href=\"/notes/10-garden/herb-bed/thyme\">Thyme</a></li>\n</ul>\n<p>A list, with the other keyword and without a colon:</p>\n<p>LINKS</p>\n<ul>\n<li><a href=\"https://garden.example/hedges\">https://garden.example/hedges</a></li>\n</ul>\n<p>A list of more than five lines, with every kind of target:</p>\n<p>LINKS:</p>\n<ul>\n<li><a href=\"https://garden.example/spring\">https://garden.example/spring</a></li>\n<li><a href=\"https://garden.example/summer\">https://garden.example/summer</a></li>\n<li><a href=\"https://garden.example/autumn\">Autumn jobs</a></li>\n<li><a class=\"article-wikilink\" href=\"/notes/10-garden/frost-dates-explained\">Frost dates explained</a></li>\n<li><span class=\"article-wikilink\">Winter plan (draft)</span></li>\n<li><a href=\"https://garden.example/winter\">https://garden.example/winter</a></li>\n<li><span class=\"article-wikilink\">Greenhouse alarm code</span></li>\n</ul>\n<p>A block where nothing can show, because its only target is on the deny list:</p>\n<p>LINK: <span class=\"article-wikilink\">Greenhouse alarm code</span></p>\n<p>A block where nothing can show, because its only target does not exist:</p>\n<p>LINK</p>\n<ul>\n<li><span class=\"article-wikilink\">Seed library rules</span></li>\n</ul>\n<p>Not a <code>LINK</code> line, because it is inside a code block:</p>\n<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"text\"><code><span class=\"line\"><span>LINK: https://garden.example/not-a-card</span></span></code></pre>\n<p>Not a <code>LINK</code> line, because it is inline code: <code>LINK: https://garden.example/inline</code>.</p>\n<p>Not a <code>LINK</code> line, because it is in a comment:</p>\n<p>%%\nLINK: <a href=\"https://garden.example/comment\">https://garden.example/comment</a>\n%%</p>\n<p>Not a <code>LINK</code> line, because it is in an HTML comment:</p>\n\n<p>Not a <code>LINK</code> line, because it is a saved row of a frozen query:</p>\n\n\n<p>LINK: <a href=\"https://garden.example/frozen\">https://garden.example/frozen</a></p>\n"
+    },
+    {
+        "form": "video-url-line",
+        "result": "fail",
+        "failures": [
+            "no element matches \"a[href*=\"GardenTour1\"]\"",
+            "\"[src*=\"youtube\"], [src*=\"ytimg\"]\" matches 1 elements, not 0"
+        ],
+        "html": "<p><img src=\"https://www.youtube.com/watch?v=GardenTour1\" alt=\"\"></p>"
+    },
+    {
+        "form": "meta-bind-inline",
+        "result": "fail",
+        "failures": ["the HTML holds \"INPUT[\"", "the HTML holds \"VIEW[\""],
+        "html": "<p>Watered today: <code>INPUT[toggle:watered]</code>. Rain this week: <code>VIEW[{rain} mm]</code>.</p>"
+    },
+    {
+        "form": "meta-bind-block",
+        "result": "fail",
+        "failures": [
+            "the HTML holds \"Log watering\"",
+            "the HTML holds \"INPUT[\"",
+            "\"pre\" matches 2 elements, not 0"
+        ],
+        "html": "<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"plaintext\"><code><span class=\"line\"><span>label: Log watering</span></span>\n<span class=\"line\"><span>style: primary</span></span>\n<span class=\"line\"><span>actions:</span></span>\n<span class=\"line\"><span>  - type: command</span></span>\n<span class=\"line\"><span>    command: garden:log-watering</span></span></code></pre>\n<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"plaintext\"><code><span class=\"line\"><span>INPUT[slider(minValue(0), maxValue(10)):rain]</span></span></code></pre>"
+    },
+    {
+        "form": "live-dataview",
+        "result": "fail",
+        "failures": [
+            "the HTML holds \"dv.pages\"",
+            "the HTML holds \"= this.file.name\"",
+            "\"pre\" matches 2 elements, not 0"
+        ],
+        "html": "<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"plaintext\"><code><span class=\"line\"><span>TABLE created FROM <a class=\"article-tag\" href=\"/notes/tags/topic/water\"><a class=\"article-tag\" href=\"/notes/tags/topic/water\">#topic/water</a></a></span></span></code></pre>\n<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"plaintext\"><code><span class=\"line\"><span>dv.list(dv.pages(\"<a class=\"article-tag\" href=\"/notes/tags/topic/water\"><a class=\"article-tag\" href=\"/notes/tags/topic/water\">#topic/water</a></a>\").file.name)</span></span></code></pre>\n<p>The note is called <code>= this.file.name</code>.</p>"
+    },
+    {
+        "form": "live-base",
+        "result": "fail",
+        "failures": ["the HTML holds \"file.inFolder\"", "\"pre\" matches 1 elements, not 0"],
+        "html": "<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"plaintext\"><code><span class=\"line\"><span>filters:</span></span>\n<span class=\"line\"><span>  and:</span></span>\n<span class=\"line\"><span>    - file.inFolder(\"10 Garden\")</span></span>\n<span class=\"line\"><span>views:</span></span>\n<span class=\"line\"><span>  - type: table</span></span>\n<span class=\"line\"><span>    name: Garden</span></span></code></pre>"
+    },
+    {
+        "form": "comment-percent",
+        "result": "fail",
+        "failures": [
+            "the HTML holds \"blue pot\"",
+            "the HTML holds \"gate code\"",
+            "the HTML holds \"%%\""
+        ],
+        "html": "<p>Water the beds %%the spare key is under the blue pot%% at dawn.</p>\n<p>%%\nThe gate code is an invented number.\n%%</p>\n<p>Close the gate after you.</p>"
+    },
+    {
+        "form": "comment-html",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>Check the tap. </p>\n"
+    },
+    {
+        "form": "tags",
+        "result": "fail",
+        "failures": [
+            "no element matches \"a\" with the text \"#légumes\"",
+            "\"a\" with the text \"#2031\" matches 1 elements, not 0"
+        ],
+        "html": "<p>Notes on <a class=\"article-tag\" href=\"/notes/tags/compost\">#compost</a>, <a class=\"article-tag\" href=\"/notes/tags/garden/soil\">#garden/soil</a> and <a class=\"article-tag\" href=\"/notes/tags/l\">#l</a>égumes.</p>\n<p>Not a tag: <a class=\"article-tag\" href=\"/notes/tags/2031\">#2031</a>, and <a href=\"https://garden.example/page#section\">a link with a fragment</a>.</p>"
+    },
+    {
+        "form": "footnotes",
+        "result": "fail",
+        "failures": [
+            "\"sup\" matches 1 elements, not 2",
+            "no element matches \"li\" with the text \"Hay has seeds.\"",
+            "the HTML holds \"^[\""
+        ],
+        "html": "<p>Mulch keeps water in the soil.<sup><a href=\"#user-content-fn-1\" id=\"user-content-fnref-1\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup> Straw works too.^[Hay has seeds.]</p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 class=\"sr-only\" id=\"footnote-label\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-1\">\n<p>Wood chips last longer. <a href=\"#user-content-fnref-1\" data-footnote-backref=\"\" aria-label=\"Back to reference 1\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>"
+    },
+    {
+        "form": "highlights",
+        "result": "fail",
+        "failures": [
+            "\"mark\" matches 0 elements, not 2",
+            "no element matches \"mark\" with the text \"at dawn\"",
+            "the HTML holds \"==\""
+        ],
+        "html": "<p>Water ==at dawn== only, not ==at noon==.</p>"
+    },
+    {
+        "form": "math-inline",
+        "result": "fail",
+        "failures": ["no element matches \"math, .katex, mjx-container\"", "the HTML holds \"$V\""],
+        "html": "<p>The bed holds $V = l \\times w \\times h$ litres.</p>"
+    },
+    {
+        "form": "math-block",
+        "result": "fail",
+        "failures": [
+            "no element matches \"math[display=\"block\"], .katex-display, mjx-container[display=\"true\"]\"",
+            "the HTML holds \"$$\""
+        ],
+        "html": "<p>$$\nA = \\pi r^2\n$$</p>"
+    },
+    {
+        "form": "mermaid",
+        "result": "fail",
+        "failures": [
+            "no element matches \"svg\"",
+            "the HTML holds \"graph TD\"",
+            "\"[style]\" matches 4 elements, not 0"
+        ],
+        "html": "<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"mermaid\"><code><span class=\"line\"><span style=\"color:#E1E4E8\">graph TD</span></span>\n<span class=\"line\"><span style=\"color:#E1E4E8\">    Seed --> Sprout</span></span>\n<span class=\"line\"><span style=\"color:#E1E4E8\">    Sprout --> Harvest</span></span></code></pre>"
+    },
+    {
+        "form": "table-pipe-in-link",
+        "result": "fail",
+        "failures": ["no element matches \"td a\" with the text \"worms\""],
+        "html": "<table>\n<thead>\n<tr>\n<th>Helper</th>\n<th>Bed</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>[[Wormery|worms]]</td>\n<td>north</td>\n</tr>\n</tbody>\n</table>"
+    },
+    {
+        "form": "task-list",
+        "result": "fail",
+        "failures": [
+            "\"input[type=\"checkbox\"]\" matches 2 elements, not 3",
+            "\"input[type=\"checkbox\"][checked]\" matches 1 elements, not 2",
+            "the HTML holds \"[/]\""
+        ],
+        "html": "<ul class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" checked disabled> Sow beans</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" disabled> Stake the tomatoes</li>\n<li>[/] Build the trellis</li>\n</ul>"
+    },
+    {
+        "form": "properties",
+        "result": "pass",
+        "failures": [],
+        "html": "<p>A note with properties of every kind.</p>"
+    },
+    {
+        "form": "headings-same-text",
+        "result": "pass",
+        "failures": [],
+        "html": "<h2 id=\"spring\">Spring</h2>\n<h3 id=\"tasks\">Tasks</h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn</h2>\n<h3 id=\"tasks-1\">Tasks</h3>\n<p>Plant the garlic.</p>"
+    },
+    {
+        "form": "code-block",
+        "result": "fail",
+        "failures": ["\"pre[style], pre [style]\" matches 6 elements, not 0"],
+        "html": "<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"python\"><code><span class=\"line\"><span style=\"color:#E1E4E8\">water_beds(</span><span style=\"color:#FFAB70\">at</span><span style=\"color:#F97583\">=</span><span style=\"color:#9ECBFF\">\"dawn\"</span><span style=\"color:#E1E4E8\">)</span></span></code></pre>"
+    },
+    {
+        "form": "raw-html",
+        "result": "fail",
+        "failures": [
+            "\"script\" matches 1 elements, not 0",
+            "\"[onclick]\" matches 1 elements, not 0",
+            "the HTML holds \"document.title\""
+        ],
+        "html": "<details><summary>More about bees</summary>Bees like borage.</details>\n<p><span onclick=\"alert(1)\">Click the bee</span></p>\n<script>document.title = \"garden\"</script>"
+    }
+]

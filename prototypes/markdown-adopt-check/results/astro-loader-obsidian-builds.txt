@@ -1,0 +1,7 @@
+Build 1: exit 1
+22:32:23 [ERROR] [vite] ✗ Build failed in 435ms
+  Error reference:
+    https://docs.astro.build/en/reference/errors/image-not-found/
+
+Build 2: exit 0
+
