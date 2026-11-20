@@ -23,8 +23,9 @@ import { startServer } from '../apps/site/server/serve.ts'
 // host does, and Lighthouse runs five times per page on the three pages of
 // the sample, on mobile (its default: slow 4G and a CPU four times slower)
 // and on desktop. A median above its time budget gets five more runs, and
-// blocks only when their median fails too. A layout shift above its budget
-// blocks at once. The byte budgets are a test (`apps/site/src/page-budgets.spec.ts`).
+// blocks only when their median fails too. A median of the layout shift
+// above its budget blocks at once. In the second runs every budget counts
+// again, the layout shift too. The byte budgets are a test (`apps/site/src/page-budgets.spec.ts`).
 //
 //     bun scripts/page-budgets.ts [--runs 5]
 //

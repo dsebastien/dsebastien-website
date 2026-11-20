@@ -308,11 +308,12 @@ describe('page of the same note after its target is published', () => {
         )
     })
 
-    // The embed of a heading of a published note shows that section (issue 45).
+    // The embed of a heading of a published note shows that section (issue 45),
+    // with its headings one level down (issue 47, R58).
     test('shows the embed of a heading of the target as that section', () => {
         const html = noteOf(page(1, LINKING))
         expect(html).toContain(
-            `<div class="note-embed" data-embed-of="${TARGET_URL}"><h2>Cleaning</h2>\n<p>Empty it in autumn and brush the inside.</p>`
+            `<div class="note-embed" data-embed-of="${TARGET_URL}"><h3>Cleaning</h3>\n<p>Empty it in autumn and brush the inside.</p>`
         )
         expect(html).not.toContain('A barrel of 200 liters')
     })

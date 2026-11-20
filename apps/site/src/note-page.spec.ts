@@ -116,7 +116,7 @@ describe('build of a content store with one published note', () => {
         const html = await readOutput(NOTE_FILE)
         expect(html.match(/<h1\b/gu)).toHaveLength(1)
         expect(html).toMatch(
-            /<h1 id="frost-dates-explained" data-note-title[^>]*>Frost dates explained<\/h1>/u
+            /<h1 id="frost-dates-explained" data-note-title data-heading="Frost dates explained"[^>]*>Frost dates explained<\/h1>/u
         )
         expect(html.indexOf('data-note-title')).toBeLessThan(html.indexOf('data-note-body'))
     })

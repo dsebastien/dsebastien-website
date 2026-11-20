@@ -47,7 +47,7 @@ function page(parts: { head?: string; body?: string } = {}): string {
 function files(extra: Record<string, Uint8Array> = {}): (path: string) => Promise<Uint8Array> {
     const all: Record<string, Uint8Array> = {
         [FONT]: new Uint8Array(35_820),
-        [STYLE]: new TextEncoder().encode('body{color:red}'),
+        [STYLE]: new TextEncoder().encode(`@font-face{src:url(${FONT})}body{color:red}`),
         ...extra
     }
     return (path) => {
@@ -117,7 +117,11 @@ describe('the budget of the bytes of a note page', () => {
 
         const large = await checkNotePage(
             page(),
-            files({ [STYLE]: new TextEncoder().encode(`/*${noise(PAGE_BUDGET.cssBrotli * 2)}*/`) })
+            files({
+                [STYLE]: new TextEncoder().encode(
+                    `@font-face{src:url(${FONT})}/*${noise(PAGE_BUDGET.cssBrotli * 2)}*/`
+                )
+            })
         )
         expect(large.failures).toEqual([
             `CSS: ${String(large.measure.css)} bytes with Brotli, the budget is 12000`
@@ -213,6 +217,91 @@ describe('the budget of the bytes of a note page', () => {
     })
 })
 
+describe('the font and the style sheet of a note page', () => {
+    const sheet = `<link rel="stylesheet" href="${STYLE}">`
+    const css = (text: string): Record<string, Uint8Array> => ({
+        [STYLE]: new TextEncoder().encode(text)
+    })
+
+    test('pass when the style sheet uses the preloaded font', async () => {
+        const result = await checkNotePage(
+            page(),
+            files(css(`@font-face{src:url(${FONT}) format("woff2")}`))
+        )
+
+        expect(result.failures).toEqual([])
+    })
+
+    // Without crossorigin, or with another file, the browser downloads the font twice.
+    test('fail when the preload of the font has no crossorigin', async () => {
+        const head = `<link rel="preload" href="${FONT}" as="font" type="font/woff2">${sheet}`
+
+        expect((await checkNotePage(page({ head }), files())).failures).toEqual([
+            `fonts: the preload of ${FONT} has no crossorigin`
+        ])
+    })
+
+    test('fail when the style sheet does not use the preloaded font', async () => {
+        const result = await checkNotePage(
+            page(),
+            files(css('@font-face{src:url(/_astro/other.woff2) format("woff2")}'))
+        )
+
+        expect(result.failures).toEqual([
+            `fonts: the style sheet does not use the preloaded font ${FONT}`
+        ])
+    })
+
+    test('fail when the style sheet imports another one', async () => {
+        const result = await checkNotePage(
+            page(),
+            files(css(`@import url("/_astro/more.css");@font-face{src:url(${FONT})}`))
+        )
+
+        expect(result.failures).toEqual([
+            `CSS: ${STYLE} imports another file, a request before the page shows`
+        ])
+    })
+
+    test('reads a file without the query and the fragment of its address', async () => {
+        const result = await checkNotePage(
+            page({
+                head:
+                    `<link rel="preload" href="${FONT}?v=1" as="font" type="font/woff2" crossorigin>` +
+                    `<link rel="stylesheet" href="${STYLE}#top">`
+            }),
+            files(css(`@font-face{src:url(${FONT}?v=1)}`))
+        )
+
+        expect(result.failures).toEqual([])
+    })
+
+    test('reads no file of another host', async () => {
+        const result = await checkNotePage(
+            page({
+                head:
+                    `<link rel="preload" href="https://fonts.example.org/a.woff2" as="font" type="font/woff2" crossorigin>` +
+                    sheet
+            }),
+            files()
+        )
+
+        expect(result.failures).toContain(
+            'requests before the page shows: https://fonts.example.org/a.woff2 is not on the host of the notes'
+        )
+    })
+})
+
+describe('the script of a note page', () => {
+    test('does not count data in a script element, such as structured data', async () => {
+        const body = `<script type="application/ld+json">{"name":"${noise(30_000, 4)}"}</script>`
+
+        const result = await checkNotePage(page({ body }), files())
+
+        expect(result.failures.filter((line) => line.startsWith('script'))).toEqual([])
+    })
+})
+
 describe('the images of a note page (PERF-25)', () => {
     const image = (attributes: string): string =>
         `<img src="/i.png" alt="" width="4" height="3" ${attributes}>`
@@ -222,6 +311,16 @@ describe('the images of a note page (PERF-25)', () => {
             image('fetchpriority="high"') + image('loading="lazy"') + image('loading="lazy"')
 
         expect((await checkNotePage(page({ body }), files())).failures).toEqual([])
+    })
+
+    test('are counted, with the address of the first', async () => {
+        const body = image('fetchpriority="high"') + image('loading="lazy"')
+
+        expect((await checkNotePage(page({ body }), files())).measure.images).toEqual({
+            count: 2,
+            first: '/i.png'
+        })
+        expect((await checkNotePage(page(), files())).measure.images).toEqual({ count: 0 })
     })
 
     test('fail when the first image is lazy or has no high priority', async () => {
@@ -290,6 +389,11 @@ describe('the times of a note page in Lighthouse (R57)', () => {
             verdict: 'fail',
             failures: ['TBT: median 120 ms, the budget is 100 ms']
         })
+    })
+
+    test('refuses a judgement with no run', () => {
+        expect(() => judgeTimes(budget, [])).toThrow('no run')
+        expect(() => judgeTimes(budget, [run(900, 0, 0.1)], [])).toThrow('no run')
     })
 
     test('a layout shift above its budget fails at once', () => {

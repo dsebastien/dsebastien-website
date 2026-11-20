@@ -80,6 +80,8 @@ jobs:
     # image has Chrome.
     budgets:
         runs-on: ubuntu-latest
+        # Each run waits for a quiet machine: a busy runner must not run for hours.
+        timeout-minutes: 60
 
         steps:
             - name: Checkout
@@ -101,6 +103,14 @@ jobs:
 
             - name: Note page budgets
               run: bun run budgets
+
+            # The reports of Lighthouse, to read why a time failed.
+            - name: Reports of Lighthouse
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: lighthouse-reports
+                  path: .cache/page-budgets
 
     # The command line program of the publishing tool runs on Linux and on
     # Windows (ADR 0009), so its checks run on both.

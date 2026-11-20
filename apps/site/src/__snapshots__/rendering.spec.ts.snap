@@ -66,7 +66,7 @@ exports[`rendering of the Markdown forms on the site embed-image-in-link: A Mark
 
 exports[`rendering of the Markdown forms on the site embed-note: An embed of a note shows the text of that note (REN-01). 1`] = `
 "
-<div class="note-embed" data-embed-of="/10+Garden/Compost+basics"><h1>Compost basics</h1>
+<div class="note-embed" data-embed-of="/10+Garden/Compost+basics"><h2>Compost basics</h2>
 <p>A heap needs green matter, brown matter, air and water.</p>
 <ul>
 <li>Turn the heap every two weeks.</li>
@@ -78,7 +78,7 @@ exports[`rendering of the Markdown forms on the site embed-note: An embed of a n
 
 exports[`rendering of the Markdown forms on the site embed-heading: An embed of a heading shows that section only (REN-01). 1`] = `
 "
-<div class="note-embed" data-embed-of="/50+Field+guide/Companion+planting"><h2>Three sisters</h2>
+<div class="note-embed" data-embed-of="/50+Field+guide/Companion+planting"><h3>Three sisters</h3>
 <p>Corn gives the beans a pole to climb.</p>
 <p>Squash leaves keep the soil cool.</p>
 </div>"
@@ -92,7 +92,7 @@ exports[`rendering of the Markdown forms on the site embed-block: An embed of a 
 exports[`rendering of the Markdown forms on the site embed-cycle: Two notes that embed each other show each text once: the embed has a depth limit and a cycle check (REN-01). 1`] = `
 "
 <p>Change the bed of each crop every year.</p>
-<div class="note-embed" data-embed-of="/50+Field+guide/Soil+rest"><h1>Soil rest</h1>
+<div class="note-embed" data-embed-of="/50+Field+guide/Soil+rest"><h2>Soil rest</h2>
 <p>Leave one bed empty each year.</p>
 <p><a href="/50+Field+guide/Crop+rotation">Crop rotation</a></p></div>"
 `;

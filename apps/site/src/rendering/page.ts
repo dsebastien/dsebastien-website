@@ -172,6 +172,22 @@ function withoutIds(nodes: ElementContent[], prefix: string): ElementContent[] {
     return nodes
 }
 
+/**
+ * The headings of an embedded part, one level down (h6 stays h6), so the
+ * body of a page holds no H1: the title band has the one H1 (R58).
+ */
+function oneLevelDown(nodes: ElementContent[]): ElementContent[] {
+    for (const node of nodes) {
+        if (node.type !== 'element' || node.tagName === 'svg') continue
+        const level = /^h([1-5])$/u.exec(node.tagName)
+        if (level !== null) {
+            node.tagName = `h${String(Number(level[1]) + 1)}`
+        }
+        oneLevelDown(node.children)
+    }
+    return nodes
+}
+
 /** Every id of an SVG and every reference to one inside it, with a prefix. */
 function withPrefix(svg: Element, prefix: string): void {
     const visit = (node: Element): void => {
@@ -474,7 +490,10 @@ export class SitePages {
             part = all.slice(start, end === -1 ? undefined : end)
         }
         const children = this.#transform(
-            withOwnLinks(withoutIds(part, `e${String((this.#embeds += 1))}-`), target.path),
+            withOwnLinks(
+                oneLevelDown(withoutIds(part, `e${String((this.#embeds += 1))}-`)),
+                target.path
+            ),
             target,
             [...stack, target.vaultPath]
         )

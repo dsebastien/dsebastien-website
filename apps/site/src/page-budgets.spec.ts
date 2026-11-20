@@ -100,8 +100,12 @@ describe('budgets of the note page', () => {
         const hub = checks.get(sampleFiles[BUDGET_SAMPLE.hub] ?? '')
 
         expect(long?.measure.html).toBeGreaterThan(5_000)
-        expect(media).toBeDefined()
-        expect(hub).toBeDefined()
         expect(long?.measure.requests).toHaveLength(3)
+        // The images are on the pages, so the check of the first image is not empty.
+        expect(long?.measure.images.count).toBe(4)
+        expect(long?.measure.images.first).toEndWith('/long-1.png')
+        expect(media?.measure.images.count).toBe(4)
+        expect(media?.measure.images.first).toEndWith('/cover.png')
+        expect(hub?.measure.html).toBeGreaterThan(0)
     })
 })

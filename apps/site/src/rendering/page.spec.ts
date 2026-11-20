@@ -33,7 +33,11 @@ const BARREL = note(
     'Rain barrel.md',
     '<h1 id="rain-barrel">Rain barrel</h1>\n<p>Fill it in spring.</p>'
 )
-const LINKS = { 'Rain barrel': 'Rain barrel.md', 'Frost dates': 'Frost dates.md' }
+const LINKS = {
+    'Rain barrel': 'Rain barrel.md',
+    'Frost dates': 'Frost dates.md',
+    'Deep': 'Deep.md'
+}
 
 describe('links of a page', () => {
     test('a mark whose target is published becomes a link to its canonical path', () => {
@@ -177,9 +181,12 @@ describe('script of a note page for an old hash (URL-14)', () => {
         let replaced: string | undefined
         // The H1 of the title band (issue 47) is outside the note body: the
         // script finds it only through its own selector.
+        // Its text is the title property, and `data-heading` keeps the text
+        // of the H1 of the note, which the old hash names.
         const title = {
             tagName: 'H1',
-            textContent: 'Garden journal',
+            textContent: 'A journal of the garden',
+            dataset: { heading: 'Garden journal' },
             id: 'garden-journal',
             scrollIntoView: () => {
                 scrolled = 'garden-journal'
@@ -270,7 +277,7 @@ describe('embeds of notes (REN-01)', () => {
                 BARREL
             )
         ).toBe(
-            '<div class="note-embed" data-embed-of="/Compost"><h1>Compost</h1><p>Turn it. <a href="/Rain+barrel">Water</a> <span class="not-published">Draft</span></p></div>'
+            '<div class="note-embed" data-embed-of="/Compost"><h2>Compost</h2><p>Turn it. <a href="/Rain+barrel">Water</a> <span class="not-published">Draft</span></p></div>'
         )
     })
 
@@ -286,7 +293,7 @@ describe('embeds of notes (REN-01)', () => {
                 guide
             )
         ).toBe(
-            '<div class="note-embed" data-embed-of="/Guide"><h2>A</h2><p>one</p><h3>B</h3><p>two</p></div>'
+            '<div class="note-embed" data-embed-of="/Guide"><h3>A</h3><p>one</p><h4>B</h4><p>two</p></div>'
         )
     })
 
@@ -357,7 +364,7 @@ describe('embeds of notes (REN-01)', () => {
                 other
             )
         ).toBe(
-            '<div class="note-embed" data-embed-of="/Other"><h2>Other</h2><p><a href="/Other#other">Other</a><sup><a href="/Other#user-content-fn-1">1</a></sup></p></div>'
+            '<div class="note-embed" data-embed-of="/Other"><h3>Other</h3><p><a href="/Other#other">Other</a><sup><a href="/Other#user-content-fn-1">1</a></sup></p></div>'
         )
     })
 
@@ -667,13 +674,25 @@ describe('page of a note', () => {
         expect(pageOf('<h2 id="part">Part</h2>')).toEqual({ html: '<h2 id="part">Part</h2>' })
     })
 
-    test('keeps the H1 of an embedded note', () => {
-        expect(
-            pageOf(
-                '<p><note-link data-link="Rain%20barrel" data-embed="">Rain barrel</note-link></p>',
-                BARREL
-            ).html
-        ).toContain('<h1>Rain barrel</h1>')
+    // The page has one H1, the one of the title band (R58): the headings of
+    // an embed go one level down, at every depth.
+    test('gives the headings of an embedded note one level less, so the page has no H1 in its body', () => {
+        const deep = note(
+            'Deep.md',
+            '<h1 id="deep">Deep</h1>\n<h5 id="five">Five</h5>\n<h6 id="six">Six</h6>\n<p><note-link data-link="Rain%20barrel" data-embed="">Rain barrel</note-link></p>',
+            LINKS
+        )
+        const html = pageOf(
+            '<p><note-link data-link="Deep" data-embed="">Deep</note-link></p>',
+            deep,
+            BARREL
+        ).html
+
+        expect(html).not.toContain('<h1')
+        expect(html).toContain('<h2>Deep</h2>')
+        expect(html).toContain('<h6>Five</h6>')
+        expect(html).toContain('<h6>Six</h6>')
+        expect(html).toContain('<h2>Rain barrel</h2>')
     })
 
     test('loads the first image at once with a high priority, and the others lazily', () => {

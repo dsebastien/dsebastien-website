@@ -70,6 +70,8 @@ export interface PageMeasure {
     fonts: { href: string; bytes: number }[]
     /** The requests before the page shows, in the order of the page. */
     requests: string[]
+    /** The images of the page, and the address of the first. */
+    images: { count: number; first?: string }
 }
 
 /** The result of the check of a page. */
@@ -99,24 +101,34 @@ export async function checkNotePage(
 ): Promise<PageCheck> {
     const elements = elementsOf(fromHtml(html))
     const failures: string[] = []
+    // A file of another host is not read: the check of the requests names it.
+    const readFile = (address: string): Promise<Uint8Array> =>
+        onHost(address)
+            ? read(address.replace(/[?#].*$/su, ''))
+            : Promise.resolve(new Uint8Array(0))
 
     const sheets = elements.filter((element) => relOf(element).includes('stylesheet'))
     const styleTexts = elements
         .filter((element) => element.tagName === 'style')
         .map((element) => toText(element))
-    const sheetBytes = await Promise.all(sheets.map((sheet) => read(hrefOf(sheet))))
+    const sheetBytes = await Promise.all(sheets.map((sheet) => readFile(hrefOf(sheet))))
+    const sheetTexts = sheetBytes.map((bytes) => new TextDecoder().decode(bytes))
     const css =
         sheetBytes.reduce((total, bytes) => total + brotliSize(bytes), 0) +
         (styleTexts.length === 0 ? 0 : brotliSize(encoder.encode(styleTexts.join('\n'))))
 
-    const scripts = elements.filter((element) => element.tagName === 'script')
+    // Only a script that runs counts: data in a script element (structured
+    // data) is part of the HTML.
+    const scripts = elements.filter(
+        (element) => element.tagName === 'script' && RUNS.test(typeOf(element).trim())
+    )
     const inline = scripts
         .filter((script) => typeof script.properties['src'] !== 'string')
         .map((script) => toText(script))
     const scriptFiles = await Promise.all(
         scripts
             .filter((script) => typeof script.properties['src'] === 'string')
-            .map((script) => read(String(script.properties['src'])))
+            .map((script) => readFile(String(script.properties['src'])))
     )
     const script =
         (inline.length === 0 ? 0 : brotliSize(encoder.encode(inline.join('\n')))) +
@@ -128,7 +140,8 @@ export async function checkNotePage(
     const fonts = await Promise.all(
         fontLinks.map(async (link) => ({
             href: hrefOf(link),
-            bytes: (await read(hrefOf(link))).byteLength
+            bytes: (await readFile(hrefOf(link))).byteLength,
+            crossOrigin: link.properties['crossOrigin'] !== undefined
         }))
     )
 
@@ -159,8 +172,9 @@ export async function checkNotePage(
         stylesheets: sheets.length,
         css,
         script,
-        fonts,
-        requests
+        fonts: fonts.map(({ href, bytes }) => ({ href, bytes })),
+        requests,
+        images: imagesOf(elements)
     }
 
     if (measure.html > PAGE_BUDGET.htmlBrotli) {
@@ -193,7 +207,22 @@ export async function checkNotePage(
             `fonts: ${String(fonts.length)} preloaded font files, the budget is exactly 1`
         )
     }
+    sheets.forEach((sheet, index) => {
+        if (/@import\b/iu.test(sheetTexts[index] ?? '')) {
+            failures.push(
+                `CSS: ${hrefOf(sheet)} imports another file, a request before the page shows`
+            )
+        }
+    })
     for (const font of fonts) {
+        // Without crossorigin, or when the style sheet uses another file, the
+        // browser downloads the font a second time.
+        if (!font.crossOrigin) {
+            failures.push(`fonts: the preload of ${font.href} has no crossorigin`)
+        }
+        if (onHost(font.href) && !sheetTexts.some((text) => text.includes(font.href))) {
+            failures.push(`fonts: the style sheet does not use the preloaded font ${font.href}`)
+        }
         if (font.bytes > PAGE_BUDGET.fontBytes) {
             failures.push(
                 `fonts: ${font.href} has ${String(font.bytes)} bytes, the budget is ${String(PAGE_BUDGET.fontBytes)}`
@@ -206,7 +235,7 @@ export async function checkNotePage(
         )
     }
     for (const address of requests.slice(1)) {
-        if (!address.startsWith('/') || address.startsWith('//')) {
+        if (!onHost(address)) {
             failures.push(
                 `requests before the page shows: ${address} is not on the host of the notes`
             )
@@ -214,6 +243,26 @@ export async function checkNotePage(
     }
     failures.push(...imageFailures(elements.filter((element) => element.tagName === 'img')))
     return { measure, failures }
+}
+
+/** The types of a script element that the browser runs. */
+const RUNS = /^(?:|module|text\/javascript|application\/javascript)$/iu
+
+/** True when the address is a path of the host of the notes. */
+function onHost(address: string): boolean {
+    return address.startsWith('/') && !address.startsWith('//')
+}
+
+/** The type attribute of an element, or an empty text. */
+function typeOf(element: Element): string {
+    const type = element.properties['type']
+    return typeof type === 'string' ? type : ''
+}
+
+function imagesOf(elements: readonly Element[]): PageMeasure['images'] {
+    const images = elements.filter((element) => element.tagName === 'img')
+    const first = images[0]?.properties['src']
+    return typeof first === 'string' ? { count: images.length, first } : { count: images.length }
 }
 
 /** The first image loads at once with a high priority, the others lazily, and each has its size (PERF-25). */
@@ -338,6 +387,9 @@ export function judgeTimes(
     first: readonly TimeRun[],
     second?: readonly TimeRun[]
 ): TimeVerdict {
+    if (first.length === 0 || second?.length === 0) {
+        throw new Error('the times of a page cannot be judged with no run')
+    }
     const cls = median(first.map((run) => run.cls))
     if (cls > budget.cls) {
         return {
