@@ -13,11 +13,19 @@ export const MARKDOWN_FORMS = join(FIXTURES, 'markdown-forms.json')
 /**
  * One check on the HTML of a note.
  *
+ * The checks read the HTML of the body of the note only, not of a whole page:
+ * a count (`count`, `nth`) over a page with a header, an outline or a list of
+ * related notes counts their elements too. The site gives `checkHtml` the
+ * HTML of the note body (issue 45).
+ *
  * A text is read as a reader sees it: the text nodes only (no markup, no
- * attribute, no comment, no script, no style), a space at each edge of a block
- * element (`p`, `li`, `br`, a heading, a cell and the like), entities read,
- * white space folded. A text split by an inline element (`LINK: <a>url</a>`)
- * or by two blocks (`<p>LINK:</p><ul><li>url`) is found.
+ * attribute, no comment, no script, no style, no title, no template, no
+ * fallback of a script or a frame), a space at each edge of a block element
+ * (`p`, `li`, `br`, a heading, a cell and the like), entities read, white
+ * space folded. An element whose end tag the HTML leaves out (`<li>a<li>b`,
+ * `<td>a<td>b`, `<p>a<div>`) is closed as a browser does. A text split by an
+ * inline element (`LINK: <a>url</a>`) or by two blocks
+ * (`<p>LINK:</p><ul><li>url`) is found.
  *
  * - `has`: a CSS selector (a list with commas is a list of alternatives). At
  *   least one element matches, or exactly `count`. With `text`, only the
@@ -25,9 +33,7 @@ export const MARKDOWN_FORMS = join(FIXTURES, 'markdown-forms.json')
  *   nested matches only the deepest counts, with or without a text: a list
  *   item that holds the text through an inner item does not count, and two
  *   alternatives that mark one callout (`<div data-callout-fold><details>`)
- *   count once. The rewriter of Bun closes no element by itself, so an end
- *   tag that the HTML leaves out (`<p>One<p>Two`) nests the next element: use
- *   `hasText` to count a text.
+ *   count once. Use `hasText` to count a text whatever its markup.
  * - `lacks`: a text that must not be anywhere in the HTML, markup and comments
  *   included, before and after the entities are read.
  * - `hasText`: a text that the text of the page holds at least once, or
@@ -70,7 +76,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function toCheck(value: unknown, form: string): FormCheck {
+/**
+ * Reads one check of the forms file. Throws when it is of no kind, mixes two
+ * kinds, has an empty text or a wrong number.
+ */
+export function parseFormCheck(value: unknown, form: string): FormCheck {
     const fail = (): never => {
         throw new Error(`a check of the form ${form} is not valid: ${JSON.stringify(value)}`)
     }
@@ -88,34 +98,29 @@ function toCheck(value: unknown, form: string): FormCheck {
         target,
         nth
     } = value
+    const filled = (each: unknown): each is string => typeof each === 'string' && each.trim() !== ''
     const validCount =
         count === undefined || (Number.isInteger(count) && typeof count === 'number' && count >= 0)
-    if (typeof has === 'string') {
-        const allowed = ['count', 'has', 'text']
-        if (!Object.keys(value).every((key) => allowed.includes(key))) return fail()
-        if (text !== undefined && typeof text !== 'string') return fail()
-        if (!validCount) return fail()
+    if (!validCount) return fail()
+    if (filled(has) && ['has', 'count,has', 'has,text', 'count,has,text'].includes(keys)) {
+        if (text !== undefined && !filled(text)) return fail()
         return {
             has,
             ...(typeof text === 'string' ? { text } : {}),
             ...(typeof count === 'number' ? { count } : {})
         }
     }
-    if (typeof hasText === 'string') {
-        if (!['hasText', 'count,hasText'].includes(keys) || hasText.trim() === '') return fail()
-        if (!validCount) return fail()
+    if (filled(hasText) && ['hasText', 'count,hasText'].includes(keys)) {
         return { hasText, ...(typeof count === 'number' ? { count } : {}) }
     }
-    if (keys === 'lacks' && typeof lacks === 'string' && lacks !== '') return { lacks }
-    if (keys === 'lacksText' && typeof lacksText === 'string' && lacksText !== '') {
-        return { lacksText }
-    }
-    if (keys === 'distinctIds' && typeof distinctIds === 'string') return { distinctIds }
-    if (keys === 'anchorsResolve' && typeof anchorsResolve === 'string') return { anchorsResolve }
+    if (keys === 'lacks' && filled(lacks)) return { lacks }
+    if (keys === 'lacksText' && filled(lacksText)) return { lacksText }
+    if (keys === 'distinctIds' && filled(distinctIds)) return { distinctIds }
+    if (keys === 'anchorsResolve' && filled(anchorsResolve)) return { anchorsResolve }
     if (
         keys === 'anchorsResolve,nth,target' &&
-        typeof anchorsResolve === 'string' &&
-        typeof target === 'string' &&
+        filled(anchorsResolve) &&
+        filled(target) &&
         typeof nth === 'number' &&
         Number.isInteger(nth) &&
         nth >= 1
@@ -145,7 +150,7 @@ function toForm(value: unknown): MarkdownForm {
     } catch (error) {
         throw new Error(`the source pattern of the form ${id} does not compile`, { cause: error })
     }
-    return { id, note, covers, source, checks: checks.map((check) => toCheck(check, id)) }
+    return { id, note, covers, source, checks: checks.map((check) => parseFormCheck(check, id)) }
 }
 
 /** Reads the forms file. Throws when its shape is wrong. */
@@ -231,8 +236,65 @@ const BLOCK_ELEMENTS = new Set([
     'ul'
 ])
 
-// Elements whose text is code, not text of the page.
-const HIDDEN_TEXT = new Set(['script', 'style'])
+// Elements whose text a reader does not see: code, the title of the window,
+// the fallbacks of a script and a frame, and a template.
+const HIDDEN_TEXT = new Set(['iframe', 'noscript', 'script', 'style', 'template', 'title'])
+
+// The start tags that close an open element whose end tag the HTML leaves
+// out, as a browser does (the rules of the HTML standard, in short): the
+// element, and where the search for it stops.
+const BLOCK_STARTS_CLOSE_P = [
+    'address',
+    'article',
+    'aside',
+    'blockquote',
+    'details',
+    'dialog',
+    'div',
+    'dl',
+    'fieldset',
+    'figcaption',
+    'figure',
+    'footer',
+    'form',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'header',
+    'hgroup',
+    'hr',
+    'main',
+    'menu',
+    'nav',
+    'ol',
+    'p',
+    'pre',
+    'section',
+    'summary',
+    'table',
+    'ul'
+]
+const P_SCOPE = ['button', 'caption', 'html', 'object', 'table', 'td', 'template', 'th']
+const TABLE_SCOPE = ['html', 'table', 'template']
+const IMPLIED_ENDS: Record<string, { closes: string[]; stops: string[] }> = {
+    li: { closes: ['li'], stops: ['menu', 'ol', 'ul', ...P_SCOPE] },
+    dt: { closes: ['dd', 'dt'], stops: ['dl', ...P_SCOPE] },
+    dd: { closes: ['dd', 'dt'], stops: ['dl', ...P_SCOPE] },
+    td: { closes: ['td', 'th'], stops: ['tr', ...TABLE_SCOPE] },
+    th: { closes: ['td', 'th'], stops: ['tr', ...TABLE_SCOPE] },
+    tr: { closes: ['td', 'th', 'tr'], stops: ['tbody', 'tfoot', 'thead', ...TABLE_SCOPE] },
+    tbody: { closes: ['tbody', 'td', 'tfoot', 'th', 'thead', 'tr'], stops: TABLE_SCOPE },
+    thead: { closes: ['tbody', 'td', 'tfoot', 'th', 'thead', 'tr'], stops: TABLE_SCOPE },
+    tfoot: { closes: ['tbody', 'td', 'tfoot', 'th', 'thead', 'tr'], stops: TABLE_SCOPE },
+    option: { closes: ['option'], stops: ['datalist', 'optgroup', 'select'] },
+    optgroup: { closes: ['optgroup', 'option'], stops: ['datalist', 'select'] },
+    ...Object.fromEntries(
+        BLOCK_STARTS_CLOSE_P.map((tag) => [tag, { closes: ['p'], stops: P_SCOPE }])
+    )
+}
 
 interface Match {
     id: string | null
@@ -249,26 +311,61 @@ interface Reading {
     text: string
 }
 
+/** An element that the reader holds open. */
+interface Open {
+    tag: string
+    match: Match | undefined
+    block: boolean
+    hidden: boolean
+    closed: boolean
+}
+
 /**
  * Reads the text of the page and of each element that the selector matches:
- * the text nodes only (no markup, no attribute, no comment, no script, no
- * style), a space at each edge of a block element, entities read, white space
- * folded.
+ * the text nodes only (no markup, no attribute, no comment, nothing that a
+ * reader does not see), a space at each edge of a block element, entities
+ * read, white space folded. An element whose end tag the HTML leaves out
+ * (`<li>a<li>b`, `<td>a<td>b`, `<p>a<div>`) is closed as a browser does, and
+ * nothing inside a hidden element (`template`, `noscript`) is a match.
  */
 async function read(html: string, selector?: string): Promise<Reading> {
     const found: Match[] = []
     const open: Match[] = []
+    const stack: Open[] = []
     let page = ''
     let hidden = 0
     // The rewriter runs the handlers of one element in the order they were
     // added, and keeps only the last end tag handler of an element: the
     // selector handler marks the match, and the handler of every element
-    // opens and closes it.
+    // opens and closes it. The rewriter closes no element by itself: it
+    // gives the end tags of left out ones late, at the end tag of a parent.
     let matched: Match | undefined
     const add = (text: string): void => {
         if (hidden > 0) return
         page += text
         for (const match of open) match.text += text
+    }
+    const close = (entry: Open): void => {
+        if (entry.closed) return
+        entry.closed = true
+        stack.splice(stack.lastIndexOf(entry), 1)
+        if (entry.hidden) hidden -= 1
+        if (entry.match !== undefined) open.splice(open.lastIndexOf(entry.match), 1)
+        if (entry.block) add(' ')
+    }
+    const closeImplied = (tag: string): void => {
+        const rule = IMPLIED_ENDS[tag]
+        if (rule === undefined) return
+        // The outermost element that the tag closes, before the search
+        // stops: a new row closes the open cell and the open row.
+        let from: number | undefined
+        for (let index = stack.length - 1; index >= 0; index -= 1) {
+            const entry = stack[index]
+            if (entry === undefined || rule.stops.includes(entry.tag)) break
+            if (rule.closes.includes(entry.tag)) from = index
+        }
+        if (from === undefined) return
+        for (const above of stack.slice(from).reverse()) close(above)
     }
     let rewriter = new HTMLRewriter()
     if (selector !== undefined) {
@@ -278,28 +375,38 @@ async function read(html: string, selector?: string): Promise<Reading> {
                     id: element.getAttribute('id'),
                     href: element.getAttribute('href'),
                     text: '',
-                    parent: open.at(-1)
+                    parent: undefined
                 }
-                found.push(matched)
             }
         })
     }
     rewriter = rewriter
         .on('*', {
             element(element) {
-                const match = matched
-                matched = undefined
                 const tag = element.tagName.toLowerCase()
+                closeImplied(tag)
+                let match = matched
+                matched = undefined
+                if (hidden > 0) match = undefined
+                if (match !== undefined) {
+                    match.parent = open.at(-1)
+                    found.push(match)
+                }
                 const block = BLOCK_ELEMENTS.has(tag)
-                const code = HIDDEN_TEXT.has(tag)
                 if (block) add(' ')
                 if (!element.canHaveContent) return
+                const entry: Open = {
+                    tag,
+                    match,
+                    block,
+                    hidden: HIDDEN_TEXT.has(tag),
+                    closed: false
+                }
+                stack.push(entry)
                 if (match !== undefined) open.push(match)
-                if (code) hidden += 1
+                if (entry.hidden) hidden += 1
                 element.onEndTag(() => {
-                    if (code) hidden -= 1
-                    if (match !== undefined) open.splice(open.lastIndexOf(match), 1)
-                    if (block) add(' ')
+                    close(entry)
                 })
             }
         })
@@ -353,12 +460,14 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
         const fragments = (await matches(html, check.anchorsResolve))
             .map((match) => match.href)
             .filter((href): href is string => href?.startsWith('#') === true)
+        // Read before any return, so a target selector that does not parse
+        // throws on every page.
+        const targets = check.target === undefined ? [] : await matches(html, check.target)
         if (fragments.length === 0) {
             return `no element matches "${check.anchorsResolve}" with a link to a fragment`
         }
         let wanted: string | null | undefined
         if (check.target !== undefined && check.nth !== undefined) {
-            const targets = await matches(html, check.target)
             const element = targets[check.nth - 1]
             if (element === undefined) {
                 return `"${check.target}" matches ${String(targets.length)} elements, so it has no element ${String(check.nth)}`

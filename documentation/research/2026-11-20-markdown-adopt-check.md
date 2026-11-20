@@ -15,7 +15,7 @@ Before own code is written for the conversion of Obsidian Markdown (BUILD-10, D4
 
 ## The corpus
 
-`fixtures/markdown-forms.json` lists 47 forms of issue 12. Each form names one invented note of the fixture vault (most of them in `50 Field guide/`) and checks on the HTML that a conversion gives for that note alone. A check says that an element must exist (a CSS selector, an optional text and an optional count), that a text must not appear anywhere in the HTML, or that headings have distinct ids. The checks come from spec v2 (REN, CARD, URL-14) and from the reading view of Obsidian where the spec names no markup (`data-callout`). `checkHtml()` of `packages/testing` runs them with the HTML rewriter of Bun. The rendering slice (issue 45) runs the same corpus on the site.
+`fixtures/markdown-forms.json` lists 47 forms of issue 12. Each form names one invented note of the fixture vault (most of them in `50 Field guide/`) and checks on the HTML that a conversion gives for that note alone. A check says that an element must exist (a CSS selector, an optional text and an optional count), that the text of the page holds a text (an optional count) or not, that a text must not appear anywhere in the HTML, that headings have distinct ids, or that a link to a fragment reaches an id (or the id of one named element). The checks come from spec v2 (REN, CARD, URL-14) and from the reading view of Obsidian where the spec names no markup (`data-callout`). `checkHtml()` of `packages/testing` runs them with the HTML rewriter of Bun. The rendering slice (issue 45) runs the same corpus on the site.
 
 ## The candidates
 
@@ -30,58 +30,60 @@ Every candidate works on the same published set: every new note of the fixture v
 
 Cell: pass, or fail with the failed checks of all checks of the form.
 
-| Form                    | Sätteri today | Quartz v5   | Parser, plain | Parser, rehype-obsidian | astro-loader-obsidian |
-| ----------------------- | ------------- | ----------- | ------------- | ----------------------- | --------------------- |
-| wikilink-note           | pass          | pass        | fail (1/2)    | fail (1/2)              | pass                  |
-| wikilink-heading        | fail (2/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (1/3)            |
-| wikilink-block          | fail (1/2)    | pass        | fail (1/2)    | fail (1/2)              | pass                  |
-| wikilink-alias          | pass          | pass        | fail (1/4)    | fail (1/4)              | pass                  |
-| wikilink-hard-names     | pass          | pass        | fail (3/4)    | fail (3/4)              | fail (2/4)            |
-| wikilink-unpublished    | pass          | pass        | pass          | pass                    | pass                  |
-| wikilink-missing        | pass          | pass        | pass          | pass                    | pass                  |
-| wikilink-duplicate-name | pass          | pass        | fail (2/3)    | fail (2/3)              | pass                  |
-| wikilink-own-heading    | fail (2/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (2/3)            |
-| markdown-link-note      | pass          | pass        | pass          | pass                    | fail (1/3)            |
-| embed-image-size        | fail (2/6)    | pass        | fail (4/6)    | fail (4/6)              | fail (4/6)            |
-| embed-image-in-link     | fail (2/2)    | pass        | pass          | pass                    | fail (1/2)            |
-| embed-note              | fail (2/3)    | fail (2/3)  | fail (2/3)    | fail (2/3)              | pass                  |
-| embed-heading           | fail (1/3)    | fail (1/3)  | fail (1/3)    | fail (1/3)              | pass                  |
-| embed-block             | fail (2/4)    | fail (2/4)  | fail (1/4)    | fail (1/4)              | fail (1/4)            |
-| embed-cycle             | fail (1/2)    | fail (1/2)  | fail (1/2)    | fail (1/2)              | fail (1/2)            |
-| embed-pdf               | pass          | pass        | fail (1/2)    | fail (1/2)              | fail (1/2)            |
-| embed-audio             | pass          | pass        | fail (1/2)    | fail (1/2)              | fail (1/2)            |
-| embed-video             | pass          | pass        | fail (1/2)    | fail (1/2)              | fail (1/2)            |
-| embed-base              | pass          | pass        | fail (1/3)    | fail (1/3)              | fail (1/3)            |
-| embed-canvas            | pass          | pass        | fail (1/3)    | fail (1/3)              | fail (1/3)            |
-| callout-types           | fail (5/5)    | fail (2/5)  | fail (4/5)    | fail (4/5)              | fail (5/5)            |
-| callout-folded          | fail (4/4)    | pass        | fail (3/4)    | fail (3/4)              | fail (4/4)            |
-| callout-nested          | fail (3/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (3/3)            |
-| callout-title           | fail (3/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (3/3)            |
-| frozen-dataview-table   | fail (2/4)    | fail (2/4)  | fail (3/4)    | fail (3/4)              | pass                  |
-| frozen-dataview-list    | fail (2/4)    | fail (2/4)  | fail (3/4)    | fail (3/4)              | pass                  |
-| link-block              | fail (7/10)   | fail (6/10) | fail (6/10)   | fail (6/10)             | fail (6/10)           |
-| video-url-line          | fail (2/3)    | fail (3/3)  | fail (2/3)    | fail (3/3)              | fail (2/3)            |
-| meta-bind-inline        | fail (2/3)    | fail (2/3)  | fail (2/3)    | fail (2/3)              | fail (2/3)            |
-| meta-bind-block         | fail (4/4)    | fail (4/4)  | fail (4/4)    | fail (4/4)              | fail (3/4)            |
-| live-dataview           | fail (4/4)    | fail (4/4)  | fail (4/4)    | fail (4/4)              | fail (3/4)            |
-| live-base               | fail (2/2)    | fail (2/2)  | fail (2/2)    | fail (2/2)              | fail (2/2)            |
-| comment-percent         | fail (3/6)    | pass        | pass          | pass                    | fail (3/6)            |
-| comment-html            | fail (3/4)    | fail (3/4)  | fail (3/4)    | fail (3/4)              | pass                  |
-| tags                    | fail (3/5)    | fail (3/5)  | fail (3/5)    | fail (3/5)              | fail (2/5)            |
-| footnotes               | fail (3/5)    | pass        | fail (2/5)    | fail (2/5)              | fail (3/5)            |
-| highlights              | fail (3/3)    | pass        | fail (2/3)    | fail (2/3)              | fail (3/3)            |
-| math-inline             | fail (2/3)    | fail (1/3)  | fail (1/3)    | fail (1/3)              | fail (2/3)            |
-| math-block              | fail (2/3)    | fail (1/3)  | fail (1/3)    | fail (1/3)              | fail (2/3)            |
-| mermaid                 | fail (2/4)    | fail (2/4)  | fail (2/4)    | fail (2/4)              | fail (3/4)            |
-| table-pipe-in-link      | pass          | pass        | fail (1/4)    | fail (1/4)              | fail (1/4)            |
-| task-list               | fail (3/4)    | fail (3/4)  | pass          | pass                    | fail (3/4)            |
-| properties              | pass          | pass        | pass          | pass                    | pass                  |
-| headings-same-text      | fail (2/4)    | fail (1/4)  | fail (3/4)    | fail (3/4)              | fail (2/4)            |
-| code-block              | fail (1/2)    | fail (1/2)  | pass          | pass                    | fail (1/2)            |
-| raw-html                | fail (3/4)    | fail (3/4)  | fail (3/4)    | fail (3/4)              | fail (3/4)            |
-| **passed** (of 47)      | 14            | 25          | 8             | 8                       | 12                    |
+| Form                    | Sätteri today | Quartz v5    | Parser, plain | Parser, rehype-obsidian | astro-loader-obsidian |
+| ----------------------- | ------------- | ------------ | ------------- | ----------------------- | --------------------- |
+| wikilink-note           | pass          | pass         | fail (1/2)    | fail (1/2)              | pass                  |
+| wikilink-heading        | fail (2/3)    | pass         | fail (2/3)    | fail (2/3)              | fail (1/3)            |
+| wikilink-block          | fail (1/2)    | pass         | fail (1/2)    | fail (1/2)              | pass                  |
+| wikilink-alias          | pass          | pass         | fail (1/4)    | fail (1/4)              | pass                  |
+| wikilink-hard-names     | pass          | pass         | fail (3/4)    | fail (3/4)              | fail (2/4)            |
+| wikilink-unpublished    | pass          | pass         | pass          | pass                    | pass                  |
+| wikilink-missing        | pass          | pass         | pass          | pass                    | pass                  |
+| wikilink-duplicate-name | pass          | pass         | fail (2/3)    | fail (2/3)              | pass                  |
+| wikilink-own-heading    | fail (2/3)    | pass         | fail (2/3)    | fail (2/3)              | fail (2/3)            |
+| markdown-link-note      | pass          | pass         | pass          | pass                    | fail (1/3)            |
+| embed-image-size        | fail (2/6)    | pass         | fail (4/6)    | fail (4/6)              | fail (4/6)            |
+| embed-image-in-link     | fail (2/2)    | pass         | pass          | pass                    | fail (1/2)            |
+| embed-note              | fail (2/3)    | fail (2/3)   | fail (2/3)    | fail (2/3)              | pass                  |
+| embed-heading           | fail (1/3)    | fail (1/3)   | fail (1/3)    | fail (1/3)              | pass                  |
+| embed-block             | fail (2/4)    | fail (2/4)   | fail (1/4)    | fail (1/4)              | fail (1/4)            |
+| embed-cycle             | fail (2/4)    | fail (2/4)   | fail (2/4)    | fail (2/4)              | fail (2/4)            |
+| embed-pdf               | pass          | pass         | fail (1/2)    | fail (1/2)              | fail (1/2)            |
+| embed-audio             | pass          | pass         | fail (1/2)    | fail (1/2)              | fail (1/2)            |
+| embed-video             | pass          | pass         | fail (1/2)    | fail (1/2)              | fail (1/2)            |
+| embed-base              | pass          | pass         | fail (1/3)    | fail (1/3)              | fail (1/3)            |
+| embed-canvas            | pass          | pass         | fail (1/3)    | fail (1/3)              | fail (1/3)            |
+| callout-types           | fail (5/5)    | fail (2/5)   | fail (4/5)    | fail (4/5)              | fail (5/5)            |
+| callout-folded          | fail (4/4)    | pass         | fail (3/4)    | fail (3/4)              | fail (4/4)            |
+| callout-nested          | fail (3/3)    | pass         | fail (2/3)    | fail (2/3)              | fail (3/3)            |
+| callout-title           | fail (3/3)    | pass         | fail (2/3)    | fail (2/3)              | fail (3/3)            |
+| frozen-dataview-table   | fail (2/4)    | fail (2/4)   | fail (3/4)    | fail (3/4)              | pass                  |
+| frozen-dataview-list    | fail (2/4)    | fail (2/4)   | fail (3/4)    | fail (3/4)              | pass                  |
+| link-block              | fail (15/20)  | fail (14/20) | fail (14/20)  | fail (14/20)            | fail (14/20)          |
+| video-url-line          | fail (2/3)    | fail (3/3)   | fail (2/3)    | fail (3/3)              | fail (2/3)            |
+| meta-bind-inline        | fail (2/3)    | fail (2/3)   | fail (2/3)    | fail (2/3)              | fail (2/3)            |
+| meta-bind-block         | fail (4/4)    | fail (4/4)   | fail (4/4)    | fail (4/4)              | fail (3/4)            |
+| live-dataview           | fail (4/4)    | fail (4/4)   | fail (4/4)    | fail (4/4)              | fail (3/4)            |
+| live-base               | fail (2/2)    | fail (2/2)   | fail (2/2)    | fail (2/2)              | fail (2/2)            |
+| comment-percent         | fail (3/6)    | pass         | pass          | pass                    | fail (3/6)            |
+| comment-html            | fail (3/4)    | fail (3/4)   | fail (3/4)    | fail (3/4)              | pass                  |
+| tags                    | fail (3/5)    | fail (3/5)   | fail (3/5)    | fail (3/5)              | fail (2/5)            |
+| footnotes               | fail (3/5)    | pass         | fail (2/5)    | fail (2/5)              | fail (3/5)            |
+| highlights              | fail (3/3)    | pass         | fail (2/3)    | fail (2/3)              | fail (3/3)            |
+| math-inline             | fail (2/3)    | fail (1/3)   | fail (1/3)    | fail (1/3)              | fail (2/3)            |
+| math-block              | fail (2/3)    | fail (1/3)   | fail (1/3)    | fail (1/3)              | fail (2/3)            |
+| mermaid                 | fail (2/4)    | fail (2/4)   | fail (2/4)    | fail (2/4)              | fail (3/4)            |
+| table-pipe-in-link      | pass          | pass         | fail (1/4)    | fail (1/4)              | fail (1/4)            |
+| task-list               | fail (3/4)    | fail (3/4)   | pass          | pass                    | fail (3/4)            |
+| properties              | pass          | pass         | pass          | pass                    | pass                  |
+| headings-same-text      | fail (2/4)    | fail (1/4)   | fail (3/4)    | fail (3/4)              | fail (2/4)            |
+| code-block              | fail (1/2)    | fail (1/2)   | pass          | pass                    | fail (1/2)            |
+| raw-html                | fail (3/4)    | fail (3/4)   | fail (3/4)    | fail (3/4)              | fail (3/4)            |
+| **passed** (of 47)      | 14            | 25           | 8             | 8                       | 12                    |
 
 Every failure is quiet: no candidate stops on a form. The only error is the build of `astro-loader-obsidian`, below. The first run, before the reviews of the ticket, gave 15 (Sätteri), 24 (Quartz) and 17 (loader). The two reviews found checks that a wrong conversion passed (a `LINK` text split by a link, an icon taken for a diagram, a file path that nobody resolved, a link to a fragment that reaches no heading) or that a right one failed (the classes of a folded callout, the URL form of another site), and the corrected corpus gives the table above.
+
+Issue 84 closed the minor gaps of the second review, and the table above is its run (2026-11-20). The text of a page now has a space at each edge of a block element and no text of a script or a style; `embed-cycle` counts each sentence in the text of the page (`hasText`), so a missing end tag cannot hide a repeat; of nested matches only the deepest counts, also without a text; `link-block` checks one line of each `LINK` form (20 checks, 10 before); the link `#Autumn#Tasks` must reach the second `Tasks` heading. No score changed: only the counts of the cells of `embed-cycle` (4 checks, 2 before) and `link-block` changed, and each candidate passes and fails the same forms.
 
 The score of Quartz is the score of its full transformer: its parser and its rendering. The setup of R50 keeps the parser only, and starts at 8 of 47: the parser builds an exact tree (typed nodes for wikilinks, embeds, callouts, tags, highlights, comments and footnotes), and almost every form needs a rendering step of our own. The author confirmed R50 after he saw this column.
 
