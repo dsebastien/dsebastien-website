@@ -703,8 +703,6 @@ function gitContentStore(folder: string): ContentStore {
             const journal = new Set(paths)
             /** Puts each path of the journal back as this commit has it, in the work tree and in the index. */
             const putBack = async (commit: string | undefined): Promise<void> => {
-                // Another run can have taken the copy (issue 75): nothing more is written.
-                await ownLock()
                 const inCommit = new Set(
                     commit === undefined
                         ? []
@@ -740,6 +738,8 @@ function gitContentStore(folder: string): ContentStore {
                 }
             }
             if (now === head) {
+                // Another run can have taken the copy (issue 75): nothing more is written.
+                await ownLock()
                 await putBack(head)
                 return 'undone'
             }
@@ -793,9 +793,12 @@ function gitContentStore(folder: string): ContentStore {
             }
             if (!ofTheRun || first === undefined) {
                 // The run made no commit, and other commits came after head.
+                await ownLock()
                 await putBack(now)
                 return 'undone'
             }
+            // The fetch can be slow: another run can take the copy meanwhile.
+            await ownLock()
             try {
                 await fetchMain()
             } catch (error) {

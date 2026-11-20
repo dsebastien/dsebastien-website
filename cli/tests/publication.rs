@@ -17,6 +17,7 @@ use std::process::{Command, Output};
 use support::{TestStores, git, text};
 
 const NOTE: &str = "10 Garden/Frost dates explained.md";
+const SECOND: &str = "10 Garden/Compost basics.md";
 const TIME: &str = "2031-04-01T08:00:00Z";
 const NOTE_ID: &str = "203d446940c02032";
 
@@ -1269,5 +1270,62 @@ fn a_plan_whose_lock_another_run_took_during_its_recovery_changes_nothing_more()
         fs::read_to_string(local.join("lock"))
             .expect("the lock of the other run exists")
             .contains("another run")
+    );
+}
+
+/// Issue 75: the journal is written only while the lock is the own one, also
+/// when the recovery of a publication finds that the push of a stopped run
+/// arrived.
+#[test]
+fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_leaves_the_journal()
+{
+    let setup = set_up();
+    let first = setup.plan(NOTE);
+    let second = setup.plan(SECOND);
+    let crashed = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("publish")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .args(["--plan", &second, "--time", TIME])
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", "push")
+        .output()
+        .expect("the program starts");
+    assert_eq!(crashed.status.code(), Some(99), "{}", errors_of(&crashed));
+    let unlocked = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("unlock")
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .output()
+        .expect("the program starts");
+    assert!(unlocked.status.success(), "{}", errors_of(&unlocked));
+    let local = setup.copy.join(".git").join("vault-publish");
+    let journal = fs::read_to_string(local.join("journal.json")).expect("the journal exists");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        .arg("publish")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .args(["--plan", &first, "--time", TIME])
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_STEAL_LOCK", "journal")
+        .output()
+        .expect("the program starts");
+
+    assert_eq!(output.status.code(), Some(1));
+    let errors = errors_of(&output);
+    assert!(
+        errors.contains("the lock of this publication was removed while it ran"),
+        "{errors}"
+    );
+    assert_eq!(
+        fs::read_to_string(local.join("journal.json")).expect("the journal exists"),
+        journal
     );
 }

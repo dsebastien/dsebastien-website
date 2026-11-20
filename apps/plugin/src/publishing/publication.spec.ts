@@ -1008,6 +1008,40 @@ describe('failure cases after the first review', () => {
         expect(await Bun.file(lock).text()).toBe(OTHER_LOCK)
     })
 
+    test('a publication whose lock another run took after the recovery found the push of a stopped run leaves the journal as it was', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const first = await plan(setup.device, { include: [NOTE] })
+        const second = await plan(setup.device, { include: [SECOND] })
+        const stopped = crashingStore(setup.device.store, setup.copy, 'push')
+        void publish({ ...setup.device, store: stopped.store }, second.id, RUN)
+        await stopped.reached
+        expect(await unlock(setup.device)).toBe(true)
+        const lock = join(setup.copy, '.git', 'vault-publish', 'lock')
+        const journal = join(setup.copy, '.git', 'vault-publish', 'journal.json')
+        const journalText = await Bun.file(journal).text()
+        // Another run takes the copy once the recovery knows that the push arrived.
+        const store = setup.device.store
+        const device: Device = {
+            ...setup.device,
+            store: {
+                ...store,
+                recover: async (...args: Parameters<typeof store.recover>) => {
+                    const result = await store.recover(...args)
+                    await writeFile(lock, OTHER_LOCK)
+                    return result
+                }
+            }
+        }
+
+        expect(await rejectionOf(publish(device, first.id, RUN))).toContain(
+            'the lock of this publication was removed while it ran'
+        )
+
+        expect(await Bun.file(journal).text()).toBe(journalText)
+        expect(await Bun.file(lock).text()).toBe(OTHER_LOCK)
+    })
+
     test('a publication whose lock another run took before its commit leaves the copy to that run and pushes nothing', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)

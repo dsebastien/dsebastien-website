@@ -307,6 +307,7 @@ fn recover(device: &Device, own_lock: &dyn Fn() -> Result<(), String>) -> Result
                 .recover(head.as_deref(), &paths, &plan, own_lock)?;
             // The journal is the one of the run only while the lock is its own
             // (issue 75).
+            steal_point("journal", &device.store);
             own_lock()?;
             if result == Recovery::Pushed || correction_owed {
                 device

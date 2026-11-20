@@ -525,6 +525,8 @@ impl ContentStore {
             self.put_back(Some(&now), paths)?;
             return Ok(Recovery::Undone);
         };
+        // The fetch can be slow: another run can take the copy meanwhile.
+        own_lock()?;
         self.fetch_main().map_err(|(FetchFailure::Unreachable(error) | FetchFailure::Other(error))| {
             format!(
                 "a publication stopped halfway after its commit, and the tool must reach the content store to know whether its push arrived: {error}"
