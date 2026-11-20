@@ -36,7 +36,16 @@ async function read(): Promise<PublishedSite> {
     // as the text of the vault (`note-properties.ts`), not from the collection.
     const properties = new Map<string, Readonly<Record<string, unknown>>>()
     for (const note of notes) {
-        properties.set(note.vaultPath, readProperties(await readCleanedNote(note.vaultPath)))
+        const source = await readCleanedNote(note.vaultPath)
+        try {
+            properties.set(note.vaultPath, readProperties(source))
+        } catch (error) {
+            // The build stops, and says which note the author must correct.
+            throw new Error(
+                `the properties of "${note.vaultPath}" cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+                { cause: error }
+            )
+        }
     }
     const pages = new SitePages(
         notes.map((note) => {

@@ -6,8 +6,11 @@ import { linkContextsOf, type NoteLinkContext } from './backlinks.ts'
 // link of a note, read from the markup that the Markdown processor made, with
 // its marks.
 
-function contexts(markup: string): NoteLinkContext[] {
-    return linkContextsOf(fromHtml(markup, { fragment: true }))
+/** The contexts of the links of a markup, without the whole sentence of each one. */
+function contexts(markup: string): Omit<NoteLinkContext, 'sentence'>[] {
+    return linkContextsOf(fromHtml(markup, { fragment: true })).map(
+        ({ linkPath, before, link, after }) => ({ linkPath, before, link, after })
+    )
 }
 
 const link = (linkPath: string, shown = linkPath): string =>
@@ -49,6 +52,25 @@ describe('the sentence around a link', () => {
                 before: 'He said "read ',
                 link: 'Sprout.js v2. Notes',
                 after: ' now."'
+            }
+        ])
+    })
+
+    test('a full stop inside the text of a link starts no sentence for a later link', () => {
+        expect(
+            contexts(`<p>See ${link('Dr. Who')} and ${link('Star Trek')} tonight. Then sleep.</p>`)
+        ).toEqual([
+            {
+                linkPath: 'Dr. Who',
+                before: 'See ',
+                link: 'Dr. Who',
+                after: ' and Star Trek tonight.'
+            },
+            {
+                linkPath: 'Star Trek',
+                before: 'See Dr. Who and ',
+                link: 'Star Trek',
+                after: ' tonight.'
             }
         ])
     })
@@ -153,18 +175,22 @@ describe('the lines of a block', () => {
         ).toEqual([{ linkPath: 'Hub', before: 'From ', link: 'Hub', after: '' }])
     })
 
+    // The ends of the sentences of a block are read one time. When they were
+    // read again for each link, this block took a minute: the test then
+    // passes its time limit on any machine.
     test('a block with very many links gives each link its own sentence', () => {
+        const count = 20_000
         const many = Array.from(
-            { length: 4000 },
+            { length: count },
             (_, index) => `Word ${link(`Note ${String(index)}`)}.`
         )
         const found = contexts(`<p>${many.join(' ')}</p>`)
 
-        expect(found).toHaveLength(4000)
-        expect(found[3999]).toEqual({
-            linkPath: 'Note 3999',
+        expect(found).toHaveLength(count)
+        expect(found[count - 1]).toEqual({
+            linkPath: `Note ${String(count - 1)}`,
             before: 'Word ',
-            link: 'Note 3999',
+            link: `Note ${String(count - 1)}`,
             after: '.'
         })
     })

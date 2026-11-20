@@ -529,7 +529,10 @@ export class SitePages {
         for (const vaultPath of this.#notes.keys()) {
             const note = this.#published(vaultPath)
             const found = new Map<string, Backlink>()
-            const add = (linkPath: string, context: LinkContext): void => {
+            // The sentences of each backlink, whole: a sentence shows one time,
+            // also when it holds two links to the note.
+            const sentences = new Map<Backlink, Set<string>>()
+            const add = (linkPath: string, sentence: string, context: LinkContext): void => {
                 if (note.files.has(linkPath)) return
                 const target = this.#targetOf(note, linkPath)
                 if (target === undefined || target.vaultPath === vaultPath) return
@@ -537,21 +540,28 @@ export class SitePages {
                 if (backlink === undefined) {
                     backlink = { vaultPath, path: note.path, contexts: [] }
                     found.set(target.vaultPath, backlink)
+                    sentences.set(backlink, new Set())
                 }
-                // A sentence shows one time, also when it holds two links to the note.
-                const sentence = `${context.before}${context.link}${context.after}`
-                const known = backlink.contexts.some(
-                    (other) => `${other.before}${other.link}${other.after}` === sentence
-                )
-                if (!known && backlink.contexts.length < BACKLINK_CONTEXTS) {
+                const known = sentences.get(backlink)
+                if (
+                    known !== undefined &&
+                    !known.has(sentence) &&
+                    backlink.contexts.length < BACKLINK_CONTEXTS
+                ) {
+                    known.add(sentence)
                     backlink.contexts.push(context)
                 }
             }
-            for (const { linkPath, ...context } of linkContextsOf(note.tree)) {
-                add(linkPath, context)
+            for (const { linkPath, sentence, ...context } of linkContextsOf(note.tree)) {
+                add(linkPath, sentence, context)
             }
             for (const link of note.propertyLinks ?? []) {
-                add(link.linkPath, { before: `${link.name}: `, link: link.text, after: '' })
+                const before = `${link.name}: `
+                add(link.linkPath, `${before}${link.text}`, {
+                    before,
+                    link: link.text,
+                    after: ''
+                })
             }
             for (const [target, backlink] of found) {
                 const list = all.get(target)

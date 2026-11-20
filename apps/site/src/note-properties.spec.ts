@@ -63,6 +63,21 @@ describe('properties of a cleaned note', () => {
         expect(readProperties(note('just a text'))).toEqual({})
     })
 
+    // Obsidian reads properties between `---` lines only. Astro also reads a
+    // TOML block between `+++` lines: for the site that block is no property.
+    test('a block between `+++` lines gives no property, and stops no build', () => {
+        expect(readProperties('+++\ntitle = "x"\n+++\n\n# Note\n')).toEqual({})
+        expect(readProperties('+++\n[extra]\nkey = 1\n+++\n\n# Note\n')).toEqual({})
+    })
+
+    test('properties that cannot be read are refused with the reason', () => {
+        expect(() => readProperties(note('a: [1, 2'))).toThrow()
+        // A date is a text, so the same date as a key with and without quotes is one key two times.
+        expect(() => readProperties(note('log:\n  2024-01-01: a\n  "2024-01-01": b'))).toThrow(
+            'unique'
+        )
+    })
+
     test('reads a note with Windows line ends', () => {
         expect(readProperties('---\r\nstatus: Seen\r\n---\r\n\r\n# Note\r\n')).toEqual({
             status: 'Seen'

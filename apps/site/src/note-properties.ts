@@ -11,13 +11,24 @@ import { parseDocument } from 'yaml'
 // rules as Astro but for one: a date stays a text. The panel and the title
 // band then show a date as the vault writes it (R58, R59).
 
+/** A note that starts with a block between `+++` lines, as the reader of Astro finds it. */
+const TOML_BLOCK = /^\uFEFF?\s*\+\+\+/u
+
 /**
  * The properties of a cleaned note, in the order of the note. A note without
- * properties, or whose properties are no list of keys, has none.
+ * properties, or whose properties are no list of keys, has none. It throws
+ * for properties that cannot be read, as the reader of Astro does. One case
+ * is new: a date is a text, so one date as a key with and without quotes is
+ * the same key two times.
  *
  * @param source the text of the cleaned note
  */
 export function readProperties(source: string): Readonly<Record<string, unknown>> {
+    // Obsidian reads properties between `---` lines only. Astro also finds a
+    // TOML block between `+++` lines: for the site that block is no property.
+    if (TOML_BLOCK.test(source)) {
+        return {}
+    }
     const yaml = extractFrontmatter(source)
     if (yaml === undefined) {
         return {}

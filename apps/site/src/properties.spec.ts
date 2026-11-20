@@ -195,6 +195,14 @@ describe('the links of the properties', () => {
         })
     })
 
+    // In a table of a note a backslash stands before the bar: it is no part of the heading.
+    test('a backslash before the bar is no part of the heading', () => {
+        expect(shown('[[Rain barrel#Cleaning\\|how]]')).toEqual({
+            kind: 'text',
+            pieces: [{ kind: 'link', text: 'how', href: '/10+Garden/Rain+barrel#cleaning' }]
+        })
+    })
+
     test('a link to a note that is not published is plain text, with no address', () => {
         expect(shown('[[Greenhouse alarm code|the code]]')).toEqual({
             kind: 'text',
@@ -262,7 +270,12 @@ describe('the lists of the properties', () => {
     // text: only the characters of a tag make a link, so no text of a note
     // writes a path of the site.
     test('a text that is no tag is plain text, with no address', () => {
-        expect(shown(['../../x', 'a//b', 'a, b', '/a', 'a/', 'jardin/été_2-b'], 'tags')).toEqual({
+        expect(
+            shown(
+                ['../../x', 'a//b', 'a, b', '/a', 'a/', '2031', '2031/04', 'jardin/été_2-b'],
+                'tags'
+            )
+        ).toEqual({
             kind: 'list',
             items: [
                 { kind: 'text', pieces: [{ kind: 'text', text: '../../x' }] },
@@ -270,6 +283,9 @@ describe('the lists of the properties', () => {
                 { kind: 'text', pieces: [{ kind: 'text', text: 'a, b' }] },
                 { kind: 'text', pieces: [{ kind: 'text', text: '/a' }] },
                 { kind: 'text', pieces: [{ kind: 'text', text: 'a/' }] },
+                // Obsidian reads no tag of digits only.
+                { kind: 'text', pieces: [{ kind: 'text', text: '2031' }] },
+                { kind: 'text', pieces: [{ kind: 'text', text: '2031/04' }] },
                 {
                     kind: 'text',
                     pieces: [

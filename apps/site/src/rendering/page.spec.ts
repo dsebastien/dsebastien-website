@@ -906,6 +906,26 @@ describe('backlinks of a note', () => {
         ])
     })
 
+    test('a long sentence with two links shows one time too, though each link cuts it at its own place', () => {
+        const words = (word: string): string => Array.from({ length: 60 }, () => word).join(' ')
+        const pages = new SitePages([
+            BARREL,
+            note(
+                'Drip.md',
+                `<p>${words('soil')} ${mark('Rain barrel')} ${words('leaf')} ${mark('Rain barrel')} ${words('root')}.</p>`,
+                BARREL_LINKS
+            )
+        ])
+
+        expect(pages.backlinks('Rain barrel.md')[0]?.contexts).toHaveLength(1)
+        // The sentence is not a part of what the page gets.
+        expect(Object.keys(pages.backlinks('Rain barrel.md')[0]?.contexts[0] ?? {})).toEqual([
+            'before',
+            'link',
+            'after'
+        ])
+    })
+
     test('a note is one backlink with a sentence per link: three at most, each one time', () => {
         const pages = new SitePages([
             BARREL,

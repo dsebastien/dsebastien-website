@@ -145,7 +145,9 @@ function isWebAddress(text: string): boolean {
 function readLink(written: string, link: Wikilink): { fragment: string; shown: string } {
     const inner = written.slice(written.indexOf('[[') + 2, -2)
     const bar = inner.indexOf('|')
-    const target = bar === -1 ? inner : inner.slice(0, bar)
+    // A backslash before the bar is no part of the target, as for the link path.
+    const end = bar > 0 && inner[bar - 1] === '\\' ? bar - 1 : bar
+    const target = bar === -1 ? inner : inner.slice(0, end)
     const hash = target.indexOf('#')
     const fragment = hash === -1 ? '' : target.slice(hash + 1).trim()
     const label = bar === -1 ? '' : link.text.trim()
@@ -223,13 +225,16 @@ function scalarOf(value: unknown, linkOf: LinkOf): Scalar | undefined {
 }
 
 /**
- * The form of a tag: levels of letters, digits, marks, underscores and
- * hyphens, with a slash between two levels. A tag of the text of a note is
+ * The form of a tag: levels of letters, digits, marks, pictographs,
+ * underscores and hyphens, with a slash between two levels. A tag of the text of a note is
  * read by the parser; a tag of the properties is any text, and only this form
  * becomes a link, so no text of a note writes a path of the site.
  */
 const TAG =
     /^[\p{L}\p{N}\p{M}\p{Extended_Pictographic}_-]+(?:\/[\p{L}\p{N}\p{M}\p{Extended_Pictographic}_-]+)*$/u
+
+/** A text of digits only, with or without levels: Obsidian reads no such tag. */
+const DIGITS_ONLY = /^[\p{Nd}/]+$/u
 
 /** The tags of a note as links to their tag pages. A text that is no tag stays a text. */
 function tagsOf(value: unknown): PropertyValue | undefined {
@@ -238,7 +243,7 @@ function tagsOf(value: unknown): PropertyValue | undefined {
     for (const item of list) {
         const text = typeof item === 'string' ? item.trim() : ''
         const tag = text.replace(/^#/u, '')
-        if (TAG.test(tag)) {
+        if (TAG.test(tag) && !DIGITS_ONLY.test(tag)) {
             items.push({
                 kind: 'text',
                 pieces: [{ kind: 'tag', text: `#${tag}`, href: tagPath(tag) }]

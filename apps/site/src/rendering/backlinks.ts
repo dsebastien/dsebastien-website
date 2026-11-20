@@ -24,6 +24,11 @@ export interface LinkContext {
 export interface NoteLinkContext extends LinkContext {
     /** The link path as the note writes it. */
     linkPath: string
+    /**
+     * The whole sentence, before it is cut around the link: two links of one
+     * sentence have the same one, also when each is cut at its own place.
+     */
+    sentence: string
 }
 
 /** The elements that are a part of the text of their block. Every other element is a block of its own. */
@@ -155,23 +160,36 @@ function contextsOf(block: Block): NoteLinkContext[] {
     if (block.links.length === 0) {
         return []
     }
-    const { text } = block
-    // Where each sentence end starts, where its mark ends, and where the next sentence starts.
-    const ends = [...text.matchAll(SENTENCE_END)].map((match) => ({
-        start: match.index,
-        mark: match.index + match[0].trimEnd().length,
-        next: match.index + match[0].length
-    }))
+    const { text, links } = block
+    // Where each sentence end starts, where its mark ends, and where the next
+    // sentence starts. An end inside the text of a link is a part of that
+    // link: it ends no sentence, for that link and for every other one. The
+    // ends and the links are both in the order of the text.
+    const ends: { start: number; mark: number; next: number }[] = []
+    let inside = 0
+    for (const match of text.matchAll(SENTENCE_END)) {
+        while (inside < links.length && (links[inside]?.end ?? 0) <= match.index) {
+            inside += 1
+        }
+        const link = links[inside]
+        if (link !== undefined && link.start <= match.index) {
+            continue
+        }
+        ends.push({
+            start: match.index,
+            mark: match.index + match[0].trimEnd().length,
+            next: match.index + match[0].length
+        })
+    }
     let at = 0
     let from = 0
-    return block.links.map((link) => {
-        // The links are in the order of the text: go on from the last end.
+    return links.map((link) => {
+        // Go on from the last end: the first end after the link ends its sentence.
         for (; at < ends.length; at += 1) {
             const end = ends[at]
             if (end === undefined || end.next > link.start) break
             from = end.next
         }
-        // An end inside the text of the link is a part of the link.
         let to = text.length
         for (let next = at; next < ends.length; next += 1) {
             const end = ends[next]
@@ -180,7 +198,11 @@ function contextsOf(block: Block): NoteLinkContext[] {
                 break
             }
         }
-        return { linkPath: link.linkPath, ...cut(text, from, link.start, link.end, to) }
+        return {
+            linkPath: link.linkPath,
+            sentence: text.slice(from, to).trim(),
+            ...cut(text, from, link.start, link.end, to)
+        }
     })
 }
 
