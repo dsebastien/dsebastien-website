@@ -569,6 +569,22 @@
                     "has": "a[href*=\"thyme\" i]"
                 },
                 {
+                    "has": "a[href=\"https://garden.example/summer\"]"
+                },
+                {
+                    "has": "a[href=\"https://garden.example/autumn\"]"
+                },
+                {
+                    "has": "a[href=\"https://garden.example/winter\"]"
+                },
+                {
+                    "has": "a[href*=\"frost\" i][href*=\"dates\" i]"
+                },
+                {
+                    "has": "a[href*=\"greenhouse\" i]",
+                    "count": 0
+                },
+                {
                     "lacksText": "LINK: https://garden.example/soil"
                 },
                 {

@@ -197,17 +197,32 @@ describe('checkHtml', () => {
         ).toEqual([])
     })
 
-    test('reads no text and no match of what a reader does not see', async () => {
+    test('reads no text of what a reader does not see', async () => {
         const html =
             '<title>Crop rotation</title><noscript><p>LINK: x</p></noscript>' +
             '<template><p>LINK: y</p></template><iframe>LINK: z</iframe><p>Crop rotation</p>'
         expect(
-            await checkHtml(html, [
-                { lacksText: 'LINK' },
-                { hasText: 'Crop rotation', count: 1 },
-                { has: 'p', count: 1 }
-            ])
+            await checkHtml(html, [{ lacksText: 'LINK' }, { hasText: 'Crop rotation', count: 1 }])
         ).toEqual([])
+    })
+
+    // Second review of issue 84: a script inside a template must still fail a
+    // check that counts zero of them. The rewriter reads the content of a
+    // noscript as raw text, so an element there is never a match (issue 85).
+    test('counts an element inside a hidden element', async () => {
+        const html =
+            '<template><script>alert(1)</script><iframe src="https://www.youtube.com/embed/tour"></iframe></template>' +
+            '<iframe src="/-/attachments/a/b.pdf"></iframe>'
+        expect(
+            await checkHtml(html, [
+                { has: 'script', count: 0 },
+                { has: '[src*="youtube"]', count: 0 },
+                { has: 'iframe[src^="/-/attachments/"]', count: 1 }
+            ])
+        ).toEqual([
+            '"script" matches 1 elements, not 0',
+            '"[src*="youtube"]" matches 1 elements, not 0'
+        ])
     })
 
     test('reports a failure, not a crash, for an entity that names no character', async () => {
@@ -411,26 +426,62 @@ describe('the forms file', () => {
         }
     })
 
-    // Issue 84, point 3: a converter that makes cards for the bare URL lines
-    // only fails link-block.
+    // Issue 84, point 3, and its second review: a card per target that can
+    // show, and none for the note on the deny list.
+    const card = (url: string, text = url): string =>
+        `<div class="card"><a href="${url}">${text}</a></div>`
+    const url = (name: string): string => `https://garden.example/${name}`
+    const notStore = '<pre><code>LINK: https://garden.example/not-a-card</code></pre>'
+
+    test('passes link-block for a card per target that can show', async () => {
+        const form = (await readMarkdownForms()).find((each) => each.id === 'link-block')
+        const html = [
+            ...['soil', 'seeds', 'bees', 'ponds', 'mulch'].map((name) => card(url(name))),
+            card('/10+Garden/Compost+basics', 'Compost basics'),
+            card('/10+Garden/Rain+barrel', 'The barrel'),
+            card(url('tools')),
+            card('/10+Garden/Herb+bed/Thyme', 'Thyme'),
+            card(url('hedges')),
+            ...['spring', 'summer', 'autumn'].map((name) => card(url(name))),
+            card('/10+Garden/Frost+dates+explained', 'Frost dates explained'),
+            '<span class="unpublished">Winter plan (draft)</span>',
+            card(url('winter')),
+            notStore,
+            '<p>LINK: https://garden.example/frozen</p>'
+        ].join('')
+        expect(await checkHtml(html, form?.checks ?? [])).toEqual([])
+    })
+
     test('fails link-block when only the bare URL lines become cards', async () => {
         const form = (await readMarkdownForms()).find((each) => each.id === 'link-block')
-        const card = (url: string): string => `<div class="card"><a href="${url}">${url}</a></div>`
         const html = [
-            ...['soil', 'seeds', 'bees', 'ponds'].map((name) =>
-                card(`https://garden.example/${name}`)
-            ),
-            '<p>LINK: <a href="https://garden.example/mulch">A guide to mulch</a></p>',
+            ...['soil', 'seeds', 'bees', 'ponds'].map((name) => card(url(name))),
+            `<p>LINK: <a href="${url('mulch')}">A guide to mulch</a></p>`,
             '<p>LINK: <a href="/10+Garden/Compost+basics">Compost basics</a></p>',
-            '<p>LINK:</p><ul><li><a href="https://garden.example/tools">https://garden.example/tools</a></li></ul>',
-            '<p>LINKS</p><ul><li><a href="https://garden.example/hedges">https://garden.example/hedges</a></li></ul>',
-            '<pre><code>LINK: https://garden.example/not-a-card</code></pre>'
+            `<p>LINK:</p><ul><li><a href="${url('tools')}">${url('tools')}</a></li></ul>`,
+            `<p>LINKS</p><ul><li><a href="${url('hedges')}">${url('hedges')}</a></li></ul>`,
+            notStore
         ].join('')
-        const failures = await checkHtml(html, form?.checks ?? [])
-        expect(failures).toContain('the text holds "LINK: A guide to mulch"')
-        expect(failures).toContain('the text holds "LINK: Compost basics"')
-        expect(failures).toContain('the text holds "LINK: https://garden.example/tools"')
-        expect(failures).toContain('the text holds "LINKS https://garden.example/hedges"')
-        expect(failures).not.toContain('the text holds "LINK: https://garden.example/soil"')
+        expect(await checkHtml(html, form?.checks ?? [])).toEqual([
+            'no element matches "a[href="https://garden.example/spring"]"',
+            'no element matches "a[href*="rain" i][href*="barrel" i]"',
+            'no element matches "a[href*="thyme" i]"',
+            'no element matches "a[href="https://garden.example/summer"]"',
+            'no element matches "a[href="https://garden.example/autumn"]"',
+            'no element matches "a[href="https://garden.example/winter"]"',
+            'no element matches "a[href*="frost" i][href*="dates" i]"',
+            'the text holds "LINK: A guide to mulch"',
+            'the text holds "LINK: Compost basics"',
+            'the text holds "LINK: https://garden.example/tools"',
+            'the text holds "LINKS https://garden.example/hedges"'
+        ])
+    })
+
+    test('fails link-block for a card of the note on the deny list', async () => {
+        const form = (await readMarkdownForms()).find((each) => each.id === 'link-block')
+        const html = card('/90+Locked+Shed/Greenhouse+alarm+code', 'Greenhouse alarm code')
+        expect(await checkHtml(html, form?.checks ?? [])).toContain(
+            '"a[href*="greenhouse" i]" matches 1 elements, not 0'
+        )
     })
 })

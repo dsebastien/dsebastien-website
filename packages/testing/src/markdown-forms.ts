@@ -325,8 +325,9 @@ interface Open {
  * the text nodes only (no markup, no attribute, no comment, nothing that a
  * reader does not see), a space at each edge of a block element, entities
  * read, white space folded. An element whose end tag the HTML leaves out
- * (`<li>a<li>b`, `<td>a<td>b`, `<p>a<div>`) is closed as a browser does, and
- * nothing inside a hidden element (`template`, `noscript`) is a match.
+ * (`<li>a<li>b`, `<td>a<td>b`, `<p>a<div>`) is closed as a browser does. An
+ * element inside a hidden one (`template`, `noscript`) is still a match, so a
+ * check that counts zero scripts or frames sees it.
  */
 async function read(html: string, selector?: string): Promise<Reading> {
     const found: Match[] = []
@@ -385,9 +386,8 @@ async function read(html: string, selector?: string): Promise<Reading> {
             element(element) {
                 const tag = element.tagName.toLowerCase()
                 closeImplied(tag)
-                let match = matched
+                const match = matched
                 matched = undefined
-                if (hidden > 0) match = undefined
                 if (match !== undefined) {
                     match.parent = open.at(-1)
                     found.push(match)
