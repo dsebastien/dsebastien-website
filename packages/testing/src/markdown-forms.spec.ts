@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { checkHtml, readMarkdownForms } from './markdown-forms.ts'
+import { checkHtml, parseFormCheck, readMarkdownForms } from './markdown-forms.ts'
 import { join } from 'node:path'
 import { FIXTURE_VAULT, listFixtureVaultFiles, readFixtureCatalog } from './fixture-vault.ts'
 import { rejectionOf } from './test-stores.ts'
@@ -121,9 +121,8 @@ describe('checkHtml', () => {
         ])
     })
 
-    // Issue 84, point 1: the rewriter closes no element by itself, so in
-    // `<p>One<p>One` the outer p holds the inner one, and a count of the
-    // deepest p with the text sees one.
+    // Issue 84, point 1: a repeated embed counts in the text of the page,
+    // whatever its markup (here, p elements with no end tag).
     test('counts how many times a text is in the text of the page', async () => {
         const looped = '<p>Leave one bed empty.<p>Leave one bed empty.'
         expect(await checkHtml(looped, [{ hasText: 'Leave one bed empty.', count: 1 }])).toEqual([
@@ -154,9 +153,59 @@ describe('checkHtml', () => {
         const html =
             '<div data-callout="faq" data-callout-fold="-"><details><summary>Why mulch?</summary></details></div>'
         expect(await checkHtml(html, [{ has: folded, count: 1 }])).toEqual([])
+        // A list item that holds a nested list is outer: two items count.
         expect(
             await checkHtml('<ul><li>One</li><li>Two<ul><li>Three</li></ul></li></ul>', [
                 { has: 'li', count: 2 }
+            ])
+        ).toEqual([])
+    })
+
+    // First review of issue 84: the rewriter closes no element by itself, so
+    // sibling cells and items with no end tag nested, and the rule of the
+    // deepest match counted one of two. A browser closes them.
+    test('closes an element whose end tag the HTML leaves out, as a browser does', async () => {
+        const table = '<table><tr><th>Helper<th>Bed<tr><td><a href="/w">worms</a><td>north</table>'
+        expect(
+            await checkHtml(table, [
+                { has: 'th', count: 2 },
+                { has: 'td', count: 2 },
+                { has: 'tr', count: 2 },
+                { has: 'td', text: 'north', count: 1 }
+            ])
+        ).toEqual([])
+        expect(
+            await checkHtml('<ol><li>a<li>b<li>c</ol>', [
+                { has: 'li', count: 3 },
+                { has: 'li', text: 'a b', count: 0 }
+            ])
+        ).toEqual([])
+        expect(
+            await checkHtml('<dl><dt>Bed<dd>North<dt>Crop<dd>Peas</dl>', [
+                { has: 'dt', count: 2 },
+                { has: 'dd', count: 2 }
+            ])
+        ).toEqual([])
+        expect(
+            await checkHtml('<p>One<p>One<div>Two</div>', [
+                { has: 'p', text: 'One', count: 2 },
+                { has: 'p', text: 'Two', count: 0 }
+            ])
+        ).toEqual([])
+        expect(
+            await checkHtml('<ul><li>One<ul><li>Two</ul><li>Three</ul>', [{ has: 'li', count: 2 }])
+        ).toEqual([])
+    })
+
+    test('reads no text and no match of what a reader does not see', async () => {
+        const html =
+            '<title>Crop rotation</title><noscript><p>LINK: x</p></noscript>' +
+            '<template><p>LINK: y</p></template><iframe>LINK: z</iframe><p>Crop rotation</p>'
+        expect(
+            await checkHtml(html, [
+                { lacksText: 'LINK' },
+                { hasText: 'Crop rotation', count: 1 },
+                { has: 'p', count: 1 }
             ])
         ).toEqual([])
     })
@@ -234,6 +283,9 @@ describe('checkHtml', () => {
 
     test('refuses a selector that does not parse', async () => {
         expect(await rejectionOf(checkHtml('<p></p>', [{ has: 'a[' }]))).toContain('selector')
+        expect(
+            await rejectionOf(checkHtml('', [{ anchorsResolve: 'p a', target: 'h3[', nth: 1 }]))
+        ).toContain('selector')
     })
 })
 
@@ -289,6 +341,45 @@ const FORMS_OF_ISSUE_12 = [
     'raw-html'
 ]
 
+describe('parseFormCheck', () => {
+    test('reads each kind of check', () => {
+        const valid = [
+            { has: 'p', text: 'Sow', count: 1 },
+            { lacks: '%%' },
+            { hasText: 'Sow', count: 2 },
+            { hasText: 'Sow' },
+            { lacksText: 'LINK' },
+            { distinctIds: 'h2' },
+            { anchorsResolve: 'p a' },
+            { anchorsResolve: 'p a', target: 'h3', nth: 2 }
+        ]
+        for (const check of valid) expect(parseFormCheck(check, 'f')).toEqual(check)
+    })
+
+    test('refuses a check of no kind, a mixed one, an empty text and a wrong number', () => {
+        const invalid: unknown[] = [
+            null,
+            {},
+            { has: 'p', lacks: 'x' },
+            { hasText: 'Sow', text: 'Sow' },
+            { hasText: ' ' },
+            { lacksText: ' ' },
+            { lacks: '' },
+            { has: 'p', text: ' ' },
+            { has: 'p', count: -1 },
+            { hasText: 'Sow', count: 1.5 },
+            { anchorsResolve: 'p a', nth: 2 },
+            { anchorsResolve: 'p a', target: 'h3' },
+            { anchorsResolve: 'p a', target: 'h3', nth: 0 }
+        ]
+        for (const check of invalid) {
+            expect(() => parseFormCheck(check, 'f'), JSON.stringify(check)).toThrow(
+                'a check of the form f is not valid'
+            )
+        }
+    })
+})
+
 describe('the forms file', () => {
     test('covers every form of issue 12, each one time', async () => {
         const ids = (await readMarkdownForms()).map((form) => form.id)
@@ -318,5 +409,28 @@ describe('the forms file', () => {
             expect(form.checks.length, form.id).toBeGreaterThan(0)
             await checkHtml('', form.checks)
         }
+    })
+
+    // Issue 84, point 3: a converter that makes cards for the bare URL lines
+    // only fails link-block.
+    test('fails link-block when only the bare URL lines become cards', async () => {
+        const form = (await readMarkdownForms()).find((each) => each.id === 'link-block')
+        const card = (url: string): string => `<div class="card"><a href="${url}">${url}</a></div>`
+        const html = [
+            ...['soil', 'seeds', 'bees', 'ponds'].map((name) =>
+                card(`https://garden.example/${name}`)
+            ),
+            '<p>LINK: <a href="https://garden.example/mulch">A guide to mulch</a></p>',
+            '<p>LINK: <a href="/10+Garden/Compost+basics">Compost basics</a></p>',
+            '<p>LINK:</p><ul><li><a href="https://garden.example/tools">https://garden.example/tools</a></li></ul>',
+            '<p>LINKS</p><ul><li><a href="https://garden.example/hedges">https://garden.example/hedges</a></li></ul>',
+            '<pre><code>LINK: https://garden.example/not-a-card</code></pre>'
+        ].join('')
+        const failures = await checkHtml(html, form?.checks ?? [])
+        expect(failures).toContain('the text holds "LINK: A guide to mulch"')
+        expect(failures).toContain('the text holds "LINK: Compost basics"')
+        expect(failures).toContain('the text holds "LINK: https://garden.example/tools"')
+        expect(failures).toContain('the text holds "LINKS https://garden.example/hedges"')
+        expect(failures).not.toContain('the text holds "LINK: https://garden.example/soil"')
     })
 })
