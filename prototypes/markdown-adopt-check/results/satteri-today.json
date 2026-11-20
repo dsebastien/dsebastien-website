@@ -53,7 +53,10 @@
     {
         "form": "wikilink-own-heading",
         "result": "fail",
-        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Harvest\""],
+        "failures": [
+            "no element matches \"p a[href^=\"#\"]\" with the text \"Harvest\"",
+            "no element matches \"p a[href^=\"#\"]\" with a link to a fragment"
+        ],
         "html": "<h1 id=\"link-to-a-heading-of-this-note\">Link to a heading of this note</h1>\n<p>Jump to #Harvest.</p>\n<h2 id=\"harvest\">Harvest</h2>\n<p>Pick the beans when they snap.</p>\n"
     },
     {
@@ -160,8 +163,8 @@
         "form": "callout-folded",
         "result": "fail",
         "failures": [
-            "\"details:not([open]), [data-callout-fold=\"-\"]\" matches 0 elements, not 1",
-            "\"details[open], [data-callout-fold=\"+\"]\" matches 0 elements, not 1",
+            "\"details:not([open]), [data-callout-fold=\"-\"], .is-collapsible.is-collapsed\" matches 0 elements, not 1",
+            "\"details[open], [data-callout-fold=\"+\"], .is-collapsible:not(.is-collapsed)\" matches 0 elements, not 1",
             "no element matches \"summary, .callout-title\" with the text \"Why mulch?\"",
             "the text holds \"[!\""
         ],
@@ -355,7 +358,10 @@
     {
         "form": "headings-same-text",
         "result": "fail",
-        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Tasks\""],
+        "failures": [
+            "no element matches \"p a[href^=\"#\"]\" with the text \"Tasks\"",
+            "no element matches \"p a[href^=\"#\"]\" with a link to a fragment"
+        ],
         "html": "<h1 id=\"headings-with-the-same-text\">Headings with the same text</h1>\n<p>Jump to the #Autumn#Tasks.</p>\n<h2 id=\"spring\">Spring</h2>\n<h3 id=\"tasks\">Tasks</h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn</h2>\n<h3 id=\"tasks-1\">Tasks</h3>\n<p>Plant the garlic.</p>\n"
     },
     {

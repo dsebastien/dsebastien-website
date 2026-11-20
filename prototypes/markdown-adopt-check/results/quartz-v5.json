@@ -131,9 +131,9 @@
     },
     {
         "form": "embed-canvas",
-        "result": "fail",
-        "failures": ["no element matches \"a[href^=\"/-/attachments/\"][href$=\".canvas\"]\""],
-        "html": "<h1 id=\"embed-of-a-canvas\">Embed of a canvas<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#embed-of-a-canvas\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h1>\n<p></p><blockquote class=\"transclude\" data-url=\"bed-layout.canvas\" data-block=\"\" data-embed-alias=\"\"><span class=\"not-published\">Transclude of bed-layout.canvas</span></blockquote><p></p>"
+        "result": "pass",
+        "failures": [],
+        "html": "<h1 id=\"embed-of-a-canvas\">Embed of a canvas<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#embed-of-a-canvas\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h1>\n<p></p><blockquote class=\"transclude\" data-url=\"bed-layout.canvas\" data-block=\"\" data-embed-alias=\"\"><a href=\"/-/attachments/key/Bed%20layout.canvas\" class=\"transclude-inner\">Transclude of bed-layout.canvas</a></blockquote><p></p>"
     },
     {
         "form": "callout-types",
@@ -146,11 +146,8 @@
     },
     {
         "form": "callout-folded",
-        "result": "fail",
-        "failures": [
-            "\"details:not([open]), [data-callout-fold=\"-\"]\" matches 0 elements, not 1",
-            "\"details[open], [data-callout-fold=\"+\"]\" matches 0 elements, not 1"
-        ],
+        "result": "pass",
+        "failures": [],
         "html": "<h1 id=\"folded-callouts\">Folded callouts<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#folded-callouts\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h1>\n<blockquote class=\"callout question is-collapsible is-collapsed\" data-callout=\"question\" data-callout-fold=\"\"><div class=\"callout-title\"><div class=\"callout-icon\"></div><div class=\"callout-title-inner\"><p>Why mulch?</p></div><div class=\"fold-callout-icon callout-fold\"></div></div><div class=\"callout-content\">\n<p>Mulch keeps the water in the soil.</p>\n</div></blockquote>\n<blockquote class=\"callout tip is-collapsible\" data-callout=\"tip\" data-callout-fold=\"\"><div class=\"callout-title\"><div class=\"callout-icon\"></div><div class=\"callout-title-inner\"><p>Open by default</p></div><div class=\"fold-callout-icon callout-fold\"></div></div><div class=\"callout-content\">\n<p>Mulch in late spring.</p>\n</div></blockquote>"
     },
     {
@@ -317,8 +314,8 @@
     },
     {
         "form": "headings-same-text",
-        "result": "pass",
-        "failures": [],
+        "result": "fail",
+        "failures": ["\"p a[href^=\"#\"]\" links to \"#autumntasks\", which is no id of the page"],
         "html": "<h1 id=\"headings-with-the-same-text\">Headings with the same text<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#headings-with-the-same-text\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h1>\n<p>Jump to the <a href=\"#autumntasks\">Autumn#Tasks</a>.</p>\n<h2 id=\"spring\">Spring<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#spring\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h2>\n<h3 id=\"tasks\">Tasks<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#tasks\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#autumn\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h2>\n<h3 id=\"tasks-1\">Tasks<a role=\"anchor\" aria-hidden tabindex=\"-1\" data-no-popover href=\"#tasks-1\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"></path><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"></path></svg></a></h3>\n<p>Plant the garlic.</p>"
     },
     {

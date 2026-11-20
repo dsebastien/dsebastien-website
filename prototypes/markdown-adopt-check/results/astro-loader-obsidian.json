@@ -29,9 +29,7 @@
         "form": "wikilink-hard-names",
         "result": "fail",
         "failures": [
-            "no element matches \"a[href*=\"Salt+%2B+pepper\"]\" with the text \"Salt + pepper crust\"",
-            "no element matches \"a[href*=\"100%25\"]\" with the text \"100% rye bread\"",
-            "no element matches \"a[href*=\"%26\"]\" with the text \"Bread & butter pickles\"",
+            "no element matches \"a[href*=\"pickles\" i]\" with the text \"Bread & butter pickles\"",
             "the HTML holds \"[[\""
         ],
         "html": "<p>Bake the <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/salt--pepper-crust\">Salt + pepper crust</a>, the <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/100-rye-bread\">100% rye bread</a> and the [[Bread &#x26; butter pickles]].</p>"
@@ -50,17 +48,17 @@
     },
     {
         "form": "wikilink-duplicate-name",
-        "result": "fail",
-        "failures": [
-            "no element matches \"a[href*=\"Herb+bed/Mint\"]\" with the text \"Mint\"",
-            "no element matches \"a[href*=\"Recipes/Mint\"]\" with the text \"mint tea\""
-        ],
+        "result": "pass",
+        "failures": [],
         "html": "<p>Plant <a class=\"article-wikilink\" href=\"/notes/10-garden/herb-bed/mint\">Mint</a> in a pot, and make <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/mint\">mint tea</a>.</p>"
     },
     {
         "form": "wikilink-own-heading",
         "result": "fail",
-        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Harvest\""],
+        "failures": [
+            "no element matches \"p a[href^=\"#\"]\" with the text \"Harvest\"",
+            "no element matches \"p a[href^=\"#\"]\" with a link to a fragment"
+        ],
         "html": "<p>Jump to <span class=\"article-wikilink\"><a class=\"article-tag\" href=\"/notes/tags/harvest\">#Harvest</a></span>.</p>\n<h2 id=\"harvest\">Harvest</h2>\n<p>Pick the beans when they snap.</p>"
     },
     {
@@ -168,8 +166,8 @@
         "form": "callout-folded",
         "result": "fail",
         "failures": [
-            "\"details:not([open]), [data-callout-fold=\"-\"]\" matches 0 elements, not 1",
-            "\"details[open], [data-callout-fold=\"+\"]\" matches 0 elements, not 1",
+            "\"details:not([open]), [data-callout-fold=\"-\"], .is-collapsible.is-collapsed\" matches 0 elements, not 1",
+            "\"details[open], [data-callout-fold=\"+\"], .is-collapsible:not(.is-collapsed)\" matches 0 elements, not 1",
             "no element matches \"summary, .callout-title\" with the text \"Why mulch?\"",
             "the text holds \"[!\""
         ],
@@ -356,7 +354,10 @@
     {
         "form": "headings-same-text",
         "result": "fail",
-        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Tasks\""],
+        "failures": [
+            "no element matches \"p a[href^=\"#\"]\" with the text \"Tasks\"",
+            "no element matches \"p a[href^=\"#\"]\" with a link to a fragment"
+        ],
         "html": "<p>Jump to the <span class=\"article-wikilink\"><a class=\"article-tag\" href=\"/notes/tags/autumn\">#Autumn</a>#Tasks</span>.</p>\n<h2 id=\"spring\">Spring</h2>\n<h3 id=\"tasks\">Tasks</h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn</h2>\n<h3 id=\"tasks-1\">Tasks</h3>\n<p>Plant the garlic.</p>"
     },
     {

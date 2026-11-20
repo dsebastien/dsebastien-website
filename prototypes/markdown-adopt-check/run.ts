@@ -14,6 +14,9 @@
 //   embeds in its core, which is not a library, so this is what a reuse gets.
 //   The transformer parses with @quartz-community/remark-obsidian, legacy
 //   preset (its default): the parser that decision R50 keeps.
+// - parser-plain and parser-rehype-obsidian: that parser alone, with a plain
+//   rendering or with rehype-obsidian, then the same link rule: where the
+//   setup of R50 starts before own rendering code.
 // - astro-loader-obsidian: the Astro 5 project of astro5/. The loader reads a
 //   copy of the published notes with their properties and resolves links and
 //   files itself: it takes no other resolver.
@@ -39,12 +42,16 @@ import { canonicalPath } from '../../packages/resolver/src/url.ts'
 import { startServer } from '../../apps/site/server/serve.ts'
 import { unified, type Plugin } from 'unified'
 import remarkParse from 'remark-parse'
+import remarkGfm from 'remark-gfm'
 import remarkRehype from 'remark-rehype'
+import rehypeRaw from 'rehype-raw'
 import rehypeStringify from 'rehype-stringify'
 import { ObsidianFlavoredMarkdown } from '@quartz-community/obsidian-flavored-markdown'
 import { GitHubFlavoredMarkdown } from '@quartz-community/github-flavored-markdown'
 import { Latex } from '@quartz-community/latex'
 import { SyntaxHighlighting } from '@quartz-community/syntax-highlighting'
+import remarkObsidian from '@quartz-community/remark-obsidian'
+import rehypeObsidian from '@quartz-community/rehype-obsidian'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const SITE = fileURLToPath(new URL('../../apps/site', import.meta.url))
@@ -103,9 +110,26 @@ function targetOfUrl(
     }
     linkPath = linkPath.replace(/^\.\//, '')
     const target =
-        index.targetOf(linkPath, from) ?? index.targetOf(linkPath.replace(/\.md$/, ''), from)
+        index.targetOf(linkPath, from) ??
+        index.targetOf(linkPath.replace(/\.md$/, ''), from) ??
+        bySlug(linkPath, index)
     return { target, fragment }
 }
+
+/**
+ * Quartz writes the name of a file in its slug form (small letters, a hyphen
+ * for a space): `Bed layout.canvas` becomes `bed-layout.canvas`. The runner
+ * reads that form back, so the link rule sees the file and not the slug.
+ */
+const SLUGS = new Map<string, string>()
+function bySlug(linkPath: string, index: LinkIndex): string | undefined {
+    const slug = (text: string): string => text.toLowerCase().replaceAll(' ', '-')
+    if (SLUGS.size === 0)
+        for (const path of ALL_FILES) SLUGS.set(slug(path.split('/').at(-1) ?? ''), path)
+    const path = SLUGS.get(slug(linkPath.split('/').at(-1) ?? ''))
+    return path === undefined ? undefined : (index.targetOf(path, '') ?? path)
+}
+let ALL_FILES: string[] = []
 
 /** The URL of an attachment on the site (R45): the key is left out of the prototype. */
 function attachmentUrl(path: string): string {
@@ -229,6 +253,42 @@ async function quartzV5(
                 await processor.process({ value: text, data: { slug, filePath: form.note } })
             )
             outcomes.push(await judge(form, html))
+        } catch (error) {
+            outcomes.push({ form: form.id, result: 'error', failures: [String(error)], html: '' })
+        }
+    }
+    return outcomes
+}
+
+/**
+ * The parser that R50 keeps, alone: @quartz-community/remark-obsidian with its
+ * legacy preset, then a plain rendering (remark-rehype), or the small HTML
+ * plugin of the same project (rehype-obsidian). Then the link rule of this
+ * project. This is the start of the setup of R50, before own rendering code.
+ */
+async function parserAlone(
+    forms: MarkdownForm[],
+    index: LinkIndex,
+    published: ReadonlySet<string>,
+    withRehypeObsidian: boolean
+): Promise<Outcome[]> {
+    const outcomes: Outcome[] = []
+    for (const form of forms) {
+        try {
+            const text = withoutProperties(await Bun.file(join(FIXTURE_VAULT, form.note)).text())
+            let processor = unified()
+                .use(remarkParse)
+                .use(remarkGfm)
+                .use(remarkObsidian as Plugin, { preset: 'legacy' })
+                .use(remarkRehype, { allowDangerousHtml: true })
+                .use(rehypeRaw) as never as ReturnType<typeof unified>
+            if (withRehypeObsidian) {
+                processor = processor.use(rehypeObsidian as Plugin, { tweetEmbed: false }) as never
+            }
+            const final = processor
+                .use(ourLinks(form.note, index, published) as Plugin)
+                .use(rehypeStringify)
+            outcomes.push(await judge(form, String(await final.process(text))))
         } catch (error) {
             outcomes.push({ form: form.id, result: 'error', failures: [String(error)], html: '' })
         }
@@ -381,11 +441,14 @@ async function astroLoader(
 // --- Main -------------------------------------------------------------------
 
 const forms = await readMarkdownForms()
-const index = new LinkIndex(await vaultFiles())
+ALL_FILES = await vaultFiles()
+const index = new LinkIndex(ALL_FILES)
 const { outcomes: satteri, published } = await satteriToday(forms)
 const candidates: Record<string, Outcome[]> = {
     'satteri-today': satteri,
-    'quartz-v5': await quartzV5(forms, index, published)
+    'quartz-v5': await quartzV5(forms, index, published),
+    'parser-plain': await parserAlone(forms, index, published, false),
+    'parser-rehype-obsidian': await parserAlone(forms, index, published, true)
 }
 await mkdir(RESULTS, { recursive: true })
 const loader = await astroLoader(forms, published)
