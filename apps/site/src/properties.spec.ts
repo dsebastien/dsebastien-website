@@ -133,11 +133,13 @@ describe('the dates of the properties', () => {
         expect(shown('2031-03-07T07:02:59.120+02:00')).toEqual(expected)
     })
 
-    test('a date that the reader of the properties already read is shown from its UTC fields', () => {
+    // The build reads a date as a text (`note-properties.ts`). A date object
+    // of another reader has no text of the vault: it shows in UTC.
+    test('a date object shows its date and its time in UTC', () => {
         expect(shown(new Date('1961-04-12T00:00:00Z'))).toEqual({
             kind: 'date',
-            datetime: '1961-04-12',
-            text: '1961-04-12'
+            datetime: '1961-04-12T00:00',
+            text: '1961-04-12, 00:00'
         })
         expect(shown(new Date('2031-03-07T07:02:30Z'))).toEqual({
             kind: 'date',
@@ -167,6 +169,28 @@ describe('the links of the properties', () => {
             kind: 'text',
             pieces: [
                 { kind: 'link', text: 'how to clean it', href: '/10+Garden/Rain+barrel#cleaning' }
+            ]
+        })
+    })
+
+    // As in the text of a note, and as Obsidian shows it.
+    test('a link to a heading with no link text shows the note and the heading', () => {
+        expect(shown('[[Rain barrel#Cleaning]]')).toEqual({
+            kind: 'text',
+            pieces: [
+                {
+                    kind: 'link',
+                    text: 'Rain barrel > Cleaning',
+                    href: '/10+Garden/Rain+barrel#cleaning'
+                }
+            ]
+        })
+        expect(shown('[[Wormery#Bins#Lids]] and [[#Cleaning]]')).toEqual({
+            kind: 'text',
+            pieces: [
+                { kind: 'not-published', text: 'Wormery > Bins > Lids' },
+                { kind: 'text', text: ' and ' },
+                { kind: 'text', text: 'Cleaning' }
             ]
         })
     })
@@ -234,6 +258,32 @@ describe('the lists of the properties', () => {
         })
     })
 
+    // A tag of the text is read by the parser. A tag of the properties is any
+    // text: only the characters of a tag make a link, so no text of a note
+    // writes a path of the site.
+    test('a text that is no tag is plain text, with no address', () => {
+        expect(shown(['../../x', 'a//b', 'a, b', '/a', 'a/', 'jardin/été_2-b'], 'tags')).toEqual({
+            kind: 'list',
+            items: [
+                { kind: 'text', pieces: [{ kind: 'text', text: '../../x' }] },
+                { kind: 'text', pieces: [{ kind: 'text', text: 'a//b' }] },
+                { kind: 'text', pieces: [{ kind: 'text', text: 'a, b' }] },
+                { kind: 'text', pieces: [{ kind: 'text', text: '/a' }] },
+                { kind: 'text', pieces: [{ kind: 'text', text: 'a/' }] },
+                {
+                    kind: 'text',
+                    pieces: [
+                        {
+                            kind: 'tag',
+                            text: '#jardin/été_2-b',
+                            href: '/-/tags/jardin/%C3%A9t%C3%A9_2-b'
+                        }
+                    ]
+                }
+            ]
+        })
+    })
+
     test('one tag as a text is one tag', () => {
         expect(shown('garden', 'tags')).toEqual({
             kind: 'list',
@@ -249,14 +299,14 @@ describe('the links of the properties, for the backlinks', () => {
         expect(
             propertyLinksOf({
                 directors: ['[[Ada Quillfeather]]', '[[Rain barrel#Cleaning|the barrel]]'],
-                related_to: 'See [[Wormery]].',
+                related_to: 'See [[Wormery#Bins]].',
                 tags: ['type/movie'],
                 rating: 4
             })
         ).toEqual([
             { name: 'Directors', linkPath: 'Ada Quillfeather', text: 'Ada Quillfeather' },
             { name: 'Directors', linkPath: 'Rain barrel', text: 'the barrel' },
-            { name: 'Related To', linkPath: 'Wormery', text: 'Wormery' }
+            { name: 'Related To', linkPath: 'Wormery', text: 'Wormery > Bins' }
         ])
     })
 

@@ -7,7 +7,8 @@ import { decode, MARK } from './mark.ts'
 // a link in code is no link, and the text is the text that a reader sees.
 //
 // The sentence is cut in the text of the block of the link: its paragraph, its
-// list item without the lists inside it, its heading, its table cell.
+// list item without the lists inside it, its heading, its table cell. A line
+// break ends a block: a line of a note is a block.
 
 /** The sentence around a link, in three parts. */
 export interface LinkContext {
@@ -76,46 +77,72 @@ function append(block: Block, value: string): void {
     block.text += block.text === '' || block.text.endsWith(' ') ? text.trimStart() : text
 }
 
+/** What the reader of a note holds: every block, and the block that the text goes to now. */
+interface Reader {
+    blocks: Block[]
+    block: Block
+}
+
+/** Starts a block, and makes it the block that the text goes to. */
+function open(reader: Reader): Block {
+    const block: Block = { text: '', links: [] }
+    reader.blocks.push(block)
+    reader.block = block
+    return block
+}
+
 /**
  * Reads the nodes of a block. An element that is no part of a text starts a
- * block of its own, and leaves a space in the block around it.
+ * block of its own, and leaves a space in the block around it. A line break
+ * ends the block, also inside the markup of a line: a line of a note is a
+ * block, so a list of links on lines of their own gives each link its line.
  *
  * @param inline true inside math: every element there is a part of the text
  */
 function read(
     nodes: readonly (Root['children'][number] | ElementContent)[],
-    block: Block,
-    blocks: Block[],
+    reader: Reader,
     inline = false
 ): void {
     for (const node of nodes) {
         if (node.type === 'text') {
-            append(block, node.value)
+            append(reader.block, node.value)
             continue
         }
         if (node.type !== 'element' || SKIPPED.has(node.tagName)) {
             continue
         }
-        // The number of a footnote is no word of the sentence.
-        if (node.properties['dataFootnoteRef'] !== undefined) {
+        // The number of a footnote, and the mark that leads back from it, are
+        // no words of the sentence.
+        if (
+            node.properties['dataFootnoteRef'] !== undefined ||
+            node.properties['dataFootnoteBackref'] !== undefined
+        ) {
             continue
         }
         if (node.tagName === 'br') {
-            append(block, ' ')
+            open(reader)
         } else if (node.tagName === MARK.link) {
             const linkPath = decode(node.properties['dataLink'])
+            const block = reader.block
             const start = block.text.length
-            read(node.children, block, blocks, inline)
+            read(node.children, reader, inline)
             if (linkPath !== undefined && linkPath !== '') {
-                block.links.push({ linkPath, start, end: block.text.length })
+                // A link whose text holds a line break: its last line is the link.
+                reader.block.links.push({
+                    linkPath,
+                    start: reader.block === block ? start : 0,
+                    end: reader.block.text.length
+                })
             }
         } else if (inline || INLINE.has(node.tagName)) {
-            read(node.children, block, blocks, inline || node.tagName === 'math')
+            read(node.children, reader, inline || node.tagName === 'math')
         } else {
-            const inner: Block = { text: '', links: [] }
-            blocks.push(inner)
-            read(node.children, inner, blocks)
-            append(block, ' ')
+            const around = reader.block
+            open(reader)
+            read(node.children, reader)
+            reader.block = around
+            append(around, ' ')
         }
     }
 }
@@ -123,20 +150,42 @@ function read(
 /** The end of a sentence: its mark, the quotes and brackets that close after it, then white space. */
 const SENTENCE_END = /[.!?…]+["'”’»)\]]*\s+/gu
 
-/** The sentence of a text around the part from `start` to `end`. */
-function sentenceAround(text: string, start: number, end: number): LinkContext {
+/** The contexts of the links of a block. The ends of its sentences are read one time. */
+function contextsOf(block: Block): NoteLinkContext[] {
+    if (block.links.length === 0) {
+        return []
+    }
+    const { text } = block
+    // Where each sentence end starts, where its mark ends, and where the next sentence starts.
+    const ends = [...text.matchAll(SENTENCE_END)].map((match) => ({
+        start: match.index,
+        mark: match.index + match[0].trimEnd().length,
+        next: match.index + match[0].length
+    }))
+    let at = 0
     let from = 0
-    let to = text.length
-    for (const match of text.matchAll(SENTENCE_END)) {
-        const after = match.index + match[0].length
-        if (after <= start) {
-            from = after
-        } else if (match.index >= end) {
-            to = match.index + match[0].trimEnd().length
-            break
+    return block.links.map((link) => {
+        // The links are in the order of the text: go on from the last end.
+        for (; at < ends.length; at += 1) {
+            const end = ends[at]
+            if (end === undefined || end.next > link.start) break
+            from = end.next
         }
         // An end inside the text of the link is a part of the link.
-    }
+        let to = text.length
+        for (let next = at; next < ends.length; next += 1) {
+            const end = ends[next]
+            if (end !== undefined && end.start >= link.end) {
+                to = end.mark
+                break
+            }
+        }
+        return { linkPath: link.linkPath, ...cut(text, from, link.start, link.end, to) }
+    })
+}
+
+/** The sentence from `from` to `to` around the link from `start` to `end`, cut to some words on each side. */
+function cut(text: string, from: number, start: number, end: number, to: number): LinkContext {
     let before = text.slice(from, start).trimStart()
     let after = text.slice(end, to).trimEnd()
     if (before.length > SIDE) {
@@ -157,12 +206,7 @@ function sentenceAround(text: string, start: number, end: number): LinkContext {
  */
 export function linkContextsOf(tree: Root): NoteLinkContext[] {
     const root: Block = { text: '', links: [] }
-    const blocks = [root]
-    read(tree.children, root, blocks)
-    return blocks.flatMap((block) =>
-        block.links.map((link) => ({
-            linkPath: link.linkPath,
-            ...sentenceAround(block.text, link.start, link.end)
-        }))
-    )
+    const reader: Reader = { blocks: [root], block: root }
+    read(tree.children, reader)
+    return reader.blocks.flatMap(contextsOf)
 }

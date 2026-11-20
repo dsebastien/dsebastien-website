@@ -1,5 +1,5 @@
 import { tagPath } from '@dsebastien-website/resolver'
-import { wikilinksOf } from '../../plugin/src/publishing/links.ts'
+import { wikilinksOf, type Wikilink } from '../../plugin/src/publishing/links.ts'
 
 // The properties panel of a note page (issue 48, PAGE-02): every property of
 // the published note (business rule 14), with the display rules of the site
@@ -14,7 +14,8 @@ import { wikilinksOf } from '../../plugin/src/publishing/links.ts'
 // - A truth value shows with a mark, a number as a number, an object as JSON.
 // - A date stays as the vault writes it: `2024-03-02`, or `2024-03-02, 09:00`
 //   with a time. The site of today shows a time in the zone of the reader; a
-//   static page shows the time of the vault (R59).
+//   static page shows the time of the vault (R59). The build reads a date as
+//   a text for that (`note-properties.ts`).
 // - A wikilink is a link when its target is published, with the heading that
 //   it names, and plain text when it is not (business rule 5).
 // - A web address is a link to another site. The items of a list are apart.
@@ -122,20 +123,6 @@ function dateOfText(text: string): Scalar | null | undefined {
     }
 }
 
-/** A date that the reader of the properties already read: its UTC fields are the text of the vault. */
-function dateOfValue(value: Date): Scalar | undefined {
-    if (Number.isNaN(value.getTime())) {
-        return undefined
-    }
-    const iso = value.toISOString()
-    const date = iso.slice(0, 10)
-    const time = iso.slice(11, 16)
-    // A date alone is read as midnight.
-    return iso.slice(11) === '00:00:00.000Z'
-        ? { kind: 'date', datetime: date, text: date }
-        : { kind: 'date', datetime: `${date}T${time}`, text: `${date}, ${time}` }
-}
-
 /** True for the address of a page of the web. Only such an address becomes a link. */
 function isWebAddress(text: string): boolean {
     if (!/^https?:\/\/\S+$/iu.test(text)) {
@@ -149,13 +136,25 @@ function isWebAddress(text: string): boolean {
     }
 }
 
-/** The heading or the block that a wikilink names: the text after the first `#` of its target. */
-function fragmentOf(written: string): string {
+/**
+ * What a wikilink names and shows, from its text as the note writes it: the
+ * heading or the block after the first `#` of its target, and what a reader
+ * sees. A link with no link text to a heading shows the note and the heading,
+ * as in the text of a note and as Obsidian shows it (`Note > Heading`).
+ */
+function readLink(written: string, link: Wikilink): { fragment: string; shown: string } {
     const inner = written.slice(written.indexOf('[[') + 2, -2)
     const bar = inner.indexOf('|')
     const target = bar === -1 ? inner : inner.slice(0, bar)
     const hash = target.indexOf('#')
-    return hash === -1 ? '' : target.slice(hash + 1).trim()
+    const fragment = hash === -1 ? '' : target.slice(hash + 1).trim()
+    const label = bar === -1 ? '' : link.text.trim()
+    if (label !== '') {
+        return { fragment, shown: label }
+    }
+    const parts = [link.linkPath, ...fragment.split('#').map((part) => part.trim())]
+    const shown = parts.filter((part) => part !== '').join(' > ')
+    return { fragment, shown: shown === '' ? link.text.trim() : shown }
 }
 
 /** The pieces of a text: its wikilinks, and the text around them. */
@@ -170,8 +169,8 @@ function piecesOf(text: string, linkOf: LinkOf): Piece[] {
             pieces.push({ kind: 'text', text: text.slice(position, link.start) })
         }
         position = link.end
-        const shown = link.text.trim() === '' ? link.linkPath : link.text.trim()
-        const href = linkOf(link.linkPath, fragmentOf(text.slice(link.start, link.end)))
+        const { fragment, shown } = readLink(text.slice(link.start, link.end), link)
+        const href = linkOf(link.linkPath, fragment)
         if (href !== undefined) {
             pieces.push({ kind: 'link', text: shown, href })
         } else if (link.linkPath === '') {
@@ -210,7 +209,9 @@ function scalarOf(value: unknown, linkOf: LinkOf): Scalar | undefined {
         return { kind: 'number', text: String(value) }
     }
     if (value instanceof Date) {
-        return dateOfValue(value)
+        // The build reads a date as a text (`note-properties.ts`). A date
+        // object has no text of the vault: it shows in UTC.
+        return Number.isNaN(value.getTime()) ? undefined : scalarOf(value.toISOString(), linkOf)
     }
     if (typeof value !== 'object') {
         return undefined
@@ -221,17 +222,29 @@ function scalarOf(value: unknown, linkOf: LinkOf): Scalar | undefined {
     return { kind: 'json', text: JSON.stringify(value, null, 2) }
 }
 
-/** The tags of a note as links to their tag pages. */
+/**
+ * The form of a tag: levels of letters, digits, marks, underscores and
+ * hyphens, with a slash between two levels. A tag of the text of a note is
+ * read by the parser; a tag of the properties is any text, and only this form
+ * becomes a link, so no text of a note writes a path of the site.
+ */
+const TAG =
+    /^[\p{L}\p{N}\p{M}\p{Extended_Pictographic}_-]+(?:\/[\p{L}\p{N}\p{M}\p{Extended_Pictographic}_-]+)*$/u
+
+/** The tags of a note as links to their tag pages. A text that is no tag stays a text. */
 function tagsOf(value: unknown): PropertyValue | undefined {
     const list = Array.isArray(value) ? value : [value]
     const items: Scalar[] = []
     for (const item of list) {
-        const tag = typeof item === 'string' ? item.trim().replace(/^#/u, '') : ''
-        if (tag !== '') {
+        const text = typeof item === 'string' ? item.trim() : ''
+        const tag = text.replace(/^#/u, '')
+        if (TAG.test(tag)) {
             items.push({
                 kind: 'text',
                 pieces: [{ kind: 'tag', text: `#${tag}`, href: tagPath(tag) }]
             })
+        } else if (text !== '') {
+            items.push({ kind: 'text', pieces: [{ kind: 'text', text }] })
         }
     }
     return items.length === 0 ? undefined : { kind: 'list', items }
@@ -291,7 +304,7 @@ export function propertyLinksOf(properties: Readonly<Record<string, unknown>>): 
                     links.push({
                         name: nameOf(key),
                         linkPath: link.linkPath,
-                        text: link.text.trim() === '' ? link.linkPath : link.text.trim()
+                        text: readLink(item.slice(link.start, link.end), link).shown
                     })
                 }
             }

@@ -3,7 +3,7 @@ import type { Element, Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
 import { toText } from 'hast-util-to-text'
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -30,6 +30,8 @@ const FROST = '10 Garden/Frost dates explained.md'
 const HEADINGS = '50 Field guide/Text/Headings with the same text.md'
 /** The one note that stays in the vault: a link to it is plain text. */
 const NOT_PUBLISHED = '10 Garden/Winter plan (draft).md'
+/** A note that the test adds to its copy of the vault: dates in the forms of a vault, and links in code. */
+const DATED = '10 Garden/Dated note.md'
 
 let stores: TestStores | undefined
 let outDir: string | undefined
@@ -58,6 +60,32 @@ function rowOf(vaultPath: string, key: string): Element | undefined {
 beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
+    // The note that stays in the vault links to a published note: it is no backlink.
+    await appendFile(join(vault, NOT_PUBLISHED), '\nThe water comes from the [[Rain barrel]].\n')
+    await writeFile(
+        join(vault, DATED),
+        [
+            '---',
+            'tags:',
+            '  - type/note',
+            '  - ../../Welcome',
+            'seen: 2031-03-09T08:00:00+02:00',
+            'never: 2031-02-30',
+            'see: "[[Rain barrel#Cleaning]]"',
+            'created: 2031-03-09T01:00:00+02:00',
+            'updated: 2031-03-10T09:30',
+            '---',
+            '',
+            '# Dated note',
+            '',
+            'A link in code is no link: `[[Compost basics]]`.',
+            '',
+            '```text',
+            '[[Compost basics]]',
+            '```',
+            ''
+        ].join('\n')
+    )
     const contentStore = await makeContentStoreCopy(stores)
     const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
     const queue = await status(device)
@@ -204,6 +232,39 @@ describe('properties panel of a note page (PAGE-02)', () => {
     })
 })
 
+describe('properties of a note with the dates and the tags of a real vault', () => {
+    test('a time with a time zone shows as the vault writes it, and a day that does not exist is hidden', () => {
+        const seen = select('dd time', rowOf(DATED, 'seen'))
+
+        expect(seen?.properties['dateTime']).toBe('2031-03-09T08:00')
+        expect(textOf(seen ?? undefined)).toBe('2031-03-09, 08:00')
+        expect(rowOf(DATED, 'never')).toBeUndefined()
+        // The title band keeps the day of the vault: it is the day before in UTC.
+        expect(sources.get(DATED)).toContain(
+            'Created <time datetime="2031-03-09">2031-03-09</time>'
+        )
+    })
+
+    test('a text of the tags that is no tag is plain text, and writes no path of the site', () => {
+        const row = rowOf(DATED, 'tags')
+
+        expect(selectAll('a', row).map((tag) => tag.properties['href'])).toEqual([
+            '/-/tags/type/note'
+        ])
+        expect(selectAll('li', row).map((item) => textOf(item))).toEqual([
+            '#type/note',
+            '../../Welcome'
+        ])
+    })
+
+    test('a link to a heading shows the note and the heading, in the panel and as a backlink', () => {
+        const link = select('dd a', rowOf(DATED, 'see'))
+
+        expect(textOf(link ?? undefined)).toBe('Rain barrel > Cleaning')
+        expect(link?.properties['href']).toBe('/10+Garden/Rain+barrel#cleaning')
+    })
+})
+
 describe('backlinks of a note page (PAGE-03)', () => {
     const backlinksOf = (vaultPath: string): Element[] =>
         selectAll('[data-backlinks] [data-backlink]', pageOf(vaultPath))
@@ -218,6 +279,7 @@ describe('backlinks of a note page (PAGE-03)', () => {
             ['Frozen table', '/50+Field+guide/Queries/Frozen+table'],
             ['Markdown links to notes', '/50+Field+guide/Links/Markdown+links+to+notes'],
             ['Reading list', '/40+Writing/Reading+list'],
+            ['Dated note', '/10+Garden/Dated+note'],
             ['Drip irrigation', '/10+Garden/Drip+irrigation'],
             ['Garden index', '/10+Garden/Garden+index'],
             ['Compost basics', '/10+Garden/Compost+basics']
@@ -225,7 +287,7 @@ describe('backlinks of a note page (PAGE-03)', () => {
     })
 
     test('shows the sentence around each link, with the text of the link marked', () => {
-        const [, markdown, , drip, , compost] = backlinksOf(BARREL)
+        const [, markdown, , dated, drip, , compost] = backlinksOf(BARREL)
 
         expect(selectAll('[data-backlink-context]', compost).map((item) => textOf(item))).toEqual([
             'Water it from the Rain barrel when the summer is dry.'
@@ -239,6 +301,10 @@ describe('backlinks of a note page (PAGE-03)', () => {
         )
         expect(sources.get(BARREL)).toContain(
             'The hose starts at the <mark>Rain barrel</mark>.</p>'
+        )
+        // A link of a property has the name of the property as its context.
+        expect(textOf(select('[data-backlink-context]', dated) ?? undefined)).toBe(
+            'See: Rain barrel > Cleaning'
         )
         // A Markdown link to a note is a link like any other.
         expect(textOf(select('[data-backlink-context]', markdown) ?? undefined)).toBe(
@@ -259,7 +325,7 @@ describe('backlinks of a note page (PAGE-03)', () => {
 
     test('names the number of the notes in the title of the section', () => {
         expect(textOf(select('[data-backlinks] h2', pageOf(BARREL)) ?? undefined)).toBe(
-            'Notes that link here 6'
+            'Notes that link here 7'
         )
     })
 
@@ -273,6 +339,40 @@ describe('backlinks of a note page (PAGE-03)', () => {
             ['The Quiet Orchard (2021)', 'Directors: Ada Quillfeather'],
             ['The Lantern Keeper (2019)', 'Directors: Ada Quillfeather']
         ])
+    })
+
+    // The note with links in code links to `Compost basics` nowhere else.
+    test('a link inside code is no backlink', () => {
+        const titles = backlinksOf('10 Garden/Compost basics.md').map((backlink) =>
+            textOf(select('a', backlink) ?? undefined)
+        )
+
+        expect(titles).toContain('Reading list')
+        expect(titles).not.toContain('Dated note')
+    })
+
+    test('a note that is not published is no backlink, and no file of the site names its address', async () => {
+        const dist = outDir ?? ''
+        const files = (await readdir(dist, { recursive: true })).filter((file) =>
+            /\.(?:html|json|md|txt|xml)$/u.test(file)
+        )
+        const naming: string[] = []
+        for (const file of files) {
+            const text = await readFile(join(dist, file), 'utf8')
+            // Its canonical path, its vault path, and the text that only it holds.
+            if (
+                /Winter\+plan|Winter%20plan|Winter plan \(draft\)\.md|The water comes from/u.test(
+                    text
+                )
+            ) {
+                naming.push(file)
+            }
+        }
+
+        expect(files.length).toBeGreaterThan(100)
+        expect(naming).toEqual([])
+        const map = await readFile(join(dist, '-', 'resolver-map.json'), 'utf8')
+        expect(map).not.toContain('winter plan')
     })
 
     test('a note that no note links to has no backlinks section', () => {

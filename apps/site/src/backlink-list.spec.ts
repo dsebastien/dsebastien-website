@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { backlinkList, BACKLINKS_ON_PAGE } from './backlink-list.ts'
+import { backlinkList } from './backlink-list.ts'
 import type { Backlink } from './rendering/page.ts'
 
 // The list of the backlinks of a note as a page shows it (issue 48, PAGE-03,
@@ -56,9 +56,5 @@ describe('list of the backlinks of a note', () => {
             // 2031-03-02
             '/Aster'
         ])
-    })
-
-    test('a note page holds the number of backlinks of its budget', () => {
-        expect(BACKLINKS_ON_PAGE).toBe(50)
     })
 })

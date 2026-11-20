@@ -1,12 +1,13 @@
 import { getCollection } from 'astro:content'
 import { backlinkList, BACKLINKS_ON_PAGE, type ShownBacklink } from './backlink-list.ts'
-import { readPublishedNotes, type PublishedNote } from './content-store.ts'
+import { readCleanedNote, readPublishedNotes, type PublishedNote } from './content-store.ts'
 import { noteHeader, type NoteHeader } from './note-header.ts'
+import { readProperties } from './note-properties.ts'
 import { propertyLinksOf } from './properties.ts'
 import { SitePages } from './rendering/page.ts'
 
 // The published notes of one build, read one time: the manifest, the cleaned
-// notes with the markup that Astro keeps, the pages of the build with their
+// notes with their properties and the markup that Astro keeps, the pages of the build with their
 // link index (BUILD-05, MOD-06), and what several pages ask about a note (its
 // title band, its backlinks). The note pages, the pages with every backlink of
 // a note and the resolver map all read this one object.
@@ -27,18 +28,16 @@ export interface PublishedSite {
     notesWithBacklinksPage(): readonly PublishedNote[]
 }
 
-/** The properties of a cleaned note, as the reader of the collection gives them: a record, or nothing. */
-function propertiesOfEntry(data: unknown): Readonly<Record<string, unknown>> {
-    return typeof data === 'object' && data !== null && !Array.isArray(data)
-        ? (data as Readonly<Record<string, unknown>>)
-        : {}
-}
-
 async function read(): Promise<PublishedSite> {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
     const notes = await readPublishedNotes()
     const byPath = new Map(notes.map((note) => [note.vaultPath, note]))
+    // The properties of each note, read from its cleaned note with every date
+    // as the text of the vault (`note-properties.ts`), not from the collection.
     const properties = new Map<string, Readonly<Record<string, unknown>>>()
+    for (const note of notes) {
+        properties.set(note.vaultPath, readProperties(await readCleanedNote(note.vaultPath)))
+    }
     const pages = new SitePages(
         notes.map((note) => {
             const entry = entries.get(note.vaultPath)
@@ -48,8 +47,6 @@ async function read(): Promise<PublishedSite> {
             if (entry.rendered === undefined) {
                 throw new Error(`the note "${note.vaultPath}" has no markup`)
             }
-            const data = propertiesOfEntry(entry.data)
-            properties.set(note.vaultPath, data)
             // The pages of this build (BUILD-05): the markup of each note, which
             // Astro keeps between two builds, with its links and its embeds in
             // the state of this build.
@@ -59,7 +56,7 @@ async function read(): Promise<PublishedSite> {
                 markup: entry.rendered.html,
                 links: new Map(note.links.map((link) => [link.link, link.path])),
                 files: new Map(note.attachments.map((file) => [file.link, file])),
-                propertyLinks: propertyLinksOf(data)
+                propertyLinks: propertyLinksOf(properties.get(note.vaultPath) ?? {})
             }
         })
     )
@@ -87,18 +84,12 @@ async function read(): Promise<PublishedSite> {
         }
         return header
     }
-    const backlinks = new Map<string, readonly ShownBacklink[]>()
-    const backlinksOf = (vaultPath: string): readonly ShownBacklink[] => {
-        let list = backlinks.get(vaultPath)
-        if (list === undefined) {
-            list = backlinkList(pages.backlinks(vaultPath), (path) => {
-                const header = headerOf(path)
-                return { title: header.title, updated: header.updated.datetime }
-            })
-            backlinks.set(vaultPath, list)
-        }
-        return list
-    }
+    // Not kept: almost every list is read one time, by the page of its note.
+    const backlinksOf = (vaultPath: string): readonly ShownBacklink[] =>
+        backlinkList(pages.backlinks(vaultPath), (path) => {
+            const header = headerOf(path)
+            return { title: header.title, updated: header.updated.datetime }
+        })
     return {
         notes,
         pages,

@@ -53,10 +53,10 @@ describe('the sentence around a link', () => {
         ])
     })
 
-    test('reads the text through the markup of the sentence, with one space for a line break or a run of spaces', () => {
+    test('reads the text through the markup of the sentence, with one space for a run of white space', () => {
         expect(
             contexts(
-                `<p>The <em>big</em>\n   <strong>${link('Rain barrel', 'the <em>green</em> barrel')}</strong><br>holds <code>200</code> liters.</p>`
+                `<p>The <em>big</em>\n   <strong>${link('Rain barrel', 'the <em>green</em> barrel')}</strong>\n\tholds <code>200</code> liters.</p>`
             )
         ).toEqual([
             {
@@ -122,6 +122,51 @@ describe('the block of a link', () => {
                 `<p>See<sup><a href="#fn-1" data-footnote-ref="">1</a></sup> <svg><text>Graph</text></svg><style>p{}</style>${link('Mint')} <math><semantics><mi>x</mi><annotation>x^2</annotation></semantics></math>.</p>`
             )
         ).toEqual([{ linkPath: 'Mint', before: 'See ', link: 'Mint', after: ' x.' }])
+    })
+})
+
+describe('the lines of a block', () => {
+    // A line break of a note is a `br` element: a list of links on lines of
+    // their own, with no list marks, is one paragraph.
+    test('a line of a paragraph is a block of its own', () => {
+        expect(
+            contexts(
+                `<p>Related notes<br>\n${link('Rain barrel')}<br>\n${link('Wormery')} for the worms</p>`
+            )
+        ).toEqual([
+            { linkPath: 'Rain barrel', before: '', link: 'Rain barrel', after: '' },
+            { linkPath: 'Wormery', before: '', link: 'Wormery', after: ' for the worms' }
+        ])
+    })
+
+    test('a line break inside the markup of a line cuts the line there too', () => {
+        expect(
+            contexts(`<p><strong>First line<br>second ${link('Mint')}</strong> end<br>last</p>`)
+        ).toEqual([{ linkPath: 'Mint', before: 'second ', link: 'Mint', after: ' end' }])
+    })
+
+    test('the mark of a footnote that leads back to the text is no word of the sentence', () => {
+        expect(
+            contexts(
+                `<li id="fn-1"><p>From ${link('Hub')} <a href="#fnref-1" data-footnote-backref="" aria-label="Back to reference 1">↩</a></p></li>`
+            )
+        ).toEqual([{ linkPath: 'Hub', before: 'From ', link: 'Hub', after: '' }])
+    })
+
+    test('a block with very many links gives each link its own sentence', () => {
+        const many = Array.from(
+            { length: 4000 },
+            (_, index) => `Word ${link(`Note ${String(index)}`)}.`
+        )
+        const found = contexts(`<p>${many.join(' ')}</p>`)
+
+        expect(found).toHaveLength(4000)
+        expect(found[3999]).toEqual({
+            linkPath: 'Note 3999',
+            before: 'Word ',
+            link: 'Note 3999',
+            after: '.'
+        })
     })
 })
 

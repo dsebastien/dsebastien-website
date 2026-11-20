@@ -735,6 +735,18 @@ describe('outline of a page', () => {
         ])
     })
 
+    test('an item holds no number of a footnote', () => {
+        expect(
+            outlineOf(
+                '<h2 id="soil1">Soil<sup><a href="#fn-1" data-footnote-ref="">1</a></sup> and water</h2><h2 id="b">B</h2><h2 id="c">C</h2>'
+            )
+        ).toEqual([
+            { depth: 0, text: 'Soil and water', id: 'soil1' },
+            { depth: 0, text: 'B', id: 'b' },
+            { depth: 0, text: 'C', id: 'c' }
+        ])
+    })
+
     test('a note with fewer than three headings has no outline', () => {
         expect(
             outlineOf('<h1 id="self">Self</h1><h2 id="soil">Soil</h2><h2 id="light">Light</h2>')
@@ -819,6 +831,33 @@ describe('first heading of a note', () => {
         expect(pages.heading('Self.md')).toEqual({ text: 'Compost basics', id: 'compost' })
         expect(pages.heading('Plain.md')).toBeUndefined()
     })
+
+    // The title of a note in a list is the title of its own page: both read
+    // the H1 that the page step takes out of the body.
+    test('is the H1 that the page takes out, also after a block of link cards that cannot show', () => {
+        const hidden =
+            '<link-cards><link-card data-url="ftp://garden.example/x">x</link-card></link-cards>\n<h1 id="real">Real title</h1><p>Text.</p>'
+        const shown =
+            '<link-cards><link-card data-url="https://garden.example/x">x</link-card></link-cards>\n<h1 id="real">Real title</h1><p>Text.</p>'
+        const pages = new SitePages([note('Hidden.md', hidden), note('Shown.md', shown)])
+
+        expect(pages.page('Hidden.md').heading).toEqual({ text: 'Real title', id: 'real' })
+        expect(pages.heading('Hidden.md')).toEqual(pages.page('Hidden.md').heading)
+        expect(pages.page('Shown.md').heading).toBeUndefined()
+        expect(pages.heading('Shown.md')).toBeUndefined()
+    })
+
+    test('holds no number of a footnote', () => {
+        const pages = new SitePages([
+            note(
+                'Self.md',
+                '<h1 id="compost1">Compost<sup><a href="#fn-1" data-footnote-ref="">1</a></sup></h1><p>Text.</p>'
+            )
+        ])
+
+        expect(pages.heading('Self.md')).toEqual({ text: 'Compost', id: 'compost1' })
+        expect(pages.page('Self.md').heading).toEqual({ text: 'Compost', id: 'compost1' })
+    })
 })
 
 // The backlinks of a note (issue 48, PAGE-03, MOD-06): the published notes
@@ -849,6 +888,22 @@ describe('backlinks of a note', () => {
             }
         ])
         expect(pages.backlinks('Drip.md')).toEqual([])
+    })
+
+    test('a sentence with two links to the note shows one time, with its first link marked', () => {
+        const pages = new SitePages([
+            BARREL,
+            note(
+                'Drip.md',
+                `<p>Compare ${mark('Rain barrel')} and ${mark('Water butt', 'its other name')}. Then ${mark('Rain barrel')}.</p>`,
+                BARREL_LINKS
+            )
+        ])
+
+        expect(pages.backlinks('Rain barrel.md')[0]?.contexts).toEqual([
+            { before: 'Compare ', link: 'Rain barrel', after: ' and its other name.' },
+            { before: 'Then ', link: 'Rain barrel', after: '.' }
+        ])
     })
 
     test('a note is one backlink with a sentence per link: three at most, each one time', () => {

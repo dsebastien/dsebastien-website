@@ -166,9 +166,25 @@ function topHeading(nodes: readonly Root['children'][number][]): Element | undef
     return first?.type === 'element' && first.tagName === 'h1' ? first : undefined
 }
 
+/** The text of a heading as a title shows it: without the number of a footnote. */
+function headingText(element: Element): string {
+    const withoutMarks = (nodes: ElementContent[]): ElementContent[] =>
+        nodes
+            .filter(
+                (node) =>
+                    node.type !== 'element' || node.properties['dataFootnoteRef'] === undefined
+            )
+            .map((node) =>
+                node.type === 'element' ? { ...node, children: withoutMarks(node.children) } : node
+            )
+    return toText({ ...element, children: withoutMarks(element.children) })
+        .replace(/\s+/gu, ' ')
+        .trim()
+}
+
 function headingOf(element: Element): NoteHeading {
     const id = element.properties['id']
-    return { text: toText(element), ...(typeof id === 'string' ? { id } : {}) }
+    return { text: headingText(element), ...(typeof id === 'string' ? { id } : {}) }
 }
 
 /**
@@ -184,7 +200,7 @@ function outlineOf(nodes: readonly Root['children'][number][]): OutlineItem[] | 
         const level = /^h([1-6])$/u.exec(node.tagName)
         const id = node.properties['id']
         if (level !== null && Number(level[1]) <= OUTLINE_LEVELS && typeof id === 'string') {
-            headings.push({ level: Number(level[1]), text: toText(node), id })
+            headings.push({ level: Number(level[1]), text: headingText(node), id })
         }
     }
     if (headings.length < OUTLINE_MINIMUM) {
@@ -459,7 +475,17 @@ export class SitePages {
      * shows: the display title of the note in a list reads it (IDX-03).
      */
     heading(vaultPath: string): NoteHeading | undefined {
-        const first = topHeading(this.#published(vaultPath).tree.children)
+        const note = this.#published(vaultPath)
+        // The page takes the H1 out of the body that the page step made. The
+        // one top node that the page step can remove is a block of link cards
+        // of which no card can show: the H1 after it is at the top too.
+        const kept = note.tree.children.filter(
+            (node) =>
+                node.type !== 'element' ||
+                node.tagName !== MARK.cards ||
+                this.#cards(node, note).length > 0
+        )
+        const first = topHeading(kept)
         return first === undefined ? undefined : headingOf(first)
     }
 
@@ -512,11 +538,10 @@ export class SitePages {
                     backlink = { vaultPath, path: note.path, contexts: [] }
                     found.set(target.vaultPath, backlink)
                 }
+                // A sentence shows one time, also when it holds two links to the note.
+                const sentence = `${context.before}${context.link}${context.after}`
                 const known = backlink.contexts.some(
-                    (other) =>
-                        other.before === context.before &&
-                        other.link === context.link &&
-                        other.after === context.after
+                    (other) => `${other.before}${other.link}${other.after}` === sentence
                 )
                 if (!known && backlink.contexts.length < BACKLINK_CONTEXTS) {
                     backlink.contexts.push(context)
@@ -529,7 +554,12 @@ export class SitePages {
                 add(link.linkPath, { before: `${link.name}: `, link: link.text, after: '' })
             }
             for (const [target, backlink] of found) {
-                all.set(target, [...(all.get(target) ?? []), backlink])
+                const list = all.get(target)
+                if (list === undefined) {
+                    all.set(target, [backlink])
+                } else {
+                    list.push(backlink)
+                }
             }
         }
         return all
