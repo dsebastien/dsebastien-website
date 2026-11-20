@@ -2,7 +2,14 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { copyFixtureVault, makeContentStoreCopy, makeTestStores } from '@dsebastien-website/testing'
+import {
+    BUDGET_SAMPLE,
+    copyFixtureVault,
+    makeContentStoreCopy,
+    makeTestStores,
+    writeBudgetSample
+} from '@dsebastien-website/testing'
+import { canonicalPath } from '@dsebastien-website/resolver'
 import { nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import type { Subprocess } from 'bun'
@@ -14,13 +21,20 @@ import { startServer, type Server } from '../apps/site/server/serve.ts'
 // server serves it with its attachments. Everything lives in `.cache/` and is
 // removed when the command stops. It never reads the real vault.
 //
-//     bun run site:fixture [--port 4322]
+//     bun run site:fixture [--port 4322] [--sample]
+//
+// With `--sample`, the vault also holds the budget sample: invented notes as
+// large as the large published notes (a long note with a long outline, a media
+// note, a hub note with 489 backlinks and its page with all of them).
 
 const SITE = fileURLToPath(new URL('../apps/site', import.meta.url))
 
 const { values } = parseArgs({
     args: Bun.argv.slice(2),
-    options: { port: { type: 'string', default: '4322' } },
+    options: {
+        port: { type: 'string', default: '4322' },
+        sample: { type: 'boolean', default: false }
+    },
     strict: true
 })
 
@@ -54,6 +68,9 @@ process.on('SIGTERM', () => void stop(0))
 
 try {
     const vault = await copyFixtureVault(stores)
+    if (values.sample) {
+        await writeBudgetSample(vault)
+    }
     const contentStore = await makeContentStoreCopy(stores)
     const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
     const queue = await status(device)
@@ -86,6 +103,11 @@ try {
         attachments: stores.attachmentStorage
     })
     console.error(`The site of the fixture vault is on ${server.url} (Ctrl+C stops it).`)
+    if (values.sample) {
+        for (const path of Object.values(BUDGET_SAMPLE)) {
+            console.error(`  ${server.url}${canonicalPath(path)}`)
+        }
+    }
 } catch (error) {
     console.error(error)
     await stop(1)
