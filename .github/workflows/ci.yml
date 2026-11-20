@@ -106,11 +106,13 @@ jobs:
 
             # The reports of Lighthouse, to read why a time failed.
             - name: Reports of Lighthouse
-              if: failure()
+              # Also after the time limit, which cancels the job.
+              if: ${{ !success() }}
               uses: actions/upload-artifact@v7
               with:
                   name: lighthouse-reports
                   path: .cache/page-budgets
+                  include-hidden-files: true
 
     # The command line program of the publishing tool runs on Linux and on
     # Windows (ADR 0009), so its checks run on both.

@@ -173,17 +173,18 @@ function withoutIds(nodes: ElementContent[], prefix: string): ElementContent[] {
 }
 
 /**
- * The headings of an embedded part, one level down (h6 stays h6), so the
- * body of a page holds no H1: the title band has the one H1 (R58).
+ * The headings of an embedded part, down by the depth of the embed (h6 at
+ * most), so an embed holds no H1 and an embed inside an embed sits below its
+ * parent: the title band has the H1 of the page (R58).
  */
-function oneLevelDown(nodes: ElementContent[]): ElementContent[] {
+function levelsDown(nodes: ElementContent[], depth: number): ElementContent[] {
     for (const node of nodes) {
         if (node.type !== 'element' || node.tagName === 'svg') continue
-        const level = /^h([1-5])$/u.exec(node.tagName)
+        const level = /^h([1-6])$/u.exec(node.tagName)
         if (level !== null) {
-            node.tagName = `h${String(Number(level[1]) + 1)}`
+            node.tagName = `h${String(Math.min(6, Number(level[1]) + depth))}`
         }
-        oneLevelDown(node.children)
+        levelsDown(node.children, depth)
     }
     return nodes
 }
@@ -491,7 +492,7 @@ export class SitePages {
         }
         const children = this.#transform(
             withOwnLinks(
-                oneLevelDown(withoutIds(part, `e${String((this.#embeds += 1))}-`)),
+                levelsDown(withoutIds(part, `e${String((this.#embeds += 1))}-`), stack.length),
                 target.path
             ),
             target,

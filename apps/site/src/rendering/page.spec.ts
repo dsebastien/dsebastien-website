@@ -674,8 +674,8 @@ describe('page of a note', () => {
         expect(pageOf('<h2 id="part">Part</h2>')).toEqual({ html: '<h2 id="part">Part</h2>' })
     })
 
-    // The page has one H1, the one of the title band (R58): the headings of
-    // an embed go one level down, at every depth.
+    // The embeds hold no H1 (R58): the headings of an embed go one level down
+    // per depth of the embed.
     test('gives the headings of an embedded note one level less, so the page has no H1 in its body', () => {
         const deep = note(
             'Deep.md',
@@ -692,7 +692,8 @@ describe('page of a note', () => {
         expect(html).toContain('<h2>Deep</h2>')
         expect(html).toContain('<h6>Five</h6>')
         expect(html).toContain('<h6>Six</h6>')
-        expect(html).toContain('<h2>Rain barrel</h2>')
+        // An embed inside an embed goes one level further down.
+        expect(html).toContain('<h3>Rain barrel</h3>')
     })
 
     test('loads the first image at once with a high priority, and the others lazily', () => {

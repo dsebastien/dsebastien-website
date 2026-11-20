@@ -101,11 +101,9 @@ export async function checkNotePage(
 ): Promise<PageCheck> {
     const elements = elementsOf(fromHtml(html))
     const failures: string[] = []
-    // A file of another host is not read: the check of the requests names it.
+    // A file of another host is not read: it fails on its own (see below).
     const readFile = (address: string): Promise<Uint8Array> =>
-        onHost(address)
-            ? read(address.replace(/[?#].*$/su, ''))
-            : Promise.resolve(new Uint8Array(0))
+        onHost(address) ? read(withoutQuery(address)) : Promise.resolve(new Uint8Array(0))
 
     const sheets = elements.filter((element) => relOf(element).includes('stylesheet'))
     const styleTexts = elements
@@ -141,7 +139,10 @@ export async function checkNotePage(
         fontLinks.map(async (link) => ({
             href: hrefOf(link),
             bytes: (await readFile(hrefOf(link))).byteLength,
-            crossOrigin: link.properties['crossOrigin'] !== undefined
+            // An anonymous request, as the style sheet makes it for a font.
+            crossOrigin:
+                typeof link.properties['crossOrigin'] === 'string' &&
+                ANONYMOUS.test(link.properties['crossOrigin'])
         }))
     )
 
@@ -214,13 +215,17 @@ export async function checkNotePage(
             )
         }
     })
+    if (styleTexts.some((text) => /@import\b/iu.test(text))) {
+        failures.push('CSS: a style element imports another file, a request before the page shows')
+    }
+    const cssTexts = [...sheetTexts, ...styleTexts]
     for (const font of fonts) {
         // Without crossorigin, or when the style sheet uses another file, the
         // browser downloads the font a second time.
         if (!font.crossOrigin) {
             failures.push(`fonts: the preload of ${font.href} has no crossorigin`)
         }
-        if (onHost(font.href) && !sheetTexts.some((text) => text.includes(font.href))) {
+        if (onHost(font.href) && !cssTexts.some((text) => text.includes(withoutQuery(font.href)))) {
             failures.push(`fonts: the style sheet does not use the preloaded font ${font.href}`)
         }
         if (font.bytes > PAGE_BUDGET.fontBytes) {
@@ -234,19 +239,39 @@ export async function checkNotePage(
             `requests before the page shows: ${String(requests.length)} (${requests.join(', ')}), the budget is ${String(PAGE_BUDGET.requests)}`
         )
     }
-    for (const address of requests.slice(1)) {
+    // Every file of the page is on the host of the notes, also one that does
+    // not stop the page: a file of another host is not measured.
+    const addresses = new Set([
+        ...sheets.map(hrefOf),
+        ...fontLinks.map(hrefOf),
+        ...elements.filter((element) => relOf(element).includes('preload')).map(hrefOf),
+        ...scripts
+            .map((script) => script.properties['src'])
+            .filter((src) => typeof src === 'string')
+    ])
+    for (const address of addresses) {
         if (!onHost(address)) {
-            failures.push(
-                `requests before the page shows: ${address} is not on the host of the notes`
-            )
+            failures.push(`files: ${address} is not on the host of the notes`)
         }
     }
     failures.push(...imageFailures(elements.filter((element) => element.tagName === 'img')))
     return { measure, failures }
 }
 
-/** The types of a script element that the browser runs. */
-const RUNS = /^(?:|module|text\/javascript|application\/javascript)$/iu
+/**
+ * The types of a script element that the browser runs (the JavaScript MIME
+ * types of the HTML standard, and `module`). Any other type is a data block.
+ */
+const RUNS =
+    /^(?:|module|(?:application|text)\/(?:x-)?(?:ecmascript|javascript)|text\/javascript1\.[0-5]|text\/(?:jscript|livescript))$/iu
+
+/** The value of `crossorigin` of an anonymous request. */
+const ANONYMOUS = /^(?:|anonymous)$/iu
+
+/** The address without its query and its fragment. */
+function withoutQuery(address: string): string {
+    return address.replace(/[?#].*$/su, '')
+}
 
 /** True when the address is a path of the host of the notes. */
 function onHost(address: string): boolean {

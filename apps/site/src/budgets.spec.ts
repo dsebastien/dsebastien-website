@@ -199,7 +199,7 @@ describe('the budget of the bytes of a note page', () => {
             'requests before the page shows: 4 (the page, https://fonts.example.org/a.woff2, /_astro/page.abc123.css, /_astro/old.js), the budget is 3'
         )
         expect(result.failures).toContain(
-            'requests before the page shows: https://fonts.example.org/a.woff2 is not on the host of the notes'
+            'files: https://fonts.example.org/a.woff2 is not on the host of the notes'
         )
     })
 
@@ -252,6 +252,44 @@ describe('the font and the style sheet of a note page', () => {
         ])
     })
 
+    test('pass when a style element of the page uses the preloaded font', async () => {
+        const result = await checkNotePage(
+            page({ body: `<style>@font-face{src:url(${FONT})}</style>` }),
+            files(css('body{color:red}'))
+        )
+
+        expect(result.failures).toEqual([])
+    })
+
+    test('compare the font without the query of its address', async () => {
+        const head =
+            `<link rel="preload" href="${FONT}?v=1" as="font" type="font/woff2" crossorigin>` +
+            `<link rel="stylesheet" href="${STYLE}">`
+
+        expect((await checkNotePage(page({ head }), files())).failures).toEqual([])
+    })
+
+    test('fail when the preload of the font sends credentials', async () => {
+        const head =
+            `<link rel="preload" href="${FONT}" as="font" type="font/woff2" crossorigin="use-credentials">` +
+            `<link rel="stylesheet" href="${STYLE}">`
+
+        expect((await checkNotePage(page({ head }), files())).failures).toEqual([
+            `fonts: the preload of ${FONT} has no crossorigin`
+        ])
+    })
+
+    test('fail when a style element imports another file', async () => {
+        const result = await checkNotePage(
+            page({ body: '<style>@import url("/_astro/more.css");</style>' }),
+            files()
+        )
+
+        expect(result.failures).toEqual([
+            'CSS: a style element imports another file, a request before the page shows'
+        ])
+    })
+
     test('fail when the style sheet imports another one', async () => {
         const result = await checkNotePage(
             page(),
@@ -287,12 +325,41 @@ describe('the font and the style sheet of a note page', () => {
         )
 
         expect(result.failures).toContain(
-            'requests before the page shows: https://fonts.example.org/a.woff2 is not on the host of the notes'
+            'files: https://fonts.example.org/a.woff2 is not on the host of the notes'
+        )
+    })
+})
+
+describe('the files of another host', () => {
+    test('fail also when they do not stop the page, and are not counted as nothing', async () => {
+        const body =
+            '<script type="module" src="https://cdn.example.org/app.js"></script>' +
+            '<script async src="_astro/relative.js"></script>' +
+            '<link rel="stylesheet" href="https://cdn.example.org/late.css" media="print">'
+
+        const result = await checkNotePage(page({ body }), files())
+
+        expect(result.failures).toContain(
+            'files: https://cdn.example.org/app.js is not on the host of the notes'
+        )
+        expect(result.failures).toContain(
+            'files: _astro/relative.js is not on the host of the notes'
+        )
+        expect(result.failures).toContain(
+            'files: https://cdn.example.org/late.css is not on the host of the notes'
         )
     })
 })
 
 describe('the script of a note page', () => {
+    test('counts a script of an older JavaScript type', async () => {
+        const body = `<script type="text/ecmascript">var a = "${noise(30_000, 5)}"</script>`
+
+        const result = await checkNotePage(page({ body }), files())
+
+        expect(result.failures.filter((line) => line.startsWith('script'))).toHaveLength(1)
+    })
+
     test('does not count data in a script element, such as structured data', async () => {
         const body = `<script type="application/ld+json">{"name":"${noise(30_000, 4)}"}</script>`
 

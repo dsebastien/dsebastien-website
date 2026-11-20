@@ -124,9 +124,19 @@ async function lighthouse(url: string, preset: 'mobile' | 'desktop'): Promise<Ti
     if (preset === 'desktop') {
         args.push('--preset=desktop')
     }
-    const child = Bun.spawn(args, { cwd: ROOT, stdout: 'ignore', stderr: 'inherit' })
-    if ((await child.exited) !== 0) {
-        throw new Error(`Lighthouse failed on ${url}`)
+    // Chrome can fail to start on a CI runner ("waiting for dynamic debugging
+    // port"): a run that crashes is tried again, three times in all. A run
+    // that ends is never run again, whatever its times.
+    let attempt = 1
+    while (
+        (await Bun.spawn(args, { cwd: ROOT, stdout: 'ignore', stderr: 'inherit' }).exited) !== 0
+    ) {
+        if (attempt === 3) {
+            throw new Error(`Lighthouse failed three times on ${url}`)
+        }
+        attempt += 1
+        console.error(`Lighthouse failed on ${url}: try ${String(attempt)} of 3`)
+        await Bun.sleep(5_000)
     }
     const report = JSON.parse(await readFile(file, 'utf8')) as {
         audits: Record<string, { numericValue?: number } | undefined>
