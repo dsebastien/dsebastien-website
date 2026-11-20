@@ -12,11 +12,11 @@
 //   in the order of the default Quartz configuration, then the link rule of
 //   this project (one resolver, ADR 0005). Quartz resolves links and fills
 //   embeds in its core, which is not a library, so this is what a reuse gets.
-// - remark-obsidian: the low-level parser and HTML plugin that the Quartz
-//   transformer wraps (@quartz-community/remark-obsidian, rehype-obsidian),
-//   with the same link rule.
-// - astro-loader-obsidian: read from astro5/dist/forms.json when the Astro 5
-//   project of this folder was built (see astro5/README.md).
+//   The transformer parses with @quartz-community/remark-obsidian, legacy
+//   preset (its default): the parser that decision R50 keeps.
+// - astro-loader-obsidian: the Astro 5 project of astro5/. The loader reads a
+//   copy of the published notes with their properties and resolves links and
+//   files itself: it takes no other resolver.
 //
 // Every input is invented. Nothing reads the real vault.
 
@@ -39,16 +39,12 @@ import { canonicalPath } from '../../packages/resolver/src/url.ts'
 import { startServer } from '../../apps/site/server/serve.ts'
 import { unified, type Plugin } from 'unified'
 import remarkParse from 'remark-parse'
-import remarkGfm from 'remark-gfm'
 import remarkRehype from 'remark-rehype'
-import rehypeRaw from 'rehype-raw'
 import rehypeStringify from 'rehype-stringify'
 import { ObsidianFlavoredMarkdown } from '@quartz-community/obsidian-flavored-markdown'
 import { GitHubFlavoredMarkdown } from '@quartz-community/github-flavored-markdown'
 import { Latex } from '@quartz-community/latex'
 import { SyntaxHighlighting } from '@quartz-community/syntax-highlighting'
-import remarkObsidian from '@quartz-community/remark-obsidian'
-import rehypeObsidian from '@quartz-community/rehype-obsidian'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const SITE = fileURLToPath(new URL('../../apps/site', import.meta.url))
@@ -87,7 +83,50 @@ interface Element {
 }
 type Node = Element | { type: string; children?: Node[]; value?: string }
 
-/** A rehype step: the link rule of this project on every relative link of a converted note. */
+/**
+ * The vault path that a relative URL of a converted note names, by the link
+ * rule of this project, and the fragment after it.
+ */
+function targetOfUrl(
+    url: string,
+    from: string,
+    index: LinkIndex
+): { target: string | undefined; fragment: string } {
+    const hash = url.indexOf('#')
+    const raw = hash === -1 ? url : url.slice(0, hash)
+    const fragment = hash === -1 ? '' : url.slice(hash)
+    let linkPath = raw
+    try {
+        linkPath = decodeURIComponent(raw)
+    } catch {
+        // kept as written
+    }
+    linkPath = linkPath.replace(/^\.\//, '')
+    const target =
+        index.targetOf(linkPath, from) ?? index.targetOf(linkPath.replace(/\.md$/, ''), from)
+    return { target, fragment }
+}
+
+/** The URL of an attachment on the site (R45): the key is left out of the prototype. */
+function attachmentUrl(path: string): string {
+    return `/-/attachments/key/${encodeURIComponent(path.split('/').at(-1) ?? '')}`
+}
+
+const SOURCES: Record<string, string> = {
+    img: 'src',
+    audio: 'src',
+    video: 'src',
+    source: 'src',
+    iframe: 'src',
+    embed: 'src',
+    object: 'data'
+}
+
+/**
+ * A rehype step: the link rule of this project on every relative link and
+ * every relative file of a converted note (the src of an image, a sound, a
+ * video or a frame, the data of an object).
+ */
 function ourLinks(
     from: string,
     index: LinkIndex,
@@ -100,32 +139,32 @@ function ourLinks(
                 visit(child)
                 if (child.type !== 'element') return [child]
                 const element = child as Element
+                const sourceKey = SOURCES[element.tagName]
+                const source = sourceKey === undefined ? undefined : element.properties[sourceKey]
+                if (
+                    sourceKey !== undefined &&
+                    typeof source === 'string' &&
+                    !/^[a-z][a-z0-9+.-]*:/i.test(source) &&
+                    !source.startsWith('/')
+                ) {
+                    const { target } = targetOfUrl(source, from, index)
+                    if (target !== undefined && !target.endsWith('.md')) {
+                        element.properties[sourceKey] = attachmentUrl(target)
+                    }
+                }
                 const href = element.properties['href']
                 if (element.tagName !== 'a' || typeof href !== 'string') return [child]
                 if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return [child]
                 // A tag link of the converter is not a link to a note.
                 const classes = element.properties['className']
                 if (Array.isArray(classes) && classes.includes('tag-link')) return [child]
-                const hash = href.indexOf('#')
-                const raw = hash === -1 ? href : href.slice(0, hash)
-                const fragment = hash === -1 ? '' : href.slice(hash)
-                let linkPath = raw
-                try {
-                    linkPath = decodeURIComponent(raw)
-                } catch {
-                    // kept as written
-                }
-                linkPath = linkPath.replace(/^\.\//, '')
-                const target =
-                    index.targetOf(linkPath, from) ??
-                    index.targetOf(linkPath.replace(/\.md$/, ''), from)
+                const { target, fragment } = targetOfUrl(href, from, index)
                 if (target !== undefined && target.endsWith('.md') && published.has(target)) {
                     element.properties['href'] = canonicalPath(target) + fragment
                     return [child]
                 }
                 if (target !== undefined && !target.endsWith('.md')) {
-                    element.properties['href'] =
-                        `/-/attachments/key/${target.split('/').at(-1) ?? ''}`
+                    element.properties['href'] = attachmentUrl(target)
                     return [child]
                 }
                 // Not published, missing or under a guard: plain text (business rule 5).
@@ -190,32 +229,6 @@ async function quartzV5(
                 await processor.process({ value: text, data: { slug, filePath: form.note } })
             )
             outcomes.push(await judge(form, html))
-        } catch (error) {
-            outcomes.push({ form: form.id, result: 'error', failures: [String(error)], html: '' })
-        }
-    }
-    return outcomes
-}
-
-async function remarkObsidianOnly(
-    forms: MarkdownForm[],
-    index: LinkIndex,
-    published: ReadonlySet<string>
-): Promise<Outcome[]> {
-    const outcomes: Outcome[] = []
-    for (const form of forms) {
-        try {
-            const text = withoutProperties(await Bun.file(join(FIXTURE_VAULT, form.note)).text())
-            const processor = unified()
-                .use(remarkParse)
-                .use(remarkGfm)
-                .use(remarkObsidian as Plugin)
-                .use(remarkRehype, { allowDangerousHtml: true })
-                .use(rehypeRaw)
-                .use(rehypeObsidian as Plugin, { tweetEmbed: false })
-                .use(ourLinks(form.note, index, published) as Plugin)
-                .use(rehypeStringify)
-            outcomes.push(await judge(form, String(await processor.process(text))))
         } catch (error) {
             outcomes.push({ form: form.id, result: 'error', failures: [String(error)], html: '' })
         }

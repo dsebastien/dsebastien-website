@@ -53,7 +53,7 @@
     {
         "form": "wikilink-own-heading",
         "result": "fail",
-        "failures": ["no element matches \"a[href^=\"#\"]\" with the text \"Harvest\""],
+        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Harvest\""],
         "html": "<h1 id=\"link-to-a-heading-of-this-note\">Link to a heading of this note</h1>\n<p>Jump to #Harvest.</p>\n<h2 id=\"harvest\">Harvest</h2>\n<p>Pick the beans when they snap.</p>\n"
     },
     {
@@ -66,7 +66,7 @@
         "form": "embed-image-size",
         "result": "fail",
         "failures": [
-            "\"img[width=\"120\"]\" matches 0 elements, not 1",
+            "\"img[src^=\"/-/attachments/\"][width=\"120\"]\" matches 0 elements, not 1",
             "no element matches \"img[alt=\"The plan, small\"]\""
         ],
         "html": "<h1 id=\"image-with-a-size\">Image with a size</h1>\n<p><img src=\"/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png\" alt=\"garden-plan.png\" width=\"300\" height=\"225\" loading=\"lazy\" decoding=\"async\"></p>\n<p><img src=\"/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png\" alt=\"garden-plan.png\" width=\"300\" height=\"200\" loading=\"lazy\" decoding=\"async\"></p>\n<p><img src=\"/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png\" alt=\"The plan, small|120\" width=\"16\" height=\"12\" loading=\"lazy\" decoding=\"async\"></p>\n"
@@ -74,7 +74,10 @@
     {
         "form": "embed-image-in-link",
         "result": "fail",
-        "failures": ["\"a img\" matches 0 elements, not 1", "\"img\" matches 0 elements, not 1"],
+        "failures": [
+            "\"a[href^=\"/-/attachments/\"][href$=\"seed-catalog.pdf\"] img[src^=\"/-/attachments/\"]\" matches 0 elements, not 1",
+            "\"img\" matches 0 elements, not 1"
+        ],
         "html": "<h1 id=\"image-inside-a-link\">Image inside a link</h1>\n<p><a href=\"/-/attachments/794abaa4f6f06fc519895c22944a0ab43ad02b4fb32bdefa1952ce81613cb47b/seed-catalog.pdf\"><note-link data-link=\"garden-plan.png\" data-embed=\"\">The plan</a></note-link></p>\n"
     },
     {
@@ -99,7 +102,7 @@
         "result": "fail",
         "failures": [
             "no element matches \"p\" with the text \"Squash leaves keep the soil cool.\"",
-            "the HTML holds \"^squash-shade\""
+            "the text holds \"^squash-shade\""
         ],
         "html": "<h1 id=\"embed-of-a-block\">Embed of a block</h1>\n<p><a href=\"/50+Field+guide/Companion+planting\">Companion planting#^squash-shade</a></p>\n"
     },
@@ -147,9 +150,9 @@
         "failures": [
             "\"[data-callout]\" matches 0 elements, not 15",
             "\"[data-callout=\"warning\"]\" matches 0 elements, not 1",
-            "no element matches \"[data-callout=\"tldr\"], [data-callout=\"abstract\"]\"",
+            "\"[data-callout=\"tldr\"]\" matches 0 elements, not 1",
             "\"[data-callout=\"faq\"]\" matches 0 elements, not 1",
-            "the HTML holds \"[!\""
+            "the text holds \"[!\""
         ],
         "html": "<h1 id=\"every-callout-type\">Every callout type</h1>\n<blockquote>\n<p>[!note]\nA callout of the type note.</p>\n</blockquote>\n<blockquote>\n<p>[!abstract]\nA callout of the type abstract.</p>\n</blockquote>\n<blockquote>\n<p>[!info]\nA callout of the type info.</p>\n</blockquote>\n<blockquote>\n<p>[!todo]\nA callout of the type todo.</p>\n</blockquote>\n<blockquote>\n<p>[!tip]\nA callout of the type tip.</p>\n</blockquote>\n<blockquote>\n<p>[!success]\nA callout of the type success.</p>\n</blockquote>\n<blockquote>\n<p>[!question]\nA callout of the type question.</p>\n</blockquote>\n<blockquote>\n<p>[!warning]\nA callout of the type warning.</p>\n</blockquote>\n<blockquote>\n<p>[!failure]\nA callout of the type failure.</p>\n</blockquote>\n<blockquote>\n<p>[!danger]\nA callout of the type danger.</p>\n</blockquote>\n<blockquote>\n<p>[!bug]\nA callout of the type bug.</p>\n</blockquote>\n<blockquote>\n<p>[!example]\nA callout of the type example.</p>\n</blockquote>\n<blockquote>\n<p>[!quote]\nA callout of the type quote.</p>\n</blockquote>\n<blockquote>\n<p>[!tldr]\nA callout of the type tldr.</p>\n</blockquote>\n<blockquote>\n<p>[!FAQ]\nA callout of the type FAQ.</p>\n</blockquote>\n"
     },
@@ -157,10 +160,10 @@
         "form": "callout-folded",
         "result": "fail",
         "failures": [
-            "\"details, [data-callout-fold]\" matches 0 elements, not 2",
+            "\"details:not([open]), [data-callout-fold=\"-\"]\" matches 0 elements, not 1",
             "\"details[open], [data-callout-fold=\"+\"]\" matches 0 elements, not 1",
             "no element matches \"summary, .callout-title\" with the text \"Why mulch?\"",
-            "the HTML holds \"[!\""
+            "the text holds \"[!\""
         ],
         "html": "<h1 id=\"folded-callouts\">Folded callouts</h1>\n<blockquote>\n<p>[!faq]- Why mulch?\nMulch keeps the water in the soil.</p>\n</blockquote>\n<blockquote>\n<p>[!tip]+ Open by default\nMulch in late spring.</p>\n</blockquote>\n"
     },
@@ -200,6 +203,10 @@
         "form": "link-block",
         "result": "fail",
         "failures": [
+            "the text holds \"LINK: https://garden.example/soil\"",
+            "the text holds \"LINK https://garden.example/seeds\"",
+            "the text holds \"LINKS: https://garden.example/bees\"",
+            "the text holds \"LINKS https://garden.example/ponds\"",
             "the HTML holds \"garden.example/comment\"",
             "the HTML holds \"garden.example/html-comment\"",
             "the HTML holds \"Seed library rules\""
@@ -317,7 +324,10 @@
     {
         "form": "mermaid",
         "result": "fail",
-        "failures": ["no element matches \"svg\"", "\"[style]\" matches 9 elements, not 0"],
+        "failures": [
+            "no element matches \"svg\" with the text \"Sprout\"",
+            "\"[style]\" matches 9 elements, not 0"
+        ],
         "html": "<h1 id=\"mermaid\">Mermaid</h1>\n<pre class=\"astro-code github-dark\" style=\"background-color:#24292e;color:#e1e4e8; overflow-x: auto;\" tabindex=\"0\" data-language=\"mermaid\"><code><span class=\"line\"><span style=\"color:#F97583\">graph</span><span style=\"color:#B392F0\"> TD</span></span>\n<span class=\"line\"><span style=\"color:#FFAB70\">    Seed </span><span style=\"color:#F97583\">--&gt;</span><span style=\"color:#FFAB70\"> Sprout</span></span>\n<span class=\"line\"><span style=\"color:#FFAB70\">    Sprout </span><span style=\"color:#F97583\">--&gt;</span><span style=\"color:#FFAB70\"> Harvest</span></span></code></pre>\n"
     },
     {
@@ -344,9 +354,9 @@
     },
     {
         "form": "headings-same-text",
-        "result": "pass",
-        "failures": [],
-        "html": "<h1 id=\"headings-with-the-same-text\">Headings with the same text</h1>\n<h2 id=\"spring\">Spring</h2>\n<h3 id=\"tasks\">Tasks</h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn</h2>\n<h3 id=\"tasks-1\">Tasks</h3>\n<p>Plant the garlic.</p>\n"
+        "result": "fail",
+        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Tasks\""],
+        "html": "<h1 id=\"headings-with-the-same-text\">Headings with the same text</h1>\n<p>Jump to the #Autumn#Tasks.</p>\n<h2 id=\"spring\">Spring</h2>\n<h3 id=\"tasks\">Tasks</h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn</h2>\n<h3 id=\"tasks-1\">Tasks</h3>\n<p>Plant the garlic.</p>\n"
     },
     {
         "form": "code-block",

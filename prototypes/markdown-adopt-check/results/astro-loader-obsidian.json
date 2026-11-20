@@ -29,7 +29,9 @@
         "form": "wikilink-hard-names",
         "result": "fail",
         "failures": [
-            "no element matches \"a\" with the text \"Bread & butter pickles\"",
+            "no element matches \"a[href*=\"Salt+%2B+pepper\"]\" with the text \"Salt + pepper crust\"",
+            "no element matches \"a[href*=\"100%25\"]\" with the text \"100% rye bread\"",
+            "no element matches \"a[href*=\"%26\"]\" with the text \"Bread & butter pickles\"",
             "the HTML holds \"[[\""
         ],
         "html": "<p>Bake the <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/salt--pepper-crust\">Salt + pepper crust</a>, the <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/100-rye-bread\">100% rye bread</a> and the [[Bread &#x26; butter pickles]].</p>"
@@ -48,14 +50,17 @@
     },
     {
         "form": "wikilink-duplicate-name",
-        "result": "pass",
-        "failures": [],
+        "result": "fail",
+        "failures": [
+            "no element matches \"a[href*=\"Herb+bed/Mint\"]\" with the text \"Mint\"",
+            "no element matches \"a[href*=\"Recipes/Mint\"]\" with the text \"mint tea\""
+        ],
         "html": "<p>Plant <a class=\"article-wikilink\" href=\"/notes/10-garden/herb-bed/mint\">Mint</a> in a pot, and make <a class=\"article-wikilink\" href=\"/notes/20-library/2002-recipes/mint\">mint tea</a>.</p>"
     },
     {
         "form": "wikilink-own-heading",
         "result": "fail",
-        "failures": ["no element matches \"a[href^=\"#\"]\" with the text \"Harvest\""],
+        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Harvest\""],
         "html": "<p>Jump to <span class=\"article-wikilink\"><a class=\"article-tag\" href=\"/notes/tags/harvest\">#Harvest</a></span>.</p>\n<h2 id=\"harvest\">Harvest</h2>\n<p>Pick the beans when they snap.</p>"
     },
     {
@@ -68,17 +73,19 @@
         "form": "embed-image-size",
         "result": "fail",
         "failures": [
-            "\"img[width=\"300\"]\" matches 0 elements, not 2",
-            "\"img[width=\"300\"][height=\"200\"]\" matches 0 elements, not 1",
-            "\"img[width=\"120\"]\" matches 0 elements, not 1",
+            "\"img[src^=\"/-/attachments/\"][width=\"300\"]\" matches 0 elements, not 2",
+            "\"img[src^=\"/-/attachments/\"][width=\"300\"][height=\"200\"]\" matches 0 elements, not 1",
+            "\"img[src^=\"/-/attachments/\"][width=\"120\"]\" matches 0 elements, not 1",
             "no element matches \"img[alt=\"The plan, small\"]\""
         ],
         "html": "<p><figure alt=\"garden-plan.png\" class=\"figure-image\" style=\"width: 300px; \"><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;../../Attachments/garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;garden-plan.png&#x22;,&#x22;index&#x22;:1,&#x22;width&#x22;:300,&#x22;style&#x22;:&#x22;width: 300px; &#x22;}\" /></figure></p>\n<p><figure alt=\"garden-plan.png\" class=\"figure-image\" style=\"width: 300px; height: 200px; \"><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;../../Attachments/garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;garden-plan.png&#x22;,&#x22;index&#x22;:1,&#x22;width&#x22;:300,&#x22;height&#x22;:200,&#x22;style&#x22;:&#x22;width: 300px; height: 200px; &#x22;}\" /></figure></p>\n<p><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;The plan, small|120&#x22;,&#x22;index&#x22;:0}\"></p>"
     },
     {
         "form": "embed-image-in-link",
-        "result": "pass",
-        "failures": [],
+        "result": "fail",
+        "failures": [
+            "\"a[href^=\"/-/attachments/\"][href$=\"seed-catalog.pdf\"] img[src^=\"/-/attachments/\"]\" matches 0 elements, not 1"
+        ],
         "html": "<p><a href=\"seed-catalog.pdf\"><img __ASTRO_IMAGE_=\"{&#x22;src&#x22;:&#x22;garden-plan.png&#x22;,&#x22;alt&#x22;:&#x22;The plan&#x22;,&#x22;index&#x22;:0}\"></a></p>"
     },
     {
@@ -111,32 +118,38 @@
     },
     {
         "form": "embed-pdf",
-        "result": "pass",
-        "failures": [],
+        "result": "fail",
+        "failures": [
+            "no element matches \"a[href^=\"/-/attachments/\"][href$=\"seed-catalog.pdf\"], iframe[src^=\"/-/attachments/\"][src$=\"seed-catalog.pdf\"], object[data^=\"/-/attachments/\"][data$=\"seed-catalog.pdf\"], embed[src^=\"/-/attachments/\"][src$=\"seed-catalog.pdf\"]\""
+        ],
         "html": "<p><iframe class=\"iframe-embed\" src=\"/vault-copy/attachments/seed-catalog.pdf\"></iframe></p>"
     },
     {
         "form": "embed-audio",
-        "result": "pass",
-        "failures": [],
+        "result": "fail",
+        "failures": [
+            "no element matches \"audio[src^=\"/-/attachments/\"][src$=\"birdsong.mp3\"], audio source[src^=\"/-/attachments/\"][src$=\"birdsong.mp3\"]\""
+        ],
         "html": "<p><audio class=\"audio-embed\" controls src=\"/vault-copy/attachments/birdsong.mp3\"></audio></p>"
     },
     {
         "form": "embed-video",
-        "result": "pass",
-        "failures": [],
+        "result": "fail",
+        "failures": [
+            "no element matches \"video[src^=\"/-/attachments/\"][src$=\"seedling-timelapse.mp4\"], video source[src^=\"/-/attachments/\"][src$=\"seedling-timelapse.mp4\"]\""
+        ],
         "html": "<p><video class=\"video-embed\" controls src=\"/vault-copy/attachments/seedling-timelapse.mp4\"></video></p>"
     },
     {
         "form": "embed-base",
         "result": "fail",
-        "failures": ["no element matches \"a[href*=\"Plants.base\"]\""],
+        "failures": ["no element matches \"a[href^=\"/-/attachments/\"][href$=\"Plants.base\"]\""],
         "html": "<p><span class=\"article-wikilink\">Plants.base</span></p>"
     },
     {
         "form": "embed-canvas",
         "result": "fail",
-        "failures": ["no element matches \"a[href*=\".canvas\"]\""],
+        "failures": ["no element matches \"a[href^=\"/-/attachments/\"][href$=\".canvas\"]\""],
         "html": "<p><span class=\"article-wikilink\">Bed layout.canvas</span></p>"
     },
     {
@@ -145,9 +158,9 @@
         "failures": [
             "\"[data-callout]\" matches 0 elements, not 15",
             "\"[data-callout=\"warning\"]\" matches 0 elements, not 1",
-            "no element matches \"[data-callout=\"tldr\"], [data-callout=\"abstract\"]\"",
+            "\"[data-callout=\"tldr\"]\" matches 0 elements, not 1",
             "\"[data-callout=\"faq\"]\" matches 0 elements, not 1",
-            "the HTML holds \"[!\""
+            "the text holds \"[!\""
         ],
         "html": "<blockquote>\n<p>[!note]\nA callout of the type note.</p>\n</blockquote>\n<blockquote>\n<p>[!abstract]\nA callout of the type abstract.</p>\n</blockquote>\n<blockquote>\n<p>[!info]\nA callout of the type info.</p>\n</blockquote>\n<blockquote>\n<p>[!todo]\nA callout of the type todo.</p>\n</blockquote>\n<blockquote>\n<p>[!tip]\nA callout of the type tip.</p>\n</blockquote>\n<blockquote>\n<p>[!success]\nA callout of the type success.</p>\n</blockquote>\n<blockquote>\n<p>[!question]\nA callout of the type question.</p>\n</blockquote>\n<blockquote>\n<p>[!warning]\nA callout of the type warning.</p>\n</blockquote>\n<blockquote>\n<p>[!failure]\nA callout of the type failure.</p>\n</blockquote>\n<blockquote>\n<p>[!danger]\nA callout of the type danger.</p>\n</blockquote>\n<blockquote>\n<p>[!bug]\nA callout of the type bug.</p>\n</blockquote>\n<blockquote>\n<p>[!example]\nA callout of the type example.</p>\n</blockquote>\n<blockquote>\n<p>[!quote]\nA callout of the type quote.</p>\n</blockquote>\n<blockquote>\n<p>[!tldr]\nA callout of the type tldr.</p>\n</blockquote>\n<blockquote>\n<p>[!FAQ]\nA callout of the type FAQ.</p>\n</blockquote>"
     },
@@ -155,10 +168,10 @@
         "form": "callout-folded",
         "result": "fail",
         "failures": [
-            "\"details, [data-callout-fold]\" matches 0 elements, not 2",
+            "\"details:not([open]), [data-callout-fold=\"-\"]\" matches 0 elements, not 1",
             "\"details[open], [data-callout-fold=\"+\"]\" matches 0 elements, not 1",
             "no element matches \"summary, .callout-title\" with the text \"Why mulch?\"",
-            "the HTML holds \"[!\""
+            "the text holds \"[!\""
         ],
         "html": "<blockquote>\n<p>[!faq]- Why mulch?\nMulch keeps the water in the soil.</p>\n</blockquote>\n<blockquote>\n<p>[!tip]+ Open by default\nMulch in late spring.</p>\n</blockquote>"
     },
@@ -198,6 +211,10 @@
         "form": "link-block",
         "result": "fail",
         "failures": [
+            "the text holds \"LINK: https://garden.example/soil\"",
+            "the text holds \"LINK https://garden.example/seeds\"",
+            "the text holds \"LINKS: https://garden.example/bees\"",
+            "the text holds \"LINKS https://garden.example/ponds\"",
             "the HTML holds \"garden.example/comment\"",
             "the HTML holds \"Seed library rules\""
         ],
@@ -308,7 +325,7 @@
         "form": "mermaid",
         "result": "fail",
         "failures": [
-            "no element matches \"svg\"",
+            "no element matches \"svg\" with the text \"Sprout\"",
             "the HTML holds \"graph TD\"",
             "\"[style]\" matches 4 elements, not 0"
         ],
@@ -338,9 +355,9 @@
     },
     {
         "form": "headings-same-text",
-        "result": "pass",
-        "failures": [],
-        "html": "<h2 id=\"spring\">Spring</h2>\n<h3 id=\"tasks\">Tasks</h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn</h2>\n<h3 id=\"tasks-1\">Tasks</h3>\n<p>Plant the garlic.</p>"
+        "result": "fail",
+        "failures": ["no element matches \"p a[href^=\"#\"]\" with the text \"Tasks\""],
+        "html": "<p>Jump to the <span class=\"article-wikilink\"><a class=\"article-tag\" href=\"/notes/tags/autumn\">#Autumn</a>#Tasks</span>.</p>\n<h2 id=\"spring\">Spring</h2>\n<h3 id=\"tasks\">Tasks</h3>\n<p>Sow the peas.</p>\n<h2 id=\"autumn\">Autumn</h2>\n<h3 id=\"tasks-1\">Tasks</h3>\n<p>Plant the garlic.</p>"
     },
     {
         "form": "code-block",
