@@ -3646,15 +3646,16 @@
                 "ɷ.md": "Turn\n",
                 "Élan.md": "Elan\n",
                 "Café.md": "Cafe\n",
-                "Locked/Old.md": "Old\n"
+                "Locked/Old.md": "Old\n",
+                "j\u030c.md": "Jump\n"
             },
             "steps": [
                 {
                     "do": "publish",
-                    "why": "the first publication of three notes whose names have letters outside ASCII",
+                    "why": "the first publication of four notes whose names have letters outside ASCII",
                     "selection": {
                         "hold": [],
-                        "include": ["Café.md", "Élan.md", "ɷ.md"],
+                        "include": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
                         "remove": []
                     },
                     "time": "2031-07-01T08:00:00Z",
@@ -3664,8 +3665,8 @@
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
-                        "propertySet": ["Café.md", "Élan.md", "ɷ.md"],
-                        "published": ["Café.md", "Élan.md", "ɷ.md"],
+                        "propertySet": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
+                        "published": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
                         "removed": [],
                         "skipped": [],
                         "updated": [],
@@ -3674,28 +3675,29 @@
                 },
                 {
                     "do": "write",
-                    "why": "a private note in a folder of the deny list has the name of each published note: one in other capitals, one in the decomposed Unicode form, one with U+A7DD, which a newer Unicode makes U+0277",
+                    "why": "a private note in a folder of the deny list has the name of each published note: one in other capitals, one in the decomposed Unicode form, one with U+A7DD (a newer Unicode makes it U+0277), and one with a capital and a mark that NFC composes only in small letters",
                     "files": {
                         "Locked/élan.md": "Private\n",
-                        "Locked/Café.md": "Private\n",
-                        "Locked/꟝.md": "Private\n"
+                        "Locked/Cafe\u0301.md": "Private\n",
+                        "Locked/꟝.md": "Private\n",
+                        "Locked/J\u030c.md": "Private\n"
                     }
                 },
                 {
                     "do": "delete",
-                    "why": "the three published notes are missing from this vault",
-                    "paths": ["Café.md", "Élan.md", "ɷ.md"]
+                    "why": "the four published notes are missing from this vault",
+                    "paths": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"]
                 },
                 {
                     "do": "plan",
-                    "why": "the guard fails closed: each name is the name of a note in the deny list folder under the wider fold, so all three are forced removals",
+                    "why": "the guard fails closed: each name is the name of a note in the deny list folder under the wider fold, so all four are forced removals",
                     "selection": {
                         "hold": [],
                         "include": [],
                         "remove": []
                     },
                     "plan": {
-                        "forcedRemove": ["Café.md", "Élan.md", "ɷ.md"],
+                        "forcedRemove": ["Café.md", "j\u030c.md", "Élan.md", "ɷ.md"],
                         "publish": [],
                         "remove": [],
                         "update": []

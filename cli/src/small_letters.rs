@@ -117,15 +117,20 @@ pub fn small_letters(text: &str) -> String {
 
 /// The name of a file as the guard by file name compares it: the composed
 /// Unicode form, the small letters of the table, then the small letters that a
-/// newer Unicode gives (canonical form, "Small letters", rule 4). This fold is
-/// wider than the small letters alone, so the guard fails closed.
+/// newer Unicode gives, with the composed form again after each step (a small
+/// letter can make a pair that NFC composes: `J` and U+030C). This fold is
+/// wider than the folded form, so the guard fails closed (canonical form,
+/// "Small letters", rule 4).
 ///
 /// # Panics
 ///
 /// When the table that the program holds is not valid, which a test checks.
 pub fn guard_name(name: &str) -> String {
     let newer = &letters().newer;
-    small_letters(&name.nfc().collect::<String>())
+    let small: String = small_letters(&name.nfc().collect::<String>())
+        .nfc()
+        .collect();
+    let wider: String = small
         .chars()
         .map(|letter| {
             newer
@@ -133,7 +138,8 @@ pub fn guard_name(name: &str) -> String {
                 .cloned()
                 .unwrap_or_else(|| letter.to_string())
         })
-        .collect()
+        .collect();
+    wider.nfc().collect()
 }
 
 #[cfg(test)]
@@ -181,6 +187,7 @@ mod tests {
     fn the_name_for_the_guard_folds_wider() {
         assert_eq!(guard_name("\u{A7DD}.md"), "\u{277}.md");
         assert_eq!(guard_name("Cafe\u{301}.MD"), "caf\u{e9}.md");
+        assert_eq!(guard_name("J\u{30C}.md"), guard_name("j\u{30C}.md"));
         assert_eq!(read().expect("the table is valid").newer.len(), 20);
     }
 

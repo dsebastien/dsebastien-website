@@ -100,12 +100,14 @@ export function smallLetters(text: string): string {
 /**
  * The name of a file as the guard by file name compares it: the composed
  * Unicode form, the small letters of the table, then the small letters that a
- * newer Unicode gives (canonical form, "Small letters", rule 4). This fold is
- * wider than the small letters alone, so the guard fails closed.
+ * newer Unicode gives, with the composed form again after each step (a small
+ * letter can make a pair that NFC composes: `J` and U+030C). This fold is
+ * wider than the folded form, so the guard fails closed (canonical form,
+ * "Small letters", rule 4).
  */
 export function guardName(name: string): string {
-    return Array.from(
-        smallLetters(name.normalize('NFC')),
-        (letter) => NEWER.get(letter.codePointAt(0) ?? 0) ?? letter
-    ).join('')
+    const small = smallLetters(name.normalize('NFC')).normalize('NFC')
+    return Array.from(small, (letter) => NEWER.get(letter.codePointAt(0) ?? 0) ?? letter)
+        .join('')
+        .normalize('NFC')
 }
