@@ -27,12 +27,16 @@ export const MARKDOWN_FORMS = join(FIXTURES, 'markdown-forms.json')
  *   space folded. A text split by an element (`LINK: <a>url</a>`) is found.
  * - `distinctIds`: every element that the selector matches has an id, and no
  *   two have the same one.
+ * - `anchorsResolve`: at least one element that the selector matches links to
+ *   a fragment (`href` that starts with `#`), and each such fragment, read as
+ *   a URL, is the id of an element of the page.
  */
 export type FormCheck =
     | { has: string; text?: string; count?: number }
     | { lacks: string }
     | { lacksText: string }
     | { distinctIds: string }
+    | { anchorsResolve: string }
 
 /** One form of issue 12: the note that holds it, and what its HTML must show. */
 export interface MarkdownForm {
@@ -60,7 +64,7 @@ function toCheck(value: unknown, form: string): FormCheck {
     }
     if (!isRecord(value)) return fail()
     const keys = Object.keys(value).sort().join(',')
-    const { has, text, count, lacks, lacksText, distinctIds } = value
+    const { has, text, count, lacks, lacksText, distinctIds, anchorsResolve } = value
     if (typeof has === 'string') {
         const allowed = ['count', 'has', 'text']
         if (!Object.keys(value).every((key) => allowed.includes(key))) return fail()
@@ -82,6 +86,7 @@ function toCheck(value: unknown, form: string): FormCheck {
         return { lacksText }
     }
     if (keys === 'distinctIds' && typeof distinctIds === 'string') return { distinctIds }
+    if (keys === 'anchorsResolve' && typeof anchorsResolve === 'string') return { anchorsResolve }
     return fail()
 }
 
@@ -146,6 +151,7 @@ function fold(text: string): string {
 
 interface Match {
     id: string | null
+    href: string | null
     text: string
     /** The nearest open match around this one. */
     parent: Match | undefined
@@ -157,7 +163,12 @@ async function matches(html: string, selector: string): Promise<Match[]> {
     const open: Match[] = []
     const rewriter = new HTMLRewriter().on(selector, {
         element(element) {
-            const match: Match = { id: element.getAttribute('id'), text: '', parent: open.at(-1) }
+            const match: Match = {
+                id: element.getAttribute('id'),
+                href: element.getAttribute('href'),
+                text: '',
+                parent: open.at(-1)
+            }
             found.push(match)
             if (!element.canHaveContent) return
             open.push(match)
@@ -194,6 +205,27 @@ async function failureOf(html: string, check: FormCheck): Promise<string | undef
     if ('lacksText' in check) {
         const present = (await textOf(html)).includes(fold(check.lacksText))
         return present ? `the text holds "${check.lacksText}"` : undefined
+    }
+    if ('anchorsResolve' in check) {
+        const ids = new Set((await matches(html, '[id]')).map((match) => match.id))
+        const fragments = (await matches(html, check.anchorsResolve))
+            .map((match) => match.href)
+            .filter((href): href is string => href?.startsWith('#') === true)
+        if (fragments.length === 0) {
+            return `no element matches "${check.anchorsResolve}" with a link to a fragment`
+        }
+        for (const href of fragments) {
+            let id = href.slice(1)
+            try {
+                id = decodeURIComponent(id)
+            } catch {
+                // kept as written
+            }
+            if (!ids.has(id)) {
+                return `"${check.anchorsResolve}" links to "${href}", which is no id of the page`
+            }
+        }
+        return undefined
     }
     if ('distinctIds' in check) {
         const seen = new Set<string>()

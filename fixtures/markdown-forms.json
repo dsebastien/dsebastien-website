@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "about": "The forms of issue 12, each with an invented note of the fixture vault, a pattern that the note holds (source), and checks on the HTML that a conversion gives for that note alone. Read by packages/testing/src/markdown-forms.ts. A check: has (CSS selector, optional text and count), lacks (text of the whole HTML), lacksText (text of the page only), distinctIds (selector). An attachment is checked at its URL of the site (/-/attachments/...).",
+    "about": "The forms of issue 12, each with an invented note of the fixture vault, a pattern that the note holds (source), and checks on the HTML that a conversion gives for that note alone. Read by packages/testing/src/markdown-forms.ts. A check: has (CSS selector, optional text and count), lacks (text of the whole HTML), lacksText (text of the page only), distinctIds (selector), anchorsResolve (selector of links to a fragment, each must reach an id of the page). An attachment is checked at its URL of the site (/-/attachments/...).",
     "forms": [
         {
             "id": "wikilink-note",
@@ -77,19 +77,19 @@
         {
             "id": "wikilink-hard-names",
             "note": "50 Field guide/Links/Links to hard names.md",
-            "covers": "Wikilinks to notes with a plus, a percent and an ampersand in their names are links (URL contract, issue 43).",
+            "covers": "Wikilinks to notes with a plus, a percent and an ampersand in their names lead to those notes (URL contract, issue 43). The checks read the target in the URL, not the URL form.",
             "source": "\\[\\[Salt \\+ pepper crust\\]\\].*\\[\\[100% rye bread\\]\\].*\\[\\[Bread & butter pickles\\]\\]",
             "checks": [
                 {
-                    "has": "a[href*=\"Salt+%2B+pepper\"]",
+                    "has": "a[href*=\"salt\" i][href*=\"crust\" i]",
                     "text": "Salt + pepper crust"
                 },
                 {
-                    "has": "a[href*=\"100%25\"]",
+                    "has": "a[href*=\"rye\" i][href*=\"bread\" i]",
                     "text": "100% rye bread"
                 },
                 {
-                    "has": "a[href*=\"%26\"]",
+                    "has": "a[href*=\"pickles\" i]",
                     "text": "Bread & butter pickles"
                 },
                 {
@@ -140,15 +140,15 @@
         {
             "id": "wikilink-duplicate-name",
             "note": "50 Field guide/Links/Links to a name of two notes.md",
-            "covers": "A wikilink by name to a name of two notes, and one by path, are links; the link rule of the tool picks the target (Canonical Form, the links of a note).",
+            "covers": "A wikilink by name to a name of two notes, and one by path, lead to the note that the link rule of the tool picks (Canonical Form, the links of a note). The checks read the target in the URL, not the URL form.",
             "source": "\\[\\[Mint\\]\\].*\\[\\[20 Library/20\\.02 Recipes/Mint\\|mint tea\\]\\]",
             "checks": [
                 {
-                    "has": "a[href*=\"Herb+bed/Mint\"]",
+                    "has": "a[href*=\"herb\" i][href$=\"mint\" i]",
                     "text": "Mint"
                 },
                 {
-                    "has": "a[href*=\"Recipes/Mint\"]",
+                    "has": "a[href*=\"recipes\" i][href$=\"mint\" i]",
                     "text": "mint tea"
                 },
                 {
@@ -165,6 +165,9 @@
                 {
                     "has": "p a[href^=\"#\"]",
                     "text": "Harvest"
+                },
+                {
+                    "anchorsResolve": "p a[href^=\"#\"]"
                 },
                 {
                     "lacks": "[["
@@ -216,7 +219,7 @@
                     "lacks": "![["
                 },
                 {
-                    "lacksText": "|300"
+                    "lacks": "|300"
                 }
             ]
         },
@@ -418,15 +421,15 @@
         {
             "id": "callout-folded",
             "note": "50 Field guide/Callouts/Folded callouts.md",
-            "covers": "A callout with a minus is folded and one with a plus is open, both can be folded (REN-01).",
+            "covers": "A callout with a minus is folded and one with a plus is open, both can be folded (REN-01). The fold state is a details element, the mark of the reading view of Obsidian (data-callout-fold), or its classes (is-collapsible, is-collapsed).",
             "source": "^> \\[!faq\\]- Why mulch\\?$[\\s\\S]*^> \\[!tip\\]\\+ Open by default$",
             "checks": [
                 {
-                    "has": "details:not([open]), [data-callout-fold=\"-\"]",
+                    "has": "details:not([open]), [data-callout-fold=\"-\"], .is-collapsible.is-collapsed",
                     "count": 1
                 },
                 {
-                    "has": "details[open], [data-callout-fold=\"+\"]",
+                    "has": "details[open], [data-callout-fold=\"+\"], .is-collapsible:not(.is-collapsed)",
                     "count": 1
                 },
                 {
@@ -918,6 +921,9 @@
                 {
                     "has": "p a[href^=\"#\"]",
                     "text": "Tasks"
+                },
+                {
+                    "anchorsResolve": "p a[href^=\"#\"]"
                 }
             ]
         },

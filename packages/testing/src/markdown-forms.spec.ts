@@ -91,6 +91,29 @@ describe('checkHtml', () => {
         ).toEqual([])
     })
 
+    test('checks that each link to a fragment reaches an id of the page', async () => {
+        const page = '<h3 id="tasks">Tasks</h3><h3 id="tasks-1">Tasks</h3>'
+        expect(
+            await checkHtml(`<p><a href="#tasks-1">Tasks</a></p>${page}`, [
+                { anchorsResolve: 'p a' }
+            ])
+        ).toEqual([])
+        expect(
+            await checkHtml(`<p><a href="#autumntasks">Tasks</a></p>${page}`, [
+                { anchorsResolve: 'p a' }
+            ])
+        ).toEqual(['"p a" links to "#autumntasks", which is no id of the page'])
+        expect(
+            await checkHtml(
+                `<p><a href="#Autumn%20Tasks">Tasks</a></p><h3 id="Autumn Tasks">Tasks</h3>`,
+                [{ anchorsResolve: 'p a' }]
+            )
+        ).toEqual([])
+        expect(await checkHtml('<p>Tasks</p>', [{ anchorsResolve: 'p a' }])).toEqual([
+            'no element matches "p a" with a link to a fragment'
+        ])
+    })
+
     test('checks that matched elements have distinct ids', async () => {
         expect(
             await checkHtml('<h2 id="a">Tip</h2><h2 id="a-1">Tip</h2>', [{ distinctIds: 'h2' }])
