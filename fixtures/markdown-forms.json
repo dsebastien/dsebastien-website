@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "about": "The forms of issue 12, each with an invented note of the fixture vault, a pattern that the note holds (source), and checks on the HTML that a conversion gives for that note alone. Read by packages/testing/src/markdown-forms.ts. A check: has (CSS selector, optional text and count), lacks (text of the whole HTML), lacksText (text of the page only), distinctIds (selector), anchorsResolve (selector of links to a fragment, each must reach an id of the page). An attachment is checked at its URL of the site (/-/attachments/...).",
+    "about": "The forms of issue 12, each with an invented note of the fixture vault, a pattern that the note holds (source), and checks on the HTML that a conversion gives for that note alone. Read by packages/testing/src/markdown-forms.ts. A check: has (CSS selector, optional text and count; of nested matches only the deepest counts), lacks (text of the whole HTML), hasText (text of the page only, optional count of its occurrences), lacksText (text of the page only), distinctIds (selector), anchorsResolve (selector of links to a fragment, each must reach an id of the page; with target and nth, the id of element nth of target). The text of the page has a space at each edge of a block element and no text of a script or a style. An attachment is checked at its URL of the site (/-/attachments/...).",
     "forms": [
         {
             "id": "wikilink-note",
@@ -305,12 +305,18 @@
             "checks": [
                 {
                     "has": "p",
-                    "text": "Change the bed of each crop every year.",
+                    "text": "Change the bed of each crop every year."
+                },
+                {
+                    "hasText": "Change the bed of each crop every year.",
                     "count": 1
                 },
                 {
                     "has": "p",
-                    "text": "Leave one bed empty each year.",
+                    "text": "Leave one bed empty each year."
+                },
+                {
+                    "hasText": "Leave one bed empty each year.",
                     "count": 1
                 }
             ]
@@ -527,13 +533,19 @@
             "id": "link-block",
             "note": "40 Writing/Reading list.md",
             "covers": "LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). The markup of a card is not settled yet: the cards slice adds its check.",
-            "source": "^LINK: https://garden\\.example/soil$[\\s\\S]*^LINKS$\\n^- https://garden\\.example/hedges$",
+            "source": "^LINK: https://garden\\.example/soil$[\\s\\S]*^LINK: \\[A guide to mulch\\]\\(https://garden\\.example/mulch\\)$[\\s\\S]*^LINK: \\[\\[Compost basics\\]\\]$[\\s\\S]*^LINK: \\[\\[Rain barrel\\|The barrel\\]\\]$[\\s\\S]*^LINK:$\\n^- https://garden\\.example/tools$[\\s\\S]*^LINK$\\n^- \\[\\[Thyme\\]\\]$[\\s\\S]*^LINKS$\\n^- https://garden\\.example/hedges$[\\s\\S]*^LINKS:$\\n^- https://garden\\.example/spring$[\\s\\S]*^LINK: \\[\\[Greenhouse alarm code\\]\\]$",
             "checks": [
                 {
                     "has": "a[href=\"https://garden.example/soil\"]"
                 },
                 {
                     "has": "a[href=\"https://garden.example/hedges\"]"
+                },
+                {
+                    "has": "a[href=\"https://garden.example/mulch\"]"
+                },
+                {
+                    "has": "a[href=\"https://garden.example/tools\"]"
                 },
                 {
                     "lacksText": "LINK: https://garden.example/soil"
@@ -546,6 +558,30 @@
                 },
                 {
                     "lacksText": "LINKS https://garden.example/ponds"
+                },
+                {
+                    "lacksText": "LINK: A guide to mulch"
+                },
+                {
+                    "lacksText": "LINK: Compost basics"
+                },
+                {
+                    "lacksText": "LINK: The barrel"
+                },
+                {
+                    "lacksText": "LINK: https://garden.example/tools"
+                },
+                {
+                    "lacksText": "LINK Thyme"
+                },
+                {
+                    "lacksText": "LINKS https://garden.example/hedges"
+                },
+                {
+                    "lacksText": "LINKS: https://garden.example/spring"
+                },
+                {
+                    "lacksText": "LINK: Greenhouse alarm code"
                 },
                 {
                     "has": "code",
@@ -908,7 +944,7 @@
         {
             "id": "headings-same-text",
             "note": "50 Field guide/Text/Headings with the same text.md",
-            "covers": "Two headings with the same text get distinct, stable ids; a link to the second one names its parent heading (`#Autumn#Tasks`), the form that the current site reads (URL-14, OPEN-15).",
+            "covers": "Two headings with the same text get distinct, stable ids; a link to the second one names its parent heading (`#Autumn#Tasks`) and reaches that heading, the form that the current site reads (URL-14, OPEN-15).",
             "source": "\\[\\[#Autumn#Tasks\\]\\][\\s\\S]*^### Tasks$[\\s\\S]*^### Tasks$",
             "checks": [
                 {
@@ -923,7 +959,9 @@
                     "text": "Tasks"
                 },
                 {
-                    "anchorsResolve": "p a[href^=\"#\"]"
+                    "anchorsResolve": "p a[href^=\"#\"]",
+                    "target": "h3",
+                    "nth": 2
                 }
             ]
         },
