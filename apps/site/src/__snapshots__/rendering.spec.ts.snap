@@ -1,0 +1,368 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`rendering of the Markdown forms on the site wikilink-note: A wikilink to a published note is a link (REN-01). 1`] = `
+"<h1 id="link-to-a-note">Link to a note</h1>
+<p>Read <a href="/10+Garden/Compost+basics">Compost basics</a> before you start.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-heading: A wikilink to a heading leads to that heading; without a label it shows the note and the heading, as in Obsidian (REN-01, URL-14). 1`] = `
+"<h1 id="link-to-a-heading">Link to a heading</h1>
+<p>Read <a href="/50+Field+guide/Companion+planting#three-sisters">Companion planting > Three sisters</a>, or the short form: <a href="/50+Field+guide/Companion+planting#three-sisters">the three sisters</a>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-block: A wikilink to a block leads to that block (REN-01). 1`] = `
+"<h1 id="link-to-a-block">Link to a block</h1>
+<p>See <a href="/50+Field+guide/Companion+planting#%5Esquash-shade">why squash helps</a>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-alias: A wikilink with a label shows the label only (REN-01). 1`] = `
+"<h1 id="link-with-an-alias">Link with an alias</h1>
+<p>The <a href="/10+Garden/Wormery">worm bin</a> eats kitchen waste.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-hard-names: Wikilinks to notes with a plus, a percent and an ampersand in their names lead to those notes (URL contract, issue 43). The checks read the target in the URL, not the URL form. 1`] = `
+"<h1 id="links-to-hard-names">Links to hard names</h1>
+<p>Bake the <a href="/20+Library/20.02+Recipes/Salt+%2B+pepper+crust">Salt + pepper crust</a>, the <a href="/20+Library/20.02+Recipes/100%25+rye+bread">100% rye bread</a> and the <a href="/20+Library/20.02+Recipes/Bread+%26+butter+pickles">Bread &#x26; butter pickles</a>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-unpublished: A wikilink to a note that is not published is plain text, never a link (business rule 5, REN-04). The tests never select the target. 1`] = `
+"<h1 id="link-to-an-unpublished-note">Link to an unpublished note</h1>
+<p>The plan for the cold months is in <span class="not-published">Winter plan (draft)</span>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-missing: A wikilink to a note that does not exist is plain text (REN-04). 1`] = `
+"<h1 id="link-to-a-missing-note">Link to a missing note</h1>
+<p>The <span class="not-published">Moon calendar</span> is not written yet.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-duplicate-name: A wikilink by name to a name of two notes, and one by path, lead to the note that the link rule of the tool picks (Canonical Form, the links of a note). The checks read the target in the URL, not the URL form. 1`] = `
+"<h1 id="links-to-a-name-of-two-notes">Links to a name of two notes</h1>
+<p>Plant <a href="/10+Garden/Herb+bed/Mint">Mint</a> in a pot, and make <a href="/20+Library/20.02+Recipes/Mint">mint tea</a>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site wikilink-own-heading: A wikilink to a heading of the note itself leads to that heading on the page. 1`] = `
+"<h1 id="link-to-a-heading-of-this-note">Link to a heading of this note</h1>
+<p>Jump to <a href="#harvest">Harvest</a>.</p>
+<h2 id="harvest">Harvest</h2>
+<p>Pick the beans when they snap.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site markdown-link-note: A Markdown link to a note, encoded or in angle brackets, leads to the page of the note, not to a .md file. 1`] = `
+"<h1 id="markdown-links-to-notes">Markdown links to notes</h1>
+<p>Fill <a href="/10+Garden/Rain+barrel">the rain barrel</a> first, then check <a href="/10+Garden/Drip+irrigation">the drip lines</a>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-image-size: An image embed with a width, or a width and a height, gets that size; a Markdown image takes the size after the bar (REN-01). 1`] = `
+"<h1 id="image-with-a-size">Image with a size</h1>
+<p><img src="/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png" alt="garden-plan.png" width="300" height="225" loading="lazy" decoding="async"></p>
+<p><img src="/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png" alt="garden-plan.png" width="300" height="200" loading="lazy" decoding="async"></p>
+<p><img src="/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png" alt="The plan, small" width="120" height="90" loading="lazy" decoding="async"></p>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-image-in-link: A Markdown image inside a link to a file shows as an image inside one link (comment of issue 35 on issue 45). 1`] = `
+"<h1 id="image-inside-a-link">Image inside a link</h1>
+<p><a href="/-/attachments/794abaa4f6f06fc519895c22944a0ab43ad02b4fb32bdefa1952ce81613cb47b/seed-catalog.pdf"><img src="/-/attachments/a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33/garden-plan.png" alt="The plan" width="16" height="12" loading="lazy" decoding="async"></a></p>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-note: An embed of a note shows the text of that note (REN-01). 1`] = `
+"<h1 id="embed-of-a-note">Embed of a note</h1>
+<div class="note-embed" data-embed-of="/10+Garden/Compost+basics"><h1>Compost basics</h1>
+<p>A heap needs green matter, brown matter, air and water.</p>
+<ul>
+<li>Turn the heap every two weeks.</li>
+<li>Keep it as wet as a wrung sponge.</li>
+<li>Water it from the <a href="/10+Garden/Rain+barrel">Rain barrel</a> when the summer is dry.</li>
+</ul>
+<p>The herbs that like compost are in <a href="/10+Garden/Herb+bed/Herb+bed">the herb bed</a>.</p></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-heading: An embed of a heading shows that section only (REN-01). 1`] = `
+"<h1 id="embed-of-a-heading">Embed of a heading</h1>
+<div class="note-embed" data-embed-of="/50+Field+guide/Companion+planting"><h2>Three sisters</h2>
+<p>Corn gives the beans a pole to climb.</p>
+<p>Squash leaves keep the soil cool.</p>
+</div>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-block: An embed of a block shows that block only, without its id (REN-01). 1`] = `
+"<h1 id="embed-of-a-block">Embed of a block</h1>
+<div class="note-embed" data-embed-of="/50+Field+guide/Companion+planting"><p>Squash leaves keep the soil cool.</p></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-cycle: Two notes that embed each other show each text once: the embed has a depth limit and a cycle check (REN-01). 1`] = `
+"<h1 id="crop-rotation">Crop rotation</h1>
+<p>Change the bed of each crop every year.</p>
+<div class="note-embed" data-embed-of="/50+Field+guide/Soil+rest"><h1>Soil rest</h1>
+<p>Leave one bed empty each year.</p>
+<p><a href="/50+Field+guide/Crop+rotation">Crop rotation</a></p></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-pdf: An embed of a PDF is a link to the file of the attachment storage, or a frame that shows it: R45 makes every file but images, sound and video a link, which is enough for REN-01 until a slice decides a viewer. 1`] = `
+"<h1 id="embed-of-a-pdf">Embed of a PDF</h1>
+<p><a href="/-/attachments/794abaa4f6f06fc519895c22944a0ab43ad02b4fb32bdefa1952ce81613cb47b/seed-catalog.pdf">seed-catalog.pdf</a></p>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-audio: An embed of a sound gets the player of the browser (REN-01, R45). 1`] = `
+"<h1 id="embed-of-a-sound">Embed of a sound</h1>
+<p><audio src="/-/attachments/59cc5693c80edd3bc3973f6cbffb16372010171ef3bb69ed5a08c8690982bff0/birdsong.mp3" controls preload="metadata"></audio></p>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-video: An embed of a video gets the player of the browser (REN-01, R45). 1`] = `
+"<h1 id="embed-of-a-video">Embed of a video</h1>
+<p><video src="/-/attachments/3427dabcef66faa7c5d5ffab0b434d54212e20f66cdebf882c439840109d38b2/seedling-timelapse.mp4" controls preload="metadata"></video></p>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-base: An embed of a base file is a link to the file: every other link to a file is a link (R45). A live base is never run (REN-14). 1`] = `
+"<h1 id="embed-of-a-base">Embed of a base</h1>
+<p><a href="/-/attachments/497bb257370925f6ccbf70cb2030c2422b15f954a4d4f6efaead7dcc2368945a/Plants.base">Plants.base</a></p>"
+`;
+
+exports[`rendering of the Markdown forms on the site embed-canvas: An embed of a canvas is a link (REN-11, R45). 1`] = `
+"<h1 id="embed-of-a-canvas">Embed of a canvas</h1>
+<p><a href="/-/attachments/fd4bd178fbad7f98a3c17cf6c3b96409a06b46f284a6f8c11aa48faebdc7dad6/Bed%20layout.canvas">Bed layout.canvas</a></p>"
+`;
+
+exports[`rendering of the Markdown forms on the site callout-types: Each type of callout, an alias of a type and a type in capitals are callouts with their type, as the reading view of Obsidian marks them (REN-01). 1`] = `
+"<h1 id="every-callout-type">Every callout type</h1>
+<div class="callout" data-callout="note"><div class="callout-title">Note</div><div class="callout-content"><p>A callout of the type note.</p></div></div>
+<div class="callout" data-callout="abstract"><div class="callout-title">Abstract</div><div class="callout-content"><p>A callout of the type abstract.</p></div></div>
+<div class="callout" data-callout="info"><div class="callout-title">Info</div><div class="callout-content"><p>A callout of the type info.</p></div></div>
+<div class="callout" data-callout="todo"><div class="callout-title">Todo</div><div class="callout-content"><p>A callout of the type todo.</p></div></div>
+<div class="callout" data-callout="tip"><div class="callout-title">Tip</div><div class="callout-content"><p>A callout of the type tip.</p></div></div>
+<div class="callout" data-callout="success"><div class="callout-title">Success</div><div class="callout-content"><p>A callout of the type success.</p></div></div>
+<div class="callout" data-callout="question"><div class="callout-title">Question</div><div class="callout-content"><p>A callout of the type question.</p></div></div>
+<div class="callout" data-callout="warning"><div class="callout-title">Warning</div><div class="callout-content"><p>A callout of the type warning.</p></div></div>
+<div class="callout" data-callout="failure"><div class="callout-title">Failure</div><div class="callout-content"><p>A callout of the type failure.</p></div></div>
+<div class="callout" data-callout="danger"><div class="callout-title">Danger</div><div class="callout-content"><p>A callout of the type danger.</p></div></div>
+<div class="callout" data-callout="bug"><div class="callout-title">Bug</div><div class="callout-content"><p>A callout of the type bug.</p></div></div>
+<div class="callout" data-callout="example"><div class="callout-title">Example</div><div class="callout-content"><p>A callout of the type example.</p></div></div>
+<div class="callout" data-callout="quote"><div class="callout-title">Quote</div><div class="callout-content"><p>A callout of the type quote.</p></div></div>
+<div class="callout" data-callout="tldr"><div class="callout-title">Tldr</div><div class="callout-content"><p>A callout of the type tldr.</p></div></div>
+<div class="callout" data-callout="faq"><div class="callout-title">Faq</div><div class="callout-content"><p>A callout of the type FAQ.</p></div></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site callout-folded: A callout with a minus is folded and one with a plus is open, both can be folded (REN-01). The fold state is a details element, the mark of the reading view of Obsidian (data-callout-fold), or its classes (is-collapsible, is-collapsed). 1`] = `
+"<h1 id="folded-callouts">Folded callouts</h1>
+<details class="callout" data-callout="faq" data-callout-fold="-"><summary class="callout-title">Why mulch?</summary><div class="callout-content"><p>Mulch keeps the water in the soil.</p></div></details>
+<details class="callout" data-callout="tip" data-callout-fold="+" open><summary class="callout-title">Open by default</summary><div class="callout-content"><p>Mulch in late spring.</p></div></details>"
+`;
+
+exports[`rendering of the Markdown forms on the site callout-nested: A callout inside a callout (REN-01). 1`] = `
+"<h1 id="nested-callouts">Nested callouts</h1>
+<div class="callout" data-callout="note"><div class="callout-title">Outer</div><div class="callout-content"><p>The outer callout.</p><div class="callout" data-callout="warning"><div class="callout-title">Inner</div><div class="callout-content"><p>The inner callout.</p></div></div></div></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site callout-title: A callout with a title that holds Markdown (REN-01). 1`] = `
+"<h1 id="callout-with-a-title">Callout with a title</h1>
+<div class="callout" data-callout="info"><div class="callout-title">Frost <strong>warning</strong> for May</div><div class="callout-content"><p>Cover the seedlings at night.</p></div></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site frozen-dataview-table: A frozen Dataview table renders as a static table without its markers (REN-02, REN-03). 1`] = `
+"<h1 id="frozen-table">Frozen table</h1>
+
+
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>created</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="/10+Garden/Drip+irrigation">Drip irrigation</a></td>
+<td>2031-03-02T07:00</td>
+</tr>
+<tr>
+<td><a href="/10+Garden/Rain+barrel">Rain barrel</a></td>
+<td>2031-03-03T07:00</td>
+</tr>
+</tbody>
+</table>
+"
+`;
+
+exports[`rendering of the Markdown forms on the site frozen-dataview-list: A frozen Dataview list renders as a static list without its markers; its row to a note of the deny list is plain text (REN-02, REN-03, REN-04). 1`] = `
+"<h1 id="garden-index">Garden index</h1>
+<p>A frozen list of the notes about water:</p>
+
+
+<ul>
+<li><a href="/10+Garden/Drip+irrigation">Drip irrigation</a></li>
+<li><span class="not-published">Greenhouse alarm code</span></li>
+<li><a href="/10+Garden/Rain+barrel">Rain barrel</a>
+
+</li>
+</ul>"
+`;
+
+exports[`rendering of the Markdown forms on the site link-block: LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). The markup of a card is not settled yet: the cards slice adds its check. 1`] = `
+"<h1 id="reading-list">Reading list</h1>
+<p>Every form of a <code>LINK</code> block.</p>
+<p>One line, with a colon and a URL:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/soil"><span class="link-card-title">https://garden.example/soil</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, without a colon:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/seeds"><span class="link-card-title">https://garden.example/seeds</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with the other keyword:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/bees"><span class="link-card-title">https://garden.example/bees</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with the other keyword and without a colon:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/ponds"><span class="link-card-title">https://garden.example/ponds</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with a Markdown link:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/mulch"><span class="link-card-title">A guide to mulch</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with a link to a note:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Compost+basics"><span class="link-card-title">Compost basics</span></a></div></div>
+<p>One line, with a link to a note and a label:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Rain+barrel"><span class="link-card-title">The barrel</span></a></div></div>
+<p>A list, with a URL:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/tools"><span class="link-card-title">https://garden.example/tools</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>A list, without a colon, with a link to a note:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Herb+bed/Thyme"><span class="link-card-title">Thyme</span></a></div></div>
+<p>A list, with the other keyword and without a colon:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/hedges"><span class="link-card-title">https://garden.example/hedges</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>A list of more than five lines, with every kind of target:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/spring"><span class="link-card-title">https://garden.example/spring</span><span class="link-card-source">garden.example</span></a></div><div class="link-card"><a class="link-card-link" href="https://garden.example/summer"><span class="link-card-title">https://garden.example/summer</span><span class="link-card-source">garden.example</span></a></div><div class="link-card"><a class="link-card-link" href="https://garden.example/autumn"><span class="link-card-title">Autumn jobs</span><span class="link-card-source">garden.example</span></a></div><div class="link-card"><a class="link-card-link" href="/10+Garden/Frost+dates+explained"><span class="link-card-title">Frost dates explained</span></a></div><div class="link-card"><span class="not-published">Winter plan (draft)</span></div><div class="link-card"><a class="link-card-link" href="https://garden.example/winter"><span class="link-card-title">https://garden.example/winter</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>A block where nothing can show, because its only target is on the deny list:</p>
+
+<p>A block where nothing can show, because its only target does not exist:</p>
+
+<p>Not a <code>LINK</code> line, because it is inside a code block:</p>
+<pre class="language-text" data-language="text"><code class="language-text">LINK: https://garden.example/not-a-card
+</code></pre>
+<p>Not a <code>LINK</code> line, because it is inline code: <code>LINK: https://garden.example/inline</code>.</p>
+<p>Not a <code>LINK</code> line, because it is in a comment:</p>
+<p>Not a <code>LINK</code> line, because it is in an HTML comment:</p>
+
+<p>Not a <code>LINK</code> line, because it is a saved row of a frozen query:</p>
+
+
+<p>LINK: <a href="https://garden.example/frozen">https://garden.example/frozen</a></p>
+"
+`;
+
+exports[`rendering of the Markdown forms on the site video-url-line: A line with only a YouTube URL in image syntax becomes a video card: a link, no player and no request to the video site before a click (CARD-07, CARD-09). 1`] = `
+"<h1 id="video-url-line">Video URL line</h1>
+<div class="link-cards"><div class="link-card link-card-video"><a class="link-card-link" href="https://www.youtube.com/watch?v=GardenTour1"><span class="link-card-title">https://www.youtube.com/watch?v=GardenTour1</span><span class="link-card-source">YouTube</span></a></div></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site meta-bind-inline: Inline Meta Bind code is removed for rendering (REN-03). 1`] = `
+"<h1 id="meta-bind-inline">Meta Bind inline</h1>
+<p>Watered today: . Rain this week: .</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site meta-bind-block: Meta Bind code blocks are removed for rendering (REN-03). 1`] = `"<h1 id="meta-bind-block">Meta Bind block</h1>"`;
+
+exports[`rendering of the Markdown forms on the site live-dataview: A live Dataview block, a DataviewJS block and an inline query are dropped from the page (REN-14). 1`] = `
+"<h1 id="live-dataview">Live Dataview</h1>
+<p>The note is called .</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site live-base: A live base block is dropped from the page (REN-14). 1`] = `"<h1 id="live-base">Live base</h1>"`;
+
+exports[`rendering of the Markdown forms on the site comment-percent: Obsidian comments, inline and on several lines, never reach the page; the text around them stays (REN-03). 1`] = `
+"<h1 id="comments">Comments</h1>
+<p>Water the beds  at dawn.</p>
+<p>Close the gate after you.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site comment-html: HTML comments never reach the page (REN-03). 1`] = `
+"<h1 id="html-comments">HTML comments</h1>
+<p>Check the tap. </p>
+"
+`;
+
+exports[`rendering of the Markdown forms on the site tags: Tags in the text are tags, nested and with letters outside ASCII; a number alone and a URL fragment are not tags. 1`] = `
+"<h1 id="tags">Tags</h1>
+<p>Notes on <a class="tag" href="/-/tags/compost">#compost</a>, <a class="tag" href="/-/tags/garden/soil">#garden/soil</a> and <a class="tag" href="/-/tags/l%C3%A9gumes">#légumes</a>.</p>
+<p>Not a tag: #2031, and <a href="https://garden.example/page#section">a link with a fragment</a>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site footnotes: Footnotes and inline footnotes (REN-01). 1`] = `
+"<h1 id="footnotes">Footnotes</h1>
+<p>Mulch keeps water in the soil.<sup><a href="#user-content-fn-1" id="user-content-fnref-1" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup> Straw works too.<sup><a href="#user-content-fn-inline-1" id="user-content-fnref-inline-1" data-footnote-ref="" aria-describedby="footnote-label">2</a></sup></p>
+<section data-footnotes="" class="footnotes"><h2 class="sr-only" id="footnote-label">Footnotes</h2>
+<ol>
+<li id="user-content-fn-1">
+<p>Wood chips last longer. <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-inline-1">
+<p>Hay has seeds. <a href="#user-content-fnref-inline-1" data-footnote-backref="" aria-label="Back to reference 2" class="data-footnote-backref">↩</a></p>
+</li>
+</ol>
+</section>"
+`;
+
+exports[`rendering of the Markdown forms on the site highlights: Highlights (REN-01). 1`] = `
+"<h1 id="highlights">Highlights</h1>
+<p>Water <mark>at dawn</mark> only, not <mark>at noon</mark>.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site math-inline: Inline math, class-based with no inline style (REN-01, REN-06). 1`] = `
+"<h1 id="inline-math">Inline math</h1>
+<p>The bed holds <math><mrow><mi>V</mi><mo>=</mo><mi>l</mi><mo>×</mo><mi>w</mi><mo>×</mo><mi>h</mi></mrow></math> litres.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site math-block: Block math, class-based with no inline style (REN-01, REN-06). 1`] = `
+"<h1 id="block-math">Block math</h1>
+<div class="math-block"><math display="block" class="tml-display"><mrow><mi>A</mi><mo>=</mo><mi>π</mi><msup><mi>r</mi><mn class="tml-sml-pad">2</mn></msup></mrow></math></div>"
+`;
+
+exports[`rendering of the Markdown forms on the site mermaid: Mermaid becomes SVG at build time, with no script and no inline style (REN-06, REN-08, BUILD-09). 1`] = `
+"<h1 id="mermaid">Mermaid</h1>
+<figure class="diagram"><svg xmlns="http://www.w3.org/2000/svg" class="pele pele-flowchart" viewBox="0 0 108 256" width="108" height="256" fill="var(--_fg)" role="graphics-document document" aria-roledescription="flowchart"><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge" data-id="L_Seed_Sprout_0"><path d="M53.56,56L53.56,97"></path><path class="pele-marker" d="M53.56,104L50.2,96L56.92,96Z" fill="var(--_l)" stroke="none"></path></g><g class="pele-edge" data-id="L_Sprout_Harvest_0"><path d="M53.56,152L53.56,193"></path><path class="pele-marker" d="M53.56,200L50.2,192L56.92,192Z" fill="var(--_l)" stroke="none"></path></g></g><g class="pele-nodes"><g class="pele-node pele-shape-rect" data-id="Seed" transform="translate(53.56,32)"><rect x="-36.68" y="-24" width="73.36" height="48" fill="var(--_s)" stroke="var(--_b)"></rect><text class="pele-label" x="0" y="5.6" text-anchor="middle">Seed</text></g><g class="pele-node pele-shape-rect" data-id="Sprout" transform="translate(53.56,128)"><rect x="-41.57" y="-24" width="83.14" height="48" fill="var(--_s)" stroke="var(--_b)"></rect><text class="pele-label" x="0" y="5.6" text-anchor="middle">Sprout</text></g><g class="pele-node pele-shape-rect" data-id="Harvest" transform="translate(53.56,224)"><rect x="-45.56" y="-24" width="91.12" height="48" fill="var(--_s)" stroke="var(--_b)"></rect><text class="pele-label" x="0" y="5.6" text-anchor="middle">Harvest</text></g></g></svg></figure>"
+`;
+
+exports[`rendering of the Markdown forms on the site table-pipe-in-link: A wikilink with an escaped bar inside a table cell keeps the table at two columns (REN-01). 1`] = `
+"<h1 id="table-with-a-link">Table with a link</h1>
+<table>
+<thead>
+<tr>
+<th>Helper</th>
+<th>Bed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="/10+Garden/Wormery">worms</a></td>
+<td>north</td>
+</tr>
+</tbody>
+</table>"
+`;
+
+exports[`rendering of the Markdown forms on the site task-list: Task lists; any character but a space marks a task as done, as in Obsidian (REN-01). 1`] = `
+"<h1 id="task-list">Task list</h1>
+<ul class="contains-task-list">
+<li class="task-list-item" data-task-char="x"><input type="checkbox" checked disabled> Sow beans</li>
+<li class="task-list-item" data-task-char=" "><input type="checkbox" disabled> Stake the tomatoes</li>
+<li class="task-list-item" data-task-char="/"><input type="checkbox" checked disabled> Build the trellis</li>
+</ul>"
+`;
+
+exports[`rendering of the Markdown forms on the site properties: The properties of a note are not part of its body: lists, a link, a date and an empty value never show in the converted text (the page shows them apart, issue 48). 1`] = `
+"<h1 id="properties">Properties</h1>
+<p>A note with properties of every kind.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site headings-same-text: Two headings with the same text get distinct, stable ids; a link to the second one names its parent heading (\`#Autumn#Tasks\`) and reaches that heading, the form that the current site reads (URL-14, OPEN-15). 1`] = `
+"<h1 id="headings-with-the-same-text">Headings with the same text</h1>
+<p>Jump to the <a href="#autumn-tasks">Autumn > Tasks</a>.</p>
+<h2 id="spring">Spring</h2>
+<h3 id="tasks">Tasks</h3>
+<p>Sow the peas.</p>
+<h2 id="autumn">Autumn</h2>
+<h3 id="autumn-tasks">Tasks</h3>
+<p>Plant the garlic.</p>"
+`;
+
+exports[`rendering of the Markdown forms on the site code-block: A code block keeps its text and is highlighted with classes, not inline styles (REN-01, REN-06). 1`] = `
+"<h1 id="code-block">Code block</h1>
+<pre class="language-python" data-language="python"><code class="language-python">water_beds<span class="token punctuation">(</span>at<span class="token operator">=</span><span class="token string">"dawn"</span><span class="token punctuation">)</span>
+</code></pre>"
+`;
+
+exports[`rendering of the Markdown forms on the site raw-html: Raw HTML passes through an allow list of elements: details stays, a script and an event attribute do not (REN-15). 1`] = `
+"<h1 id="raw-html">Raw HTML</h1>
+<details><summary>More about bees</summary>Bees like borage.</details>
+<p><span>Click the bee</span></p>
+"
+`;

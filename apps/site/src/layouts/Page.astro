@@ -12,14 +12,16 @@ interface Props {
     title: string
     /** The canonical path of the page. The "not found" page has none. */
     path?: string
+    /** The language of the page (REN-09). English when it is not given. */
+    lang?: string
 }
 
-const { title, path } = Astro.props
+const { title, path, lang = 'en' } = Astro.props
 const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
 ---
 
 <!doctype html>
-<html lang='en' data-theme='dark'>
+<html lang={lang} data-theme='dark'>
     <head>
         <meta charset='utf-8' />
         <meta name='viewport' content='width=device-width, initial-scale=1' />

@@ -162,21 +162,200 @@
         @apply rounded-control bg-well px-1.5 py-0.5 font-mono text-base;
     }
 
-    /* A block of code: the colors of the theme, until the rendering slice
-       (issue 45) gives the highlighter colors from the tokens. The highlighter
-       writes its own colors into the markup, so they are replaced here. */
+    /* A block of code. The highlighter writes classes (REN-06); the colors
+       come from tokens that pass WCAG AA on the well in both modes. */
     .note-text pre {
-        @apply overflow-x-auto rounded-card border border-border p-4 font-mono text-base leading-7;
-        background-color: var(--color-well) !important;
+        @apply overflow-x-auto rounded-card border border-border bg-well p-4 font-mono text-base leading-7 text-primary;
     }
 
-    .note-text pre,
-    .note-text pre * {
-        color: var(--color-primary) !important;
+    .note-text pre .token.comment,
+    .note-text pre .token.prolog,
+    .note-text pre .token.doctype,
+    .note-text pre .token.punctuation {
+        @apply text-muted;
     }
 
-    /* Text for screen readers only. */
-    .visually-hidden {
+    .note-text pre .token.comment {
+        @apply italic;
+    }
+
+    .note-text pre .token.keyword,
+    .note-text pre .token.builtin,
+    .note-text pre .token.important,
+    .note-text pre .token.function {
+        @apply font-semibold text-link;
+    }
+
+    .note-text pre .token.number,
+    .note-text pre .token.boolean,
+    .note-text pre .token.constant {
+        @apply text-danger;
+    }
+
+    /* A table of a note, also a frozen query (REN-02). */
+    .note-text table {
+        @apply block w-full overflow-x-auto border-collapse text-base;
+    }
+
+    .note-text th,
+    .note-text td {
+        @apply border border-border px-3 py-2 text-left align-top;
+    }
+
+    .note-text th {
+        @apply bg-surface font-semibold;
+    }
+
+    /* A highlight (`==text==`). */
+    .note-text mark {
+        @apply rounded-control bg-secondary/25 px-1 text-primary;
+    }
+
+    /* A tag in the text: it leads to its tag page. */
+    .note-text a.tag {
+        @apply rounded-pill bg-well px-2 py-0.5 text-base text-primary no-underline;
+    }
+
+    .note-text a.tag:hover {
+        @apply bg-surface-elevated;
+    }
+
+    /* A task list: any mark but a space is done, as in Obsidian. */
+    .note-text .contains-task-list {
+        @apply list-none pl-0;
+    }
+
+    .note-text .task-list-item input {
+        @apply mr-2 accent-secondary;
+    }
+
+    /* A callout (REN-01): the type gives the color of its edge. A folding callout is a `details` element. */
+    .note-text .callout {
+        @apply rounded-card border border-l-4 border-border border-l-secondary bg-surface px-5 py-3;
+    }
+
+    .note-text .callout[data-callout='warning'],
+    .note-text .callout[data-callout='caution'],
+    .note-text .callout[data-callout='attention'],
+    .note-text .callout[data-callout='question'],
+    .note-text .callout[data-callout='help'],
+    .note-text .callout[data-callout='faq'] {
+        @apply border-l-warning;
+    }
+
+    .note-text .callout[data-callout='danger'],
+    .note-text .callout[data-callout='error'],
+    .note-text .callout[data-callout='failure'],
+    .note-text .callout[data-callout='fail'],
+    .note-text .callout[data-callout='missing'],
+    .note-text .callout[data-callout='bug'] {
+        @apply border-l-danger;
+    }
+
+    .note-text .callout[data-callout='success'],
+    .note-text .callout[data-callout='check'],
+    .note-text .callout[data-callout='done'],
+    .note-text .callout[data-callout='tip'],
+    .note-text .callout[data-callout='hint'] {
+        @apply border-l-success;
+    }
+
+    .note-text .callout-title {
+        @apply font-semibold;
+    }
+
+    .note-text .callout-content > * + * {
+        @apply mt-3;
+    }
+
+    .note-text .callout-content:not(:empty) {
+        @apply mt-2;
+    }
+
+    /* An embed of a note, a heading or a block (REN-01). */
+    .note-text .note-embed {
+        @apply border-l-2 border-border-strong pl-5;
+    }
+
+    .note-text .note-embed > * + * {
+        @apply mt-4;
+    }
+
+    .note-text .note-embed h1 {
+        @apply text-2xl;
+    }
+
+    /* Link cards (CARD-01 to CARD-09): compact cards, with no image yet. */
+    .note-text .link-cards {
+        @apply grid gap-3;
+    }
+
+    .note-text .link-card {
+        @apply card;
+    }
+
+    .note-text .link-card > .not-published {
+        @apply block px-4 py-3;
+    }
+
+    .note-text a.link-card-link {
+        @apply flex flex-col gap-1 px-4 py-3 text-primary no-underline transition-colors;
+    }
+
+    .note-text a.link-card-link:hover {
+        @apply bg-surface-elevated;
+    }
+
+    .note-text .link-card-title {
+        @apply font-semibold break-words;
+    }
+
+    .note-text .link-card-source {
+        @apply text-sm text-muted;
+    }
+
+    /* Math as MathML, with no style of its own (REN-06). */
+    .note-text .math-block {
+        @apply overflow-x-auto text-xl;
+    }
+
+    /* A Mermaid diagram as SVG from Pele (REN-08): its colors come from the
+       variables that Pele reads, set here from the tokens, so one SVG serves
+       both modes. */
+    .note-text .diagram {
+        @apply overflow-x-auto;
+    }
+
+    .note-text .pele {
+        --_bg: var(--color-background);
+        --_fg: var(--color-primary);
+        --_m: var(--color-muted);
+        --_l: var(--color-muted);
+        --_s: var(--color-surface);
+        --_a: var(--color-surface-elevated);
+        --_b: var(--color-border-strong);
+        --_c: var(--color-secondary);
+        --_r: var(--radius-control);
+        --_fm: var(--font-mono);
+        @apply h-auto max-w-full font-sans text-base text-primary;
+    }
+
+    .note-text .pele .pele-node > rect {
+        rx: var(--_r);
+    }
+
+    /* Footnotes (REN-01). */
+    .note-text .footnotes {
+        @apply border-t border-border pt-4 text-base text-muted;
+    }
+
+    .note-text .footnotes ol {
+        @apply space-y-1;
+    }
+
+    /* Text for screen readers only. The footnotes of a note have such a heading. */
+    .visually-hidden,
+    .note-text .sr-only {
         @apply sr-only;
     }
 }

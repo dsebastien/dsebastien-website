@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import {
     copyFixtureVault,
@@ -12,6 +13,7 @@ import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 import { modeScript, modeSwitchScript } from './mode.ts'
+import { oldAnchorScript } from './rendering/anchors.ts'
 
 // The first slice (issue 31), from the content store to a served page: the
 // build makes one page from a published note, and a plain local server serves
@@ -113,14 +115,41 @@ describe('build of a content store with one published note', () => {
     })
 
     // The page works without JavaScript (PAGE-01): its only scripts are the
-    // two inline scripts of the mode (MODE-01), with no attribute.
-    test('makes a page without JavaScript, but for the mode', async () => {
+    // two inline scripts of the mode (MODE-01) and the one that reads an old
+    // heading anchor (URL-14), with no attribute.
+    test('makes a page without JavaScript, but for the mode and the old anchors', async () => {
         const html = await readOutput(NOTE_FILE)
         const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gu)].map(
             ([whole, attributes = '', text = '']) => (attributes.trim() === '' ? text : whole)
         )
         const [head = '', ...rest] = scripts
-        expect(rest).toEqual([modeSwitchScript])
+        expect(rest).toHaveLength(2)
+        expect(rest[1]).toBe(modeSwitchScript)
+        // The script of the old anchors holds a function as the build writes it
+        // (its run is tested in rendering/page.spec.ts).
+        expect(rest[0]).toContain('function headingFor(headings, path)')
+        expect(oldAnchorScript).toContain('function headingFor(headings, path)')
+        // The script as the build wrote it runs, and reads an old hash.
+        let scrolled = ''
+        const heading = {
+            tagName: 'H2',
+            textContent: 'Panels: a review',
+            id: 'panels-a-review',
+            scrollIntoView: () => {
+                scrolled = heading.id
+            }
+        }
+        runInNewContext(rest[0] ?? '', {
+            location: { hash: '#panels+a+review' },
+            document: {
+                getElementById: (id: string) => (id === heading.id ? heading : null),
+                querySelectorAll: () => [heading],
+                getElementsByName: () => []
+            },
+            history: { replaceState: () => undefined },
+            addEventListener: () => undefined
+        })
+        expect(scrolled).toBe('panels-a-review')
         // The head script holds the function as the build writes it (its run is tested in build.spec.ts).
         expect(head).toContain('localStorage.getItem("mode")')
         expect(modeScript).toContain('localStorage.getItem("mode")')
