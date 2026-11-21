@@ -24,6 +24,21 @@ fn repository() -> PathBuf {
         .to_path_buf()
 }
 
+/// The program of the tool, with the Starter Kit of the tests: no note has a
+/// type (the switch `DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES` of the debug
+/// build, decision R61). A test that needs types sets the switch to a file
+/// of answers.
+pub fn program() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+    command.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", "none");
+    command
+}
+
+/// The fixture file of the answers of the Starter Kit for the fixture vault.
+pub fn fixture_note_types() -> PathBuf {
+    repository().join("fixtures").join("note-types.json")
+}
+
 /// The fixture vault: invented notes only. A test never writes into it.
 pub fn fixture_vault() -> PathBuf {
     repository().join("fixtures").join("vault")

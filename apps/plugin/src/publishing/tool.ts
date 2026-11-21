@@ -19,11 +19,12 @@ import { parseJson } from './json.ts'
 import type { NoteLink } from './links.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
+import type { NoteType } from './note-types.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import type { Device, Fetch, LockHolder } from './ports.ts'
-import { computeQueue } from './queue.ts'
+import { computeQueue, noteTypesOf } from './queue.ts'
 import type { PublicationQueue, Scan } from './queue.ts'
 
 // The operations of the publishing tool. Every face calls these: the plugin,
@@ -167,7 +168,12 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
     const { configuration, hash } = await readConfiguration(device)
     const manifest = await readManifest(device.store)
     return {
-        scan: await computeQueue({ vault: device.vault, manifest, configuration }),
+        scan: await computeQueue({
+            vault: device.vault,
+            manifest,
+            configuration,
+            noteTypes: device.noteTypes
+        }),
         configurationHash: hash,
         behind,
         reached
@@ -337,13 +343,14 @@ export async function status(given: Device): Promise<PublicationQueue> {
     return { ...state.scan.queue, behind: state.behind }
 }
 
-/** The source, the cleaned note, the aliases, the links and the attachments of one note of a plan. */
+/** The source, the cleaned note, the aliases, the links, the attachments and the note type of one note of a plan. */
 interface NoteTexts {
     readonly source: string
     readonly aliases: Aliases
     readonly cleaned: string
     readonly links: readonly NoteLink[]
     readonly attachments: readonly Attachment[]
+    readonly noteType: NoteType | undefined
 }
 
 /** A plan with everything that its publication needs. */
@@ -369,12 +376,16 @@ async function recordFor(
 ): Promise<Computed> {
     const { scan, configurationHash, reached } = await readState(device, fetch)
     const plan = computePlan(scan, selection)
+    // The published notes got their type in the scan. The new ones of the plan
+    // get theirs in one more question.
+    const newTypes = await noteTypesOf(device.noteTypes, plan.publish)
     const texts = new Map<string, NoteTexts>()
     const notes: {
         aliases: readonly string[]
         attachments: readonly Attachment[]
         cleanedHash: string
         links: readonly NoteLink[]
+        noteType?: NoteType
         path: string
         sourceHash: string
     }[] = []
@@ -389,12 +400,14 @@ async function recordFor(
         const { links, files } = linksOf(source, path, scan.index, scan.guarded)
         const attachments = await attachmentsOf(files, scan.files)
         const aliases = aliasesOf(source)
-        texts.set(path, { source, aliases, cleaned, links, attachments })
+        const noteType = newTypes.get(path) ?? scan.noteTypes.get(path)
+        texts.set(path, { source, aliases, cleaned, links, attachments, noteType })
         notes.push({
             aliases: aliases.aliases,
             attachments,
             cleanedHash: contentHash(cleaned),
             links,
+            ...(noteType === undefined ? {} : { noteType }),
             path,
             sourceHash: contentHash(source)
         })
@@ -581,6 +594,7 @@ function entryOf(
         cleanedHash: contentHash(texts.cleaned),
         cleaningVersion: CLEANING_VERSION,
         links: texts.links,
+        ...(texts.noteType === undefined ? {} : { noteType: texts.noteType }),
         sourceHash: contentHash(texts.source)
     }
     if (before === undefined) {
@@ -597,8 +611,10 @@ function entryOf(
     // The identity and the first date stay. A technical update does not move
     // the last date: the author did not edit the note (PUB-24).
     const edited = before.state !== 'published' || before.sourceHash !== hashes.sourceHash
+    // A note that has no type now loses the type of its entry.
+    const { noteType: _before, ...kept } = before
     return {
-        ...before,
+        ...kept,
         ...hashes,
         lastPublished: edited ? time : before.lastPublished,
         state: 'published'

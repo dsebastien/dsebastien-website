@@ -270,6 +270,17 @@
                 "Attachments/seed-catalog.pdf",
                 "Attachments/seedling-timelapse.mp4"
             ]
+        },
+        {
+            "id": "note-type-affixes",
+            "covers": "Notes whose file names carry the prefix or the suffix of their note type in `fixtures/note-types.json` (issue 49): a `title` property that only repeats the file name, a note with an H1, two notes with the same H1, a prefix, and a `description` property.",
+            "files": [
+                "20 Library/20.04 Books/The Patient Gardener (Book).md",
+                "20 Library/20.04 Books/Seeds of Time (Book).md",
+                "40 Writing/Letters/Garden letter 1 (Newsletter).md",
+                "40 Writing/Letters/Garden letter 2 (Newsletter).md",
+                "40 Writing/AI Wiki - Mulch.md"
+            ]
         }
     ]
 }

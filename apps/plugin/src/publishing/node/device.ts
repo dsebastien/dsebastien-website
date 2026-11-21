@@ -19,6 +19,7 @@ import type {
     AttachmentStorage,
     ContentStore,
     Device,
+    NoteTypes,
     LocalStore,
     Vault,
     VaultEntry
@@ -1186,22 +1187,70 @@ function folderLocalStore(contentStore: string): LocalStore {
     }
 }
 
+/** No note has a type: the answer of a Starter Kit with no note type. */
+export const NO_NOTE_TYPES: NoteTypes = {
+    recognize: (paths) =>
+        Promise.resolve({
+            noteTypes: [],
+            notes: paths.map((path) => ({ path, noteType: null }))
+        })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * The Starter Kit of the tests: it answers from a file in place of the
+ * plugin (`documentation/Canonical Form.md`, "The note type of a note"). The
+ * file is an object with `noteTypes`, the list of the types as the Starter
+ * Kit gives them, and `notes`, the `name` of the type of each vault path; a
+ * path that the file does not name has no type. The file is read again at
+ * each question, so a test can change it between two runs. A missing file is
+ * a missing Starter Kit. The Rust twin is the switch
+ * `DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES` of its debug build.
+ */
+export function fileNoteTypes(file: string): NoteTypes {
+    return {
+        async recognize(paths) {
+            const data: unknown = JSON.parse(await readFile(file, 'utf8'))
+            const types =
+                isRecord(data) && Array.isArray(data['noteTypes']) ? data['noteTypes'] : []
+            const named = isRecord(data) && isRecord(data['notes']) ? data['notes'] : {}
+            const notes = paths.map((path) => {
+                const name = named[path]
+                return { path, noteType: typeof name === 'string' ? name : null }
+            })
+            const used = new Set(notes.map((note) => note.noteType))
+            return {
+                noteTypes: types.filter(
+                    (type) => isRecord(type) && used.has(type['name'] as string)
+                ),
+                notes
+            }
+        }
+    }
+}
+
 /**
  * Makes a device from three folders.
  *
  * @param options.vault the folder of the vault
  * @param options.contentStore the folder of the copy of the content store: a git clone whose `origin` is the content store
  * @param options.attachmentStorage the folder of the attachment storage
+ * @param options.noteTypes the Starter Kit of the device; by default no note has a type
  */
 export function nodeDevice(options: {
     vault: string
     contentStore: string
     attachmentStorage: string
+    noteTypes?: NoteTypes
 }): Device {
     return {
         vault: folderVault(options.vault),
         store: gitContentStore(options.contentStore),
         attachments: folderAttachmentStorage(options.attachmentStorage),
-        local: folderLocalStore(options.contentStore)
+        local: folderLocalStore(options.contentStore),
+        noteTypes: options.noteTypes ?? NO_NOTE_TYPES
     }
 }

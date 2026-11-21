@@ -12,7 +12,7 @@ mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 use serde_json::{Value, json};
 
@@ -51,7 +51,7 @@ fn errors_of(output: &Output) -> String {
 
 impl Setup {
     fn run(&self, arguments: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        support::program()
             .args(arguments)
             .arg("--vault")
             .arg(&self.vault)

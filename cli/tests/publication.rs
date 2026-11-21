@@ -12,7 +12,7 @@ mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 use support::{TestStores, git, text};
 
@@ -115,7 +115,7 @@ fn errors_of(output: &Output) -> String {
 
 impl Setup {
     fn run(&self, command: &str, arguments: &[&str]) -> Output {
-        let mut program = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+        let mut program = support::program();
         program
             .arg(command)
             .arg("--vault")
@@ -574,7 +574,7 @@ fn a_folder_that_is_not_the_root_of_its_own_git_repository_is_not_a_content_stor
     let inside = setup.copy.join("inside");
     fs::create_dir(&inside).expect("the folder can be made");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let output = support::program()
         .arg("plan")
         .arg("--vault")
         .arg(&setup.vault)
@@ -1074,7 +1074,7 @@ fn a_folder_that_is_not_a_copy_of_the_content_store_gets_no_file_of_the_tool() {
     let folder = setup.stores.root().join("not-a-copy");
     fs::create_dir(&folder).expect("the folder can be made");
     let run = |arguments: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        support::program()
             .args(arguments)
             .arg("--vault")
             .arg(&setup.vault)
@@ -1189,7 +1189,7 @@ fn a_publication_whose_lock_another_run_took_before_the_commit_makes_no_commit()
     let id = setup.plan(NOTE);
     let head = git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let output = support::program()
         .arg("publish")
         .arg("--vault")
         .arg(&setup.vault)
@@ -1220,7 +1220,7 @@ fn a_publication_whose_lock_another_run_took_before_the_commit_makes_no_commit()
 fn a_plan_whose_lock_another_run_took_during_its_recovery_changes_nothing_more() {
     let setup = set_up();
     let id = setup.plan(NOTE);
-    let crashed = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let crashed = support::program()
         .arg("publish")
         .arg("--vault")
         .arg(&setup.vault)
@@ -1234,7 +1234,7 @@ fn a_plan_whose_lock_another_run_took_during_its_recovery_changes_nothing_more()
         .expect("the program starts");
     assert_eq!(crashed.status.code(), Some(99), "{}", errors_of(&crashed));
     // The lock is a file of the copy: `unlock` takes no vault.
-    let unlocked = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let unlocked = support::program()
         .arg("unlock")
         .arg("--content-store")
         .arg(&setup.copy)
@@ -1246,7 +1246,7 @@ fn a_plan_whose_lock_another_run_took_during_its_recovery_changes_nothing_more()
     let written = setup.copy.join("notes").join(NOTE);
     assert!(written.exists());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let output = support::program()
         .arg("plan")
         .arg("--vault")
         .arg(&setup.vault)
@@ -1284,7 +1284,7 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
     let setup = set_up();
     let first = setup.plan(NOTE);
     let second = setup.plan(SECOND);
-    let crashed = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let crashed = support::program()
         .arg("publish")
         .arg("--vault")
         .arg(&setup.vault)
@@ -1297,7 +1297,7 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
         .output()
         .expect("the program starts");
     assert_eq!(crashed.status.code(), Some(99), "{}", errors_of(&crashed));
-    let unlocked = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let unlocked = support::program()
         .arg("unlock")
         .arg("--content-store")
         .arg(&setup.copy)
@@ -1307,7 +1307,7 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
     let local = setup.copy.join(".git").join("vault-publish");
     let journal = fs::read_to_string(local.join("journal.json")).expect("the journal exists");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let output = support::program()
         .arg("publish")
         .arg("--vault")
         .arg(&setup.vault)

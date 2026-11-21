@@ -25,6 +25,7 @@ use crate::links::{NoteLink, links_of};
 use crate::manifest::{
     MANIFEST_FOLDER, ManifestEntry, NOTES_FOLDER, State, manifest_file, note_id, read_manifest,
 };
+use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, compute_plan};
 use crate::queue::{Scan, compute_queue};
@@ -33,6 +34,9 @@ use crate::queue::{Scan, compute_queue};
 pub struct Device {
     pub vault: Vault,
     pub store: ContentStore,
+    /// The Obsidian Starter Kit of the vault, which knows the note type of
+    /// each note (decision R61).
+    pub note_types: StarterKit,
 }
 
 /// The faces of the tool that can start a publication.
@@ -121,7 +125,7 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
     }
     let (configuration, configuration_hash) = read_configuration(device)?;
     let manifest = read_manifest(&device.store)?;
-    let mut scan = compute_queue(&device.vault, manifest, configuration)?;
+    let mut scan = compute_queue(&device.vault, manifest, configuration, &device.note_types)?;
     scan.queue.behind = behind;
     Ok(DeviceState {
         scan,
@@ -346,6 +350,7 @@ struct NoteTexts {
     cleaned: String,
     links: Vec<NoteLink>,
     attachments: Vec<Attachment>,
+    note_type: Option<NoteType>,
 }
 
 /// A plan with everything that its publication needs.
@@ -371,6 +376,9 @@ fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Co
         reached,
     } = read_state(device, fetch)?;
     let plan = compute_plan(&scan, selection)?;
+    // The published notes got their type in the scan. The new ones of the
+    // plan get theirs in one more question.
+    let new_types = note_types_of(&device.note_types, plan.publish())?;
     let mut texts = BTreeMap::new();
     for path in plan.publish().iter().chain(plan.update()) {
         let text = device
@@ -390,6 +398,10 @@ fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Co
                 cleaned,
                 links: targets.links,
                 attachments,
+                note_type: new_types
+                    .get(path)
+                    .or_else(|| scan.note_types.get(path))
+                    .cloned(),
             },
         );
     }
@@ -397,14 +409,18 @@ fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Co
     let notes = texts
         .iter()
         .map(|(path, texts)| {
-            Ok(json!({
+            let mut note = json!({
                 "aliases": texts.aliases.aliases,
                 "attachments": to_value(&texts.attachments)?,
                 "cleanedHash": content_hash(&texts.cleaned),
                 "links": to_value(&texts.links)?,
                 "path": path,
                 "sourceHash": content_hash(&texts.source),
-            }))
+            });
+            if let Some(note_type) = &texts.note_type {
+                note["noteType"] = to_value(note_type)?;
+            }
+            Ok(note)
         })
         .collect::<Result<Vec<Value>, String>>()?;
     let record = canonical(&json!({
@@ -669,6 +685,7 @@ fn entry_of(
             id: note_id(path, time),
             last_published: time.to_owned(),
             links: texts.links.clone(),
+            note_type: texts.note_type.clone(),
             path: path.to_owned(),
             source_hash,
             state: State::Published,
@@ -688,6 +705,8 @@ fn entry_of(
             before.last_published.clone()
         },
         links: texts.links.clone(),
+        // A note that has no type now loses the type of its entry.
+        note_type: texts.note_type.clone(),
         source_hash,
         state: State::Published,
         ..before.clone()

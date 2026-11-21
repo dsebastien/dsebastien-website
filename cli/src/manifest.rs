@@ -13,6 +13,7 @@ use crate::device::ContentStore;
 use crate::hash::sha256_hex;
 use crate::json::parse_json;
 use crate::links::NoteLink;
+use crate::note_types::{NoteType, note_type_of_entry};
 
 /// The folder of the manifest in the content store.
 pub const MANIFEST_FOLDER: &str = "manifest";
@@ -42,6 +43,9 @@ pub struct ManifestEntry {
     pub last_published: String,
     /// The links of the note that lead to a note, sorted by their link path.
     pub links: Vec<NoteLink>,
+    /// The note type of the note, when it has one (decision R61).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note_type: Option<NoteType>,
     /// The vault path of the note.
     pub path: String,
     pub source_hash: String,
@@ -199,6 +203,11 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
     // Texts, each one time, in the order of the code points.
     let aliases =
         list_of("aliases").filter(|aliases| aliases.windows(2).all(|pair| pair[0] < pair[1]))?;
+    // No key: the note has no type.
+    let note_type = match entry.get("noteType") {
+        None => None,
+        Some(value) => Some(note_type_of_entry(value)?),
+    };
     Some(ManifestEntry {
         aliases,
         attachments: attachment_list(entry.get("attachments")?)?,
@@ -209,6 +218,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         id: text_of("id").filter(|id| is_note_id(id))?,
         last_published: text_of("lastPublished")?,
         links: link_list(entry.get("links")?)?,
+        note_type,
         path: text_of("path").filter(|path| is_note_path(path))?,
         source_hash: text_of("sourceHash")?,
         state,

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+    FIXTURE_NOTE_TYPES,
     FIXTURE_CONFIGURATION,
     FIXTURE_VAULT,
     listFixtureVaultFiles,
@@ -231,6 +232,32 @@ describe('first set of notes (spec 18.4)', () => {
     }
 
     const CHECKS: Record<string, Check> = {
+        'note-type-affixes': async (notes) => {
+            // The answers of the invented Starter Kit, by vault path (decision R61).
+            const answers = (await Bun.file(FIXTURE_NOTE_TYPES).json()) as {
+                noteTypes: { name: string; prefix: string; suffix: string }[]
+                notes: Record<string, string>
+            }
+            for (const note of take(notes, 5)) {
+                const type = answers.noteTypes.find(
+                    (candidate) => candidate.name === answers.notes[note.path]
+                )
+                expect(type, note.path).toBeDefined()
+                if (type === undefined) continue
+                const name = note.name
+                expect(
+                    (type.prefix !== '' && name.startsWith(type.prefix)) ||
+                        (type.suffix !== '' && name.endsWith(type.suffix)),
+                    note.path
+                ).toBe(true)
+            }
+            const headings = notes.map((note) => /^# (.+)$/m.exec(note.body)?.[1])
+            expect(headings.filter((heading) => heading === 'The garden letter')).toHaveLength(2)
+            expect(notes.some((note) => property(note, 'title') === note.name)).toBe(true)
+            expect(notes.some((note) => typeof property(note, 'description') === 'string')).toBe(
+                true
+            )
+        },
         'link-to-deny-list-note': (notes) => {
             const [from, to] = take(notes, 2)
             expect(from?.denied).toBe(false)

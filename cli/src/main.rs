@@ -18,6 +18,7 @@ mod json;
 mod links;
 mod manifest;
 mod names;
+mod note_types;
 mod order;
 mod plan;
 mod queue;
@@ -53,6 +54,14 @@ struct Places {
     /// clone whose `origin` is the content store.
     #[arg(long)]
     content_store: PathBuf,
+
+    /// The command line program of the Obsidian Starter Kit, which gives the
+    /// note type of each note (`osk-cli recognize`). The default is the
+    /// program that the plugin installs in the vault:
+    /// `.obsidian/plugins/obsidian-starter-kit-plugin/osk-cli`
+    /// (`osk-cli-windows-x64.exe` on Windows).
+    #[arg(long, value_name = "PROGRAM")]
+    osk_cli: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -151,9 +160,14 @@ fn device(places: &Places) -> Result<Device, String> {
             return Err(format!("the {name} is not a folder: {}", folder.display()));
         }
     }
+    let program = places
+        .osk_cli
+        .clone()
+        .unwrap_or_else(|| note_types::default_program(&places.vault));
     Ok(Device {
         vault: Vault::new(&places.vault),
         store: ContentStore::new(&places.content_store),
+        note_types: note_types::StarterKit::new(&program, &places.vault),
     })
 }
 

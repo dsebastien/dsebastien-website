@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
+    FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     crashingStore,
     gitEnvironment,
@@ -11,7 +12,7 @@ import {
 } from '@dsebastien-website/testing'
 import { toCanonicalJson } from '../apps/plugin/src/publishing/canonical.ts'
 import type { CanonicalValue } from '../apps/plugin/src/publishing/canonical.ts'
-import { nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import type { Selection } from '../apps/plugin/src/publishing/plan.ts'
 import { plan, publish, status, unlock } from '../apps/plugin/src/publishing/tool.ts'
 import { buildRustProgram, runRustProgram } from './harness.ts'
@@ -214,6 +215,7 @@ type Implementation = (
 
 const typescript: Implementation = async (vault, copy, include, time = TIME) => {
     const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
         vault,
         contentStore: copy,
         attachmentStorage: storageOf(copy)
@@ -386,6 +388,7 @@ function reportLists(report: Record<string, unknown>): string {
 
 function typescriptTool(vault: string, copy: string): Tool {
     const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
         vault,
         contentStore: copy,
         attachmentStorage: storageOf(copy)
@@ -746,6 +749,7 @@ describe('parity of an empty plan', () => {
         const fromTypeScript = await run(async (vault, copy) => {
             await plan(
                 nodeDevice({
+                    noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
                     vault,
                     contentStore: copy,
                     attachmentStorage: storageOf(copy)
@@ -822,6 +826,7 @@ describe('parity of the guards', () => {
         const typescriptPlan: Implementation = async (vault, copy, include) => {
             await plan(
                 nodeDevice({
+                    noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
                     vault,
                     contentStore: copy,
                     attachmentStorage: storageOf(copy)
@@ -863,7 +868,12 @@ describe('parity of a publication that stops halfway', () => {
         await using stores = await makeTestStores()
         const vault = await copyFixtureVault(stores)
         const copy = await makeContentStoreCopy(stores)
-        const device = nodeDevice({ vault, contentStore: copy, attachmentStorage: storageOf(copy) })
+        const device = nodeDevice({
+            noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+            vault,
+            contentStore: copy,
+            attachmentStorage: storageOf(copy)
+        })
         const run = { time: TIME, device: DEVICE, face: 'command-line' } as const
         const first = await plan(device, { include: FIRST })
         await publish(device, first.id, run)

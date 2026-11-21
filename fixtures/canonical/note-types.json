@@ -1,0 +1,324 @@
+{
+    "about": "The note type of a note (documentation/Canonical Form.md, section \"The note type of a note\"). Both implementations read every case. `read`: the paths of a question, the answer of the Starter Kit, and the note type that each path must get (a path that is not in `types` has no type). `refused`: the paths of a question and an answer that must stop the run. `manifest`: a value of the key `noteType` of a manifest entry, and whether the entry can be read.",
+    "read": [
+        {
+            "name": "a note with a type and a note without one",
+            "question": ["Garden/Tomato.md", "Welcome.md"],
+            "answer": {
+                "noteTypes": [
+                    {
+                        "name": "recipes",
+                        "displayName": "Recipes",
+                        "prefix": "",
+                        "suffix": " (Recipe)",
+                        "prefixOptional": false,
+                        "suffixOptional": true
+                    }
+                ],
+                "notes": [
+                    { "path": "Garden/Tomato.md", "noteType": "recipes" },
+                    { "path": "Welcome.md", "noteType": null }
+                ]
+            },
+            "types": {
+                "Garden/Tomato.md": {
+                    "displayName": "Recipes",
+                    "name": "recipes",
+                    "suffix": " (Recipe)"
+                }
+            }
+        },
+        {
+            "name": "a prefix with a token stays as the Starter Kit gives it",
+            "question": ["Posts/2031-03-14 - Frost.md"],
+            "answer": {
+                "noteTypes": [
+                    {
+                        "name": "social-posts",
+                        "displayName": "Social Posts",
+                        "prefix": "{{date}} - ",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    }
+                ],
+                "notes": [{ "path": "Posts/2031-03-14 - Frost.md", "noteType": "social-posts" }]
+            },
+            "types": {
+                "Posts/2031-03-14 - Frost.md": {
+                    "displayName": "Social Posts",
+                    "name": "social-posts",
+                    "prefix": "{{date}} - "
+                }
+            }
+        },
+        {
+            "name": "two notes of one type, other keys ignored, a type that no note names",
+            "question": ["B.md", "A.md"],
+            "answer": {
+                "version": 1,
+                "noteTypes": [
+                    {
+                        "name": "ai_wiki-articles",
+                        "displayName": "AI Wiki Articles",
+                        "prefix": "AI Wiki - ",
+                        "suffix": "",
+                        "icon": "book"
+                    },
+                    { "name": "quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                ],
+                "notes": [
+                    { "path": "B.md", "noteType": "ai_wiki-articles", "matched": 2 },
+                    { "path": "A.md", "noteType": "ai_wiki-articles" }
+                ]
+            },
+            "types": {
+                "A.md": {
+                    "displayName": "AI Wiki Articles",
+                    "name": "ai_wiki-articles",
+                    "prefix": "AI Wiki - "
+                },
+                "B.md": {
+                    "displayName": "AI Wiki Articles",
+                    "name": "ai_wiki-articles",
+                    "prefix": "AI Wiki - "
+                }
+            }
+        },
+        {
+            "name": "a question with no path",
+            "question": [],
+            "answer": { "noteTypes": [], "notes": [] },
+            "types": {}
+        },
+        {
+            "name": "a name of 64 characters, a display name outside ASCII",
+            "question": ["Café.md"],
+            "answer": {
+                "noteTypes": [
+                    {
+                        "name": "a234567890123456789012345678901234567890123456789012345678901234",
+                        "displayName": "Cafés",
+                        "prefix": "",
+                        "suffix": " (Café)"
+                    }
+                ],
+                "notes": [
+                    {
+                        "path": "Café.md",
+                        "noteType": "a234567890123456789012345678901234567890123456789012345678901234"
+                    }
+                ]
+            },
+            "types": {
+                "Café.md": {
+                    "displayName": "Cafés",
+                    "name": "a234567890123456789012345678901234567890123456789012345678901234",
+                    "suffix": " (Café)"
+                }
+            }
+        }
+    ],
+    "refused": [
+        { "name": "not an object", "question": [], "answer": [] },
+        { "name": "no list of notes", "question": [], "answer": { "noteTypes": [] } },
+        { "name": "no list of types", "question": [], "answer": { "notes": [] } },
+        {
+            "name": "one path too few",
+            "question": ["A.md", "B.md"],
+            "answer": { "noteTypes": [], "notes": [{ "path": "A.md", "noteType": null }] }
+        },
+        {
+            "name": "one path too many",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    { "path": "A.md", "noteType": null },
+                    { "path": "B.md", "noteType": null }
+                ]
+            }
+        },
+        {
+            "name": "the paths in another order",
+            "question": ["A.md", "B.md"],
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    { "path": "B.md", "noteType": null },
+                    { "path": "A.md", "noteType": null }
+                ]
+            }
+        },
+        {
+            "name": "a path in another letter case",
+            "question": ["A.md"],
+            "answer": { "noteTypes": [], "notes": [{ "path": "a.md", "noteType": null }] }
+        },
+        {
+            "name": "a path in another Unicode form",
+            "question": ["Café.md"],
+            "answer": { "noteTypes": [], "notes": [{ "path": "Cafe\u0301.md", "noteType": null }] }
+        },
+        {
+            "name": "a note without its type key",
+            "question": ["A.md"],
+            "answer": { "noteTypes": [], "notes": [{ "path": "A.md" }] }
+        },
+        {
+            "name": "a type that is a number",
+            "question": ["A.md"],
+            "answer": { "noteTypes": [], "notes": [{ "path": "A.md", "noteType": 3 }] }
+        },
+        {
+            "name": "a type that is not in the list of types",
+            "question": ["A.md"],
+            "answer": { "noteTypes": [], "notes": [{ "path": "A.md", "noteType": "quotes" }] }
+        },
+        {
+            "name": "a type two times in the list",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [
+                    { "name": "quotes", "displayName": "Quotes", "prefix": "", "suffix": "" },
+                    { "name": "quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                ],
+                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+            }
+        },
+        {
+            "name": "a name with a capital letter",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [
+                    { "name": "Quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                ],
+                "notes": [{ "path": "A.md", "noteType": "Quotes" }]
+            }
+        },
+        {
+            "name": "a name that starts with a digit",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [
+                    { "name": "1-quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                ],
+                "notes": [{ "path": "A.md", "noteType": "1-quotes" }]
+            }
+        },
+        {
+            "name": "a name of 65 characters",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [
+                    {
+                        "name": "a2345678901234567890123456789012345678901234567890123456789012345",
+                        "displayName": "Long",
+                        "prefix": "",
+                        "suffix": ""
+                    }
+                ],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "a2345678901234567890123456789012345678901234567890123456789012345"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "an empty name",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [{ "name": "", "displayName": "Quotes", "prefix": "", "suffix": "" }],
+                "notes": [{ "path": "A.md", "noteType": "" }]
+            }
+        },
+        {
+            "name": "an empty display name",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [{ "name": "quotes", "displayName": "", "prefix": "", "suffix": "" }],
+                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+            }
+        },
+        {
+            "name": "a prefix that is null",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [
+                    { "name": "quotes", "displayName": "Quotes", "prefix": null, "suffix": "" }
+                ],
+                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+            }
+        },
+        {
+            "name": "no suffix key",
+            "question": ["A.md"],
+            "answer": {
+                "noteTypes": [{ "name": "quotes", "displayName": "Quotes", "prefix": "" }],
+                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+            }
+        },
+        {
+            "name": "a type that is not an object",
+            "question": ["A.md"],
+            "answer": { "noteTypes": ["quotes"], "notes": [{ "path": "A.md", "noteType": null }] }
+        },
+        {
+            "name": "a note that is not an object",
+            "question": ["A.md"],
+            "answer": { "noteTypes": [], "notes": ["A.md"] }
+        }
+    ],
+    "manifest": [
+        {
+            "name": "a name and a display name",
+            "noteType": { "displayName": "Quotes", "name": "quotes" },
+            "valid": true
+        },
+        {
+            "name": "with a prefix and a suffix",
+            "noteType": {
+                "displayName": "Social Posts",
+                "name": "social-posts",
+                "prefix": "{{date}} - ",
+                "suffix": " (Post)"
+            },
+            "valid": true
+        },
+        { "name": "no display name", "noteType": { "name": "quotes" }, "valid": false },
+        {
+            "name": "an empty display name",
+            "noteType": { "displayName": "", "name": "quotes" },
+            "valid": false
+        },
+        {
+            "name": "a name with a capital letter",
+            "noteType": { "displayName": "Quotes", "name": "Quotes" },
+            "valid": false
+        },
+        {
+            "name": "an empty prefix",
+            "noteType": { "displayName": "Quotes", "name": "quotes", "prefix": "" },
+            "valid": false
+        },
+        {
+            "name": "an empty suffix",
+            "noteType": { "displayName": "Quotes", "name": "quotes", "suffix": "" },
+            "valid": false
+        },
+        {
+            "name": "a suffix that is a number",
+            "noteType": { "displayName": "Quotes", "name": "quotes", "suffix": 1 },
+            "valid": false
+        },
+        {
+            "name": "another key",
+            "noteType": { "displayName": "Quotes", "icon": "quote", "name": "quotes" },
+            "valid": false
+        },
+        { "name": "a text", "noteType": "quotes", "valid": false },
+        { "name": "null", "noteType": null, "valid": false }
+    ]
+}

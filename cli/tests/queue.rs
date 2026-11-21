@@ -40,6 +40,9 @@ struct Setup {
     stores: TestStores,
     vault: PathBuf,
     copy: PathBuf,
+    /// The file of the answers of the Starter Kit of a scenario, which a
+    /// step can change or remove. Without one, no note has a type.
+    answers: Option<PathBuf>,
 }
 
 fn errors_of(output: &Output) -> String {
@@ -165,6 +168,7 @@ impl Setup {
             stores,
             vault,
             copy,
+            answers: None,
         }
     }
 
@@ -177,10 +181,17 @@ impl Setup {
         let copy = stores.make_content_store_copy();
         let configuration = json!({ "denyList": scenario["denyList"] }).to_string();
         push_to_store(&copy, &json!({ "configuration.json": configuration }));
+        let answers = stores.root().join("note-types.json");
+        let note_types = match &scenario["noteTypes"] {
+            Value::Null => json!({ "noteTypes": [], "notes": {} }),
+            note_types => note_types.clone(),
+        };
+        fs::write(&answers, note_types.to_string()).expect("the answers can be written");
         Self {
             stores,
             vault,
             copy,
+            answers: Some(answers),
         }
     }
 
@@ -191,7 +202,7 @@ impl Setup {
     /// Runs a command. With a crash point, the run stops there, as after a
     /// power cut: the switch exists only in a debug build of the program.
     fn run_with(&self, command: &str, arguments: &[&str], crash: Option<&str>) -> Output {
-        let mut program = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+        let mut program = support::program();
         program.arg(command);
         // The lock is a file of the copy: `unlock` needs no vault.
         if command != "unlock" {
@@ -200,6 +211,9 @@ impl Setup {
         program.arg("--content-store").arg(&self.copy);
         if let Some(point) = crash {
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", point);
+        }
+        if let Some(answers) = &self.answers {
+            program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", answers);
         }
         if command == "publish" {
             program
@@ -326,6 +340,17 @@ fn assert_refused_saying(output: &Output, step: &Value, label: &str) {
     }
 }
 
+/// The step `noteTypes`: the Starter Kit of the scenario gives other
+/// answers, or is missing (`null`).
+fn set_answers(setup: &Setup, note_types: &Value) {
+    let answers = setup.answers.as_ref().expect("a scenario has answers");
+    if note_types.is_null() {
+        fs::remove_file(answers).expect("the answers can be removed");
+    } else {
+        fs::write(answers, note_types.to_string()).expect("the answers can be written");
+    }
+}
+
 fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String) {
     match step["do"].as_str().expect("a step says what it does") {
         "write" => write_files(&setup.vault, &step["files"]),
@@ -393,6 +418,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String)
                     .expect("the file of the storage can be removed");
             }
         }
+        "noteTypes" => set_answers(setup, &step["noteTypes"]),
         "publish" if step["refused"] == json!(true) => {
             let time = step["time"].as_str().expect("a publication has a time");
             let id = setup.plan_id(&step["selection"]);
@@ -457,8 +483,19 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
     assert_eq!(
         kinds,
         [
-            "crash", "delete", "expect", "lose", "offline", "online", "plan", "publish", "status",
-            "store", "unlock", "write"
+            "crash",
+            "delete",
+            "expect",
+            "lose",
+            "noteTypes",
+            "offline",
+            "online",
+            "plan",
+            "publish",
+            "status",
+            "store",
+            "unlock",
+            "write"
         ]
     );
 }
@@ -828,6 +865,7 @@ fn a_first_publication_after_another_device_stops_and_the_copy_can_pull() {
         stores: TestStores::new(),
         vault: setup.vault.clone(),
         copy: first,
+        answers: None,
     };
     let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
     first_device.publish(&json!({ "include": ["Welcome.md"] }), TIME);
@@ -1364,7 +1402,7 @@ fn a_copy_of_the_content_store_in_a_relative_folder_takes_new_notes_and_updates(
         .strip_prefix(root)
         .expect("the copy is in the folder of the test");
     let run = |arguments: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+        support::program()
             .args(arguments)
             .arg("--vault")
             .arg(&setup.vault)
@@ -1808,6 +1846,7 @@ fn copy_with_no_commit() -> Setup {
         stores,
         vault,
         copy,
+        answers: None,
     }
 }
 
@@ -2599,6 +2638,7 @@ fn other_device(setup: &Setup, name: &str) -> Setup {
         stores: TestStores::new(),
         vault: setup.vault.clone(),
         copy,
+        answers: None,
     }
 }
 
@@ -2706,6 +2746,7 @@ fn a_copy_that_never_fetched_stops_plan_until_the_pull() {
         stores: TestStores::new(),
         vault: setup.vault.clone(),
         copy: fresh,
+        answers: None,
     };
 
     let output = device.plan(&json!({ "include": ["Welcome.md"] }));

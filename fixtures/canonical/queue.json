@@ -3816,6 +3816,393 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "the note type of a note",
+            "denyList": ["Locked"],
+            "noteTypes": {
+                "noteTypes": [
+                    {
+                        "name": "recipes",
+                        "displayName": "Recipes",
+                        "prefix": "",
+                        "suffix": " (Recipe)",
+                        "prefixOptional": false,
+                        "suffixOptional": true
+                    },
+                    {
+                        "name": "herbs",
+                        "displayName": "Herbs",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    }
+                ],
+                "notes": {
+                    "Tomato (Recipe).md": "recipes",
+                    "Basil.md": "herbs",
+                    "Folder/Ignored.md": "recipes"
+                }
+            },
+            "vault": {
+                "Basil.md": "Basil\n",
+                "Tomato (Recipe).md": "Tomato\n",
+                "Welcome.md": "Welcome\n",
+                "Folder/Ignored.md": "---\npublish_ignore: true\n---\nNever\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "a candidate has no type yet: only the published notes are asked for",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the first publication of three notes, two of them with a type",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Welcome.md", "Tomato (Recipe).md", "Basil.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        "published": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry of a note with a type holds it, with no empty prefix or suffix, and the entry of a note with no type has no such key",
+                    "vault": {},
+                    "store": {
+                        "manifest/2bb2e264751974c9.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:5aff37f2f78967dc89867878702d9d1a11f666199b100b500e77efeea16505e4\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"2bb2e264751974c9\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Herbs\",\n    \"name\": \"herbs\"\n  },\n  \"path\": \"Basil.md\",\n  \"sourceHash\": \"sha256:5aff37f2f78967dc89867878702d9d1a11f666199b100b500e77efeea16505e4\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/b0d6fb44c120ec81.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:a21555d78b289e0b8ad789c9a993f3cc398d9209a015ed315ef32f099faf6505\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"b0d6fb44c120ec81\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Recipes\",\n    \"name\": \"recipes\",\n    \"suffix\": \" (Recipe)\"\n  },\n  \"path\": \"Tomato (Recipe).md\",\n  \"sourceHash\": \"sha256:a21555d78b289e0b8ad789c9a993f3cc398d9209a015ed315ef32f099faf6505\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/78d3552ec6586512.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:0e90e1aa36481e399939d32680dab2005c299f2bb9c3ba6b151ac0cc821fec7a\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"78d3552ec6586512\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Welcome.md\",\n  \"sourceHash\": \"sha256:0e90e1aa36481e399939d32680dab2005c299f2bb9c3ba6b151ac0cc821fec7a\",\n  \"state\": \"published\"\n}\n",
+                        "notes/Basil.md": "Basil\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the types did not change",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 3
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the author renames a type and gives a note a type",
+                    "noteTypes": {
+                        "noteTypes": [
+                            {
+                                "name": "recipes",
+                                "displayName": "Recipes",
+                                "prefix": "",
+                                "suffix": " (Recipe)",
+                                "prefixOptional": false,
+                                "suffixOptional": true
+                            },
+                            {
+                                "name": "herbs",
+                                "displayName": "Kitchen herbs",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            },
+                            {
+                                "name": "pages",
+                                "displayName": "Pages",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            }
+                        ],
+                        "notes": {
+                            "Tomato (Recipe).md": "recipes",
+                            "Basil.md": "herbs",
+                            "Welcome.md": "pages"
+                        }
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a note whose type changed is a technical update",
+                    "queue": {
+                        "changed": ["Basil.md", "Welcome.md"],
+                        "counts": {
+                            "changed": 2,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": ["Basil.md", "Welcome.md"],
+                        "toRemove": [],
+                        "unchanged": ["Tomato (Recipe).md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a plan without paths updates them",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Basil.md", "Welcome.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entries hold the new types, and a technical update does not move the last date",
+                    "vault": {},
+                    "store": {
+                        "manifest/2bb2e264751974c9.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:5aff37f2f78967dc89867878702d9d1a11f666199b100b500e77efeea16505e4\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"2bb2e264751974c9\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Kitchen herbs\",\n    \"name\": \"herbs\"\n  },\n  \"path\": \"Basil.md\",\n  \"sourceHash\": \"sha256:5aff37f2f78967dc89867878702d9d1a11f666199b100b500e77efeea16505e4\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/78d3552ec6586512.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:0e90e1aa36481e399939d32680dab2005c299f2bb9c3ba6b151ac0cc821fec7a\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"78d3552ec6586512\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Pages\",\n    \"name\": \"pages\"\n  },\n  \"path\": \"Welcome.md\",\n  \"sourceHash\": \"sha256:0e90e1aa36481e399939d32680dab2005c299f2bb9c3ba6b151ac0cc821fec7a\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the Starter Kit no longer gives a type to one note",
+                    "noteTypes": {
+                        "noteTypes": [
+                            {
+                                "name": "recipes",
+                                "displayName": "Recipes",
+                                "prefix": "",
+                                "suffix": " (Recipe)",
+                                "prefixOptional": false,
+                                "suffixOptional": true
+                            },
+                            {
+                                "name": "herbs",
+                                "displayName": "Kitchen herbs",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            },
+                            {
+                                "name": "pages",
+                                "displayName": "Pages",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            }
+                        ],
+                        "notes": {
+                            "Basil.md": "herbs",
+                            "Welcome.md": "pages"
+                        }
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a note that lost its type is a technical update",
+                    "queue": {
+                        "changed": ["Tomato (Recipe).md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": ["Tomato (Recipe).md"],
+                        "toRemove": [],
+                        "unchanged": ["Basil.md", "Welcome.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "its update",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Tomato (Recipe).md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "its entry has no type any more",
+                    "vault": {},
+                    "store": {
+                        "manifest/b0d6fb44c120ec81.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:a21555d78b289e0b8ad789c9a993f3cc398d9209a015ed315ef32f099faf6505\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"b0d6fb44c120ec81\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Tomato (Recipe).md\",\n  \"sourceHash\": \"sha256:a21555d78b289e0b8ad789c9a993f3cc398d9209a015ed315ef32f099faf6505\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the Starter Kit is missing",
+                    "noteTypes": null
+                },
+                {
+                    "do": "status",
+                    "why": "the queue cannot say which notes changed",
+                    "refused": true,
+                    "says": "the Obsidian Starter Kit cannot give the note types"
+                },
+                {
+                    "do": "plan",
+                    "why": "no plan without the Starter Kit: every type would leave the site",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "the Obsidian Starter Kit cannot give the note types"
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the Starter Kit gives a type with no display name",
+                    "noteTypes": {
+                        "noteTypes": [
+                            {
+                                "name": "herbs",
+                                "displayName": "",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            }
+                        ],
+                        "notes": {
+                            "Basil.md": "herbs"
+                        }
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "an answer that the tool cannot read stops the plan",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "the Obsidian Starter Kit gave an answer that the tool cannot read"
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the Starter Kit is back",
+                    "noteTypes": {
+                        "noteTypes": [
+                            {
+                                "name": "recipes",
+                                "displayName": "Recipes",
+                                "prefix": "",
+                                "suffix": " (Recipe)",
+                                "prefixOptional": false,
+                                "suffixOptional": true
+                            },
+                            {
+                                "name": "herbs",
+                                "displayName": "Kitchen herbs",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            },
+                            {
+                                "name": "pages",
+                                "displayName": "Pages",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            }
+                        ],
+                        "notes": {
+                            "Basil.md": "herbs",
+                            "Welcome.md": "pages"
+                        }
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "with the Starter Kit back, a plan works again",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                }
+            ]
         }
     ]
 }

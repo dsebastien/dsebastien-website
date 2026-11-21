@@ -4,6 +4,8 @@ import { isVaultPath } from './configuration.ts'
 import { sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
 import type { NoteLink } from './links.ts'
+import { isNoteType } from './note-types.ts'
+import type { NoteType } from './note-types.ts'
 import { compareCodePoints } from './order.ts'
 import type { ContentStore } from './ports.ts'
 
@@ -34,6 +36,8 @@ export type ManifestEntry = {
     readonly lastPublished: string
     /** The links of the note that lead to a note, sorted by their link path. */
     readonly links: readonly NoteLink[]
+    /** The note type of the note, when it has one (decision R61). */
+    readonly noteType?: NoteType
     /** The vault path of the note. */
     readonly path: string
     readonly sourceHash: string
@@ -108,7 +112,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
     }
     const { aliases, attachments, cleanedHash, cleaningVersion, firstPublished, formerPaths } =
         value
-    const { id, lastPublished, links, path, sourceHash, state } = value
+    const { id, lastPublished, links, noteType, path, sourceHash, state } = value
     if (
         !isAliasList(aliases) ||
         !isAttachmentList(attachments, isVaultPath) ||
@@ -122,6 +126,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         !NOTE_ID.test(id) ||
         typeof lastPublished !== 'string' ||
         !isLinkList(links) ||
+        (noteType !== undefined && !isNoteType(noteType)) ||
         typeof path !== 'string' ||
         !isNotePath(path) ||
         typeof sourceHash !== 'string' ||
@@ -146,6 +151,16 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         id,
         lastPublished,
         links: links.map((item) => ({ link: item.link, path: item.path })),
+        ...(noteType === undefined
+            ? {}
+            : {
+                  noteType: {
+                      displayName: noteType.displayName,
+                      name: noteType.name,
+                      ...(noteType.prefix === undefined ? {} : { prefix: noteType.prefix }),
+                      ...(noteType.suffix === undefined ? {} : { suffix: noteType.suffix })
+                  }
+              }),
         path,
         sourceHash,
         state

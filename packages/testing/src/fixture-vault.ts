@@ -18,6 +18,13 @@ export const FIXTURE_CONFIGURATION = join(FIXTURES, 'configuration.json')
 /** The list that says which feature or trap each file of the fixture vault serves. */
 export const FIXTURE_CATALOG = join(FIXTURES, 'catalog.json')
 
+/**
+ * The answers of an invented Obsidian Starter Kit for the fixture vault: the
+ * note type of each note (decision R61). A device of the tests reads it with
+ * `fileNoteTypes()` of the publishing logic.
+ */
+export const FIXTURE_NOTE_TYPES = join(FIXTURES, 'note-types.json')
+
 /** One entry of the catalog: a feature or a trap, and the files that serve it. */
 export interface FixtureCatalogEntry {
     /** A short name, stable, used by the tests. */

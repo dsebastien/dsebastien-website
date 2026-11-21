@@ -13,7 +13,7 @@ import {
     rejectionOf,
     type TestStores
 } from '@dsebastien-website/testing'
-import { nodeDevice } from './node/device.ts'
+import { fileNoteTypes, nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
 import type { Device } from './ports.ts'
 import type { PublicationQueue } from './queue.ts'
@@ -70,6 +70,7 @@ type Step = { why: string } & (
     | { do: 'offline' }
     | { do: 'online' }
     | { do: 'lose'; keys: string[] }
+    | { do: 'noteTypes'; noteTypes: NoteTypesFile | null }
     | {
           do: 'expect'
           vault: Files
@@ -78,9 +79,17 @@ type Step = { why: string } & (
       }
 )
 
+/** The answers of the Starter Kit of a scenario (see `fileNoteTypes`). */
+interface NoteTypesFile {
+    noteTypes: Record<string, unknown>[]
+    notes: Record<string, string>
+}
+
 interface Scenario {
     name: string
     denyList: string[]
+    /** The answers of the Starter Kit; by default no note has a type. */
+    noteTypes?: NoteTypesFile
     vault: Record<string, FileContent>
     steps: Step[]
 }
@@ -176,10 +185,17 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
             await pushToStore(copy, {
                 'configuration.json': JSON.stringify({ denyList: scenario.denyList })
             })
+            // The Starter Kit of the scenario answers from a file that a step can change or remove.
+            const answers = join(stores.root, 'note-types.json')
+            await writeFile(
+                answers,
+                JSON.stringify(scenario.noteTypes ?? { noteTypes: [], notes: {} })
+            )
             const device = nodeDevice({
                 vault,
                 contentStore: copy,
-                attachmentStorage: stores.attachmentStorage
+                attachmentStorage: stores.attachmentStorage,
+                noteTypes: fileNoteTypes(answers)
             })
 
             // The address of the content store, for the steps "offline" and "online".
@@ -238,6 +254,12 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     for (const key of step.keys) {
                         await rm(join(stores.attachmentStorage, key))
                     }
+                } else if (step.do === 'noteTypes') {
+                    if (step.noteTypes === null) {
+                        await rm(answers)
+                    } else {
+                        await writeFile(answers, JSON.stringify(step.noteTypes))
+                    }
                 } else if (step.do === 'publish' && step.refused === true) {
                     const planned = await plan(device, step.selection)
                     const run: Run = { time: step.time, device: 'garden-shed', face: 'plugin' }
@@ -285,6 +307,7 @@ describe('shared scenarios of the publication queue', () => {
             'delete',
             'expect',
             'lose',
+            'noteTypes',
             'offline',
             'online',
             'plan',

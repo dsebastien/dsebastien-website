@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { FIXTURE_NOTE_TYPES } from '@dsebastien-website/testing'
 
 // The parity harness: it builds the Rust command line program and runs it, so
 // that a test can compare its output with the output of the TypeScript
@@ -79,7 +80,13 @@ export async function runRustProgram(
 ): Promise<RustRun> {
     const child = Bun.spawn([program, ...args], {
         cwd: ROOT,
-        env: { ...process.env, ...environment },
+        // The Starter Kit of the tests: the answers for the fixture vault, as
+        // the TypeScript side of a parity test reads them (decision R61).
+        env: {
+            ...process.env,
+            DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES: FIXTURE_NOTE_TYPES,
+            ...environment
+        },
         stdout: 'pipe',
         stderr: 'pipe'
     })

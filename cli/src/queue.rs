@@ -16,6 +16,7 @@ use crate::guards::{guard_of, in_deny_list};
 use crate::hash::content_hash;
 use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
+use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::small_letters::guard_name;
 
 /// The number of paths of each of the four lists.
@@ -120,6 +121,9 @@ pub struct Scan {
     /// Every entry of the manifest, by the vault path of its note.
     pub manifest: BTreeMap<String, ManifestEntry>,
     pub configuration: Configuration,
+    /// The note type of each published note that the scan found and that no
+    /// guard excludes, when it has one.
+    pub note_types: BTreeMap<String, NoteType>,
 }
 
 impl Scan {
@@ -241,6 +245,56 @@ fn scan_denied(
     Ok((files, names))
 }
 
+/// The published notes that the scan found and that no guard excludes, in
+/// the order of the code points: the question to the Starter Kit. A note
+/// under a guard is never in it.
+fn published_question(
+    notes: &BTreeMap<String, ScannedNote>,
+    manifest: &BTreeMap<String, ManifestEntry>,
+    ignored: &BTreeSet<String>,
+) -> Vec<String> {
+    notes
+        .keys()
+        .filter(|path| {
+            manifest
+                .get(*path)
+                .is_some_and(|entry| entry.state == State::Published)
+                && !ignored.contains(*path)
+        })
+        .cloned()
+        .collect()
+}
+
+/// The paths of `to_remove` that are only missing from this vault: no
+/// guard excludes them.
+fn missing_of(
+    to_remove: &[String],
+    configuration: &Configuration,
+    ignored: &BTreeSet<String>,
+    denied_file_names: &BTreeSet<String>,
+) -> Vec<String> {
+    // A published note waits for its removal under a guard when its path is
+    // in a folder of the deny list, it has the ignore property, or its file is
+    // missing and a note of its name is in a folder of the deny list (it moved
+    // there: the names in small letters, hidden ones included). Every other
+    // one is only missing from this vault. The list stays sorted.
+    let moved_under_guard = |path: &String| {
+        let name = guard_name(path.rsplit('/').next().unwrap_or(path));
+        #[allow(clippy::case_sensitive_file_extension_comparisons)]
+        let is_note = name.ends_with(".md");
+        is_note && denied_file_names.contains(&name)
+    };
+    to_remove
+        .iter()
+        .filter(|path| {
+            !in_deny_list(path, configuration)
+                && !ignored.contains(*path)
+                && !moved_under_guard(path)
+        })
+        .cloned()
+        .collect()
+}
+
 /// Scans the vault and fills the four lists of the queue. The state property
 /// of a note is never an input (PUB-12): it is read only to know which notes
 /// the correction after a publication must write.
@@ -253,6 +307,7 @@ pub fn compute_queue(
     vault: &Vault,
     manifest: BTreeMap<String, ManifestEntry>,
     configuration: Configuration,
+    kit: &StarterKit,
 ) -> Result<Scan, String> {
     // A `BTreeMap` of `String` keeps the order of the code points.
     let mut notes = BTreeMap::new();
@@ -298,6 +353,8 @@ pub fn compute_queue(
     let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
     let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
     let files = FileReader::default();
+    // The type that each published note has now, in one question.
+    let note_types = note_types_of(kit, &published_question(&notes, &manifest, &ignored))?;
     // True when the cleaning step gives another result for a published note:
     // it has another version, or a target was made, moved or removed, or a
     // file was added, changed, moved or removed, or a guard now excludes one.
@@ -308,7 +365,10 @@ pub fn compute_queue(
         let link_paths = link_paths.get(path).map_or(&[][..], Vec::as_slice);
         let targets = resolve_links(link_paths, path, &index, &guarded);
         Ok(!same_links(&targets.links, &entry.links)
-            || attachments_of(&targets.files, vault, &files)? != entry.attachments)
+            || attachments_of(&targets.files, vault, &files)? != entry.attachments
+            // The Starter Kit gives the note another type, or the type
+            // changed.
+            || note_types.get(path) != entry.note_type.as_ref())
     };
     let mut queue = PublicationQueue::empty();
     // Both maps give their paths in the order of the code points, so each list
@@ -344,27 +404,12 @@ pub fn compute_queue(
         }
     }
     queue.count();
-    // A published note waits for its removal under a guard when its path is
-    // in a folder of the deny list, it has the ignore property, or its file is
-    // missing and a note of its name is in a folder of the deny list (it moved
-    // there: the names in small letters, hidden ones included). Every other
-    // one is only missing from this vault. The list stays sorted.
-    let moved_under_guard = |path: &String| {
-        let name = guard_name(path.rsplit('/').next().unwrap_or(path));
-        #[allow(clippy::case_sensitive_file_extension_comparisons)]
-        let is_note = name.ends_with(".md");
-        is_note && denied_file_names.contains(&name)
-    };
-    queue.missing = queue
-        .to_remove
-        .iter()
-        .filter(|path| {
-            !in_deny_list(path, &configuration)
-                && !ignored.contains(*path)
-                && !moved_under_guard(path)
-        })
-        .cloned()
-        .collect();
+    queue.missing = missing_of(
+        &queue.to_remove,
+        &configuration,
+        &ignored,
+        &denied_file_names,
+    );
     Ok(Scan {
         queue,
         notes,
@@ -376,5 +421,6 @@ pub fn compute_queue(
         denied_file_names,
         manifest,
         configuration,
+        note_types,
     })
 }

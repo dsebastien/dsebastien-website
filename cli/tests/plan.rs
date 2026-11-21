@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use support::TestStores;
 
 fn plan_command(stores: &TestStores) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+    let mut command = support::program();
     command
         .arg("plan")
         .arg("--vault")
@@ -45,7 +45,7 @@ fn stops_when_a_place_is_not_a_folder() {
     let stores = TestStores::new();
     let missing = stores.root().join("No such folder");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"))
+    let output = support::program()
         .arg("plan")
         .arg("--vault")
         .arg(&missing)
@@ -104,7 +104,7 @@ fn plan_command_of(stores: &TestStores) -> impl Fn() -> Command {
     let vault = stores.copy_fixture_vault();
     let copy = stores.make_content_store_copy();
     move || {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+        let mut command = support::program();
         command
             .arg("plan")
             .arg("--vault")

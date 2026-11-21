@@ -178,10 +178,25 @@ export interface LocalStore {
     removeJournal(): Promise<void>
 }
 
+/**
+ * The Obsidian Starter Kit of the vault, which knows the note type of each
+ * note (decision R61): its API in Obsidian, a file of answers in the tests.
+ */
+export interface NoteTypes {
+    /**
+     * The answer of the Starter Kit for these vault paths, as data: the
+     * document of `recognizeNoteTypes` (`documentation/Canonical Form.md`,
+     * "The note type of a note"). The logic reads it strictly. It throws when
+     * the Starter Kit is missing or fails.
+     */
+    recognize(paths: readonly string[]): Promise<unknown>
+}
+
 /** Everything that a publication needs on one device. */
 export interface Device {
     readonly vault: Vault
     readonly store: ContentStore
     readonly attachments: AttachmentStorage
     readonly local: LocalStore
+    readonly noteTypes: NoteTypes
 }

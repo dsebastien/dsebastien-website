@@ -6,8 +6,10 @@ import { guardOf, guardOfPath } from './guards.ts'
 import { contentHash } from './hash.ts'
 import { LinkIndex, linkPathsOf, linksOfPaths, sameLinks } from './links.ts'
 import type { ManifestEntry } from './manifest.ts'
+import { readNoteTypes, sameNoteType } from './note-types.ts'
+import type { NoteType } from './note-types.ts'
 import { sortByCodePoint } from './order.ts'
-import type { Vault } from './ports.ts'
+import type { NoteTypes, Vault } from './ports.ts'
 import { guardName } from '@dsebastien-website/resolver'
 
 // The publication queue: what waits for a publication (PUB-18 of the spec).
@@ -87,6 +89,30 @@ export interface Scan {
     /** Every entry of the manifest, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
     readonly configuration: Configuration
+    /** The note type of each published note that the scan found and that no guard excludes, when it has one. */
+    readonly noteTypes: ReadonlyMap<string, NoteType>
+}
+
+/**
+ * The note type of each of these notes, from the Starter Kit, in one
+ * question (decision R61). A note with no type is not in the result. It
+ * throws when the Starter Kit is missing, fails or gives an answer that the
+ * tool cannot read: every type would else leave the site.
+ */
+export async function noteTypesOf(
+    port: NoteTypes,
+    paths: readonly string[]
+): Promise<Map<string, NoteType>> {
+    let answer: unknown
+    try {
+        answer = await port.recognize(paths)
+    } catch (error) {
+        throw new Error(
+            `the Obsidian Starter Kit cannot give the note types: ${error instanceof Error ? error.message : 'it failed'}. Nothing can be planned or published without it`,
+            { cause: error }
+        )
+    }
+    return readNoteTypes(paths, answer)
 }
 
 /** The replacement character: it stands for bytes of a name that are not valid Unicode. */
@@ -171,6 +197,7 @@ export async function computeQueue(input: {
     vault: Vault
     manifest: ReadonlyMap<string, ManifestEntry>
     configuration: Configuration
+    noteTypes: NoteTypes
 }): Promise<Scan> {
     const notes = new Map<string, ScannedNote>()
     const ignored = new Set<string>()
@@ -219,6 +246,13 @@ export async function computeQueue(input: {
     const guarded = new Set([...ignored, ...denied])
     const files = new FileReader(input.vault)
     const others = new Set(scanned.others)
+    // The type that each published note has now, in one question: never for a note under a guard.
+    const noteTypes = await noteTypesOf(
+        input.noteTypes,
+        [...notes.keys()].filter(
+            (path) => input.manifest.get(path)?.state === 'published' && !ignored.has(path)
+        )
+    )
     const lists = {
         changed: [] as string[],
         new: [] as string[],
@@ -243,7 +277,9 @@ export async function computeQueue(input: {
                 // A target was made, moved or removed, or a guard now excludes it.
                 !sameLinks(targets.links, entry.links) ||
                 // A file was added, changed, moved or removed, or a guard now excludes it.
-                !sameAttachments(await attachmentsOf(targets.files, files), entry.attachments)
+                !sameAttachments(await attachmentsOf(targets.files, files), entry.attachments) ||
+                // The Starter Kit gives the note another type, or the type changed.
+                !sameNoteType(noteTypes.get(path), entry.noteType)
             ) {
                 lists.changed.push(path)
                 lists.technicalUpdates.push(path)
@@ -309,6 +345,7 @@ export async function computeQueue(input: {
             }
         },
         manifest: input.manifest,
-        configuration: input.configuration
+        configuration: input.configuration,
+        noteTypes
     }
 }
