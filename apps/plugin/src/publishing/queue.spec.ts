@@ -17,7 +17,7 @@ import { fileNoteTypes, nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
 import type { Device } from './ports.ts'
 import type { PublicationQueue } from './queue.ts'
-import { plan, publish, status, unlock } from './tool.ts'
+import { plan, publish, status, takedown, unlock, unpublish } from './tool.ts'
 import type { Run } from './tool.ts'
 
 // The publication queue (issue 33): the four lists, the selection, the plan,
@@ -44,6 +44,14 @@ interface ReportLists {
     warnings: readonly string[]
 }
 
+/** The lists of paths of a takedown report. */
+interface TakedownLists {
+    attachmentsDeleted: readonly string[]
+    propertyRemoved: readonly string[]
+    takenDown: readonly string[]
+    warnings: readonly string[]
+}
+
 /** A file of a scenario: a text, or bytes in hexadecimal. */
 type FileContent = string | { bytes: string }
 
@@ -64,8 +72,20 @@ type Step = { why: string } & (
           offline?: true
       }
     | { do: 'publish'; selection: Selection; time: string; report: ReportLists; refused?: never }
-    | { do: 'publish'; selection: Selection; time: string; refused: true; says?: string }
-    | { do: 'crash'; selection: Selection; time: string; at: CrashPoint }
+    | {
+          do: 'publish'
+          selection?: Selection
+          stored?: true
+          time: string
+          refused: true
+          says?: string
+      }
+    | { do: 'takedown'; paths: string[]; time: string; report: TakedownLists; refused?: never }
+    | { do: 'takedown'; paths: string[]; time: string; refused: true; says?: string }
+    | { do: 'unpublish'; paths: string[]; time: string; report: ReportLists; refused?: never }
+    | { do: 'unpublish'; paths: string[]; time: string; refused: true; says?: string }
+    | { do: 'crash'; selection: Selection; time: string; at: CrashPoint; takedown?: never }
+    | { do: 'crash'; takedown: string[]; time: string; at: CrashPoint }
     | { do: 'unlock' }
     | { do: 'offline' }
     | { do: 'online' }
@@ -202,6 +222,9 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
             // The address of the content store, for the steps "offline" and "online".
             const address = await git(copy, 'remote', 'get-url', 'origin')
             let stoppedPlan = ''
+            // The plan of the last step that stored one, for a publish step with `stored`.
+            let storedPlan = ''
+            const runAt = (time: string): Run => ({ time, device: 'garden-shed', face: 'plugin' })
             for (const [index, step] of scenario.steps.entries()) {
                 const label = `step ${String(index + 1)}: ${step.why}`
                 if (step.do === 'write') {
@@ -230,11 +253,20 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         )
                     } else {
                         const planned = await plan(device, step.selection)
+                        storedPlan = planned.id
                         expect(planned.plan, label).toEqual(
                             step.plan ?? { forcedRemove: [], publish: [], update: [], remove: [] }
                         )
                         expect(planned.offline, label).toBe(step.offline ?? false)
                     }
+                } else if (step.do === 'crash' && step.takedown !== undefined) {
+                    const stopped = crashingStore(device.store, copy, step.at)
+                    void takedown(
+                        { ...device, store: stopped.store },
+                        step.takedown,
+                        runAt(step.time)
+                    )
+                    await stopped.reached
                 } else if (step.do === 'crash') {
                     const planned = await plan(device, step.selection)
                     stoppedPlan = planned.id
@@ -275,11 +307,39 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         await writeFile(answers, JSON.stringify(step.noteTypes))
                     }
                 } else if (step.do === 'publish' && step.refused === true) {
-                    const planned = await plan(device, step.selection)
-                    const run: Run = { time: step.time, device: 'garden-shed', face: 'plugin' }
-                    expect(await rejectionOf(publish(device, planned.id, run)), label).toContain(
-                        step.says ?? ''
-                    )
+                    const id =
+                        step.stored === true
+                            ? storedPlan
+                            : (await plan(device, step.selection ?? { include: [] })).id
+                    expect(
+                        await rejectionOf(publish(device, id, runAt(step.time))),
+                        label
+                    ).toContain(step.says ?? '')
+                } else if (step.do === 'takedown' && step.refused === true) {
+                    expect(
+                        await rejectionOf(takedown(device, step.paths, runAt(step.time))),
+                        label
+                    ).toContain(step.says ?? '')
+                } else if (step.do === 'takedown') {
+                    const report = await takedown(device, step.paths, runAt(step.time))
+                    const lists: TakedownLists = {
+                        ...report,
+                        warnings: report.warnings.map((entry) => entry.path)
+                    }
+                    expect(lists, label).toEqual(step.report)
+                } else if (step.do === 'unpublish' && step.refused === true) {
+                    expect(
+                        await rejectionOf(unpublish(device, step.paths, runAt(step.time))),
+                        label
+                    ).toContain(step.says ?? '')
+                } else if (step.do === 'unpublish') {
+                    const report = await unpublish(device, step.paths, runAt(step.time))
+                    const lists: ReportLists = {
+                        ...report,
+                        failed: report.failed.map((entry) => entry.path),
+                        warnings: report.warnings.map((entry) => entry.path)
+                    }
+                    expect(lists, label).toEqual(step.report)
                 } else if (step.do === 'publish') {
                     const planned = await plan(device, step.selection)
                     const report = await publish(device, planned.id, {
@@ -329,7 +389,9 @@ describe('shared scenarios of the publication queue', () => {
             'publish',
             'status',
             'store',
+            'takedown',
             'unlock',
+            'unpublish',
             'write'
         ])
         expect(scenarios.length).toBeGreaterThanOrEqual(3)

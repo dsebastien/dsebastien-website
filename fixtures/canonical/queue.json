@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\" or a \"publish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum.",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\", a \"publish\", a \"takedown\" or an \"unpublish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum. Steps of issue 38: \"takedown\" takes down the notes of its paths at the time, and states the lists of its report. \"unpublish\" unpublishes the notes of its paths in one step, and states the lists of the publication report. A \"crash\" with \"takedown\" stops a takedown of those paths in the place of a publication. A \"publish\" with \"stored\" applies the plan of the last \"plan\" step that gave one, not a new plan.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -4606,6 +4606,678 @@
                     "do": "asked",
                     "why": "a note in a folder of the deny list is never asked about",
                     "questions": [["Tomato (Recipe).md"]]
+                }
+            ]
+        },
+        {
+            "name": "a takedown removes a note at once, with the files that no other note uses (issue 38)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Notes/Plan.md": "# Plan\n\nThe [list](../Files/only.txt) and the [shared list](../Files/shared.txt).\n",
+                "Notes/Shed.md": "# Shed\n\nThe [shared list](../Files/shared.txt).\n",
+                "Files/only.txt": "A file that only the plan uses\n",
+                "Files/shared.txt": "A file that two notes use\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "both notes are published, with the files that they use",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb",
+                            "e9c87c965f4f83834df66105cb645ac0be064484628f1f4bc998cb1ec1d4dcd6"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "published": ["Notes/Plan.md", "Notes/Shed.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan is stored",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "an edit of the other note makes the stored plan stale",
+                    "files": {
+                        "Notes/Shed.md": "---\npublic_note: true\n---\n# Shed\n\nThe [shared list](../Files/shared.txt), edited.\n"
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the Starter Kit is missing, so a plan stops",
+                    "noteTypes": null
+                },
+                {
+                    "do": "plan",
+                    "why": "without the Starter Kit no plan can be made",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "takedown",
+                    "why": "the takedown waits for no plan and needs no Starter Kit: the note and its entry leave the content store, the file that no other note uses leaves the storage, and the property leaves the note",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb"
+                        ],
+                        "propertyRemoved": ["Notes/Plan.md"],
+                        "takenDown": ["Notes/Plan.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note is gone from the content store with its entry; the shared file stays; the other note is as it was published",
+                    "vault": {
+                        "Notes/Plan.md": "# Plan\n\nThe [list](../Files/only.txt) and the [shared list](../Files/shared.txt).\n"
+                    },
+                    "store": {
+                        "notes/Notes/Plan.md": null,
+                        "manifest/1e82c8e2a992d3fb.json": null,
+                        "notes/Notes/Shed.md": "# Shed\n\nThe [shared list](../Files/shared.txt).\n"
+                    },
+                    "attachmentStorage": {
+                        "e9c87c965f4f83834df66105cb645ac0be064484628f1f4bc998cb1ec1d4dcd6": "A file that two notes use\n"
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the Starter Kit is back",
+                    "noteTypes": {
+                        "noteTypes": [],
+                        "notes": {}
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the stored plan is stale",
+                    "stored": true,
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "is stale"
+                },
+                {
+                    "do": "status",
+                    "why": "the note that was taken down is a candidate again",
+                    "queue": {
+                        "behind": 0,
+                        "changed": ["Notes/Shed.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": ["Notes/Plan.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "takedown",
+                    "why": "a note with no manifest entry cannot be taken down: a mistake in a path must not look like a takedown that worked",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "has no manifest entry"
+                },
+                {
+                    "do": "takedown",
+                    "why": "a path must be a vault path",
+                    "paths": ["../Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "is not a vault path"
+                },
+                {
+                    "do": "takedown",
+                    "why": "a takedown names at least one note",
+                    "paths": [],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "at least one note"
+                }
+            ]
+        },
+        {
+            "name": "an unpublish holds the other changed notes, and a takedown removes an unpublished note and a note under a guard (issue 38)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Notes/Old.md": "# Old\n",
+                "Notes/Kept.md": "# Kept\n",
+                "Drafts/Idea.md": "# Idea\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "three notes are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Drafts/Idea.md", "Notes/Kept.md", "Notes/Old.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Drafts/Idea.md", "Notes/Kept.md", "Notes/Old.md"],
+                        "published": ["Drafts/Idea.md", "Notes/Kept.md", "Notes/Old.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "another note changes",
+                    "files": {
+                        "Notes/Kept.md": "---\npublic_note: true\n---\n# Kept, edited\n"
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the unpublish removes the named note only: the changed note is held, and its live version stays",
+                    "paths": ["Notes/Old.md", "Notes/Old.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Notes/Old.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Notes/Old.md"],
+                        "skipped": ["Notes/Kept.md"],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry of the note says unpublished; the held note keeps its live version",
+                    "vault": {
+                        "Notes/Old.md": "# Old\n"
+                    },
+                    "store": {
+                        "notes/Notes/Old.md": null,
+                        "manifest/86c447498d7c7509.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:ccd2955cfc4a825d2f7a5462af7450e9ffa3206a551ce903071776fa6bb78590\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"86c447498d7c7509\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Old.md\",\n  \"sourceHash\": \"sha256:ccd2955cfc4a825d2f7a5462af7450e9ffa3206a551ce903071776fa6bb78590\",\n  \"state\": \"unpublished\"\n}\n",
+                        "notes/Notes/Kept.md": "# Kept\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the unpublished note is a candidate again; the held note is still changed",
+                    "queue": {
+                        "behind": 0,
+                        "changed": ["Notes/Kept.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["Notes/Old.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Drafts/Idea.md"],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "a note that is not published cannot be unpublished",
+                    "paths": ["Notes/Old.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "is not published"
+                },
+                {
+                    "do": "unpublish",
+                    "why": "an unpublish names at least one note",
+                    "paths": [],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "at least one note"
+                },
+                {
+                    "do": "store",
+                    "why": "another device adds the folder of the third note to the deny list",
+                    "files": {
+                        "configuration.json": "{\"denyList\":[\"Drafts\",\"Locked\"]}"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note in the new folder of the deny list waits for its forced removal",
+                    "queue": {
+                        "behind": 0,
+                        "changed": ["Notes/Kept.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": ["Notes/Old.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Drafts/Idea.md"],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "takedown",
+                    "why": "the unpublished note and the note under a guard leave the manifest; the note in the folder of the deny list is never written",
+                    "paths": ["Notes/Old.md", "Drafts/Idea.md", "Notes/Old.md"],
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "propertyRemoved": [],
+                        "takenDown": ["Drafts/Idea.md", "Notes/Old.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "both entries are gone, and the note under the guard keeps its property",
+                    "vault": {
+                        "Drafts/Idea.md": "---\npublic_note: true\n---\n# Idea\n",
+                        "Notes/Old.md": "# Old\n"
+                    },
+                    "store": {
+                        "manifest/86c447498d7c7509.json": null,
+                        "manifest/15516b5f07453288.json": null,
+                        "notes/Drafts/Idea.md": null,
+                        "notes/Notes/Kept.md": "# Kept\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note under the guard has no entry any more: it is in no list",
+                    "queue": {
+                        "behind": 0,
+                        "changed": ["Notes/Kept.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": ["Notes/Old.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a takedown that stops halfway gives the same result when it is run again (issue 38)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Notes/Plan.md": "# Plan\n\nThe [list](../Files/only.txt).\n",
+                "Files/only.txt": "A file that only the plan uses\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the note is published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/Plan.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Plan.md"],
+                        "published": ["Notes/Plan.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "crash",
+                    "why": "the takedown stops after its commit, before its push",
+                    "takedown": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "at": "commit"
+                },
+                {
+                    "do": "takedown",
+                    "why": "the lock of the stopped run stops a new takedown",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "unlock"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "offline",
+                    "why": "the content store cannot be reached"
+                },
+                {
+                    "do": "takedown",
+                    "why": "without a network the tool cannot know whether the push arrived",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true
+                },
+                {
+                    "do": "online",
+                    "why": "the network is back"
+                },
+                {
+                    "do": "takedown",
+                    "why": "the commit that did not arrive is taken back, and the takedown runs again",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb"
+                        ],
+                        "propertyRemoved": ["Notes/Plan.md"],
+                        "takenDown": ["Notes/Plan.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note is gone, once",
+                    "vault": {
+                        "Notes/Plan.md": "# Plan\n\nThe [list](../Files/only.txt).\n"
+                    },
+                    "store": {
+                        "notes/Notes/Plan.md": null,
+                        "manifest/1e82c8e2a992d3fb.json": null
+                    },
+                    "attachmentStorage": {}
+                },
+                {
+                    "do": "publish",
+                    "why": "the author publishes the note again: a new entry",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/Plan.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Plan.md"],
+                        "published": ["Notes/Plan.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "crash",
+                    "why": "the takedown stops after its push, before the storage and the property",
+                    "takedown": ["Notes/Plan.md"],
+                    "time": "2031-06-04T08:00:00Z",
+                    "at": "push"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "status",
+                    "why": "status writes nothing, so it does not put the copy back",
+                    "refused": true,
+                    "says": "stopped halfway"
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan puts the copy back: the push arrived, so nothing is taken back",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note has no entry",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": ["Notes/Plan.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the file and the property wait for the next run",
+                    "vault": {
+                        "Notes/Plan.md": "---\npublic_note: true\n---\n# Plan\n\nThe [list](../Files/only.txt).\n"
+                    },
+                    "store": {
+                        "manifest/792847ca0b963dbf.json": null
+                    },
+                    "attachmentStorage": {
+                        "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb": "A file that only the plan uses\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the next publication corrects the property and cleans the storage",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-05T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Notes/Plan.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "nothing of the note stays",
+                    "vault": {
+                        "Notes/Plan.md": "# Plan\n\nThe [list](../Files/only.txt).\n"
+                    },
+                    "store": {},
+                    "attachmentStorage": {}
+                }
+            ]
+        },
+        {
+            "name": "a takedown works when the configuration stops every plan (issue 38)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Notes/One.md": "# One\n",
+                "Notes/Two.md": "# Two\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "two notes are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/One.md", "Notes/Two.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/One.md", "Notes/Two.md"],
+                        "published": ["Notes/One.md", "Notes/Two.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "another device names a folder that the vault does not have",
+                    "files": {
+                        "configuration.json": "{\"denyList\":[\"Gone\",\"Locked\"]}"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a deny list entry that names no folder stops every plan (GATE-38)",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "not a folder of the vault"
+                },
+                {
+                    "do": "takedown",
+                    "why": "the takedown does not check the deny list against the vault: it takes the note down and removes the property",
+                    "paths": ["Notes/One.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "propertyRemoved": ["Notes/One.md"],
+                        "takenDown": ["Notes/One.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "another device writes a configuration that is not JSON",
+                    "files": {
+                        "configuration.json": "not JSON"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a configuration that cannot be read stops every plan",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "takedown",
+                    "why": "the takedown still takes the note down; without a deny list it writes no note, and says so",
+                    "paths": ["Notes/Two.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "propertyRemoved": [],
+                        "takenDown": ["Notes/Two.md"],
+                        "warnings": [""]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "both notes are gone from the content store; the second keeps its property",
+                    "vault": {
+                        "Notes/One.md": "# One\n",
+                        "Notes/Two.md": "---\npublic_note: true\n---\n# Two\n"
+                    },
+                    "store": {
+                        "notes/Notes/One.md": null,
+                        "notes/Notes/Two.md": null
+                    }
                 }
             ]
         }

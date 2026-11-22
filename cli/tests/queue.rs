@@ -218,7 +218,7 @@ impl Setup {
             asked.push(".asked");
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES_ASKED", asked);
         }
-        if command == "publish" {
+        if ["publish", "takedown", "unpublish"].contains(&command) {
             program
                 .arg("--attachment-storage")
                 .arg(self.stores.attachment_storage());
@@ -276,6 +276,30 @@ impl Setup {
         json_of(&output)
     }
 
+    /// Runs a command on the paths of a step, at the time of the step.
+    fn run_on_paths(&self, command: &str, step: &Value, crash: Option<&str>) -> Output {
+        let time = step["time"].as_str().expect("a run has a time");
+        let key = if step["do"] == "crash" {
+            "takedown"
+        } else {
+            "paths"
+        };
+        let mut arguments = vec![
+            "--time".to_owned(),
+            time.to_owned(),
+            "--device".to_owned(),
+            "garden-shed".to_owned(),
+        ];
+        // With `=`: a path can start with a hyphen.
+        arguments.extend(
+            paths(&step[key])
+                .iter()
+                .map(|path| format!("--path={path}")),
+        );
+        let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
+        self.run_with(command, &arguments, crash)
+    }
+
     fn git(&self, arguments: &[&str]) -> String {
         let mut all = vec!["-C", text(&self.copy)];
         all.extend_from_slice(arguments);
@@ -318,8 +342,11 @@ fn text_of(path: &Path) -> Value {
 /// The lists of paths of a report, in the form of the shared file.
 fn report_lists(report: &Value) -> Value {
     let mut lists = report.clone();
+    // A takedown report has no `failed`.
     for key in ["failed", "warnings"] {
-        lists[key] = json!(paths(&report[key]));
+        if report.get(key).is_some() {
+            lists[key] = json!(paths(&report[key]));
+        }
     }
     lists
 }
@@ -371,7 +398,62 @@ fn set_answers(setup: &Setup, note_types: &Value) {
     }
 }
 
-fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String) {
+/// The plans of the steps of one scenario: the last one that stopped, and
+/// the last one that a `plan` step stored.
+#[derive(Default)]
+struct Plans {
+    stopped: String,
+    stored: String,
+}
+
+/// The step `expect`: the texts of files of the vault and of the content
+/// store, and the files of the attachment storage when the step names them.
+fn check_files(setup: &Setup, step: &Value, label: &str) {
+    for (folder, key) in [(&setup.vault, "vault"), (&setup.copy, "store")] {
+        for (path, expected) in step[key].as_object().expect("the files are an object") {
+            assert_eq!(&text_of(&folder.join(path)), expected, "{label}: {path}");
+        }
+    }
+    if let Some(storage) = step["attachmentStorage"].as_object() {
+        let mut expected: Vec<(String, Vec<u8>)> = storage
+            .iter()
+            .map(|(key, content)| (key.clone(), bytes_of(content)))
+            .collect();
+        expected.sort();
+        assert_eq!(
+            storage_of(setup.stores.attachment_storage()),
+            expected,
+            "{label}"
+        );
+    }
+}
+
+/// The steps of issue 38 on the paths of a step: `takedown`, `unpublish`,
+/// and a `crash` of a takedown. False for every other step.
+fn run_removal_step(setup: &Setup, step: &Value, label: &str) -> bool {
+    let kind = step["do"].as_str().unwrap_or_default();
+    if kind == "crash" && !step["takedown"].is_null() {
+        let point = step["at"].as_str().expect("a crash has a point");
+        let output = setup.run_on_paths("takedown", step, Some(point));
+        assert!(!output.status.success(), "{label}: the run did not stop");
+    } else if kind == "takedown" || kind == "unpublish" {
+        let output = setup.run_on_paths(kind, step, None);
+        if step["refused"] == json!(true) {
+            assert_refused_saying(&output, step, label);
+        } else {
+            assert!(output.status.success(), "{label}: {}", errors_of(&output));
+            assert_eq!(report_lists(&json_of(&output)), step["report"], "{label}");
+        }
+    } else {
+        return false;
+    }
+    true
+}
+
+fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
+    if run_removal_step(setup, step, label) {
+        return;
+    }
     match step["do"].as_str().expect("a step says what it does") {
         "write" => write_files(&setup.vault, &step["files"]),
         "delete" => {
@@ -384,7 +466,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String)
             Some(message) => push_to_store_with(
                 &setup.copy,
                 &step["files"],
-                &message.replace("{plan}", stopped_plan),
+                &message.replace("{plan}", &plans.stopped),
             ),
             None => push_to_store(&setup.copy, &step["files"]),
         },
@@ -398,6 +480,10 @@ fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String)
                 assert_refused_saying(&output, step, label);
             } else {
                 assert!(output.status.success(), "{label}: {}", errors_of(&output));
+                json_of(&output)["id"]
+                    .as_str()
+                    .expect("the plan has an id")
+                    .clone_into(&mut plans.stored);
                 assert_eq!(json_of(&output)["plan"], step["plan"], "{label}");
                 let offline = step.get("offline").cloned().unwrap_or(json!(false));
                 assert_eq!(json_of(&output)["offline"], offline, "{label}");
@@ -407,7 +493,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String)
             let time = step["time"].as_str().expect("a publication has a time");
             let point = step["at"].as_str().expect("a crash has a point");
             let id = setup.plan_id(&step["selection"]);
-            stopped_plan.clone_from(&id);
+            plans.stopped.clone_from(&id);
             let output = setup.run_with(
                 "publish",
                 &["--plan", &id, "--time", time, "--device", "garden-shed"],
@@ -442,7 +528,11 @@ fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String)
         "asked" => check_questions(setup, step, label),
         "publish" if step["refused"] == json!(true) => {
             let time = step["time"].as_str().expect("a publication has a time");
-            let id = setup.plan_id(&step["selection"]);
+            let id = if step["stored"] == json!(true) {
+                plans.stored.clone()
+            } else {
+                setup.plan_id(&step["selection"])
+            };
             assert_refused_saying(&setup.publish_plan(&id, time), step, label);
         }
         "publish" => {
@@ -450,25 +540,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String)
             let report = setup.publish(&step["selection"], time);
             assert_eq!(report_lists(&report), step["report"], "{label}");
         }
-        "expect" => {
-            for (folder, key) in [(&setup.vault, "vault"), (&setup.copy, "store")] {
-                for (path, expected) in step[key].as_object().expect("the files are an object") {
-                    assert_eq!(&text_of(&folder.join(path)), expected, "{label}: {path}");
-                }
-            }
-            if let Some(storage) = step["attachmentStorage"].as_object() {
-                let mut expected: Vec<(String, Vec<u8>)> = storage
-                    .iter()
-                    .map(|(key, content)| (key.clone(), bytes_of(content)))
-                    .collect();
-                expected.sort();
-                assert_eq!(
-                    storage_of(setup.stores.attachment_storage()),
-                    expected,
-                    "{label}"
-                );
-            }
-        }
+        "expect" => check_files(setup, step, label),
         other => panic!("{label}: the step \"{other}\" is not known"),
     }
 }
@@ -486,14 +558,14 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
         let name = scenario["name"].as_str().expect("a scenario has a name");
         let setup = Setup::scenario(scenario);
         let steps = scenario["steps"].as_array().expect("a scenario has steps");
-        let mut stopped_plan = String::new();
+        let mut plans = Plans::default();
         for (index, step) in steps.iter().enumerate() {
             let why = step["why"].as_str().expect("a step says why");
             run_step(
                 &setup,
                 step,
                 &format!("{name}, step {}: {why}", index + 1),
-                &mut stopped_plan,
+                &mut plans,
             );
             kinds.push(step["do"].as_str().unwrap_or_default().to_owned());
         }
@@ -516,7 +588,9 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
             "publish",
             "status",
             "store",
+            "takedown",
             "unlock",
+            "unpublish",
             "write"
         ]
     );

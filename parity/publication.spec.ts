@@ -14,7 +14,14 @@ import { toCanonicalJson } from '../apps/plugin/src/publishing/canonical.ts'
 import type { CanonicalValue } from '../apps/plugin/src/publishing/canonical.ts'
 import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import type { Selection } from '../apps/plugin/src/publishing/plan.ts'
-import { plan, publish, status, unlock } from '../apps/plugin/src/publishing/tool.ts'
+import {
+    plan,
+    publish,
+    status,
+    takedown,
+    unlock,
+    unpublish
+} from '../apps/plugin/src/publishing/tool.ts'
 import { buildRustProgram, runRustProgram } from './harness.ts'
 
 // The parity rule (ADR 0009, TEST-03 of the spec): for the same input, the
@@ -371,6 +378,10 @@ interface Tool {
     status(): Promise<string>
     /** Makes the plan of a selection, applies it, and gives the plan and the lists of paths of the report. */
     publish(selection: Selection, time: string): Promise<{ plan: string; report: string }>
+    /** Unpublishes the notes in one step, and gives the lists of paths of the report. */
+    unpublish(paths: readonly string[], time: string): Promise<string>
+    /** Takes the notes down, and gives the lists of paths of the report. */
+    takedown(paths: readonly string[], time: string): Promise<string>
 }
 
 /** The lists of paths of a report: the texts for a person are outside the parity rule. */
@@ -403,6 +414,14 @@ function typescriptTool(vault: string, copy: string): Tool {
                 face: 'command-line'
             })
             return { plan: toCanonicalJson(planned.plan), report: reportLists(report) }
+        },
+        async unpublish(paths, time) {
+            const run = { time, device: DEVICE, face: 'command-line' } as const
+            return reportLists(await unpublish(device, paths, run))
+        },
+        async takedown(paths, time) {
+            const run = { time, device: DEVICE, face: 'command-line' } as const
+            return reportLists(await takedown(device, paths, run))
         }
     }
 }
@@ -437,6 +456,38 @@ function rustTool(vault: string, copy: string): Tool {
                 ])
             ) as Record<string, unknown>
             return { plan: toCanonicalJson(planned.plan), report: reportLists(report) }
+        },
+        async unpublish(paths, time) {
+            const output = await run('unpublish', [
+                '--attachment-storage',
+                storageOf(copy),
+                ...paths.map((path) => `--path=${path}`),
+                '--time',
+                time,
+                '--device',
+                DEVICE
+            ])
+            return reportLists(JSON.parse(output) as Record<string, unknown>)
+        },
+        async takedown(paths, time) {
+            const result = await runRustProgram(program, [
+                'takedown',
+                '--vault',
+                vault,
+                '--content-store',
+                copy,
+                '--attachment-storage',
+                storageOf(copy),
+                ...paths.map((path) => `--path=${path}`),
+                '--time',
+                time,
+                '--device',
+                DEVICE
+            ])
+            expect(result.stderr, 'takedown').toBe('')
+            return reportLists(
+                JSON.parse(new TextDecoder().decode(result.stdout)) as Record<string, unknown>
+            )
         }
     }
 }
@@ -719,6 +770,75 @@ describe('parity of the publication queue', () => {
             { link: 'Welcome', path: 'Welcome.md' },
             { link: 'Welcome.md', path: 'Welcome.md' }
         ])
+    })
+})
+
+// An unpublish and a takedown (issue 38). Each implementation publishes the
+// fixture, unpublishes one note while another note is changed, then takes down
+// two notes that share an image and the unpublished note.
+
+const LATEST = '2031-04-03T10:00:00Z'
+
+interface Removals {
+    unpublished: string
+    takenDown: string
+    queue: string
+    left: Result
+}
+
+async function removals(toolOf: (vault: string, copy: string) => Tool): Promise<Removals> {
+    await using stores = await makeTestStores()
+    const vault = await copyFixtureVault(stores)
+    const copy = await makeContentStoreCopy(stores)
+    await craft(vault)
+    const tool = toolOf(vault, copy)
+    await tool.publish({ include: PUBLISHED }, TIME)
+    const file = join(vault, EDITED)
+    await writeFile(file, `${await Bun.file(file).text()}\nA second paragraph.\n`)
+    const unpublished = await tool.unpublish([HELD], LATER)
+    const takenDown = await tool.takedown([TOUR, HELD, PLAN], LATEST)
+    return { unpublished, takenDown, queue: await tool.status(), left: await resultOf(vault, copy) }
+}
+
+describe('parity of an unpublish and a takedown', () => {
+    let fromTypeScript: Removals
+    let fromRust: Removals
+
+    beforeAll(async () => {
+        fromTypeScript = await removals(typescriptTool)
+        fromRust = await removals(rustTool)
+    }, 120_000)
+
+    test('both implementations give the same reports and the same queue', () => {
+        expect(fromRust.unpublished).toBe(fromTypeScript.unpublished)
+        expect(fromRust.takenDown).toBe(fromTypeScript.takenDown)
+        expect(fromRust.queue).toBe(fromTypeScript.queue)
+    })
+
+    test('both implementations leave the same content store, vault, storage and plans', () => {
+        expect(fromRust.left).toEqual(fromTypeScript.left)
+    })
+
+    // The comparison must have something to compare. The expected values are stated by hand.
+    test('the unpublish held the changed note, and the takedown removed the three notes and their image', () => {
+        const unpublished = JSON.parse(fromRust.unpublished) as Record<string, string[]>
+        expect(unpublished['removed']).toEqual([HELD])
+        expect(unpublished['skipped']).toEqual([EDITED])
+        expect(JSON.parse(fromRust.takenDown)).toEqual({
+            attachmentsDeleted: [IMAGE_KEY],
+            propertyRemoved: [PLAN, TOUR],
+            takenDown: [PLAN, TOUR, HELD],
+            warnings: []
+        })
+        const files = Object.keys(fromRust.left.store)
+        for (const note of [PLAN, TOUR, HELD]) {
+            expect(files, note).not.toContain(`notes/${note}`)
+            expect(fromRust.left.vault[note], note).not.toMatch(/public_note/)
+        }
+        expect(files.filter((name) => name.startsWith('manifest/')).length).toBe(
+            PUBLISHED.length - 3
+        )
+        expect(Object.keys(fromRust.left.storage)).toEqual([])
     })
 })
 

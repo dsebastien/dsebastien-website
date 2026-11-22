@@ -13,7 +13,7 @@ import {
     setProperty
 } from './frontmatter.ts'
 import type { Aliases } from './frontmatter.ts'
-import { IGNORE_PROPERTY } from './guards.ts'
+import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
 import { bytesHash, contentHash, sha256Hex } from './hash.ts'
 import { parseJson } from './json.ts'
 import type { NoteLink } from './links.ts'
@@ -75,6 +75,19 @@ export type PublicationReport = {
     /** The changed notes that the plan did not update. Their live version stays. */
     readonly skipped: readonly string[]
     readonly updated: readonly string[]
+    /** What the author must know and what stopped nothing. */
+    readonly warnings: readonly { readonly path: string; readonly message: string }[]
+}
+
+/** What a takedown did (`documentation/Canonical Form.md`, "A takedown"). Every list of paths is sorted by path. */
+// A type alias, not an interface: the canonical form takes any object of data.
+export type TakedownReport = {
+    /** The keys of the files that the takedown deleted from the attachment storage. */
+    readonly attachmentsDeleted: readonly string[]
+    /** The notes whose state property was removed. */
+    readonly propertyRemoved: readonly string[]
+    /** The notes that left the content store with their manifest entries. */
+    readonly takenDown: readonly string[]
     /** What the author must know and what stopped nothing. */
     readonly warnings: readonly { readonly path: string; readonly message: string }[]
 }
@@ -160,10 +173,8 @@ interface State {
  */
 async function readState(device: Device, fetch: Fetch): Promise<State> {
     const { behind, reached } = await device.store.verify(fetch)
-    if (fetch !== 'none' && behind > 0) {
-        throw new Error(
-            `the copy of the content store is ${String(behind)} commit(s) behind the content store: another device published since the last pull. Nothing can be planned or published until the copy is up to date: pull first (git pull --ff-only origin main)`
-        )
+    if (fetch !== 'none') {
+        refuseWhenBehind(behind)
     }
     const { configuration, hash } = await readConfiguration(device)
     const manifest = await readManifest(device.store)
@@ -177,6 +188,19 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
         configurationHash: hash,
         behind,
         reached
+    }
+}
+
+/**
+ * Stops when the copy is behind the content store: a copy that did not pull
+ * reads an older manifest, and its push would be refused. The tool never
+ * pulls by itself (R46, R65).
+ */
+function refuseWhenBehind(behind: number): void {
+    if (behind > 0) {
+        throw new Error(
+            `the copy of the content store is ${String(behind)} commit(s) behind the content store: another device published since the last pull. Nothing can be planned, published or taken down until the copy is up to date: pull first (git pull --ff-only origin main)`
+        )
     }
 }
 
@@ -371,10 +395,13 @@ interface Computed {
  */
 async function recordFor(
     device: Device,
-    selection: NormalSelection,
+    selectionOf: NormalSelection | ((scan: Scan) => NormalSelection),
     fetch: Fetch
 ): Promise<Computed> {
     const { scan, configurationHash, reached } = await readState(device, fetch)
+    // An unpublish holds every changed note that it does not name: its
+    // selection comes from the queue of the same scan.
+    const selection = typeof selectionOf === 'function' ? selectionOf(scan) : selectionOf
     const plan = computePlan(scan, selection)
     // The published notes got their type in the scan. The new ones of the plan
     // get theirs in one more question.
@@ -427,6 +454,14 @@ async function recordFor(
  * into the vault and nothing into the content of the store.
  */
 export async function plan(given: Device, selection: Selection): Promise<StoredPlan> {
+    return await storePlan(given, normalSelection(selection))
+}
+
+/** Computes the plan of a selection and stores it on the device. */
+async function storePlan(
+    given: Device,
+    selection: NormalSelection | ((scan: Scan) => NormalSelection)
+): Promise<StoredPlan> {
     const device = forRun(given)
     await refuseWhenLocked(device)
     // A publication that stopped halfway left files in the copy: they are put
@@ -434,7 +469,7 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     if ((await readJournal(device))?.step === 'write') {
         await withLock(device, { command: 'plan' }, (ownLock) => recover(device, ownLock))
     }
-    const computed = await recordFor(device, normalSelection(selection), 'try')
+    const computed = await recordFor(device, selection, 'try')
     // The id names the record. It is outside the parity rule (TOOL-30).
     const id = sha256Hex(computed.record).slice(0, 16)
     await device.local.save(id, computed.record)
@@ -666,34 +701,12 @@ async function correctState(
                 })
                 continue
             }
-            // A new line below a line in the flow form of YAML (`{ }`, `[ ]`)
-            // is not valid YAML. The note stays as the author wrote it.
-            if (hasFlowProperties(text)) {
-                warnings.push({
-                    path,
-                    message: `the properties of the note are in the flow form of YAML ({ } or [ ]), and the tool does not write into that form: correct the ${STATE_PROPERTY} property by hand`
-                })
-                continue
+            const warning = await writeState(device, path, text, isPublished)
+            if (warning === undefined) {
+                ;(isPublished ? propertySet : propertyRemoved).push(path)
+            } else {
+                warnings.push({ path, message: warning })
             }
-            const wanted = isPublished
-                ? setProperty(text, STATE_PROPERTY, 'true')
-                : removeProperty(text, STATE_PROPERTY)
-            // The write must not change what the guard reads. In an odd form
-            // of the properties, a line of the ignore property can belong to
-            // the state property, or the new lines can close properties that
-            // were open. Such a note is never written.
-            if (
-                namesInProperties(wanted, IGNORE_PROPERTY) !==
-                namesInProperties(text, IGNORE_PROPERTY)
-            ) {
-                warnings.push({
-                    path,
-                    message: `the ${STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand`
-                })
-                continue
-            }
-            await device.vault.write(path, wanted)
-            ;(isPublished ? propertySet : propertyRemoved).push(path)
         } catch (error) {
             warnings.push({
                 path,
@@ -702,6 +715,36 @@ async function correctState(
         }
     }
     return { propertyRemoved, propertySet, warnings }
+}
+
+/**
+ * Sets the state property of a note to true, or removes it. The result is
+ * `undefined` when the note was written, else the warning that says why it
+ * was not. It throws when the write fails.
+ */
+async function writeState(
+    device: Device,
+    path: string,
+    text: string,
+    isPublished: boolean
+): Promise<string | undefined> {
+    // A new line below a line in the flow form of YAML (`{ }`, `[ ]`) is not
+    // valid YAML. The note stays as the author wrote it.
+    if (hasFlowProperties(text)) {
+        return `the properties of the note are in the flow form of YAML ({ } or [ ]), and the tool does not write into that form: correct the ${STATE_PROPERTY} property by hand`
+    }
+    const wanted = isPublished
+        ? setProperty(text, STATE_PROPERTY, 'true')
+        : removeProperty(text, STATE_PROPERTY)
+    // The write must not change what the guard reads. In an odd form of the
+    // properties, a line of the ignore property can belong to the state
+    // property, or the new lines can close properties that were open. Such a
+    // note is never written.
+    if (namesInProperties(wanted, IGNORE_PROPERTY) !== namesInProperties(text, IGNORE_PROPERTY)) {
+        return `the ${STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand`
+    }
+    await device.vault.write(path, wanted)
+    return undefined
 }
 
 /**
@@ -810,7 +853,32 @@ async function cleanStorage(
     readonly uploaded: string[]
     readonly warnings: { path: string; message: string }[]
 }> {
-    const used = await usedKeys(manifest, isGuarded)
+    const unused = await deleteUnused(device, await usedKeys(manifest, isGuarded))
+    if (unused.names === undefined) {
+        return { deleted: unused.deleted, uploaded: [], warnings: unused.warnings }
+    }
+    const repaired = await repairStorage(device, manifest, isGuarded, new Set(unused.names))
+    return {
+        deleted: unused.deleted,
+        uploaded: repaired.uploaded,
+        warnings: [...unused.warnings, ...repaired.warnings]
+    }
+}
+
+/**
+ * Deletes every file of the attachment storage whose name is a key, or a key
+ * that is being written, and is not one of the used keys. A name that is not
+ * in the form of a key stays, with a warning. The result has the names of the
+ * storage, or `undefined` when it could not be listed.
+ */
+async function deleteUnused(
+    device: Device,
+    used: ReadonlySet<string>
+): Promise<{
+    readonly deleted: string[]
+    readonly names: readonly string[] | undefined
+    readonly warnings: { path: string; message: string }[]
+}> {
     const deleted: string[] = []
     const warnings: { path: string; message: string }[] = []
     let names: string[]
@@ -821,7 +889,7 @@ async function cleanStorage(
             path: '',
             message: `the attachment storage could not be listed, and it is cleaned at the next publication: ${messageOf(error)}`
         })
-        return { deleted, uploaded: [], warnings }
+        return { deleted, names: undefined, warnings }
     }
     for (const name of sortByCodePoint(names)) {
         if (used.has(name)) {
@@ -846,8 +914,7 @@ async function cleanStorage(
             })
         }
     }
-    const repaired = await repairStorage(device, manifest, isGuarded, new Set(names))
-    return { deleted, uploaded: repaired.uploaded, warnings: [...warnings, ...repaired.warnings] }
+    return { deleted, names, warnings }
 }
 
 /**
@@ -1101,6 +1168,21 @@ async function writeAll(
  */
 export async function publish(given: Device, id: string, run: Run): Promise<PublicationReport> {
     const device = forRun(given)
+    checkRun(run)
+    if (!PLAN_ID.test(id)) {
+        throw new Error(`"${id}" is not the id of a plan: an id is 16 hexadecimal digits`)
+    }
+    const holder: LockHolder = {
+        command: 'publish',
+        device: run.device,
+        face: run.face,
+        time: run.time
+    }
+    return await withLock(device, holder, (ownLock) => apply(device, id, run, ownLock))
+}
+
+/** Checks what a face gives to a run: the time, the name of the device and the face. */
+function checkRun(run: Run): void {
     if (!isCanonicalTime(run.time)) {
         throw new Error(
             `the time of the run must be a real date and time in UTC, to the second: "${run.time}" is not`
@@ -1112,16 +1194,220 @@ export async function publish(given: Device, id: string, run: Run): Promise<Publ
     if (!FACES.includes(run.face)) {
         throw new Error(`"${run.face}" is not a face of the tool`)
     }
-    if (!PLAN_ID.test(id)) {
-        throw new Error(`"${id}" is not the id of a plan: an id is 16 hexadecimal digits`)
+}
+
+/**
+ * Unpublishes the named published notes in one step (PUB-80, R65): the plan
+ * of the selection that removes them and holds every other changed note is
+ * stored, then applied as `publish` applies a plan. Only the named notes
+ * leave, with the forced removals that every plan holds.
+ */
+export async function unpublish(
+    given: Device,
+    paths: readonly string[],
+    run: Run
+): Promise<PublicationReport> {
+    checkRun(run)
+    if (paths.length === 0) {
+        throw new Error('an unpublish names at least one note')
     }
+    const remove = new Set(paths)
+    const stored = await storePlan(given, (scan) =>
+        normalSelection({
+            include: [],
+            hold: scan.queue.changed.filter((path) => !remove.has(path)),
+            remove: [...remove]
+        })
+    )
+    return await publish(given, stored.id, run)
+}
+
+/**
+ * Takes the named notes down at once (`documentation/Canonical Form.md`, "A
+ * takedown"; PUB-81 to PUB-84, PUB-99, business rule 16): each note leaves
+ * the content store with its manifest entry, in one commit that is pushed,
+ * with no plan. Then the files of the attachment storage that no published
+ * note uses go, and the state property leaves the notes. It reads no plan,
+ * scans no vault and asks no Starter Kit, so nothing but the copy can stop it.
+ */
+export async function takedown(
+    given: Device,
+    paths: readonly string[],
+    run: Run
+): Promise<TakedownReport> {
+    const device = forRun(given)
+    checkRun(run)
+    if (paths.length === 0) {
+        throw new Error('a takedown names at least one note')
+    }
+    for (const path of paths) {
+        if (!isVaultPath(path)) {
+            throw new Error(`"${path}" is not a vault path`)
+        }
+    }
+    const named = sortByCodePoint([...new Set(paths)])
     const holder: LockHolder = {
-        command: 'publish',
+        command: 'takedown',
         device: run.device,
         face: run.face,
         time: run.time
     }
-    return await withLock(device, holder, (ownLock) => apply(device, id, run, ownLock))
+    return await withLock(device, holder, (ownLock) => takeDown(device, named, run, ownLock))
+}
+
+/** The takedown of the named notes, with the lock of the device. */
+async function takeDown(
+    device: Device,
+    named: readonly string[],
+    run: Run,
+    ownLock: () => Promise<void>
+): Promise<TakedownReport> {
+    // A publication that stopped halfway is put back first. When it stopped
+    // after its push, the correction of the property is owed: the next
+    // publication makes it.
+    const owed = (await recover(device, ownLock))?.step === 'correct'
+    // The copy must follow the content store: an older manifest would miss a
+    // note, and the push would be refused.
+    refuseWhenBehind((await device.store.verify('must')).behind)
+    const manifest = await readManifest(device.store)
+    const entries = named.map((path) => {
+        const entry = manifest.get(path)
+        if (entry === undefined) {
+            throw new Error(
+                `"${path}" has no manifest entry: it is not published and not unpublished, so there is nothing to take down`
+            )
+        }
+        return entry
+    })
+    // The id names the takedown in the journal and in the message of its
+    // commit, so a recovery finds the commit. It is outside the parity rule.
+    const id = sha256Hex(
+        toCanonicalJson({ manifest: await manifestHash(device), takedown: named })
+    ).slice(0, 16)
+    const paths = sortByCodePoint(
+        entries.flatMap((entry) => [`${NOTES_FOLDER}/${entry.path}`, manifestFile(entry.id)])
+    )
+    const head = await device.store.head()
+    await ownLock()
+    await device.local.saveJournal(
+        journalText({ step: 'write', correctionOwed: owed, head, paths, plan: id })
+    )
+    const journal = new Backup(device.store)
+    try {
+        const written: string[] = []
+        for (const path of paths) {
+            if (await journal.apply({ path, text: undefined })) {
+                written.push(path)
+            }
+        }
+        await ownLock()
+        const count = named.length === 1 ? '1 note' : `${String(named.length)} notes`
+        await device.store.commitAndPush(
+            [
+                `Takedown: ${count}`,
+                '',
+                `Device: ${run.device}`,
+                `Face: ${run.face}`,
+                // The recovery of a run that stopped halfway finds its commit by this line.
+                `Plan: ${id}`
+            ].join('\n'),
+            written
+        )
+    } catch (error) {
+        // Another run took the copy: this run touches nothing of it any more.
+        if (error instanceof LockLost) {
+            throw error
+        }
+        const stayed = await journal.putAllBack()
+        // A file that could not be put back, or a commit that git could not
+        // take back, stays in the journal, so the next run puts it back.
+        if (stayed.length === 0 && (await device.store.head()) === head) {
+            if (owed) {
+                await device.local.saveJournal(journalText({ step: 'correct' }))
+            } else {
+                await device.local.removeJournal()
+            }
+        }
+        const files =
+            stayed.length === 0
+                ? 'and the files of the copy are as they were before'
+                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan, publish or takedown puts them back`
+        throw new Error(`${messageOf(error)}. Nothing is taken down, ${files}`, { cause: error })
+    }
+    // The push arrived. When another run took the copy, this run changes
+    // nothing more: the other run owns the journal.
+    await ownLock()
+    await device.local.saveJournal(journalText({ step: 'correct' }))
+    const after = new Map(manifest)
+    for (const path of named) {
+        after.delete(path)
+    }
+    // The files go first: they are public. No file of the vault is read, so a
+    // file under a guard that a published entry lists waits for the cleanup of
+    // the next publication.
+    const storage = await deleteUnused(device, await usedKeys(after, () => Promise.resolve(false)))
+    const property = await removeState(device, named)
+    if (!owed) {
+        await device.local.removeJournal()
+    }
+    return {
+        attachmentsDeleted: storage.deleted,
+        propertyRemoved: property.propertyRemoved,
+        takenDown: named,
+        warnings: [...storage.warnings, ...property.warnings].sort((one, two) =>
+            compareCodePoints(one.path, two.path)
+        )
+    }
+}
+
+/**
+ * Removes the state property of the notes that were taken down, when the
+ * vault has them at exactly their paths. A note in a folder of the deny list
+ * is never read or written. Without a configuration that can be read, no note
+ * is written.
+ */
+async function removeState(
+    device: Device,
+    paths: readonly string[]
+): Promise<{
+    readonly propertyRemoved: string[]
+    readonly warnings: { path: string; message: string }[]
+}> {
+    const propertyRemoved: string[] = []
+    const warnings: { path: string; message: string }[] = []
+    let configuration: Configuration
+    try {
+        configuration = parseConfiguration(await device.store.read(CONFIGURATION_FILE))
+    } catch (error) {
+        warnings.push({
+            path: '',
+            message: `the configuration of the content store cannot be read, so the ${STATE_PROPERTY} property of the notes that were taken down is not removed: remove it by hand (${messageOf(error)})`
+        })
+        return { propertyRemoved, warnings }
+    }
+    for (const path of paths) {
+        if (guardOfPath(path, configuration) !== undefined) {
+            continue
+        }
+        try {
+            const text = await device.vault.read(path)
+            if (text === undefined || removeProperty(text, STATE_PROPERTY) === text) {
+                continue
+            }
+            const warning = await writeState(device, path, text, false)
+            if (warning === undefined) {
+                propertyRemoved.push(path)
+            } else {
+                warnings.push({ path, message: warning })
+            }
+        } catch (error) {
+            warnings.push({
+                path,
+                message: `the ${STATE_PROPERTY} property could not be removed: ${messageOf(error)}`
+            })
+        }
+    }
+    return { propertyRemoved, warnings }
 }
 
 /**

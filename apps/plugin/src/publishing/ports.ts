@@ -144,7 +144,7 @@ export interface AttachmentStorage {
  */
 export type LockHolder =
     | {
-          readonly command: 'publish'
+          readonly command: 'publish' | 'takedown'
           readonly device: string
           readonly face: string
           readonly time: string

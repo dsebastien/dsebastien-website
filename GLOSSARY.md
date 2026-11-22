@@ -66,7 +66,7 @@ The result of a publication, shown to the author: what is live, what failed, and
 To remove a published note from the site through a normal publication.
 
 **Takedown**:
-The immediate and complete removal of a published note and of everything derived from it.
+The immediate and complete removal of a published or unpublished note and of everything derived from it, with no plan. Its addresses answer 404.
 _Avoid_: unpublish (which waits for a publication)
 
 **Forced removal**:

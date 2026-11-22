@@ -18,7 +18,7 @@ use crate::device::{
 use crate::frontmatter::{
     Aliases, aliases_of, has_flow_properties, names_in_properties, remove_property, set_property,
 };
-use crate::guards::IGNORE_PROPERTY;
+use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::hash::{bytes_hash, content_hash, sha256_hex};
 use crate::json::parse_json;
 use crate::links::{NoteLink, links_of};
@@ -118,10 +118,8 @@ struct DeviceState {
 fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
     let verified = device.store.verify(fetch)?;
     let behind = verified.behind;
-    if fetch != Fetch::None && behind > 0 {
-        return Err(format!(
-            "the copy of the content store is {behind} commit(s) behind the content store: another device published since the last pull. Nothing can be planned or published until the copy is up to date: pull first (git pull --ff-only origin main)"
-        ));
+    if fetch != Fetch::None {
+        refuse_when_behind(behind)?;
     }
     let (configuration, configuration_hash) = read_configuration(device)?;
     let manifest = read_manifest(&device.store)?;
@@ -132,6 +130,18 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
         configuration_hash,
         reached: verified.reached,
     })
+}
+
+/// `Err` when the copy is behind the content store: a copy that did not pull
+/// reads an older manifest, and its push would be refused. The tool never
+/// pulls by itself (R46, R65).
+fn refuse_when_behind(behind: u64) -> Result<(), String> {
+    if behind > 0 {
+        return Err(format!(
+            "the copy of the content store is {behind} commit(s) behind the content store: another device published since the last pull. Nothing can be planned, published or taken down until the copy is up to date: pull first (git pull --ff-only origin main)"
+        ));
+    }
+    Ok(())
 }
 
 /// What the lock of the device holds, for a message: one line.
@@ -369,12 +379,19 @@ struct Computed {
 
 /// Computes the plan of a selection and its record: the plan, the selection,
 /// and the state that the plan was computed from, in the canonical form.
-fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Computed, String> {
+fn record_for(
+    device: &Device,
+    selection_of: &dyn Fn(&Scan) -> Selection,
+    fetch: Fetch,
+) -> Result<Computed, String> {
     let DeviceState {
         scan,
         configuration_hash,
         reached,
     } = read_state(device, fetch)?;
+    // An unpublish holds every changed note that it does not name: its
+    // selection comes from the queue of the same scan.
+    let selection = &selection_of(&scan);
     let plan = compute_plan(&scan, selection)?;
     // The published notes got their type in the scan. The new ones of the
     // plan get theirs in one more question.
@@ -449,6 +466,20 @@ fn record_for(device: &Device, selection: &Selection, fetch: Fetch) -> Result<Co
 ///
 /// The selection cannot become a plan, or the plan cannot be stored.
 pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
+    let (id, computed) = store_plan(device, &|_| selection.clone())?;
+    canonical(&json!({
+        "id": id,
+        "offline": !computed.reached,
+        "plan": to_value(&computed.plan)?,
+    }))
+}
+
+/// Computes the plan of a selection and stores it on the device. The result is
+/// its id and the plan.
+fn store_plan(
+    device: &Device,
+    selection: &dyn Fn(&Scan) -> Selection,
+) -> Result<(String, Computed), String> {
     refuse_when_locked(device)?;
     // A publication that stopped halfway left files in the copy: they are
     // put back first, with the lock, so that no publication starts in the
@@ -462,11 +493,7 @@ pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
     // The id names the record. It is outside the parity rule (TOOL-30).
     let id = sha256_hex(&computed.record)[..16].to_owned();
     device.store.save_plan(&id, &computed.record)?;
-    canonical(&json!({
-        "id": id,
-        "offline": !computed.reached,
-        "plan": to_value(&computed.plan)?,
-    }))
+    Ok((id, computed))
 }
 
 /// Reads the selection of a stored record.
@@ -891,7 +918,21 @@ fn clean_storage(
     scan: &Scan,
     vault: &Vault,
 ) -> Cleanup {
-    let used = used_keys(manifest, scan, vault);
+    let (mut cleanup, present) = delete_unused(storage, &used_keys(manifest, scan, vault));
+    if let Some(present) = present {
+        repair_storage(storage, manifest, scan, vault, &present, &mut cleanup);
+    }
+    cleanup
+}
+
+/// Deletes every file of the attachment storage whose name is a key, or a key
+/// that is being written, and is not one of the used keys. A name that is not
+/// in the form of a key stays, with a warning. The result has the names of
+/// the storage, or `None` when it could not be listed.
+fn delete_unused(
+    storage: &AttachmentStorage,
+    used: &BTreeSet<String>,
+) -> (Cleanup, Option<BTreeSet<String>>) {
     let mut cleanup = Cleanup {
         deleted: Vec::new(),
         uploaded: Vec::new(),
@@ -904,7 +945,7 @@ fn clean_storage(
                 "message": format!("the attachment storage could not be listed, and it is cleaned at the next publication: {error}"),
                 "path": "",
             }));
-            return cleanup;
+            return (cleanup, None);
         }
     };
     sort_by_code_point(&mut names);
@@ -929,8 +970,7 @@ fn clean_storage(
             })),
         }
     }
-    repair_storage(storage, manifest, scan, vault, &present, &mut cleanup);
-    cleanup
+    (cleanup, Some(present))
 }
 
 /// Uploads again every file that a published entry uses and that the storage
@@ -1099,34 +1139,10 @@ fn correct_state(device: &Device, scan: &Scan, published: &BTreeSet<String>) -> 
                 continue;
             }
         };
-        // A new line below a line in the flow form of YAML (`{ }`, `[ ]`) is
-        // not valid YAML. The note stays as the author wrote it.
-        if has_flow_properties(&text) {
-            warn(format!(
-                "the properties of the note are in the flow form of YAML ({{ }} or [ ]), and the tool does not write into that form: correct the {STATE_PROPERTY} property by hand"
-            ));
-            continue;
-        }
-        let wanted = if is_published {
-            set_property(&text, STATE_PROPERTY, "true")
-        } else {
-            remove_property(&text, STATE_PROPERTY)
-        };
-        // The write must not change what the guard reads. In an odd form of
-        // the properties, a line of the ignore property can belong to the
-        // state property, or the new lines can close properties that were
-        // open. Such a note is never written.
-        if names_in_properties(&wanted, IGNORE_PROPERTY)
-            != names_in_properties(&text, IGNORE_PROPERTY)
-        {
-            warn(format!(
-                "the {STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand"
-            ));
-            continue;
-        }
-        match device.vault.write(path, &wanted) {
-            Ok(()) if is_published => correction.property_set.push(path.clone()),
-            Ok(()) => correction.property_removed.push(path.clone()),
+        match write_state(device, path, &text, is_published) {
+            Ok(None) if is_published => correction.property_set.push(path.clone()),
+            Ok(None) => correction.property_removed.push(path.clone()),
+            Ok(Some(warning)) => warn(warning),
             Err(error) => warn(format!(
                 "the {STATE_PROPERTY} property could not be corrected: {error}"
             )),
@@ -1135,9 +1151,55 @@ fn correct_state(device: &Device, scan: &Scan, published: &BTreeSet<String>) -> 
     correction
 }
 
+/// Sets the state property of a note to true, or removes it. `Ok(None)` when
+/// the note was written, `Ok(Some(warning))` when it was not, with the reason,
+/// and `Err` when the write failed.
+fn write_state(
+    device: &Device,
+    path: &str,
+    text: &str,
+    is_published: bool,
+) -> Result<Option<String>, String> {
+    // A new line below a line in the flow form of YAML (`{ }`, `[ ]`) is not
+    // valid YAML. The note stays as the author wrote it.
+    if has_flow_properties(text) {
+        return Ok(Some(format!(
+            "the properties of the note are in the flow form of YAML ({{ }} or [ ]), and the tool does not write into that form: correct the {STATE_PROPERTY} property by hand"
+        )));
+    }
+    let wanted = if is_published {
+        set_property(text, STATE_PROPERTY, "true")
+    } else {
+        remove_property(text, STATE_PROPERTY)
+    };
+    // The write must not change what the guard reads. In an odd form of the
+    // properties, a line of the ignore property can belong to the state
+    // property, or the new lines can close properties that were open. Such a
+    // note is never written.
+    if names_in_properties(&wanted, IGNORE_PROPERTY) != names_in_properties(text, IGNORE_PROPERTY) {
+        return Ok(Some(format!(
+            "the {STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand"
+        )));
+    }
+    device.vault.write(path, &wanted)?;
+    Ok(None)
+}
+
 /// Checks the inputs of a publication: the time, the name of the device, the
 /// face and the id of the plan.
 fn check_inputs(id: &str, run: &Run) -> Result<(), String> {
+    check_run(run)?;
+    if !is_plan_id(id) {
+        return Err(format!(
+            "\"{id}\" is not the id of a plan: an id is 16 hexadecimal digits"
+        ));
+    }
+    Ok(())
+}
+
+/// Checks what a face gives to a run: the time, the name of the device and
+/// the face.
+fn check_run(run: &Run) -> Result<(), String> {
     if !is_canonical_time(run.time) {
         return Err(format!(
             "the time of the run must be a real date and time in UTC, to the second: \"{}\" is not",
@@ -1149,11 +1211,6 @@ fn check_inputs(id: &str, run: &Run) -> Result<(), String> {
     }
     if !FACES.contains(&run.face) {
         return Err(format!("\"{}\" is not a face of the tool", run.face));
-    }
-    if !is_plan_id(id) {
-        return Err(format!(
-            "\"{id}\" is not the id of a plan: an id is 16 hexadecimal digits"
-        ));
     }
     Ok(())
 }
@@ -1393,7 +1450,8 @@ fn apply(
         .store
         .load_plan(id)
         .ok_or_else(|| format!("there is no plan with the id {id} on this device"))?;
-    let current = record_for(device, &selection_of(&record, id)?, Fetch::Must)?;
+    let selection = selection_of(&record, id)?;
+    let current = record_for(device, &|_| selection.clone(), Fetch::Must)?;
     refuse_stale(device, storage, &current, &record, id)?;
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
@@ -1567,4 +1625,280 @@ fn report_of(
         output,
         failed: written.failed.len(),
     })
+}
+
+/// Unpublishes the named published notes in one step (PUB-80, R65): the plan
+/// of the selection that removes them and holds every other changed note is
+/// stored, then applied as `publish` applies a plan. Only the named notes
+/// leave, with the forced removals that every plan holds.
+///
+/// # Errors
+///
+/// No path is named, the selection cannot become a plan, or the publication
+/// fails.
+pub fn unpublish(
+    device: &Device,
+    storage: &AttachmentStorage,
+    paths: &[String],
+    run: &Run,
+) -> Result<Outcome, String> {
+    check_run(run)?;
+    if paths.is_empty() {
+        return Err("an unpublish names at least one note".to_owned());
+    }
+    let remove: BTreeSet<&String> = paths.iter().collect();
+    let (id, _) = store_plan(device, &|scan| {
+        let hold: Vec<String> = scan
+            .queue
+            .changed
+            .iter()
+            .filter(|path| !remove.contains(path))
+            .cloned()
+            .collect();
+        Selection::new(&[], &hold, paths)
+    })?;
+    publish(device, storage, &id, run)
+}
+
+/// Takes the named notes down at once (`documentation/Canonical Form.md`, "A
+/// takedown"; PUB-81 to PUB-84, PUB-99, business rule 16): each note leaves
+/// the content store with its manifest entry, in one commit that is pushed,
+/// with no plan. Then the files of the attachment storage that no published
+/// note uses go, and the state property leaves the notes. It reads no plan,
+/// scans no vault and asks no Starter Kit, so nothing but the copy can stop
+/// it. The result is the takedown report, in the canonical form.
+///
+/// # Errors
+///
+/// A path is not the path of a manifest entry, the lock is taken, the copy
+/// is behind the content store or cannot be trusted, or the commit or the
+/// push fails: nothing is taken down.
+pub fn takedown(
+    device: &Device,
+    storage: &AttachmentStorage,
+    paths: &[String],
+    run: &Run,
+) -> Result<String, String> {
+    check_run(run)?;
+    if paths.is_empty() {
+        return Err("a takedown names at least one note".to_owned());
+    }
+    if let Some(path) = paths.iter().find(|path| !is_vault_path(path)) {
+        return Err(format!("\"{path}\" is not a vault path"));
+    }
+    let named: Vec<String> = paths
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let holder = json!({
+        "command": "takedown",
+        "device": run.device,
+        "face": run.face,
+        "time": run.time,
+    });
+    with_lock(device, &holder, |own_lock| {
+        take_down(device, storage, &named, run, own_lock)
+    })
+}
+
+/// The takedown of the named notes, with the lock of the device.
+fn take_down(
+    device: &Device,
+    storage: &AttachmentStorage,
+    named: &[String],
+    run: &Run,
+    own_lock: &dyn Fn() -> Result<(), String>,
+) -> Result<String, String> {
+    // A publication that stopped halfway is put back first. When it stopped
+    // after its push, the correction of the property is owed: the next
+    // publication makes it.
+    let owed = recover(device, own_lock)?;
+    // The copy must follow the content store: an older manifest would miss a
+    // note, and the push would be refused.
+    refuse_when_behind(device.store.verify(Fetch::Must)?.behind)?;
+    let manifest = read_manifest(&device.store)?;
+    let mut paths = Vec::new();
+    for path in named {
+        let entry = manifest.get(path).ok_or_else(|| {
+            format!(
+                "\"{path}\" has no manifest entry: it is not published and not unpublished, so there is nothing to take down"
+            )
+        })?;
+        paths.push(format!("{NOTES_FOLDER}/{path}"));
+        paths.push(manifest_file(&entry.id));
+    }
+    sort_by_code_point(&mut paths);
+    // The id names the takedown in the journal and in the message of its
+    // commit, so a recovery finds the commit. It is outside the parity rule.
+    let id = sha256_hex(&canonical(
+        &json!({ "manifest": manifest_hash(device)?, "takedown": named }),
+    )?)[..16]
+        .to_owned();
+    let head = device.store.head();
+    own_lock()?;
+    device
+        .store
+        .save_journal(&journal_text(&RunJournal::Write {
+            correction_owed: owed,
+            head: head.clone(),
+            paths: paths.clone(),
+            plan: id.clone(),
+        })?)?;
+    let mut journal = Backup::new(&device.store);
+    let message = format!(
+        "Takedown: {}\n\nDevice: {}\nFace: {}\nPlan: {id}",
+        if named.len() == 1 {
+            "1 note".to_owned()
+        } else {
+            format!("{} notes", named.len())
+        },
+        run.device,
+        run.face
+    );
+    if let Err(error) = remove_and_push(device, &mut journal, &paths, &message, own_lock) {
+        // Another run took the copy: this run touches nothing of it any more.
+        if error == LOCK_LOST {
+            return Err(error);
+        }
+        let stayed = journal.put_all_back();
+        // A file that could not be put back, or a commit that git could not
+        // take back, stays in the journal, so the next run puts it back.
+        if stayed.is_empty() && device.store.head() == head {
+            if owed {
+                device
+                    .store
+                    .save_journal(&journal_text(&RunJournal::Correct)?)?;
+            } else {
+                device.store.remove_journal()?;
+            }
+        }
+        let files = if stayed.is_empty() {
+            "and the files of the copy are as they were before".to_owned()
+        } else {
+            format!(
+                "and these files of the copy could not be put back: {}. The next plan, publish or takedown puts them back",
+                stayed.join(", ")
+            )
+        };
+        return Err(format!("{error}. Nothing is taken down, {files}"));
+    }
+    crash_point("push");
+    // The push arrived. When another run took the copy, this run changes
+    // nothing more: the other run owns the journal.
+    own_lock()?;
+    device
+        .store
+        .save_journal(&journal_text(&RunJournal::Correct)?)?;
+    after_push(device, storage, manifest, named, owed)
+}
+
+/// Removes the files of a takedown from the copy, and commits and pushes the
+/// removals. The recovery of a run that stopped halfway finds the commit by
+/// the line `Plan:` of its message.
+fn remove_and_push(
+    device: &Device,
+    journal: &mut Backup,
+    paths: &[String],
+    message: &str,
+    own_lock: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    let mut written = Vec::new();
+    for path in paths {
+        let removal = StoreFile {
+            path: path.clone(),
+            text: None,
+        };
+        if journal.apply(&removal)? {
+            written.push(path.clone());
+        }
+    }
+    crash_point("write");
+    own_lock()?;
+    device.store.commit_and_push(message, &written)
+}
+
+/// What a takedown does after its push: the files of the attachment storage
+/// that no published note uses go, then the state property of the notes. The
+/// result is the takedown report, in the canonical form.
+fn after_push(
+    device: &Device,
+    storage: &AttachmentStorage,
+    mut manifest: BTreeMap<String, ManifestEntry>,
+    named: &[String],
+    owed: bool,
+) -> Result<String, String> {
+    for path in named {
+        manifest.remove(path);
+    }
+    // The files go first: they are public. No file of the vault is read, so a
+    // file under a guard that a published entry lists waits for the cleanup
+    // of the next publication.
+    let used: BTreeSet<String> = manifest
+        .values()
+        .filter(|entry| entry.state == State::Published)
+        .flat_map(|entry| &entry.attachments)
+        .map(|attachment| key_of(&attachment.hash).to_owned())
+        .collect();
+    let (cleanup, _) = delete_unused(storage, &used);
+    let (property_removed, property_warnings) = remove_state(device, named);
+    if !owed {
+        device.store.remove_journal()?;
+    }
+    let mut warnings = cleanup.warnings;
+    warnings.extend(property_warnings);
+    // A stable sort, by the path of each warning.
+    warnings.sort_by(|one, two| one["path"].as_str().cmp(&two["path"].as_str()));
+    canonical(&json!({
+        "attachmentsDeleted": cleanup.deleted,
+        "propertyRemoved": property_removed,
+        "takenDown": named,
+        "warnings": warnings,
+    }))
+}
+
+/// Removes the state property of the notes that were taken down, when the
+/// vault has them at exactly their paths. A note in a folder of the deny list
+/// is never read or written. Without a configuration that can be read, no
+/// note is written. The result is the notes that were written and the
+/// warnings.
+fn remove_state(device: &Device, paths: &[String]) -> (Vec<String>, Vec<Value>) {
+    let mut removed = Vec::new();
+    let mut warnings = Vec::new();
+    let configuration = device
+        .store
+        .read(CONFIGURATION_FILE)
+        .and_then(|text| parse_configuration(text.as_deref()));
+    let configuration = match configuration {
+        Ok(configuration) => configuration,
+        Err(error) => {
+            warnings.push(json!({
+                "message": format!("the configuration of the content store cannot be read, so the {STATE_PROPERTY} property of the notes that were taken down is not removed: remove it by hand ({error})"),
+                "path": "",
+            }));
+            return (removed, warnings);
+        }
+    };
+    for path in paths {
+        if in_deny_list(path, &configuration) {
+            continue;
+        }
+        let written = device.vault.read(path).and_then(|text| match text {
+            Some(text) if remove_property(&text, STATE_PROPERTY) != text => {
+                write_state(device, path, &text, false).map(Some)
+            }
+            _ => Ok(None),
+        });
+        match written {
+            Ok(Some(None)) => removed.push(path.clone()),
+            Ok(Some(Some(warning))) => warnings.push(json!({ "message": warning, "path": path })),
+            Ok(None) => {}
+            Err(error) => warnings.push(json!({
+                "message": format!("the {STATE_PROPERTY} property could not be removed: {error}"),
+                "path": path,
+            })),
+        }
+    }
+    (removed, warnings)
 }

@@ -291,6 +291,46 @@ The result of the `publish` command, as data in the canonical form. Every list o
 
 The parity tests compare the lists of paths and of keys. The texts (`reason`, `message`) are outside the rule. `failed` is sorted by path like the other lists, not in the order of the plan. An upload of a note that was left out is in `attachmentsUploaded`, and in `attachmentsDeleted` when the cleanup deleted it.
 
+## An unpublish
+
+The `unpublish` command removes the named published notes through a normal publication, in one step (PUB-80, decision of the author R65). It makes the plan of the selection whose `remove` is the named paths, whose `hold` is every path of the list `changed` of the queue that is not named, and whose `include` is empty. It stores that plan as `plan` does, then applies it as `publish` applies a plan, and writes the publication report. So only the named notes leave, with the forced removals that every plan holds. The rules of the selection apply: a path that is not the path of a published note stops it, and so does a command with no path. A path named twice counts one time.
+
+## A takedown
+
+The `takedown` command removes the named notes from the content store at once, with everything that derives from them (PUB-81 to PUB-84, PUB-99, business rule 16, decisions of the author R65). It needs no plan. Each named path is the path of a manifest entry, published or unpublished: the note leaves the manifest with its former paths, so every address of the note answers 404 after the next build, also the addresses of an unpublished note that answered 410 (URL-28).
+
+1. The command takes vault paths, at least one, the time of the run, the name of the device and the face. A path named twice counts one time. It stops, and changes nothing, when a path is not a vault path or is the path of no manifest entry: a mistake in a path must never look like a takedown that worked.
+2. It takes the lock of the device, with `command` (`takedown`), and puts back what a publication that stopped halfway left, as `publish` does (see "Failure cases"). A lock that another run left stops it.
+3. It checks the copy and fetches the content store as `publish` does (see "The content store"). When the copy is behind the content store, it stops with the message that says to pull (decision of the author R65: the tool does not pull by itself). Without a network, it stops.
+4. It reads no plan, scans no vault and asks no Starter Kit. A stale plan, a publication that failed, a deny list entry that names no folder, a missing Starter Kit and a note that cannot be read do not stop it (PUB-99).
+5. Before its first write into the copy, it writes the run journal, as `publish` does: `paths` holds `notes/<vault path>` and the manifest file of each named note, and `plan` holds the id of the takedown, 16 hexadecimal digits of the SHA-256 of `{"manifest": <state.manifest>, "takedown": <the named paths, sorted>}` in the canonical form (`state.manifest` as in the record of a plan).
+6. For each named note, it removes `notes/<vault path>` (an unpublished note has no such file) and its manifest entry. The removals go into one commit, which is checked and pushed as rules 5 and 6 of "A publication" say. When a removal, the commit or the push fails, every file is put back as it was, nothing is committed, and the command fails: nothing is taken down. The message of the commit:
+
+    ```text
+    Takedown: 1 note
+
+    Device: garden-shed
+    Face: command-line
+    Plan: 0123456789abcdef
+    ```
+
+    The line `Plan:` names the id of the takedown, so the recovery of a takedown that stopped halfway finds its commit as it finds the commit of a publication.
+
+7. After the push, it writes the journal `{"step": "correct"}`. Then it deletes from the attachment storage every file whose name is a key, or a key that is being written, and that no published entry of the manifest lists any more (PUB-82). It reads no file of the vault for this: a file under a guard that a published entry still lists stays until the cleanup of the next publication, and nothing is uploaded again. A name that is not a key stays, with a warning, as in rule 8 of "A publication". A storage that cannot be listed, and a deletion that fails, give a warning.
+8. Then it removes the `public_note` property of each named note whose file is in the vault at exactly its path, by the rules of the correction of the property (a note in the flow form of YAML, or whose ignore property would read otherwise, is not written and gets a warning). It never reads or writes a file in a folder of the deny list of `configuration.json`. When that file cannot be read, no note is written, with a warning. A note that is not in the vault, or that has no such property, is left as it is.
+9. Then it removes the journal, or leaves it `correct` when an earlier publication still owes its correction.
+
+After a takedown, the note is a candidate again when its file is in the vault (decision of the author R65): only a path of `include` publishes it again, with a new id and a new `firstPublished`. Copies in browser caches and at crawlers cannot be recalled (PUB-86). The text of the note stays in the history of the content store: the removal from the history is issue 103 (decision of the author R65).
+
+The result of the command, as data in the canonical form. Every list of paths is sorted by path, and every list of keys in the order of the code points. The parity tests compare the lists.
+
+| Key                  | Value                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `attachmentsDeleted` | The keys of the files that the takedown deleted from the attachment storage              |
+| `propertyRemoved`    | The vault paths of the notes whose `public_note` property was removed                    |
+| `takenDown`          | The vault paths of the notes that left the content store                                 |
+| `warnings`           | What the author must know and what stopped nothing, each with its `path` and a `message` |
+
 ## Failure cases
 
 Decisions of the author R46 (issue 36). The lock and the run journal are files of the device, in the git folder of the copy: `.git/vault-publish/lock` and `.git/vault-publish/journal.json`, next to the stored plans. They are never in a commit and never in the vault. They are data in the canonical form, because a run of one implementation can stop and the next run can be the other one. The parity rule does not compare them.
@@ -301,7 +341,7 @@ The device opt-in of the spec (TOOL-11, story 96) is dropped by the author: ever
 
 One publication at a time on a device, for every face (TOOL-09, PUB-27 of the spec). Between devices, the refused push is the lock.
 
-1. `publish` takes the lock before it reads anything: it makes the file `lock` only when no such file exists (one create, never a test and then a write). The file holds `command` (`publish`), `device`, `face` and `time` of the run, `process`, the id of the process of the run, and `token`, a value that no other run has (two runs of one process in the same second never hold the same text). A `plan` that puts the copy back takes the lock too, with `command` (`plan`), `process` and `token` only. The tool makes the folder `vault-publish` only inside a `.git` folder that exists: a folder that is not a copy gets no file.
+1. `publish` takes the lock before it reads anything: it makes the file `lock` only when no such file exists (one create, never a test and then a write). The file holds `command` (`publish`, or `takedown` for a takedown, which takes the lock in the same way), `device`, `face` and `time` of the run, `process`, the id of the process of the run, and `token`, a value that no other run has (two runs of one process in the same second never hold the same text). A `plan` that puts the copy back takes the lock too, with `command` (`plan`), `process` and `token` only. The tool makes the folder `vault-publish` only inside a `.git` folder that exists: a folder that is not a copy gets no file.
 2. When the file exists, `publish` stops and changes nothing. `status` and `plan` stop too, with the content of the lock: the files of the copy can be half written. Two plans or two status at the same time are allowed.
 3. A run removes the lock at its end, after a success and after every failure that it reports, but only when the file is still its own lock (the same text): it never removes the lock of another run.
 4. A run that stops halfway (a crash, a power cut) leaves the lock. The tool never removes a lock by itself: the `unlock` command (`unlock --content-store <folder>`) removes it, and says whether a lock was there. Then the next `plan` or `publish` puts the copy back. The author runs `unlock` only when no publication runs.
@@ -320,7 +360,7 @@ Before its first write into the copy, `publish` writes the journal:
 | `correctionOwed` | `true` when an earlier publication stopped after its push and the correction of the property is still owed                                                           |
 | `head`           | The commit of the copy before the run. No key when the copy has no commit                                                                                            |
 | `paths`          | Every path of the content store that the run can write or remove: `notes/<vault path>` and the manifest file of each note of the plan, each one time, sorted by path |
-| `plan`           | The id of the plan                                                                                                                                                   |
+| `plan`           | The id of the plan, or of the takedown                                                                                                                               |
 | `step`           | `write`                                                                                                                                                              |
 
 After its push succeeded, the publication writes the journal `{"step": "correct"}`. After the correction of the property and the cleanup of the storage, it removes the journal. A publication with nothing to commit writes no journal, and removes a journal `correct` after its correction. After a failure that it reports, the files are put back as rule 6 of "A publication" says, and the journal is removed (or written `correct` again when the correction was owed).

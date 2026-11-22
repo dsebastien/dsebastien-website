@@ -74,7 +74,7 @@ impl PublicationPlan {
 /// What the author, or an agent that he started, selected for one plan: three
 /// lists of vault paths, each path one time, sorted. It is a part of the
 /// record of a plan.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Selection {
     /// The notes to leave out: their live version stays.
     hold: Vec<String>,

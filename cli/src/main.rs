@@ -143,6 +143,75 @@ enum Command {
         device: Option<String>,
     },
 
+    /// Unpublishes the named published notes in one step: it makes the plan
+    /// that removes them and holds every other changed note, and applies it
+    /// as `publish` does. Only the named notes leave, with the forced
+    /// removals that every plan holds. Their addresses then answer 410. It
+    /// writes the publication report.
+    Unpublish {
+        #[command(flatten)]
+        places: Places,
+
+        /// The folder of the attachment storage. The publication deletes
+        /// every file that no published note uses.
+        #[arg(long, value_name = "FOLDER")]
+        attachment_storage: PathBuf,
+
+        /// The vault path of a published note to unpublish. Give the option
+        /// one time per note.
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        path: Vec<String>,
+
+        /// The time of the run, in UTC and to the second, for example
+        /// 2031-04-01T08:00:00Z. The default is the time of the clock.
+        #[arg(long)]
+        time: Option<String>,
+
+        /// The name of this device, for the message of the commit. The
+        /// default is the name of the host.
+        #[arg(long, value_name = "NAME")]
+        device: Option<String>,
+    },
+
+    /// Takes the named notes down at once, with no plan: each note leaves the
+    /// content store with its manifest entry and its former paths, in one
+    /// commit that is pushed, so its addresses answer 404 after the next
+    /// build. Then the files of the attachment storage that no published note
+    /// uses are deleted, and the `public_note` property leaves the notes. A
+    /// published or an unpublished note can be taken down. A stale plan, a
+    /// failed publication and a missing Starter Kit do not stop it. Copies in
+    /// browser caches and at crawlers cannot be recalled, and the text stays
+    /// in the history of the content store. It writes the takedown report.
+    Takedown {
+        /// The folder of the vault.
+        #[arg(long)]
+        vault: PathBuf,
+
+        /// The folder of the copy of the content store on this device: a git
+        /// clone whose `origin` is the content store.
+        #[arg(long)]
+        content_store: PathBuf,
+
+        /// The folder of the attachment storage.
+        #[arg(long, value_name = "FOLDER")]
+        attachment_storage: PathBuf,
+
+        /// The vault path of a note to take down, as the manifest names it.
+        /// Give the option one time per note.
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        path: Vec<String>,
+
+        /// The time of the run, in UTC and to the second, for example
+        /// 2031-04-01T08:00:00Z. The default is the time of the clock.
+        #[arg(long)]
+        time: Option<String>,
+
+        /// The name of this device, for the message of the commit. The
+        /// default is the name of the host.
+        #[arg(long, value_name = "NAME")]
+        device: Option<String>,
+    },
+
     /// Removes the lock of this device that a publication left when it
     /// stopped halfway (a crash, a power cut). Run it only when no
     /// publication runs. The next plan or publish puts the copy of the
@@ -155,28 +224,32 @@ enum Command {
 }
 
 fn device(places: &Places) -> Result<Device, String> {
-    for (name, folder) in [
-        ("vault", &places.vault),
-        ("content store", &places.content_store),
-    ] {
+    device_of(
+        &places.vault,
+        &places.content_store,
+        places.osk_cli.as_deref(),
+    )
+}
+
+/// The device of a vault and a copy of the content store. A takedown asks no
+/// Starter Kit: it gets the default program, which it never runs.
+fn device_of(vault: &Path, content_store: &Path, osk_cli: Option<&Path>) -> Result<Device, String> {
+    for (name, folder) in [("vault", vault), ("content store", content_store)] {
         if !folder.is_dir() {
             return Err(format!("the {name} is not a folder: {}", folder.display()));
         }
     }
-    let program = places
-        .osk_cli
-        .clone()
-        .unwrap_or_else(|| note_types::default_program(&places.vault));
+    let program = osk_cli.map_or_else(|| note_types::default_program(vault), Path::to_path_buf);
     Ok(Device {
-        vault: Vault::new(&places.vault),
-        store: ContentStore::new(&places.content_store),
-        note_types: note_types::StarterKit::new(&program, &places.vault),
+        vault: Vault::new(vault),
+        store: ContentStore::new(content_store),
+        note_types: note_types::StarterKit::new(&program, vault),
     })
 }
 
 /// The attachment storage. It is not checked here: a publication with no
-/// upload, a takedown for example, never needs it. A note whose upload fails
-/// is left out and reported.
+/// upload never needs it, and a takedown only deletes from it after its push.
+/// A note whose upload fails is left out and reported.
 fn storage(folder: &Path) -> AttachmentStorage {
     AttachmentStorage::new(folder)
 }
@@ -320,6 +393,40 @@ fn run(command: Command) -> Result<Outcome, String> {
             warn_when_offline(&output);
             Ok(done(output))
         }
+        Command::Unpublish {
+            places,
+            attachment_storage,
+            path,
+            time,
+            device: name,
+        } => tool::unpublish(
+            &device(&places)?,
+            &storage(&attachment_storage),
+            &path,
+            &Run {
+                time: &time.unwrap_or_else(now),
+                device: &name.unwrap_or_else(host_name),
+                face: "command-line",
+            },
+        ),
+        Command::Takedown {
+            vault,
+            content_store,
+            attachment_storage,
+            path,
+            time,
+            device: name,
+        } => tool::takedown(
+            &device_of(&vault, &content_store, None)?,
+            &storage(&attachment_storage),
+            &path,
+            &Run {
+                time: &time.unwrap_or_else(now),
+                device: &name.unwrap_or_else(host_name),
+                face: "command-line",
+            },
+        )
+        .map(done),
         Command::Unlock { content_store } => {
             if !content_store.is_dir() {
                 return Err(format!(

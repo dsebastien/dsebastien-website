@@ -122,7 +122,7 @@ impl Setup {
             .arg(&self.vault)
             .arg("--content-store")
             .arg(&self.copy);
-        if command == "publish" {
+        if command == "publish" || command == "takedown" {
             program
                 .arg("--attachment-storage")
                 .arg(self.stores.attachment_storage());
@@ -1372,4 +1372,145 @@ fn a_missing_cleaned_note_whose_path_git_cannot_write_on_some_systems_gets_the_c
         message.contains("rename the note in the vault"),
         "{message}"
     );
+}
+
+/// The takedown (issue 38, PUB-81, PUB-99): one commit with the removals, and
+/// nothing taken down when the copy is behind or the push is refused.
+fn take_down(setup: &Setup, note: &str) -> Output {
+    setup.run(
+        "takedown",
+        &[
+            "--path",
+            note,
+            "--time",
+            "2031-04-02T08:00:00Z",
+            "--device",
+            "garden-shed",
+        ],
+    )
+}
+
+#[test]
+fn a_takedown_removes_the_note_and_its_entry_in_one_commit_which_names_the_takedown() {
+    let setup = set_up();
+    setup.publish(NOTE);
+
+    let output = take_down(&setup, NOTE);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is JSON");
+    assert_eq!(report["takenDown"], serde_json::json!([NOTE]));
+    let remote = text(setup.stores.content_store());
+    let commit = git(&[
+        "--git-dir",
+        remote,
+        "show",
+        "--name-status",
+        "--format=%B",
+        "--no-renames",
+        "main",
+    ]);
+    let (message, files) = commit
+        .split_once("\n\n\n")
+        .expect("a message and its files");
+    let lines: Vec<&str> = message.lines().collect();
+    assert_eq!(
+        lines[..4],
+        [
+            "Takedown: 1 note",
+            "",
+            "Device: garden-shed",
+            "Face: command-line"
+        ]
+    );
+    let id = lines[4].strip_prefix("Plan: ").expect("the line Plan:");
+    assert!(id.len() == 16 && id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert_eq!(
+        files,
+        format!("D\tmanifest/{NOTE_ID}.json\nD\tnotes/{NOTE}")
+    );
+    assert_eq!(
+        git(&["--git-dir", remote, "ls-tree", "-r", "--name-only", "main"]),
+        "configuration.json"
+    );
+    let local = setup.copy.join(".git").join("vault-publish");
+    assert!(!local.join("journal.json").exists());
+    assert!(!local.join("lock").exists());
+}
+
+#[test]
+fn a_refused_push_takes_nothing_down_and_leaves_everything_as_it_was() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    let remote = text(setup.stores.content_store());
+    setup.stores.refuse_pushes();
+    let before = (
+        picture(&setup.vault),
+        picture(&setup.copy),
+        picture(setup.stores.attachment_storage()),
+        git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]),
+        git(&["--git-dir", remote, "rev-parse", "main"]),
+    );
+
+    let output = take_down(&setup, NOTE);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("refused"));
+    assert!(errors_of(&output).contains("Nothing is taken down"));
+    assert_eq!(picture(&setup.vault), before.0);
+    assert_eq!(picture(&setup.copy), before.1);
+    assert_eq!(picture(setup.stores.attachment_storage()), before.2);
+    assert_eq!(
+        git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]),
+        before.3
+    );
+    assert_eq!(git(&["-C", text(&setup.copy), "status", "--porcelain"]), "");
+    assert_eq!(git(&["--git-dir", remote, "rev-parse", "main"]), before.4);
+    assert!(
+        !setup
+            .copy
+            .join(".git")
+            .join("vault-publish")
+            .join("journal.json")
+            .exists()
+    );
+}
+
+#[test]
+fn a_copy_that_is_behind_the_content_store_stops_the_takedown_which_says_to_pull() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    // Another device publishes after the last pull of this copy.
+    let other = setup.stores.root().join("other-device");
+    let remote = text(setup.stores.content_store());
+    git(&["clone", "--quiet", remote, text(&other)]);
+    fs::write(
+        other.join("notes").join("Elsewhere.md"),
+        "A note of another device\n",
+    )
+    .expect("the note is written");
+    git(&["-C", text(&other), "add", "--", "notes/Elsewhere.md"]);
+    git(&[
+        "-C",
+        text(&other),
+        "commit",
+        "--quiet",
+        "--message",
+        "A publication of another device",
+    ]);
+    git(&["-C", text(&other), "push", "--quiet", "origin", "HEAD:main"]);
+    let after_other = git(&["--git-dir", remote, "rev-parse", "main"]);
+    let vault = picture(&setup.vault);
+
+    let output = take_down(&setup, NOTE);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(errors_of(&output).contains("git pull --ff-only origin main"));
+    assert_eq!(
+        git(&["--git-dir", remote, "rev-parse", "main"]),
+        after_other
+    );
+    assert!(setup.copy.join("notes").join(NOTE).exists());
+    assert_eq!(picture(&setup.vault), vault);
 }

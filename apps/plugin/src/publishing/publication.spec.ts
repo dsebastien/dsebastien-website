@@ -12,7 +12,7 @@ import {
     type TestStores
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
-import { plan, publish, status, unlock } from './tool.ts'
+import { plan, publish, status, takedown, unlock } from './tool.ts'
 import type { Device } from './ports.ts'
 
 // The first slice (issue 31): one invented note goes through the plan, the
@@ -693,6 +693,88 @@ describe('commit of a publication', () => {
         expect(await git('--git-dir', stores.contentStore, 'show', `main:notes/${NOTE}`)).toBe(
             NOTE_TEXT.trimEnd()
         )
+    })
+})
+
+// The takedown (issue 38, PUB-81, PUB-99): one commit with the removals, and
+// nothing taken down when the copy is behind or the push is refused.
+describe('takedown', () => {
+    const LATER = { ...RUN, time: '2031-04-02T08:00:00Z' }
+
+    test('removes the note and its entry in one commit, which names the takedown', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+
+        const report = await takedown(setup.device, [NOTE], LATER)
+
+        expect(report.takenDown).toEqual([NOTE])
+        const remote = ['--git-dir', stores.contentStore]
+        const commit = await git(
+            ...remote,
+            'show',
+            '--name-status',
+            '--format=%B',
+            '--no-renames',
+            'main'
+        )
+        expect(commit.replace(/^Plan: [0-9a-f]{16}$/mu, 'Plan: <id>')).toBe(
+            `Takedown: 1 note\n\nDevice: garden-shed\nFace: plugin\nPlan: <id>\n\n\nD\tmanifest/${NOTE_ID}.json\nD\tnotes/${NOTE}`
+        )
+        expect(await git(...remote, 'ls-tree', '-r', '--name-only', 'main')).toBe(
+            'configuration.json'
+        )
+        expect(await exists(join(setup.copy, '.git', 'vault-publish', 'journal.json'))).toBe(false)
+        expect(await exists(join(setup.copy, '.git', 'vault-publish', 'lock'))).toBe(false)
+    })
+
+    test('a refused push takes nothing down and leaves everything as it was', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        await refusePushes(stores.contentStore)
+        const before = {
+            vault: await picture(setup.vault),
+            copy: await picture(setup.copy),
+            storage: await readdir(stores.attachmentStorage),
+            head: await git('-C', setup.copy, 'rev-parse', 'HEAD'),
+            remote: await git('--git-dir', stores.contentStore, 'rev-parse', 'main')
+        }
+
+        const refusal = await rejectionOf(takedown(setup.device, [NOTE], LATER))
+
+        expect(refusal).toContain('refused')
+        expect(refusal).toContain('Nothing is taken down')
+        expect(await picture(setup.vault)).toEqual(before.vault)
+        expect(await picture(setup.copy)).toEqual(before.copy)
+        expect(await readdir(stores.attachmentStorage)).toEqual(before.storage)
+        expect(await git('-C', setup.copy, 'rev-parse', 'HEAD')).toBe(before.head)
+        expect(await git('-C', setup.copy, 'status', '--porcelain')).toBe('')
+        expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(before.remote)
+        expect(await exists(join(setup.copy, '.git', 'vault-publish', 'journal.json'))).toBe(false)
+    })
+
+    test('a copy that is behind the content store stops the takedown, which says to pull', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        // Another device publishes after the last pull of this copy.
+        const other = join(stores.root, 'other-device')
+        await git('clone', '--quiet', stores.contentStore, other)
+        await writeFile(join(other, 'notes', 'Elsewhere.md'), 'A note of another device\n')
+        await git('-C', other, 'add', '--', 'notes/Elsewhere.md')
+        await git('-C', other, 'commit', '--quiet', '--message', 'A publication of another device')
+        await git('-C', other, 'push', '--quiet', 'origin', 'HEAD:main')
+        const remote = await git('--git-dir', stores.contentStore, 'rev-parse', 'main')
+        const vault = await picture(setup.vault)
+
+        expect(await rejectionOf(takedown(setup.device, [NOTE], LATER))).toContain(
+            'git pull --ff-only origin main'
+        )
+
+        expect(await git('--git-dir', stores.contentStore, 'rev-parse', 'main')).toBe(remote)
+        expect(await exists(join(setup.copy, 'notes', NOTE))).toBe(true)
+        expect(await picture(setup.vault)).toEqual(vault)
     })
 })
 
