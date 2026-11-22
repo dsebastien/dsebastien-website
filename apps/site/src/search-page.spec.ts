@@ -226,10 +226,7 @@ describe('the ways to the search page', () => {
             element.children.some((child) => child === link)
         )
         const items = (row?.children ?? []).filter((child) => child.type === 'element')
-        expect(items.map((item) => (item.type === 'element' ? item.tagName : ''))).toEqual([
-            'button',
-            'a'
-        ])
+        expect(items.map((item) => item.tagName)).toEqual(['button', 'a'])
         expect(select('header [data-mode-switch]', page)?.properties['hidden']).toBe(true)
     })
 
