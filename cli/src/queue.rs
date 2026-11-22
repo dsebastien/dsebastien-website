@@ -682,6 +682,15 @@ fn apply_moves(
             under_guard.insert(from.clone());
             continue;
         }
+        // An unpublished entry does not move: its old address stays gone
+        // (R64), and a path that it had only while it was unpublished never
+        // becomes a public former path. The guard rule above still applies.
+        if entries
+            .get(from)
+            .is_none_or(|entry| entry.state != State::Published)
+        {
+            continue;
+        }
         let vault_name = !to
             .split('/')
             .any(|part| part.starts_with('.') || part.contains('\u{fffd}'));

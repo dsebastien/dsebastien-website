@@ -1028,7 +1028,7 @@ fn the_refusal_of_a_stale_plan_whose_cleanup_gave_no_warning_names_none() {
     assert_eq!(output.status.code(), Some(1));
     let errors = errors_of(&output);
     assert!(
-        errors.contains(&format!("the plan {id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan")),
+        errors.contains(&format!("the plan {id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan")),
         "{errors}"
     );
     assert!(!errors.contains("The cleanup"), "{errors}");

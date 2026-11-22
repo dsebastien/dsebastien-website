@@ -6746,411 +6746,6 @@
             ]
         },
         {
-            "name": "a line that is not valid, a line that is being written and a journal that was edited apply nothing (issue 37)",
-            "denyList": [],
-            "vault": {
-                "Alpha.md": "Alpha\n"
-            },
-            "steps": [
-                {
-                    "do": "publish",
-                    "why": "the first publication",
-                    "time": "2031-07-01T08:00:00Z",
-                    "selection": {
-                        "include": ["Alpha.md"]
-                    },
-                    "report": {
-                        "attachmentsDeleted": [],
-                        "attachmentsUploaded": [],
-                        "failed": [],
-                        "forcedRemoved": [],
-                        "propertyRemoved": [],
-                        "propertySet": ["Alpha.md"],
-                        "published": ["Alpha.md"],
-                        "removed": [],
-                        "skipped": [],
-                        "updated": [],
-                        "warnings": [],
-                        "moved": []
-                    }
-                },
-                {
-                    "do": "write",
-                    "why": "a journal with a line that is not a rename, a rename, and a line that is still being written; a file that is not a journal; a copy of the journal by a synchronization",
-                    "files": {
-                        "Beta.md": "---\npublic_note: true\n---\nAlpha\n",
-                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "not a line\n{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Beta.md\"}\n{\"from\":\"Beta.md\",\"kind\":\"no",
-                        ".obsidian/plugins/dsebastien-vault-publish/renames/notes.txt": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Wrong.md\"}\n",
-                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.sync-conflict.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Wrong.md\"}\n"
-                    }
-                },
-                {
-                    "do": "delete",
-                    "why": "the old file is gone",
-                    "paths": ["Alpha.md"]
-                },
-                {
-                    "do": "status",
-                    "why": "the valid line moves the note; the line that is being written is not read yet",
-                    "queue": {
-                        "changed": [],
-                        "counts": {
-                            "changed": 0,
-                            "new": 0,
-                            "toRemove": 0,
-                            "unchanged": 1
-                        },
-                        "missing": [],
-                        "new": [],
-                        "technicalUpdates": [],
-                        "toRemove": [],
-                        "unchanged": ["Beta.md"],
-                        "behind": 0,
-                        "unpublishedUnderGuard": [],
-                        "pairings": [],
-                        "renamed": [
-                            {
-                                "from": "Alpha.md",
-                                "to": "Beta.md"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "do": "publish",
-                    "why": "the line that is not a rename gives a warning with the name of the journal",
-                    "time": "2031-07-02T09:00:00Z",
-                    "selection": {
-                        "include": []
-                    },
-                    "report": {
-                        "attachmentsDeleted": [],
-                        "attachmentsUploaded": [],
-                        "failed": [],
-                        "forcedRemoved": [],
-                        "propertyRemoved": [],
-                        "propertySet": [],
-                        "published": [],
-                        "removed": [],
-                        "skipped": [],
-                        "updated": [],
-                        "warnings": ["00000000000000aa.jsonl"],
-                        "moved": [
-                            {
-                                "from": "Alpha.md",
-                                "to": "Beta.md"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "do": "expect",
-                    "why": "the two lines are counted, and the line that is being written is not",
-                    "vault": {},
-                    "store": {
-                        "notes/Beta.md": "Alpha\n",
-                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:1d40af2d1b888b0c61238023ad5080e808cc3894379838807af2bfc707c4147b\",\n    \"lines\": 2\n  }\n}\n"
-                    }
-                },
-                {
-                    "do": "write",
-                    "why": "the journal of the device is replaced by an older copy with another line, and the note moves outside Obsidian",
-                    "files": {
-                        "Gamma.md": "Alpha\n",
-                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Beta.md\",\"kind\":\"note\",\"time\":\"2031-07-03T08:00:00Z\",\"to\":\"Gamma.md\"}\n"
-                    }
-                },
-                {
-                    "do": "delete",
-                    "why": "the old file is gone",
-                    "paths": ["Beta.md"]
-                },
-                {
-                    "do": "status",
-                    "why": "a journal that was cut or edited applies no line: the note shows as a pairing",
-                    "queue": {
-                        "changed": [],
-                        "counts": {
-                            "changed": 0,
-                            "new": 1,
-                            "toRemove": 1,
-                            "unchanged": 0
-                        },
-                        "missing": ["Beta.md"],
-                        "new": ["Gamma.md"],
-                        "technicalUpdates": [],
-                        "toRemove": ["Beta.md"],
-                        "unchanged": [],
-                        "behind": 0,
-                        "unpublishedUnderGuard": [],
-                        "pairings": [
-                            {
-                                "from": "Beta.md",
-                                "to": "Gamma.md"
-                            }
-                        ],
-                        "renamed": []
-                    }
-                },
-                {
-                    "do": "publish",
-                    "why": "the publication counts the journal again, with a warning, and moves nothing",
-                    "time": "2031-07-03T09:00:00Z",
-                    "selection": {
-                        "include": []
-                    },
-                    "report": {
-                        "attachmentsDeleted": [],
-                        "attachmentsUploaded": [],
-                        "failed": [],
-                        "forcedRemoved": [],
-                        "propertyRemoved": [],
-                        "propertySet": [],
-                        "published": [],
-                        "removed": [],
-                        "skipped": [],
-                        "updated": [],
-                        "warnings": ["00000000000000aa.jsonl"],
-                        "moved": []
-                    }
-                },
-                {
-                    "do": "expect",
-                    "why": "the journal counts all its lines now",
-                    "vault": {},
-                    "store": {
-                        "notes/Beta.md": "Alpha\n",
-                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:2eed2e6adb48581bd50a0f81fe004d16b42de7ede6ad6d4ea3380f64df6f64b8\",\n    \"lines\": 1\n  }\n}\n"
-                    }
-                },
-                {
-                    "do": "publish",
-                    "why": "the next publication gives no warning, and the author confirms the pairing",
-                    "time": "2031-07-04T08:00:00Z",
-                    "selection": {
-                        "include": [],
-                        "pair": [
-                            {
-                                "from": "Beta.md",
-                                "to": "Gamma.md"
-                            }
-                        ]
-                    },
-                    "report": {
-                        "attachmentsDeleted": [],
-                        "attachmentsUploaded": [],
-                        "failed": [],
-                        "forcedRemoved": [],
-                        "propertyRemoved": [],
-                        "propertySet": ["Gamma.md"],
-                        "published": [],
-                        "removed": [],
-                        "skipped": [],
-                        "updated": ["Gamma.md"],
-                        "warnings": [],
-                        "moved": [
-                            {
-                                "from": "Beta.md",
-                                "to": "Gamma.md"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "do": "expect",
-                    "why": "the two old paths are former paths",
-                    "vault": {},
-                    "store": {
-                        "notes/Beta.md": null,
-                        "notes/Gamma.md": "Alpha\n",
-                        "manifest/aea530d10302396d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\",\n    \"Beta.md\"\n  ],\n  \"id\": \"aea530d10302396d\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Gamma.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n"
-                    }
-                }
-            ]
-        },
-        {
-            "name": "a move that the vault does not show, a move to the path of another note and a move to a reserved name do not happen, and an unpublished note moves (issue 37)",
-            "denyList": [],
-            "vault": {
-                "A.md": "A\n",
-                "B.md": "B\n",
-                "C.md": "C\n",
-                "U.md": "U\n"
-            },
-            "steps": [
-                {
-                    "do": "publish",
-                    "why": "the first publication",
-                    "time": "2031-07-01T08:00:00Z",
-                    "selection": {
-                        "include": ["A.md", "B.md", "C.md", "U.md"]
-                    },
-                    "report": {
-                        "attachmentsDeleted": [],
-                        "attachmentsUploaded": [],
-                        "failed": [],
-                        "forcedRemoved": [],
-                        "propertyRemoved": [],
-                        "propertySet": ["A.md", "B.md", "C.md", "U.md"],
-                        "published": ["A.md", "B.md", "C.md", "U.md"],
-                        "removed": [],
-                        "skipped": [],
-                        "updated": [],
-                        "warnings": [],
-                        "moved": []
-                    }
-                },
-                {
-                    "do": "unpublish",
-                    "why": "the author unpublishes one note",
-                    "time": "2031-07-01T09:00:00Z",
-                    "paths": ["U.md"],
-                    "report": {
-                        "attachmentsDeleted": [],
-                        "attachmentsUploaded": [],
-                        "failed": [],
-                        "forcedRemoved": [],
-                        "propertyRemoved": ["U.md"],
-                        "propertySet": [],
-                        "published": [],
-                        "removed": ["U.md"],
-                        "skipped": [],
-                        "updated": [],
-                        "warnings": [],
-                        "moved": []
-                    }
-                },
-                {
-                    "do": "write",
-                    "why": "the journal of another device arrives before its files: A.md moved and B.md took its name; C.md moved to a reserved folder; the unpublished note moved",
-                    "files": {
-                        "-/C.md": "C\n",
-                        "Gone/U.md": "U\n",
-                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Late.md\"}\n{\"from\":\"B.md\",\"kind\":\"note\",\"time\":\"2031-07-02T09:00:00Z\",\"to\":\"A.md\"}\n{\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-07-02T10:00:00Z\",\"to\":\"-/C.md\"}\n{\"from\":\"U.md\",\"kind\":\"note\",\"time\":\"2031-07-02T11:00:00Z\",\"to\":\"Gone/U.md\"}\n"
-                    }
-                },
-                {
-                    "do": "delete",
-                    "why": "the old files that arrived are gone",
-                    "paths": ["C.md", "U.md"]
-                },
-                {
-                    "do": "status",
-                    "why": "the vault still has A.md, so A.md does not move, and B.md cannot take the path of its entry; the reserved name does not move; the unpublished entry moves",
-                    "queue": {
-                        "changed": [],
-                        "counts": {
-                            "changed": 0,
-                            "new": 2,
-                            "toRemove": 1,
-                            "unchanged": 2
-                        },
-                        "missing": ["C.md"],
-                        "new": ["-/C.md", "Gone/U.md"],
-                        "technicalUpdates": [],
-                        "toRemove": ["C.md"],
-                        "unchanged": ["A.md", "B.md"],
-                        "behind": 0,
-                        "unpublishedUnderGuard": [],
-                        "pairings": [
-                            {
-                                "from": "C.md",
-                                "to": "-/C.md"
-                            }
-                        ],
-                        "renamed": [
-                            {
-                                "from": "U.md",
-                                "to": "Gone/U.md"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "do": "publish",
-                    "why": "each move that does not happen gives a warning with the path of its note",
-                    "time": "2031-07-03T08:00:00Z",
-                    "selection": {
-                        "include": []
-                    },
-                    "report": {
-                        "attachmentsDeleted": [],
-                        "attachmentsUploaded": [],
-                        "failed": [],
-                        "forcedRemoved": [],
-                        "propertyRemoved": [],
-                        "propertySet": [],
-                        "published": [],
-                        "removed": [],
-                        "skipped": [],
-                        "updated": [],
-                        "warnings": ["A.md", "B.md", "C.md"],
-                        "moved": [
-                            {
-                                "from": "U.md",
-                                "to": "Gone/U.md"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "do": "expect",
-                    "why": "the unpublished entry has a former path, and its state stays",
-                    "vault": {},
-                    "store": {
-                        "notes/A.md": "A\n",
-                        "notes/B.md": "B\n",
-                        "notes/C.md": "C\n",
-                        "notes/Gone/U.md": null,
-                        "manifest/755099fbf094afaa.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:385cfb0cc262da1f7aeb6c3ab6c42af72acbb6f0175511e0ffc55d404779cdae\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"U.md\"\n  ],\n  \"id\": \"755099fbf094afaa\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Gone/U.md\",\n  \"sourceHash\": \"sha256:385cfb0cc262da1f7aeb6c3ab6c42af72acbb6f0175511e0ffc55d404779cdae\",\n  \"state\": \"unpublished\"\n}\n",
-                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:aaf118c84fee8929105b39f01c7138a951c0bdede09c911bbd77dacc6d750360\",\n    \"lines\": 4\n  }\n}\n"
-                    }
-                },
-                {
-                    "do": "status",
-                    "why": "the lines were read: the next queue has no move",
-                    "queue": {
-                        "changed": [],
-                        "counts": {
-                            "changed": 0,
-                            "new": 2,
-                            "toRemove": 1,
-                            "unchanged": 2
-                        },
-                        "missing": ["C.md"],
-                        "new": ["-/C.md", "Gone/U.md"],
-                        "technicalUpdates": [],
-                        "toRemove": ["C.md"],
-                        "unchanged": ["A.md", "B.md"],
-                        "behind": 0,
-                        "unpublishedUnderGuard": [],
-                        "pairings": [
-                            {
-                                "from": "C.md",
-                                "to": "-/C.md"
-                            }
-                        ],
-                        "renamed": []
-                    }
-                },
-                {
-                    "do": "plan",
-                    "why": "a pairing with a reserved name stops the plan, as a new note does",
-                    "refused": true,
-                    "selection": {
-                        "include": [],
-                        "pair": [
-                            {
-                                "from": "C.md",
-                                "to": "-/C.md"
-                            }
-                        ]
-                    },
-                    "says": "is a reserved root name of the site"
-                }
-            ]
-        },
-        {
             "name": "a publication with a move that stops halfway is put back, and the next one applies the move (issue 37)",
             "denyList": [],
             "vault": {
@@ -8134,6 +7729,587 @@
                         "notes/P/New.md": "New\n",
                         "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:0f0038019874db3c2659beaa3aa34c2b6642157739f1da9bb8afb854358482a2\",\n    \"lines\": 1\n  }\n}\n"
                     }
+                }
+            ]
+        },
+        {
+            "name": "a journal with fewer lines than its count applies nothing and keeps its count, so a vault that is behind applies no line twice (issue 37)",
+            "denyList": [],
+            "vault": {
+                "A.md": "A\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-10-01T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md"],
+                        "published": ["A.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "another device moves the note",
+                    "files": {
+                        "B.md": "---\npublic_note: true\n---\nA\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-10-02T08:00:00Z\",\"to\":\"B.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["A.md"]
+                },
+                {
+                    "do": "publish",
+                    "why": "the move",
+                    "time": "2031-10-02T09:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "A.md",
+                                "to": "B.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "on this device the vault is behind: the journal has no line yet, and the author writes a new note with the old name",
+                    "files": {
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "",
+                        "A.md": "A new note\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a publication of the new note warns about the journal, and keeps its count",
+                    "time": "2031-10-03T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md"],
+                        "published": ["A.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["00000000000000aa.jsonl"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the count of the journal did not go down",
+                    "vault": {},
+                    "store": {
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:e74a56fa29028c0b942e7aa272bb715165af4716eb1c6aa01e72c28d5fefc036\",\n    \"lines\": 1\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the vault catches up, with one more move of the other device",
+                    "files": {
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-10-02T08:00:00Z\",\"to\":\"B.md\"}\n{\"from\":\"B.md\",\"kind\":\"note\",\"time\":\"2031-10-04T08:00:00Z\",\"to\":\"C.md\"}\n",
+                        "C.md": "---\npublic_note: true\n---\nA\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["B.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "only the new line moves a note: the first one is not applied again to the new note A.md",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["A.md", "C.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "B.md",
+                                "to": "C.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the move of the new line",
+                    "time": "2031-10-04T09:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "B.md",
+                                "to": "C.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the new note stays at its path, with its own text",
+                    "vault": {},
+                    "store": {
+                        "notes/A.md": "A new note\n",
+                        "notes/C.md": "A\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:f5998fac5156789735dc06b6766fd1ad82305df0153077d6cff995dd158f0c29\",\n    \"lines\": 2\n  }\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a line that is not valid, a line that is being written and a journal that was edited apply nothing (issue 37)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md"],
+                        "published": ["Alpha.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a journal with a line that is not a rename, a rename, and a line that is still being written; a file that is not a journal; a copy of the journal by a synchronization",
+                    "files": {
+                        "Beta.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "not a line\n{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Beta.md\"}\n{\"from\":\"Beta.md\",\"kind\":\"no",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/notes.txt": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Wrong.md\"}\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.sync-conflict.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Wrong.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Alpha.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the valid line moves the note; the line that is being written is not read yet",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Beta.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Beta.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the line that is not a rename gives a warning with the name of the journal",
+                    "time": "2031-07-02T09:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["00000000000000aa.jsonl"],
+                        "moved": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Beta.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the two lines are counted, and the line that is being written is not",
+                    "vault": {},
+                    "store": {
+                        "notes/Beta.md": "Alpha\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:1d40af2d1b888b0c61238023ad5080e808cc3894379838807af2bfc707c4147b\",\n    \"lines\": 2\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the journal of the device is edited (its two lines are other lines now), and the note moves outside Obsidian",
+                    "files": {
+                        "Gamma.md": "Alpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Beta.md\",\"kind\":\"note\",\"time\":\"2031-07-03T08:00:00Z\",\"to\":\"Gamma.md\"}\n{\"from\":\"Other.md\",\"kind\":\"note\",\"time\":\"2031-07-03T09:00:00Z\",\"to\":\"Else.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Beta.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "a journal that was cut or edited applies no line: the note shows as a pairing",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "missing": ["Beta.md"],
+                        "new": ["Gamma.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Beta.md"],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "Beta.md",
+                                "to": "Gamma.md"
+                            }
+                        ],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication counts the journal again, with a warning, and moves nothing",
+                    "time": "2031-07-03T09:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["00000000000000aa.jsonl"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the journal counts all its lines now",
+                    "vault": {},
+                    "store": {
+                        "notes/Beta.md": "Alpha\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:dc58502366cda1009bab31272e71de08d23e589ee8efbaecd6c8d4b6c3a08890\",\n    \"lines\": 2\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the next publication gives no warning, and the author confirms the pairing",
+                    "time": "2031-07-04T08:00:00Z",
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "Beta.md",
+                                "to": "Gamma.md"
+                            }
+                        ]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Gamma.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Gamma.md"],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Beta.md",
+                                "to": "Gamma.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the two old paths are former paths",
+                    "vault": {},
+                    "store": {
+                        "notes/Beta.md": null,
+                        "notes/Gamma.md": "Alpha\n",
+                        "manifest/aea530d10302396d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\",\n    \"Beta.md\"\n  ],\n  \"id\": \"aea530d10302396d\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Gamma.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a move that the vault does not show, a move to the path of another note, a move to a reserved name and a move of an unpublished note do not happen (issue 37)",
+            "denyList": [],
+            "vault": {
+                "A.md": "A\n",
+                "B.md": "B\n",
+                "C.md": "C\n",
+                "U.md": "U\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md", "B.md", "C.md", "U.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md", "B.md", "C.md", "U.md"],
+                        "published": ["A.md", "B.md", "C.md", "U.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the author unpublishes one note",
+                    "time": "2031-07-01T09:00:00Z",
+                    "paths": ["U.md"],
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["U.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["U.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the journal of another device arrives before its files: A.md moved and B.md took its name; C.md moved to a reserved folder; the unpublished note moved",
+                    "files": {
+                        "-/C.md": "C\n",
+                        "Gone/U.md": "U\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Late.md\"}\n{\"from\":\"B.md\",\"kind\":\"note\",\"time\":\"2031-07-02T09:00:00Z\",\"to\":\"A.md\"}\n{\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-07-02T10:00:00Z\",\"to\":\"-/C.md\"}\n{\"from\":\"U.md\",\"kind\":\"note\",\"time\":\"2031-07-02T11:00:00Z\",\"to\":\"Gone/U.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old files that arrived are gone",
+                    "paths": ["C.md", "U.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the vault still has A.md, so A.md does not move, and B.md cannot take the path of its entry; the reserved name does not move; the unpublished entry moves",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 1,
+                            "unchanged": 2
+                        },
+                        "missing": ["C.md"],
+                        "new": ["-/C.md", "Gone/U.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["C.md"],
+                        "unchanged": ["A.md", "B.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "C.md",
+                                "to": "-/C.md"
+                            }
+                        ],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "each move that does not happen gives a warning with the path of its note",
+                    "time": "2031-07-03T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["A.md", "B.md", "C.md"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "an unpublished entry does not move: its old address stays gone, and its new path never becomes public",
+                    "vault": {},
+                    "store": {
+                        "notes/A.md": "A\n",
+                        "notes/B.md": "B\n",
+                        "notes/C.md": "C\n",
+                        "notes/Gone/U.md": null,
+                        "manifest/755099fbf094afaa.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:385cfb0cc262da1f7aeb6c3ab6c42af72acbb6f0175511e0ffc55d404779cdae\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"755099fbf094afaa\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"U.md\",\n  \"sourceHash\": \"sha256:385cfb0cc262da1f7aeb6c3ab6c42af72acbb6f0175511e0ffc55d404779cdae\",\n  \"state\": \"unpublished\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:aaf118c84fee8929105b39f01c7138a951c0bdede09c911bbd77dacc6d750360\",\n    \"lines\": 4\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the lines were read: the next queue has no move",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 1,
+                            "unchanged": 2
+                        },
+                        "missing": ["C.md"],
+                        "new": ["-/C.md", "Gone/U.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["C.md"],
+                        "unchanged": ["A.md", "B.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "C.md",
+                                "to": "-/C.md"
+                            }
+                        ],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a pairing with a reserved name stops the plan, as a new note does",
+                    "refused": true,
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "C.md",
+                                "to": "-/C.md"
+                            }
+                        ]
+                    },
+                    "says": "is a reserved root name of the site"
                 }
             ]
         }

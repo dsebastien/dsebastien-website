@@ -78,7 +78,9 @@ enum Command {
     /// notes, and the notes to remove, with a count per list; the technical
     /// updates; the notes to remove that are only missing from this vault; and
     /// the unpublished notes that a guard excludes, which the next publication
-    /// removes. It changes nothing in the vault and in the content store.
+    /// removes; the moves of the rename journals that the next publication
+    /// applies (`renamed`), and the pairings to confirm (`pairings`). It
+    /// changes nothing in the vault and in the content store.
     Status {
         #[command(flatten)]
         places: Places,
@@ -87,8 +89,9 @@ enum Command {
     /// Computes a publication plan, stores it on this device and writes it
     /// with its id. It changes nothing in the vault and in the content store.
     /// Without a path, the plan holds the changed notes only. Every plan holds
-    /// the forced removals: the published and the unpublished notes that a
-    /// guard excludes.
+    /// the moves of the rename journals, which cannot be held, and the forced
+    /// removals: the published and the unpublished notes that a guard
+    /// excludes.
     Plan {
         #[command(flatten)]
         places: Places,
@@ -127,8 +130,11 @@ enum Command {
         selection: Option<PathBuf>,
     },
 
-    /// Applies exactly one plan, by its id: the published and the unpublished
-    /// notes that a guard excludes leave the content store first, the cleaned notes and the
+    /// Applies exactly one plan, by its id: the moves of the rename journals
+    /// and of the pairings come first (the published version moves as it is,
+    /// and `renames.json` counts the lines that were read), then the published
+    /// and the unpublished notes that a guard excludes leave the content
+    /// store, the cleaned notes and the
     /// manifest go to the content store in one commit after the upload of
     /// their attachments, the commit is pushed, the `public_note` property of
     /// the notes of the vault is corrected, and the files of the attachment

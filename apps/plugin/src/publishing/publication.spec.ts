@@ -1389,7 +1389,7 @@ describe('failure cases after the first review', () => {
         const message = await rejectionOf(publish(setup.device, planned.id, RUN))
 
         expect(message).toBe(
-            `the plan ${planned.id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan`
+            `the plan ${planned.id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan`
         )
     })
 

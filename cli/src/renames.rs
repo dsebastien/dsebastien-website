@@ -284,11 +284,20 @@ pub fn read_journals(
         let _ = write!(hashes, "{name}\n{whole}\n");
         let marker = markers.get(&name);
         let mut first = 0;
+        // A journal with fewer lines than its count is not counted again: the
+        // vault of this device can be behind, and a lower count would apply
+        // its later lines a second time.
+        let mut keep = false;
         if let Some(marker) = marker {
             let counted = usize::try_from(marker.lines).unwrap_or(usize::MAX);
-            if lines.len() < counted
-                || bytes_hash(prefix_of(&bytes, &lines, counted)) != marker.hash
-            {
+            if lines.len() < counted {
+                warnings.push(RenameWarning {
+                    path: name.clone(),
+                    message: "the journal has fewer lines than the publications read: the vault of this device may be behind. None of its lines is applied, and its count stays".to_owned(),
+                });
+                first = lines.len();
+                keep = true;
+            } else if bytes_hash(prefix_of(&bytes, &lines, counted)) != marker.hash {
                 warnings.push(RenameWarning {
                     path: name.clone(),
                     message: "the journal was cut or edited since the last publication: none of its lines is applied, and its notes can show as pairings".to_owned(),
@@ -324,7 +333,7 @@ pub fn read_journals(
             hash: whole,
             lines: lines.len() as u64,
         };
-        if marker != Some(&after) && (marker.is_some() || after.lines > 0) {
+        if !keep && marker != Some(&after) && (marker.is_some() || after.lines > 0) {
             next.insert(name, after);
             read = true;
         }

@@ -1726,7 +1726,7 @@ async function apply(
         // also when the plan is stale.
         const cleanup = await cleanStorage(device, scan.manifest, scan.isGuardedFile)
         throw new Error(
-            `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
+            `the plan ${id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
     }
     return await applyCurrent(device, id, run, ownLock, owed, current)

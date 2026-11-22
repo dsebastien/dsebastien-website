@@ -1212,7 +1212,10 @@ export function folderRenameJournals(folder: string): RenameJournals {
                 if (missing(error)) {
                     return []
                 }
-                throw error
+                throw new Error(
+                    `the folder of the rename journals "${folder}" cannot be listed: ${error instanceof Error ? error.message : 'it failed'}`,
+                    { cause: error }
+                )
             }
         },
         async read(name) {
@@ -1226,7 +1229,10 @@ export function folderRenameJournals(folder: string): RenameJournals {
                 if (missing(error)) {
                     return undefined
                 }
-                throw error
+                throw new Error(
+                    `the rename journal "${name}" cannot be read: ${error instanceof Error ? error.message : 'it failed'}`,
+                    { cause: error }
+                )
             }
         }
     }

@@ -223,11 +223,20 @@ export async function readJournals(
         hashes += `${name}\n${whole}\n`
         const marker = markers[name]
         let first = 0
+        // A journal with fewer lines than its count is not counted again: the
+        // vault of this device can be behind, and a lower count would apply
+        // its later lines a second time.
+        let keep = false
         if (marker !== undefined) {
-            if (
-                lines.length < marker.lines ||
-                bytesHash(prefixOf(bytes, lines, marker.lines)) !== marker.hash
-            ) {
+            if (lines.length < marker.lines) {
+                warnings.push({
+                    path: name,
+                    message:
+                        'the journal has fewer lines than the publications read: the vault of this device may be behind. None of its lines is applied, and its count stays'
+                })
+                first = lines.length
+                keep = true
+            } else if (bytesHash(prefixOf(bytes, lines, marker.lines)) !== marker.hash) {
                 warnings.push({
                     path: name,
                     message:
@@ -257,7 +266,7 @@ export async function readJournals(
         every.push({ name, lines: valid })
         fresh.push({ name, lines: added })
         const after: Marker = { hash: whole, lines: lines.length }
-        if (marker?.hash !== after.hash || marker.lines !== after.lines) {
+        if (!keep && (marker?.hash !== after.hash || marker.lines !== after.lines)) {
             if (marker !== undefined || after.lines > 0) {
                 next[name] = after
                 read = true

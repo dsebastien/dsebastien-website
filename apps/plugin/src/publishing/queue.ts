@@ -516,6 +516,12 @@ export function applyMoves(
             underGuard.add(from)
             continue
         }
+        // An unpublished entry does not move: its old address stays gone
+        // (R64), and a path that it had only while it was unpublished never
+        // becomes a public former path. The guard rule above still applies.
+        if (entries.get(from)?.state !== 'published') {
+            continue
+        }
         if ((vault.inVault(from) && !vault.inVault(to)) || !vault.isVaultName(to)) {
             warnings.push({
                 path: from,
