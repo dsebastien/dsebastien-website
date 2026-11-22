@@ -139,6 +139,15 @@
         @apply absolute inset-0 rounded-control content-[''];
     }
 
+    /* The focus ring goes around the row that a finger can tap, not the title alone. */
+    .search-result-link:focus-visible {
+        @apply outline-none;
+    }
+
+    .search-result-link:focus-visible::after {
+        @apply outline-2 outline-offset-2 outline-focus;
+    }
+
     /* The excerpt of a full-text result: the words of the query stand out. */
     .search-excerpt {
         @apply mt-1 block text-sm break-words text-muted;

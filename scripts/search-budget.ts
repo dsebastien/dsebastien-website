@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -7,37 +7,44 @@ import * as pagefind from 'pagefind'
 import { sourceOf } from '../apps/plugin/src/publishing/clean.ts'
 import { aliasesOf } from '../apps/plugin/src/publishing/frontmatter.ts'
 import { brotliSize, FIRST_SEARCH_BROTLI } from '../apps/site/src/budgets.ts'
-import { SHORTEST_QUERY } from '../apps/site/src/search/session.ts'
+import { createSearch } from '../apps/site/src/search/engine.ts'
+import { pagefindEngine } from '../apps/site/src/search/full-text.ts'
+import { createSession, type SearchView } from '../apps/site/src/search/session.ts'
 import {
     foldedWords,
-    partOf,
+    partFile,
     titleIndexOf,
-    type TitleEntry
+    type TitleEntry,
+    type TitleRow
 } from '../apps/site/src/search/titles.ts'
+
+/** The file of the keys of the title index. */
+interface TitleKeys {
+    keys: Record<string, boolean>
+}
 
 // The budget of the first search at full size (issue 51, R57, PERF-21): the
 // title index and the full-text index of a vault, as if every note of it were
 // published, and the bytes that a first search loads for the most frequent
-// words of the vault and for pairs of them. A first search (the budget, as
-// the author decided in R63): the keys of the title index, every part that
-// the letters of the query load as the reader types, and the full-text search
-// of the query with its first results. A typing session (reported, not a
-// gate): a reader who stops after each letter, so that each prefix runs a
-// full-text search too. Each measure runs in a process of its own, as a
-// reader who searches for the first time.
+// words of the vault and for pairs of them. The measure runs the code of the
+// search page (`createSearch`, `createSession`) over the files of the indexes
+// and counts what it reads. One search (the budget, as the author decided in
+// R63): the reader types the query, the titles answer at each key, and the
+// full text answers the query. A typing session (reported, not a gate): the
+// reader stops after each letter, so each prefix runs the full text too.
+// Each measure runs in a process of its own, as a reader who searches for
+// the first time.
 //
 //   bun run budgets:search [--vault <folder>]
 //
 // The default vault is the invented corpus of `bun run corpus`. The script
 // prints numbers only, never a word or a name of a note: it can run on the
 // export of the published notes of the author (`.cache/published/vault`),
-// whose numbers stay out of this repository. It stops with an error when a
-// first search is above the budget.
+// whose numbers stay out of this repository. It stops with an error when one
+// search is above the budget.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
-/** The full-text results that a first search shows. */
-const SHOWN = 10
 /** The most frequent words that the measure searches for, then pairs of them. */
 const WORDS = 12
 
@@ -47,23 +54,21 @@ function wireSize(bytes: Uint8Array): number {
     return gzip ? bytes.byteLength : brotliSize(bytes)
 }
 
-/** The texts that a reader who stops after each letter searches for: each prefix that the page answers. */
-export function prefixesOf(query: string, shortest = SHORTEST_QUERY): string[] {
-    const letters = Array.from(query)
-    const prefixes: string[] = []
-    for (let size = 1; size <= letters.length; size += 1) {
-        const prefix = letters.slice(0, size).join('').trim()
-        if (Array.from(prefix).length >= shortest && prefixes.at(-1) !== prefix)
-            prefixes.push(prefix)
-    }
-    return prefixes
+/** A promise and the function that settles it. */
+function signal(): { done: Promise<void>; fire(): void } {
+    let fire: () => void = () => undefined
+    const done = new Promise<void>((resolveSignal) => {
+        fire = resolveSignal
+    })
+    return { done, fire }
 }
 
 /**
- * The bytes that the full-text index loads for a query, in a process of its
- * own: for the query alone, or for each prefix of it (a typing session).
+ * The bytes that the search page loads for a query, in a process of its own:
+ * the reader types it letter by letter, and the full text answers the query
+ * alone, or each prefix of it when the reader stops after each letter.
  */
-async function measureQuery(index: string, query: string, session: boolean): Promise<number> {
+async function measureQuery(folder: string, query: string, typing: boolean): Promise<number> {
     let bytes = 0
     const fetchFile = globalThis.fetch
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -71,17 +76,67 @@ async function measureQuery(index: string, query: string, session: boolean): Pro
         bytes += wireSize(new Uint8Array(await answer.clone().arrayBuffer()))
         return answer
     }) as typeof fetch
-    const script = join(index, 'pagefind.js')
-    bytes += wireSize(await readFile(script))
-    const module = (await import(pathToFileURL(script).href)) as {
-        options(options: { basePath: string; baseUrl: string }): Promise<void>
-        search(query: string): Promise<{ results: { data(): Promise<unknown> }[] }>
+    const read = async (file: string): Promise<unknown> => {
+        const data = await readFile(file)
+        bytes += brotliSize(data)
+        return JSON.parse(new TextDecoder().decode(data)) as unknown
     }
-    await module.options({ basePath: `${pathToFileURL(index).href}/`, baseUrl: '/' })
-    for (const prefix of session ? prefixesOf(query) : [query]) {
-        const { results } = await module.search(prefix)
-        await Promise.all(results.slice(0, SHOWN).map((result) => result.data()))
+    const fullText = join(folder, 'pagefind')
+    const search = createSearch({
+        keys: async () => ((await read(join(folder, 'titles.json'))) as TitleKeys).keys,
+        part: async (key) =>
+            (await read(join(folder, 'titles', `${partFile(key)}.json`))) as TitleRow[],
+        fullText: async () => {
+            bytes += wireSize(await readFile(join(fullText, 'pagefind.js')))
+            return pagefindEngine(`${pathToFileURL(fullText).href}/`)()
+        }
+    })
+    let titles = signal()
+    let said = signal()
+    let message = ''
+    const view: SearchView = {
+        showTitles: () => {
+            titles.fire()
+        },
+        showText: () => undefined,
+        clearText: () => undefined,
+        textPending: () => undefined,
+        say: (text) => {
+            message = text
+            said.fire()
+        },
+        setQuery: () => undefined
     }
+    let waiting: (() => void) | undefined
+    const session = createSession(search, view, {
+        set: (callback) => {
+            waiting = callback
+            return 1
+        },
+        clear: () => {
+            waiting = undefined
+        }
+    })
+    /** Runs the full text that waits for its pause, and waits for its answer. */
+    const answer = async (): Promise<void> => {
+        said = signal()
+        const run = waiting
+        waiting = undefined
+        run?.()
+        await said.done
+        if (message.startsWith('The search could not load')) {
+            throw new Error('the search failed')
+        }
+    }
+    const letters = Array.from(query)
+    for (let size = 1; size <= letters.length; size += 1) {
+        const typed = letters.slice(0, size).join('')
+        titles = signal()
+        session.type(typed)
+        await titles.done
+        if (typing && waiting !== undefined) await answer()
+    }
+    if (!typing) await answer()
     return bytes
 }
 
@@ -103,15 +158,15 @@ async function main(): Promise<void> {
         args: Bun.argv.slice(2),
         options: {
             vault: { type: 'string', default: join(ROOT, '.cache', 'corpus', 'vault') },
-            index: { type: 'string' },
+            folder: { type: 'string' },
             query: { type: 'string' },
-            session: { type: 'boolean', default: false }
+            typing: { type: 'boolean', default: false }
         },
         strict: true
     })
-    if (values.index !== undefined && values.query !== undefined) {
+    if (values.folder !== undefined && values.query !== undefined) {
         process.stdout.write(
-            `${String(await measureQuery(values.index, values.query, values.session))}\n`
+            `${String(await measureQuery(values.folder, values.query, values.typing))}\n`
         )
         return
     }
@@ -145,14 +200,17 @@ async function main(): Promise<void> {
     await index.writeFiles({ outputPath: join(output, 'pagefind') })
     await pagefind.close()
 
+    // The files of the title index, as the build writes them.
     const titles = titleIndexOf(entries)
-    const keys = brotliSize(new TextEncoder().encode(JSON.stringify({ v: 1, keys: titles.keys })))
-    const partSize = new Map(
-        [...titles.parts].map(([key, rows]) => [
-            key,
-            brotliSize(new TextEncoder().encode(JSON.stringify(rows)))
-        ])
-    )
+    const keysText = JSON.stringify({ v: 1, keys: titles.keys })
+    await writeFile(join(output, 'titles.json'), keysText)
+    await mkdir(join(output, 'titles'))
+    const partSize: number[] = []
+    for (const [key, rows] of titles.parts) {
+        const text = JSON.stringify(rows)
+        await writeFile(join(output, 'titles', `${partFile(key)}.json`), text)
+        partSize.push(brotliSize(new TextEncoder().encode(text)))
+    }
     const frequent = [...counts]
         .sort((one, two) => two[1] - one[1])
         .slice(0, WORDS)
@@ -161,16 +219,16 @@ async function main(): Promise<void> {
         ...frequent,
         ...frequent.slice(0, WORDS / 2).map((word, index) => `${word} ${frequent[index + 1] ?? ''}`)
     ]
-    const measure = async (query: string, session: boolean): Promise<number> => {
+    const measure = async (query: string, typing: boolean): Promise<number> => {
         const child = Bun.spawn(
             [
                 'bun',
                 fileURLToPath(import.meta.url),
-                '--index',
-                join(output, 'pagefind'),
+                '--folder',
+                output,
                 '--query',
                 query,
-                ...(session ? ['--session'] : [])
+                ...(typing ? ['--typing'] : [])
             ],
             { stdout: 'pipe', stderr: 'inherit' }
         )
@@ -183,15 +241,8 @@ async function main(): Promise<void> {
     const searches: number[] = []
     const sessions: number[] = []
     for (const query of queries) {
-        // The titles answer at each key: every part that a prefix of the query loads, one time each.
-        const parts = new Set(
-            prefixesOf(query)
-                .map((prefix) => partOf(prefix, titles.keys)?.key)
-                .filter((key) => key !== undefined)
-        )
-        const titleBytes = [...parts].reduce((sum, key) => sum + (partSize.get(key) ?? 0), 0)
-        searches.push(keys + titleBytes + (await measure(query, false)))
-        sessions.push(keys + titleBytes + (await measure(query, true)))
+        searches.push(await measure(query, false))
+        sessions.push(await measure(query, true))
     }
     const ordered = (values: number[]): number[] => [...values].sort((one, two) => one - two)
     const median = (values: number[]): number => ordered(values)[Math.floor(values.length / 2)] ?? 0
@@ -201,8 +252,8 @@ async function main(): Promise<void> {
             {
                 notes: entries.length,
                 titleParts: titles.parts.size,
-                titleKeysBrotli: keys,
-                largestTitlePartBrotli: Math.max(...partSize.values()),
+                titleKeysBrotli: brotliSize(new TextEncoder().encode(keysText)),
+                largestTitlePartBrotli: Math.max(...partSize),
                 queries: queries.length,
                 firstSearchMedian: median(searches),
                 firstSearchWorst: worst,

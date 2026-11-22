@@ -37,6 +37,7 @@ export const STEP = 10
 export const SHORTEST_QUERY = 2
 
 const FAILED = 'The search could not load. Check the connection, then try again.'
+const FAILED_MORE = 'The next results could not load. Check the connection, then try again.'
 
 const clock: Timer = {
     set: (callback, wait) => setTimeout(callback, wait),
@@ -85,6 +86,8 @@ export function createSession(
         const current = text
         if (current === undefined || current.busy) return
         current.busy = true
+        // A step that fails leaves the list as it was, so a new tap tries the same results again.
+        const before = { next: current.next, kept: [...current.kept] }
         try {
             const added: FullTextHit[] = []
             while (added.length < STEP) {
@@ -104,6 +107,10 @@ export function createSession(
                 append,
                 more: current.kept.length > 0 || current.next < current.results.total
             })
+        } catch (error) {
+            current.next = before.next
+            current.kept = before.kept
+            throw error
         } finally {
             current.busy = false
         }
@@ -184,7 +191,8 @@ export function createSession(
             try {
                 await step(true)
             } catch {
-                failed(mine)
+                // The shown results stay, and so does the button.
+                if (mine === turn) view.say(FAILED_MORE)
             }
         }
     }

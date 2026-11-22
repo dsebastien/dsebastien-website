@@ -4,6 +4,7 @@ import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
 import { toText } from 'hast-util-to-text'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { connect } from 'node:net'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -84,6 +85,25 @@ function searchOfOutput(): ReturnType<typeof createSearch> {
         },
         part: async (key) => (await json(`-/search/titles/${partFile(key)}.json`)) as TitleRow[],
         fullText: pagefindEngine(pathToFileURL(join(dir, '-', 'search', 'pagefind')).href + '/')
+    })
+}
+
+/** The answer of the server to a request line sent as it is, with no URL parser between. */
+async function rawGet(base: string, path: string): Promise<string> {
+    const { hostname, port } = new URL(base)
+    return new Promise((resolveAnswer, reject) => {
+        let answer = ''
+        const socket = connect({ host: hostname, port: Number(port) }, () => {
+            socket.write(`GET ${path} HTTP/1.1\r\nHost: ${hostname}\r\nConnection: close\r\n\r\n`)
+        })
+        socket.setEncoding('utf8')
+        socket.on('data', (chunk: string) => {
+            answer += chunk
+        })
+        socket.on('end', () => {
+            resolveAnswer(answer)
+        })
+        socket.on('error', reject)
     })
 }
 
@@ -375,11 +395,18 @@ describe('the files of the search on the plain server', () => {
             expect(script.status).toBe(200)
             expect(script.headers.get('content-type')).toStartWith('text/javascript')
             expect((await fetch(`${server.url}/-/search/titles/zz.json`)).status).toBe(404)
-            // A folder and an encoded way out of the folder are no files of it.
+            // A folder and a way out of the folder are no files of it. The way
+            // out goes as a raw request line: a URL parser would remove the dots.
             expect((await fetch(`${server.url}/-/search/titles`)).status).toBe(404)
-            const out = await fetch(`${server.url}/-/search/%2E%2E/resolver-map.json`)
-            expect(out.status).toBe(404)
-            expect(out.headers.get('content-type')).not.toStartWith('application/json')
+            for (const path of [
+                '/-/search/../resolver-map.json',
+                '/-/search/%2E%2E/resolver-map.json',
+                '/-/search/titles/..%2F..%2Fresolver-map.json'
+            ]) {
+                const answer = await rawGet(server.url, path)
+                expect(answer.split('\r\n')[0], path).toBe('HTTP/1.1 404 Not Found')
+                expect(answer, path).not.toContain('"pages"')
+            }
         } finally {
             await server.stop()
         }

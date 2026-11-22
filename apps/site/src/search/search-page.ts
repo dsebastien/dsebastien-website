@@ -132,6 +132,7 @@ export function startSearchPage(document: Document): void {
     const textBlock = part(document, '[data-search-text]', HTMLElement)
     const textList = part(textBlock, '[data-search-list]', HTMLElement)
     const more = part(textBlock, '[data-search-more]', HTMLButtonElement)
+    const updating = part(textBlock, '[data-search-updating]', HTMLElement)
 
     const view: SearchView = {
         showTitles(matches) {
@@ -148,9 +149,11 @@ export function startSearchPage(document: Document): void {
             }
             textBlock.hidden = textList.childElementCount === 0
             more.hidden = !hasMore
-            // A reader who tapped "More results" goes on with the first new result.
+            // A reader who tapped "More results" goes on with the first new
+            // result, or with the last one when the step added none.
             if (moved) {
-                rows[0]?.querySelector('a')?.focus()
+                const links = textList.querySelectorAll('a')
+                ;(rows[0]?.querySelector('a') ?? links[links.length - 1])?.focus()
             }
         },
         clearText() {
@@ -159,7 +162,8 @@ export function startSearchPage(document: Document): void {
             more.hidden = true
         },
         textPending(pending) {
-            textBlock.classList.toggle('opacity-60', pending)
+            // The old results stay readable, with a mark that new ones come.
+            updating.hidden = !pending
             textBlock.setAttribute('aria-busy', String(pending))
             if (pending) more.hidden = true
         },

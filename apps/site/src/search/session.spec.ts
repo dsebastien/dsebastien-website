@@ -264,6 +264,73 @@ describe('the search session of the search page', () => {
         )
     })
 
+    test('keeps the shown results and the button when "More results" fails, and can try again', async () => {
+        const paths = Array.from({ length: 25 }, (_, index) => `/n${String(index)}`)
+        let fail = false
+        const results: FullTextResults = {
+            total: paths.length,
+            hits: (from, count) =>
+                fail && from > 0
+                    ? Promise.reject(new Error('offline'))
+                    : Promise.resolve(paths.slice(from, from + count).map(hit))
+        }
+        const view = recordingView()
+        const timer = manualTimer()
+        const session = createSession(
+            fakeSearch({ fullText: () => Promise.resolve(results) }),
+            view,
+            timer
+        )
+        session.submit('note')
+        timer.run()
+        await settle()
+        fail = true
+        view.log.length = 0
+        await session.more()
+        expect(view.text).toEqual(paths.slice(0, 10))
+        expect(view.log).toEqual([
+            'say The next results could not load. Check the connection, then try again.'
+        ])
+        fail = false
+        await session.more()
+        expect(view.text).toEqual(paths.slice(0, 20))
+    })
+
+    test('drops a step of "More results" that a new query overtakes', async () => {
+        const paths = Array.from({ length: 25 }, (_, index) => `/n${String(index)}`)
+        const second = later<FullTextHit[]>()
+        const view = recordingView()
+        const timer = manualTimer()
+        const session = createSession(
+            fakeSearch({
+                fullText: (query) =>
+                    Promise.resolve(
+                        query === 'note'
+                            ? {
+                                  total: paths.length,
+                                  hits: (from: number, count: number) =>
+                                      from === 0
+                                          ? Promise.resolve(paths.slice(0, count).map(hit))
+                                          : second.promise
+                              }
+                            : resultsOf(['/Tomato'])
+                    )
+            }),
+            view,
+            timer
+        )
+        session.submit('note')
+        timer.run()
+        await settle()
+        const step = session.more()
+        session.submit('tomato')
+        timer.run()
+        await settle()
+        second.resolve(paths.slice(10, 20).map(hit))
+        await step
+        expect(view.text).toEqual(['/Tomato'])
+    })
+
     test('asks for two letters, counted as characters, and clears the results for an empty query', () => {
         const view = recordingView()
         const timer = manualTimer()
