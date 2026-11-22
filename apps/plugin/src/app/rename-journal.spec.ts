@@ -126,6 +126,41 @@ describe('the rename journal of the plugin', () => {
     })
 })
 
+describe('the rename journal after a restart of Obsidian', () => {
+    test('the next session appends to the same journal, and reads it one time', async () => {
+        const files = new Map<string, string>()
+        const values = new Map<string, unknown>()
+        const storage = memoryStorage(values)
+        const random = (): Uint8Array => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8])
+        const first = new RenameRecorder(memoryAdapter(files), FOLDER, journalName(storage, random))
+        await first.record('file', 'A.md', 'B.md', MOMENT)
+
+        // A restart: a new recorder, with the name that the local storage kept.
+        let reads = 0
+        const adapter = memoryAdapter(files, new Set([FOLDER]))
+        const counted: JournalAdapter = {
+            ...adapter,
+            readBinary: (path) => {
+                reads += 1
+                return adapter.readBinary(path)
+            }
+        }
+        const second = new RenameRecorder(
+            counted,
+            FOLDER,
+            journalName(storage, () => new Uint8Array(8))
+        )
+        for (const name of ['C', 'D', 'E']) {
+            await second.record('file', 'B.md', `${name}.md`, MOMENT)
+        }
+
+        const text = files.get(`${FOLDER}/0102030405060708.jsonl`) ?? ''
+        expect(text.split('\n').filter((line) => line !== '')).toHaveLength(4)
+        expect(text).toStartWith('{"from":"A.md"')
+        expect(reads).toBe(1)
+    })
+})
+
 describe('the name of the journal of the device', () => {
     test('is made one time from random bytes, then kept in the local storage', () => {
         const values = new Map<string, unknown>()

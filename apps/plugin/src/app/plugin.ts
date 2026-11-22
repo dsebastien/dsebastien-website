@@ -26,7 +26,7 @@ export class VaultPublishPlugin extends Plugin {
                     // A rename that is not recorded loses its redirect: the
                     // author must know, and can confirm the pairing later.
                     new Notice(
-                        `Vault Publish could not record the rename of "${oldPath}" in its journal: ${error instanceof Error ? error.message : 'it failed'}. Confirm the pairing at the next publication.`
+                        `Vault Publish could not record the rename of "${oldPath}" in its journal: ${error instanceof Error ? error.message : 'it failed'}. At the next publication, confirm the pairing, or pair the two notes by hand.`
                     )
                 })
             })

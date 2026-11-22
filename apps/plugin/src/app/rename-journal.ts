@@ -64,6 +64,8 @@ export class RenameRecorder {
     readonly #folder: string
     readonly #name: string
     #last: Promise<void> = Promise.resolve()
+    /** True when this recorder wrote the last line: the file then ends with a line feed. */
+    #wrote = false
 
     /**
      * @param folder the folder of the journals, as a path of the adapter
@@ -103,13 +105,22 @@ export class RenameRecorder {
         }
         const path = `${this.#folder}/${this.#name}`
         if (!(await this.#adapter.exists(path))) {
+            this.#wrote = false
             await this.#adapter.write(path, text)
+            this.#wrote = true
             return
         }
         // A line that was cut (a crash during a write) stays one line: the
-        // new line starts on a line of its own.
-        const bytes = new Uint8Array(await this.#adapter.readBinary(path))
-        const cut = bytes.length > 0 && bytes[bytes.length - 1] !== 0x0a
+        // new line starts on a line of its own. Only this device writes its
+        // journal, so the file is read one time per session, not for each
+        // line: a folder rename gives one event per note.
+        let cut = false
+        if (!this.#wrote) {
+            const bytes = new Uint8Array(await this.#adapter.readBinary(path))
+            cut = bytes.length > 0 && bytes[bytes.length - 1] !== 0x0a
+        }
+        this.#wrote = false
         await this.#adapter.append(path, cut ? `\n${text}` : text)
+        this.#wrote = true
     }
 }
