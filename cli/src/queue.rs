@@ -53,6 +53,10 @@ pub struct PublicationQueue {
     /// The published notes that cannot stay published as they are.
     pub to_remove: Vec<String>,
     pub unchanged: Vec<String>,
+    /// The unpublished notes that a guard excludes: forced removals of the
+    /// next plan, so that their addresses answer 404 and no more 410
+    /// (decision R64). Apart from the four lists: they are not counted.
+    pub unpublished_under_guard: Vec<String>,
 }
 
 impl PublicationQueue {
@@ -72,6 +76,7 @@ impl PublicationQueue {
             technical_updates: Vec::new(),
             to_remove: Vec::new(),
             unchanged: Vec::new(),
+            unpublished_under_guard: Vec::new(),
         }
     }
 
@@ -124,10 +129,6 @@ pub struct Scan {
     /// The note type of each published note that the scan found and that no
     /// guard excludes, when it has one.
     pub note_types: BTreeMap<String, NoteType>,
-    /// The vault paths of the unpublished notes that a guard excludes, sorted:
-    /// forced removals of the next plan, so that their addresses answer 404
-    /// and no more 410 (decision R64). They are in no list of the queue.
-    pub unpublished_under_guard: Vec<String>,
 }
 
 impl Scan {
@@ -269,14 +270,22 @@ fn published_question(
         .collect()
 }
 
+/// What the guards of a scan exclude: the deny list, the notes with the
+/// ignore property, and the names of the files in the folders of the deny list.
+struct Guards<'a> {
+    configuration: &'a Configuration,
+    ignored: &'a BTreeSet<String>,
+    denied_file_names: &'a BTreeSet<String>,
+}
+
 /// The paths of `to_remove` that are only missing from this vault: no
 /// guard excludes them.
-fn missing_of(
-    to_remove: &[String],
-    configuration: &Configuration,
-    ignored: &BTreeSet<String>,
-    denied_file_names: &BTreeSet<String>,
-) -> Vec<String> {
+fn missing_of(to_remove: &[String], guards: &Guards) -> Vec<String> {
+    let Guards {
+        configuration,
+        ignored,
+        denied_file_names,
+    } = guards;
     // A published note waits for its removal under a guard when its path is
     // in a folder of the deny list, it has the ignore property, or its file is
     // missing and a note of its name is in a folder of the deny list (it moved
@@ -309,10 +318,13 @@ fn moved_under_guard(path: &str, denied_file_names: &BTreeSet<String>) -> bool {
 fn unpublished_under_guard(
     manifest: &BTreeMap<String, ManifestEntry>,
     notes: &BTreeMap<String, ScannedNote>,
-    configuration: &Configuration,
-    ignored: &BTreeSet<String>,
-    denied_file_names: &BTreeSet<String>,
+    guards: &Guards,
 ) -> Vec<String> {
+    let Guards {
+        configuration,
+        ignored,
+        denied_file_names,
+    } = guards;
     manifest
         .iter()
         .filter(|(path, entry)| {
@@ -434,21 +446,14 @@ pub fn compute_queue(
         }
     }
     queue.count();
-    queue.missing = missing_of(
-        &queue.to_remove,
-        &configuration,
-        &ignored,
-        &denied_file_names,
-    );
+    let guards = Guards {
+        configuration: &configuration,
+        ignored: &ignored,
+        denied_file_names: &denied_file_names,
+    };
+    queue.missing = missing_of(&queue.to_remove, &guards);
+    queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
     Ok(Scan {
-        // First: the fields below move what it reads.
-        unpublished_under_guard: unpublished_under_guard(
-            &manifest,
-            &notes,
-            &configuration,
-            &ignored,
-            &denied_file_names,
-        ),
         queue,
         notes,
         ignored,

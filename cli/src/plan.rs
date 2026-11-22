@@ -185,7 +185,7 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
                 "is published and a guard excludes it: its removal cannot be held",
             );
         }
-        if within(&scan.unpublished_under_guard, path) {
+        if within(&queue.unpublished_under_guard, path) {
             return refuse(
                 path,
                 "is unpublished and a guard excludes it: its removal cannot be held",
@@ -219,7 +219,7 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
     let plan = PublicationPlan::new(
         forced
             .iter()
-            .chain(&scan.unpublished_under_guard)
+            .chain(&queue.unpublished_under_guard)
             .cloned()
             .collect(),
         selection

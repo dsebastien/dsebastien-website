@@ -122,16 +122,17 @@ The tool scans the vault to find its notes and the other files that a note can l
 
 The publication queue is what the `status` command writes, as data in the canonical form. It changes nothing in the vault and in the content store.
 
-| Key                | Value                                                                                                            | Order          |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------- | -------------- |
-| `behind`           | The number of commits of the branch `main` of the content store, at the last fetch, that the copy does not have  |                |
-| `changed`          | The vault paths of the published notes whose content in the vault is not the published content                   | Sorted by path |
-| `counts`           | The number of paths of each of the four lists: `changed`, `new`, `toRemove`, `unchanged`                         |                |
-| `missing`          | The paths of `toRemove` whose file this device does not have and that no guard excludes: missing from this vault | Sorted by path |
-| `new`              | The vault paths of the candidates                                                                                | Sorted by path |
-| `technicalUpdates` | The paths of `changed` that the author did not edit: only the result of the cleaning step moved                  | Sorted by path |
-| `toRemove`         | The vault paths of the published notes that cannot stay published as they are                                    | Sorted by path |
-| `unchanged`        | The vault paths of the published notes that are the same in the vault and in the content store                   | Sorted by path |
+| Key                     | Value                                                                                                                                                                  | Order          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `behind`                | The number of commits of the branch `main` of the content store, at the last fetch, that the copy does not have                                                        |                |
+| `changed`               | The vault paths of the published notes whose content in the vault is not the published content                                                                         | Sorted by path |
+| `counts`                | The number of paths of each of the four lists: `changed`, `new`, `toRemove`, `unchanged`                                                                               |                |
+| `missing`               | The paths of `toRemove` whose file this device does not have and that no guard excludes: missing from this vault                                                       | Sorted by path |
+| `new`                   | The vault paths of the candidates                                                                                                                                      | Sorted by path |
+| `technicalUpdates`      | The paths of `changed` that the author did not edit: only the result of the cleaning step moved                                                                        | Sorted by path |
+| `toRemove`              | The vault paths of the published notes that cannot stay published as they are                                                                                          | Sorted by path |
+| `unchanged`             | The vault paths of the published notes that are the same in the vault and in the content store                                                                         | Sorted by path |
+| `unpublishedUnderGuard` | The vault paths of the unpublished notes that a guard excludes: the forced removals of the next plan (rule 3 of the plan, R64). Apart from the four lists: not counted | Sorted by path |
 
 A published note is a note with a manifest entry whose state is `published`. Each note is in one of the four lists at most:
 
@@ -139,7 +140,7 @@ A published note is a note with a manifest entry whose state is `published`. Eac
 2. Another published note is in `changed` when the hash of its source is not the `sourceHash` of its manifest entry. It is in `changed` and in `technicalUpdates` when the hash is the same and the cleaning step would give another result: the `cleaningVersion` of its entry is not the version of the cleaning step, the `links` of its entry are not the links that the note has now (a target was made, moved or removed, or a guard now excludes it), or the `attachments` of its entry are not the attachments that the note has now (a file was added, changed, moved or removed, or a guard now excludes it), or the `noteType` of its entry is not the note type that the note has now (see "The note type of a note").
 3. Every other published note is in `unchanged`.
 4. A note of the scan that is not published is in `new` when the ignore property does not exclude it. A note that was unpublished is a candidate again.
-5. A note that is not published and that a guard excludes is in no list. An unpublished note under a guard waits for its forced removal (rule 3 of the plan): the plan and the publication report show it, not the queue. This is deliberate (R64): a new list of the queue would change its canonical form for a case that the next plan closes.
+5. A note that is not published and that a guard excludes is in none of the four lists. An unpublished note under a guard waits for its forced removal (rule 3 of the plan): it is in `unpublishedUnderGuard`, so that the author sees that the next publication has work to do (R64).
 
 The `public_note` property is not read for the queue. A note that carries it by mistake is a candidate like every other note, and a published note without it stays published.
 
@@ -160,7 +161,8 @@ The empty queue. A test compares this block with the output of the code:
   "new": [],
   "technicalUpdates": [],
   "toRemove": [],
-  "unchanged": []
+  "unchanged": [],
+  "unpublishedUnderGuard": []
 }
 ```
 

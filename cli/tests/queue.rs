@@ -555,7 +555,7 @@ fn the_status_of_an_empty_vault_is_the_empty_queue() {
     assert_eq!(errors_of(&output), "");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"new\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": []\n}\n"
+        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"new\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
     );
 }
 

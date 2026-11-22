@@ -125,7 +125,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const onlyMissing = new Set(queue.missing)
     const forced = queue.toRemove.filter((path) => !onlyMissing.has(path))
     const underGuard = new Set(forced)
-    const unpublishedUnderGuard = new Set(scan.unpublishedUnderGuard)
+    const unpublishedUnderGuard = new Set(queue.unpublishedUnderGuard)
     for (const path of selection.include) {
         if (waiting.has(path)) {
             refuse(path, 'is published and waits for its removal: it cannot be published again')
@@ -160,7 +160,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const removed = new Set(selection.remove)
     const plan = makePlan({
         // An unpublished note under a guard leaves the manifest too (decision R64).
-        forcedRemove: [...forced, ...scan.unpublishedUnderGuard],
+        forcedRemove: [...forced, ...queue.unpublishedUnderGuard],
         publish: selection.include.filter((path) => candidates.has(path)),
         update: queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
         // A guard wins over an unpublish: the note leaves the manifest.

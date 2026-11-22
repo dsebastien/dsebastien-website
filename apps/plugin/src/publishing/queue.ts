@@ -50,6 +50,12 @@ export type QueueLists = {
     /** The published notes that cannot stay published as they are. */
     readonly toRemove: readonly string[]
     readonly unchanged: readonly string[]
+    /**
+     * The unpublished notes that a guard excludes: forced removals of the next
+     * plan, so that their addresses answer 404 and no more 410 (decision R64).
+     * Apart from the four lists: they are not counted.
+     */
+    readonly unpublishedUnderGuard: readonly string[]
 }
 
 /** What the scan knows of one note. The text itself is not kept. */
@@ -91,12 +97,6 @@ export interface Scan {
     readonly configuration: Configuration
     /** The note type of each published note that the scan found and that no guard excludes, when it has one. */
     readonly noteTypes: ReadonlyMap<string, NoteType>
-    /**
-     * The vault paths of the unpublished notes that a guard excludes, sorted:
-     * forced removals of the next plan, so that their addresses answer 404 and
-     * no more 410 (decision R64). They are in no list of the queue.
-     */
-    readonly unpublishedUnderGuard: readonly string[]
 }
 
 /**
@@ -338,11 +338,11 @@ export async function computeQueue(input: {
         new: sortByCodePoint(lists.new),
         technicalUpdates: sortByCodePoint(lists.technicalUpdates),
         toRemove: sortByCodePoint(lists.toRemove),
-        unchanged: sortByCodePoint(lists.unchanged)
+        unchanged: sortByCodePoint(lists.unchanged),
+        unpublishedUnderGuard: sortByCodePoint(unpublishedUnderGuard)
     }
     return {
         queue,
-        unpublishedUnderGuard: sortByCodePoint(unpublishedUnderGuard),
         notes,
         ignored,
         index,

@@ -32,7 +32,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -108,7 +109,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -140,7 +142,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Beta.md"],
                         "unchanged": ["Folder/Gamma.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -528,7 +531,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Alpha.md", "Delta.md", "Folder/Gamma.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -589,7 +593,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Delta.md", "Folder/Gamma.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -615,7 +620,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Folder/Gamma.md"],
                         "unchanged": ["Delta.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -708,7 +714,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Delta.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 }
             ]
@@ -741,7 +748,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -856,7 +864,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Published.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -941,7 +950,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Published.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1039,7 +1049,8 @@
                         "technicalUpdates": ["Note.md"],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1092,7 +1103,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Edited.md", "Note.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 }
             ]
@@ -1123,7 +1135,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1173,7 +1186,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Nested.md", "Open.md"],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1229,7 +1243,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Other.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1339,7 +1354,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1488,7 +1504,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md"],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1514,7 +1531,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Lost.md"],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1650,7 +1668,7 @@
                 },
                 {
                     "do": "status",
-                    "why": "a note that is not published is in no list of the queue, also under a guard",
+                    "why": "a note that is not published is in none of the four lists, also under a guard; the unpublished notes under a guard wait for their forced removal",
                     "queue": {
                         "changed": [],
                         "counts": {
@@ -1664,7 +1682,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Keep.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": ["Marked.md", "Moves.md", "Private/Diary.md"]
                     }
                 },
                 {
@@ -1752,7 +1771,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Keep.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1856,7 +1876,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Hub.md", "Leaf.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1892,7 +1913,8 @@
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": [],
                         "unchanged": ["Leaf.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1943,7 +1965,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Hub.md", "Leaf.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -1969,7 +1992,8 @@
                         "technicalUpdates": ["Hub.md"],
                         "toRemove": ["Leaf.md"],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2051,7 +2075,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2117,7 +2142,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Block.md", "Flow.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2203,7 +2229,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Two.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 }
             ]
@@ -2238,7 +2265,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2298,7 +2326,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Notes/Plan.md", "Notes/Shed.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2326,7 +2355,8 @@
                         "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2400,7 +2430,8 @@
                         "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2470,7 +2501,8 @@
                         "technicalUpdates": ["Notes/Plan.md", "Notes/Shed.md"],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2609,7 +2641,8 @@
                         "technicalUpdates": ["Pub/A.md"],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2789,7 +2822,8 @@
                         "technicalUpdates": ["Pub/A.md", "Pub/C.md"],
                         "toRemove": [],
                         "unchanged": ["Pub/D.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -2961,7 +2995,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Hide.md"],
                         "unchanged": ["Keep.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -3017,7 +3052,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Edit.md", "Keep.md", "New.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 }
             ]
@@ -3152,7 +3188,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["One.md", "Two.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 }
             ]
@@ -3227,7 +3264,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["One.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -3338,7 +3376,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["One.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -4089,7 +4128,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -4142,7 +4182,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -4198,7 +4239,8 @@
                         "technicalUpdates": ["Basil.md", "Welcome.md"],
                         "toRemove": [],
                         "unchanged": ["Tomato (Recipe).md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -4285,7 +4327,8 @@
                         "technicalUpdates": ["Tomato (Recipe).md"],
                         "toRemove": [],
                         "unchanged": ["Basil.md", "Welcome.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -4453,7 +4496,8 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -4484,7 +4528,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Welcome.md"],
                         "unchanged": ["Basil.md", "Tomato (Recipe).md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
@@ -4553,7 +4598,8 @@
                         "technicalUpdates": [],
                         "toRemove": ["Basil.md"],
                         "unchanged": ["Tomato (Recipe).md"],
-                        "behind": 0
+                        "behind": 0,
+                        "unpublishedUnderGuard": []
                     }
                 },
                 {
