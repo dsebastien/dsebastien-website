@@ -1,4 +1,4 @@
-import { foldedForm, type GoneMap, type ResolverMap } from './resolver.ts'
+import { foldedForm, goneKey, type GoneMap, type ResolverMap } from './resolver.ts'
 import { canonicalPath, folderPath, markdownPath } from './url.ts'
 
 // What the site has, from its published notes: the folders, the names, the
@@ -234,8 +234,11 @@ export function resolverMapOf(
 /** The addresses of the unpublished notes (URL-27, decision R64). */
 function goneMapOf(removed: readonly SiteNote[], file: string): GoneMap {
     const ordered = [...removed].sort((one, two) => compareCodePoints(one.path, two.path))
-    const set = (keys: Iterable<string>): Record<string, true> =>
-        Object.fromEntries(sorted(keys).map((key): [string, true] => [key, true]))
+    // Keys, never texts: the map holds no title and no alias of these notes.
+    const set = (texts: Iterable<string>): Record<string, true> =>
+        Object.fromEntries(
+            sorted([...texts].map(goneKey)).map((key): [string, true] => [key, true])
+        )
     const { names, aliases } = namesAndAliases(ordered)
     return {
         file,

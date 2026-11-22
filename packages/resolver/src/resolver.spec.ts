@@ -287,6 +287,24 @@ describe('resolver of unpublished notes', () => {
         expect(resolve('/hasOwnProperty', map).kind).toBe('not-found')
     })
 
+    // A release that leaks the map shows no title and no alias (R64).
+    test('the map holds no text of an unpublished note', () => {
+        const text = JSON.stringify(
+            resolverMapOf([{ path: 'Garden/Mint.md', aliases: [] }], files, {}, {}, [
+                { path: 'Shed/Secret plan.md', aliases: ['Hidden name'] }
+            ])
+        ).toLowerCase()
+        for (const part of ['secret', 'plan', 'hidden', 'shed']) {
+            expect(text).not.toContain(part)
+        }
+        expect(
+            resolve(
+                '/Shed/Secret+plan',
+                mapOf([], [{ path: 'Shed/Secret plan.md', aliases: ['Hidden name'] }])
+            )
+        ).toEqual(GONE)
+    })
+
     test('a map without unpublished notes has no gone page', () => {
         expect(resolve('/Anything', { pages: {} })).toEqual({ kind: 'not-found', suggestions: [] })
     })

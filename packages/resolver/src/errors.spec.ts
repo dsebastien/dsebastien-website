@@ -34,6 +34,37 @@ describe('form of an error answer', () => {
         ['Markdown with a character set', '/Nothing', 'text/markdown; charset=utf-8', 'markdown'],
         ['a weight that is not a number', '/Nothing', 'text/markdown;q=high', 'html'],
         ['a weight above 1', '/Nothing', 'text/markdown;q=2', 'html'],
+        ['XHTML before Markdown', '/Nothing', 'application/xhtml+xml, text/markdown;q=0.9', 'html'],
+        [
+            'Markdown before XHTML',
+            '/Nothing',
+            'application/xhtml+xml;q=0.5, text/markdown',
+            'markdown'
+        ],
+        [
+            'a quoted parameter with a comma and a semicolon',
+            '/Nothing',
+            'text/html;q=0.1;x="a,b;q=1", text/markdown',
+            'markdown'
+        ],
+        [
+            'a range with a parameter of another character set',
+            '/Nothing',
+            'text/markdown;charset=latin1;q=0, text/markdown',
+            'markdown'
+        ],
+        [
+            'a range of the same character set wins over the bare range',
+            '/Nothing',
+            'text/markdown;charset=UTF-8;q=0, text/markdown',
+            'html'
+        ],
+        [
+            'the bare range wins over the group',
+            '/Nothing',
+            'text/*;q=0.1, text/markdown;q=0.2, text/html;q=0.1',
+            'markdown'
+        ],
         ['a Markdown path', '/-/md/Nothing.md', null, 'markdown'],
         ['a Markdown path, asked as HTML', '/-/md/Nothing.md', 'text/html', 'markdown']
     ] as const)('%s', (_name, path, accept, format) => {

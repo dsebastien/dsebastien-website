@@ -15,6 +15,10 @@ const PAGES = ['500.html']
 
 const STYLESHEET = /<link rel="stylesheet" href="([^"]+)"\s*\/?>/gu
 const FONT_FACE = /@font-face\{[^}]*\}/gu
+const LOADING_ELEMENT =
+    /<(?:img|picture|source|video|audio|track|iframe|frame|object|embed|image)\b/iu
+const SOURCE = /\s(?:src|srcset|data|poster|background)\s*=/iu
+const ADDRESS = /<([a-z][\w:-]*)\b[^>]*\s(?:xlink:)?href\s*=/giu
 
 function refuse(reason: string): never {
     throw new Error(`The server error page must be one file: ${reason}`)
@@ -49,6 +53,16 @@ export async function selfContained(
     }
     if (/<link\b/iu.test(page) || /\/_astro\//u.test(page)) {
         refuse('it names another file of the release')
+    }
+    // Every other way to load a file: an element that loads one, a source,
+    // a CSS address, and an address of an element that is no link.
+    if (LOADING_ELEMENT.test(page) || SOURCE.test(page) || /url\(/iu.test(page)) {
+        refuse('it loads another file')
+    }
+    for (const [, element = ''] of page.matchAll(ADDRESS)) {
+        if (element.toLowerCase() !== 'a') {
+            refuse(`its element ${element} names another file`)
+        }
     }
     return page
 }

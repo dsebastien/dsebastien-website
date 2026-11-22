@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { canonicalPath, errorText, folderPath } from '@dsebastien-website/resolver'
+import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
 import {
     FIXTURE_NOTE_TYPES,
     copyFixtureVault,
@@ -191,7 +191,12 @@ describe('URL table over HTTP', () => {
                     expect(response.headers.get('content-type')).toBe(
                         'text/markdown; charset=utf-8'
                     )
-                    expect(body).toBe(errorText(entry.status, entry.suggestions ?? []))
+                    expect(body).toStartWith(
+                        entry.status === 410 ? '# Removed\n\n' : '# Not found\n\n'
+                    )
+                    for (const path of entry.suggestions ?? []) {
+                        expect(body).toContain(`- ${path}\n`)
+                    }
                     return
                 }
                 expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
@@ -229,6 +234,32 @@ describe('URL table over HTTP', () => {
             expect(canonicalLinkOf(body)).toBe(`${ORIGIN}${entry.canonical ?? ''}`)
         }
     )
+})
+
+// Nothing of a removed note reaches the output of the build (NAV-19, R64):
+// no title, no path, in no page, no file and no index. The note "Bean
+// trellis" has no backlink, so no other note names it either (a link to an
+// unpublished note shows its text, by rule 5 of the business rules).
+describe('output of the build after an unpublication', () => {
+    test('holds no name of a removed note that no note links to', async () => {
+        const folder = outDir ?? ''
+        const files = (await readdir(folder, { recursive: true, withFileTypes: true })).filter(
+            (entry) => entry.isFile()
+        )
+        expect(files.length).toBeGreaterThan(20)
+        const forms = ['Bean trellis', 'Bean+trellis', 'Bean%20trellis', 'bean trellis']
+        const found: string[] = []
+        for (const entry of files) {
+            const bytes = await readFile(join(entry.parentPath, entry.name))
+            const text = bytes.toString('utf8').toLowerCase()
+            for (const form of forms) {
+                if (text.includes(form.toLowerCase())) {
+                    found.push(`${entry.name}: ${form}`)
+                }
+            }
+        }
+        expect(found).toEqual([])
+    })
 })
 
 describe('plain local server', () => {
@@ -305,7 +336,8 @@ describe('plain local server with a broken release', () => {
         const agent = await get(path, { accept: 'text/markdown' })
         expect(agent.status, path).toBe(agentStatus)
         expect(agent.headers.get('content-type'), path).toBe('text/markdown; charset=utf-8')
-        expect(await agent.text(), path).toStartWith(errorText(agentStatus).split('\n')[0] ?? '')
+        const first = { 404: '# Not found\n', 410: '# Removed\n', 500: '# Server error\n' }
+        expect(await agent.text(), path).toStartWith(first[agentStatus])
     }
 
     test('answers 500 when a file of the map is missing', async () => {
@@ -346,7 +378,7 @@ describe('plain local server with a broken release', () => {
             expect(response.status).toBe(500)
             expect(response.headers.get('cache-control')).toBe('no-store')
             expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
-            expect(await response.text()).toBe(errorText(500))
+            expect(await response.text()).toStartWith('# Server error\n')
         } finally {
             await without.stop()
         }

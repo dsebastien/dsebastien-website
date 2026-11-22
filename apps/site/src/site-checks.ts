@@ -149,7 +149,9 @@ export function fileOfLink(link: string, map: ResolverMap): LinkTarget {
     switch (resolution.kind) {
         case 'page':
             return { kind: 'page', file: resolution.file }
+        // The gone page of an unpublished note is no page to link to (R64).
         case 'not-found':
+        case 'gone':
             return { kind: 'missing' }
         default:
             return { kind: 'other' }

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rejectionOf } from '@dsebastien-website/testing'
-import { readImportRun, readPublishedNotes, readRemovedNotes } from './content-store.ts'
+import { readImportRun, readPublication, readPublishedNotes } from './content-store.ts'
 
 // How the build reads the content store. A content store that cannot be
 // trusted stops the build: a site with a part of the notes must never go out
@@ -229,7 +229,7 @@ describe('unpublished notes of a content store', () => {
             'b.json': { ...ENTRY, id: 'bbbbbbbbbbbbbbbb', path: 'Live.md' },
             'c.json': { ...ENTRY, id: 'cccccccccccccccc', path: 'A/Older.md', state: 'unpublished' }
         })
-        expect(await readRemovedNotes()).toEqual([
+        expect((await readPublication()).removed).toEqual([
             { vaultPath: 'A/Older.md', aliases: [] },
             { vaultPath: 'Z/Old.md', aliases: ['Gone'] }
         ])
@@ -237,7 +237,7 @@ describe('unpublished notes of a content store', () => {
     })
 
     test('are none without a content store', async () => {
-        expect(await readRemovedNotes()).toEqual([])
+        expect((await readPublication()).removed).toEqual([])
     })
 
     test('stop the build when an unpublished entry has the path of another entry', async () => {
@@ -245,13 +245,13 @@ describe('unpublished notes of a content store', () => {
             'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Same.md', state: 'unpublished' },
             'b.json': { ...ENTRY, id: 'bbbbbbbbbbbbbbbb', path: 'Same.md' }
         })
-        expect(await rejectionOf(readRemovedNotes())).toContain('"Same.md"')
+        expect(await rejectionOf(readPublication())).toContain('"Same.md"')
     })
 
     test('stop the build when an entry has a state that is neither published nor unpublished', async () => {
         await contentStore({
             'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Odd.md', state: 'hidden' }
         })
-        expect(await rejectionOf(readRemovedNotes())).toContain('manifest/a.json')
+        expect(await rejectionOf(readPublication())).toContain('manifest/a.json')
     })
 })

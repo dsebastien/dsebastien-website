@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ResolverMap } from '@dsebastien-website/resolver'
+import { goneKey, type ResolverMap } from '@dsebastien-website/resolver'
 import {
     fileOfLink,
     readBuiltPage,
@@ -129,5 +129,22 @@ describe('the target of a link of a built page', () => {
     test('is missing for an internal path that leads to the not found page', () => {
         expect(fileOfLink('/-/tags/tag/', map)).toEqual({ kind: 'missing' })
         expect(fileOfLink('/Basil', map)).toEqual({ kind: 'missing' })
+    })
+
+    // A page that links to an address of an unpublished note leads to the
+    // gone page (410): the build stops as for "not found" (R64).
+    test('is missing for an address of an unpublished note', () => {
+        const withGone: ResolverMap = {
+            ...map,
+            gone: {
+                file: '410.html',
+                paths: { [goneKey('/Basil')]: true },
+                folded: { [goneKey('basil')]: true },
+                names: {},
+                aliases: {}
+            }
+        }
+        expect(fileOfLink('/Basil', withGone)).toEqual({ kind: 'missing' })
+        expect(fileOfLink('/basil', withGone)).toEqual({ kind: 'missing' })
     })
 })

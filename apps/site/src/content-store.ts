@@ -144,11 +144,6 @@ export interface RemovedNote {
     readonly aliases: readonly string[]
 }
 
-/** The notes that the author unpublished, in the order of their paths. */
-export async function readRemovedNotes(): Promise<RemovedNote[]> {
-    return (await readManifest()).removed
-}
-
 /**
  * The run of the first publication of the content store (decision R62): the
  * earliest `firstPublished` of every entry of the manifest, also of an entry

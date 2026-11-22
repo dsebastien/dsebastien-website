@@ -37,9 +37,25 @@ describe('self-contained page', () => {
             'a preloaded font',
             '<html><head><link rel="preload" href="/_astro/noto.woff2" as="font"></head></html>'
         ],
-        ['an image of the release', '<html><body><img src="/_astro/logo.svg"></body></html>']
+        ['an image of the release', '<html><body><img src="/_astro/logo.svg"></body></html>'],
+        ['an image at the root', '<html><body><img src="/logo.svg"></body></html>'],
+        ['a set of images', '<html><body><img srcset="/a.png 2x"></body></html>'],
+        ['a use of an SVG', '<html><body><svg><use href="/icons.svg#x"></use></svg></body></html>'],
+        [
+            'a style attribute that loads a file',
+            '<html><body><p style="background:url(/a.png)">x</p></body></html>'
+        ],
+        ['a frame', '<html><body><iframe srcdoc="x"></iframe></body></html>'],
+        ['an object', '<html><body><object data="/a.pdf"></object></body></html>'],
+        ['an embed', '<html><body><embed type="x"></body></html>']
     ])('refuses a page with %s', async (_name, html) => {
         expect(await rejectionOf(selfContained(html, read))).toContain('server error page')
+    })
+
+    test('lets links, an inline SVG and a form pass', async () => {
+        const html =
+            '<html><body><a href="/">Home</a><a href="#content">Skip</a><svg viewBox="0 0 24 24"><path d="M1 1"></path></svg><form action="/-/search"></form></body></html>'
+        expect(await selfContained(html, read)).toBe(html)
     })
 
     test('refuses a style sheet that loads another file', async () => {

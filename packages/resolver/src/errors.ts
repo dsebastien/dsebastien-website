@@ -12,39 +12,99 @@ const MARKDOWN_PREFIX = '/-/md/'
 /** The form of a weight of the `Accept` header: 0 to 1, with three decimals at most (RFC 9110). */
 const WEIGHT = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u
 
-/**
- * The weight of each media range of an `Accept` header, by the range in
- * small letters. A range with a weight in another form is left out.
- */
-function weightsOf(accept: string): Map<string, number> {
-    const weights = new Map<string, number>()
-    for (const item of accept.split(',')) {
-        const [range = '', ...parameters] = item.split(';').map((part) => part.trim().toLowerCase())
-        let weight = 1
-        for (const parameter of parameters) {
-            const [name = '', value = ''] = parameter.split('=').map((part) => part.trim())
-            if (name === 'q') {
-                weight = WEIGHT.test(value) ? Number(value) : Number.NaN
-            }
-        }
-        if (range !== '' && !Number.isNaN(weight) && !weights.has(range)) {
-            weights.set(range, weight)
-        }
-    }
-    return weights
+/** A media range of an `Accept` header, in small letters, with its parameters and its weight. */
+interface MediaRange {
+    readonly type: string
+    readonly parameters: ReadonlyMap<string, string>
+    readonly weight: number
 }
 
-/** The weight of a type: its own range, else the range of its group, else any type, else 0. */
-function weightOf(weights: Map<string, number>, type: string): number {
+/** The parts of a text between the separators that are outside of quotes. */
+function splitOutsideQuotes(text: string, separator: string): string[] {
+    const parts: string[] = []
+    let part = ''
+    let quoted = false
+    let escaped = false
+    for (const character of text) {
+        if (escaped) {
+            escaped = false
+        } else if (quoted && character === '\\') {
+            escaped = true
+        } else if (character === '"') {
+            quoted = !quoted
+        } else if (!quoted && character === separator) {
+            parts.push(part)
+            part = ''
+            continue
+        }
+        part += character
+    }
+    parts.push(part)
+    return parts
+}
+
+/** The media ranges of an `Accept` header. A range with a weight in another form is left out. */
+function rangesOf(accept: string): MediaRange[] {
+    const ranges: MediaRange[] = []
+    for (const item of splitOutsideQuotes(accept, ',')) {
+        const [type = '', ...rest] = splitOutsideQuotes(item, ';').map((part) => part.trim())
+        const parameters = new Map<string, string>()
+        let weight = 1
+        for (const parameter of rest) {
+            const at = parameter.indexOf('=')
+            const name = parameter
+                .slice(0, at < 0 ? parameter.length : at)
+                .trim()
+                .toLowerCase()
+            const value = (at < 0 ? '' : parameter.slice(at + 1).trim()).replace(/^"(.*)"$/su, '$1')
+            if (name === 'q') {
+                weight = WEIGHT.test(value) ? Number(value) : Number.NaN
+            } else if (name !== '') {
+                parameters.set(name, value.toLowerCase())
+            }
+        }
+        if (type.includes('/') && !Number.isNaN(weight)) {
+            ranges.push({ type: type.toLowerCase(), parameters, weight })
+        }
+    }
+    return ranges
+}
+
+/**
+ * The weight of a type of the answers, which are always UTF-8 (RFC 9110,
+ * section 12.5.1): the most specific range that matches it wins. A range of
+ * the type with parameters matches when each one is the character set
+ * `utf-8`; then comes the range of the type, then its group, then any type.
+ * Among ranges of one rank, the first one wins. No range: 0.
+ */
+function weightOf(ranges: readonly MediaRange[], type: string): number {
     const group = `${type.slice(0, type.indexOf('/'))}/*`
-    return weights.get(type) ?? weights.get(group) ?? weights.get('*/*') ?? 0
+    const rank = (range: MediaRange): number => {
+        if (range.type === type) {
+            if (range.parameters.size === 0) {
+                return 2
+            }
+            const matches = [...range.parameters].every(
+                ([name, value]) => name === 'charset' && value === 'utf-8'
+            )
+            return matches ? 3 : 0
+        }
+        return range.type === group ? 1 : range.type === '*/*' ? 0.5 : 0
+    }
+    let best: MediaRange | undefined
+    for (const range of ranges) {
+        if (rank(range) > 0 && (best === undefined || rank(range) > rank(best))) {
+            best = range
+        }
+    }
+    return best?.weight ?? 0
 }
 
 /**
  * The form of an error answer: `markdown` for a path of the Markdown of a
  * note, and for a request whose `Accept` header names `text/markdown` with a
- * weight above 0 and not below the weight of HTML; `html` in every other
- * case. The form follows the header or the path, never the user agent (URL-11).
+ * weight above 0 and not below the weight of HTML (`text/html` or
+ * `application/xhtml+xml`); `html` in every other case. The form follows the header or the path, never the user agent (URL-11).
  */
 export function errorFormat(path: string, accept: string | null): 'html' | 'markdown' {
     if (path.startsWith(MARKDOWN_PREFIX)) {
@@ -53,9 +113,13 @@ export function errorFormat(path: string, accept: string | null): 'html' | 'mark
     if (accept === null) {
         return 'html'
     }
-    const weights = weightsOf(accept)
-    const markdown = weights.get('text/markdown') ?? 0
-    return markdown > 0 && markdown >= weightOf(weights, 'text/html') ? 'markdown' : 'html'
+    const ranges = rangesOf(accept)
+    // Markdown only when the header names it: a group or any type is no wish for Markdown.
+    const named = ranges.some((range) => range.type === 'text/markdown')
+    const markdown = weightOf(ranges, 'text/markdown')
+    // HTML is `text/html` or XHTML, whichever the header weighs more.
+    const html = Math.max(weightOf(ranges, 'text/html'), weightOf(ranges, 'application/xhtml+xml'))
+    return named && markdown > 0 && markdown >= html ? 'markdown' : 'html'
 }
 
 /** The ways on from an error answer: the search and the home page. */

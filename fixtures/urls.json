@@ -76,6 +76,10 @@
     ],
     "removed": [
         {
+            "path": "10 Garden/Bean trellis.md",
+            "aliases": []
+        },
+        {
             "path": "10 Garden/Rain barrel.md",
             "aliases": ["Water butt"]
         }
@@ -624,6 +628,12 @@
             "status": 404,
             "suggestions": [],
             "format": "markdown"
+        },
+        {
+            "name": "the canonical path of an unpublished note that no note links to",
+            "request": "/10+Garden/Bean+trellis",
+            "status": 410,
+            "format": "html"
         }
     ]
 }

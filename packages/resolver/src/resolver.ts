@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.ts'
 import { smallLetters } from './small-letters.ts'
 
 // The resolver (MOD-05 of the spec): a pure function, in plain TypeScript, so
@@ -35,8 +36,9 @@ export interface ResolverMap {
 /**
  * The addresses of the unpublished notes, apart from the rest of the map: the
  * resolver reads them only when no published note, folder or page has the
- * path, so a published note always wins (decision R64). Each part is a set,
- * by the keys of the parts of the same name of the map.
+ * path, so a published note always wins (decision R64). Each part is a set of
+ * keys (`goneKey()`), never of texts: the map holds no title and no alias of
+ * an unpublished note.
  */
 export interface GoneMap {
     /** The file of the gone page. */
@@ -49,6 +51,15 @@ export interface GoneMap {
     readonly names: Readonly<Record<string, true>>
     /** The folded form of each alias of an unpublished note. */
     readonly aliases: Readonly<Record<string, true>>
+}
+
+/**
+ * The key of a text in the gone part of the map: 32 hexadecimal digits of its
+ * SHA-256. The resolver only asks whether a text is in a set, so the key is
+ * enough, and a release that leaks the map shows no title (decision R64).
+ */
+export function goneKey(text: string): string {
+    return sha256Hex(text).slice(0, 32)
 }
 
 /** What a requested path leads to. */
@@ -190,13 +201,13 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
         ...(map.gone?.file === undefined ? {} : { file: map.gone.file })
     }
     if (path.startsWith(PREFIX)) {
-        return own(map.gone?.paths, path) === undefined ? notFound : gone
+        return own(map.gone?.paths, goneKey(path)) === undefined ? notFound : gone
     }
     const published = resolvePublished(path, map, query)
     if (published !== undefined) {
         return published
     }
-    return own(map.gone?.paths, path) === undefined && !isGone(path, map.gone) ? notFound : gone
+    return isGone(path, map.gone) ? gone : notFound
 }
 
 /** The answer of the published notes and folders for a path outside the prefix, or `undefined` when none has it. */
@@ -235,14 +246,19 @@ function isGone(path: string, gone: GoneMap | undefined): boolean {
     if (gone === undefined) {
         return false
     }
+    if (own(gone.paths, goneKey(path)) !== undefined) {
+        return true
+    }
     return readingsOf(path).some((reading) =>
         formsOf(reading)
             .map(foldedForm)
-            .some(
-                (form) =>
-                    own(gone.folded, form) !== undefined ||
-                    (!form.includes('/') && own(gone.names, form) !== undefined) ||
-                    own(gone.aliases, form) !== undefined
-            )
+            .some((form) => {
+                const key = goneKey(form)
+                return (
+                    own(gone.folded, key) !== undefined ||
+                    (!form.includes('/') && own(gone.names, key) !== undefined) ||
+                    own(gone.aliases, key) !== undefined
+                )
+            })
     )
 }
