@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rejectionOf } from '@dsebastien-website/testing'
-import { readPublishedNotes } from './content-store.ts'
+import { readImportRun, readPublishedNotes } from './content-store.ts'
 
 // How the build reads the content store. A content store that cannot be
 // trusted stops the build: a site with a part of the notes must never go out
@@ -186,5 +186,29 @@ describe('published notes of a content store', () => {
         })
 
         expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
+    })
+})
+
+// The import (decision R62): the run of the first publication of the content
+// store, read from every entry, so that an unpublished note still counts.
+describe('the import run of a content store', () => {
+    test('is the earliest first publication of any entry, also of an unpublished one', async () => {
+        await contentStore({
+            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'A.md', state: 'unpublished' },
+            'b.json': {
+                ...ENTRY,
+                id: 'bbbbbbbbbbbbbbbb',
+                path: 'B.md',
+                firstPublished: '2031-05-01T00:00:00Z',
+                lastPublished: '2031-05-01T00:00:00Z'
+            }
+        })
+        expect(await readImportRun()).toBe('2031-04-01T08:00:00Z')
+    })
+
+    test('is none without a content store or without a publication', async () => {
+        expect(await readImportRun()).toBeUndefined()
+        await contentStore({})
+        expect(await readImportRun()).toBeUndefined()
     })
 })

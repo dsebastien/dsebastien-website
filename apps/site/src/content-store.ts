@@ -133,9 +133,27 @@ const NOTE_ID = /^[0-9a-f]{16}$/
  * manifest is not an entry, or two entries have the same path.
  */
 export async function readPublishedNotes(): Promise<PublishedNote[]> {
+    return (await readManifest()).notes
+}
+
+/**
+ * The run of the first publication of the content store (decision R62): the
+ * earliest `firstPublished` of every entry of the manifest, also of an entry
+ * that is no longer published. The notes of that run keep the `created` and
+ * `updated` properties of the vault in the recent lists. `undefined` without
+ * a publication.
+ */
+export async function readImportRun(): Promise<string | undefined> {
+    // A time of the manifest is ASCII in one form, so its text order is its time order.
+    return [...(await readManifest()).firstRuns].sort((one, two) => (one < two ? -1 : 1))[0]
+}
+
+/** The published notes and the first publication of every entry of the manifest. */
+async function readManifest(): Promise<{ notes: PublishedNote[]; firstRuns: Set<string> }> {
     const store = contentStoreFolder()
+    const firstRuns = new Set<string>()
     if (store === undefined) {
-        return []
+        return { notes: [], firstRuns }
     }
     try {
         if (!(await stat(store)).isDirectory()) {
@@ -149,7 +167,7 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
         files = await readdir(join(store, 'manifest'))
     } catch {
         // A content store with no publication yet has no manifest.
-        return []
+        return { notes: [], firstRuns }
     }
     const notes = new Map<string, PublishedNote>()
     for (const file of files.filter((name) => name.endsWith('.json')).sort()) {
@@ -168,6 +186,7 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
         }
+        firstRuns.add(entry['firstPublished'])
         if (entry['state'] !== 'published') {
             continue
         }
@@ -201,9 +220,12 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
     }
     // In the order of the paths, so that two builds of one content store give
     // the same files.
-    return [...notes.values()].sort((one, two) =>
-        one.vaultPath < two.vaultPath ? -1 : one.vaultPath > two.vaultPath ? 1 : 0
-    )
+    return {
+        notes: [...notes.values()].sort((one, two) =>
+            one.vaultPath < two.vaultPath ? -1 : one.vaultPath > two.vaultPath ? 1 : 0
+        ),
+        firstRuns
+    }
 }
 
 /** The text of the cleaned note of a published note, as the content store holds it. */

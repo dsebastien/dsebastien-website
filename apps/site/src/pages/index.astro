@@ -34,7 +34,7 @@ function counted(value: number, one: string, many: string): string {
             <h2 id='topics' class='section-title'>
                 Browse by topic
             </h2>
-            <ul class='grid gap-3 sm:grid-cols-2 lg:grid-cols-4' data-topics>
+            <ul class='grid grid-cols-2 gap-3 lg:grid-cols-4' data-topics>
                 {site.topics.map((topic) => (
                     <li>
                         <a class='card-link h-full' href={topic.note.path}>
@@ -53,7 +53,7 @@ function counted(value: number, one: string, many: string): string {
             <h2 id='types' class='section-title'>
                 Browse by note type
             </h2>
-            <ul class='grid gap-3 sm:grid-cols-2 lg:grid-cols-4' data-type-hubs>
+            <ul class='grid grid-cols-2 gap-3 lg:grid-cols-4' data-type-hubs>
                 {site.typeHubs.map((hub) => (
                     <li>
                         <a class='card-link h-full' href={hub.pages[0]?.path}>

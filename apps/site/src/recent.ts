@@ -49,7 +49,11 @@ export interface RecentSource {
 /** A date of a recent list: what the page shows, and a key that orders it. */
 interface Dated {
     readonly date: NoteDate
-    /** `yyyy-mm-ddThh:mm:ss`: the time of a run in UTC, or the time of a property as the vault writes it. */
+    /**
+     * `yyyy-mm-ddThh:mm:ss`: the time of a run in UTC, the time of a property
+     * with an offset in UTC, or the time of a property without one as the
+     * vault writes it.
+     */
     readonly key: string
 }
 
@@ -68,8 +72,15 @@ function propertyDated(value: unknown): Dated | undefined {
         return undefined
     }
     const text = typeof value === 'string' ? value.trim() : ''
-    const time = /^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2}(?::\d{2})?)/u.exec(text)?.[1] ?? '00:00:00'
-    return { date, key: `${date.datetime}T${time.padEnd(8, ':00')}` }
+    const time =
+        /^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/u.exec(text)
+    if (time?.[2] !== undefined) {
+        const moment = new Date(text.replace(' ', 'T'))
+        if (!Number.isNaN(moment.getTime())) {
+            return { date, key: moment.toISOString().slice(0, 19) }
+        }
+    }
+    return { date, key: `${date.datetime}T${(time?.[1] ?? '00:00:00').padEnd(8, ':00')}` }
 }
 
 /** The labels of the two lists. */
@@ -90,24 +101,46 @@ function newestFirst<T extends { dated: Dated; note: ListedNote }>(items: readon
 }
 
 /**
+ * The date of a note of the import: its property, but never after the import
+ * itself (a typo such as `2041` would stay at the top for good), else the
+ * import.
+ */
+function importDate(property: unknown, importRun: string): Dated {
+    const run = runDate(importRun)
+    const dated = propertyDated(property)
+    return dated === undefined || compareCodePoints(dated.key, run.key) > 0 ? run : dated
+}
+
+/** What the recent lists need of the whole site. */
+export interface RecentOptions {
+    /** The run of the first publication of the content store, from every manifest entry (`readImportRun()`). */
+    readonly importRun: string | undefined
+    /** The plural label of each note type, as its hub names it, by canonical name. */
+    readonly labels?: ReadonlyMap<string, string> | undefined
+}
+
+/**
  * The recent lists of the published notes: `added` and `updated`, then the
  * filter of each note type of each, by the plural label of the type.
  */
-export function recentListsOf(sources: readonly RecentSource[]): NoteList[] {
-    const firstRuns = sources.map((source) => source.firstPublished).sort(compareCodePoints)
-    const importRun = firstRuns[0]
+export function recentListsOf(
+    sources: readonly RecentSource[],
+    { importRun, labels }: RecentOptions
+): NoteList[] {
     const datesOf: Record<RecentKind, (source: RecentSource) => Dated> = {
         added: (source) =>
-            (source.firstPublished === importRun ? propertyDated(source.created) : undefined) ??
-            runDate(source.firstPublished),
+            importRun !== undefined && source.firstPublished === importRun
+                ? importDate(source.created, importRun)
+                : runDate(source.firstPublished),
         updated: (source) =>
-            (source.lastPublished === importRun ? propertyDated(source.updated) : undefined) ??
-            runDate(source.lastPublished)
+            importRun !== undefined && source.lastPublished === importRun
+                ? importDate(source.updated, importRun)
+                : runDate(source.lastPublished)
     }
     const types = new Map<string, string>()
     for (const { note } of sources) {
-        if (note.type !== undefined) {
-            types.set(note.type.name, note.type.many)
+        if (note.type !== undefined && !types.has(note.type.name)) {
+            types.set(note.type.name, labels?.get(note.type.name) ?? note.type.many)
         }
     }
     const byLabel = [...types].sort(
@@ -131,6 +164,7 @@ export function recentListsOf(sources: readonly RecentSource[]): NoteList[] {
             key: kind,
             label: NAMES[kind],
             count: newest.length,
+            total: ordered.length,
             indexed: true,
             media: false,
             filters: links,
@@ -146,15 +180,15 @@ export function recentListsOf(sources: readonly RecentSource[]): NoteList[] {
             )
         })
         for (const [name, label] of byLabel) {
-            const ofType = ordered
-                .filter((note) => note.type?.name === name)
-                .slice(0, RECENT_NOTES_OF_A_TYPE)
+            const all = ordered.filter((note) => note.type?.name === name)
+            const ofType = all.slice(0, RECENT_NOTES_OF_A_TYPE)
             const title = `${kind === 'added' ? 'Recently added' : 'Recently updated'}: ${label}`
             filters.push({
                 kind: 'recent',
                 key: `${kind}/${name}`,
                 label: title,
                 count: ofType.length,
+                total: all.length,
                 indexed: false,
                 media: false,
                 filters: links,
@@ -163,7 +197,7 @@ export function recentListsOf(sources: readonly RecentSource[]): NoteList[] {
                     () => recentTypePath(kind, name),
                     title,
                     () =>
-                        `The ${count(ofType.length)} ${label} of ${SITE_NAME} most recently ${verb}, newest first.`,
+                        `${label} of ${SITE_NAME} most recently ${verb}${all.length > ofType.length ? `: the ${count(ofType.length)} newest of ${count(all.length)}` : ', newest first'}.`,
                     { first: false, later: false },
                     [],
                     true

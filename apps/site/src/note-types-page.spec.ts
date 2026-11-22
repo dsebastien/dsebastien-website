@@ -3,7 +3,7 @@ import type { Element, Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
 import { toText } from 'hast-util-to-text'
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -36,6 +36,10 @@ const LETTER_2 = '40 Writing/Letters/Garden letter 2 (Newsletter).md'
 const MULCH = '40 Writing/AI Wiki - Mulch.md'
 const WELCOME = 'Welcome.md'
 const FILM = '20 Library/20.01 Films/The Lantern Keeper (2019).md'
+/** Published for the first time by the second run, after the import. */
+const LATE = '10 Garden/Wormery.md'
+/** Imported, then edited and published again by the second run. */
+const EDITED = '10 Garden/Seed swap day.md'
 
 let stores: TestStores | undefined
 let outDir: string | undefined
@@ -88,10 +92,19 @@ beforeAll(async () => {
         contentStore,
         attachmentStorage: stores.attachmentStorage
     })
+    // Two runs (R62): the import holds every note but one; the second run
+    // publishes that note for the first time and a real edit of another one.
     const queue = await status(device)
-    const planned = await plan(device, { include: queue.new })
+    const planned = await plan(device, { include: queue.new.filter((path) => path !== LATE) })
     await publish(device, planned.id, {
         time: '2031-05-01T00:00:00Z',
+        device: 'garden-shed',
+        face: 'command-line'
+    })
+    await appendFile(join(vault, EDITED), '\nBring a pencil too.\n')
+    const second = await plan(device, { include: [LATE, EDITED] })
+    await publish(device, second.id, {
+        time: '2031-06-01T00:00:00Z',
         device: 'garden-shed',
         face: 'command-line'
     })
@@ -395,8 +408,14 @@ describe('the recent pages (NAV-05, PUB-70, PUB-71, R62)', () => {
         const listed = listedDates(page)
         expect(listed).toHaveLength(Math.min(notes.size, 100))
         expect(newestFirst(listed.map((item) => item.date))).toBe(true)
-        // The fixture is published in one run: the import.
-        for (const { path, date } of listed.slice(0, 15)) {
+        // The note of the second run comes first, with the date of that run
+        // (its created property says 2031-03-06).
+        expect(listed[0]).toEqual({ path: '/10+Garden/Wormery', date: '2031-06-01' })
+        // The edited note keeps its created date: it was imported.
+        expect(listed.find((item) => item.path === '/10+Garden/Seed+swap+day')?.date).toBe(
+            '2031-03-03'
+        )
+        for (const { path, date } of listed.slice(1, 15)) {
             expect(date, path).toBe(await bandDate(path, 'created'))
         }
     })
@@ -404,7 +423,13 @@ describe('the recent pages (NAV-05, PUB-70, PUB-71, R62)', () => {
     test('list the notes updated, newest first; a note unchanged since the import keeps its updated date', async () => {
         const listed = listedDates(await served('/-/recent/updated'))
         expect(newestFirst(listed.map((item) => item.date))).toBe(true)
-        for (const { path, date } of listed.slice(0, 15)) {
+        // The two notes of the second run, from A to Z; the edit moved one up
+        // (its updated property still says 2031-03-03).
+        expect(listed.slice(0, 2)).toEqual([
+            { path: '/10+Garden/Seed+swap+day', date: '2031-06-01' },
+            { path: '/10+Garden/Wormery', date: '2031-06-01' }
+        ])
+        for (const { path, date } of listed.slice(2, 15)) {
             expect(date, path).toBe(await bandDate(path, 'updated'))
         }
     })

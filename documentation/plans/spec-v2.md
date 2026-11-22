@@ -685,12 +685,12 @@ The skill of the tool (TOOL-04) states the rule of PUB-52 and PUB-54 for every a
 
 ### 8.8 Dates
 
-| Id     | Rule                                                                                                                                                                                                                                        | Source              |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| PUB-70 | "Recently added" uses the date of the first publication, seeded from `created`. Done in issue 50 (R62): a note of the import (the run of the earliest `firstPublished`) takes its `created` property                                        | decisions D14       |
-| PUB-71 | "Updated" on the site changes only with a real edit of the public content. A technical update does not move it. Issue 50 (R62): "recently updated" uses `lastPublished`, and a note unchanged since the import takes its `updated` property | v1 6.7, tool ST16   |
-| PUB-72 | Only a significant update moves a note up in "recently updated", in the feeds and in the sitemap dates. The threshold is to set from the first version of the tool                                                                          | v1 6.7, seo item 37 |
-| PUB-73 | A bulk import stays out of the recent pages and out of the feeds                                                                                                                                                                            | decisions D14       |
+| Id     | Rule                                                                                                                                                                                                                                                             | Source              |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| PUB-70 | "Recently added" uses the date of the first publication, seeded from `created`. Done in issue 50 (R62): a note of the import (the run of the earliest `firstPublished`) takes its `created` property                                                             | decisions D14       |
+| PUB-71 | "Updated" on the site changes only with a real edit of the public content. A technical update does not move it. Issue 50 (R62): "recently updated" uses `lastPublished`, and a note unchanged since the import takes its `updated` property                      | v1 6.7, tool ST16   |
+| PUB-72 | Only a significant update moves a note up in "recently updated", in the feeds and in the sitemap dates. The threshold is to set from the first version of the tool                                                                                               | v1 6.7, seo item 37 |
+| PUB-73 | A bulk import stays out of the recent pages and out of the feeds. Issue 50 (R62): the notes of the import are in the recent lists with their `created` and `updated` properties, so the import does not flood them; another bulk publication is not kept out yet | decisions D14       |
 
 ### 8.9 Unpublish and takedown
 

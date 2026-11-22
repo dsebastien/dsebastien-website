@@ -28,14 +28,24 @@ function source(
     }
 }
 
-function list(sources: RecentSource[], key: string) {
-    const found = recentListsOf(sources).find((item) => item.key === key)
+function list(
+    sources: RecentSource[],
+    key: string,
+    options: { importRun?: string; labels?: ReadonlyMap<string, string> } = {}
+) {
+    const found = recentListsOf(sources, { importRun: IMPORT, ...options }).find(
+        (item) => item.key === key
+    )
     if (found === undefined) throw new Error(`no list ${key}`)
     return found
 }
 
-function shown(sources: RecentSource[], key: string): string[] {
-    return list(sources, key).pages.flatMap((page) =>
+function shown(
+    sources: RecentSource[],
+    key: string,
+    options: { importRun?: string } = {}
+): string[] {
+    return list(sources, key, options).pages.flatMap((page) =>
         page.notes.map((note) => `${note.title} ${note.date?.shown ?? ''}`)
     )
 }
@@ -45,7 +55,7 @@ describe('the notes most recently added (PUB-70, R62)', () => {
         const sources = [
             source('Alder', { firstPublished: '2031-05-03T10:00:00Z' }),
             source('Birch', { firstPublished: '2031-06-01T08:00:00Z' }),
-            // The import is the earliest run: this note keeps its created date.
+            // A note of the import keeps its created date.
             source('Cedar', { created: '2024-03-02' })
         ]
         expect(shown(sources, 'added')).toEqual([
@@ -72,6 +82,33 @@ describe('the notes most recently added (PUB-70, R62)', () => {
         expect(shown([source('Alder', { created: '2031-02-30' })], 'added')).toEqual([
             'Alder 2031-05-01'
         ])
+    })
+
+    test('the import is the run that the content store names, not the earliest published note', () => {
+        // The notes of the import were unpublished: no published note is of the import.
+        const sources = [
+            source('Alder', { firstPublished: '2031-06-01T00:00:00Z', created: '2020-01-01' })
+        ]
+        expect(shown(sources, 'added', { importRun: '2031-05-01T00:00:00Z' })).toEqual([
+            'Alder 2031-06-01'
+        ])
+    })
+
+    test('a created date with an offset is ordered by its time in UTC', () => {
+        const sources = [
+            // 21:30 in UTC.
+            source('Alder', { created: '2024-03-02T23:30:00+02:00' }),
+            source('Birch', { created: '2024-03-02T22:00:00Z' })
+        ]
+        expect(shown(sources, 'added')).toEqual(['Birch 2024-03-02', 'Alder 2024-03-02'])
+    })
+
+    test('a created date after the import is never newer than the import', () => {
+        const sources = [
+            source('Typo', { created: '2041-01-01' }),
+            source('Later', { firstPublished: '2031-06-01T00:00:00Z' })
+        ]
+        expect(shown(sources, 'added')).toEqual(['Later 2031-06-01', 'Typo 2031-05-01'])
     })
 
     test('the same date gives the order of the titles from A to Z', () => {
@@ -115,6 +152,9 @@ describe('the pages of a recent list (NAV-05, IDX-22, IDX-23)', () => {
     test('hold the 1,000 newest notes, 100 per page; only page 1 is indexed', () => {
         const added = list(many, 'added')
         expect(added.count).toBe(1000)
+        expect(added.total).toBe(1005)
+        expect(added.pages[0]?.notes[0]?.title).toBe('Note 1004')
+        expect(added.pages.at(-1)?.notes.at(-1)?.title).toBe('Note 0005')
         expect(added.pages.map((page) => page.notes.length)).toEqual(Array<number>(10).fill(100))
         expect(added.pages.map((page) => page.indexed)).toEqual([
             true,
@@ -148,6 +188,9 @@ describe('the filter of a recent list by note type (NAV-05, R62)', () => {
         expect(movies.pages).toHaveLength(1)
         expect(movies.pages[0]?.path).toBe('/-/recent/added/movies')
         expect(movies.pages[0]?.title).toBe('Recently added: Movies · Sébastien’s Notes')
+        expect(movies.pages[0]?.description).toBe(
+            'Movies of Sébastien’s Notes most recently added, newest first.'
+        )
         expect(movies.pages[0]?.indexed).toBe(false)
         expect(shown(sources, 'added/movies')).toEqual(['Alien 2024-01-02'])
         const filters = [
@@ -160,10 +203,35 @@ describe('the filter of a recent list by note type (NAV-05, R62)', () => {
         expect(list(sources, 'updated/movies').pages[0]?.path).toBe('/-/recent/updated/movies')
     })
 
-    test('holds the 100 newest notes of the type', () => {
+    test('holds the 100 newest notes of the type, and says how many the type has', () => {
         const movies = Array.from({ length: 120 }, (_item, index) =>
-            source(`Movie ${String(index).padStart(3, '0')}`, {}, MOVIE)
+            source(
+                `Movie ${String(index).padStart(3, '0')}`,
+                {
+                    created: `2024-01-01T${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}`
+                },
+                MOVIE
+            )
         )
-        expect(list(movies, 'added/movies').count).toBe(100)
+        const filter = list(movies, 'added/movies')
+        expect([filter.count, filter.total]).toEqual([100, 120])
+        const titles = filter.pages[0]?.notes.map((note) => note.title)
+        expect([titles?.[0], titles?.at(-1)]).toEqual(['Movie 119', 'Movie 020'])
+        expect(filter.pages[0]?.description).toBe(
+            'Movies of Sébastien’s Notes most recently added: the 100 newest of 120.'
+        )
+    })
+
+    test('names a type with the label of its hub', () => {
+        const sources = [
+            source('Alien', {}, MOVIE),
+            source('Brave', {}, { ...MOVIE, many: 'Films' })
+        ]
+        const labels = new Map([['movies', 'Movies']])
+        expect(list(sources, 'added/movies', { labels }).label).toBe('Recently added: Movies')
+        expect(list(sources, 'added', { labels }).filters.map((filter) => filter.label)).toEqual([
+            'All',
+            'Movies'
+        ])
     })
 })

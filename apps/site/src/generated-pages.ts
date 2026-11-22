@@ -69,6 +69,8 @@ export interface NoteList {
     readonly label: string
     /** The number of notes of the list. */
     readonly count: number
+    /** For a recent list, the number of notes that it is cut from: its newest notes are listed. */
+    readonly total?: number
     /** False for a list whose pages search engines must not index (IDX-22). */
     readonly indexed: boolean
     readonly pages: readonly ListPage[]
