@@ -12,7 +12,7 @@ import {
 } from '@dsebastien-website/testing'
 import { canonicalPath } from '@dsebastien-website/resolver'
 import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
-import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
+import { plan, publish, status, takedown, unpublish } from '../apps/plugin/src/publishing/tool.ts'
 import type { Subprocess } from 'bun'
 import { startServer, type Server } from '../apps/site/server/serve.ts'
 
@@ -29,14 +29,18 @@ import { startServer, type Server } from '../apps/site/server/serve.ts'
 // note, a hub note with 489 backlinks and its page with all of them).
 //
 // One invented note that no other note links to is unpublished by a second
-// publication, so that the gone page (410) shows at its address. The server
-// error page (500) is printed as a file to open in a browser: a working
-// server never gives it.
+// publication, so that the gone page (410) shows at its address. One more
+// invented note is taken down, with the sound file that only it uses, so that
+// its address answers 404. The server error page (500) is printed as a file
+// to open in a browser: a working server never gives it.
 
 const SITE = fileURLToPath(new URL('../apps/site', import.meta.url))
 
 /** The invented note that the second publication unpublishes (URL-27). */
 const GONE_NOTE = '10 Garden/Bean trellis.md'
+
+/** The invented note that a takedown removes, with its sound file (URL-28). */
+const TAKEN_DOWN_NOTE = '50 Field guide/Embeds/Embed of a sound.md'
 
 const { values } = parseArgs({
     args: Bun.argv.slice(2),
@@ -99,9 +103,12 @@ try {
     for (const warning of report.warnings) {
         console.error(`  warning: ${warning.path}: ${warning.message}`)
     }
-    const removal = await plan(device, { include: [], remove: [GONE_NOTE] })
-    await publish(device, removal.id, run)
+    await unpublish(device, [GONE_NOTE], run)
     console.error(`Unpublished ${GONE_NOTE}.`)
+    const takenDown = await takedown(device, [TAKEN_DOWN_NOTE], run)
+    console.error(
+        `Took down ${TAKEN_DOWN_NOTE}, and ${String(takenDown.attachmentsDeleted.length)} file(s) of the attachment storage.`
+    )
 
     build = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
@@ -122,6 +129,7 @@ try {
     })
     console.error(`The site of the fixture vault is on ${server.url} (Ctrl+C stops it).`)
     console.error(`  the gone page (410): ${server.url}${canonicalPath(GONE_NOTE)}`)
+    console.error(`  a note taken down (404): ${server.url}${canonicalPath(TAKEN_DOWN_NOTE)}`)
     console.error(`  the server error page (500), as a file: ${join(outDir, '500.html')}`)
     if (values.sample) {
         for (const path of Object.values(BUDGET_SAMPLE)) {
