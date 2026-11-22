@@ -74,7 +74,13 @@ function rangesOf(accept: string): MediaRange[] {
             }
         }
         if (type.includes('/') && !Number.isNaN(weight)) {
-            ranges.push({ type: type.toLowerCase(), charset, weight })
+            // `text/x-markdown` is the name of Markdown before RFC 7763.
+            const name = type.toLowerCase()
+            ranges.push({
+                type: name === 'text/x-markdown' ? 'text/markdown' : name,
+                charset,
+                weight
+            })
         }
     }
     return ranges
@@ -134,32 +140,41 @@ export function errorFormat(path: string, accept: string | null): 'html' | 'mark
         : 'html'
 }
 
-/** The ways on from an error answer: the search and the home page. */
-const WAYS_ON = 'Search the notes at /-/search, or start at the home page: /\n'
-
-const NOT_FOUND =
-    '# Not found\n\nNo note has this address. It may have moved, or it was never published.\n\n'
-
-const TEXTS: Record<ErrorStatus, string> = {
-    404: `${NOT_FOUND}${WAYS_ON}`,
-    410: `# Removed\n\nThe note that had this address was removed. It is no longer published.\n\n${WAYS_ON}`,
-    500: '# Server error\n\nThe site could not give this answer. Try again later.\n\nThe home page: /\n'
+/** An absolute address of the site as a Markdown link: an agent that reads the text has no base address. */
+function link(origin: string, path: string): string {
+    const address = `${origin}${path}`
+    return `[${address}](${address})`
 }
 
 /** The file of the server error page in the output of the build (NAV-20). */
 export const SERVER_ERROR_FILE = '500.html'
 
 /**
- * The short Markdown text of an error answer. It names no unpublished note
- * and no detail of a failure.
+ * The short Markdown text of an error answer (NAV-21). It names no
+ * unpublished note and no detail of a failure, and the 500 text says what
+ * the server error page says.
  *
+ * @param origin the origin of the request, such as `https://notes.dsebastien.net`
  * @param suggestions the canonical paths of the published notes of a file
  * name or an alias of several notes (404 only, R47)
  */
-export function errorText(status: ErrorStatus, suggestions: readonly string[] = []): string {
-    if (status === 404 && suggestions.length > 0) {
-        const list = suggestions.map((path) => `- ${path}`).join('\n')
-        return `${NOT_FOUND}These notes have this name:\n\n${list}\n\n${WAYS_ON}`
+export function errorText(
+    status: ErrorStatus,
+    origin: string,
+    suggestions: readonly string[] = []
+): string {
+    const home = `Start at the home page: ${link(origin, '/')}\n`
+    const search = `Search the notes in a browser: ${link(origin, '/-/search')}\n`
+    if (status === 500) {
+        return `# Server error\n\nThe site could not give this page. Try again in a moment.\n\n${home}`
     }
-    return TEXTS[status]
+    const head =
+        status === 410
+            ? '# Removed\n\nThe note that had this address was removed. It is no longer published.\n\n'
+            : '# Not found\n\nNo note has this address. It may have moved, or it was never published.\n\n'
+    const list =
+        status === 404 && suggestions.length > 0
+            ? `These notes have this name:\n\n${suggestions.map((path) => `- ${link(origin, path)}`).join('\n')}\n\n`
+            : ''
+    return `${head}${list}${home}\n${search}`
 }

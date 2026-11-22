@@ -139,7 +139,7 @@ _Avoid_: 404 for an unpublished note (a takedown gives a 404)
 The page of the answer 500. One file with no script, which shows also when another file of the release is missing.
 
 **Resolver map**:
-What the build writes for the resolver: which canonical path leads to which page, and the keys of the addresses of the unpublished notes. Only the resolver reads it: the host never serves it.
+What the build writes for the resolver: which canonical path leads to which page, and which addresses are gone.
 
 **Alias**:
 Another name of a note, from its `aliases` property. A URL with the alias leads to the note.

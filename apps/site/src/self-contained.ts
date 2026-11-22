@@ -18,6 +18,8 @@ const FONT_FACE = /@font-face\{[^}]*\}/gu
 const STYLE = /<style\b[^>]*>([\s\S]*?)<\/style>/giu
 /** What loads a file in CSS: an address, an import, a set of images, a source. */
 const CSS_LOAD = /url\(|@import|image-set\(|(?<![\w-])src\(/iu
+/** A meta element that loads another address after a time. */
+const REFRESH = /<meta\b[^>]*http-equiv\s*=\s*["']?refresh/iu
 const LOADING_ELEMENT =
     /<(?:img|picture|source|video|audio|track|iframe|frame|object|embed|image)\b/iu
 const SOURCE = /\s(?:src|srcset|data|poster|background)\s*=/iu
@@ -64,7 +66,12 @@ export async function selfContained(
     }
     // Every other way to load a file: an element that loads one, a source,
     // a CSS address in an attribute, and an address of an element that is no link.
-    if (LOADING_ELEMENT.test(markup) || SOURCE.test(markup) || CSS_LOAD.test(markup)) {
+    if (
+        LOADING_ELEMENT.test(markup) ||
+        SOURCE.test(markup) ||
+        CSS_LOAD.test(markup) ||
+        REFRESH.test(markup)
+    ) {
         refuse('it loads another file')
     }
     for (const [, element = ''] of markup.matchAll(ADDRESS)) {

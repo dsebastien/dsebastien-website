@@ -215,6 +215,11 @@ describe('error pages', () => {
         expect(scriptsOf(html).slice(1)).toEqual([modeSwitchScript])
     })
 
+    // Only the page with no script needs the mode of the system.
+    test('the other pages do not load the mode of the system', async () => {
+        expect(await readStylesheets()).not.toContain('data-theme=system')
+    })
+
     test.each([['410.html']])('has a rule for each class of %s', async (file) => {
         const css = await readStylesheets()
         const missing = [...classesOf(await readOutput(file))].filter(
@@ -247,6 +252,10 @@ describe('error pages', () => {
     // system, dark when the system states none.
     test('the server error page follows the mode of the system', async () => {
         const html = await readOutput('500.html')
+        // The block of the system comes after the dark values of `:root`, which it overrides.
+        const dark = html.indexOf(':root,[data-theme=dark]{')
+        expect(dark).toBeGreaterThan(0)
+        expect(html.indexOf('[data-theme=system]{')).toBeGreaterThan(dark)
         expect(html).toContain('<html lang="en" data-theme="system">')
         expect(html).toMatch(
             /@media \(prefers-color-scheme:light\)\{\[data-theme=system\]\{color-scheme:light;/u

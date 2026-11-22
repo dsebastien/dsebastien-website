@@ -47,7 +47,11 @@ describe('self-contained page', () => {
         ],
         ['a frame', '<html><body><iframe srcdoc="x"></iframe></body></html>'],
         ['an object', '<html><body><object data="/a.pdf"></object></body></html>'],
-        ['an embed', '<html><body><embed type="x"></body></html>']
+        ['an embed', '<html><body><embed type="x"></body></html>'],
+        [
+            'a refresh to another address',
+            '<html><head><meta http-equiv="refresh" content="0;url=/x"></head></html>'
+        ]
     ])('refuses a page with %s', async (_name, html) => {
         expect(await rejectionOf(selfContained(html, read))).toContain('server error page')
     })

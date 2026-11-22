@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 // the contrast of the theme in both modes (DES-05, DES-11, the gate of DES-04).
 const SOURCE = fileURLToPath(new URL('.', import.meta.url))
 const THEME = join(SOURCE, 'styles', 'themes', 'knowii.css')
+const SYSTEM_MODE = join(SOURCE, 'styles', 'themes', 'knowii-system.css')
 
 /** The files of the site that hold markup or styles, except the theme files, which hold the values, and the contract. */
 async function componentFiles(): Promise<string[]> {
@@ -114,8 +115,8 @@ describe('tokens only', () => {
 })
 
 /** The values of the theme in one mode, from the block whose selector is given. */
-async function themeValues(selector: string): Promise<Map<string, string>> {
-    const css = await readFile(THEME, 'utf8')
+async function themeValues(selector: string, file = THEME): Promise<Map<string, string>> {
+    const css = await readFile(file, 'utf8')
     const start = css.indexOf(`${selector} {`)
     expect(start).toBeGreaterThanOrEqual(0)
     const block = css.slice(start, css.indexOf('}', start))
@@ -192,18 +193,23 @@ describe('contrast of the theme knowii', () => {
     // system (decision R64): its light block is the light mode, value by value.
     test('gives the mode of the system the values of the light mode', async () => {
         const light = await themeValues("[data-theme='light']")
-        const system = await themeValues("    [data-theme='system']")
+        const system = await themeValues("    [data-theme='system']", SYSTEM_MODE)
         expect(light.size).toBeGreaterThan(10)
         expect([...system]).toEqual([...light])
-        const css = await readFile(THEME, 'utf8')
-        const block = (selector: string): string => {
+        const theme = await readFile(THEME, 'utf8')
+        const systemMode = await readFile(SYSTEM_MODE, 'utf8')
+        const block = (css: string, selector: string): string => {
             const start = css.indexOf(`${selector} {`)
             return css
                 .slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
                 .replace(/\s+/gu, ' ')
         }
-        expect(block("    [data-theme='system']")).toBe(block("[data-theme='light']"))
-        expect(css).toContain("@media (prefers-color-scheme: light) {\n    [data-theme='system'] {")
+        expect(block(systemMode, "    [data-theme='system']")).toBe(
+            block(theme, "[data-theme='light']")
+        )
+        expect(systemMode).toContain(
+            "@media (prefers-color-scheme: light) {\n    [data-theme='system'] {"
+        )
     })
 
     test('measures a known pair', () => {

@@ -216,8 +216,12 @@ async function attachmentResponse(
 const ERROR_HEADERS = { 'cache-control': 'no-store', 'vary': 'Accept' } as const
 
 /** The short Markdown text of an error answer, for an agent (NAV-21). */
-function errorMarkdown(status: ErrorStatus, suggestions: readonly string[] = []): Response {
-    return new Response(errorText(status, suggestions), {
+function errorMarkdown(
+    status: ErrorStatus,
+    origin: string,
+    suggestions: readonly string[] = []
+): Response {
+    return new Response(errorText(status, origin, suggestions), {
         status,
         headers: { 'content-type': 'text/markdown; charset=utf-8', ...ERROR_HEADERS }
     })
@@ -238,12 +242,16 @@ function notFound(): Response {
  *
  * @param page the server error page, or `undefined` when the build had none
  */
-function serverError(format: 'html' | 'markdown', page: string | undefined): Response {
+function serverError(
+    format: 'html' | 'markdown',
+    page: string | undefined,
+    origin: string
+): Response {
     if (format === 'markdown') {
-        return errorMarkdown(500)
+        return errorMarkdown(500, origin)
     }
     return page === undefined
-        ? new Response(errorText(500), {
+        ? new Response(errorText(500, origin), {
               status: 500,
               headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
           })
@@ -376,6 +384,7 @@ export async function startServer(options: {
         request: Request,
         pathname: string,
         search: string,
+        origin: string,
         fail: () => Response
     ): Promise<Response> {
         // A file of the build comes first: an alias or a variant never hides it.
@@ -391,7 +400,7 @@ export async function startServer(options: {
         switch (resolution.kind) {
             case 'not-found':
                 if (format === 'markdown') {
-                    return errorMarkdown(404, resolution.suggestions)
+                    return errorMarkdown(404, origin, resolution.suggestions)
                 }
                 return resolution.file === undefined
                     ? notFound()
@@ -399,10 +408,10 @@ export async function startServer(options: {
             case 'gone':
                 // An unpublished note (URL-27, NAV-19).
                 if (format === 'markdown') {
-                    return errorMarkdown(410)
+                    return errorMarkdown(410, origin)
                 }
                 return resolution.file === undefined
-                    ? new Response(errorText(410), {
+                    ? new Response(errorText(410, origin), {
                           status: 410,
                           headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
                       })
@@ -445,15 +454,19 @@ export async function startServer(options: {
         error(error) {
             // The detail goes to the log of the machine, never to the answer.
             console.error(error)
-            return serverError('html', serverErrorPage)
+            return serverError('html', serverErrorPage, this.url.origin)
         },
         async fetch(request) {
             // The path is read as it is requested, with its percent-encoding.
-            const { pathname, search } = new URL(request.url)
+            const { pathname, search, origin } = new URL(request.url)
             const fail = (): Response =>
-                serverError(errorFormat(pathname, request.headers.get('accept')), serverErrorPage)
+                serverError(
+                    errorFormat(pathname, request.headers.get('accept')),
+                    serverErrorPage,
+                    origin
+                )
             try {
-                return await answer(request, pathname, search, fail)
+                return await answer(request, pathname, search, origin, fail)
             } catch (error) {
                 console.error(error)
                 return fail()

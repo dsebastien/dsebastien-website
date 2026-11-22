@@ -1,5 +1,7 @@
 ---
 import Page from '../layouts/Page.astro'
+// After the layout: the mode of the system wins over the dark values of `:root`.
+import '../styles/themes/knowii-system.css'
 import { fullTitle } from '../page-titles.ts'
 
 // The server error page (URL-33, NAV-20, decision R64): status 500, never

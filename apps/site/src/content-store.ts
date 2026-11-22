@@ -149,7 +149,8 @@ export interface RemovedNote {
  * earliest `firstPublished` of every entry of the manifest, also of an entry
  * that is no longer published. The notes of that run keep the `created` and
  * `updated` properties of the vault in the recent lists. `undefined` without
- * a publication.
+ * a publication. A forced removal deletes an entry (R64): when every entry
+ * of the first run leaves, the import run moves to a later run.
  */
 export async function readImportRun(): Promise<string | undefined> {
     return (await readPublication()).importRun
