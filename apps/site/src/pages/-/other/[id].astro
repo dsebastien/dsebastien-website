@@ -6,8 +6,9 @@ import { publishedSite } from '../../../published-site.ts'
 import { listPageId } from '../../../site-files.ts'
 
 // A page of the list of the notes with no note type (decision R61): their
-// crawl path from the home page, 100 notes per page, from A to Z. The
-// resolver leads `/-/other` and `/-/other/page/<number>` to these files.
+// crawl path from the home page, 100 notes per page, from A to Z. It is not
+// indexed (IDX-22); its links are followed. The resolver leads `/-/other` and
+// `/-/other/page/<number>` to these files.
 export const getStaticPaths = (async () => {
     const list = (await publishedSite()).otherNotes
     return (list?.pages ?? []).map((page) => ({
@@ -20,7 +21,7 @@ const { list, page } = Astro.props
 ---
 
 {list !== undefined && (
-    <Page title={page.title} description={page.description} path={page.path}>
+    <Page title={page.title} description={page.description} path={page.path} noindex>
         <NoteList list={list} page={page} />
     </Page>
 )}

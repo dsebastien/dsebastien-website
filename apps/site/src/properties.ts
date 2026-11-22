@@ -1,5 +1,6 @@
 import { tagPath } from '@dsebastien-website/resolver'
 import { wikilinksOf, type Wikilink } from '../../plugin/src/publishing/links.ts'
+import { tagOfText } from './tags.ts'
 
 // The properties panel of a note page (issue 48, PAGE-02): every property of
 // the published note (business rule 14), with the display rules of the site
@@ -222,24 +223,6 @@ function scalarOf(value: unknown, linkOf: LinkOf): Scalar | undefined {
         return undefined
     }
     return { kind: 'json', text: JSON.stringify(value, null, 2) }
-}
-
-/**
- * The form of a tag: levels of letters, digits, marks, pictographs,
- * underscores and hyphens, with a slash between two levels. A tag of the text of a note is
- * read by the parser; a tag of the properties is any text, and only this form
- * becomes a link, so no text of a note writes a path of the site.
- */
-const TAG =
-    /^[\p{L}\p{N}\p{M}\p{Extended_Pictographic}_-]+(?:\/[\p{L}\p{N}\p{M}\p{Extended_Pictographic}_-]+)*$/u
-
-/** A text of digits only, with or without levels: Obsidian reads no such tag. */
-const DIGITS_ONLY = /^[\p{Nd}/]+$/u
-
-/** The tag of a text of the `tags` property, without its `#`, or `undefined` when the text is no tag. */
-export function tagOfText(text: string): string | undefined {
-    const tag = text.trim().replace(/^#/u, '')
-    return TAG.test(tag) && !DIGITS_ONLY.test(tag) ? tag : undefined
 }
 
 /** The tags of a note as links to their tag pages. A text that is no tag stays a text. */

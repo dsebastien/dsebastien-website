@@ -169,6 +169,7 @@ async function read(): Promise<PublishedSite> {
                 description: noteDescription({
                     title,
                     typeLabel: header?.type?.one,
+                    media: header?.type?.media,
                     properties: properties.get(note.vaultPath) ?? {},
                     html: pages.page(note.vaultPath).html
                 })

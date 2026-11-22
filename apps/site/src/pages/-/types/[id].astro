@@ -6,8 +6,9 @@ import { publishedSite } from '../../../published-site.ts'
 import { listPageId } from '../../../site-files.ts'
 
 // A page of the type hub of a note type (NAV-03, decision R61): its notes
-// from A to Z, 100 per page. The hubs are the crawl path to every note, so
-// every page of a hub is indexed (IDX-22). The resolver leads
+// from A to Z, 100 per page. The hubs are the crawl path to every note. A hub
+// of fewer than 5 notes is not indexed (IDX-22); its links are followed. The
+// resolver leads
 // `/-/types/<name>` and `/-/types/<name>/page/<number>` to these files.
 export const getStaticPaths = (async () => {
     const site = await publishedSite()
@@ -22,6 +23,6 @@ export const getStaticPaths = (async () => {
 const { list, page } = Astro.props
 ---
 
-<Page title={page.title} description={page.description} path={page.path}>
+<Page title={page.title} description={page.description} path={page.path} noindex={!list.indexed}>
     <NoteList list={list} page={page} />
 </Page>

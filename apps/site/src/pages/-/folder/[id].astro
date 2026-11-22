@@ -3,6 +3,7 @@ import type { GetStaticPaths } from 'astro'
 import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
 import { readPublishedNotes } from '../../../content-store.ts'
 import Page from '../../../layouts/Page.astro'
+import { fullTitle } from '../../../page-titles.ts'
 import { folderId, folderLinkOf, listedFoldersOf } from '../../../site-files.ts'
 import { foldersOf } from '@dsebastien-website/resolver'
 
@@ -40,7 +41,7 @@ export const getStaticPaths = (async () => {
 const { name, path, notes, folders } = Astro.props
 ---
 
-<Page title={name} path={path} noindex>
+<Page title={fullTitle(name)} path={path} noindex>
     <h1 class='text-3xl font-bold tracking-tight'>{name}</h1>
     {folders.length > 0 && (
         <section aria-labelledby='folders' class='mt-8'>

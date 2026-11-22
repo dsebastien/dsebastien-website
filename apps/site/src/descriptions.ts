@@ -4,12 +4,14 @@ import { fromHtml } from 'hast-util-from-html'
 import { toText } from 'hast-util-to-text'
 import { SITE_NAME } from './site.ts'
 
-// The description of a page (IDX-05, IDX-04, decision R61): the `description`
-// property of a note; else a sentence from its note type and its properties,
-// with the data that only this site has first (the rating and the status of
-// the author), then the first sentences of its text, cut at a word end. It
-// is never empty. No two indexable pages share one: when they would, each
-// note of them gets its title in front.
+// The description of a page (IDX-05, IDX-04, IDX-06, decision R61): the
+// `description` property of a note, with the text of its links; else a
+// sentence from its note type and its properties, with the data that only
+// this site has first (the rating and the status of the author), then the
+// first sentences of its text, cut at a word end. A note of a media type
+// gets the sentence alone: its text often starts with a copied synopsis
+// (IDX-06). It is never empty. No two indexable pages share one: when they
+// would, each note of them gets its title in front, and is cut again.
 
 /** The longest description that the build writes, in characters, the end mark included. */
 export const DESCRIPTION_LENGTH = 155
@@ -26,6 +28,8 @@ export interface DescriptionInput {
     readonly title: string
     /** The label of its note type, when it has one. */
     readonly typeLabel?: string | undefined
+    /** True for a note of a media type: its text stays out of its description (IDX-06). */
+    readonly media?: boolean | undefined
     readonly properties: Readonly<Record<string, unknown>>
     /** The body of the note page, as HTML. */
     readonly html: string
@@ -35,6 +39,20 @@ export interface DescriptionInput {
 function shownText(value: string): string {
     const link = /^\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]$/u.exec(value.trim())
     return (link?.[2] ?? link?.[1] ?? value).trim()
+}
+
+/**
+ * A text with the shown text of each of its links instead of their Markdown:
+ * `[[Compost basics|compost]]` gives `compost`, `[[Soil#Layers]]` gives
+ * `Soil`, `[the guide](https://…)` gives `the guide`.
+ */
+function linkTexts(text: string): string {
+    return text
+        .replace(
+            /!?\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/gu,
+            (_all, name: string, shown?: string) => (shown ?? name).trim()
+        )
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, (_all, shown: string) => shown.trim())
 }
 
 function textsOf(value: unknown): string[] {
@@ -130,10 +148,10 @@ function cut(text: string): string {
 /** The description of a note page (IDX-05). */
 export function noteDescription(input: DescriptionInput): string {
     const property = input.properties['description']
-    if (typeof property === 'string' && property.trim() !== '') {
-        return property.trim().replace(/\s+/gu, ' ')
+    if (typeof property === 'string' && linkTexts(property).trim() !== '') {
+        return linkTexts(property).trim().replace(/\s+/gu, ' ')
     }
-    const text = [factsOf(input), plainTextOf(input.html)]
+    const text = [factsOf(input), input.media === true ? undefined : plainTextOf(input.html)]
         .filter((part) => part !== undefined && part !== '')
         .join(' ')
     return text === '' ? `${input.title}, a note of ${SITE_NAME}.` : cut(text)
@@ -142,7 +160,7 @@ export function noteDescription(input: DescriptionInput): string {
 /**
  * The descriptions of the notes, so that no two indexable pages share one:
  * a description that more than one page has gets the title of each note in
- * front. `taken` holds the descriptions of the other indexable pages. It
+ * front, and is cut to the limit. `taken` holds the descriptions of the other indexable pages. It
  * throws when two pages still share one: the build stops and names them.
  */
 export function uniqueDescriptions(
@@ -156,7 +174,7 @@ export function uniqueDescriptions(
     const result = new Map<string, string>()
     for (const item of items) {
         const shared = (count.get(item.description) ?? 0) > 1 || taken.has(item.description)
-        result.set(item.key, shared ? `${item.title}: ${item.description}` : item.description)
+        result.set(item.key, shared ? cut(`${item.title}: ${item.description}`) : item.description)
     }
     const seen = new Map<string, string>()
     for (const [key, description] of result) {

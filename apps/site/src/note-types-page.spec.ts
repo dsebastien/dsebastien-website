@@ -16,6 +16,7 @@ import {
 import { resolve, type ResolverMap } from '@dsebastien-website/resolver'
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
+import { SITE_NAME } from './site.ts'
 
 // The note types on the built site (issue 49, decision R61): the title of a
 // page with its type word, the display title without the prefix and the
@@ -137,6 +138,30 @@ describe('build of the fixture vault with note types', () => {
     })
 })
 
+describe('the title of every page (IDX-01)', () => {
+    test('ends with the site name, also on a page that is not indexed', async () => {
+        const built = outDir ?? ''
+        const files = (await readdir(built, { recursive: true })).filter((file) =>
+            file.endsWith('.html')
+        )
+        for (const folder of ['-/folder/', '-/choice/', '-/tags/', '-/note/']) {
+            expect(
+                files.some((file) => file.startsWith(folder)),
+                folder
+            ).toBe(true)
+        }
+        expect(files).toContain('404.html')
+        const without: string[] = []
+        for (const file of files) {
+            const title = titleOf(fromHtml(await readFile(join(built, file), 'utf8')))
+            if (title !== SITE_NAME && !title.endsWith(` · ${SITE_NAME}`)) {
+                without.push(`${file}: ${title}`)
+            }
+        }
+        expect(without).toEqual([])
+    })
+})
+
 describe('the title of a note page (IDX-01, IDX-03, IDX-07)', () => {
     test('is the display title, the type word and the site name; the H1 is the display title', () => {
         const page = noteOf(PATIENT)
@@ -163,10 +188,12 @@ describe('the title of a note page (IDX-01, IDX-03, IDX-07)', () => {
 })
 
 describe('the type badge of a note page', () => {
-    test('names the type and leads to its hub', () => {
+    test('names the type and leads to its hub, with a name that says where it leads', () => {
         const badge = select('[data-type-badge]', noteOf(FILM))
         expect(textOf(badge)).toBe('Movie')
         expect(badge?.properties['href']).toBe('/-/types/movies')
+        expect(badge?.properties['ariaLabel']).toBe('Movie: all Movies')
+        expect(badge?.properties['className']).toEqual(['badge-link'])
     })
 })
 
@@ -191,7 +218,12 @@ describe('the description of a note page (IDX-05)', () => {
 })
 
 describe('the type hubs (NAV-03)', () => {
-    test('list the notes of a type from A to Z, with an indexed page and its canonical link', async () => {
+    test('are indexed with 5 notes or more (IDX-22)', async () => {
+        expect(metaOf(await served('/-/types/permanent-notes'), 'robots')).toBeUndefined()
+        expect(metaOf(await served('/-/types/movies'), 'robots')).toBe('noindex, follow')
+    })
+
+    test('list the notes of a type from A to Z, with its canonical link', async () => {
         const hub = await served('/-/types/movies')
         expect(titleOf(hub)).toBe('Movies · Sébastien’s Notes')
         expect(textOf(select('[data-list-title]', hub))).toBe('Movies')
@@ -200,7 +232,6 @@ describe('the type hubs (NAV-03)', () => {
             'The Lantern Keeper (2019)',
             'The Quiet Orchard (2021)'
         ])
-        expect(metaOf(hub, 'robots')).toBeUndefined()
         expect(metaOf(hub, 'description')).toBe('Movies of Sébastien’s Notes: 2 notes from A to Z.')
         expect(select('link[rel="canonical"]', hub)?.properties['href']).toBe(
             'https://notes.dsebastien.net/-/types/movies'
@@ -222,11 +253,14 @@ describe('the type hubs (NAV-03)', () => {
         expect(metaOf(home, 'description')?.startsWith('Sébastien’s Notes:')).toBe(true)
     })
 
-    test('of the media types are in the library', async () => {
+    test('of the media types are in the library, which is indexed, with its title as its H1', async () => {
         const library = await served('/-/library')
         expect(
             selectAll('[data-library] a', library).map((link) => link.properties['href'])
         ).toEqual(['/-/types/movies'])
+        expect(metaOf(library, 'robots')).toBeUndefined()
+        expect(titleOf(library)).toBe('Library · Sébastien’s Notes')
+        expect(textOf(select('h1', library))).toBe('Library')
     })
 })
 
@@ -237,6 +271,7 @@ describe('the list of the notes with no type', () => {
             'Welcome'
         ])
         expect(titleOf(other)).toBe('Other notes · Sébastien’s Notes')
+        expect(metaOf(other, 'robots')).toBe('noindex, follow')
         const hubs = selectAll('[data-type-hubs] a', await served('/')).map(
             (link) => link.properties['href']
         )

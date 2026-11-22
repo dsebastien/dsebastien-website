@@ -5,7 +5,15 @@ import {
     typeHubPath
 } from '@dsebastien-website/resolver'
 import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
-import { byTitle, childTagsOf, isIndexedTag, notesByTag, pagesOf, type Listed } from './lists.ts'
+import {
+    byTitle,
+    childTagsOf,
+    INDEXED_LIST_NOTES,
+    isIndexedTag,
+    notesByTag,
+    pagesOf,
+    type Listed
+} from './lists.ts'
 import type { NoteTypeBadge } from './note-header.ts'
 import { fullTitle } from './page-titles.ts'
 import { SITE_NAME } from './site.ts'
@@ -26,6 +34,12 @@ export interface ListedNote {
     readonly type?: NoteTypeBadge | undefined
 }
 
+/** A tag as a list page links to it: its folded form, and `#tag` as most of its notes write it. */
+export interface TagLink {
+    readonly key: string
+    readonly label: string
+}
+
 /** One page of a list. */
 export interface ListPage {
     /** The number of the page, from 1. */
@@ -34,6 +48,8 @@ export interface ListPage {
     readonly title: string
     readonly description: string
     readonly notes: readonly ListedNote[]
+    /** For page 1 of a tag, its direct child tags; nothing on a later page. */
+    readonly children: readonly TagLink[]
 }
 
 /** The list of a type hub or of a tag, with its pages. */
@@ -42,15 +58,13 @@ export interface NoteList {
     readonly kind: 'type' | 'tag' | 'other'
     /** The canonical name of the note type, the tag in small letters, or `other`. */
     readonly key: string
-    /** What the page names: the plural label of the type, or `#tag`. */
+    /** What the page names: the plural label of the type, or `#tag` as most of its notes write it. */
     readonly label: string
     /** The number of notes of the list. */
     readonly count: number
     /** False for a page that search engines must not index (IDX-22). */
     readonly indexed: boolean
     readonly pages: readonly ListPage[]
-    /** For a tag, its direct child tags. */
-    readonly children: readonly string[]
     /** For a type hub, true when the type is a media type: its hub is in the library. */
     readonly media: boolean
 }
@@ -69,7 +83,8 @@ function listPages(
     notes: readonly ListedNote[],
     pathOf: (page: number) => string,
     name: string,
-    about: (page: number, pages: number) => string
+    about: (page: number, pages: number) => string,
+    children: readonly TagLink[] = []
 ): ListPage[] {
     const pages = pagesOf(byTitle(notes))
     return pages.map((page, index) => {
@@ -79,7 +94,8 @@ function listPages(
             path: pathOf(number),
             title: fullTitle(number === 1 ? name : `${name}, page ${String(number)}`),
             description: about(number, pages.length),
-            notes: page
+            notes: page,
+            children: number === 1 ? children : []
         }
     })
 }
@@ -123,8 +139,7 @@ function hubOf(badge: NoteTypeBadge, listed: readonly ListedNote[]): NoteList & 
         key: badge.name,
         label: badge.many,
         count: listed.length,
-        indexed: true,
-        children: [],
+        indexed: listed.length >= INDEXED_LIST_NOTES,
         media: badge.media,
         pages: listPages(
             listed,
@@ -141,8 +156,9 @@ export const OTHER_NOTES = 'Other notes'
 
 /**
  * The list of the notes with no note type (decision R61): their crawl path
- * from the home page, as a type hub is for the notes of a type. `undefined`
- * when every note has a type.
+ * from the home page, as a type hub is for the notes of a type. Search
+ * engines follow its links but do not index it (IDX-22). `undefined` when
+ * every note has a type.
  */
 export function otherNotesOf(notes: readonly ListedNote[]): NoteList | undefined {
     const other = notes.filter((note) => note.type === undefined)
@@ -154,8 +170,7 @@ export function otherNotesOf(notes: readonly ListedNote[]): NoteList | undefined
         key: 'other',
         label: OTHER_NOTES,
         count: other.length,
-        indexed: true,
-        children: [],
+        indexed: false,
         media: false,
         pages: listPages(
             other,
@@ -167,28 +182,60 @@ export function otherNotesOf(notes: readonly ListedNote[]): NoteList | undefined
     }
 }
 
-/** The page of each tag of the published notes, in the order of the code points of the tags. */
+/** The form of a tag that most of its notes write, then the first in the order of the code points. */
+function writtenForm(forms: ReadonlyMap<string, number>): string | undefined {
+    return [...forms].sort(
+        ([one, many], [two, more]) => more - many || compareCodePoints(one, two)
+    )[0]?.[0]
+}
+
+/**
+ * The page of each tag of the published notes, in the order of the code
+ * points of the tags. Its path is the folded form of the tag; it names the
+ * tag as most of its notes write it.
+ */
 export function tagListsOf(
-    notes: readonly { note: ListedNote; tags: ReadonlySet<string> }[]
+    notes: readonly { note: ListedNote; tags: ReadonlyMap<string, string> }[]
 ): NoteList[] {
     const byTag = notesByTag(notes)
+    const forms = new Map<string, Map<string, number>>()
+    for (const { tags } of notes) {
+        for (const [tag, written] of tags) {
+            const counts = forms.get(tag) ?? new Map<string, number>()
+            counts.set(written, (counts.get(written) ?? 0) + 1)
+            forms.set(tag, counts)
+        }
+    }
+    const labels = new Map(
+        [...byTag.keys()].map((tag) => [
+            tag,
+            `#${writtenForm(forms.get(tag) ?? new Map<string, number>()) ?? tag}`
+        ])
+    )
     const tags = [...byTag.keys()]
-    return [...byTag].map(([tag, listed]) => ({
-        kind: 'tag' as const,
-        key: tag,
-        label: `#${tag}`,
-        count: listed.length,
-        indexed: isIndexedTag(tag, listed.length),
-        children: childTagsOf(tag, tags),
-        media: false,
-        pages: listPages(
-            listed,
-            (page) => tagPagePath(tag, page),
-            `#${tag}`,
-            (page, pages) =>
-                `Notes tagged #${tag} on ${SITE_NAME}: ${count(listed.length)} notes from A to Z${pageText(page, pages)}.`
-        )
-    }))
+    return [...byTag].map(([tag, listed]) => {
+        const label = labels.get(tag) ?? `#${tag}`
+        const children = childTagsOf(tag, tags).map((child) => ({
+            key: child,
+            label: labels.get(child) ?? `#${child}`
+        }))
+        return {
+            kind: 'tag' as const,
+            key: tag,
+            label,
+            count: listed.length,
+            indexed: isIndexedTag(tag, listed.length),
+            media: false,
+            pages: listPages(
+                listed,
+                (page) => tagPagePath(tag, page),
+                label,
+                (page, pages) =>
+                    `Notes tagged ${label} on ${SITE_NAME}: ${count(listed.length)} notes from A to Z${pageText(page, pages)}.`,
+                children
+            )
+        }
+    })
 }
 
 /** The title and the description of the home page. */
@@ -222,7 +269,11 @@ function listName(list: NoteList): string {
     }[list.kind]
 }
 
-/** The titles and the descriptions of the indexed generated pages: no note may take one (IDX-04). */
+/**
+ * The titles and the descriptions of the indexed generated pages: no note
+ * may take one (IDX-04). It throws when two generated pages share a title,
+ * indexed or not: a reader could not tell them apart.
+ */
 export function generatedTexts(lists: readonly NoteList[]): {
     titles: Set<string>
     descriptions: Set<string>
@@ -234,8 +285,8 @@ export function generatedTexts(lists: readonly NoteList[]): {
         [library.title, 'the library']
     ])
     const descriptions = new Set<string>([HOME.description, library.description])
+    const titles = new Set<string>(owners.keys())
     for (const list of lists) {
-        if (!list.indexed) continue
         for (const page of list.pages) {
             const owner = owners.get(page.title)
             if (owner !== undefined) {
@@ -244,8 +295,11 @@ export function generatedTexts(lists: readonly NoteList[]): {
                 )
             }
             owners.set(page.title, listName(list))
-            descriptions.add(page.description)
+            if (list.indexed) {
+                titles.add(page.title)
+                descriptions.add(page.description)
+            }
         }
     }
-    return { titles: new Set(owners.keys()), descriptions }
+    return { titles, descriptions }
 }

@@ -78,6 +78,15 @@
         @apply border-border-strong bg-surface-elevated;
     }
 
+    /* A badge that is a link: the type badge of a note page, which leads to its hub. */
+    .badge-link {
+        @apply badge transition-colors;
+    }
+
+    .badge-link:hover {
+        @apply border-primary bg-surface-elevated;
+    }
+
     .badge-accent {
         @apply badge border-secondary bg-secondary text-on-secondary;
     }

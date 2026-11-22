@@ -12,6 +12,7 @@ import temml from 'temml'
 import { linkPathOfDestination, wikilinksOf } from '../../../plugin/src/publishing/links.ts'
 import { allowList } from './allow-list.ts'
 import { headingIds } from './anchors.ts'
+import { tagOfText } from '../tags.ts'
 import { encode, MARK } from './mark.ts'
 
 // The markup of a note (BUILD-04, REN-01 to REN-15 of the spec, R50): what
@@ -31,9 +32,10 @@ import { encode, MARK } from './mark.ts'
  * what these steps write: it is an option of a step, so a part of the
  * configuration, and every note is rendered again. That holds also for a
  * change of the two functions of the publishing tool that read a link here
- * (`wikilinksOf`, `linkPathOfDestination`).
+ * (`wikilinksOf`, `linkPathOfDestination`) and of the reader of the tags
+ * (`tagOfText` in `tags.ts`).
  */
-export const MARKUP_VERSION = 7
+export const MARKUP_VERSION = 8
 
 /**
  * The packages that write the markup, with their versions from the site
@@ -404,8 +406,11 @@ function nodesOf(node: MdNode, context: Context): MdNode[] {
             return markOfDestination(node, context.definitions.get(name))
         }
         case 'tag': {
+            // Only a tag that the lists read has a page: any other tag is plain text (NAV-04).
             const tag = node.value ?? ''
-            return [element('a', { className: ['tag'], href: tagPath(tag) }, [text(`#${tag}`)])]
+            return tagOfText(tag) === undefined
+                ? [text(`#${tag}`)]
+                : [element('a', { className: ['tag'], href: tagPath(tag) }, [text(`#${tag}`)])]
         }
         case 'highlight':
             return [element('mark', {}, node.children ?? [])]

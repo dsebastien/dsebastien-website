@@ -61,7 +61,12 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
             </h1>
             <p class='mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted'>
                 {header.type !== undefined && (
-                    <a class='badge' href={typeHubPath(header.type.name, 1)} data-type-badge>
+                    <a
+                        class='badge-link'
+                        href={typeHubPath(header.type.name, 1)}
+                        aria-label={`${header.type.one}: all ${header.type.many}`}
+                        data-type-badge
+                    >
                         {header.type.one}
                     </a>
                 )}

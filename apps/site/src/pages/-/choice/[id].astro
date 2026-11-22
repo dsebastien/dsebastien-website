@@ -3,6 +3,7 @@ import type { GetStaticPaths } from 'astro'
 import { canonicalPath } from '@dsebastien-website/resolver'
 import { readPublishedNotes } from '../../../content-store.ts'
 import Page from '../../../layouts/Page.astro'
+import { fullTitle } from '../../../page-titles.ts'
 import { choiceId, choiceListsOf } from '../../../site-files.ts'
 
 // The "not found" page of a file name or an alias of several notes (URL-04 of
@@ -25,7 +26,7 @@ export const getStaticPaths = (async () => {
 const { notes } = Astro.props
 ---
 
-<Page title='Not found' noindex>
+<Page title={fullTitle('Not found')} noindex>
     <div class='max-w-2xl py-12'>
         <h1 class='text-3xl font-bold'>Not found</h1>
         <p class='mt-4 text-muted'>This name leads to more than one note:</p>

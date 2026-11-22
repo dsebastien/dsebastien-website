@@ -1,4 +1,4 @@
-import { smallLetters } from './small-letters.ts'
+import { foldedForm } from './resolver.ts'
 
 // The URL function (MOD-04 of the spec): the one place that knows the
 // encoding of the canonical URL. Every output of the site uses it.
@@ -65,14 +65,15 @@ export function attachmentPath(hash: string, vaultPath: string): string {
 }
 
 /**
- * The path of the page of a tag (NAV-04): `/-/tags/`, then the tag in small
- * letters, one segment per level. A tag in the text of a note and a tag in its
- * properties lead to the same page.
+ * The path of the page of a tag (NAV-04): `/-/tags/`, then the folded form of
+ * the tag (composed, in small letters), one segment per level. A tag in the
+ * text of a note and a tag in its properties lead to the same page, and so do
+ * two Unicode forms of one tag.
  *
  * @param tag the tag without its `#`
  */
 export function tagPath(tag: string): string {
-    return `/-/tags/${smallLetters(tag).split('/').map(encodeURIComponent).join('/')}`
+    return `/-/tags/${foldedForm(tag).split('/').map(encodeURIComponent).join('/')}`
 }
 
 /** A canonical name of a note type (decision R61). */

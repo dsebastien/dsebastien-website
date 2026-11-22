@@ -6,8 +6,9 @@ import type { AstroIntegration } from 'astro'
 
 // The checks of a built site (IDX-04, IDX-05, NAV-07, decision R61): every
 // indexable page has a title and a description, no two indexable pages share
-// a title or a description, and every indexable note is reachable from the
-// home page in at most four plain links. A finding stops the build.
+// a title or a description, every indexable note is reachable from the home
+// page in at most four plain links, and no internal link of a page leads to
+// the "not found" page. A finding stops the build.
 
 /** The most links from the home page to an indexable note (NAV-07). */
 export const MOST_LINKS_TO_A_NOTE = 4
@@ -37,6 +38,12 @@ function decoded(text: string): string {
         .replaceAll('&amp;', '&')
 }
 
+/** Where a link of a built page leads: a page of the site, the "not found" page, or something else (a file, an attachment, another site). */
+export type LinkTarget =
+    | { readonly kind: 'page'; readonly file: string }
+    | { readonly kind: 'missing' }
+    | { readonly kind: 'other' }
+
 /** Reads the parts of a built page that the checks need. */
 export function readBuiltPage(html: string): BuiltPage {
     const title = /<title>([^<]*)<\/title>/u.exec(html)?.[1]
@@ -59,15 +66,21 @@ export function readBuiltPage(html: string): BuiltPage {
  * @param pages the built pages, by file
  * @param home the file of the home page
  * @param notes the files of the note pages
- * @param fileOf the file that a link leads to, or `undefined` for a link to no page of the site
+ * @param targetOf where a link leads
  */
 export function siteFindings(
     pages: ReadonlyMap<string, BuiltPage>,
     home: string,
     notes: ReadonlySet<string>,
-    fileOf: (link: string) => string | undefined
+    targetOf: (link: string) => LinkTarget
 ): string[] {
     const findings: string[] = []
+    const targets = new Map<string, LinkTarget>()
+    const target = (link: string): LinkTarget => {
+        const known = targets.get(link) ?? targetOf(link)
+        targets.set(link, known)
+        return known
+    }
     const titles = new Map<string, string>()
     const descriptions = new Map<string, string>()
     for (const [file, page] of pages) {
@@ -91,6 +104,14 @@ export function siteFindings(
             descriptions.set(page.description, file)
         }
     }
+    // A link to the "not found" page, from any page: a reader would follow it.
+    for (const [file, page] of pages) {
+        for (const link of new Set(page.links)) {
+            if (target(link).kind === 'missing') {
+                findings.push(`${file} links to "${link}", which leads to no page`)
+            }
+        }
+    }
     // The plain links from the home page, one step at a time (NAV-07).
     const depth = new Map([[home, 0]])
     let step = [home]
@@ -98,10 +119,10 @@ export function siteFindings(
         const next: string[] = []
         for (const file of step) {
             for (const link of pages.get(file)?.links ?? []) {
-                const target = fileOf(link)
-                if (target !== undefined && pages.has(target) && !depth.has(target)) {
-                    depth.set(target, links)
-                    next.push(target)
+                const to = target(link)
+                if (to.kind === 'page' && pages.has(to.file) && !depth.has(to.file)) {
+                    depth.set(to.file, links)
+                    next.push(to.file)
                 }
             }
         }
@@ -117,15 +138,22 @@ export function siteFindings(
     return findings
 }
 
-/** The file that a link of a page leads to, through the resolver, after one redirect at most. */
-export function fileOfLink(link: string, map: ResolverMap): string | undefined {
+/** Where a link of a page leads, through the resolver, after one redirect at most. */
+export function fileOfLink(link: string, map: ResolverMap): LinkTarget {
     if (!link.startsWith('/') || link.startsWith('//')) {
-        return undefined
+        return { kind: 'other' }
     }
     const path = link.split('#')[0]?.split('?')[0] ?? ''
     const first = resolve(path, map)
     const resolution = first.kind === 'redirect' ? resolve(first.location, map) : first
-    return resolution.kind === 'page' ? resolution.file : undefined
+    switch (resolution.kind) {
+        case 'page':
+            return { kind: 'page', file: resolution.file }
+        case 'not-found':
+            return { kind: 'missing' }
+        default:
+            return { kind: 'other' }
+    }
 }
 
 /** The checks of the built site, after a build. A finding stops the build. */
@@ -153,11 +181,11 @@ export function siteChecks(): AstroIntegration {
                 )
                 if (findings.length > 0) {
                     throw new Error(
-                        `the built site breaks ${String(findings.length)} rule(s) of IDX-04, IDX-05 and NAV-07:\n${findings.slice(0, 20).join('\n')}`
+                        `the built site breaks ${String(findings.length)} rule(s) of IDX-04, IDX-05, NAV-07 and its links:\n${findings.slice(0, 20).join('\n')}`
                     )
                 }
                 logger.info(
-                    `${String(pages.size)} pages: titles and descriptions unique, every indexable note within ${String(MOST_LINKS_TO_A_NOTE)} links of the home page`
+                    `${String(pages.size)} pages: titles and descriptions unique, every indexable note within ${String(MOST_LINKS_TO_A_NOTE)} links of the home page, no link to a missing page`
                 )
             }
         }

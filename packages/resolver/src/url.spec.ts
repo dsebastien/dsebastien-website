@@ -82,7 +82,8 @@ describe('path of the page of a tag', () => {
         ['a tag with levels', 'topic/water', '/-/tags/topic/water'],
         ['capital letters', 'Topic/Water', '/-/tags/topic/water'],
         ['a letter outside ASCII', 'ÉTÉ', '/-/tags/%C3%A9t%C3%A9'],
-        ['an underscore and a hyphen', 'type/permanent_note-v2', '/-/tags/type/permanent_note-v2']
+        ['an underscore and a hyphen', 'type/permanent_note-v2', '/-/tags/type/permanent_note-v2'],
+        ['a decomposed accent, composed', 'E\u0301te\u0301', '/-/tags/%C3%A9t%C3%A9']
     ])('%s', (_case, tag, expected) => {
         expect(tagPath(tag)).toBe(expected)
     })

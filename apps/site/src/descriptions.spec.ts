@@ -25,6 +25,24 @@ describe('the description of a note', () => {
         ).toBe('A heist in dreams.')
     })
 
+    test('is its description property with the text of its links, not their Markdown', () => {
+        expect(
+            noteDescription({
+                ...MOVIE,
+                properties: {
+                    description:
+                        'On [[Compost basics|compost]], [[Mulch]] and [[Soil#Layers]], from [the guide](https://example.invalid/g).'
+                }
+            })
+        ).toBe('On compost, Mulch and Soil, from the guide.')
+    })
+
+    test('is the facts alone for a media note: its text is often a copied synopsis (IDX-06)', () => {
+        expect(noteDescription({ ...MOVIE, media: true })).toBe(
+            'Movie, 2010, by Christopher Nolan, rated 8 by Sébastien, watched.'
+        )
+    })
+
     test('starts with the type and the data of the author, then the text', () => {
         expect(noteDescription(MOVIE)).toBe(
             'Movie, 2010, by Christopher Nolan, rated 8 by Sébastien, watched. A thief who steals secrets through dreams.'
@@ -109,6 +127,18 @@ describe('the descriptions of the notes', () => {
         expect(descriptions.get('1.md')).toBe('Letter 1: A garden letter.')
         expect(descriptions.get('2.md')).toBe('Letter 2: A garden letter.')
         expect(descriptions.get('3.md')).toBe('A herb.')
+    })
+
+    test('stay within the length limit with the title in front', () => {
+        const long = `${'A long garden letter about the beds '.repeat(4).trim()} ending here.`
+        const descriptions = uniqueDescriptions([
+            { key: '1.md', title: 'Garden letter 1', description: long },
+            { key: '2.md', title: 'Garden letter 2', description: long }
+        ])
+        const first = descriptions.get('1.md') ?? ''
+        expect(first.length).toBeLessThanOrEqual(DESCRIPTION_LENGTH)
+        expect(first.startsWith('Garden letter 1: A long garden letter')).toBe(true)
+        expect(first.endsWith('…')).toBe(true)
     })
 
     test('stop the build when two pages still share one', () => {

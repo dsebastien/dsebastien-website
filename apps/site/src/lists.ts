@@ -1,6 +1,5 @@
-import { smallLetters } from '@dsebastien-website/resolver'
 import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
-import { tagOfText } from './properties.ts'
+import { tagLevels, tagOfText } from './tags.ts'
 
 // The lists of notes of the generated pages (NAV-03, NAV-04, decision R61):
 // the type hub of each note type and the page of each tag, 100 notes per
@@ -11,8 +10,8 @@ import { tagOfText } from './properties.ts'
 /** The number of notes of a page of a list. */
 export const LIST_PAGE_SIZE = 100
 
-/** The fewest notes of a tag page that is indexed (IDX-22). */
-export const INDEXED_TAG_NOTES = 5
+/** The fewest notes of a type hub or a tag page that is indexed (IDX-22). */
+export const INDEXED_LIST_NOTES = 5
 
 /** The first levels of the tags of the system, whose pages repeat the type hubs: never indexed. */
 const SYSTEM_TAGS = new Set(['type', 'zone'])
@@ -45,35 +44,26 @@ export function pagesOf<T>(items: readonly T[], size = LIST_PAGE_SIZE): T[][] {
     return pages.length === 0 ? [[]] : pages
 }
 
-/** A tag and each of its parent levels, in small letters: `media/movie` gives `media` and `media/movie`. */
-function withParents(tag: string): string[] {
-    const levels = smallLetters(tag).split('/')
-    return levels.map((_level, index) => levels.slice(0, index + 1).join('/'))
-}
-
-/** The tags of the text of a note, from the tag links that its markup writes (`/-/tags/<tag>`). */
+/**
+ * The tags of the text of a note, from the texts of the tag links that its
+ * markup writes. A tag has no character that HTML writes as an entity.
+ */
 function tagsOfMarkup(markup: string): string[] {
-    const tags: string[] = []
-    for (const match of markup.matchAll(/<a class="tag" href="\/-\/tags\/([^"]+)"/gu)) {
-        const path = match[1] ?? ''
-        try {
-            tags.push(path.split('/').map(decodeURIComponent).join('/'))
-        } catch {
-            // The markup writes only encoded tags: a path that does not decode is no tag.
-        }
-    }
-    return tags
+    return [...markup.matchAll(/<a class="tag" href="\/-\/tags\/[^"]*">#([^<]+)<\/a>/gu)].map(
+        (match) => match[1] ?? ''
+    )
 }
 
 /**
- * The tags of a note, each with its parent levels, in small letters: the
- * tags of its `tags` property and the tags of its text. A note is on the page
- * of each of them, so the page of a tag lists the notes of its nested tags
- * too, as the search of Obsidian does.
+ * The tags of a note, each with its parent levels: the folded form of each
+ * (the key of its page), with the form that the note writes first. They are
+ * the tags of its `tags` property and the tags of its text. A note is on the
+ * page of each of them, so the page of a tag lists the notes of its nested
+ * tags too, as the search of Obsidian does.
  */
-export function tagsOfNote(tagsProperty: unknown, markup: string): Set<string> {
+export function tagsOfNote(tagsProperty: unknown, markup: string): Map<string, string> {
     const list = Array.isArray(tagsProperty) ? tagsProperty : [tagsProperty]
-    const tags = new Set<string>()
+    const tags = new Map<string, string>()
     const texts = [
         ...list.filter((item): item is string => typeof item === 'string'),
         ...tagsOfMarkup(markup)
@@ -81,21 +71,23 @@ export function tagsOfNote(tagsProperty: unknown, markup: string): Set<string> {
     for (const text of texts) {
         const tag = tagOfText(text)
         if (tag !== undefined) {
-            for (const level of withParents(tag)) {
-                tags.add(level)
+            for (const [folded, written] of tagLevels(tag)) {
+                if (!tags.has(folded)) {
+                    tags.set(folded, written)
+                }
             }
         }
     }
     return tags
 }
 
-/** The notes of each tag, by the tag in small letters, the tags in the order of their code points. */
+/** The notes of each tag, by the folded form of the tag, the tags in the order of their code points. */
 export function notesByTag<T>(
-    notes: readonly { note: T; tags: ReadonlySet<string> }[]
+    notes: readonly { note: T; tags: ReadonlyMap<string, string> }[]
 ): Map<string, T[]> {
     const byTag = new Map<string, T[]>()
     for (const { note, tags } of notes) {
-        for (const tag of tags) {
+        for (const tag of tags.keys()) {
             const listed = byTag.get(tag)
             if (listed === undefined) {
                 byTag.set(tag, [note])
@@ -109,7 +101,7 @@ export function notesByTag<T>(
 
 /** True when the page of a tag is indexed: 5 notes or more, and not a tag of the system (IDX-22, R61). */
 export function isIndexedTag(tag: string, notes: number): boolean {
-    return notes >= INDEXED_TAG_NOTES && !SYSTEM_TAGS.has(tag.split('/')[0] ?? '')
+    return notes >= INDEXED_LIST_NOTES && !SYSTEM_TAGS.has(tag.split('/')[0] ?? '')
 }
 
 /**

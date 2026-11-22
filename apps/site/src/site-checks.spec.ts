@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { readBuiltPage, siteFindings, type BuiltPage } from './site-checks.ts'
+import type { ResolverMap } from '@dsebastien-website/resolver'
+import {
+    fileOfLink,
+    readBuiltPage,
+    siteFindings,
+    type BuiltPage,
+    type LinkTarget
+} from './site-checks.ts'
 
 function page(title: string, links: string[] = [], options: Partial<BuiltPage> = {}): BuiltPage {
     return { title, description: `About ${title}.`, indexable: true, links, ...options }
@@ -23,7 +30,13 @@ describe('a built page', () => {
 })
 
 describe('the checks of a built site', () => {
-    const fileOf = (link: string): string | undefined => link.slice(1)
+    /** A test site: `/missing...` leads to no page, an outside link to nothing that the checks read. */
+    const fileOf = (link: string): LinkTarget =>
+        link.startsWith('/missing')
+            ? { kind: 'missing' }
+            : link.startsWith('/')
+              ? { kind: 'page', file: link.slice(1) }
+              : { kind: 'other' }
 
     test('find nothing in a site that keeps the rules', () => {
         const pages = new Map([
@@ -72,5 +85,49 @@ describe('the checks of a built site', () => {
             '5 is an indexable note that the home page does not reach in 4 links',
             'lost is an indexable note that the home page does not reach in 4 links'
         ])
+    })
+
+    test('find an internal link that leads to no page, on any page, once per page', () => {
+        const pages = new Map([
+            ['home', page('Home', ['/a', 'https://example.invalid', '/missing-tag'])],
+            ['a', page('A', ['/missing-tag', '/missing-tag'], { indexable: false })]
+        ])
+        expect(siteFindings(pages, 'home', new Set(['a']), fileOf)).toEqual([
+            'home links to "/missing-tag", which leads to no page',
+            'a links to "/missing-tag", which leads to no page'
+        ])
+    })
+})
+
+describe('the target of a link of a built page', () => {
+    const map: ResolverMap = {
+        pages: { '/': 'index.html', '/Mint': '-/note/m.html' },
+        files: { '/-/md/Mint.md': { file: '-/md/m.md', type: 'markdown' } },
+        attachments: { '/-/attachments/abc/mint.png': 'abc' },
+        folded: { mint: '/Mint' },
+        notFound: '404.html'
+    }
+
+    test('is the page of a path, after one redirect', () => {
+        expect(fileOfLink('/Mint#Uses', map)).toEqual({ kind: 'page', file: '-/note/m.html' })
+        expect(fileOfLink('/mint', map)).toEqual({ kind: 'page', file: '-/note/m.html' })
+    })
+
+    test('is no page for a file, an attachment and an outside link', () => {
+        for (const link of [
+            '/-/md/Mint.md',
+            '/-/attachments/abc/mint.png',
+            'https://example.invalid/x',
+            '//example.invalid',
+            'mailto:a@example.invalid',
+            '#top'
+        ]) {
+            expect(fileOfLink(link, map), link).toEqual({ kind: 'other' })
+        }
+    })
+
+    test('is missing for an internal path that leads to the not found page', () => {
+        expect(fileOfLink('/-/tags/tag/', map)).toEqual({ kind: 'missing' })
+        expect(fileOfLink('/Basil', map)).toEqual({ kind: 'missing' })
     })
 })

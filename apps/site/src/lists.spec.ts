@@ -46,29 +46,43 @@ describe('the pages of a list', () => {
 })
 
 describe('the tags of a note', () => {
-    test('are the tags of its property and of its text, with their parent levels, in small letters', () => {
+    test('are the tags of its property and of its text, with their parent levels, by their folded forms', () => {
         const markup = `<p>See <a class="tag" href="${tagPath('Garden/Herbs')}">#Garden/Herbs</a> and <a class="tag" href="${tagPath('été')}">#été</a></p>`
         expect([...tagsOfNote(['type/media/movie', '#Topic', 'not a tag!', 42], markup)]).toEqual([
-            'type',
-            'type/media',
-            'type/media/movie',
-            'topic',
-            'garden',
-            'garden/herbs',
-            'été'
+            ['type', 'type'],
+            ['type/media', 'type/media'],
+            ['type/media/movie', 'type/media/movie'],
+            ['topic', 'Topic'],
+            ['garden', 'Garden'],
+            ['garden/herbs', 'Garden/Herbs'],
+            ['été', 'été']
         ])
     })
 
     test('read a tags property of one text', () => {
-        expect([...tagsOfNote('compost', '')]).toEqual(['compost'])
+        expect([...tagsOfNote('compost', '')]).toEqual([['compost', 'compost']])
+    })
+
+    test('are one tag in two Unicode forms', () => {
+        const decomposed = 'Cafe\u0301/The\u0301'
+        expect([...tagsOfNote([decomposed, 'café/thé'], '')]).toEqual([
+            ['café', 'Café'],
+            ['café/thé', 'Café/Thé']
+        ])
     })
 })
 
 describe('the notes of each tag', () => {
     test('list each note under each of its tags, the tags in the order of their code points', () => {
         const byTag = notesByTag([
-            { note: 'a', tags: new Set(['media', 'media/movie']) },
-            { note: 'b', tags: new Set(['media']) }
+            {
+                note: 'a',
+                tags: new Map([
+                    ['media', 'media'],
+                    ['media/movie', 'media/movie']
+                ])
+            },
+            { note: 'b', tags: new Map([['media', 'media']]) }
         ])
         expect([...byTag]).toEqual([
             ['media', ['a', 'b']],

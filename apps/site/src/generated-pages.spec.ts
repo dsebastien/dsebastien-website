@@ -21,6 +21,11 @@ function note(title: string, type = MOVIE): ListedNote {
     return { vaultPath: `${title}.md`, path: `/${title}`, title, type }
 }
 
+/** The tags of a note as the lists read them: each folded form with its written form. */
+function tags(...written: string[]): Map<string, string> {
+    return new Map(written.map((tag) => [tag.toLowerCase(), tag]))
+}
+
 describe('the type hubs', () => {
     test('list the notes of each type from A to Z, the hubs by their labels', () => {
         const hubs = typeHubsOf([
@@ -39,7 +44,8 @@ describe('the type hubs', () => {
                 path: '/-/types/movies',
                 title: 'Movies · Sébastien’s Notes',
                 description: 'Movies of Sébastien’s Notes: 2 notes from A to Z.',
-                notes: [note('Alien'), note('Zorro')]
+                notes: [note('Alien'), note('Zorro')],
+                children: []
             }
         ])
     })
@@ -56,6 +62,16 @@ describe('the type hubs', () => {
             'Movies of Sébastien’s Notes: 4,890 notes from A to Z, page 2 of 49.'
         )
         expect(hub?.pages.at(-1)?.notes).toHaveLength(90)
+    })
+
+    test('are indexed with 5 notes or more (IDX-22)', () => {
+        const four = Array.from({ length: 4 }, (_item, index) => note(`N${String(index)}`, NOTE))
+        const five = Array.from({ length: 5 }, (_item, index) => note(`M${String(index)}`))
+        const hubs = typeHubsOf([...four, ...five])
+        expect(hubs.map((hub) => [hub.key, hub.count, hub.indexed])).toEqual([
+            ['movies', 5, true],
+            ['permanent-notes', 4, false]
+        ])
     })
 })
 
@@ -88,6 +104,7 @@ describe('the list of the notes with no type', () => {
         const about = { vaultPath: 'About.md', path: '/About', title: 'About' }
         const list = otherNotesOf([note('Alien'), welcome, about])
         expect(list?.count).toBe(2)
+        expect(list?.indexed).toBe(false)
         expect(list?.pages[0]?.notes).toEqual([about, welcome])
         expect(list?.pages[0]?.path).toBe('/-/other')
         expect(list?.pages[0]?.title).toBe('Other notes · Sébastien’s Notes')
@@ -104,11 +121,11 @@ describe('the list of the notes with no type', () => {
 describe('the tag pages', () => {
     test('list the notes of a tag and of its nested tags, with its child tags', () => {
         const lists = tagListsOf([
-            { note: note('Alien'), tags: new Set(['media', 'media/movie']) },
-            { note: note('Atlas'), tags: new Set(['media']) }
+            { note: note('Alien'), tags: tags('media', 'media/movie') },
+            { note: note('Atlas'), tags: tags('media') }
         ])
-        expect(lists.map((list) => [list.label, list.count, list.children])).toEqual([
-            ['#media', 2, ['media/movie']],
+        expect(lists.map((list) => [list.label, list.count, list.pages[0]?.children])).toEqual([
+            ['#media', 2, [{ key: 'media/movie', label: '#media/movie' }]],
             ['#media/movie', 1, []]
         ])
         expect(lists[0]?.pages[0]?.path).toBe('/-/tags/media')
@@ -121,15 +138,39 @@ describe('the tag pages', () => {
     test('are indexed with 5 notes or more, and never for a tag of the system', () => {
         const five = Array.from({ length: 5 }, (_item, index) => ({
             note: note(`N${String(index)}`),
-            tags: new Set(['garden', 'type', 'type/note'])
+            tags: tags('garden', 'type', 'type/note')
         }))
-        const lists = tagListsOf([...five, { note: note('Alone'), tags: new Set(['rare']) }])
+        const lists = tagListsOf([...five, { note: note('Alone'), tags: tags('rare') }])
         expect(Object.fromEntries(lists.map((list) => [list.key, list.indexed]))).toEqual({
             'garden': true,
             'rare': false,
             'type': false,
             'type/note': false
         })
+    })
+
+    test('show the nested tags on page 1 only, as most of their notes write them', () => {
+        const many = Array.from({ length: 101 }, (_item, index) => ({
+            note: note(`N${String(index).padStart(3, '0')}`),
+            tags: tags('Garden', 'Garden/Herbs')
+        }))
+        const [garden] = tagListsOf(many)
+        expect(garden?.pages.map((page) => page.children)).toEqual([
+            [{ key: 'garden/herbs', label: '#Garden/Herbs' }],
+            []
+        ])
+    })
+
+    test('show the tag as most of its notes write it', () => {
+        const lists = tagListsOf([
+            { note: note('Alien'), tags: tags('PKM') },
+            { note: note('Atlas'), tags: tags('pkm') },
+            { note: note('Brave'), tags: tags('PKM') }
+        ])
+        expect(lists.map((list) => [list.key, list.label, list.pages[0]?.path])).toEqual([
+            ['pkm', '#PKM', '/-/tags/pkm']
+        ])
+        expect(lists[0]?.pages[0]?.title).toBe('#PKM · Sébastien’s Notes')
     })
 })
 
@@ -142,9 +183,10 @@ describe('the library and the texts of the generated pages', () => {
     })
 
     test('the texts are the ones of the indexed pages only', () => {
+        const fiveMovies = ['Alien', 'Atlas', 'Brave', 'Cobra', 'Dune'].map((title) => note(title))
         const lists = [
-            ...typeHubsOf([note('Alien')]),
-            ...tagListsOf([{ note: note('Alien'), tags: new Set(['rare']) }])
+            ...typeHubsOf([...fiveMovies, note('Compost', NOTE)]),
+            ...tagListsOf([{ note: note('Alien'), tags: tags('rare') }])
         ]
         const { titles, descriptions } = generatedTexts(lists)
         expect([...titles]).toEqual([

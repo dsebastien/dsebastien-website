@@ -66,6 +66,20 @@ describe('links that the tool does not read', () => {
     })
 })
 
+describe('tags of the text (NAV-04)', () => {
+    test('a tag that has a tag page is a link to it', async () => {
+        expect(await html('#Topic/Water x')).toBe(
+            '<p><a class="tag" href="/-/tags/topic/water">#Topic/Water</a> x</p>'
+        )
+    })
+
+    test('a tag that the parser reads but that has no tag page stays plain text', async () => {
+        for (const tag of ['#tag/', '#a//b', '#a·b']) {
+            expect(await html(`${tag} x`)).toBe(`<p>${tag} x</p>`)
+        }
+    })
+})
+
 describe('language of a note (REN-09)', () => {
     test('is the property language when it is a language tag, else English', () => {
         expect(languageOf({ language: 'fr' })).toBe('fr')
