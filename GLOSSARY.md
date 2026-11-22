@@ -167,6 +167,12 @@ The list of the headings of a note on its page, each one a link to its heading.
 **Type hub**:
 The generated page that lists all published notes of one note type.
 
+**Type label**:
+The name of a note type on the site: a singular one for the badge and the title of a note page, a plural one for its type hub.
+
+**Library**:
+The generated page that lists the type hubs of the media types (movies, games, shows).
+
 **Link card**:
 A link that shows as a card with the title, the source and a small image of its target.
 _Avoid_: bookmark, embed
