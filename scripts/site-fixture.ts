@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import {
@@ -29,7 +29,10 @@ import { startServer, type Server } from '../apps/site/server/serve.ts'
 // note, a hub note with 489 backlinks and its page with all of them).
 //
 // One invented note that no other note links to is unpublished by a second
-// publication, so that the gone page (410) shows at its address. One more
+// publication, so that the gone page (410) shows at its address. The same
+// publication moves one more invented note into another folder, as the
+// rename journal of the plugin records it, so that its old address answers
+// 301 to its new one. One more
 // invented note is taken down, with the sound file that only it uses, so that
 // its address answers 404. The server error page (500) is printed as a file
 // to open in a browser: a working server never gives it.
@@ -38,6 +41,9 @@ const SITE = fileURLToPath(new URL('../apps/site', import.meta.url))
 
 /** The invented note that the second publication unpublishes (URL-27). */
 const GONE_NOTE = '10 Garden/Bean trellis.md'
+
+/** The invented note that the second publication moves, and its new path (URL-21, R66). */
+const MOVED_NOTE = { from: '10 Garden/Wormery.md', to: '10 Garden/Compost/Wormery.md' }
 
 /** The invented note that a takedown removes, with its sound file (URL-28). */
 const TAKEN_DOWN_NOTE = '50 Field guide/Embeds/Embed of a sound.md'
@@ -103,8 +109,19 @@ try {
     for (const warning of report.warnings) {
         console.error(`  warning: ${warning.path}: ${warning.message}`)
     }
-    await unpublish(device, [GONE_NOTE], run)
-    console.error(`Unpublished ${GONE_NOTE}.`)
+    // A move in Obsidian: the file moves, and the plugin writes a line.
+    await mkdir(dirname(join(vault, MOVED_NOTE.to)), { recursive: true })
+    await rename(join(vault, MOVED_NOTE.from), join(vault, MOVED_NOTE.to))
+    const journals = join(vault, '.obsidian', 'plugins', 'dsebastien-vault-publish', 'renames')
+    await mkdir(journals, { recursive: true })
+    await writeFile(
+        join(journals, '0000000000000001.jsonl'),
+        `${JSON.stringify({ from: MOVED_NOTE.from, kind: 'note', time: run.time, to: MOVED_NOTE.to })}\n`
+    )
+    const second = await unpublish(device, [GONE_NOTE], run)
+    console.error(
+        `Unpublished ${GONE_NOTE}, and moved ${String(second.moved.length)} note(s): ${second.moved.map((move) => `${move.from} to ${move.to}`).join(', ')}.`
+    )
     const takenDown = await takedown(device, [TAKEN_DOWN_NOTE], run)
     console.error(
         `Took down ${TAKEN_DOWN_NOTE}, and ${String(takenDown.attachmentsDeleted.length)} file(s) of the attachment storage.`
@@ -130,6 +147,9 @@ try {
     console.error(`The site of the fixture vault is on ${server.url} (Ctrl+C stops it).`)
     console.error(`  the gone page (410): ${server.url}${canonicalPath(GONE_NOTE)}`)
     console.error(`  a note taken down (404): ${server.url}${canonicalPath(TAKEN_DOWN_NOTE)}`)
+    console.error(
+        `  the old address of a note that moved (301): ${server.url}${canonicalPath(MOVED_NOTE.from)}`
+    )
     console.error(`  the server error page (500), as a file: ${join(outDir, '500.html')}`)
     if (values.sample) {
         for (const path of Object.values(BUDGET_SAMPLE)) {
