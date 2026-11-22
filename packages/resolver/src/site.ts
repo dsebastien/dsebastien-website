@@ -266,13 +266,20 @@ export function resolverMapOf(
         choices,
         notFound: files.notFound,
         gone: goneMapOf(removed, files.gone),
-        former: formerMapOf(ordered)
+        former: formerMapOf(ordered, removed)
     }
 }
 
-/** The former paths of the published notes (URL-06, URL-21, decision R66). */
-function formerMapOf(notes: readonly SiteNote[]): FormerMap {
-    const { texts, names } = formersOf(notes)
+/**
+ * The former paths of the published notes (URL-06, URL-21, decision R66). The
+ * last owner of an address wins (business rule 1): a former path that is now
+ * the path of an unpublished note is gone, not a redirect.
+ */
+function formerMapOf(notes: readonly SiteNote[], removed: readonly SiteNote[]): FormerMap {
+    const taken = new Set(removed.map((note) => foldedForm(note.path.slice(0, -'.md'.length))))
+    const takenMarkdown = new Set(removed.map((note) => markdownPath(note.path)))
+    const { names } = formersOf(notes)
+    const texts = new Map([...formersOf(notes).texts].filter(([text]) => !taken.has(text)))
     const urls = (map: Map<string, string[]>): Record<string, string[]> =>
         Object.fromEntries([...map].map(([key, paths]) => [key, paths.map(canonicalPath)]))
     // A former Markdown path of one note only: of two notes, it names none.
@@ -280,6 +287,9 @@ function formerMapOf(notes: readonly SiteNote[]): FormerMap {
     for (const note of notes) {
         for (const former of note.formerPaths ?? []) {
             const path = markdownPath(former)
+            if (takenMarkdown.has(path)) {
+                continue
+            }
             markdown.set(path, [
                 ...new Set([...(markdown.get(path) ?? []), markdownPath(note.path)])
             ])

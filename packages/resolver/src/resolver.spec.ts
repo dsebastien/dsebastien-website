@@ -436,4 +436,18 @@ describe('resolver of former paths', () => {
         expect(resolve('/Herbs/Basil', map)).toEqual(moved('/Garden/Mint'))
         expect(JSON.stringify(map)).not.toContain('Rain butt')
     })
+
+    // The last owner of an address wins (business rule 1): a note took the
+    // old path of another note, then the author unpublished it.
+    test('the path and the Markdown path of an unpublished note win over a former path of another note, and a former path still wins over a file name', () => {
+        const map = mapOf(
+            [{ path: 'Garden/Moved.md', aliases: [], formerPaths: ['Shed/Tools.md', 'Tools.md'] }],
+            [{ path: 'Shed/Tools.md', aliases: [] }]
+        )
+        const GONE: Resolution = { kind: 'gone', file: '410.html' }
+        expect(resolve('/Shed/Tools', map)).toEqual(GONE)
+        expect(resolve('/shed/tools', map)).toEqual(GONE)
+        expect(resolve('/-/md/Shed/Tools.md', map)).toEqual(GONE)
+        expect(resolve('/Tools', map)).toEqual(moved('/Garden/Moved'))
+    })
 })

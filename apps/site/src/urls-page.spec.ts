@@ -274,7 +274,7 @@ describe('URL table over HTTP', () => {
                 }
                 // The gone page shows nothing of the removed note (NAV-19).
                 for (const note of table.removed) {
-                    for (const text of [note.path, ...note.aliases]) {
+                    for (const text of [note.path, ...note.aliases, ...(note.formerPaths ?? [])]) {
                         const name = text.replace(/\.md$/u, '').split('/').at(-1) ?? ''
                         expect(body).not.toContain(name)
                         expect(body).not.toContain(canonicalPath(note.path))
@@ -305,7 +305,8 @@ describe('URL table over HTTP', () => {
 // Nothing of a removed note reaches the output of the build (NAV-19, R64):
 // no title, no path, in no page, no file and no index. The note "Bean
 // trellis" has no backlink, so no other note names it either (a link to an
-// unpublished note shows its text, by rule 5 of the business rules).
+// unpublished note shows its text, by rule 5 of the business rules). "Rain
+// butt" is the former name of an unpublished note: it is gone too (R66).
 describe('output of the build after an unpublication', () => {
     test('holds no name of a removed note that no note links to', async () => {
         const folder = outDir ?? ''
@@ -313,7 +314,15 @@ describe('output of the build after an unpublication', () => {
             (entry) => entry.isFile()
         )
         expect(files.length).toBeGreaterThan(20)
-        const forms = ['Bean trellis', 'Bean+trellis', 'Bean%20trellis', 'bean trellis']
+        const forms = [
+            'Bean trellis',
+            'Bean+trellis',
+            'Bean%20trellis',
+            'bean trellis',
+            'Rain butt',
+            'Rain+butt',
+            'Rain%20butt'
+        ]
         const found: string[] = []
         for (const entry of files) {
             const bytes = await readFile(join(entry.parentPath, entry.name))

@@ -65,11 +65,11 @@ export interface GoneMap {
      * text of a request is never hashed, so a long path costs no hash.
      */
     readonly longest: number
-    /** The canonical path and the Markdown path of each unpublished note, as written. */
+    /** The canonical path and the Markdown path of each unpublished note and of each of its former paths, as written. */
     readonly paths: Readonly<Record<string, true>>
-    /** The folded form of the text of each unpublished note. */
+    /** The folded form of the text of each unpublished note and of each of its former paths. */
     readonly folded: Readonly<Record<string, true>>
-    /** The folded form of the file name of each unpublished note. */
+    /** The folded form of the file name of each unpublished note and of each of its former paths. */
     readonly names: Readonly<Record<string, true>>
     /** The folded form of each alias of an unpublished note. */
     readonly aliases: Readonly<Record<string, true>>
@@ -184,8 +184,10 @@ function toNotes(
  * The path is read as it is requested, with its percent-encoding. A path of
  * the map is the answer. Else the resolver reads the path in each of its
  * readings (URL-03) and looks, in this order, for a note or a folder with that
- * text in any letter case and Unicode form (301), a file name (301, kept one
- * hour), and an alias (302) (URL-04). A slash at the end and a `.md` suffix
+ * text in any letter case and Unicode form (301), a former path of a note that
+ * moved (301, kept one hour, URL-21), a file name (301, kept one hour), and an
+ * alias (302) (URL-04); then, in every reading, for a former file name (301).
+ * The former Markdown path of a note answers 301 to its Markdown. A slash at the end and a `.md` suffix
  * are left out. A name or an alias of several notes gives the "not found" page
  * with those notes. A path under `/-/` has no variant.
  *
