@@ -67,8 +67,10 @@ struct Places {
 #[derive(Subcommand)]
 enum Command {
     /// Writes the publication queue: the new, the changed and the unchanged
-    /// notes, and the notes to remove, with a count per list. It changes
-    /// nothing in the vault and in the content store.
+    /// notes, and the notes to remove, with a count per list; the technical
+    /// updates; the notes to remove that are only missing from this vault; and
+    /// the unpublished notes that a guard excludes, which the next publication
+    /// removes. It changes nothing in the vault and in the content store.
     Status {
         #[command(flatten)]
         places: Places,
