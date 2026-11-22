@@ -50,9 +50,9 @@ export interface RecentSource {
 interface Dated {
     readonly date: NoteDate
     /**
-     * `yyyy-mm-ddThh:mm:ss`: the time of a run in UTC, the time of a property
-     * with an offset in UTC, or the time of a property without one as the
-     * vault writes it.
+     * `yyyy-mm-ddThh:mm:ss`: the time of a run in UTC, or the time of a
+     * property as the vault writes it (an offset is not applied), so that the
+     * order of a list is the order of the days that it shows.
      */
     readonly key: string
 }
@@ -72,15 +72,8 @@ function propertyDated(value: unknown): Dated | undefined {
         return undefined
     }
     const text = typeof value === 'string' ? value.trim() : ''
-    const time =
-        /^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/u.exec(text)
-    if (time?.[2] !== undefined) {
-        const moment = new Date(text.replace(' ', 'T'))
-        if (!Number.isNaN(moment.getTime())) {
-            return { date, key: moment.toISOString().slice(0, 19) }
-        }
-    }
-    return { date, key: `${date.datetime}T${(time?.[1] ?? '00:00:00').padEnd(8, ':00')}` }
+    const time = /^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2}(?::\d{2})?)/u.exec(text)?.[1] ?? '00:00:00'
+    return { date, key: `${date.datetime}T${time.padEnd(8, ':00')}` }
 }
 
 /** The labels of the two lists. */
@@ -100,15 +93,26 @@ function newestFirst<T extends { dated: Dated; note: ListedNote }>(items: readon
     )
 }
 
+/** The day after a day: `2031-05-01` gives `2031-05-02`. */
+function dayAfter(day: string): string {
+    const next = new Date(`${day}T00:00:00Z`)
+    next.setUTCDate(next.getUTCDate() + 1)
+    return next.toISOString().slice(0, 10)
+}
+
 /**
- * The date of a note of the import: its property, but never after the import
- * itself (a typo such as `2041` would stay at the top for good), else the
- * import.
+ * The date of a note of the import: its property, else the import. A
+ * property more than one day after the import is a typo (a `2041` would stay
+ * at the top for good): it takes the import. One day of margin, because the
+ * import ran in UTC and the vault writes local times.
  */
 function importDate(property: unknown, importRun: string): Dated {
     const run = runDate(importRun)
     const dated = propertyDated(property)
-    return dated === undefined || compareCodePoints(dated.key, run.key) > 0 ? run : dated
+    return dated === undefined ||
+        compareCodePoints(dated.date.datetime, dayAfter(run.date.datetime)) > 0
+        ? run
+        : dated
 }
 
 /** What the recent lists need of the whole site. */

@@ -48,6 +48,14 @@ const summary = `${cut ?? `${notes}, ${order}`}${pages > 1 ? `, page ${String(pa
                 <span class='chip bg-surface-elevated font-semibold' aria-current='page'>
                     {filter.label}
                 </span>
+            ) : filter.path === list.pages[0]?.path ? (
+                <a
+                    class='chip bg-surface-elevated font-semibold'
+                    href={filter.path}
+                    aria-current='true'
+                >
+                    {filter.label}
+                </a>
             ) : (
                 <a class='chip' href={filter.path}>
                     {filter.label}

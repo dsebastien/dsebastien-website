@@ -38,7 +38,9 @@ function counted(value: number, one: string, many: string): string {
                 {site.topics.map((topic) => (
                     <li>
                         <a class='card-link h-full' href={topic.note.path}>
-                            <span class='font-semibold break-words'>{topic.note.title}</span>
+                            <span class='font-semibold break-words hyphens-auto'>
+                                {topic.note.title}
+                            </span>
                             <span class='mt-1 block text-sm text-muted'>
                                 {counted(topic.backlinks, 'note links here', 'notes link here')}
                             </span>
@@ -57,7 +59,7 @@ function counted(value: number, one: string, many: string): string {
                 {site.typeHubs.map((hub) => (
                     <li>
                         <a class='card-link h-full' href={hub.pages[0]?.path}>
-                            <span class='font-semibold'>{hub.label}</span>
+                            <span class='font-semibold break-words hyphens-auto'>{hub.label}</span>
                             <span class='mt-1 block text-sm text-muted'>
                                 {counted(hub.count, 'note', 'notes')}
                             </span>
@@ -67,7 +69,9 @@ function counted(value: number, one: string, many: string): string {
                 {site.otherNotes !== undefined && (
                     <li>
                         <a class='card-link h-full' href={site.otherNotes.pages[0]?.path}>
-                            <span class='font-semibold'>{site.otherNotes.label}</span>
+                            <span class='font-semibold break-words hyphens-auto'>
+                                {site.otherNotes.label}
+                            </span>
                             <span class='mt-1 block text-sm text-muted'>
                                 {counted(site.otherNotes.count, 'note', 'notes')}
                             </span>

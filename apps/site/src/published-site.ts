@@ -1,11 +1,6 @@
 import { getCollection } from 'astro:content'
 import { backlinkList, BACKLINKS_ON_PAGE, type ShownBacklink } from './backlink-list.ts'
-import {
-    readCleanedNote,
-    readImportRun,
-    readPublishedNotes,
-    type PublishedNote
-} from './content-store.ts'
+import { readCleanedNote, readPublication, type PublishedNote } from './content-store.ts'
 import { noteDescription, uniqueDescriptions } from './descriptions.ts'
 import {
     generatedTexts,
@@ -70,8 +65,7 @@ export interface PublishedSite {
 
 async function read(): Promise<PublishedSite> {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
-    const notes = await readPublishedNotes()
-    const importRun = await readImportRun()
+    const { notes, importRun } = await readPublication()
     const byPath = new Map(notes.map((note) => [note.vaultPath, note]))
     // The properties of each note, read from its cleaned note with every date
     // as the text of the vault (`note-properties.ts`), not from the collection.

@@ -144,8 +144,17 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
  * a publication.
  */
 export async function readImportRun(): Promise<string | undefined> {
+    return (await readPublication()).importRun
+}
+
+/** The published notes and the import run, from one read of the manifest. */
+export async function readPublication(): Promise<{
+    notes: PublishedNote[]
+    importRun: string | undefined
+}> {
+    const { notes, firstRuns } = await readManifest()
     // A time of the manifest is ASCII in one form, so its text order is its time order.
-    return [...(await readManifest()).firstRuns].sort((one, two) => (one < two ? -1 : 1))[0]
+    return { notes, importRun: [...firstRuns].sort((one, two) => (one < two ? -1 : 1))[0] }
 }
 
 /** The published notes and the first publication of every entry of the manifest. */

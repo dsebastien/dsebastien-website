@@ -94,13 +94,34 @@ describe('the notes most recently added (PUB-70, R62)', () => {
         ])
     })
 
-    test('a created date with an offset is ordered by its time in UTC', () => {
+    test('a property date is ordered by its time as the vault writes it, as the page shows it', () => {
         const sources = [
-            // 21:30 in UTC.
-            source('Alder', { created: '2024-03-02T23:30:00+02:00' }),
-            source('Birch', { created: '2024-03-02T22:00:00Z' })
+            source('Alder', { created: '2024-03-03T01:00+02:00' }),
+            source('Birch', { created: '2024-03-02T23:30:00Z' }),
+            source('Cedar', { created: '2024-03-02T23:00 (approx)' }),
+            source('Dogwood', { created: '2024-03-02T10:00' })
         ]
-        expect(shown(sources, 'added')).toEqual(['Birch 2024-03-02', 'Alder 2024-03-02'])
+        expect(shown(sources, 'added')).toEqual([
+            'Alder 2024-03-03',
+            'Birch 2024-03-02',
+            'Cedar 2024-03-02',
+            'Dogwood 2024-03-02'
+        ])
+    })
+
+    test('an updated date on the day after the import stays: the import ran in UTC', () => {
+        const run = {
+            firstPublished: '2031-04-30T23:45:00Z',
+            lastPublished: '2031-04-30T23:45:00Z'
+        }
+        const sources = [
+            source('Alder', { ...run, updated: '2031-05-01T00:10' }),
+            source('Birch', { ...run, updated: '2031-05-01T00:30' })
+        ]
+        expect(shown(sources, 'updated', { importRun: run.firstPublished })).toEqual([
+            'Birch 2031-05-01',
+            'Alder 2031-05-01'
+        ])
     })
 
     test('a created date after the import is never newer than the import', () => {
