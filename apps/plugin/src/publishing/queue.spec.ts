@@ -71,6 +71,7 @@ type Step = { why: string } & (
     | { do: 'online' }
     | { do: 'lose'; keys: string[] }
     | { do: 'noteTypes'; noteTypes: NoteTypesFile | null }
+    | { do: 'asked'; questions?: string[][] }
     | {
           do: 'expect'
           vault: Files
@@ -254,6 +255,19 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     for (const key of step.keys) {
                         await rm(join(stores.attachmentStorage, key))
                     }
+                } else if (step.do === 'asked') {
+                    // The questions to the Starter Kit since the last such step.
+                    const asked = (await textOf(`${answers}.asked`)) ?? ''
+                    await rm(`${answers}.asked`, { force: true })
+                    if (step.questions !== undefined) {
+                        expect(
+                            asked
+                                .split('\n')
+                                .filter((line) => line !== '')
+                                .map((line) => JSON.parse(line) as string[]),
+                            label
+                        ).toEqual(step.questions)
+                    }
                 } else if (step.do === 'noteTypes') {
                     if (step.noteTypes === null) {
                         await rm(answers)
@@ -303,6 +317,7 @@ describe('shared scenarios of the publication queue', () => {
             scenarios.flatMap((scenario) => scenario.steps.map((step) => step.do))
         )
         expect([...kinds].sort()).toEqual([
+            'asked',
             'crash',
             'delete',
             'expect',

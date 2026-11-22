@@ -68,6 +68,16 @@ describe('the description of a note', () => {
         expect(long.endsWith('grow…')).toBe(true)
     })
 
+    test('is cut on whole characters, never in the middle of an emoji', () => {
+        const cut = noteDescription({
+            title: 'Seeds',
+            properties: {},
+            html: `<p>${'🌱'.repeat(200)}</p>`
+        })
+        expect(Array.from(cut)).toHaveLength(DESCRIPTION_LENGTH)
+        expect(cut.isWellFormed()).toBe(true)
+    })
+
     test('is never empty', () => {
         expect(noteDescription({ title: 'Mint', properties: {}, html: '' })).toBe(
             'Mint, a note of Sébastien’s Notes.'

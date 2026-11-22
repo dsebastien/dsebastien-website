@@ -6,7 +6,7 @@ import { guardOf, guardOfPath } from './guards.ts'
 import { contentHash } from './hash.ts'
 import { LinkIndex, linkPathsOf, linksOfPaths, sameLinks } from './links.ts'
 import type { ManifestEntry } from './manifest.ts'
-import { readNoteTypes, sameNoteType } from './note-types.ts'
+import { askable, readNoteTypes, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
 import { sortByCodePoint } from './order.ts'
 import type { NoteTypes, Vault } from './ports.ts'
@@ -103,16 +103,17 @@ export async function noteTypesOf(
     port: NoteTypes,
     paths: readonly string[]
 ): Promise<Map<string, NoteType>> {
+    const question = askable(paths)
     let answer: unknown
     try {
-        answer = await port.recognize(paths)
+        answer = await port.recognize(question)
     } catch (error) {
         throw new Error(
             `the Obsidian Starter Kit cannot give the note types: ${error instanceof Error ? error.message : 'it failed'}. Nothing can be planned or published without it`,
             { cause: error }
         )
     }
-    return readNoteTypes(paths, answer)
+    return readNoteTypes(question, answer)
 }
 
 /** The replacement character: it stands for bytes of a name that are not valid Unicode. */

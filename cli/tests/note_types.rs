@@ -114,7 +114,7 @@ fn stops_when_the_starter_kit_is_not_in_the_vault() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        errors_of(&output).contains("obsidian-starter-kit-plugin"),
+        errors_of(&output).contains("obsidian-starter-kit"),
         "{}",
         errors_of(&output)
     );
@@ -172,9 +172,21 @@ fn asks_the_program_with_the_published_notes_on_its_input() {
 #[test]
 fn runs_the_program_that_the_plugin_installs_in_the_vault_by_default() {
     let published = Published::new();
-    let program = published
-        .vault
-        .join(".obsidian/plugins/obsidian-starter-kit-plugin/osk-cli");
+    // A plugin installed by hand, in a folder that is not named by its id,
+    // beside another plugin: the manifest says which one is the Starter Kit.
+    let plugins = published.vault.join(".obsidian/plugins");
+    for (folder, id) in [
+        ("another", "another-plugin"),
+        ("osk-by-hand", "obsidian-starter-kit"),
+    ] {
+        fs::create_dir_all(plugins.join(folder)).expect("the folder can be made");
+        fs::write(
+            plugins.join(folder).join("manifest.json"),
+            format!("{{\"id\": \"{id}\"}}"),
+        )
+        .expect("the manifest can be written");
+    }
+    let program = plugins.join("osk-by-hand").join("osk-cli");
     script(
         &program,
         r#"{"noteTypes":[{"name":"letters","displayName":"Letters","prefix":"","suffix":""}],"notes":[{"path":"A.md","noteType":"letters"}]}"#,
@@ -222,5 +234,79 @@ fn stops_when_the_program_writes_no_json() {
         errors_of(&output).contains("wrote no JSON"),
         "{}",
         errors_of(&output)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stops_a_program_that_does_not_end_in_time() {
+    let published = Published::new();
+    let program = published.stores.root().join("kit").join("osk-cli");
+    fs::create_dir_all(program.parent().expect("a folder")).expect("the folder can be made");
+    fs::write(&program, "#!/bin/sh\nsleep 30\n").expect("the script can be written");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
+            .expect("the script can be made a program");
+    }
+
+    let mut status = published.command("status");
+    status
+        .env_remove("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES")
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_OSK_CLI_SECONDS", "1")
+        .arg("--osk-cli")
+        .arg(&program);
+    let started = std::time::Instant::now();
+    let output = status.output().expect("the program starts");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(started.elapsed().as_secs() < 20);
+    assert!(
+        errors_of(&output).contains("did not end within 1 seconds"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn never_asks_the_program_about_a_note_under_a_guard() {
+    let published = Published::new();
+    // A second published note, which the author then excludes.
+    fs::write(published.vault.join("B.md"), "Beta\n").expect("the note can be written");
+    let planned = published
+        .command("plan")
+        .args(["--include", "B.md"])
+        .output()
+        .expect("the program starts");
+    let id = json_of(&planned)["id"].as_str().expect("an id").to_owned();
+    let done = published
+        .command("publish")
+        .arg("--attachment-storage")
+        .arg(published.stores.attachment_storage())
+        .args(["--plan", &id, "--time", "2031-07-02T08:00:00Z"])
+        .output()
+        .expect("the program starts");
+    assert!(done.status.success(), "{}", errors_of(&done));
+    fs::write(
+        published.vault.join("B.md"),
+        "---\npublish_ignore: true\n---\nBeta\n",
+    )
+    .expect("the note can be written");
+    let program = published.stores.root().join("kit").join("osk-cli");
+    script(
+        &program,
+        r#"{"noteTypes":[],"notes":[{"path":"A.md","noteType":null}]}"#,
+        0,
+    );
+
+    let output = published.status_with(Some(&program));
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(json_of(&output)["toRemove"], serde_json::json!(["B.md"]));
+    assert_eq!(
+        fs::read_to_string(program.parent().expect("a folder").join("kept.input"))
+            .expect("the input was kept"),
+        "A.md\n"
     );
 }

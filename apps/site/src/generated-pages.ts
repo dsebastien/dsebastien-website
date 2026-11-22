@@ -4,7 +4,8 @@ import {
     tagPagePath,
     typeHubPath
 } from '@dsebastien-website/resolver'
-import { byTitle, childTagsOf, isIndexedTag, notesByTag, pagesOf } from './lists.ts'
+import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
+import { byTitle, childTagsOf, isIndexedTag, notesByTag, pagesOf, type Listed } from './lists.ts'
 import type { NoteTypeBadge } from './note-header.ts'
 import { fullTitle } from './page-titles.ts'
 import { SITE_NAME } from './site.ts'
@@ -85,14 +86,39 @@ function listPages(
 
 /** The type hub of each note type of the published notes, by the plural label of the type. */
 export function typeHubsOf(notes: readonly ListedNote[]): NoteList[] {
-    const byType = new Map<string, { badge: NoteTypeBadge; notes: ListedNote[] }>()
+    const byType = new Map<string, { badges: Map<string, number>; notes: ListedNote[] }>()
     for (const note of notes) {
         if (note.type === undefined) continue
-        const hub = byType.get(note.type.name) ?? { badge: note.type, notes: [] }
+        const hub = byType.get(note.type.name) ?? {
+            badges: new Map<string, number>(),
+            notes: [] as ListedNote[]
+        }
+        // The entries of one type can hold two labels for a time: after a
+        // rename in the Starter Kit, until every technical update is published.
+        const key = JSON.stringify(note.type)
+        hub.badges.set(key, (hub.badges.get(key) ?? 0) + 1)
         hub.notes.push(note)
         byType.set(note.type.name, hub)
     }
-    const hubs = [...byType.values()].map(({ badge, notes: listed }) => ({
+    const hubs = [...byType.values()].map(({ badges, notes: listed }) => ({
+        badge: [...badges].sort(
+            ([one, many], [two, more]) => more - many || compareCodePoints(one, two)
+        )[0]?.[0],
+        listed
+    }))
+    return byTitle(
+        hubs.map(({ badge, listed }) => {
+            const type = JSON.parse(badge ?? '{}') as NoteTypeBadge
+            return hubOf(type, listed)
+        })
+    )
+}
+
+/** The type hub of one note type: the label that most of its notes have. */
+function hubOf(badge: NoteTypeBadge, listed: readonly ListedNote[]): NoteList & Listed {
+    return {
+        title: badge.many,
+        vaultPath: badge.name,
         kind: 'type' as const,
         key: badge.name,
         label: badge.many,
@@ -107,8 +133,7 @@ export function typeHubsOf(notes: readonly ListedNote[]): NoteList[] {
             (page, pages) =>
                 `${badge.many} of ${SITE_NAME}: ${count(listed.length)} notes from A to Z${pageText(page, pages)}.`
         )
-    }))
-    return byTitle(hubs.map((hub) => ({ ...hub, title: hub.label, vaultPath: hub.key })))
+    }
 }
 
 /** The label of the list of the notes with no type. */
@@ -199,6 +224,11 @@ export function generatedTexts(lists: readonly NoteList[]): {
     for (const list of lists) {
         if (!list.indexed) continue
         for (const page of list.pages) {
+            if (titles.has(page.title)) {
+                throw new Error(
+                    `two generated pages have the title "${page.title}" (IDX-04): give the note type "${list.key}" another label in the table of the site`
+                )
+            }
             titles.add(page.title)
             descriptions.add(page.description)
         }

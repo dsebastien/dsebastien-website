@@ -340,6 +340,23 @@ fn assert_refused_saying(output: &Output, step: &Value, label: &str) {
     }
 }
 
+/// The step `asked`: the questions to the Starter Kit since the last such
+/// step, in their order, when the step names them.
+fn check_questions(setup: &Setup, step: &Value, label: &str) {
+    let answers = setup.answers.as_ref().expect("a scenario has answers");
+    let mut file = answers.as_os_str().to_owned();
+    file.push(".asked");
+    let text = fs::read_to_string(&file).unwrap_or_default();
+    let _ = fs::remove_file(&file);
+    if !step["questions"].is_null() {
+        let questions: Vec<Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("a question is JSON"))
+            .collect();
+        assert_eq!(Value::from(questions), step["questions"], "{label}");
+    }
+}
+
 /// The step `noteTypes`: the Starter Kit of the scenario gives other
 /// answers, or is missing (`null`).
 fn set_answers(setup: &Setup, note_types: &Value) {
@@ -419,6 +436,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, stopped_plan: &mut String)
             }
         }
         "noteTypes" => set_answers(setup, &step["noteTypes"]),
+        "asked" => check_questions(setup, step, label),
         "publish" if step["refused"] == json!(true) => {
             let time = step["time"].as_str().expect("a publication has a time");
             let id = setup.plan_id(&step["selection"]);
@@ -483,6 +501,7 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
     assert_eq!(
         kinds,
         [
+            "asked",
             "crash",
             "delete",
             "expect",

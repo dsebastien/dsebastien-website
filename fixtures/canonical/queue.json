@@ -4201,6 +4201,98 @@
                         "remove": [],
                         "update": []
                     }
+                },
+                {
+                    "do": "asked",
+                    "why": "the questions so far are not checked here"
+                },
+                {
+                    "do": "status",
+                    "why": "the queue asks for the published notes only",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 3
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "one question, with the three published notes in the order of the canonical form",
+                    "questions": [["Basil.md", "Tomato (Recipe).md", "Welcome.md"]]
+                },
+                {
+                    "do": "write",
+                    "why": "the author excludes a published note with the ignore property",
+                    "files": {
+                        "Welcome.md": "---\npublish_ignore: true\npublic_note: true\n---\nWelcome\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note waits for its removal",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 1,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Welcome.md"],
+                        "unchanged": ["Basil.md", "Tomato (Recipe).md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "a note under a guard is never asked about",
+                    "questions": [["Basil.md", "Tomato (Recipe).md"]]
+                },
+                {
+                    "do": "publish",
+                    "why": "its forced removal",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-04T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": ["Welcome.md"],
+                        "propertyRemoved": ["Welcome.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "the plan and the publication ask again, never for the note under a guard",
+                    "questions": [
+                        ["Basil.md", "Tomato (Recipe).md"],
+                        [],
+                        ["Basil.md", "Tomato (Recipe).md"],
+                        []
+                    ]
                 }
             ]
         }

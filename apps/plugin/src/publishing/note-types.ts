@@ -16,6 +16,15 @@ export type NoteType = {
     readonly suffix?: string
 }
 
+/**
+ * The paths of a question that the Starter Kit can be asked about: a path
+ * with a line feed or a carriage return is left out, because its program
+ * reads one path per line. Such a note has no type.
+ */
+export function askable(paths: readonly string[]): string[] {
+    return paths.filter((path) => !path.includes('\n') && !path.includes('\r'))
+}
+
 /** The message of every answer that the tool refuses. */
 const REFUSED = 'the Obsidian Starter Kit gave an answer that the tool cannot read'
 

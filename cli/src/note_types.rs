@@ -5,10 +5,11 @@
 //! in the same commit.
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -190,14 +191,69 @@ pub struct StarterKit {
     vault: PathBuf,
 }
 
-/// The program of the Starter Kit in a vault, where the plugin installs it.
+/// The id of the Starter Kit plugin in Obsidian.
+const STARTER_KIT_ID: &str = "obsidian-starter-kit";
+
+/// The longest time that the program of the Starter Kit may take.
+const PROGRAM_LIMIT: Duration = Duration::from_secs(300);
+
+/// The program of the Starter Kit in a vault: in the folder of
+/// `.obsidian/plugins/` whose `manifest.json` has the id of the Starter Kit,
+/// as `osk-cli` itself finds the plugin (the folder of a plugin of the
+/// catalog is its id, a plugin installed by hand can have another name).
+/// Without such a folder, the folder named by the id, which the message of
+/// a missing program then names.
 pub fn default_program(vault: &Path) -> PathBuf {
-    let folder = vault.join(".obsidian/plugins/obsidian-starter-kit-plugin");
+    let plugins = vault.join(".obsidian").join("plugins");
+    let mut folders: Vec<PathBuf> = std::fs::read_dir(&plugins).map_or_else(
+        |_| Vec::new(),
+        |entries| {
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .collect()
+        },
+    );
+    folders.sort();
+    let has_id = |folder: &PathBuf| {
+        std::fs::read_to_string(folder.join("manifest.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .is_some_and(|manifest| manifest["id"] == STARTER_KIT_ID)
+    };
+    let folder = folders
+        .into_iter()
+        .find(has_id)
+        .unwrap_or_else(|| plugins.join(STARTER_KIT_ID));
     if cfg!(windows) {
         folder.join("osk-cli-windows-x64.exe")
     } else {
         folder.join("osk-cli")
     }
+}
+
+/// The paths of a question that the Starter Kit can be asked about: a path
+/// with a line feed or a carriage return is left out, because its program
+/// reads one path per line. Such a note has no type.
+pub fn askable(paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .filter(|path| !path.contains(['\n', '\r']))
+        .cloned()
+        .collect()
+}
+
+/// The time limit of the program: 300 seconds, or the seconds of a switch of
+/// the debug build for the tests.
+fn program_limit() -> Duration {
+    #[cfg(debug_assertions)]
+    if let Some(seconds) = std::env::var("DSEBASTIEN_VAULT_PUBLISH_TEST_OSK_CLI_SECONDS")
+        .ok()
+        .and_then(|seconds| seconds.parse().ok())
+    {
+        return Duration::from_secs(seconds);
+    }
+    PROGRAM_LIMIT
 }
 
 impl StarterKit {
@@ -237,17 +293,65 @@ impl StarterKit {
             input.push_str(path);
             input.push('\n');
         }
-        let output = thread::scope(|scope| {
-            // The input is written while the program runs, so that a full
-            // pipe of its output never blocks it.
-            if let Some(mut stdin) = child.stdin.take() {
-                scope.spawn(move || {
-                    let _ = stdin.write_all(input.as_bytes());
-                });
+        let limit = program_limit();
+        // The input is written and the output read by threads of their own,
+        // while the program runs, so that a full pipe never blocks it. They
+        // are not joined after a stop: a child of the program can keep a
+        // pipe open, and the run must not wait for it.
+        if let Some(mut stdin) = child.stdin.take() {
+            thread::spawn(move || {
+                let _ = stdin.write_all(input.as_bytes());
+            });
+        }
+        let reader = |pipe: Option<Box<dyn Read + Send>>| {
+            pipe.map(|mut pipe| {
+                thread::spawn(move || {
+                    let mut bytes = Vec::new();
+                    let _ = pipe.read_to_end(&mut bytes);
+                    bytes
+                })
+            })
+        };
+        let stdout = reader(
+            child
+                .stdout
+                .take()
+                .map(|pipe| Box::new(pipe) as Box<dyn Read + Send>),
+        );
+        let stderr = reader(
+            child
+                .stderr
+                .take()
+                .map(|pipe| Box::new(pipe) as Box<dyn Read + Send>),
+        );
+        let started = Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Ok(status),
+                Ok(None) if started.elapsed() >= limit => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break Err(format!(
+                        "its program did not end within {} seconds and was stopped",
+                        limit.as_secs()
+                    ));
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(10)),
+                Err(error) => break Err(format!("its program could not run: {error}")),
             }
-            child.wait_with_output()
-        })
-        .map_err(|error| format!("its program could not run: {error}"))?;
+        };
+        let collect = |reader: Option<thread::JoinHandle<Vec<u8>>>| {
+            reader
+                .and_then(|reader| reader.join().ok())
+                .unwrap_or_default()
+        };
+        let status = status?;
+        let (stdout, stderr) = (collect(stdout), collect(stderr));
+        let output = Output {
+            status,
+            stdout,
+            stderr,
+        };
         if !output.status.success() {
             return Err(format!(
                 "its program ended with an error: {}",
@@ -272,6 +376,16 @@ fn answer_of_file(file: &Path, paths: &[String]) -> Result<Value, String> {
     let data = if file == Path::new("none") {
         Value::Null
     } else {
+        // The question is kept, so that a test sees which notes were asked.
+        let mut asked = file.as_os_str().to_owned();
+        asked.push(".asked");
+        let line = format!("{}\n", Value::from(paths.to_vec()));
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&asked)
+            .and_then(|mut kept| kept.write_all(line.as_bytes()))
+            .map_err(|error| format!("its test file of questions cannot be written ({error})"))?;
         let text = std::fs::read_to_string(file)
             .map_err(|error| format!("its test file cannot be read ({error})"))?;
         serde_json::from_str(&text).map_err(|_| "its test file is not JSON".to_owned())?
@@ -317,17 +431,18 @@ pub fn note_types_of(
     kit: &StarterKit,
     paths: &[String],
 ) -> Result<BTreeMap<String, NoteType>, String> {
-    let answer = kit.recognize(paths).map_err(|error| {
+    let question = askable(paths);
+    let answer = kit.recognize(&question).map_err(|error| {
         format!(
             "the Obsidian Starter Kit cannot give the note types: {error}. Nothing can be planned or published without it"
         )
     })?;
-    read_note_types(paths, &answer)
+    read_note_types(&question, &answer)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{note_type_of_entry, read_note_types};
+    use super::{askable, note_type_of_entry, read_note_types};
     use serde_json::Value;
 
     /// The cases that the TypeScript implementation reads too
@@ -375,6 +490,26 @@ mod tests {
                     "the Obsidian Starter Kit gave an answer that the tool cannot read"
                 ),
                 "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn asks_about_the_paths_that_the_file_states() {
+        let asked = cases("asked");
+        assert!(asked.len() >= 3);
+        for case in asked {
+            let paths: Vec<String> = case["paths"]
+                .as_array()
+                .expect("paths")
+                .iter()
+                .map(|path| path.as_str().expect("a path").to_owned())
+                .collect();
+            assert_eq!(
+                serde_json::to_value(askable(&paths)).expect("data"),
+                case["asked"],
+                "{}",
+                case["name"]
             );
         }
     }

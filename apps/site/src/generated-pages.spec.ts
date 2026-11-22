@@ -59,6 +59,22 @@ describe('the type hubs', () => {
     })
 })
 
+describe('a type hub after a rename of its type', () => {
+    test('takes the label that most of its notes have', () => {
+        const films = { ...MOVIE, many: 'Films' }
+        const [hub] = typeHubsOf([note('A'), note('B', films), note('C', films)])
+        expect(hub?.label).toBe('Films')
+        expect(hub?.count).toBe(3)
+    })
+
+    test('two hubs with one label stop the build, with the name of a type', () => {
+        const other = { ...MOVIE, name: 'films' }
+        expect(() => generatedTexts(typeHubsOf([note('A'), note('B', other)]))).toThrow(
+            'two generated pages have the title "Movies · Sébastien’s Notes"'
+        )
+    })
+})
+
 describe('the list of the notes with no type', () => {
     test('lists them from A to Z, with its pages', () => {
         const welcome = { vaultPath: 'Welcome.md', path: '/Welcome', title: 'Welcome' }

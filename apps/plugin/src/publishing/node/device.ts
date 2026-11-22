@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
+    appendFile,
     lstat,
     mkdir,
     readdir,
@@ -1207,7 +1208,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Kit gives them, and `notes`, the `name` of the type of each vault path; a
  * path that the file does not name has no type. The file is read again at
  * each question, so a test can change it between two runs. A missing file is
- * a missing Starter Kit. The Rust twin is the switch
+ * a missing Starter Kit. Each question is added to `<file>.asked`, one line of
+ * JSON per question. The Rust twin is the switch
  * `DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES` of its debug build.
  */
 export function fileNoteTypes(file: string): NoteTypes {
@@ -1221,10 +1223,13 @@ export function fileNoteTypes(file: string): NoteTypes {
                 const name = named[path]
                 return { path, noteType: typeof name === 'string' ? name : null }
             })
+            // The question is kept, so that a test sees which notes were asked.
+            await appendFile(`${file}.asked`, `${JSON.stringify(paths)}\n`)
             const used = new Set(notes.map((note) => note.noteType))
             return {
                 noteTypes: types.filter(
-                    (type) => isRecord(type) && used.has(type['name'] as string)
+                    (type) =>
+                        isRecord(type) && typeof type['name'] === 'string' && used.has(type['name'])
                 ),
                 notes
             }

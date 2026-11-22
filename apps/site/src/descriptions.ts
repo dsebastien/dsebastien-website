@@ -110,10 +110,13 @@ function isSkipped(element: Element): boolean {
 
 /** The text cut at a word end, with an end mark, when it is longer than the limit. */
 function cut(text: string): string {
-    if (text.length <= DESCRIPTION_LENGTH) {
+    if (Array.from(text).length <= DESCRIPTION_LENGTH) {
         return text
     }
-    const room = text.slice(0, DESCRIPTION_LENGTH - 1)
+    // Cut on code points, so that no emoji loses half of itself.
+    const room = Array.from(text)
+        .slice(0, DESCRIPTION_LENGTH - 1)
+        .join('')
     const end = room.lastIndexOf(' ')
     return `${(end > DESCRIPTION_LENGTH / 2 ? room.slice(0, end) : room).replace(/[\s,;:.]+$/u, '')}…`
 }

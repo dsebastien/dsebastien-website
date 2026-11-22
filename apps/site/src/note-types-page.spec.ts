@@ -38,6 +38,8 @@ const FILM = '20 Library/20.01 Films/The Lantern Keeper (2019).md'
 let stores: TestStores | undefined
 let outDir: string | undefined
 let exitCode = -1
+/** What the build wrote: the checks of the built site say there that they ran. */
+let buildOutput = ''
 let map: ResolverMap | undefined
 const notes = new Map<string, Root>()
 
@@ -97,9 +99,10 @@ beforeAll(async () => {
     const child = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
         env: { ...process.env, CONTENT_STORE: contentStore },
-        stdout: 'ignore',
+        stdout: 'pipe',
         stderr: 'inherit'
     })
+    buildOutput = await new Response(child.stdout).text()
     exitCode = await child.exited
     if (exitCode !== 0) return
     map = JSON.parse(await readFile(join(outDir, '-', 'resolver-map.json'), 'utf8')) as ResolverMap
@@ -127,6 +130,9 @@ afterAll(async () => {
 describe('build of the fixture vault with note types', () => {
     test('completes, so its checks of titles, descriptions and links passed', () => {
         expect(exitCode).toBe(0)
+        expect(buildOutput).toMatch(
+            /\d+ pages: titles and descriptions unique, every indexable note within 4 links of the home page/u
+        )
         expect(notes.size).toBeGreaterThan(80)
     })
 })
@@ -242,22 +248,31 @@ describe('the tag pages (NAV-04)', () => {
     test('list the notes of a tag and of its nested tags', async () => {
         const topic = await served('/-/tags/topic')
         const water = await served('/-/tags/topic/water')
-        const inWater = selectAll('[data-listed-note]', water).map((link) => textOf(link))
-        expect(inWater.length).toBeGreaterThan(0)
+        expect(
+            selectAll('[data-listed-note] > span:first-child', water).map((link) => textOf(link))
+        ).toEqual(['Drip irrigation', 'Rain barrel'])
         expect(
             selectAll('[data-child-tags] a', topic).map((link) => link.properties['href'])
-        ).toContain('/-/tags/topic/water')
-        const inTopic = selectAll('[data-listed-note]', topic).map((link) => textOf(link))
-        for (const title of inWater) {
-            expect(inTopic.some((shown) => shown.startsWith(title))).toBe(true)
+        ).toEqual(['/-/tags/topic/water'])
+        expect(
+            selectAll('[data-listed-note] > span:first-child', topic).map((link) => textOf(link))
+        ).toEqual(['Drip irrigation', 'Rain barrel'])
+    })
+
+    test('list a note whose tag is only in its text', async () => {
+        for (const path of ['/-/tags/compost', '/-/tags/garden/soil', '/-/tags/garden']) {
+            const titles = selectAll(
+                '[data-listed-note] > span:first-child',
+                await served(path)
+            ).map((link) => textOf(link))
+            expect(titles, path).toContain('Tags')
         }
     })
 
     test('are not indexed for a tag of the system or a tag with fewer than 5 notes', async () => {
         expect(metaOf(await served('/-/tags/type/note'), 'robots')).toBe('noindex, follow')
-        const water = await served('/-/tags/topic/water')
-        const count = selectAll('[data-listed-note]', water).length
-        expect(metaOf(water, 'robots')).toBe(count < 5 ? 'noindex, follow' : undefined)
+        // Two notes only.
+        expect(metaOf(await served('/-/tags/topic/water'), 'robots')).toBe('noindex, follow')
     })
 
     test('are the target of the tags of the properties panel', () => {

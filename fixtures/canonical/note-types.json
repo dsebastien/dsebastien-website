@@ -1,5 +1,5 @@
 {
-    "about": "The note type of a note (documentation/Canonical Form.md, section \"The note type of a note\"). Both implementations read every case. `read`: the paths of a question, the answer of the Starter Kit, and the note type that each path must get (a path that is not in `types` has no type). `refused`: the paths of a question and an answer that must stop the run. `manifest`: a value of the key `noteType` of a manifest entry, and whether the entry can be read.",
+    "about": "The note type of a note (documentation/Canonical Form.md, section \"The note type of a note\"). Both implementations read every case. `read`: the paths of a question, the answer of the Starter Kit, and the note type that each path must get (a path that is not in `types` has no type). `refused`: the paths of a question and an answer that must stop the run. `manifest`: a value of the key `noteType` of a manifest entry, and whether the entry can be read. `asked`: the paths of a question and the paths that the Starter Kit is asked about.",
     "read": [
         {
             "name": "a note with a type and a note without one",
@@ -16,8 +16,14 @@
                     }
                 ],
                 "notes": [
-                    { "path": "Garden/Tomato.md", "noteType": "recipes" },
-                    { "path": "Welcome.md", "noteType": null }
+                    {
+                        "path": "Garden/Tomato.md",
+                        "noteType": "recipes"
+                    },
+                    {
+                        "path": "Welcome.md",
+                        "noteType": null
+                    }
                 ]
             },
             "types": {
@@ -42,7 +48,12 @@
                         "suffixOptional": false
                     }
                 ],
-                "notes": [{ "path": "Posts/2031-03-14 - Frost.md", "noteType": "social-posts" }]
+                "notes": [
+                    {
+                        "path": "Posts/2031-03-14 - Frost.md",
+                        "noteType": "social-posts"
+                    }
+                ]
             },
             "types": {
                 "Posts/2031-03-14 - Frost.md": {
@@ -65,11 +76,23 @@
                         "suffix": "",
                         "icon": "book"
                     },
-                    { "name": "quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                    {
+                        "name": "quotes",
+                        "displayName": "Quotes",
+                        "prefix": "",
+                        "suffix": ""
+                    }
                 ],
                 "notes": [
-                    { "path": "B.md", "noteType": "ai_wiki-articles", "matched": 2 },
-                    { "path": "A.md", "noteType": "ai_wiki-articles" }
+                    {
+                        "path": "B.md",
+                        "noteType": "ai_wiki-articles",
+                        "matched": 2
+                    },
+                    {
+                        "path": "A.md",
+                        "noteType": "ai_wiki-articles"
+                    }
                 ]
             },
             "types": {
@@ -88,7 +111,10 @@
         {
             "name": "a question with no path",
             "question": [],
-            "answer": { "noteTypes": [], "notes": [] },
+            "answer": {
+                "noteTypes": [],
+                "notes": []
+            },
             "types": {}
         },
         {
@@ -120,13 +146,37 @@
         }
     ],
     "refused": [
-        { "name": "not an object", "question": [], "answer": [] },
-        { "name": "no list of notes", "question": [], "answer": { "noteTypes": [] } },
-        { "name": "no list of types", "question": [], "answer": { "notes": [] } },
+        {
+            "name": "not an object",
+            "question": [],
+            "answer": []
+        },
+        {
+            "name": "no list of notes",
+            "question": [],
+            "answer": {
+                "noteTypes": []
+            }
+        },
+        {
+            "name": "no list of types",
+            "question": [],
+            "answer": {
+                "notes": []
+            }
+        },
         {
             "name": "one path too few",
             "question": ["A.md", "B.md"],
-            "answer": { "noteTypes": [], "notes": [{ "path": "A.md", "noteType": null }] }
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": null
+                    }
+                ]
+            }
         },
         {
             "name": "one path too many",
@@ -134,8 +184,14 @@
             "answer": {
                 "noteTypes": [],
                 "notes": [
-                    { "path": "A.md", "noteType": null },
-                    { "path": "B.md", "noteType": null }
+                    {
+                        "path": "A.md",
+                        "noteType": null
+                    },
+                    {
+                        "path": "B.md",
+                        "noteType": null
+                    }
                 ]
             }
         },
@@ -145,45 +201,105 @@
             "answer": {
                 "noteTypes": [],
                 "notes": [
-                    { "path": "B.md", "noteType": null },
-                    { "path": "A.md", "noteType": null }
+                    {
+                        "path": "B.md",
+                        "noteType": null
+                    },
+                    {
+                        "path": "A.md",
+                        "noteType": null
+                    }
                 ]
             }
         },
         {
             "name": "a path in another letter case",
             "question": ["A.md"],
-            "answer": { "noteTypes": [], "notes": [{ "path": "a.md", "noteType": null }] }
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    {
+                        "path": "a.md",
+                        "noteType": null
+                    }
+                ]
+            }
         },
         {
             "name": "a path in another Unicode form",
             "question": ["Café.md"],
-            "answer": { "noteTypes": [], "notes": [{ "path": "Cafe\u0301.md", "noteType": null }] }
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    {
+                        "path": "Café.md",
+                        "noteType": null
+                    }
+                ]
+            }
         },
         {
             "name": "a note without its type key",
             "question": ["A.md"],
-            "answer": { "noteTypes": [], "notes": [{ "path": "A.md" }] }
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    {
+                        "path": "A.md"
+                    }
+                ]
+            }
         },
         {
             "name": "a type that is a number",
             "question": ["A.md"],
-            "answer": { "noteTypes": [], "notes": [{ "path": "A.md", "noteType": 3 }] }
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": 3
+                    }
+                ]
+            }
         },
         {
             "name": "a type that is not in the list of types",
             "question": ["A.md"],
-            "answer": { "noteTypes": [], "notes": [{ "path": "A.md", "noteType": "quotes" }] }
+            "answer": {
+                "noteTypes": [],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "quotes"
+                    }
+                ]
+            }
         },
         {
             "name": "a type two times in the list",
             "question": ["A.md"],
             "answer": {
                 "noteTypes": [
-                    { "name": "quotes", "displayName": "Quotes", "prefix": "", "suffix": "" },
-                    { "name": "quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                    {
+                        "name": "quotes",
+                        "displayName": "Quotes",
+                        "prefix": "",
+                        "suffix": ""
+                    },
+                    {
+                        "name": "quotes",
+                        "displayName": "Quotes",
+                        "prefix": "",
+                        "suffix": ""
+                    }
                 ],
-                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "quotes"
+                    }
+                ]
             }
         },
         {
@@ -191,9 +307,19 @@
             "question": ["A.md"],
             "answer": {
                 "noteTypes": [
-                    { "name": "Quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                    {
+                        "name": "Quotes",
+                        "displayName": "Quotes",
+                        "prefix": "",
+                        "suffix": ""
+                    }
                 ],
-                "notes": [{ "path": "A.md", "noteType": "Quotes" }]
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "Quotes"
+                    }
+                ]
             }
         },
         {
@@ -201,9 +327,19 @@
             "question": ["A.md"],
             "answer": {
                 "noteTypes": [
-                    { "name": "1-quotes", "displayName": "Quotes", "prefix": "", "suffix": "" }
+                    {
+                        "name": "1-quotes",
+                        "displayName": "Quotes",
+                        "prefix": "",
+                        "suffix": ""
+                    }
                 ],
-                "notes": [{ "path": "A.md", "noteType": "1-quotes" }]
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "1-quotes"
+                    }
+                ]
             }
         },
         {
@@ -230,16 +366,40 @@
             "name": "an empty name",
             "question": ["A.md"],
             "answer": {
-                "noteTypes": [{ "name": "", "displayName": "Quotes", "prefix": "", "suffix": "" }],
-                "notes": [{ "path": "A.md", "noteType": "" }]
+                "noteTypes": [
+                    {
+                        "name": "",
+                        "displayName": "Quotes",
+                        "prefix": "",
+                        "suffix": ""
+                    }
+                ],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": ""
+                    }
+                ]
             }
         },
         {
             "name": "an empty display name",
             "question": ["A.md"],
             "answer": {
-                "noteTypes": [{ "name": "quotes", "displayName": "", "prefix": "", "suffix": "" }],
-                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+                "noteTypes": [
+                    {
+                        "name": "quotes",
+                        "displayName": "",
+                        "prefix": "",
+                        "suffix": ""
+                    }
+                ],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "quotes"
+                    }
+                ]
             }
         },
         {
@@ -247,34 +407,69 @@
             "question": ["A.md"],
             "answer": {
                 "noteTypes": [
-                    { "name": "quotes", "displayName": "Quotes", "prefix": null, "suffix": "" }
+                    {
+                        "name": "quotes",
+                        "displayName": "Quotes",
+                        "prefix": null,
+                        "suffix": ""
+                    }
                 ],
-                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "quotes"
+                    }
+                ]
             }
         },
         {
             "name": "no suffix key",
             "question": ["A.md"],
             "answer": {
-                "noteTypes": [{ "name": "quotes", "displayName": "Quotes", "prefix": "" }],
-                "notes": [{ "path": "A.md", "noteType": "quotes" }]
+                "noteTypes": [
+                    {
+                        "name": "quotes",
+                        "displayName": "Quotes",
+                        "prefix": ""
+                    }
+                ],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": "quotes"
+                    }
+                ]
             }
         },
         {
             "name": "a type that is not an object",
             "question": ["A.md"],
-            "answer": { "noteTypes": ["quotes"], "notes": [{ "path": "A.md", "noteType": null }] }
+            "answer": {
+                "noteTypes": ["quotes"],
+                "notes": [
+                    {
+                        "path": "A.md",
+                        "noteType": null
+                    }
+                ]
+            }
         },
         {
             "name": "a note that is not an object",
             "question": ["A.md"],
-            "answer": { "noteTypes": [], "notes": ["A.md"] }
+            "answer": {
+                "noteTypes": [],
+                "notes": ["A.md"]
+            }
         }
     ],
     "manifest": [
         {
             "name": "a name and a display name",
-            "noteType": { "displayName": "Quotes", "name": "quotes" },
+            "noteType": {
+                "displayName": "Quotes",
+                "name": "quotes"
+            },
             "valid": true
         },
         {
@@ -287,38 +482,91 @@
             },
             "valid": true
         },
-        { "name": "no display name", "noteType": { "name": "quotes" }, "valid": false },
+        {
+            "name": "no display name",
+            "noteType": {
+                "name": "quotes"
+            },
+            "valid": false
+        },
         {
             "name": "an empty display name",
-            "noteType": { "displayName": "", "name": "quotes" },
+            "noteType": {
+                "displayName": "",
+                "name": "quotes"
+            },
             "valid": false
         },
         {
             "name": "a name with a capital letter",
-            "noteType": { "displayName": "Quotes", "name": "Quotes" },
+            "noteType": {
+                "displayName": "Quotes",
+                "name": "Quotes"
+            },
             "valid": false
         },
         {
             "name": "an empty prefix",
-            "noteType": { "displayName": "Quotes", "name": "quotes", "prefix": "" },
+            "noteType": {
+                "displayName": "Quotes",
+                "name": "quotes",
+                "prefix": ""
+            },
             "valid": false
         },
         {
             "name": "an empty suffix",
-            "noteType": { "displayName": "Quotes", "name": "quotes", "suffix": "" },
+            "noteType": {
+                "displayName": "Quotes",
+                "name": "quotes",
+                "suffix": ""
+            },
             "valid": false
         },
         {
             "name": "a suffix that is a number",
-            "noteType": { "displayName": "Quotes", "name": "quotes", "suffix": 1 },
+            "noteType": {
+                "displayName": "Quotes",
+                "name": "quotes",
+                "suffix": 1
+            },
             "valid": false
         },
         {
             "name": "another key",
-            "noteType": { "displayName": "Quotes", "icon": "quote", "name": "quotes" },
+            "noteType": {
+                "displayName": "Quotes",
+                "icon": "quote",
+                "name": "quotes"
+            },
             "valid": false
         },
-        { "name": "a text", "noteType": "quotes", "valid": false },
-        { "name": "null", "noteType": null, "valid": false }
+        {
+            "name": "a text",
+            "noteType": "quotes",
+            "valid": false
+        },
+        {
+            "name": "null",
+            "noteType": null,
+            "valid": false
+        }
+    ],
+    "asked": [
+        {
+            "name": "every plain path",
+            "paths": ["A.md", "Folder/B c.md"],
+            "asked": ["A.md", "Folder/B c.md"]
+        },
+        {
+            "name": "a path with a line feed or a carriage return is not asked",
+            "paths": ["A.md", "a\nb.md", "c\rd.md", "E.md"],
+            "asked": ["A.md", "E.md"]
+        },
+        {
+            "name": "no path",
+            "paths": [],
+            "asked": []
+        }
     ]
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { isNoteType, readNoteTypes, sameNoteType } from './note-types.ts'
+import { askable, isNoteType, readNoteTypes, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
 
 // The note type of a note (documentation/Canonical Form.md, "The note type of
@@ -13,6 +13,7 @@ interface Cases {
     read: { name: string; question: string[]; answer: unknown; types: Record<string, NoteType> }[]
     refused: { name: string; question: string[]; answer: unknown }[]
     manifest: { name: string; noteType: unknown; valid: boolean }[]
+    asked: { name: string; paths: string[]; asked: string[] }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
@@ -41,6 +42,12 @@ describe('the answer of the Starter Kit', () => {
         expect(cases.read.length).toBeGreaterThanOrEqual(5)
         expect(cases.refused.length).toBeGreaterThanOrEqual(15)
         expect(cases.manifest.length).toBeGreaterThanOrEqual(8)
+    })
+})
+
+describe('the paths that the Starter Kit is asked about', () => {
+    test.each(cases.asked.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
+        expect(askable(entry.paths)).toEqual(entry.asked)
     })
 })
 

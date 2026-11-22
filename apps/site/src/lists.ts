@@ -96,7 +96,12 @@ export function notesByTag<T>(
     const byTag = new Map<string, T[]>()
     for (const { note, tags } of notes) {
         for (const tag of tags) {
-            byTag.set(tag, [...(byTag.get(tag) ?? []), note])
+            const listed = byTag.get(tag)
+            if (listed === undefined) {
+                byTag.set(tag, [note])
+            } else {
+                listed.push(note)
+            }
         }
     }
     return new Map([...byTag].sort(([one], [two]) => compareCodePoints(one, two)))
