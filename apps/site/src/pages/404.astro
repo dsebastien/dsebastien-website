@@ -1,19 +1,53 @@
 ---
+import { recentPath } from '@dsebastien-website/resolver'
 import Page from '../layouts/Page.astro'
 import { fullTitle } from '../page-titles.ts'
+import { publishedSite } from '../published-site.ts'
 
-// The "not found" page (URL-26 of the spec). The search suggestions come with
-// the search slice.
+// The "not found" page (URL-26, NAV-06, decision R62): status 404, never a
+// redirect. It leads to the home page, the recent lists and the type hubs.
+// Its search comes with issue 51.
+const site = await publishedSite()
 ---
 
 <Page title={fullTitle('Not found')} noindex>
-    <div class='max-w-2xl py-12'>
+    <div class='max-w-3xl py-12'>
         <h1 class='text-3xl font-bold'>Not found</h1>
-        <p class='mt-4 text-muted'>No note has this address.</p>
-        <p class='mt-6'>
-            <a class='button' href='/'>
-                Go to the home page
-            </a>
+        <p class='mt-4 text-muted'>
+            No note has this address. It may have moved, or it was never published.
         </p>
+        <ul class='mt-6 flex flex-wrap gap-3' data-not-found-links>
+            <li>
+                <a class='button' href='/'>
+                    Go to the home page
+                </a>
+            </li>
+            <li>
+                <a class='button-quiet' href={recentPath('added', 1)}>
+                    Recently added notes
+                </a>
+            </li>
+            <li>
+                <a class='button-quiet' href={recentPath('updated', 1)}>
+                    Recently updated notes
+                </a>
+            </li>
+        </ul>
+        {site.typeHubs.length > 0 && (
+            <section class='mt-10' aria-labelledby='not-found-types'>
+                <h2 id='not-found-types' class='section-title'>
+                    Browse by note type
+                </h2>
+                <ul class='flex flex-wrap gap-2'>
+                    {site.typeHubs.map((hub) => (
+                        <li>
+                            <a class='chip' href={hub.pages[0]?.path}>
+                                {hub.label}
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </section>
+        )}
     </div>
 </Page>

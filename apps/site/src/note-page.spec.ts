@@ -226,13 +226,18 @@ describe('build of a content store with one published note', () => {
         // with sha256sum. The library, the type hub of the note and the pages
         // of its tag and of the parent level of the tag are generated pages
         // (issue 49); the names of the files of the tags are the SHA-256 of
-        // "type" and of "type/note", computed with sha256sum.
+        // "type" and of "type/note", computed with sha256sum. The recent lists
+        // and the filter of the type of the note are generated pages too (issue 50).
         expect(map).toEqual({
             pages: {
                 '/': 'index.html',
                 [NOTE_URL]: NOTE_FILE,
                 '/10+Garden': '-/folder/e824100b642854a7.html',
                 '/-/library': '-/library.html',
+                '/-/recent/added': '-/recent/added.html',
+                '/-/recent/added/permanent-notes': '-/recent/added.permanent-notes.html',
+                '/-/recent/updated': '-/recent/updated.html',
+                '/-/recent/updated/permanent-notes': '-/recent/updated.permanent-notes.html',
                 '/-/tags/type': '-/tags/1303c06b0b014d0c.html',
                 '/-/tags/type/note': '-/tags/8cf4e21b748bf742.html',
                 '/-/types/permanent-notes': '-/types/permanent-notes.html'

@@ -1,0 +1,28 @@
+---
+import type { GetStaticPaths } from 'astro'
+import NoteList from '../../../components/NoteList.astro'
+import Page from '../../../layouts/Page.astro'
+import { publishedSite } from '../../../published-site.ts'
+import { listPageId } from '../../../site-files.ts'
+
+// A page of a recent list (NAV-05, decision R62): the notes most recently
+// added or updated, newest first, 100 per page, with the filter of each note
+// type. Page 1 of each list is indexed; a later page and a filter are not
+// (IDX-22, IDX-23). The resolver leads `/-/recent/<list>`,
+// `/-/recent/<list>/page/<number>` and `/-/recent/<list>/<type>` to these files.
+export const getStaticPaths = (async () => {
+    const site = await publishedSite()
+    return site.recentLists.flatMap((list) =>
+        list.pages.map((page) => ({
+            params: { id: listPageId(list, page.number) },
+            props: { list, page }
+        }))
+    )
+}) satisfies GetStaticPaths
+
+const { list, page } = Astro.props
+---
+
+<Page title={page.title} description={page.description} path={page.path} noindex={!page.indexed}>
+    <NoteList list={list} page={page} />
+</Page>

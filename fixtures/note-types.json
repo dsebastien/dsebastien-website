@@ -18,6 +18,14 @@
             "suffixOptional": true
         },
         {
+            "name": "maps-of-content",
+            "displayName": "Maps of Content",
+            "prefix": "",
+            "suffix": "",
+            "prefixOptional": false,
+            "suffixOptional": false
+        },
+        {
             "name": "movies",
             "displayName": "Movies",
             "prefix": "",
@@ -87,7 +95,7 @@
         "10 Garden/Compost basics.md": "permanent-notes",
         "10 Garden/Drip irrigation.md": "permanent-notes",
         "10 Garden/Frost dates explained.md": "permanent-notes",
-        "10 Garden/Garden index.md": "permanent-notes",
+        "10 Garden/Garden index.md": "maps-of-content",
         "10 Garden/Garden plan.md": "permanent-notes",
         "10 Garden/Herb bed/Herb bed.md": "permanent-notes",
         "10 Garden/Herb bed/Mint.md": "permanent-notes",

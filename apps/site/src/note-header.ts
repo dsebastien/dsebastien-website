@@ -72,8 +72,8 @@ export function noteHeader(input: NoteHeaderInput): NoteHeader {
         title: titleOf(input, bareName),
         bareName,
         ...(type === undefined ? {} : { type }),
-        created: dateOf(input.properties['created']) ?? dateOfTime(input.firstPublished),
-        updated: dateOf(input.properties['updated']) ?? dateOfTime(input.lastPublished)
+        created: propertyDate(input.properties['created']) ?? dateOfTime(input.firstPublished),
+        updated: propertyDate(input.properties['updated']) ?? dateOfTime(input.lastPublished)
     }
 }
 
@@ -119,7 +119,8 @@ function titleOf(
 /** The date at the start of a property: `2024-03-02`, then nothing, a time after `T`, or a time after a space. */
 const DATE = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/u
 
-function dateOf(value: unknown): NoteDate | undefined {
+/** The date of a property, as the vault writes it, or `undefined` when it holds no valid date. */
+export function propertyDate(value: unknown): NoteDate | undefined {
     if (value instanceof Date) {
         return Number.isNaN(value.getTime()) ? undefined : day(value.toISOString().slice(0, 10))
     }

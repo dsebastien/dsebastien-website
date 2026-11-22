@@ -14,7 +14,7 @@ import {
     pagesOf,
     type Listed
 } from './lists.ts'
-import type { NoteTypeBadge } from './note-header.ts'
+import type { NoteDate, NoteTypeBadge } from './note-header.ts'
 import { fullTitle } from './page-titles.ts'
 import { SITE_NAME } from './site.ts'
 
@@ -32,12 +32,14 @@ export interface ListedNote {
     readonly title: string
     /** The note type of the note, when it has one. */
     readonly type?: NoteTypeBadge | undefined
+    /** In a recent list, the date that orders the note (R62). */
+    readonly date?: NoteDate | undefined
 }
 
-/** A tag as a list page links to it: its folded form, and `#tag` as most of its notes write it. */
-export interface TagLink {
-    readonly key: string
+/** A link of a list page to another list: a nested tag, or a filter of a recent list. */
+export interface ListLink {
     readonly label: string
+    readonly path: string
 }
 
 /** One page of a list. */
@@ -48,45 +50,59 @@ export interface ListPage {
     readonly title: string
     readonly description: string
     readonly notes: readonly ListedNote[]
-    /** For page 1 of a tag, its direct child tags; nothing on a later page. */
-    readonly children: readonly TagLink[]
+    /** For page 1 of a tag, its direct child tags, as most of their notes write them; nothing on a later page. */
+    readonly children: readonly ListLink[]
+    /** False for a page that search engines must not index (IDX-22, IDX-23). */
+    readonly indexed: boolean
 }
 
 /** The list of a type hub or of a tag, with its pages. */
 export interface NoteList {
-    /** A type hub, a tag page, or the list of the notes with no type. */
-    readonly kind: 'type' | 'tag' | 'other'
-    /** The canonical name of the note type, the tag in small letters, or `other`. */
+    /** A type hub, a tag page, the list of the notes with no type, or a recent list. */
+    readonly kind: 'type' | 'tag' | 'other' | 'recent'
+    /**
+     * The canonical name of the note type, the folded form of the tag,
+     * `other`, or the recent list: `added`, `updated`, `added/<type>`.
+     */
     readonly key: string
     /** What the page names: the plural label of the type, or `#tag` as most of its notes write it. */
     readonly label: string
     /** The number of notes of the list. */
     readonly count: number
-    /** False for a page that search engines must not index (IDX-22). */
+    /** False for a list whose pages search engines must not index (IDX-22). */
     readonly indexed: boolean
     readonly pages: readonly ListPage[]
+    /** For a recent list, the links of its filter by note type, with `All` first. */
+    readonly filters: readonly ListLink[]
     /** For a type hub, true when the type is a media type: its hub is in the library. */
     readonly media: boolean
 }
 
 /** A number as a reader reads it: `4,890`. */
-function count(value: number): string {
+export function count(value: number): string {
     return value.toLocaleString('en')
 }
 
-function pageText(number: number, pages: number): string {
+export function pageText(number: number, pages: number): string {
     return pages > 1 ? `, page ${String(number)} of ${String(pages)}` : ''
 }
 
-/** The pages of a list, with the title and the description of each. */
-function listPages(
+/**
+ * The pages of a list, with the title and the description of each.
+ *
+ * @param indexed whether page 1 and the later pages are indexed
+ * @param ordered true when the notes are already in the order of the list
+ */
+export function listPages(
     notes: readonly ListedNote[],
     pathOf: (page: number) => string,
     name: string,
     about: (page: number, pages: number) => string,
-    children: readonly TagLink[] = []
+    indexed: { first: boolean; later: boolean },
+    children: readonly ListLink[] = [],
+    ordered = false
 ): ListPage[] {
-    const pages = pagesOf(byTitle(notes))
+    const pages = pagesOf(ordered ? notes : byTitle(notes))
     return pages.map((page, index) => {
         const number = index + 1
         return {
@@ -95,7 +111,8 @@ function listPages(
             title: fullTitle(number === 1 ? name : `${name}, page ${String(number)}`),
             description: about(number, pages.length),
             notes: page,
-            children: number === 1 ? children : []
+            children: number === 1 ? children : [],
+            indexed: number === 1 ? indexed.first : indexed.later
         }
     })
 }
@@ -132,6 +149,7 @@ export function typeHubsOf(notes: readonly ListedNote[]): NoteList[] {
 
 /** The type hub of one note type: the label that most of its notes have. */
 function hubOf(badge: NoteTypeBadge, listed: readonly ListedNote[]): NoteList & Listed {
+    const indexed = listed.length >= INDEXED_LIST_NOTES
     return {
         title: badge.many,
         vaultPath: badge.name,
@@ -139,14 +157,16 @@ function hubOf(badge: NoteTypeBadge, listed: readonly ListedNote[]): NoteList & 
         key: badge.name,
         label: badge.many,
         count: listed.length,
-        indexed: listed.length >= INDEXED_LIST_NOTES,
+        indexed,
         media: badge.media,
+        filters: [],
         pages: listPages(
             listed,
             (page) => typeHubPath(badge.name, page),
             badge.many,
             (page, pages) =>
-                `${badge.many} of ${SITE_NAME}: ${count(listed.length)} notes from A to Z${pageText(page, pages)}.`
+                `${badge.many} of ${SITE_NAME}: ${count(listed.length)} notes from A to Z${pageText(page, pages)}.`,
+            { first: indexed, later: indexed }
         )
     }
 }
@@ -172,12 +192,14 @@ export function otherNotesOf(notes: readonly ListedNote[]): NoteList | undefined
         count: other.length,
         indexed: false,
         media: false,
+        filters: [],
         pages: listPages(
             other,
             otherNotesPath,
             OTHER_NOTES,
             (page, pages) =>
-                `${OTHER_NOTES} of ${SITE_NAME}: ${count(other.length)} notes with no note type, from A to Z${pageText(page, pages)}.`
+                `${OTHER_NOTES} of ${SITE_NAME}: ${count(other.length)} notes with no note type, from A to Z${pageText(page, pages)}.`,
+            { first: false, later: false }
         )
     }
 }
@@ -216,22 +238,25 @@ export function tagListsOf(
     return [...byTag].map(([tag, listed]) => {
         const label = labels.get(tag) ?? `#${tag}`
         const children = childTagsOf(tag, tags).map((child) => ({
-            key: child,
-            label: labels.get(child) ?? `#${child}`
+            label: labels.get(child) ?? `#${child}`,
+            path: tagPagePath(child, 1)
         }))
+        const indexed = isIndexedTag(tag, listed.length)
         return {
             kind: 'tag' as const,
             key: tag,
             label,
             count: listed.length,
-            indexed: isIndexedTag(tag, listed.length),
+            indexed,
             media: false,
+            filters: [],
             pages: listPages(
                 listed,
                 (page) => tagPagePath(tag, page),
                 label,
                 (page, pages) =>
                     `Notes tagged ${label} on ${SITE_NAME}: ${count(listed.length)} notes from A to Z${pageText(page, pages)}.`,
+                { first: indexed, later: indexed },
                 children
             )
         }
@@ -265,7 +290,8 @@ function listName(list: NoteList): string {
     return {
         type: `the type hub of the note type "${list.key}"`,
         tag: `the page of the tag "${list.key}"`,
-        other: 'the list of the notes with no type'
+        other: 'the list of the notes with no type',
+        recent: `the recent list "${list.key}"`
     }[list.kind]
 }
 
@@ -295,7 +321,7 @@ export function generatedTexts(lists: readonly NoteList[]): {
                 )
             }
             owners.set(page.title, listName(list))
-            if (list.indexed) {
+            if (page.indexed) {
                 titles.add(page.title)
                 descriptions.add(page.description)
             }

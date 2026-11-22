@@ -1,9 +1,10 @@
 ---
-import { tagPagePath } from '@dsebastien-website/resolver'
 import type { ListPage, NoteList } from '../generated-pages.ts'
 
-// One page of a type hub or of a tag page (NAV-03, NAV-04, decision R61): its
-// notes from A to Z, the child tags of a tag on its page 1, and a link to
+// One page of a list: a type hub, a tag page, the notes with no type
+// (NAV-03, NAV-04, decision R61) or a recent list (NAV-05, R62). Its notes
+// from A to Z, or newest first with their dates for a recent list; the child
+// tags of a tag on its page 1; the filter of a recent list; and a link to
 // every page of the list, so that a note is at most three links from the home
 // page (NAV-07).
 interface Props {
@@ -14,10 +15,13 @@ interface Props {
 const { list, page } = Astro.props
 const pages = list.pages.length
 const notes = `${list.count.toLocaleString('en')} ${list.count === 1 ? 'note' : 'notes'}`
-const summary = `${notes}, from A to Z${pages > 1 ? `, page ${String(page.number)} of ${String(pages)}` : ''}.`
+const order = list.kind === 'recent' ? 'newest first' : 'from A to Z'
+const summary = `${notes}, ${order}${pages > 1 ? `, page ${String(page.number)} of ${String(pages)}` : ''}.`
 ---
 
-<p class='section-title'>{{ type: 'Type hub', tag: 'Tag', other: 'Notes' }[list.kind]}</p>
+<p class='section-title'>
+    {{ type: 'Type hub', tag: 'Tag', other: 'Notes', recent: 'Recent notes' }[list.kind]}
+</p>
 <h1 class='text-3xl font-bold tracking-tight break-words sm:text-4xl' data-list-title>
     {list.label}
 </h1>
@@ -27,10 +31,25 @@ const summary = `${notes}, from A to Z${pages > 1 ? `, page ${String(page.number
 {page.children.length > 0 && (
     <nav class='mt-6 flex flex-wrap gap-2' aria-label='Nested tags' data-child-tags>
         {page.children.map((child) => (
-            <a class='chip' href={tagPagePath(child.key, 1)}>
+            <a class='chip' href={child.path}>
                 {child.label}
             </a>
         ))}
+    </nav>
+)}
+{list.filters.length > 0 && (
+    <nav class='mt-6 flex flex-wrap gap-2' aria-label='Filter by note type' data-filters>
+        {list.filters.map((filter) =>
+            filter.path === list.pages[0]?.path ? (
+                <span class='chip bg-surface-elevated font-semibold' aria-current='page'>
+                    {filter.label}
+                </span>
+            ) : (
+                <a class='chip' href={filter.path}>
+                    {filter.label}
+                </a>
+            )
+        )}
     </nav>
 )}
 <ul class='mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3' data-list>
@@ -38,11 +57,17 @@ const summary = `${notes}, from A to Z${pages > 1 ? `, page ${String(page.number
         <li>
             <a class='card-link h-full' href={note.path} data-listed-note>
                 <span class='font-semibold break-words'>{note.title}</span>
-                {list.kind === 'tag' && note.type !== undefined && (
-                    <span class='mt-2 block'>
-                        <span class='badge'>{note.type.one}</span>
-                    </span>
-                )}
+                {(list.kind === 'tag' || list.kind === 'recent') &&
+                    (note.type !== undefined || note.date !== undefined) && (
+                        <span class='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted'>
+                            {note.type !== undefined && <span class='badge'>{note.type.one}</span>}
+                            {note.date !== undefined && (
+                                <time datetime={note.date.datetime} data-listed-date>
+                                    {note.date.shown}
+                                </time>
+                            )}
+                        </span>
+                    )}
             </a>
         </li>
     ))}

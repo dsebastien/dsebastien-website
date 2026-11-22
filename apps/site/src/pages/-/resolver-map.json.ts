@@ -9,7 +9,8 @@ export const GET: APIRoute = async () => {
     const map = resolverMapFor(site.notes, site.notesWithBacklinksPage(), [
         ...site.typeHubs,
         ...(site.otherNotes === undefined ? [] : [site.otherNotes]),
-        ...site.tagLists
+        ...site.tagLists,
+        ...site.recentLists
     ])
     return new Response(`${JSON.stringify(map, null, 2)}\n`, {
         headers: { 'content-type': 'application/json; charset=utf-8' }

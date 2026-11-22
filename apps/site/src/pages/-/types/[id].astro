@@ -23,6 +23,6 @@ export const getStaticPaths = (async () => {
 const { list, page } = Astro.props
 ---
 
-<Page title={page.title} description={page.description} path={page.path} noindex={!list.indexed}>
+<Page title={page.title} description={page.description} path={page.path} noindex={!page.indexed}>
     <NoteList list={list} page={page} />
 </Page>

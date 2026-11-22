@@ -21,7 +21,12 @@ const { list, page } = Astro.props
 ---
 
 {list !== undefined && (
-    <Page title={page.title} description={page.description} path={page.path} noindex>
+    <Page
+        title={page.title}
+        description={page.description}
+        path={page.path}
+        noindex={!page.indexed}
+    >
         <NoteList list={list} page={page} />
     </Page>
 )}

@@ -22,6 +22,9 @@ export {
     LIBRARY_PATH,
     markdownPath,
     otherNotesPath,
+    recentPath,
+    recentTypePath,
+    type RecentKind,
     tagPagePath,
     tagPath,
     typeHubPath

@@ -99,9 +99,14 @@ export function notesByTag<T>(
     return new Map([...byTag].sort(([one], [two]) => compareCodePoints(one, two)))
 }
 
+/** True for a tag of the system (`type/`, `zone/`) or one of their parent levels. */
+export function isSystemTag(tag: string): boolean {
+    return SYSTEM_TAGS.has(tag.split('/')[0] ?? '')
+}
+
 /** True when the page of a tag is indexed: 5 notes or more, and not a tag of the system (IDX-22, R61). */
 export function isIndexedTag(tag: string, notes: number): boolean {
-    return notes >= INDEXED_LIST_NOTES && !SYSTEM_TAGS.has(tag.split('/')[0] ?? '')
+    return notes >= INDEXED_LIST_NOTES && !isSystemTag(tag)
 }
 
 /**

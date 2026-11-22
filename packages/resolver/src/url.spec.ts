@@ -5,6 +5,8 @@ import {
     canonicalPath,
     LIBRARY_PATH,
     otherNotesPath,
+    recentPath,
+    recentTypePath,
     tagPagePath,
     tagPath,
     typeHubPath
@@ -122,6 +124,26 @@ describe('paths of the pages of a list', () => {
     test('the list of the notes with no type has its pages too', () => {
         expect(otherNotesPath(1)).toBe('/-/other')
         expect(otherNotesPath(3)).toBe('/-/other/page/3')
+    })
+})
+
+// The recent pages (NAV-05, decision R62): the two lists with their pages,
+// and the filter of a note type, one page.
+describe('paths of the recent pages', () => {
+    test('the two lists have their pages', () => {
+        expect(recentPath('added', 1)).toBe('/-/recent/added')
+        expect(recentPath('updated', 10)).toBe('/-/recent/updated/page/10')
+    })
+
+    test('the filter of a note type is one page under its list', () => {
+        expect(recentTypePath('added', 'movies')).toBe('/-/recent/added/movies')
+        expect(recentTypePath('updated', 'permanent-notes')).toBe(
+            '/-/recent/updated/permanent-notes'
+        )
+    })
+
+    test('is refused for a name that is not a canonical name of a note type', () => {
+        expect(() => recentTypePath('added', '../x')).toThrow('canonical name')
     })
 })
 

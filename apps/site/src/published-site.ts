@@ -11,11 +11,13 @@ import {
     type ListedNote,
     type NoteList
 } from './generated-pages.ts'
-import { refuseTagsThatTakePagePaths, tagsOfNote } from './lists.ts'
+import { topicsOf, type Linked, type SiteStats } from './home.ts'
+import { isSystemTag, refuseTagsThatTakePagePaths, tagsOfNote } from './lists.ts'
 import { noteHeader, type NoteHeader } from './note-header.ts'
 import { readProperties } from './note-properties.ts'
 import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
+import { recentListsOf } from './recent.ts'
 import { SitePages } from './rendering/page.ts'
 
 // The published notes of one build, read one time: the manifest, the cleaned
@@ -49,6 +51,12 @@ export interface PublishedSite {
     readonly library: ReturnType<typeof libraryOf>
     /** The list of the notes with no note type, when the site has such notes: their crawl path. */
     readonly otherNotes: NoteList | undefined
+    /** The recent lists: `added`, `updated`, then the filter of each note type of each (NAV-05, R62). */
+    readonly recentLists: readonly NoteList[]
+    /** The entry points by topic of the home page: the most linked maps of content (R62). */
+    readonly topics: readonly Linked[]
+    /** What the stats line of the home page counts (R62). */
+    readonly stats: SiteStats
     /** The backlinks of a published note, in the order of a page (R59). */
     backlinksOf(vaultPath: string): readonly ShownBacklink[]
     /** The notes with more backlinks than a note page holds: each has a page with all of them. */
@@ -133,7 +141,20 @@ async function read(): Promise<PublishedSite> {
         return {
             typeHubs: typeHubsOf(tagged.map((item) => item.note)),
             otherNotes: otherNotesOf(tagged.map((item) => item.note)),
-            tagLists: tagListsOf(tagged)
+            tagLists: tagListsOf(tagged),
+            recentLists: recentListsOf(
+                tagged.map(({ note }, index) => {
+                    const published = notes[index]
+                    const noteProperties = properties.get(note.vaultPath) ?? {}
+                    return {
+                        note,
+                        firstPublished: published?.firstPublished ?? '',
+                        lastPublished: published?.lastPublished ?? '',
+                        created: noteProperties['created'],
+                        updated: noteProperties['updated']
+                    }
+                })
+            )
         }
     }
     const draft = listsOf((note) => raw.get(note.vaultPath)?.title ?? note.title)
@@ -141,7 +162,8 @@ async function read(): Promise<PublishedSite> {
     const taken = generatedTexts([
         ...draft.typeHubs,
         ...(draft.otherNotes === undefined ? [] : [draft.otherNotes]),
-        ...draft.tagLists
+        ...draft.tagLists,
+        ...draft.recentLists
     ])
     const titles = uniqueTitles(
         notes.map((note) => {
@@ -212,6 +234,19 @@ async function read(): Promise<PublishedSite> {
         tagLists: lists.tagLists,
         library: libraryOf(lists.typeHubs),
         otherNotes: lists.otherNotes,
+        recentLists: lists.recentLists,
+        topics: topicsOf(
+            notes.map((note) => ({
+                note: listed(note, headers.get(note.vaultPath)?.title ?? note.title),
+                backlinks: pages.backlinks(note.vaultPath).length
+            }))
+        ),
+        stats: {
+            notes: notes.length,
+            types: lists.typeHubs.length,
+            tags: lists.tagLists.filter((list) => !isSystemTag(list.key)).length,
+            lastUpdate: lists.recentLists[1]?.pages[0]?.notes[0]?.date?.shown ?? ''
+        },
         backlinksOf,
         notesWithBacklinksPage: () =>
             notes.filter((note) => pages.backlinks(note.vaultPath).length > BACKLINKS_ON_PAGE)

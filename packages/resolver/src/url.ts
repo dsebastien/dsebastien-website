@@ -125,6 +125,35 @@ export function otherNotesPath(page: number): string {
     return `/-/other${pageSuffix(page)}`
 }
 
+/** The two recent lists (NAV-05, decision R62). */
+export type RecentKind = 'added' | 'updated'
+
+/**
+ * The path of a page of a recent list (NAV-05, decision R62):
+ * `/-/recent/added` or `/-/recent/updated`, and `/page/<number>` after page 1.
+ *
+ * @param kind the list: the notes most recently added or updated
+ * @param page the number of the page, from 1
+ */
+export function recentPath(kind: RecentKind, page: number): string {
+    return `/-/recent/${kind}${pageSuffix(page)}`
+}
+
+/**
+ * The path of the filter of a note type of a recent list (decision R62):
+ * one page with the newest notes of that type. A type named `page` has no
+ * number after it, so it never takes the path of a page of the list.
+ *
+ * @param kind the list: the notes most recently added or updated
+ * @param name the canonical name of the note type
+ */
+export function recentTypePath(kind: RecentKind, name: string): string {
+    if (!TYPE_NAME.test(name)) {
+        throw new Error(`"${name}" is not the canonical name of a note type`)
+    }
+    return `/-/recent/${kind}/${name}`
+}
+
 /** The form of the identity of a note. */
 const NOTE_ID = /^[0-9a-f]{16}$/
 

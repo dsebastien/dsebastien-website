@@ -66,17 +66,18 @@ export function backlinksFile(id: string): string {
 
 /**
  * The name of the file of a page of a list, without `.html`: the canonical
- * name of a note type (`movies`), or a hash of a tag, which can hold any
- * letter; then the number of a later page after a dot (`movies.2`).
+ * name of a note type (`movies`), a hash of a tag, which can hold any
+ * letter, or a recent list (`added`, `added.movies`: a type name starts with
+ * a letter); then the number of a later page after a dot (`movies.2`).
  */
 export function listPageId(list: Pick<NoteList, 'kind' | 'key'>, page: number): string {
-    const name = list.kind === 'tag' ? shortHash(list.key) : list.key
+    const name = list.kind === 'tag' ? shortHash(list.key) : list.key.replace('/', '.')
     return page === 1 ? name : `${name}.${String(page)}`
 }
 
 /** The file of a page of a list, relative to the output of the build. */
 export function listPageFile(list: Pick<NoteList, 'kind' | 'key'>, page: number): string {
-    const folder = { type: 'types', tag: 'tags', other: 'other' }[list.kind]
+    const folder = { type: 'types', tag: 'tags', other: 'other', recent: 'recent' }[list.kind]
     return `-/${folder}/${listPageId(list, page)}.html`
 }
 

@@ -45,7 +45,8 @@ describe('the type hubs', () => {
                 title: 'Movies · Sébastien’s Notes',
                 description: 'Movies of Sébastien’s Notes: 2 notes from A to Z.',
                 notes: [note('Alien'), note('Zorro')],
-                children: []
+                children: [],
+                indexed: false
             }
         ])
     })
@@ -125,7 +126,7 @@ describe('the tag pages', () => {
             { note: note('Atlas'), tags: tags('media') }
         ])
         expect(lists.map((list) => [list.label, list.count, list.pages[0]?.children])).toEqual([
-            ['#media', 2, [{ key: 'media/movie', label: '#media/movie' }]],
+            ['#media', 2, [{ label: '#media/movie', path: '/-/tags/media/movie' }]],
             ['#media/movie', 1, []]
         ])
         expect(lists[0]?.pages[0]?.path).toBe('/-/tags/media')
@@ -156,7 +157,7 @@ describe('the tag pages', () => {
         }))
         const [garden] = tagListsOf(many)
         expect(garden?.pages.map((page) => page.children)).toEqual([
-            [{ key: 'garden/herbs', label: '#Garden/Herbs' }],
+            [{ label: '#Garden/Herbs', path: '/-/tags/garden/herbs' }],
             []
         ])
     })

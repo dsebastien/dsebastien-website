@@ -18,8 +18,9 @@ import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/devi
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 import { SITE_NAME } from './site.ts'
 
-// The note types on the built site (issue 49, decision R61): the title of a
-// page with its type word, the display title without the prefix and the
+// The generated pages on the built site: the note types (issue 49, decision
+// R61) and the home page, the recent pages and the 404 page (issue 50, R62).
+// The note types: the title of a page with its type word, the display title without the prefix and the
 // suffix of the type, the type badge, the descriptions, the type hubs, the
 // tag pages, the library and the home page. The tool publishes the fixture
 // vault with the answers of an invented Starter Kit, the site is built, and
@@ -315,5 +316,128 @@ describe('the tag pages (NAV-04)', () => {
             (link) => link.properties['href']
         )
         expect(tags).toContain('/-/tags/type/movie')
+    })
+})
+
+/** The created or the updated date of the title band of a note page, by the path of the note. */
+async function bandDate(path: string, which: 'created' | 'updated'): Promise<string> {
+    const times = selectAll('[data-note-title] ~ p time', await served(path))
+    const time = times[which === 'created' ? 0 : 1]?.properties['dateTime']
+    return typeof time === 'string' ? time : ''
+}
+
+/** The paths and the dates of the notes of a list page. */
+function listedDates(page: Root): { path: string; date: string }[] {
+    return selectAll('[data-listed-note]', page).map((link) => {
+        const time = select('[data-listed-date]', link)?.properties['dateTime']
+        return {
+            path: String(link.properties['href']),
+            date: typeof time === 'string' ? time : ''
+        }
+    })
+}
+
+function newestFirst(dates: readonly string[]): boolean {
+    return dates.every((date, index) => index === 0 || (dates[index - 1] ?? '') >= date)
+}
+
+describe('the home page (NAV-02, R62)', () => {
+    test('has its blocks in order: topics, note types, recent notes, the stats line', async () => {
+        const html = await readFile(join(outDir ?? '', 'index.html'), 'utf8')
+        const at = [
+            'data-topics',
+            'data-type-hubs',
+            'data-recent="added"',
+            'data-recent="updated"',
+            'data-stats'
+        ].map((mark) => html.indexOf(mark))
+        expect(at.every((position) => position > 0)).toBe(true)
+        expect([...at].sort((one, two) => one - two)).toEqual(at)
+    })
+
+    test('leads to the maps of content as topics', async () => {
+        const topics = selectAll('[data-topics] a', await served('/')).map(
+            (link) => link.properties['href']
+        )
+        expect(topics).toEqual(['/10+Garden/Garden+index'])
+    })
+
+    test('shows the 10 notes most recently added and updated, newest first, with a link to each list', async () => {
+        const home = await served('/')
+        for (const kind of ['added', 'updated']) {
+            const items = selectAll(`[data-recent="${kind}"] li`, home)
+            expect(items, kind).toHaveLength(10)
+            const dates = items.map((item) => String(select('time', item)?.properties['dateTime']))
+            expect(newestFirst(dates), kind).toBe(true)
+            expect(
+                select(`[data-recent="${kind}"] a[href="/-/recent/${kind}"]`, home),
+                kind
+            ).toBeDefined()
+        }
+    })
+
+    test('ends with the stats line', async () => {
+        const stats = textOf(select('[data-stats]', await served('/')))
+        expect(stats).toMatch(
+            new RegExp(
+                `^${String(notes.size)} notes, \\d+ note types and \\d+ tags\\. Last update: \\d{4}-\\d{2}-\\d{2}\\.$`,
+                'u'
+            )
+        )
+    })
+})
+
+describe('the recent pages (NAV-05, PUB-70, PUB-71, R62)', () => {
+    test('list the notes added, newest first; a note of the import keeps its created date', async () => {
+        const page = await served('/-/recent/added')
+        expect(titleOf(page)).toBe('Recently added notes · Sébastien’s Notes')
+        expect(metaOf(page, 'robots')).toBeUndefined()
+        const listed = listedDates(page)
+        expect(listed).toHaveLength(Math.min(notes.size, 100))
+        expect(newestFirst(listed.map((item) => item.date))).toBe(true)
+        // The fixture is published in one run: the import.
+        for (const { path, date } of listed.slice(0, 15)) {
+            expect(date, path).toBe(await bandDate(path, 'created'))
+        }
+    })
+
+    test('list the notes updated, newest first; a note unchanged since the import keeps its updated date', async () => {
+        const listed = listedDates(await served('/-/recent/updated'))
+        expect(newestFirst(listed.map((item) => item.date))).toBe(true)
+        for (const { path, date } of listed.slice(0, 15)) {
+            expect(date, path).toBe(await bandDate(path, 'updated'))
+        }
+    })
+
+    test('have a filter by note type: one page per type, not indexed', async () => {
+        const movies = await served('/-/recent/added/movies')
+        expect(titleOf(movies)).toBe('Recently added: Movies · Sébastien’s Notes')
+        expect(metaOf(movies, 'robots')).toBe('noindex, follow')
+        expect(
+            listedDates(movies)
+                .map((item) => item.path)
+                .sort()
+        ).toEqual([
+            '/20+Library/20.01+Films/The+Lantern+Keeper+(2019)',
+            '/20+Library/20.01+Films/The+Quiet+Orchard+(2021)'
+        ])
+        const filters = selectAll('[data-filters] a', movies).map((link) => link.properties['href'])
+        expect(filters).toContain('/-/recent/added')
+        expect(filters).toContain('/-/recent/added/permanent-notes')
+        expect(textOf(select('[data-filters] [aria-current="page"]', movies))).toBe('Movies')
+    })
+})
+
+describe('the 404 page (NAV-06, URL-26, R62)', () => {
+    test('answers an unknown path, also under /-/, and leads home, to the recent lists and to the hubs', async () => {
+        for (const path of ['/No+such+note', '/-/no-such-page']) {
+            expect(resolve(path, map ?? { pages: {} }).kind, path).toBe('not-found')
+        }
+        const page = fromHtml(await readFile(join(outDir ?? '', '404.html'), 'utf8'))
+        const links = selectAll('a', page).map((link) => link.properties['href'])
+        for (const href of ['/', '/-/recent/added', '/-/recent/updated', '/-/types/movies']) {
+            expect(links, href).toContain(href)
+        }
+        expect(metaOf(page, 'robots')).toBe('noindex, follow')
     })
 })

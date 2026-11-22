@@ -1,14 +1,23 @@
 ---
 import { LIBRARY_PATH } from '@dsebastien-website/resolver'
 import { HOME } from '../generated-pages.ts'
+import { RECENT_ON_HOME, statsLine } from '../home.ts'
 import Page from '../layouts/Page.astro'
 import { publishedSite } from '../published-site.ts'
 import { SITE_NAME } from '../site.ts'
 
-// The home page. Its full content and order come with its slice (issue 50).
-// It lists the type hubs now (issue 49, R61): the crawl path from the home
-// page to every note (NAV-07).
+// The home page (NAV-02, decision R62), in this order: the hero, the entry
+// points by topic (the most linked maps of content), the entry points by note
+// type (the type hubs, the library and the notes with no type: the crawl path
+// from the home page to every note, NAV-07), the notes most recently added
+// and updated, and the stats line. The "start here" block stays out while no
+// note is featured; the search comes with issue 51, the newsletter with issue 57.
 const site = await publishedSite()
+const recent = site.recentLists.filter((list) => list.key === 'added' || list.key === 'updated')
+
+function counted(value: number, one: string, many: string): string {
+    return `${value.toLocaleString('en')} ${value === 1 ? one : many}`
+}
 ---
 
 <Page title={HOME.title} description={HOME.description} path='/'>
@@ -17,11 +26,30 @@ const site = await publishedSite()
         <h1 class='mt-3 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl'>{SITE_NAME}</h1>
         <p class='mt-5 max-w-2xl text-lg text-muted'>
             Thousands of connected notes about knowledge management, personal productivity, software
-            and the things I read, watch and play. The home page comes with its slice.
+            and the books, movies and games that I read, watch and play.
         </p>
     </section>
+    {site.topics.length > 0 && (
+        <section class='pb-12' aria-labelledby='topics'>
+            <h2 id='topics' class='section-title'>
+                Browse by topic
+            </h2>
+            <ul class='grid gap-3 sm:grid-cols-2 lg:grid-cols-4' data-topics>
+                {site.topics.map((topic) => (
+                    <li>
+                        <a class='card-link h-full' href={topic.note.path}>
+                            <span class='font-semibold break-words'>{topic.note.title}</span>
+                            <span class='mt-1 block text-sm text-muted'>
+                                {counted(topic.backlinks, 'note links here', 'notes link here')}
+                            </span>
+                        </a>
+                    </li>
+                ))}
+            </ul>
+        </section>
+    )}
     {(site.typeHubs.length > 0 || site.otherNotes !== undefined) && (
-        <section class='pb-16' aria-labelledby='types'>
+        <section class='pb-12' aria-labelledby='types'>
             <h2 id='types' class='section-title'>
                 Browse by note type
             </h2>
@@ -31,8 +59,7 @@ const site = await publishedSite()
                         <a class='card-link h-full' href={hub.pages[0]?.path}>
                             <span class='font-semibold'>{hub.label}</span>
                             <span class='mt-1 block text-sm text-muted'>
-                                {hub.count.toLocaleString('en')}{' '}
-                                {hub.count === 1 ? 'note' : 'notes'}
+                                {counted(hub.count, 'note', 'notes')}
                             </span>
                         </a>
                     </li>
@@ -42,8 +69,7 @@ const site = await publishedSite()
                         <a class='card-link h-full' href={site.otherNotes.pages[0]?.path}>
                             <span class='font-semibold'>{site.otherNotes.label}</span>
                             <span class='mt-1 block text-sm text-muted'>
-                                {site.otherNotes.count.toLocaleString('en')}{' '}
-                                {site.otherNotes.count === 1 ? 'note' : 'notes'}
+                                {counted(site.otherNotes.count, 'note', 'notes')}
                             </span>
                         </a>
                     </li>
@@ -57,5 +83,43 @@ const site = await publishedSite()
                 </p>
             )}
         </section>
+    )}
+    {recent.length > 0 && (
+        <div class='grid gap-12 pb-12 lg:grid-cols-2'>
+            {recent.map((list) => (
+                <section aria-labelledby={`recent-${list.key}`} data-recent={list.key}>
+                    <h2 id={`recent-${list.key}`} class='section-title'>
+                        {list.label}
+                    </h2>
+                    <ol class='grid gap-2'>
+                        {(list.pages[0]?.notes ?? []).slice(0, RECENT_ON_HOME).map((note) => (
+                            <li class='flex items-baseline justify-between gap-4'>
+                                <a class='link min-w-0 break-words' href={note.path}>
+                                    {note.title}
+                                </a>
+                                {note.date !== undefined && (
+                                    <time
+                                        class='shrink-0 text-sm text-muted tabular-nums'
+                                        datetime={note.date.datetime}
+                                    >
+                                        {note.date.shown}
+                                    </time>
+                                )}
+                            </li>
+                        ))}
+                    </ol>
+                    <p class='mt-4'>
+                        <a class='link' href={list.pages[0]?.path}>
+                            All {list.label.toLowerCase()}
+                        </a>
+                    </p>
+                </section>
+            ))}
+        </div>
+    )}
+    {site.notes.length > 0 && (
+        <p class='border-t border-border pt-6 pb-4 text-sm text-muted' data-stats>
+            {statsLine(site.stats)}
+        </p>
     )}
 </Page>
