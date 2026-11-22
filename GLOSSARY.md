@@ -84,7 +84,19 @@ _Avoid_: bucket, media store
 The record of each published note: identity, path, former paths, dates and state.
 
 **Rename journal**:
-The record of the renames and moves of notes that wait for the next publication.
+The record of the renames and moves of notes that Obsidian reported on one device. Each device has its own, and it travels with the vault.
+
+**Move**:
+The change of the path of a published or unpublished note that a rename journal or a pairing gives. The note keeps its identity, and its old path becomes a former path.
+
+**Former path**:
+A path that a note had before a move. Its address leads to the note.
+
+**Pairing**:
+A missing published note and a candidate that the author confirms as one note that moved without a line in a rename journal.
+
+**Read marker**:
+The record in the content store of how many lines of each rename journal the publications read, so that each line is applied one time.
 
 **Run journal**:
 The record that a publication writes on its device before its first write into the copy of the content store. When the run stops halfway, the next run reads it to put the copy back.
