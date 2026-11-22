@@ -16,7 +16,7 @@ import type { Scan } from './queue.ts'
 // A type alias, not an interface: the canonical form takes any object of data,
 // and an interface is not one for the compiler.
 export type PublicationPlan = {
-    /** The forced removals: the published notes that a guard excludes. No selection changes this list (PUB-21). */
+    /** The forced removals: the notes with a manifest entry that a guard excludes, also unpublished ones (R64). No selection changes this list (PUB-21). */
     readonly forcedRemove: readonly string[]
     readonly publish: readonly string[]
     readonly update: readonly string[]
@@ -92,8 +92,9 @@ function reasonOutOfQueue(path: string, scan: Scan): string {
  *
  * A plan without paths holds the changed notes only. A new candidate enters a
  * plan only when its path is included (PUB-19, PUB-54). Every plan holds
- * every forced removal: a published note that a guard excludes is removed by
- * the next publication, whatever is selected, and it cannot be held (PUB-21).
+ * every forced removal: a note with a manifest entry that a guard excludes,
+ * published or unpublished, leaves the content store at the next publication,
+ * whatever is selected, and it cannot be held (PUB-21, R64).
  * A selection that cannot become a plan stops with a `SelectionError`.
  */
 export function computePlan(scan: Scan, selection: NormalSelection): PublicationPlan {
@@ -124,7 +125,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const onlyMissing = new Set(queue.missing)
     const forced = queue.toRemove.filter((path) => !onlyMissing.has(path))
     const underGuard = new Set(forced)
-    // An unpublished note under a guard leaves the manifest too (decision R64).
+    const unpublishedUnderGuard = new Set(scan.unpublishedUnderGuard)
     for (const path of selection.include) {
         if (waiting.has(path)) {
             refuse(path, 'is published and waits for its removal: it cannot be published again')
@@ -136,6 +137,9 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     for (const path of selection.hold) {
         if (underGuard.has(path)) {
             refuse(path, 'is published and a guard excludes it: its removal cannot be held')
+        }
+        if (unpublishedUnderGuard.has(path)) {
+            refuse(path, 'is unpublished and a guard excludes it: its removal cannot be held')
         }
         if (
             !candidates.has(path) &&
@@ -155,6 +159,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const held = new Set(selection.hold)
     const removed = new Set(selection.remove)
     const plan = makePlan({
+        // An unpublished note under a guard leaves the manifest too (decision R64).
         forcedRemove: [...forced, ...scan.unpublishedUnderGuard],
         publish: selection.include.filter((path) => candidates.has(path)),
         update: queue.changed.filter((path) => !held.has(path) && !removed.has(path)),

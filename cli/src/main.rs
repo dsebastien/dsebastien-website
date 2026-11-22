@@ -77,7 +77,8 @@ enum Command {
     /// Computes a publication plan, stores it on this device and writes it
     /// with its id. It changes nothing in the vault and in the content store.
     /// Without a path, the plan holds the changed notes only. Every plan holds
-    /// the forced removals: the published notes that a guard excludes.
+    /// the forced removals: the published and the unpublished notes that a
+    /// guard excludes.
     Plan {
         #[command(flatten)]
         places: Places,
@@ -106,8 +107,8 @@ enum Command {
         selection: Option<PathBuf>,
     },
 
-    /// Applies exactly one plan, by its id: the published notes that a guard
-    /// excludes leave the content store first, the cleaned notes and the
+    /// Applies exactly one plan, by its id: the published and the unpublished
+    /// notes that a guard excludes leave the content store first, the cleaned notes and the
     /// manifest go to the content store in one commit after the upload of
     /// their attachments, the commit is pushed, the `public_note` property of
     /// the notes of the vault is corrected, and the files of the attachment

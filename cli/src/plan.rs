@@ -19,7 +19,8 @@ use crate::queue::Scan;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicationPlan {
-    /// The forced removals: the published notes that a guard excludes. No
+    /// The forced removals: the notes with a manifest entry that a guard
+    /// excludes, also unpublished ones (R64). No
     /// selection changes this list (PUB-21).
     forced_remove: Vec<String>,
     publish: Vec<String>,
@@ -48,7 +49,8 @@ impl PublicationPlan {
         }
     }
 
-    /// The vault paths of the published notes that a guard excludes.
+    /// The vault paths of the notes with a manifest entry that a guard
+    /// excludes, also unpublished ones (R64).
     pub fn forced_remove(&self) -> &[String] {
         &self.forced_remove
     }
@@ -119,8 +121,9 @@ fn reason_out_of_queue(path: &str, scan: &Scan) -> String {
 ///
 /// A plan without paths holds the changed notes only. A new candidate enters a
 /// plan only when its path is included (PUB-19, PUB-54). Every plan holds
-/// every forced removal: a published note that a guard excludes is removed by
-/// the next publication, whatever is selected, and it cannot be held (PUB-21).
+/// every forced removal: a note with a manifest entry that a guard excludes,
+/// published or unpublished, leaves the content store at the next publication,
+/// whatever is selected, and it cannot be held (PUB-21, R64).
 ///
 /// # Errors
 ///
@@ -180,6 +183,12 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             return refuse(
                 path,
                 "is published and a guard excludes it: its removal cannot be held",
+            );
+        }
+        if within(&scan.unpublished_under_guard, path) {
+            return refuse(
+                path,
+                "is unpublished and a guard excludes it: its removal cannot be held",
             );
         }
         if !within(&queue.new, path)

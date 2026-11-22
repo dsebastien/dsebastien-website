@@ -1690,7 +1690,8 @@
                         "include": [],
                         "remove": []
                     },
-                    "refused": true
+                    "refused": true,
+                    "says": "a guard excludes it: its removal cannot be held"
                 },
                 {
                     "do": "publish",

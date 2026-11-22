@@ -139,7 +139,7 @@ A published note is a note with a manifest entry whose state is `published`. Eac
 2. Another published note is in `changed` when the hash of its source is not the `sourceHash` of its manifest entry. It is in `changed` and in `technicalUpdates` when the hash is the same and the cleaning step would give another result: the `cleaningVersion` of its entry is not the version of the cleaning step, the `links` of its entry are not the links that the note has now (a target was made, moved or removed, or a guard now excludes it), or the `attachments` of its entry are not the attachments that the note has now (a file was added, changed, moved or removed, or a guard now excludes it), or the `noteType` of its entry is not the note type that the note has now (see "The note type of a note").
 3. Every other published note is in `unchanged`.
 4. A note of the scan that is not published is in `new` when the ignore property does not exclude it. A note that was unpublished is a candidate again.
-5. A note that is not published and that a guard excludes is in no list.
+5. A note that is not published and that a guard excludes is in no list. An unpublished note under a guard waits for its forced removal (rule 3 of the plan): the plan and the publication report show it, not the queue. This is deliberate (R64): a new list of the queue would change its canonical form for a case that the next plan closes.
 
 The `public_note` property is not read for the queue. A note that carries it by mistake is a candidate like every other note, and a published note without it stays published.
 
