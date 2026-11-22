@@ -68,6 +68,7 @@ async function main(): Promise<void> {
     const files: SiteFiles = {
         home: 'index.html',
         notFound: '404.html',
+        gone: '410.html',
         robots: 'robots.txt',
         page: (path) => `-/note/${shortHash(path)}.html`,
         markdown: (path) => `-/md/${shortHash(path)}.md`,

@@ -1,5 +1,5 @@
 {
-    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them. Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`), the redirect (`location`, `cacheControl`) or the suggestions of the not found page (the canonical paths of the notes, sorted by vault path). A page case also states its canonical path. The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test.",
+    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them, and the notes that `removed` lists, which were published and then unpublished (issue 62). Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`), the redirect (`location`, `cacheControl`), the suggestions of the not found page (the canonical paths of the notes, sorted by vault path), or the gone page (410). A case with `accept` sends that `Accept` header, and `format` says the form of an error answer: `html`, or `markdown` (the short text for an agent, NAV-21). A page case also states its canonical path. The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test.",
     "notes": [
         {
             "path": "Welcome.md",
@@ -72,6 +72,12 @@
         {
             "path": "10 Garden/🌱 Seedlings.md",
             "aliases": []
+        }
+    ],
+    "removed": [
+        {
+            "path": "10 Garden/Rain barrel.md",
+            "aliases": ["Water butt"]
         }
     ],
     "cases": [
@@ -501,7 +507,8 @@
             "name": "no variant under the prefix of the site",
             "request": "/-/md/welcome.md",
             "status": 404,
-            "suggestions": []
+            "suggestions": [],
+            "format": "markdown"
         },
         {
             "name": "an unknown path under the prefix of the site",
@@ -532,6 +539,91 @@
             "request": "/10+Garden/Nothing+here",
             "status": 404,
             "suggestions": []
+        },
+        {
+            "name": "the canonical path of an unpublished note",
+            "request": "/10+Garden/Rain+barrel",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "an unpublished note with a query",
+            "request": "/10+Garden/Rain+barrel?ref=dsebastien.net",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "an unpublished note in another letter case",
+            "request": "/10+garden/RAIN+BARREL",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "an unpublished note with %20 for the spaces",
+            "request": "/10%20Garden/Rain%20barrel",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "an unpublished note with a Markdown suffix and a slash",
+            "request": "/10+Garden/Rain+barrel.md/",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "the file name of an unpublished note",
+            "request": "/Rain+barrel",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "the alias of an unpublished note",
+            "request": "/Water+butt",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "the Markdown of an unpublished note",
+            "request": "/-/md/10+Garden/Rain+barrel.md",
+            "status": 410,
+            "format": "markdown"
+        },
+        {
+            "name": "no variant of the Markdown of an unpublished note",
+            "request": "/-/md/10+garden/rain+barrel.md",
+            "status": 404,
+            "suggestions": [],
+            "format": "markdown"
+        },
+        {
+            "name": "an unpublished note asked as Markdown",
+            "request": "/10+Garden/Rain+barrel",
+            "accept": "text/markdown",
+            "status": 410,
+            "format": "markdown"
+        },
+        {
+            "name": "an unknown path asked as Markdown",
+            "request": "/Nothing+here",
+            "accept": "text/markdown, text/html;q=0.9",
+            "status": 404,
+            "suggestions": [],
+            "format": "markdown"
+        },
+        {
+            "name": "an unknown path asked as HTML before Markdown",
+            "request": "/Nothing+here",
+            "accept": "text/html, text/markdown;q=0.5",
+            "status": 404,
+            "suggestions": [],
+            "format": "html"
+        },
+        {
+            "name": "an unknown Markdown path",
+            "request": "/-/md/Nothing+here.md",
+            "status": 404,
+            "suggestions": [],
+            "format": "markdown"
         }
     ]
 }

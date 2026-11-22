@@ -253,7 +253,9 @@ describe('build of a content store with one published note', () => {
             names: { 'frost dates explained': [NOTE_URL] },
             aliases: {},
             choices: {},
-            notFound: '404.html'
+            notFound: '404.html',
+            // No note was unpublished (URL-27, R64).
+            gone: { file: '410.html', paths: {}, folded: {}, names: {}, aliases: {} }
         })
     })
 })

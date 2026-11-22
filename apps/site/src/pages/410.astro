@@ -1,0 +1,59 @@
+---
+import { recentPath } from '@dsebastien-website/resolver'
+import SearchForm from '../components/SearchForm.astro'
+import Page from '../layouts/Page.astro'
+import { fullTitle } from '../page-titles.ts'
+import { publishedSite } from '../published-site.ts'
+
+// The gone page (URL-27, NAV-19, decision R64): status 410, for every address
+// of a note that the author unpublished. It shows no title and no content of
+// the note: its search field starts empty, also of the words of the address.
+// It leads to the search, the home page, the recent lists and the type hubs,
+// as the "not found" page does.
+const site = await publishedSite()
+---
+
+<Page title={fullTitle('Removed')} noindex>
+    <div class='max-w-3xl py-12'>
+        <h1 class='text-3xl font-bold'>This note was removed</h1>
+        <p class='mt-4 text-muted'>
+            The note that had this address was removed. It is no longer published.
+        </p>
+        <div class='mt-6'>
+            <SearchForm id='gone-search' />
+        </div>
+        <ul class='mt-6 flex flex-wrap gap-3'>
+            <li>
+                <a class='button' href='/'>
+                    Go to the home page
+                </a>
+            </li>
+            <li>
+                <a class='button-quiet' href={recentPath('added', 1)}>
+                    Recently added notes
+                </a>
+            </li>
+            <li>
+                <a class='button-quiet' href={recentPath('updated', 1)}>
+                    Recently updated notes
+                </a>
+            </li>
+        </ul>
+        {site.typeHubs.length > 0 && (
+            <section class='mt-10' aria-labelledby='gone-types'>
+                <h2 id='gone-types' class='section-title'>
+                    Browse by note type
+                </h2>
+                <ul class='flex flex-wrap gap-2'>
+                    {site.typeHubs.map((hub) => (
+                        <li>
+                            <a class='chip' href={hub.pages[0]?.path}>
+                                {hub.label}
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </section>
+        )}
+    </div>
+</Page>

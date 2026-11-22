@@ -195,3 +195,61 @@ describe('design base', () => {
         }
     })
 })
+
+// The error pages (issue 62, NAV-19, NAV-20, decision R64).
+describe('error pages', () => {
+    test.each([['410.html'], ['500.html']])('%s is not indexed and leads home', async (file) => {
+        const html = await readOutput(file)
+        expect(html).toContain('<meta name="robots" content="noindex, follow">')
+        expect(html).not.toContain('rel="canonical"')
+        expect(html).toMatch(/<main[^>]*>[\s\S]*<a [^>]*href="\/"[\s\S]*<\/main>/u)
+        expect(html).toMatch(/<title>[^<]*Sébastien’s Notes<\/title>/u)
+    })
+
+    test('the gone page offers the search with an empty field, and runs only the scripts of the mode', async () => {
+        const html = await readOutput('410.html')
+        const form = /<form role="search"[^>]*action="\/-\/search"[\s\S]*?<\/form>/u.exec(html)
+        expect(form).not.toBeNull()
+        expect(form?.[0] ?? '').toMatch(/<input[^>]*name="q"/u)
+        expect(form?.[0] ?? '').not.toMatch(/<input[^>]*\svalue=/u)
+        expect(scriptsOf(html).slice(1)).toEqual([modeSwitchScript])
+    })
+
+    test.each([['410.html']])('has a rule for each class of %s', async (file) => {
+        const css = await readStylesheets()
+        const missing = [...classesOf(await readOutput(file))].filter(
+            (name) => !css.includes(selectorOf(name))
+        )
+        expect(missing).toEqual([])
+    })
+
+    test('the server error page is one file: no script, no style sheet, no font, no other file of the release', async () => {
+        const html = await readOutput('500.html')
+        expect(html).not.toMatch(/<script/iu)
+        expect(html).not.toMatch(/<link[^>]*rel="(?:stylesheet|preload|modulepreload)"/u)
+        expect(html).not.toContain('/_astro/')
+        expect(html).not.toMatch(/@font-face/u)
+        expect(html).not.toMatch(/url\(/u)
+        expect(html).toMatch(/<style>[\s\S]*\.button[\s\S]*<\/style>/u)
+        expect(html).not.toContain('data-mode-switch')
+    })
+
+    test('the server error page has a rule for each of its classes in its own style', async () => {
+        const html = await readOutput('500.html')
+        const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/gu)]
+            .map(([, text]) => text)
+            .join('\n')
+        const missing = [...classesOf(html)].filter((name) => !css.includes(selectorOf(name)))
+        expect(missing).toEqual([])
+    })
+
+    // No script reads the stored choice: the page follows the mode of the
+    // system, dark when the system states none.
+    test('the server error page follows the mode of the system', async () => {
+        const html = await readOutput('500.html')
+        expect(html).toContain('<html lang="en" data-theme="system">')
+        expect(html).toMatch(
+            /@media \(prefers-color-scheme:light\)\{\[data-theme=system\]\{color-scheme:light;/u
+        )
+    })
+})

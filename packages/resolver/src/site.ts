@@ -1,4 +1,4 @@
-import { foldedForm, type ResolverMap } from './resolver.ts'
+import { foldedForm, type GoneMap, type ResolverMap } from './resolver.ts'
 import { canonicalPath, folderPath, markdownPath } from './url.ts'
 
 // What the site has, from its published notes: the folders, the names, the
@@ -29,6 +29,8 @@ export interface SiteFolder {
 export interface SiteFiles {
     readonly home: string
     readonly notFound: string
+    /** The gone page (410). */
+    readonly gone: string
     readonly robots: string
     /** The file of the page of a note, from its vault path. */
     page(path: string): string
@@ -164,12 +166,15 @@ const GENERATED = '/-/'
  * @param attachments the key of each hashed path of an attachment that a page uses
  * @param generated the file of each other generated page of the build, by its
  * path under `/-/` (the page with every backlink of a note)
+ * @param removed the notes that the author unpublished: their addresses are
+ * gone (410), unless a published note, folder or page has them (decision R64)
  */
 export function resolverMapOf(
     notes: readonly SiteNote[],
     files: SiteFiles,
     attachments: Readonly<Record<string, string>> = {},
-    generated: Readonly<Record<string, string>> = {}
+    generated: Readonly<Record<string, string>> = {},
+    removed: readonly SiteNote[] = []
 ): ResolverMap {
     const ordered = [...notes].sort((one, two) => compareCodePoints(one.path, two.path))
     const pages: Record<string, string> = { '/': files.home }
@@ -221,6 +226,22 @@ export function resolverMapOf(
         names: urls(names),
         aliases: urls(aliases),
         choices,
-        notFound: files.notFound
+        notFound: files.notFound,
+        gone: goneMapOf(removed, files.gone)
+    }
+}
+
+/** The addresses of the unpublished notes (URL-27, decision R64). */
+function goneMapOf(removed: readonly SiteNote[], file: string): GoneMap {
+    const ordered = [...removed].sort((one, two) => compareCodePoints(one.path, two.path))
+    const set = (keys: Iterable<string>): Record<string, true> =>
+        Object.fromEntries(sorted(keys).map((key): [string, true] => [key, true]))
+    const { names, aliases } = namesAndAliases(ordered)
+    return {
+        file,
+        paths: set(ordered.flatMap((note) => [canonicalPath(note.path), markdownPath(note.path)])),
+        folded: set(ordered.map((note) => foldedForm(note.path.slice(0, -'.md'.length)))),
+        names: set(names.keys()),
+        aliases: set(aliases.keys())
     }
 }

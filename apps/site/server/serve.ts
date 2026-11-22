@@ -2,7 +2,15 @@ import type { Dirent } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, relative, resolve as resolvePath, sep } from 'node:path'
 import { parseArgs } from 'node:util'
-import { resolve, type ResolverMap, type SiteFile } from '@dsebastien-website/resolver'
+import {
+    errorFormat,
+    errorText,
+    resolve,
+    SERVER_ERROR_FILE,
+    type ErrorStatus,
+    type ResolverMap,
+    type SiteFile
+} from '@dsebastien-website/resolver'
 
 // The plain server (MOD-09 and HOST-02 of the spec): it serves the output of
 // the build through the resolver, as the edge does on the real host. It is
@@ -31,6 +39,14 @@ function everyValue(value: unknown, check: (item: unknown) => boolean): boolean 
 
 const isText = (value: unknown): value is string => typeof value === 'string'
 const isTextList = (value: unknown): boolean => Array.isArray(value) && value.every(isText)
+const isSet = (value: unknown): boolean => everyValue(value, (item) => item === true)
+const isGoneMap = (value: unknown): boolean =>
+    isRecord(value) &&
+    (value['file'] === undefined || isText(value['file'])) &&
+    isSet(value['paths']) &&
+    isSet(value['folded']) &&
+    isSet(value['names']) &&
+    isSet(value['aliases'])
 const isSiteFile = (value: unknown): value is SiteFile =>
     isRecord(value) &&
     isText(value['file']) &&
@@ -50,7 +66,8 @@ async function readResolverMap(dist: string): Promise<ResolverMap> {
         !everyValue(map['names'] ?? {}, isTextList) ||
         !everyValue(map['aliases'] ?? {}, isTextList) ||
         !everyValue(map['choices'] ?? {}, isText) ||
-        !(map['notFound'] === undefined || isText(map['notFound']))
+        !(map['notFound'] === undefined || isText(map['notFound'])) ||
+        !(map['gone'] === undefined || isGoneMap(map['gone']))
     ) {
         throw new Error(`${RESOLVER_MAP} is not a resolver map`)
     }
@@ -142,12 +159,17 @@ function rangeOf(
  * it can be kept for a year. An attachment is never a page: it runs no
  * script and loads nothing, also an SVG that is opened alone.
  */
-async function attachmentResponse(request: Request, file: string, name: string): Promise<Response> {
+async function attachmentResponse(
+    request: Request,
+    file: string,
+    name: string,
+    fail: () => Response
+): Promise<Response> {
     const blob = Bun.file(file)
     if (!(await blob.exists())) {
         // The map names the file, so the storage lacks it: a failure of the
         // release, never "not found" that a cache keeps (URL-33).
-        return serverError()
+        return fail()
     }
     const size = blob.size
     const type =
@@ -184,22 +206,48 @@ async function attachmentResponse(request: Request, file: string, name: string):
     })
 }
 
+/**
+ * The headers of every error answer: it is never kept, and its form follows
+ * the `Accept` header (NAV-21, decision R64).
+ */
+const ERROR_HEADERS = { 'cache-control': 'no-store', 'vary': 'Accept' } as const
+
+/** The short Markdown text of an error answer, for an agent (NAV-21). */
+function errorMarkdown(status: ErrorStatus, suggestions: readonly string[] = []): Response {
+    return new Response(errorText(status, suggestions), {
+        status,
+        headers: { 'content-type': 'text/markdown; charset=utf-8', ...ERROR_HEADERS }
+    })
+}
+
+/** A plain "not found", for a build with no "not found" page and for an attachment without a storage. */
 function notFound(): Response {
     return new Response('Not found\n', {
         status: 404,
-        headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
+        headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
     })
 }
 
 /**
  * The answer when the release lacks a file that the resolver map names, and
- * for every other failure: no detail of the failure (NAV-20).
+ * for every other failure: the server error page that the server read at its
+ * start, or its short text, with no detail of the failure (URL-33, NAV-20).
+ *
+ * @param page the server error page, or `undefined` when the build had none
  */
-function serverError(): Response {
-    return new Response('Server error\n', {
-        status: 500,
-        headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
-    })
+function serverError(format: 'html' | 'markdown', page: string | undefined): Response {
+    if (format === 'markdown') {
+        return errorMarkdown(500)
+    }
+    return page === undefined
+        ? new Response(errorText(500), {
+              status: 500,
+              headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
+          })
+        : new Response(page, {
+              status: 500,
+              headers: { 'content-type': 'text/html; charset=utf-8', ...ERROR_HEADERS }
+          })
 }
 
 /** The kinds of the files of the site that are not pages. */
@@ -218,20 +266,24 @@ async function siteFileResponse(
     request: Request,
     file: string,
     type: string,
+    fail: () => Response,
     status = 200
 ): Promise<Response> {
     const blob = Bun.file(file)
     if (!(await blob.exists())) {
         // The map names the file, so the release lacks it: a failure of the
         // release, never a page "not found" that a cache keeps (URL-33).
-        return serverError()
+        return fail()
     }
     const tag = `"${blob.size.toString(16)}-${blob.lastModified.toString(16)}"`
-    const headers: Record<string, string> = {
-        'content-type': type,
-        'cache-control': status === 200 ? 'public, max-age=0, must-revalidate' : 'no-store',
-        'etag': tag
-    }
+    const headers: Record<string, string> =
+        status === 200
+            ? {
+                  'content-type': type,
+                  'cache-control': 'public, max-age=0, must-revalidate',
+                  'etag': tag
+              }
+            : { 'content-type': type, ...ERROR_HEADERS }
     const wanted = request.headers.get('if-none-match')
     if (
         status === 200 &&
@@ -250,7 +302,7 @@ async function siteFileResponse(
  */
 async function readAssets(
     dist: string
-): Promise<{ get(path: string): Promise<Response> | undefined }> {
+): Promise<{ get(path: string, fail: () => Response): Promise<Response> | undefined }> {
     const files = new Map<string, string>()
     for (const folder of ASSET_FOLDERS) {
         const root = join(dist, folder)
@@ -269,7 +321,7 @@ async function readAssets(
         }
     }
     return {
-        get(path) {
+        get(path, fail) {
             const file = files.get(path)
             if (file === undefined) {
                 return undefined
@@ -282,9 +334,7 @@ async function readAssets(
             return blob
                 .exists()
                 .then((exists) =>
-                    exists
-                        ? new Response(blob, { headers: { 'content-type': type } })
-                        : serverError()
+                    exists ? new Response(blob, { headers: { 'content-type': type } }) : fail()
                 )
         }
     }
@@ -313,66 +363,97 @@ export async function startServer(options: {
     const storage = options.attachments === undefined ? undefined : resolvePath(options.attachments)
     const map = await readResolverMap(dist)
     const assets = await readAssets(dist)
+    // Read one time at the start: a failure never depends on a file of the
+    // release, which can be the missing file (NAV-20).
+    const errorPage = Bun.file(join(dist, SERVER_ERROR_FILE))
+    const serverErrorPage = (await errorPage.exists()) ? await errorPage.text() : undefined
+
+    /** The answer of a request, through the resolver. */
+    async function answer(
+        request: Request,
+        pathname: string,
+        search: string,
+        fail: () => Response
+    ): Promise<Response> {
+        // A file of the build comes first: an alias or a variant never hides it.
+        const asset = assets.get(pathname, fail)
+        if (asset !== undefined) {
+            return await asset
+        }
+        const resolution = resolve(pathname, map, search)
+        const format = errorFormat(pathname, request.headers.get('accept'))
+        const html = 'text/html; charset=utf-8'
+        // Each file comes from the resolver map or from the list of the
+        // assets, never from the request.
+        switch (resolution.kind) {
+            case 'not-found':
+                if (format === 'markdown') {
+                    return errorMarkdown(404, resolution.suggestions)
+                }
+                return resolution.file === undefined
+                    ? notFound()
+                    : await siteFileResponse(request, join(dist, resolution.file), html, fail, 404)
+            case 'gone':
+                // An unpublished note (URL-27, NAV-19).
+                if (format === 'markdown') {
+                    return errorMarkdown(410)
+                }
+                return resolution.file === undefined
+                    ? new Response(errorText(410), {
+                          status: 410,
+                          headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
+                      })
+                    : await siteFileResponse(request, join(dist, resolution.file), html, fail, 410)
+            case 'attachment':
+                return storage === undefined
+                    ? notFound()
+                    : await attachmentResponse(
+                          request,
+                          join(storage, resolution.key),
+                          resolution.name,
+                          fail
+                      )
+            case 'redirect':
+                return new Response(null, {
+                    status: resolution.status,
+                    headers: {
+                        'location': resolution.location,
+                        'cache-control': resolution.cacheControl
+                    }
+                })
+            case 'file':
+                return await siteFileResponse(
+                    request,
+                    join(dist, resolution.file),
+                    FILE_TYPES[resolution.type],
+                    fail
+                )
+            case 'page':
+                return await siteFileResponse(request, join(dist, resolution.file), html, fail)
+        }
+    }
+
     const server = Bun.serve({
         hostname: '127.0.0.1',
         port: options.port,
-        // Any failure gives a plain 500 with no detail, never the error page
-        // of Bun with the paths of the machine (NAV-20).
+        // A failure outside a request gives the server error page with no
+        // detail, never the error page of Bun with the paths of the machine
+        // (NAV-20).
         error(error) {
             // The detail goes to the log of the machine, never to the answer.
             console.error(error)
-            return serverError()
+            return serverError('html', serverErrorPage)
         },
-        fetch(request) {
+        async fetch(request) {
             // The path is read as it is requested, with its percent-encoding.
             const { pathname, search } = new URL(request.url)
-            // A file of the build comes first: an alias or a variant never hides it.
-            const asset = assets.get(pathname)
-            if (asset !== undefined) {
-                return asset
-            }
-            const resolution = resolve(pathname, map, search)
-            // Each file comes from the resolver map or from the list of the
-            // assets, never from the request.
-            switch (resolution.kind) {
-                case 'not-found': {
-                    return resolution.file === undefined
-                        ? notFound()
-                        : siteFileResponse(
-                              request,
-                              join(dist, resolution.file),
-                              'text/html; charset=utf-8',
-                              404
-                          )
-                }
-                case 'attachment':
-                    return storage === undefined
-                        ? notFound()
-                        : attachmentResponse(
-                              request,
-                              join(storage, resolution.key),
-                              resolution.name
-                          )
-                case 'redirect':
-                    return new Response(null, {
-                        status: resolution.status,
-                        headers: {
-                            'location': resolution.location,
-                            'cache-control': resolution.cacheControl
-                        }
-                    })
-                case 'file':
-                    return siteFileResponse(
-                        request,
-                        join(dist, resolution.file),
-                        FILE_TYPES[resolution.type]
-                    )
-                case 'page':
-                    return siteFileResponse(
-                        request,
-                        join(dist, resolution.file),
-                        'text/html; charset=utf-8'
-                    )
+            const fail = (): Response =>
+                serverError(errorFormat(pathname, request.headers.get('accept')), serverErrorPage)
+            try {
+                return await answer(request, pathname, search, fail)
+            } catch (error) {
+                console.error(error)
+                return fail()
             }
         }
     })

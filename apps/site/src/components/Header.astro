@@ -10,6 +10,12 @@ import { SITE_NAME } from '../site.ts'
 // The switch comes first: it is hidden until its script runs, and it shows in
 // the free space at the left, so nothing moves (CLS, R57). On a very small
 // screen the site name gives way with an ellipsis, so nothing goes past the edge.
+interface Props {
+    /** False on a page with no script: the switch needs its script (NAV-20). */
+    modeSwitch?: boolean
+}
+
+const { modeSwitch = true } = Astro.props
 const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '/-/search.html'
 ---
 
@@ -25,7 +31,7 @@ const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '
             <span class='truncate'>{SITE_NAME}</span>
         </a>
         <div class='ml-auto flex shrink-0 items-center gap-2'>
-            <ModeSwitch />
+            {modeSwitch && <ModeSwitch />}
             <a
                 class='button-quiet h-9 min-w-9 px-2 sm:px-3'
                 href={SEARCH_PATH}

@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { foldedForm, resolve, type ResolverMap } from './resolver.ts'
+import { foldedForm, resolve, type Resolution, type ResolverMap } from './resolver.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
 
 // The resolver (MOD-05 of the spec): a pure function that turns a requested
 // path into the page to serve, or "not found". The first slice knows the
-// canonical path of a published note. The variants and the redirects are in
-// the URL table (`table.spec.ts`), and "gone" comes with issue 38.
+// canonical path of a published note. The variants, the redirects and the
+// addresses of an unpublished note are in the URL table (`table.spec.ts`).
 const MAP: ResolverMap = {
     pages: { '/10+Garden/Frost+dates+explained': '-/note/203d446940c02032.html' }
 }
@@ -86,6 +86,7 @@ describe('resolver of names of the language', () => {
     const files: SiteFiles = {
         home: 'index.html',
         notFound: '404.html',
+        gone: '410.html',
         robots: 'robots.txt',
         page: (path) => `page:${path}`,
         markdown: (path) => `markdown:${path}`,
@@ -143,6 +144,7 @@ describe('resolver map with generated pages', () => {
     const files: SiteFiles = {
         home: 'index.html',
         notFound: '404.html',
+        gone: '410.html',
         robots: 'robots.txt',
         page: (path) => `page:${path}`,
         markdown: (path) => `markdown:${path}`,
@@ -178,5 +180,114 @@ describe('resolver map with generated pages', () => {
             'generated page'
         )
         expect(() => resolverMapOf(notes, files, {}, { '/': 'x.html' })).toThrow('generated page')
+    })
+})
+
+// The addresses of an unpublished note are gone (410), but a published note,
+// folder or page always wins (URL-27, decision R64).
+describe('resolver of unpublished notes', () => {
+    const files: SiteFiles = {
+        home: 'index.html',
+        notFound: '404.html',
+        gone: '410.html',
+        robots: 'robots.txt',
+        page: (path) => `page:${path}`,
+        markdown: (path) => `markdown:${path}`,
+        folder: (path) => `folder:${path}`,
+        choice: (paths) => `choice:${paths.join('|')}`
+    }
+    const GONE: Resolution = { kind: 'gone', file: '410.html' }
+    // Through JSON, as the build writes the map and the server reads it.
+    const mapOf = (
+        notes: { path: string; aliases: string[] }[],
+        removed: { path: string; aliases: string[] }[]
+    ): ResolverMap =>
+        JSON.parse(JSON.stringify(resolverMapOf(notes, files, {}, {}, removed))) as ResolverMap
+
+    test('a published note wins over the file name of an unpublished note', () => {
+        const map = mapOf(
+            [{ path: 'Garden/Shared.md', aliases: [] }],
+            [{ path: 'Shed/Shared.md', aliases: [] }]
+        )
+        expect(resolve('/Shared', map)).toEqual({
+            kind: 'redirect',
+            status: 301,
+            location: '/Garden/Shared',
+            cacheControl: 'public, max-age=3600'
+        })
+        expect(resolve('/Shed/Shared', map)).toEqual(GONE)
+    })
+
+    test('an alias of a published note wins over the path of an unpublished note', () => {
+        const map = mapOf(
+            [{ path: 'Garden/Water butt.md', aliases: ['Rain barrel'] }],
+            [{ path: 'Rain barrel.md', aliases: [] }]
+        )
+        expect(resolve('/Rain+barrel', map)).toEqual({
+            kind: 'redirect',
+            status: 302,
+            location: '/Garden/Water+butt',
+            cacheControl: 'no-store'
+        })
+        expect(resolve('/-/md/Rain+barrel.md', map)).toEqual(GONE)
+    })
+
+    test('another reading that finds a published note wins over the reading of an unpublished note', () => {
+        const map = mapOf([{ path: 'A+B.md', aliases: [] }], [{ path: 'A B.md', aliases: [] }])
+        expect(resolve('/A+B', map)).toEqual({
+            kind: 'redirect',
+            status: 301,
+            location: '/A%2BB',
+            cacheControl: 'public, max-age=3600'
+        })
+    })
+
+    test('a folder of published notes wins over an unpublished note of the same text', () => {
+        const map = mapOf(
+            [{ path: 'Shed/Tools.md', aliases: [] }],
+            [{ path: 'Shed.md', aliases: [] }]
+        )
+        expect(resolve('/Shed', map)).toEqual({ kind: 'page', file: 'folder:Shed' })
+        expect(resolve('/-/md/Shed.md', map)).toEqual(GONE)
+    })
+
+    test('a name or an alias of two unpublished notes is gone', () => {
+        const map = mapOf(
+            [],
+            [
+                { path: 'Garden/Mint.md', aliases: ['Herb'] },
+                { path: 'Kitchen/Mint.md', aliases: ['Herb'] }
+            ]
+        )
+        expect(resolve('/Mint', map)).toEqual(GONE)
+        expect(resolve('/herb', map)).toEqual(GONE)
+    })
+
+    test('a path under the prefix of the site is gone only as it is written', () => {
+        const map = mapOf([], [{ path: 'Garden/Mint.md', aliases: [] }])
+        expect(resolve('/-/md/Garden/Mint.md', map)).toEqual(GONE)
+        expect(resolve('/-/md/garden/mint.md', map)).toEqual({
+            kind: 'not-found',
+            suggestions: [],
+            file: '404.html'
+        })
+        expect(resolve('/-/Garden/Mint', map).kind).toBe('not-found')
+    })
+
+    test('a file name with a slash is no file name', () => {
+        const map = mapOf([], [{ path: 'Garden/Mint.md', aliases: [] }])
+        expect(resolve('/Other/Mint', map).kind).toBe('not-found')
+    })
+
+    test('a name of the language is no unpublished note', () => {
+        const map = mapOf([], [{ path: 'constructor.md', aliases: ['toString'] }])
+        expect(resolve('/constructor', map)).toEqual(GONE)
+        expect(resolve('/toString', map)).toEqual(GONE)
+        expect(resolve('/__proto__', map).kind).toBe('not-found')
+        expect(resolve('/hasOwnProperty', map).kind).toBe('not-found')
+    })
+
+    test('a map without unpublished notes has no gone page', () => {
+        expect(resolve('/Anything', { pages: {} })).toEqual({ kind: 'not-found', suggestions: [] })
     })
 })

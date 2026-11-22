@@ -1,6 +1,8 @@
+export { errorFormat, errorText, type ErrorStatus, SERVER_ERROR_FILE } from './errors.ts'
 export {
     foldedForm,
     resolve,
+    type GoneMap,
     type Resolution,
     type ResolverMap,
     type SiteFile

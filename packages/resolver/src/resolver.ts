@@ -28,15 +28,37 @@ export interface ResolverMap {
     readonly choices?: Readonly<Record<string, string>>
     /** The file of the "not found" page. */
     readonly notFound?: string
+    /** The addresses of the notes that the author unpublished (URL-27). */
+    readonly gone?: GoneMap
 }
 
-/** What a requested path leads to. A later slice adds "gone" (410). */
+/**
+ * The addresses of the unpublished notes, apart from the rest of the map: the
+ * resolver reads them only when no published note, folder or page has the
+ * path, so a published note always wins (decision R64). Each part is a set,
+ * by the keys of the parts of the same name of the map.
+ */
+export interface GoneMap {
+    /** The file of the gone page. */
+    readonly file?: string
+    /** The canonical path and the Markdown path of each unpublished note, as written. */
+    readonly paths: Readonly<Record<string, true>>
+    /** The folded form of the text of each unpublished note. */
+    readonly folded: Readonly<Record<string, true>>
+    /** The folded form of the file name of each unpublished note. */
+    readonly names: Readonly<Record<string, true>>
+    /** The folded form of each alias of an unpublished note. */
+    readonly aliases: Readonly<Record<string, true>>
+}
+
+/** What a requested path leads to. */
 export type Resolution =
     | { kind: 'page'; file: string }
     | { kind: 'file'; file: string; type: 'markdown' | 'text' }
     | { kind: 'attachment'; key: string; name: string }
     | { kind: 'redirect'; status: 301 | 302; location: string; cacheControl: string }
     | { kind: 'not-found'; suggestions: string[]; file?: string }
+    | { kind: 'gone'; file?: string }
 
 /**
  * How long a client keeps a redirect: a variant of the syntax, a file name
@@ -132,6 +154,10 @@ function toNotes(
  * are left out. A name or an alias of several notes gives the "not found" page
  * with those notes. A path under `/-/` has no variant.
  *
+ * Only when no published note, folder or page has the path: the canonical
+ * path, the Markdown path, a variant, the file name or an alias of a note
+ * that the author unpublished is "gone" (410, URL-27, decision R64).
+ *
  * @param query the query of the request, with its `?`, or nothing. A
  * redirect keeps it, so that the parameters of analytics survive (URL-12).
  */
@@ -159,9 +185,22 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
         suggestions: [],
         ...(map.notFound === undefined ? {} : { file: map.notFound })
     }
-    if (path.startsWith(PREFIX)) {
-        return notFound
+    const gone: Resolution = {
+        kind: 'gone',
+        ...(map.gone?.file === undefined ? {} : { file: map.gone.file })
     }
+    if (path.startsWith(PREFIX)) {
+        return own(map.gone?.paths, path) === undefined ? notFound : gone
+    }
+    const published = resolvePublished(path, map, query)
+    if (published !== undefined) {
+        return published
+    }
+    return own(map.gone?.paths, path) === undefined && !isGone(path, map.gone) ? notFound : gone
+}
+
+/** The answer of the published notes and folders for a path outside the prefix, or `undefined` when none has it. */
+function resolvePublished(path: string, map: ResolverMap, query: string): Resolution | undefined {
     for (const reading of readingsOf(path)) {
         const forms = formsOf(reading).map(foldedForm)
         for (const form of forms) {
@@ -188,5 +227,22 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
             }
         }
     }
-    return notFound
+    return undefined
+}
+
+/** True when a path, in one of its readings and forms, is the text, the file name or an alias of an unpublished note (decision R64). */
+function isGone(path: string, gone: GoneMap | undefined): boolean {
+    if (gone === undefined) {
+        return false
+    }
+    return readingsOf(path).some((reading) =>
+        formsOf(reading)
+            .map(foldedForm)
+            .some(
+                (form) =>
+                    own(gone.folded, form) !== undefined ||
+                    (!form.includes('/') && own(gone.names, form) !== undefined) ||
+                    own(gone.aliases, form) !== undefined
+            )
+    )
 }

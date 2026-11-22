@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rejectionOf } from '@dsebastien-website/testing'
-import { readImportRun, readPublishedNotes } from './content-store.ts'
+import { readImportRun, readPublishedNotes, readRemovedNotes } from './content-store.ts'
 
 // How the build reads the content store. A content store that cannot be
 // trusted stops the build: a site with a part of the notes must never go out
@@ -210,5 +210,48 @@ describe('the import run of a content store', () => {
         expect(await readImportRun()).toBeUndefined()
         await contentStore({})
         expect(await readImportRun()).toBeUndefined()
+    })
+})
+
+// The notes that the author unpublished keep their entries: their addresses
+// answer 410 (URL-27, decision R64). The build reads their paths and aliases
+// only, never their cleaned notes.
+describe('unpublished notes of a content store', () => {
+    test('are the entries in the state unpublished, by path, with their aliases', async () => {
+        await contentStore({
+            'a.json': {
+                ...ENTRY,
+                id: 'aaaaaaaaaaaaaaaa',
+                path: 'Z/Old.md',
+                aliases: ['Gone'],
+                state: 'unpublished'
+            },
+            'b.json': { ...ENTRY, id: 'bbbbbbbbbbbbbbbb', path: 'Live.md' },
+            'c.json': { ...ENTRY, id: 'cccccccccccccccc', path: 'A/Older.md', state: 'unpublished' }
+        })
+        expect(await readRemovedNotes()).toEqual([
+            { vaultPath: 'A/Older.md', aliases: [] },
+            { vaultPath: 'Z/Old.md', aliases: ['Gone'] }
+        ])
+        expect((await readPublishedNotes()).map((note) => note.vaultPath)).toEqual(['Live.md'])
+    })
+
+    test('are none without a content store', async () => {
+        expect(await readRemovedNotes()).toEqual([])
+    })
+
+    test('stop the build when an unpublished entry has the path of another entry', async () => {
+        await contentStore({
+            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Same.md', state: 'unpublished' },
+            'b.json': { ...ENTRY, id: 'bbbbbbbbbbbbbbbb', path: 'Same.md' }
+        })
+        expect(await rejectionOf(readRemovedNotes())).toContain('"Same.md"')
+    })
+
+    test('stop the build when an entry has a state that is neither published nor unpublished', async () => {
+        await contentStore({
+            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Odd.md', state: 'hidden' }
+        })
+        expect(await rejectionOf(readRemovedNotes())).toContain('manifest/a.json')
     })
 })

@@ -129,7 +129,14 @@ The website of the author on his main domain. It is not part of this project.
 _Avoid_: blog, Ghost site
 
 **Resolver**:
-The function that turns a requested path into a canonical URL, a redirect, or "not found".
+The function that turns a requested path into a canonical URL, a redirect, "gone", or "not found".
+
+**Gone page**:
+The page of the answer 410. Every address of a note that the author unpublished leads to it, unless a published note has the address. It shows nothing of the note.
+_Avoid_: 404 for an unpublished note (a takedown gives a 404)
+
+**Server error page**:
+The page of the answer 500. One file with no script, which shows also when another file of the release is missing.
 
 **Resolver map**:
 What the build writes for the resolver: which canonical path leads to which page.

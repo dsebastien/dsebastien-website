@@ -1,6 +1,11 @@
 import { getCollection } from 'astro:content'
 import { backlinkList, BACKLINKS_ON_PAGE, type ShownBacklink } from './backlink-list.ts'
-import { readCleanedNote, readPublication, type PublishedNote } from './content-store.ts'
+import {
+    readCleanedNote,
+    readPublication,
+    type PublishedNote,
+    type RemovedNote
+} from './content-store.ts'
 import { noteDescription, uniqueDescriptions } from './descriptions.ts'
 import {
     generatedTexts,
@@ -34,6 +39,12 @@ import { titleIndexOf, type TitleIndex } from './search/titles.ts'
 export interface PublishedSite {
     /** The published notes, in the order of their paths. */
     readonly notes: readonly PublishedNote[]
+    /**
+     * The notes that the author unpublished, in the order of their paths: the
+     * resolver map gives their addresses the gone page (410, R64). Nothing else
+     * of the site reads them.
+     */
+    readonly removed: readonly RemovedNote[]
     /** The pages of the notes, and the link index of the build. */
     readonly pages: SitePages
     /** The properties of a published note. */
@@ -68,7 +79,7 @@ export interface PublishedSite {
 
 async function read(): Promise<PublishedSite> {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
-    const { notes, importRun } = await readPublication()
+    const { notes, removed, importRun } = await readPublication()
     const byPath = new Map(notes.map((note) => [note.vaultPath, note]))
     // The properties of each note, read from its cleaned note with every date
     // as the text of the vault (`note-properties.ts`), not from the collection.
@@ -221,6 +232,7 @@ async function read(): Promise<PublishedSite> {
         })
     return {
         notes,
+        removed,
         pages,
         propertiesOf: (vaultPath) => {
             noteOf(vaultPath)

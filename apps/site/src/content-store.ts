@@ -136,6 +136,19 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
     return (await readManifest()).notes
 }
 
+/** A note that the author unpublished: its entry stays, and its addresses answer 410 (URL-27, decision R64). */
+export interface RemovedNote {
+    /** The vault path of the note. */
+    readonly vaultPath: string
+    /** The aliases of the note that had a URL. */
+    readonly aliases: readonly string[]
+}
+
+/** The notes that the author unpublished, in the order of their paths. */
+export async function readRemovedNotes(): Promise<RemovedNote[]> {
+    return (await readManifest()).removed
+}
+
 /**
  * The run of the first publication of the content store (decision R62): the
  * earliest `firstPublished` of every entry of the manifest, also of an entry
@@ -150,19 +163,28 @@ export async function readImportRun(): Promise<string | undefined> {
 /** The published notes and the import run, from one read of the manifest. */
 export async function readPublication(): Promise<{
     notes: PublishedNote[]
+    removed: RemovedNote[]
     importRun: string | undefined
 }> {
-    const { notes, firstRuns } = await readManifest()
+    const { notes, removed, firstRuns } = await readManifest()
     // A time of the manifest is ASCII in one form, so its text order is its time order.
-    return { notes, importRun: [...firstRuns].sort((one, two) => (one < two ? -1 : 1))[0] }
+    return {
+        notes,
+        removed,
+        importRun: [...firstRuns].sort((one, two) => (one < two ? -1 : 1))[0]
+    }
 }
 
-/** The published notes and the first publication of every entry of the manifest. */
-async function readManifest(): Promise<{ notes: PublishedNote[]; firstRuns: Set<string> }> {
+/** The published notes, the unpublished notes and the first publication of every entry of the manifest. */
+async function readManifest(): Promise<{
+    notes: PublishedNote[]
+    removed: RemovedNote[]
+    firstRuns: Set<string>
+}> {
     const store = contentStoreFolder()
     const firstRuns = new Set<string>()
     if (store === undefined) {
-        return { notes: [], firstRuns }
+        return { notes: [], removed: [], firstRuns }
     }
     try {
         if (!(await stat(store)).isDirectory()) {
@@ -176,9 +198,10 @@ async function readManifest(): Promise<{ notes: PublishedNote[]; firstRuns: Set<
         files = await readdir(join(store, 'manifest'))
     } catch {
         // A content store with no publication yet has no manifest.
-        return { notes: [], firstRuns }
+        return { notes: [], removed: [], firstRuns }
     }
     const notes = new Map<string, PublishedNote>()
+    const removed = new Map<string, RemovedNote>()
     for (const file of files.filter((name) => name.endsWith('.json')).sort()) {
         const entry: unknown = JSON.parse(await readFile(join(store, 'manifest', file), 'utf8'))
         if (
@@ -191,19 +214,21 @@ async function readManifest(): Promise<{ notes: PublishedNote[]; firstRuns: Set<
             !isTime(entry['firstPublished']) ||
             !isTime(entry['lastPublished']) ||
             !isAttachmentList(entry['attachments']) ||
-            (entry['noteType'] !== undefined && !isNoteType(entry['noteType']))
+            (entry['noteType'] !== undefined && !isNoteType(entry['noteType'])) ||
+            (entry['state'] !== 'published' && entry['state'] !== 'unpublished')
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
         }
         firstRuns.add(entry['firstPublished'])
-        if (entry['state'] !== 'published') {
-            continue
-        }
         const vaultPath = entry['path']
-        const noteType = entry['noteType']
-        if (notes.has(vaultPath)) {
+        if (notes.has(vaultPath) || removed.has(vaultPath)) {
             throw new Error(`two entries of the manifest have the path "${vaultPath}"`)
         }
+        if (entry['state'] === 'unpublished') {
+            removed.set(vaultPath, { vaultPath, aliases: [...entry['aliases']] })
+            continue
+        }
+        const noteType = entry['noteType']
         notes.set(vaultPath, {
             id: entry['id'],
             vaultPath,
@@ -229,10 +254,11 @@ async function readManifest(): Promise<{ notes: PublishedNote[]; firstRuns: Set<
     }
     // In the order of the paths, so that two builds of one content store give
     // the same files.
+    const byPath = (one: { vaultPath: string }, two: { vaultPath: string }): number =>
+        one.vaultPath < two.vaultPath ? -1 : one.vaultPath > two.vaultPath ? 1 : 0
     return {
-        notes: [...notes.values()].sort((one, two) =>
-            one.vaultPath < two.vaultPath ? -1 : one.vaultPath > two.vaultPath ? 1 : 0
-        ),
+        notes: [...notes.values()].sort(byPath),
+        removed: [...removed.values()].sort(byPath),
         firstRuns
     }
 }

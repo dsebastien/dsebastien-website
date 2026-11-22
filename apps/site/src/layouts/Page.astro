@@ -20,18 +20,31 @@ interface Props {
     lang?: string
     /** True when the page lays out the width of its own parts (the note page and its title band). */
     bare?: boolean
+    /**
+     * True for a page with no script (the server error page, NAV-20): no
+     * switch of the mode, and the mode of the system (decision R64).
+     */
+    scriptless?: boolean
 }
 
-const { title, description, noindex = false, path, lang = 'en', bare = false } = Astro.props
+const {
+    title,
+    description,
+    noindex = false,
+    path,
+    lang = 'en',
+    bare = false,
+    scriptless = false
+} = Astro.props
 const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
 ---
 
 <!doctype html>
-<html lang={lang} data-theme='dark'>
+<html lang={lang} data-theme={scriptless ? 'system' : 'dark'}>
     <head>
         <meta charset='utf-8' />
         <meta name='viewport' content='width=device-width, initial-scale=1' />
-        <script is:inline set:html={modeScript} />
+        {!scriptless && <script is:inline set:html={modeScript} />}
         <title>{title}</title>
         {description !== undefined && <meta name='description' content={description} />}
         {noindex && <meta name='robots' content='noindex, follow' />}
@@ -42,7 +55,7 @@ const canonical = path === undefined ? undefined : new URL(path, Astro.site).hre
         <a class='skip-link' href='#content'>
             Skip to the content
         </a>
-        <Header />
+        <Header modeSwitch={!scriptless} />
         <main
             id='content'
             class:list={['flex-1', !bare && 'mx-auto w-full max-w-7xl px-4 py-10 sm:px-6']}
@@ -50,6 +63,6 @@ const canonical = path === undefined ? undefined : new URL(path, Astro.site).hre
             <slot />
         </main>
         <Footer />
-        <script is:inline set:html={modeSwitchScript} />
+        {!scriptless && <script is:inline set:html={modeSwitchScript} />}
     </body>
 </html>

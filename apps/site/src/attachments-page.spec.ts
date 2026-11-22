@@ -259,6 +259,10 @@ describe('plain local server of attachments with a broken storage', () => {
 
         expect(response.status).toBe(500)
         expect(response.headers.get('cache-control')).toBe('no-store')
-        expect(await response.text()).toBe('Server error\n')
+        // The server error page of the build, with no detail of the failure (NAV-20).
+        const html = await response.text()
+        expect(html).toContain('>Server error</h1>')
+        expect(html).not.toContain(VIDEO_KEY)
+        expect(html).not.toContain(stores.attachmentStorage)
     })
 })

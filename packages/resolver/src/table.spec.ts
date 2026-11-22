@@ -23,6 +23,7 @@ interface Case {
 
 interface Table {
     notes: { path: string; aliases: string[] }[]
+    removed: { path: string; aliases: string[] }[]
     cases: Case[]
 }
 
@@ -34,6 +35,7 @@ const table = (await Bun.file(TABLE).json()) as Table
 const FILES: SiteFiles = {
     home: 'index.html',
     notFound: '404.html',
+    gone: '410.html',
     robots: 'robots.txt',
     page: (path) => `page:${path}`,
     markdown: (path) => `markdown:${path}`,
@@ -42,10 +44,13 @@ const FILES: SiteFiles = {
     choice: (paths) => `choice:${paths.map(canonicalPath).join('|')}`
 }
 
-const map = resolverMapOf(table.notes, FILES)
+const map = resolverMapOf(table.notes, FILES, {}, {}, table.removed)
 
 /** The answer that a case states, as the resolver gives it. */
 function expected(entry: Case): Resolution {
+    if (entry.status === 410) {
+        return { kind: 'gone', file: FILES.gone }
+    }
     if (entry.status === 404) {
         const suggestions = entry.suggestions ?? []
         return {
@@ -97,7 +102,7 @@ describe('URL table of the site', () => {
 
     test('the table has a case of each kind', () => {
         const statuses = new Set(table.cases.map((entry) => entry.status))
-        expect([...statuses].sort()).toEqual([200, 301, 302, 404])
+        expect([...statuses].sort()).toEqual([200, 301, 302, 404, 410])
         expect(table.cases.length).toBeGreaterThan(50)
     })
 })

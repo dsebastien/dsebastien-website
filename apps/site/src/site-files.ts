@@ -12,7 +12,7 @@ import {
     type SiteFiles,
     type SiteFolder
 } from '@dsebastien-website/resolver'
-import type { PublishedNote } from './content-store.ts'
+import type { PublishedNote, RemovedNote } from './content-store.ts'
 import type { NoteList } from './generated-pages.ts'
 
 // The files of the build, by what they are, and the resolver map that leads
@@ -47,6 +47,7 @@ export function siteFilesOf(notes: readonly PublishedNote[]): SiteFiles {
     return {
         home: 'index.html',
         notFound: '404.html',
+        gone: '410.html',
         robots: 'robots.txt',
         page: (path) => noteOf(path).file,
         markdown: (path) => noteOf(path).markdownFile,
@@ -97,7 +98,8 @@ export const SEARCH_FILE = '-/search.html'
 export function resolverMapFor(
     notes: readonly PublishedNote[],
     withBacklinksPage: readonly PublishedNote[] = [],
-    lists: readonly NoteList[] = []
+    lists: readonly NoteList[] = [],
+    removed: readonly RemovedNote[] = []
 ): ResolverMap {
     const attachments: Record<string, string> = {}
     for (const note of notes) {
@@ -116,7 +118,13 @@ export function resolverMapFor(
             generated[page.path] = listPageFile(list, page.number)
         }
     }
-    return resolverMapOf(siteNotesOf(notes), siteFilesOf(notes), attachments, generated)
+    return resolverMapOf(
+        siteNotesOf(notes),
+        siteFilesOf(notes),
+        attachments,
+        generated,
+        removed.map((note) => ({ path: note.vaultPath, aliases: note.aliases }))
+    )
 }
 
 /** The folders that get a generated list: the folders without a published folder note (URL-16). */

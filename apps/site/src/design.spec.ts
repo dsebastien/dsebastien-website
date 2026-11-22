@@ -188,6 +188,24 @@ describe('contrast of the theme knowii', () => {
         expect(failing).toEqual([])
     })
 
+    // The server error page has no script, so it follows the mode of the
+    // system (decision R64): its light block is the light mode, value by value.
+    test('gives the mode of the system the values of the light mode', async () => {
+        const light = await themeValues("[data-theme='light']")
+        const system = await themeValues("    [data-theme='system']")
+        expect(light.size).toBeGreaterThan(10)
+        expect([...system]).toEqual([...light])
+        const css = await readFile(THEME, 'utf8')
+        const block = (selector: string): string => {
+            const start = css.indexOf(`${selector} {`)
+            return css
+                .slice(css.indexOf('{', start) + 1, css.indexOf('}', start))
+                .replace(/\s+/gu, ' ')
+        }
+        expect(block("    [data-theme='system']")).toBe(block("[data-theme='light']"))
+        expect(css).toContain("@media (prefers-color-scheme: light) {\n    [data-theme='system'] {")
+    })
+
     test('measures a known pair', () => {
         expect(contrast('#ffffff', '#000000')).toBeCloseTo(21, 5)
         expect(contrast('#ffffff', '#37404c')).toBeCloseTo(10.5, 1)

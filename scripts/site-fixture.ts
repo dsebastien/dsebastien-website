@@ -27,8 +27,16 @@ import { startServer, type Server } from '../apps/site/server/serve.ts'
 // With `--sample`, the vault also holds the budget sample: invented notes as
 // large as the large published notes (a long note with a long outline, a media
 // note, a hub note with 489 backlinks and its page with all of them).
+//
+// One invented note that no other note links to is unpublished by a second
+// publication, so that the gone page (410) shows at its address. The server
+// error page (500) is printed as a file to open in a browser: a working
+// server never gives it.
 
 const SITE = fileURLToPath(new URL('../apps/site', import.meta.url))
+
+/** The invented note that the second publication unpublishes (URL-27). */
+const GONE_NOTE = '10 Garden/Bean trellis.md'
 
 const { values } = parseArgs({
     args: Bun.argv.slice(2),
@@ -81,15 +89,19 @@ try {
     })
     const queue = await status(device)
     const planned = await plan(device, { include: queue.new })
-    const report = await publish(device, planned.id, {
+    const run = {
         time: new Date().toISOString().replace(/\.\d{3}Z$/u, 'Z'),
         device: 'site-fixture',
         face: 'command-line'
-    })
+    } as const
+    const report = await publish(device, planned.id, run)
     console.error(`Published ${String(queue.new.length)} invented notes of the fixture vault.`)
     for (const warning of report.warnings) {
         console.error(`  warning: ${warning.path}: ${warning.message}`)
     }
+    const removal = await plan(device, { include: [], remove: [GONE_NOTE] })
+    await publish(device, removal.id, run)
+    console.error(`Unpublished ${GONE_NOTE}.`)
 
     build = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
@@ -109,6 +121,8 @@ try {
         attachments: stores.attachmentStorage
     })
     console.error(`The site of the fixture vault is on ${server.url} (Ctrl+C stops it).`)
+    console.error(`  the gone page (410): ${server.url}${canonicalPath(GONE_NOTE)}`)
+    console.error(`  the server error page (500), as a file: ${join(outDir, '500.html')}`)
     if (values.sample) {
         for (const path of Object.values(BUDGET_SAMPLE)) {
             console.error(`  ${server.url}${canonicalPath(path)}`)

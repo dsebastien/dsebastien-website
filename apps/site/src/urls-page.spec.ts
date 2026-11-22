@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
+import { canonicalPath, errorText, folderPath } from '@dsebastien-website/resolver'
 import {
     FIXTURE_NOTE_TYPES,
     copyFixtureVault,
@@ -33,12 +33,15 @@ interface Case {
     location?: string
     cacheControl?: string
     suggestions?: string[]
+    accept?: string
+    format?: 'html' | 'markdown'
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
 // shape fails the tests that read it.
 const table = (await Bun.file(TABLE).json()) as {
     notes: { path: string; aliases: string[] }[]
+    removed: { path: string; aliases: string[] }[]
     cases: Case[]
 }
 
@@ -81,9 +84,19 @@ beforeAll(async () => {
         contentStore,
         attachmentStorage: stores.attachmentStorage
     })
-    const planned = await plan(device, { include: table.notes.map((note) => note.path) })
+    const removed = table.removed.map((note) => note.path)
+    const planned = await plan(device, {
+        include: [...table.notes.map((note) => note.path), ...removed]
+    })
     await publish(device, planned.id, {
         time: '2031-04-01T08:00:00Z',
+        device: 'garden-shed',
+        face: 'plugin'
+    })
+    // The notes of `removed` are unpublished by a second publication (URL-27).
+    const unpublish = await plan(device, { include: [], remove: removed })
+    await publish(device, unpublish.id, {
+        time: '2031-04-02T08:00:00Z',
         device: 'garden-shed',
         face: 'plugin'
     })
@@ -128,12 +141,21 @@ describe('site of the URL table', () => {
                     JSON.parse(await readFile(join(folder, file), 'utf8')) as {
                         path: string
                         aliases: string[]
+                        state: string
                     }
             )
         )
-        const aliases = Object.fromEntries(entries.map((entry) => [entry.path, entry.aliases]))
-        expect(aliases).toEqual(
+        const aliasesOf = (state: string): Record<string, string[]> =>
+            Object.fromEntries(
+                entries
+                    .filter((entry) => entry.state === state)
+                    .map((entry) => [entry.path, entry.aliases])
+            )
+        expect(aliasesOf('published')).toEqual(
             Object.fromEntries(table.notes.map((note) => [note.path, note.aliases]))
+        )
+        expect(aliasesOf('unpublished')).toEqual(
+            Object.fromEntries(table.removed.map((note) => [note.path, note.aliases]))
         )
     })
 })
@@ -142,7 +164,10 @@ describe('URL table over HTTP', () => {
     test.each(table.cases.map((entry) => [entry.name, entry] as const))(
         '%s',
         async (_name, entry) => {
-            const response = await get(entry.request)
+            const response = await get(
+                entry.request,
+                entry.accept === undefined ? {} : { accept: entry.accept }
+            )
             expect(response.status).toBe(entry.status)
             if (entry.location !== undefined) {
                 expect(response.headers.get('location')).toBe(entry.location)
@@ -157,10 +182,32 @@ describe('URL table over HTTP', () => {
                 return
             }
             const body = await response.text()
-            if (entry.status === 404) {
+            if (entry.status === 404 || entry.status === 410) {
+                // An error answer is never kept, and its form follows the
+                // header or the path (NAV-21).
+                expect(response.headers.get('cache-control')).toBe('no-store')
+                expect(response.headers.get('vary')).toBe('Accept')
+                if (entry.format === 'markdown') {
+                    expect(response.headers.get('content-type')).toBe(
+                        'text/markdown; charset=utf-8'
+                    )
+                    expect(body).toBe(errorText(entry.status, entry.suggestions ?? []))
+                    return
+                }
                 expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+                expect(body).toContain(
+                    entry.status === 410 ? '>This note was removed</h1>' : '>Not found</h1>'
+                )
                 for (const path of entry.suggestions ?? []) {
                     expect(body).toContain(`href="${path}"`)
+                }
+                // The gone page shows nothing of the removed note (NAV-19).
+                for (const note of table.removed) {
+                    for (const text of [note.path, ...note.aliases]) {
+                        const name = text.replace(/\.md$/u, '').split('/').at(-1) ?? ''
+                        expect(body).not.toContain(name)
+                        expect(body).not.toContain(canonicalPath(note.path))
+                    }
                 }
                 return
             }
@@ -233,11 +280,32 @@ describe('plain local server with a broken release', () => {
         return outDir
     }
 
-    async function expectServerError(path: string): Promise<void> {
+    let serverErrorPage = ''
+
+    // The page as the build wrote it, read before a test removes a file.
+    beforeAll(async () => {
+        serverErrorPage = await readFile(join(output(), '500.html'), 'utf8')
+    })
+
+    // The server error page, or its short text for an agent (NAV-20, NAV-21).
+    // An agent that asks for the Markdown of an error answer gets the text of
+    // that answer: it needs no page of the release.
+    async function expectServerError(
+        path: string,
+        agentStatus: 404 | 410 | 500 = 500
+    ): Promise<void> {
         const response = await get(path)
         expect(response.status, path).toBe(500)
         expect(response.headers.get('cache-control'), path).toBe('no-store')
-        expect(await response.text(), path).toBe('Server error\n')
+        expect(response.headers.get('vary'), path).toBe('Accept')
+        expect(response.headers.get('content-type'), path).toBe('text/html; charset=utf-8')
+        const html = await response.text()
+        expect(html, path).toBe(serverErrorPage)
+        expect(html, path).toContain('>Server error</h1>')
+        const agent = await get(path, { accept: 'text/markdown' })
+        expect(agent.status, path).toBe(agentStatus)
+        expect(agent.headers.get('content-type'), path).toBe('text/markdown; charset=utf-8')
+        expect(await agent.text(), path).toStartWith(errorText(agentStatus).split('\n')[0] ?? '')
     }
 
     test('answers 500 when a file of the map is missing', async () => {
@@ -251,18 +319,37 @@ describe('plain local server with a broken release', () => {
             pages: Record<string, string>
             choices: Record<string, string>
             notFound: string
+            gone: { file: string }
         }
         const choices = table.cases.find((entry) => entry.name === 'an alias of two notes')
         const choice = map.choices[(choices?.suggestions ?? []).join('\n')]
         const page = map.pages['/Welcome']
         expect(choice).toBeDefined()
         expect(page).toBeDefined()
-        for (const file of [page, map.notFound, choice]) {
+        for (const file of [page, map.notFound, choice, map.gone.file]) {
             await rm(join(output(), file ?? ''))
         }
         await expectServerError('/Welcome')
-        await expectServerError('/Nothing+here')
-        await expectServerError(choices?.request ?? '')
+        await expectServerError('/Nothing+here', 404)
+        await expectServerError(choices?.request ?? '', 404)
+        await expectServerError('/10+Garden/Rain+barrel', 410)
+    })
+
+    // The server read the page at its start: a release that lost it still
+    // gives it, and a page that it never had gives a short text.
+    test('answers with the server error page that it read at its start', async () => {
+        await rm(join(output(), '500.html'))
+        await expectServerError('/Welcome')
+        const without = await startServer({ dist: output(), port: 0 })
+        try {
+            const response = await fetch(`${without.url}/Welcome`)
+            expect(response.status).toBe(500)
+            expect(response.headers.get('cache-control')).toBe('no-store')
+            expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+            expect(await response.text()).toBe(errorText(500))
+        } finally {
+            await without.stop()
+        }
     })
 
     test('answers 500 with no detail when a file that the pages load is missing', async () => {
