@@ -117,10 +117,15 @@ describe('CI workflow', () => {
         const budgets = jobs.find((job) =>
             readSteps(job).some((step) => step['run'] === 'bun run budgets')
         )
-        const runs = readSteps(budgets ?? {}).map((step) => step['run'])
+        const steps = readSteps(budgets ?? {})
+        const runs = steps.map((step) => step['run'])
         const corpus = runs.indexOf('bun run corpus')
+        const search = runs.indexOf('bun run budgets:search')
         expect(corpus).toBeGreaterThanOrEqual(0)
-        expect(runs.indexOf('bun run budgets:search')).toBeGreaterThan(corpus)
+        expect(search).toBeGreaterThan(corpus)
+        // It runs also when a time budget of the note page failed.
+        expect(steps[corpus]?.['if']).toBe('${{ !cancelled() }}')
+        expect(steps[search]?.['if']).toBe('${{ !cancelled() }}')
     })
 
     test('lets no job and no step fail without failing the run', async () => {

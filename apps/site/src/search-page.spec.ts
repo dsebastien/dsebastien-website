@@ -5,6 +5,7 @@ import { select, selectAll } from 'hast-util-select'
 import { toText } from 'hast-util-to-text'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
     FIXTURE_NOTE_TYPES,
@@ -207,12 +208,30 @@ describe('the ways to the search page', () => {
 
     test('the "not found" page fills its field with the words of the missing address', async () => {
         const page = await served('/no/such/page')
-        const scripts = selectAll('main script:not([src])', page).map((script) => toText(script))
-        expect(scripts.some((script) => script.includes('"not-found-search"'))).toBe(true)
         expect(select('#not-found-search', page)?.properties['value']).toBeUndefined()
+        // The raw text of the script: a text of the page folds its line ends.
+        const scripts = selectAll('main script:not([src])', page).map((script) =>
+            script.children.map((child) => (child.type === 'text' ? child.value : '')).join('')
+        )
+        expect(scripts).toHaveLength(1)
+        // The script of the page, run alone with a field and an address.
+        const field = { value: '' }
+        const run = (document: unknown, location: unknown): void => {
+            runInNewContext(scripts[0] ?? '', { document, location })
+        }
+        run(
+            { getElementById: (id: string) => (id === 'not-found-search' ? field : null) },
+            { pathname: '/10+Garden/Compost+basics.md' }
+        )
+        expect(field.value).toBe('Compost basics')
+        // A query of the reader stays.
+        field.value = 'tomato'
+        run({ getElementById: () => field }, { pathname: '/x' })
+        expect(field.value).toBe('tomato')
     })
 
     test('a note page loads nothing of the search (R57)', async () => {
+        const { dir } = built()
         const page = await served(canonicalPath(BARREL))
         const loads = [
             ...selectAll('script[src]', page).map((element) => element.properties['src']),
@@ -221,6 +240,18 @@ describe('the ways to the search page', () => {
         expect(loads.filter((url) => url.includes('search') || url.includes('pagefind'))).toEqual(
             []
         )
+        // Nor does any script of the page name the search, inline or in a file of a shared name.
+        const texts = selectAll('script:not([src])', page).map((script) => toText(script))
+        for (const src of selectAll('script[src]', page).map((script) =>
+            String(script.properties['src'])
+        )) {
+            texts.push(await readFile(join(dir, src), 'utf8'))
+        }
+        for (const text of texts) {
+            expect(text).not.toContain('pagefind')
+            expect(text).not.toContain('data-search')
+            expect(text).not.toContain('/-/search')
+        }
     })
 })
 
@@ -344,9 +375,11 @@ describe('the files of the search on the plain server', () => {
             expect(script.status).toBe(200)
             expect(script.headers.get('content-type')).toStartWith('text/javascript')
             expect((await fetch(`${server.url}/-/search/titles/zz.json`)).status).toBe(404)
-            expect((await fetch(`${server.url}/-/search/../resolver-map.json`)).status).not.toBe(
-                500
-            )
+            // A folder and an encoded way out of the folder are no files of it.
+            expect((await fetch(`${server.url}/-/search/titles`)).status).toBe(404)
+            const out = await fetch(`${server.url}/-/search/%2E%2E/resolver-map.json`)
+            expect(out.status).toBe(404)
+            expect(out.headers.get('content-type')).not.toStartWith('application/json')
         } finally {
             await server.stop()
         }

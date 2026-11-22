@@ -139,9 +139,10 @@ describe('the excerpt of a full-text result', () => {
         ])
     })
 
-    test('reads the characters that the engine escapes, and keeps any other markup as text', () => {
-        expect(excerptParts('A &amp; B &lt;b&gt; <mark>&lt;i&gt;x</mark> & <b>c</b>')).toEqual([
-            { text: 'A & B <b> ', marked: false },
+    test('reads the two characters that the engine escapes, and keeps any other markup as text', () => {
+        // Pagefind writes `<` and `>` as entities and leaves `&` as it is.
+        expect(excerptParts('A & B &amp; &lt;b&gt; <mark>&lt;i&gt;x</mark> & <b>c</b>')).toEqual([
+            { text: 'A & B &amp; <b> ', marked: false },
             { text: '<i>x', marked: true },
             { text: ' & <b>c</b>', marked: false }
         ])

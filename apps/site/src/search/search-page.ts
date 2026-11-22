@@ -1,23 +1,12 @@
-import { createSearch, type FullTextHit, type FullTextResults, type Search } from './engine.ts'
+import { createSearch, type FullTextHit, type Search } from './engine.ts'
 import { pagefindEngine } from './full-text.ts'
+import { createSession, type SearchView } from './session.ts'
 import { partFile, type TitleMatch, type TitleRow } from './titles.ts'
 
-// The script of the search page (SRCH-01, SRCH-02, decision R63). The titles
-// answer at each key, from the title index; the full text answers when the
-// reader stops typing for a short time, or at once on Enter. A late answer
-// of an older query never replaces the answer of a newer one. Every text of
-// a result goes into the page as text, never as HTML.
-
-/** The time without a key before the full text answers. */
-const PAUSE = 250
-/** The full-text results per step of "More results". */
-const STEP = 10
-/** The fewest characters that the full text answers. */
-const SHORTEST_QUERY = 2
-
-function counted(value: number, one: string, many: string): string {
-    return `${value.toLocaleString('en')} ${value === 1 ? one : many}`
-}
+// The script of the search page (SRCH-01, SRCH-02, decision R63): the page
+// part of the search. `session.ts` decides what shows for each query; this
+// module reads the files of the site and writes the results into the page.
+// Every text of a result goes into the page as text, never as HTML.
 
 async function fetchJson(url: string): Promise<unknown> {
     const answer = await fetch(url)
@@ -74,45 +63,46 @@ function part<T extends Element>(
     return element
 }
 
-/** A row of a list of results: a link with a title, a type badge and a line under it. */
+/**
+ * A row of a list of results. The link holds the title only, so its name
+ * stays short; it covers the whole row (`search-result-link`), so a finger
+ * can tap any part of it. The badge and the line under it are text of the row.
+ */
 function resultRow(
     document: Document,
     path: string,
     title: string,
     type: string | undefined,
-    under: Node | undefined
+    under: HTMLElement | undefined
 ): HTMLLIElement {
     const item = document.createElement('li')
-    const link = document.createElement('a')
-    link.className = 'search-result'
-    link.href = path
+    item.className = 'search-result'
     const head = document.createElement('span')
     head.className = 'flex flex-wrap items-baseline gap-x-3 gap-y-1'
-    const name = document.createElement('span')
-    name.className = 'font-semibold break-words'
-    name.textContent = title
-    head.append(name)
+    const link = document.createElement('a')
+    link.className = 'search-result-link font-semibold break-words'
+    link.href = path
+    link.textContent = title
+    head.append(link)
     if (type !== undefined) {
         const badge = document.createElement('span')
         badge.className = 'badge'
         badge.textContent = type
         head.append(badge)
     }
-    link.append(head)
+    item.append(head)
     if (under !== undefined) {
-        link.append(under)
+        item.append(under)
     }
-    item.append(link)
     return item
 }
 
 function titleRow(document: Document, match: TitleMatch): HTMLLIElement {
-    let under: Node | undefined
+    let under: HTMLElement | undefined
     if (match.aliasOf !== undefined) {
-        const line = document.createElement('span')
-        line.className = 'mt-1 block text-sm text-muted'
-        line.textContent = `Alias of ${match.aliasOf}`
-        under = line
+        under = document.createElement('span')
+        under.className = 'mt-1 block text-sm text-muted'
+        under.textContent = `Alias of ${match.aliasOf}`
     }
     return resultRow(document, match.path, match.text, match.type, under)
 }
@@ -142,126 +132,67 @@ export function startSearchPage(document: Document): void {
     const textBlock = part(document, '[data-search-text]', HTMLElement)
     const textList = part(textBlock, '[data-search-list]', HTMLElement)
     const more = part(textBlock, '[data-search-more]', HTMLButtonElement)
-    const search = siteSearch(input.dataset['titles'] ?? '', input.dataset['fullText'] ?? '')
 
-    /** The number of the newest query: an answer of an older one is dropped. */
-    let turn = 0
-    let pause: ReturnType<typeof setTimeout> | undefined
-    let titleCount = 0
-    let shownTitles = new Set<string>()
-    let text: { results: FullTextResults; next: number; shown: number } | undefined
-
-    const say = (message: string): void => {
-        status.textContent = message
-    }
-    const failed = (mine: number): void => {
-        if (mine === turn) {
-            say('The search could not load. Check the connection, then try again.')
-        }
-    }
-    const summary = (): void => {
-        if (text === undefined) return
-        const total = text.results.total
-        if (titleCount === 0 && total === 0) {
-            say('No note matches.')
-            return
-        }
-        const parts = []
-        if (titleCount > 0) parts.push(counted(titleCount, 'title', 'titles'))
-        parts.push(`${counted(total, 'note', 'notes')} with these words in the text`)
-        say(parts.join(', '))
-    }
-
-    /** Adds the next full-text results, without the notes that the titles show. */
-    const showMore = async (mine: number): Promise<void> => {
-        if (text === undefined) return
-        const added: FullTextHit[] = []
-        while (added.length < STEP && text.next < text.results.total) {
-            const hits = await text.results.hits(text.next, STEP)
-            if (mine !== turn) return
-            text.next += STEP
-            added.push(...hits.filter((hit) => !shownTitles.has(hit.path)))
-        }
-        for (const hit of added) textList.append(textRow(document, hit))
-        text.shown += added.length
-        textBlock.hidden = text.shown === 0
-        more.hidden = text.next >= text.results.total
-    }
-
-    const runFullText = async (
-        query: string,
-        mine: number,
-        titles: Promise<void>
-    ): Promise<void> => {
-        const results = await search.fullText(query)
-        // The titles answer first, so the full text leaves out the notes that they show.
-        await titles
-        if (mine !== turn) return
-        text = { results, next: 0, shown: 0 }
-        textList.replaceChildren()
-        await showMore(mine)
-        if (mine === turn) summary()
-    }
-
-    const run = (query: string, at: 'key' | 'enter'): void => {
-        turn += 1
-        const mine = turn
-        clearTimeout(pause)
-        text = undefined
-        const url = new URL(document.location.href)
-        if (query.trim() === '') {
-            url.searchParams.delete('q')
-        } else {
-            url.searchParams.set('q', query)
-        }
-        history.replaceState(null, '', url)
-        if (query.trim().length < SHORTEST_QUERY) {
-            titlesBlock.hidden = true
-            textBlock.hidden = true
-            say(query.trim() === '' ? '' : 'Type two letters or more.')
-            return
-        }
-        const titles = search.titles(query).then(
-            (matches) => {
-                if (mine !== turn) return
-                titleCount = matches.length
-                shownTitles = new Set(matches.map((match) => match.path))
-                titlesList.replaceChildren(...matches.map((match) => titleRow(document, match)))
-                titlesBlock.hidden = matches.length === 0
-            },
-            () => {
-                // The full text can still answer.
-                if (mine !== turn) return
-                titleCount = 0
-                shownTitles = new Set()
-                titlesBlock.hidden = true
+    const view: SearchView = {
+        showTitles(matches) {
+            titlesList.replaceChildren(...matches.map((match) => titleRow(document, match)))
+            titlesBlock.hidden = matches.length === 0
+        },
+        showText(hits, { append, more: hasMore }) {
+            const rows = hits.map((hit) => textRow(document, hit))
+            const moved = append && document.activeElement === more
+            if (append) {
+                textList.append(...rows)
+            } else {
+                textList.replaceChildren(...rows)
             }
-        )
-        pause = setTimeout(
-            () => {
-                runFullText(query, mine, titles).catch(() => {
-                    failed(mine)
-                })
-            },
-            at === 'enter' ? 0 : PAUSE
-        )
+            textBlock.hidden = textList.childElementCount === 0
+            more.hidden = !hasMore
+            // A reader who tapped "More results" goes on with the first new result.
+            if (moved) {
+                rows[0]?.querySelector('a')?.focus()
+            }
+        },
+        clearText() {
+            textList.replaceChildren()
+            textBlock.hidden = true
+            more.hidden = true
+        },
+        textPending(pending) {
+            textBlock.classList.toggle('opacity-60', pending)
+            textBlock.setAttribute('aria-busy', String(pending))
+            if (pending) more.hidden = true
+        },
+        say(message) {
+            status.textContent = message
+        },
+        setQuery(query) {
+            const url = new URL(document.location.href)
+            if (query.trim() === '') {
+                url.searchParams.delete('q')
+            } else {
+                url.searchParams.set('q', query)
+            }
+            history.replaceState(null, '', url)
+        }
     }
-
+    const session = createSession(
+        siteSearch(input.dataset['titles'] ?? '', input.dataset['fullText'] ?? ''),
+        view
+    )
     input.addEventListener('input', () => {
-        run(input.value, 'key')
+        session.type(input.value)
     })
     form.addEventListener('submit', (event) => {
         event.preventDefault()
-        run(input.value, 'enter')
+        session.submit(input.value)
     })
     more.addEventListener('click', () => {
-        showMore(turn).catch(() => {
-            failed(turn)
-        })
+        void session.more()
     })
     const query = new URL(document.location.href).searchParams.get('q') ?? ''
     if (query !== '') {
         input.value = query
-        run(query, 'enter')
+        session.submit(query)
     }
 }

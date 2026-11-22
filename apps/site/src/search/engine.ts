@@ -98,21 +98,12 @@ export function createSearch(sources: SearchSources): Search {
     }
 }
 
-/** The characters that the full-text library writes as entities in an excerpt. */
-const ENTITIES = new Map([
-    ['&amp;', '&'],
-    ['&lt;', '<'],
-    ['&gt;', '>'],
-    ['&quot;', '"'],
-    ['&#39;', "'"],
-    ['&#x27;', "'"]
-])
-
+/**
+ * The text of a piece of an excerpt. The full-text library writes `<` and
+ * `>` as entities and leaves `&` as it is, so only those two are read.
+ */
 function unescaped(text: string): string {
-    return text.replace(
-        /&(?:amp|lt|gt|quot|#39|#x27);/gu,
-        (entity) => ENTITIES.get(entity) ?? entity
-    )
+    return text.replaceAll('&lt;', '<').replaceAll('&gt;', '>')
 }
 
 /**

@@ -1,5 +1,6 @@
-import { readdir, stat } from 'node:fs/promises'
-import { join, resolve as resolvePath, sep } from 'node:path'
+import type { Dirent } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { join, relative, resolve as resolvePath, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolve, type ResolverMap, type SiteFile } from '@dsebastien-website/resolver'
 
@@ -252,16 +253,18 @@ async function readAssets(
 ): Promise<{ get(path: string): Promise<Response> | undefined }> {
     const files = new Map<string, string>()
     for (const folder of ASSET_FOLDERS) {
-        let names: string[]
+        const root = join(dist, folder)
+        let entries: Dirent[]
         try {
-            names = await readdir(join(dist, folder), { recursive: true })
+            entries = await readdir(root, { recursive: true, withFileTypes: true })
         } catch {
-            names = []
+            entries = []
         }
-        for (const name of names) {
-            const file = join(dist, folder, name)
-            if ((await stat(file)).isFile()) {
-                files.set(`/${folder}/${name.split(sep).join('/')}`, file)
+        // Files only: a folder, and a link that could lead out of the output, are never given.
+        for (const entry of entries) {
+            if (entry.isFile()) {
+                const file = join(entry.parentPath, entry.name)
+                files.set(`/${folder}/${relative(root, file).split(sep).join('/')}`, file)
             }
         }
     }

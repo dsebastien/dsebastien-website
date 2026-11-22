@@ -145,6 +145,19 @@ describe('the parts of the title index (SRCH-02, R57)', () => {
     })
 })
 
+describe('a part at the most letters of a key (round 1, finding 1)', () => {
+    test('answers a longer word of the query with its best rows', () => {
+        const entries = Array.from({ length: 60 }, (_, index) =>
+            entry(`Knowledge ${String(index)}`)
+        )
+        const index = titleIndexOf(entries, { partBytes: 500, rowsOfSplitPart: 5 })
+        expect(index.keys['knowledg']).toBe(false)
+        expect(partOf('knowledge', index.keys)).toEqual({ key: 'knowledg', complete: false })
+        expect(partOf('knowledge 12', index.keys)).toEqual({ key: '12', complete: true })
+        expect(partOf('knowledgeable', index.keys)).toEqual({ key: 'knowledg', complete: false })
+    })
+})
+
 describe('the part that answers a query', () => {
     const keys = { co: false, com: true, cop: true, te: true, se: false }
 

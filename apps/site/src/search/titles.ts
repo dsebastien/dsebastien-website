@@ -198,10 +198,11 @@ export function partOf(
         let size = SHORTEST_KEY
         let key = letters.slice(0, size).join('')
         if (!Object.hasOwn(keys, key)) return undefined
-        while (keys[key] === false && letters.length > size) {
+        // A split part has a child for each longer word that starts with its
+        // key, but a part of the most letters has no child: it answers alone.
+        while (keys[key] === false && letters.length > size && size < LONGEST_KEY) {
             size += 1
             key = letters.slice(0, size).join('')
-            // A split part has a child for each longer word that starts with its key.
             if (!Object.hasOwn(keys, key)) return undefined
         }
         found.push({ key, complete: keys[key] === true })

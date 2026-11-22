@@ -104,11 +104,14 @@ jobs:
             - name: Note page budgets
               run: bun run budgets
 
-            # The budget of the first search (R57), on the invented corpus of full size.
+            # The budget of the first search (R57), on the invented corpus of full
+            # size. It runs also when a time budget of the note page failed.
             - name: Invented corpus
+              if: ${{ !cancelled() }}
               run: bun run corpus
 
             - name: First search budget
+              if: ${{ !cancelled() }}
               run: bun run budgets:search
 
             # The reports of Lighthouse, to read why a time failed.

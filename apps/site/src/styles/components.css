@@ -125,13 +125,18 @@
         @apply w-full rounded-control border border-border-strong bg-well px-4 py-2.5 text-primary placeholder:text-muted;
     }
 
-    /* A row of the results of the search page (R63): a link of 44 px at least, for a finger. */
+    /* A row of the results of the search page (R63): 44 px at least, for a
+       finger. Its link holds the title and covers the whole row. */
     .search-result {
-        @apply block min-h-11 rounded-control px-3 py-2.5 transition-colors;
+        @apply relative min-h-11 rounded-control px-3 py-2.5 transition-colors;
     }
 
     .search-result:hover {
         @apply bg-surface-elevated;
+    }
+
+    .search-result-link::after {
+        @apply absolute inset-0 rounded-control content-[''];
     }
 
     /* The excerpt of a full-text result: the words of the query stand out. */
