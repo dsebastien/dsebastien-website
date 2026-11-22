@@ -322,3 +322,118 @@ describe('resolver of unpublished notes', () => {
         expect(resolve('/Anything', { pages: {} })).toEqual({ kind: 'not-found', suggestions: [] })
     })
 })
+
+// The former paths of a note that moved answer 301 to the note (URL-06,
+// URL-21, decision R66): the old path and its variants, its Markdown path and
+// its file name. A current path or folder of a published note wins over a
+// former path, and a former path wins over a file name and an alias. The
+// former paths of an unpublished note are gone (R64).
+describe('resolver of former paths', () => {
+    const files: SiteFiles = {
+        home: 'index.html',
+        notFound: '404.html',
+        gone: '410.html',
+        robots: 'robots.txt',
+        page: (path) => `page:${path}`,
+        markdown: (path) => `markdown:${path}`,
+        folder: (path) => `folder:${path}`,
+        choice: (paths) => `choice:${paths.join('|')}`
+    }
+    type Note = { path: string; aliases: string[]; formerPaths?: string[] }
+    // Through JSON, as the build writes the map and the server reads it.
+    const mapOf = (notes: Note[], removed: Note[] = []): ResolverMap =>
+        JSON.parse(JSON.stringify(resolverMapOf(notes, files, {}, {}, removed))) as ResolverMap
+    const moved = (location: string): Resolution => ({
+        kind: 'redirect',
+        status: 301,
+        location,
+        cacheControl: 'public, max-age=3600'
+    })
+    const NOTE = { path: 'Garden/Wormery.md', aliases: [], formerPaths: ['Shed/Worm bin.md'] }
+
+    test('the old path and its variants lead to the note in one redirect', () => {
+        const map = mapOf([NOTE])
+        expect(resolve('/Shed/Worm+bin', map)).toEqual(moved('/Garden/Wormery'))
+        expect(resolve('/Shed/Worm%20bin', map)).toEqual(moved('/Garden/Wormery'))
+        expect(resolve('/shed/WORM+BIN.md/', map)).toEqual(moved('/Garden/Wormery'))
+        expect(resolve('/Shed/Worm+bin', map, '?ref=x')).toEqual(moved('/Garden/Wormery?ref=x'))
+    })
+
+    test('the old Markdown path leads to the Markdown of the note, as it is written only', () => {
+        const map = mapOf([NOTE])
+        expect(resolve('/-/md/Shed/Worm+bin.md', map)).toEqual(moved('/-/md/Garden/Wormery.md'))
+        expect(resolve('/-/md/shed/worm+bin.md', map)).toEqual({
+            kind: 'not-found',
+            suggestions: [],
+            file: '404.html'
+        })
+    })
+
+    test('the old file name leads to the note', () => {
+        expect(resolve('/Worm+bin', mapOf([NOTE]))).toEqual(moved('/Garden/Wormery'))
+    })
+
+    test('the old folder is no address of the note', () => {
+        expect(resolve('/Shed', mapOf([NOTE]))).toEqual({
+            kind: 'not-found',
+            suggestions: [],
+            file: '404.html'
+        })
+    })
+
+    test('a current path wins over a former path, and a former path over a name and an alias', () => {
+        const map = mapOf([
+            NOTE,
+            { path: 'Shed/Worm bin.md', aliases: [] },
+            { path: 'Kitchen/Wormery.md', aliases: ['Old Wormery'], formerPaths: ['Hut.md'] },
+            { path: 'Barn/Hut.md', aliases: [] },
+            { path: 'Garden/Old Wormery.md', aliases: [] }
+        ])
+        // A new note took the old path: it wins.
+        expect(resolve('/Shed/Worm+bin', map)).toEqual({
+            kind: 'page',
+            file: 'page:Shed/Worm bin.md'
+        })
+        // The old path of a note wins over the file name of another note.
+        expect(resolve('/Hut', map)).toEqual(moved('/Kitchen/Wormery'))
+        // The file name of a note wins over an old file name.
+        expect(resolve('/Worm+bin', map)).toEqual(moved('/Shed/Worm+bin'))
+    })
+
+    test('a former path of two notes gives the "not found" page with both', () => {
+        const map = mapOf([
+            { path: 'Garden/One.md', aliases: [], formerPaths: ['Old.md'] },
+            { path: 'Kitchen/Two.md', aliases: [], formerPaths: ['Old.md'] }
+        ])
+        expect(resolve('/Old', map)).toEqual({
+            kind: 'not-found',
+            suggestions: ['/Garden/One', '/Kitchen/Two'],
+            file: 'choice:Garden/One.md|Kitchen/Two.md'
+        })
+        expect(resolve('/-/md/Old.md', map)).toEqual({
+            kind: 'not-found',
+            suggestions: [],
+            file: '404.html'
+        })
+    })
+
+    test('the former paths of an unpublished note are gone, unless a published note has them', () => {
+        const map = mapOf(
+            [{ path: 'Garden/Mint.md', aliases: [], formerPaths: ['Herbs/Basil.md'] }],
+            [
+                {
+                    path: 'Garden/Rain barrel.md',
+                    aliases: [],
+                    formerPaths: ['Shed/Rain butt.md', 'Herbs/Basil.md']
+                }
+            ]
+        )
+        const GONE: Resolution = { kind: 'gone', file: '410.html' }
+        expect(resolve('/Shed/Rain+butt', map)).toEqual(GONE)
+        expect(resolve('/shed/rain+butt', map)).toEqual(GONE)
+        expect(resolve('/Rain+butt', map)).toEqual(GONE)
+        expect(resolve('/-/md/Shed/Rain+butt.md', map)).toEqual(GONE)
+        expect(resolve('/Herbs/Basil', map)).toEqual(moved('/Garden/Mint'))
+        expect(JSON.stringify(map)).not.toContain('Rain butt')
+    })
+})

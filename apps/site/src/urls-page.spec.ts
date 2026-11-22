@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
 import {
@@ -40,9 +40,16 @@ interface Case {
 // The file is test data of this repository. The cast is the boundary: a wrong
 // shape fails the tests that read it.
 const table = (await Bun.file(TABLE).json()) as {
-    notes: { path: string; aliases: string[] }[]
-    removed: { path: string; aliases: string[] }[]
+    notes: Note[]
+    removed: Note[]
     cases: Case[]
+}
+
+/** A note of the table: a note with former paths was published at the first one. */
+interface Note {
+    path: string
+    aliases: string[]
+    formerPaths?: string[]
 }
 
 let stores: TestStores | undefined
@@ -85,15 +92,44 @@ beforeAll(async () => {
         attachmentStorage: stores.attachmentStorage
     })
     const removed = table.removed.map((note) => note.path)
+    // A note with former paths is published at its first one, then moved by
+    // a line of a rename journal, as the plugin writes it (R66).
+    const moved = [...table.notes, ...table.removed].flatMap((note) => {
+        const [former] = note.formerPaths ?? []
+        return former === undefined ? [] : [{ from: former, to: note.path }]
+    })
+    const move = async (from: string, to: string): Promise<void> => {
+        await mkdir(dirname(join(vault, to)), { recursive: true })
+        await rename(join(vault, from), join(vault, to))
+    }
+    for (const { from, to } of moved) {
+        await move(to, from)
+    }
+    const first = (note: Note): string => note.formerPaths?.[0] ?? note.path
     const planned = await plan(device, {
-        include: [...table.notes.map((note) => note.path), ...removed]
+        include: [...table.notes.map(first), ...table.removed.map(first)]
     })
     await publish(device, planned.id, {
         time: '2031-04-01T08:00:00Z',
         device: 'garden-shed',
         face: 'plugin'
     })
-    // The notes of `removed` are unpublished by a second publication (URL-27).
+    const journals = join(vault, '.obsidian', 'plugins', 'dsebastien-vault-publish', 'renames')
+    await mkdir(journals, { recursive: true })
+    for (const { from, to } of moved) {
+        await move(from, to)
+    }
+    await writeFile(
+        join(journals, '00000000000000ab.jsonl'),
+        moved
+            .map(({ from, to }) =>
+                JSON.stringify({ from, kind: 'note', time: '2031-04-01T09:00:00Z', to })
+            )
+            .map((line) => `${line}\n`)
+            .join('')
+    )
+    // The notes of `removed` are unpublished by a second publication (URL-27),
+    // which also applies the moves.
     const unpublish = await plan(device, { include: [], remove: removed })
     await publish(device, unpublish.id, {
         time: '2031-04-02T08:00:00Z',
@@ -158,6 +194,33 @@ describe('site of the URL table', () => {
             Object.fromEntries(table.removed.map((note) => [note.path, note.aliases]))
         )
     })
+
+    // The moves of the journal gave the former paths of the table (R66).
+    test('has the former paths of the table in its manifest', async () => {
+        const folder = join(store(), 'manifest')
+        const entries = await Promise.all(
+            (await readdir(folder)).map(
+                async (file) =>
+                    JSON.parse(await readFile(join(folder, file), 'utf8')) as {
+                        path: string
+                        formerPaths: string[]
+                    }
+            )
+        )
+        expect(
+            Object.fromEntries(
+                entries
+                    .filter((entry) => entry.formerPaths.length > 0)
+                    .map((entry) => [entry.path, entry.formerPaths])
+            )
+        ).toEqual(
+            Object.fromEntries(
+                [...table.notes, ...table.removed]
+                    .map((note) => [note.path, note.formerPaths ?? []] as const)
+                    .filter(([, formerPaths]) => formerPaths.length > 0)
+            )
+        )
+    })
 })
 
 describe('URL table over HTTP', () => {
@@ -176,9 +239,12 @@ describe('URL table over HTTP', () => {
                 // clean canonical link.
                 const target = await get(entry.location)
                 expect(target.status).toBe(200)
-                expect(canonicalLinkOf(await target.text())).toBe(
-                    `${ORIGIN}${entry.location.split('?')[0] ?? ''}`
-                )
+                // The Markdown of a note has no canonical link.
+                if (!entry.location.startsWith('/-/md/')) {
+                    expect(canonicalLinkOf(await target.text())).toBe(
+                        `${ORIGIN}${entry.location.split('?')[0] ?? ''}`
+                    )
+                }
                 return
             }
             const body = await response.text()

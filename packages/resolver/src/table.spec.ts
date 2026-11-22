@@ -22,8 +22,8 @@ interface Case {
 }
 
 interface Table {
-    notes: { path: string; aliases: string[] }[]
-    removed: { path: string; aliases: string[] }[]
+    notes: { path: string; aliases: string[]; formerPaths?: string[] }[]
+    removed: { path: string; aliases: string[]; formerPaths?: string[] }[]
     cases: Case[]
 }
 
@@ -88,7 +88,8 @@ describe('URL table of the site', () => {
     })
 
     // URL-05: a redirect target never redirects. Every variant reaches a
-    // page with status 200 in one hop.
+    // page with status 200 in one hop, and an old Markdown path the Markdown
+    // of its note.
     test.each(
         table.cases
             .filter((entry) => entry.location !== undefined)
@@ -97,7 +98,7 @@ describe('URL table of the site', () => {
         const location = entry.location ?? ''
         const at = location.indexOf('?')
         const resolution = resolve(at < 0 ? location : location.slice(0, at), map)
-        expect(resolution.kind).toBe('page')
+        expect(resolution.kind).toBe(location.startsWith('/-/md/') ? 'file' : 'page')
     })
 
     test('the table has a case of each kind', () => {

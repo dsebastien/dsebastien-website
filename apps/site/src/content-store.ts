@@ -40,6 +40,8 @@ export interface PublishedNote {
     markdownFile: string
     /** The aliases of the note that get a URL. */
     aliases: string[]
+    /** The vault paths that the note had before it moved: each answers 301 to the note (URL-21, R66). */
+    formerPaths: string[]
     /** The title of the page. A first version: the file name of the note. */
     title: string
     /** The time of the first publication of the note, in UTC (`2031-03-14T07:30:00Z`). */
@@ -122,6 +124,20 @@ function isTime(value: unknown): value is string {
     return typeof value === 'string' && TIME.test(value)
 }
 
+/**
+ * True when the text is the vault path of a note: relative, with `/`, no empty
+ * part, no `.` and no `..` part, and the end `.md`. A former path becomes an
+ * address of the site.
+ */
+function isFormerPath(value: string): boolean {
+    const parts = value.split('/')
+    return (
+        value.endsWith('.md') &&
+        !value.includes('\\') &&
+        parts.every((part) => part !== '' && part !== '.' && part !== '..')
+    )
+}
+
 /** The form of the identity of a note. It becomes the name of a file of the site. */
 const NOTE_ID = /^[0-9a-f]{16}$/
 
@@ -142,6 +158,8 @@ export interface RemovedNote {
     readonly vaultPath: string
     /** The aliases of the note that had a URL. */
     readonly aliases: readonly string[]
+    /** The vault paths that the note had before it moved: they are gone too (R64, R66). */
+    readonly formerPaths: readonly string[]
 }
 
 /**
@@ -207,6 +225,8 @@ async function readManifest(): Promise<{
             typeof entry['path'] !== 'string' ||
             !isLinkList(entry['links']) ||
             !isTextList(entry['aliases']) ||
+            !isTextList(entry['formerPaths']) ||
+            !entry['formerPaths'].every(isFormerPath) ||
             !isTime(entry['firstPublished']) ||
             !isTime(entry['lastPublished']) ||
             !isAttachmentList(entry['attachments']) ||
@@ -221,7 +241,11 @@ async function readManifest(): Promise<{
             throw new Error(`two entries of the manifest have the path "${vaultPath}"`)
         }
         if (entry['state'] === 'unpublished') {
-            removed.set(vaultPath, { vaultPath, aliases: [...entry['aliases']] })
+            removed.set(vaultPath, {
+                vaultPath,
+                aliases: [...entry['aliases']],
+                formerPaths: [...entry['formerPaths']]
+            })
             continue
         }
         const noteType = entry['noteType']
@@ -232,6 +256,7 @@ async function readManifest(): Promise<{
             file: `-/note/${entry['id']}.html`,
             markdownFile: `-/md/${entry['id']}.md`,
             aliases: [...entry['aliases']],
+            formerPaths: [...entry['formerPaths']],
             title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, ''),
             firstPublished: entry['firstPublished'],
             lastPublished: entry['lastPublished'],

@@ -57,8 +57,14 @@ export function siteFilesOf(notes: readonly PublishedNote[]): SiteFiles {
 }
 
 /** The site notes of the resolver: the vault path and the aliases of each published note. */
-function siteNotesOf(notes: readonly PublishedNote[]): { path: string; aliases: string[] }[] {
-    return notes.map((note) => ({ path: note.vaultPath, aliases: note.aliases }))
+function siteNotesOf(
+    notes: readonly PublishedNote[]
+): { path: string; aliases: string[]; formerPaths: string[] }[] {
+    return notes.map((note) => ({
+        path: note.vaultPath,
+        aliases: note.aliases,
+        formerPaths: note.formerPaths
+    }))
 }
 
 /** The file of the page with every backlink of a note, from the identity of the note. */
@@ -123,7 +129,11 @@ export function resolverMapFor(
         siteFilesOf(notes),
         attachments,
         generated,
-        removed.map((note) => ({ path: note.vaultPath, aliases: note.aliases }))
+        removed.map((note) => ({
+            path: note.vaultPath,
+            aliases: note.aliases,
+            formerPaths: note.formerPaths
+        }))
     )
 }
 

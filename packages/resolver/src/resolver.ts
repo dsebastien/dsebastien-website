@@ -31,6 +31,23 @@ export interface ResolverMap {
     readonly notFound?: string
     /** The addresses of the notes that the author unpublished (URL-27). */
     readonly gone?: GoneMap
+    /** The former paths of the published notes that moved (URL-06, URL-21). */
+    readonly former?: FormerMap
+}
+
+/**
+ * The former paths of the published notes that moved (decision R66). The
+ * resolver reads them after the current paths and folders, and before the
+ * file names and the aliases: a former path was the canonical URL of a note
+ * (business rule 1).
+ */
+export interface FormerMap {
+    /** The canonical paths of the notes of each former text (the old vault path without `.md`), by its folded form. */
+    readonly folded: Readonly<Record<string, readonly string[]>>
+    /** The canonical paths of the notes of each former file name, by its folded form. */
+    readonly names: Readonly<Record<string, readonly string[]>>
+    /** The Markdown path of the note of each former Markdown path, as written. */
+    readonly markdown: Readonly<Record<string, string>>
 }
 
 /**
@@ -85,7 +102,9 @@ export type Resolution =
 const CACHE = {
     variant: 'public, max-age=3600',
     name: 'public, max-age=3600',
-    alias: 'no-store'
+    alias: 'no-store',
+    // A former path can be taken again by a note or come back: one hour.
+    former: 'public, max-age=3600'
 } as const
 
 /** The prefix of the generated pages and files. A path under it has no variant (URL-26). */
@@ -206,6 +225,16 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
         ...(map.gone?.file === undefined ? {} : { file: map.gone.file })
     }
     if (path.startsWith(PREFIX)) {
+        // The Markdown of a note that moved, as its old path was written.
+        const markdown = own(map.former?.markdown, path)
+        if (markdown !== undefined) {
+            return {
+                kind: 'redirect',
+                status: 301,
+                location: markdown + query,
+                cacheControl: CACHE.former
+            }
+        }
         return isGonePath(path, map.gone) ? gone : notFound
     }
     const published = resolvePublished(path, map, query)
@@ -230,6 +259,13 @@ function resolvePublished(path: string, map: ResolverMap, query: string): Resolu
                 }
             }
         }
+        // A former path of a note that moved (URL-21).
+        for (const form of forms) {
+            const notes = own(map.former?.folded, form)
+            if (notes !== undefined) {
+                return toNotes(notes, 301, CACHE.former, query, map)
+            }
+        }
         for (const form of forms) {
             const notes = form.includes('/') ? undefined : own(map.names, form)
             if (notes !== undefined) {
@@ -240,6 +276,15 @@ function resolvePublished(path: string, map: ResolverMap, query: string): Resolu
             const notes = own(map.aliases, form)
             if (notes !== undefined) {
                 return toNotes(notes, 302, CACHE.alias, query, map)
+            }
+        }
+    }
+    // A former file name comes after every current address.
+    for (const reading of readingsOf(path)) {
+        for (const form of formsOf(reading).map(foldedForm)) {
+            const notes = form.includes('/') ? undefined : own(map.former?.names, form)
+            if (notes !== undefined) {
+                return toNotes(notes, 301, CACHE.former, query, map)
             }
         }
     }

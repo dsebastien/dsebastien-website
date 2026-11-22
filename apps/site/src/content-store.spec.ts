@@ -76,6 +76,7 @@ describe('published notes of a content store', () => {
                 id: 'aaaaaaaaaaaaaaaa',
                 path: '10 Garden/Compost basics.md',
                 aliases: ['Composting'],
+                formerPaths: ['Shed/Compost.md', 'Compost basics.md'],
                 firstPublished: '2031-03-01T07:30:00Z',
                 lastPublished: '2031-03-20T18:05:00Z'
             }
@@ -89,6 +90,7 @@ describe('published notes of a content store', () => {
                 file: '-/note/aaaaaaaaaaaaaaaa.html',
                 markdownFile: '-/md/aaaaaaaaaaaaaaaa.md',
                 aliases: ['Composting'],
+                formerPaths: ['Shed/Compost.md', 'Compost basics.md'],
                 title: 'Compost basics',
                 firstPublished: '2031-03-01T07:30:00Z',
                 lastPublished: '2031-03-20T18:05:00Z',
@@ -102,6 +104,7 @@ describe('published notes of a content store', () => {
                 file: '-/note/bbbbbbbbbbbbbbbb.html',
                 markdownFile: '-/md/bbbbbbbbbbbbbbbb.md',
                 aliases: [],
+                formerPaths: [],
                 title: 'Welcome',
                 firstPublished: '2031-04-01T08:00:00Z',
                 lastPublished: '2031-04-01T08:00:00Z',
@@ -157,6 +160,22 @@ describe('published notes of a content store', () => {
 
         expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
     })
+
+    // A former path becomes an address of the site (URL-21, R66).
+    for (const former of [['../Outside.md'], ['Old'], ['a//b.md'], [3], 'Old.md']) {
+        test(`stop the build when the former paths are ${JSON.stringify(former)}`, async () => {
+            await contentStore({
+                'a.json': {
+                    ...ENTRY,
+                    id: 'aaaaaaaaaaaaaaaa',
+                    path: 'Welcome.md',
+                    formerPaths: former
+                }
+            })
+
+            expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
+        })
+    }
 
     // The page of a note shows a date of publication when the note has no date
     // property (PAGE-05).
@@ -224,14 +243,15 @@ describe('unpublished notes of a content store', () => {
                 id: 'aaaaaaaaaaaaaaaa',
                 path: 'Z/Old.md',
                 aliases: ['Gone'],
+                formerPaths: ['Y/Older name.md'],
                 state: 'unpublished'
             },
             'b.json': { ...ENTRY, id: 'bbbbbbbbbbbbbbbb', path: 'Live.md' },
             'c.json': { ...ENTRY, id: 'cccccccccccccccc', path: 'A/Older.md', state: 'unpublished' }
         })
         expect((await readPublication()).removed).toEqual([
-            { vaultPath: 'A/Older.md', aliases: [] },
-            { vaultPath: 'Z/Old.md', aliases: ['Gone'] }
+            { vaultPath: 'A/Older.md', aliases: [], formerPaths: [] },
+            { vaultPath: 'Z/Old.md', aliases: ['Gone'], formerPaths: ['Y/Older name.md'] }
         ])
         expect((await readPublishedNotes()).map((note) => note.vaultPath)).toEqual(['Live.md'])
     })

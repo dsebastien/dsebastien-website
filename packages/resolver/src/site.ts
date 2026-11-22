@@ -1,4 +1,4 @@
-import { foldedForm, goneKey, type GoneMap, type ResolverMap } from './resolver.ts'
+import { foldedForm, goneKey, type FormerMap, type GoneMap, type ResolverMap } from './resolver.ts'
 import { canonicalPath, folderPath, markdownPath } from './url.ts'
 
 // What the site has, from its published notes: the folders, the names, the
@@ -11,6 +11,8 @@ export interface SiteNote {
     readonly path: string
     /** The aliases of the note that get a URL. */
     readonly aliases: readonly string[]
+    /** The vault paths that the note had before it moved (decision R66). */
+    readonly formerPaths?: readonly string[]
 }
 
 /** A folder of the site: a folder of the vault path of a published note. */
@@ -145,11 +147,47 @@ function namesAndAliases(notes: readonly SiteNote[]): {
     }
 }
 
-/** Each list of more than one note that a file name or an alias names: each one gets a "not found" page with its notes. */
+/** The former texts (the old vault paths without `.md`) and the former file names of the notes, with the vault paths of their notes. */
+function formersOf(notes: readonly SiteNote[]): {
+    texts: Map<string, string[]>
+    names: Map<string, string[]>
+} {
+    const pairs = notes.flatMap((note) =>
+        (note.formerPaths ?? []).map((former): [string, string] => [former, note.path])
+    )
+    const unique = (map: Map<string, string[]>): Map<string, string[]> =>
+        new Map([...map].map(([key, paths]) => [key, sorted(paths)]))
+    return {
+        texts: unique(
+            byFolded(
+                pairs.map(([former, path]): [string, string] => [
+                    former.slice(0, -'.md'.length),
+                    path
+                ])
+            )
+        ),
+        names: unique(
+            byFolded(
+                pairs.map(([former, path]): [string, string] => [
+                    nameOf(former).slice(0, -'.md'.length),
+                    path
+                ])
+            )
+        )
+    }
+}
+
+/** Each list of more than one note that a file name, an alias or a former path names: each one gets a "not found" page with its notes. */
 export function choicesOf(notes: readonly SiteNote[]): string[][] {
     const { names, aliases } = namesAndAliases(notes)
+    const formers = formersOf(notes)
     const lists = new Map<string, string[]>()
-    for (const paths of [...names.values(), ...aliases.values()]) {
+    for (const paths of [
+        ...names.values(),
+        ...aliases.values(),
+        ...formers.texts.values(),
+        ...formers.names.values()
+    ]) {
         if (paths.length > 1) {
             lists.set(paths.join('\n'), paths)
         }
@@ -227,7 +265,34 @@ export function resolverMapOf(
         aliases: urls(aliases),
         choices,
         notFound: files.notFound,
-        gone: goneMapOf(removed, files.gone)
+        gone: goneMapOf(removed, files.gone),
+        former: formerMapOf(ordered)
+    }
+}
+
+/** The former paths of the published notes (URL-06, URL-21, decision R66). */
+function formerMapOf(notes: readonly SiteNote[]): FormerMap {
+    const { texts, names } = formersOf(notes)
+    const urls = (map: Map<string, string[]>): Record<string, string[]> =>
+        Object.fromEntries([...map].map(([key, paths]) => [key, paths.map(canonicalPath)]))
+    // A former Markdown path of one note only: of two notes, it names none.
+    const markdown = new Map<string, string[]>()
+    for (const note of notes) {
+        for (const former of note.formerPaths ?? []) {
+            const path = markdownPath(former)
+            markdown.set(path, [
+                ...new Set([...(markdown.get(path) ?? []), markdownPath(note.path)])
+            ])
+        }
+    }
+    return {
+        folded: urls(texts),
+        names: urls(names),
+        markdown: Object.fromEntries(
+            [...markdown]
+                .filter(([, targets]) => targets.length === 1)
+                .map(([path, [target]]) => [path, target ?? ''])
+        )
     }
 }
 
@@ -240,15 +305,22 @@ function goneMapOf(removed: readonly SiteNote[], file: string): GoneMap {
             sorted([...texts].map(goneKey)).map((key): [string, true] => [key, true])
         )
     const { names, aliases } = namesAndAliases(ordered)
-    const paths = ordered.flatMap((note) => [canonicalPath(note.path), markdownPath(note.path)])
-    const folded = ordered.map((note) => foldedForm(note.path.slice(0, -'.md'.length)))
-    const texts = [...paths, ...folded, ...names.keys(), ...aliases.keys()]
+    // The former paths of an unpublished note are gone too (R64, R66).
+    const formers = formersOf(ordered)
+    const every = ordered.flatMap((note) => [note.path, ...(note.formerPaths ?? [])])
+    const paths = every.flatMap((path) => [canonicalPath(path), markdownPath(path)])
+    const folded = [
+        ...ordered.map((note) => foldedForm(note.path.slice(0, -'.md'.length))),
+        ...formers.texts.keys()
+    ]
+    const goneNames = [...names.keys(), ...formers.names.keys()]
+    const texts = [...paths, ...folded, ...goneNames, ...aliases.keys()]
     return {
         file,
         longest: Math.max(0, ...texts.map((text) => text.length)),
         paths: set(paths),
         folded: set(folded),
-        names: set(names.keys()),
+        names: set(goneNames),
         aliases: set(aliases.keys())
     }
 }
