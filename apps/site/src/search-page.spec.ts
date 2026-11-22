@@ -367,6 +367,13 @@ describe('the full-text index (SRCH-01)', () => {
         expect([...found].filter((path) => !publishedPaths.has(path))).toEqual([])
     })
 
+    test('holds no file of the interface of Pagefind, which the page does not use', async () => {
+        const files = await readdir(join(built().dir, '-', 'search', 'pagefind'))
+        expect(files).toContain('pagefind.js')
+        expect(files).toContain('pagefind-worker.js')
+        expect(files.filter((file) => /-ui\.|highlight/u.test(file))).toEqual([])
+    })
+
     test('indexes the title, the values of the properties and the text of a note page only', async () => {
         const dir = join(built().dir, '-', 'search', 'pagefind')
         const pagefind = (await import(join(dir, 'pagefind.js'))) as {

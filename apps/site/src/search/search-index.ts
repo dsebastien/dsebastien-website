@@ -1,4 +1,4 @@
-import { readFile, rm } from 'node:fs/promises'
+import { readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ResolverMap } from '@dsebastien-website/resolver'
@@ -16,6 +16,9 @@ import { FULL_TEXT_BASE } from './paths.ts'
 
 /** The folder of the full-text index in the output of the build. */
 const FULL_TEXT_FOLDER = FULL_TEXT_BASE.slice(1, -1)
+
+/** The files of Pagefind that the site does not use: its interfaces and its highlight script. */
+const UNUSED = /^pagefind-(?:ui|component-ui|modular-ui|highlight)\./u
 
 /** The folder of the note pages in the output of the build. */
 const NOTE_PAGES = '-/note/'
@@ -52,6 +55,9 @@ export async function writeFullTextIndex(output: string): Promise<number> {
         const written = await index.writeFiles({ outputPath: folder })
         if (written.errors.length > 0) {
             throw new Error(`the full-text index cannot be written: ${written.errors.join('; ')}`)
+        }
+        for (const file of await readdir(folder)) {
+            if (UNUSED.test(file)) await rm(join(folder, file))
         }
         return pages.length
     } finally {

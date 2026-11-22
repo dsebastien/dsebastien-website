@@ -184,7 +184,13 @@ export function startSearchPage(document: Document): void {
         siteSearch(input.dataset['titles'] ?? '', input.dataset['fullText'] ?? ''),
         view
     )
-    input.addEventListener('input', () => {
+    // An input method sends many events while a word is being composed: the
+    // search waits for the composed text.
+    input.addEventListener('input', (event) => {
+        if (event instanceof InputEvent && event.isComposing) return
+        session.type(input.value)
+    })
+    input.addEventListener('compositionend', () => {
         session.type(input.value)
     })
     form.addEventListener('submit', (event) => {

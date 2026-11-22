@@ -260,7 +260,7 @@ describe('the search session of the search page', () => {
         await settle()
         expect(view.text).toEqual([])
         expect(view.log.at(-1)).toBe(
-            'say The search could not load. Check the connection, then try again.'
+            'say The search could not load. Check the connection, then reload the page.'
         )
     })
 
@@ -342,6 +342,38 @@ describe('the search session of the search page', () => {
         expect(view.titles).toEqual([])
         expect(view.text).toEqual([])
         expect(timer.waits).toEqual([])
+    })
+
+    test('cuts a long query to 100 characters and 8 words before it searches', async () => {
+        const asked: string[] = []
+        const view = recordingView()
+        const timer = manualTimer()
+        const session = createSession(
+            fakeSearch({
+                titles: (query) => {
+                    asked.push(query)
+                    return Promise.resolve([])
+                },
+                fullText: (query) => {
+                    asked.push(query)
+                    return Promise.resolve(resultsOf([]))
+                }
+            }),
+            view,
+            timer
+        )
+        session.submit('one two three four five six seven eight nine ten')
+        timer.run()
+        await settle()
+        expect(asked).toEqual([
+            'one two three four five six seven eight',
+            'one two three four five six seven eight'
+        ])
+        asked.length = 0
+        session.submit('x'.repeat(300))
+        timer.run()
+        await settle()
+        expect(asked.map((query) => query.length)).toEqual([100, 100])
     })
 
     test('says when no note matches, and writes each query into the address', async () => {

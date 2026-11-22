@@ -36,7 +36,8 @@ export const STEP = 10
 /** The fewest characters that the search answers. */
 export const SHORTEST_QUERY = 2
 
-const FAILED = 'The search could not load. Check the connection, then try again.'
+// After a new publication, an open page can ask for files that are gone: a reload gets the new ones.
+const FAILED = 'The search could not load. Check the connection, then reload the page.'
 const FAILED_MORE = 'The next results could not load. Check the connection, then try again.'
 
 const clock: Timer = {
@@ -44,6 +45,16 @@ const clock: Timer = {
     clear: (handle) => {
         clearTimeout(handle as ReturnType<typeof setTimeout>)
     }
+}
+
+/** The most characters and words of a query: each word can load a part of the full-text index. */
+const LONGEST_QUERY = 100
+const MOST_WORDS = 8
+
+/** The query that the session searches for: its first 8 words, cut to 100 characters. */
+function limited(query: string): string {
+    const words = query.trim().split(/\s+/u).slice(0, MOST_WORDS).join(' ')
+    return Array.from(words).slice(0, LONGEST_QUERY).join('')
 }
 
 function counted(value: number, one: string, many: string): string {
@@ -140,13 +151,14 @@ export function createSession(
         summary()
     }
 
-    const run = (query: string, wait: number): void => {
+    const run = (typed: string, wait: number): void => {
         turn += 1
         const mine = turn
         timer.clear(pause)
         text = undefined
-        view.setQuery(query)
-        const trimmed = query.trim()
+        view.setQuery(typed)
+        const query = limited(typed)
+        const trimmed = query
         if (Array.from(trimmed).length < SHORTEST_QUERY) {
             titleCount = 0
             titlePaths = new Set()
