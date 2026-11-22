@@ -189,6 +189,7 @@ describe('the type hubs (NAV-03)', () => {
         const hub = await served('/-/types/movies')
         expect(titleOf(hub)).toBe('Movies · Sébastien’s Notes')
         expect(textOf(select('[data-list-title]', hub))).toBe('Movies')
+        expect(textOf(select('[data-list-count]', hub))).toBe('2 notes, from A to Z.')
         expect(selectAll('[data-listed-note]', hub).map((link) => textOf(link))).toEqual([
             'The Lantern Keeper (2019)',
             'The Quiet Orchard (2021)'

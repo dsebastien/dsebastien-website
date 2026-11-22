@@ -12,16 +12,16 @@ interface Props {
 
 const { list, page } = Astro.props
 const pages = list.pages.length
+const notes = `${list.count.toLocaleString('en')} ${list.count === 1 ? 'note' : 'notes'}`
+const summary = `${notes}, from A to Z${pages > 1 ? `, page ${String(page.number)} of ${String(pages)}` : ''}.`
 ---
 
 <p class='section-title'>{{ type: 'Type hub', tag: 'Tag', other: 'Notes' }[list.kind]}</p>
 <h1 class='text-3xl font-bold tracking-tight break-words sm:text-4xl' data-list-title>
     {list.label}
 </h1>
-<p class='mt-2 text-muted'>
-    {list.count.toLocaleString('en')}
-    {list.count === 1 ? 'note' : 'notes'}, from A to Z
-    {pages > 1 && `, page ${String(page.number)} of ${String(pages)}`}.
+<p class='mt-2 text-muted' data-list-count>
+    {summary}
 </p>
 {list.children.length > 0 && (
     <nav class='mt-6 flex flex-wrap gap-2' aria-label='Nested tags' data-child-tags>
