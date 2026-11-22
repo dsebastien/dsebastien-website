@@ -275,7 +275,8 @@ fn journal_text(journal: &RunJournal) -> Result<String, String> {
 /// content store.
 fn is_store_path(path: &str) -> bool {
     is_vault_path(path)
-        && (path.starts_with(&format!("{NOTES_FOLDER}/"))
+        && (path == RENAMES_FILE
+            || path.starts_with(&format!("{NOTES_FOLDER}/"))
             || (path.starts_with(&format!("{MANIFEST_FOLDER}/")) && path.split('/').count() == 2))
 }
 
@@ -1112,10 +1113,14 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
         .map(|(path, entry)| (path.as_str(), entry.id.clone()))
         .collect();
     for one in plan.moves() {
-        let id = ids
-            .get(one.to.as_str())
-            .or_else(|| ids.get(one.from.as_str()))
-            .cloned();
+        // The entry of a move of a journal is at its new path in the scan,
+        // and the entry of a pairing is still at its old path.
+        let id = if scan.queue.renamed.contains(one) {
+            ids.get(one.to.as_str())
+        } else {
+            ids.get(one.from.as_str())
+        }
+        .cloned();
         if let Some(id) = id {
             paths.extend(files_of_note(&one.from, &id));
             paths.insert(format!("{NOTES_FOLDER}/{}", one.to));
@@ -1151,15 +1156,12 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
 fn remove_forced(
     journal: &mut Backup,
     plan: &PublicationPlan,
-    scan: &Scan,
+    manifest: &BTreeMap<String, ManifestEntry>,
 ) -> Result<Vec<String>, String> {
     let mut changed = Vec::new();
     for path in plan.forced_remove() {
         let mut remove = || -> Result<(), String> {
-            let entry = scan
-                .manifest
-                .get(path)
-                .ok_or("the note has no manifest entry")?;
+            let entry = manifest.get(path).ok_or("the note has no manifest entry")?;
             for file in files_of_note(path, &entry.id) {
                 let removal = StoreFile {
                     path: file.clone(),
@@ -1368,7 +1370,7 @@ fn apply_store_moves(
                     path: from,
                     text: None,
                 });
-                if !plan.remove().contains(&one.to) {
+                if !plan.remove().contains(&one.to) && !plan.forced_remove().contains(&one.to) {
                     files.push(StoreFile {
                         path: format!("{NOTES_FOLDER}/{}", one.to),
                         text: Some(text),
@@ -1410,13 +1412,15 @@ fn write_all(
     } = computed;
     // The forced removals come first, and they are no unit of one note: a
     // failure stops the whole publication.
-    let mut paths = remove_forced(journal, plan, scan)?;
+    // The moves come first (R66): a forced removal can take the new path of a
+    // move. Then the forced removals.
+    let mut paths = Vec::new();
     let mut manifest = scan.manifest.clone();
+    let targets = apply_store_moves(device, journal, plan, scan, &mut manifest, &mut paths)?;
+    paths.extend(remove_forced(journal, plan, &manifest)?);
     for path in plan.forced_remove() {
         manifest.remove(path);
     }
-    // The moves come next (R66).
-    let targets = apply_store_moves(device, journal, plan, scan, &mut manifest, &mut paths)?;
     // The entries after the moves: each unit of a note starts from its entry.
     let moved = manifest.clone();
     let mut failed = Vec::new();
@@ -1793,12 +1797,13 @@ fn report_of(
     let mut uploaded = uploads.to_vec();
     uploaded.extend(cleanup.uploaded);
     sort_by_code_point(&mut uploaded);
-    let mut warnings = reserved;
-    warnings.extend(
-        scan.rename_warnings
-            .iter()
-            .map(|warning| json!({ "message": warning.message, "path": warning.path })),
-    );
+    // In the order of the TypeScript twin: the moves first.
+    let mut warnings: Vec<Value> = scan
+        .rename_warnings
+        .iter()
+        .map(|warning| json!({ "message": warning.message, "path": warning.path }))
+        .collect();
+    warnings.extend(reserved);
     warnings.extend(correction.warnings);
     warnings.extend(cleanup.warnings);
     // A stable sort, by the path of each warning.

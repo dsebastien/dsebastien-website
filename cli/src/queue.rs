@@ -444,7 +444,12 @@ pub fn compute_queue(
             // Missing from this vault, in a folder of the deny list, or with
             // the ignore property.
             None => queue.to_remove.push(path.clone()),
-            Some(_) if ignored.contains(path) => queue.to_remove.push(path.clone()),
+            // With the ignore property, or moved under a guard by a line of a
+            // journal, also when this device still has the file (the guards
+            // win).
+            Some(_) if ignored.contains(path) || moves.under_guard.contains(path) => {
+                queue.to_remove.push(path.clone());
+            }
             Some(note) if note.source_hash != entry.source_hash => {
                 queue.changed.push(path.clone());
             }
@@ -475,7 +480,14 @@ pub fn compute_queue(
     };
     queue.missing = missing_of(&queue.to_remove, &guards);
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
-    queue.pairings = pairings_of(&queue.missing, &queue.new, &manifest, &notes);
+    // A note at the new path of a move waits for the publication of the move.
+    let waiting: Vec<String> = queue
+        .missing
+        .iter()
+        .filter(|path| !moves.applied.iter().any(|one| &one.to == *path))
+        .cloned()
+        .collect();
+    queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
     queue.renamed = moves.applied;
     let mut rename_warnings = journals.warnings.clone();
     rename_warnings.extend(moves.warnings);

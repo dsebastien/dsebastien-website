@@ -311,7 +311,8 @@ function journalText(journal: RunJournal): string {
 function isStorePath(path: string): boolean {
     return (
         isVaultPath(path) &&
-        (path.startsWith(`${NOTES_FOLDER}/`) ||
+        (path === RENAMES_FILE ||
+            path.startsWith(`${NOTES_FOLDER}/`) ||
             (path.startsWith(`${MANIFEST_FOLDER}/`) && path.split('/').length === 2))
     )
 }
@@ -525,6 +526,7 @@ function selectionOf(record: string, id: string): NormalSelection {
             pair.every(
                 (item) =>
                     isRecord(item) &&
+                    Object.keys(item).length === 2 &&
                     typeof item['from'] === 'string' &&
                     typeof item['to'] === 'string'
             )
@@ -1066,10 +1068,12 @@ async function repairStorage(
  */
 function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[] {
     const paths = new Set<string>()
-    // The entry of a pairing is still at its old path in the scan.
+    // The entry of a move of a journal is at its new path in the scan, and
+    // the entry of a pairing is still at its old path.
     const ids = new Map([...scan.manifest].map(([path, entry]) => [path, entry.id]))
+    const journalMoves = new Set(scan.queue.renamed.map((move) => `${move.from}\n${move.to}`))
     for (const { from, to } of plan.move) {
-        const id = ids.get(to) ?? ids.get(from)
+        const id = journalMoves.has(`${from}\n${to}`) ? ids.get(to) : ids.get(from)
         if (id !== undefined) {
             ids.set(to, id)
             for (const file of [...filesOfNote(from, id), `${NOTES_FOLDER}/${to}`]) {
@@ -1133,35 +1137,13 @@ async function writeAll(
     const lists = computed.plan
     const written: string[] = []
     const manifest = new Map(scan.manifest)
-    // The forced removals come first, and they follow the takedown rule: the
-    // note leaves the manifest (PUB-21, PUB-84). When one fails, the whole
-    // publication stops: no note is published while a note under a guard
-    // stays live.
-    for (const path of lists.forcedRemove) {
-        try {
-            const entry = scan.manifest.get(path)
-            if (entry === undefined) {
-                throw new Error('the note has no manifest entry')
-            }
-            for (const file of filesOfNote(path, entry.id)) {
-                if (await journal.apply({ path: file, text: undefined })) {
-                    written.push(file)
-                }
-            }
-            manifest.delete(path)
-        } catch (error) {
-            throw new Stop(
-                `a guard excludes "${path}", and it could not be removed from the content store: ${messageOf(error)}`,
-                { cause: error }
-            )
-        }
-    }
-    // The moves come next (R66): the published version moves as it is, and a
+    // The moves come first (R66): the published version moves as it is, and a
     // move that fails stops the whole publication, as a forced removal does.
+    // A forced removal can take the new path of a move.
     // The entry of a move of a journal is at its new path in the scan, and
     // the entry of a pairing is still at its old path.
     const journalMoves = new Set(scan.queue.renamed.map((move) => `${move.from}\n${move.to}`))
-    const removing = new Set(lists.remove)
+    const removing = new Set([...lists.remove, ...lists.forcedRemove])
     const targets = new Set<string>()
     for (const move of lists.move) {
         try {
@@ -1200,6 +1182,29 @@ async function writeAll(
         } catch (error) {
             throw new Stop(
                 `the note "${move.from}" could not be moved to "${move.to}" in the content store: ${messageOf(error)}`,
+                { cause: error }
+            )
+        }
+    }
+    // Then the forced removals, which follow the takedown rule: the
+    // note leaves the manifest (PUB-21, PUB-84). When one fails, the whole
+    // publication stops: no note is published while a note under a guard
+    // stays live.
+    for (const path of lists.forcedRemove) {
+        try {
+            const entry = manifest.get(path)
+            if (entry === undefined) {
+                throw new Error('the note has no manifest entry')
+            }
+            for (const file of filesOfNote(path, entry.id)) {
+                if (await journal.apply({ path: file, text: undefined })) {
+                    written.push(file)
+                }
+            }
+            manifest.delete(path)
+        } catch (error) {
+            throw new Stop(
+                `a guard excludes "${path}", and it could not be removed from the content store: ${messageOf(error)}`,
                 { cause: error }
             )
         }

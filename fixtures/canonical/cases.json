@@ -1,5 +1,5 @@
 {
-    "about": "Cases of the canonical form (documentation/Canonical Form.md). The TypeScript and the Rust implementation both read this file. Each canonical text is written by hand.",
+    "about": "Cases of the canonical form (documentation/Canonical Form.md). The TypeScript and the Rust implementation both read this file. Each canonical text is written by hand. The list \"markers\" holds texts of renames.json of the content store, and \"journalLines\" one line of a rename journal (issue 37): each valid or not.",
     "cases": [
         {
             "name": "an empty object",
@@ -506,5 +506,159 @@
                 "valid": false
             }
         ]
-    }
+    },
+    "markers": [
+        {
+            "name": "no journal read yet",
+            "text": "{}",
+            "valid": true
+        },
+        {
+            "name": "a count and a hash",
+            "text": "{\"00000000000000aa.jsonl\": {\"hash\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"lines\": 2}}",
+            "valid": true
+        },
+        {
+            "name": "a count written 1.0",
+            "text": "{\"00000000000000aa.jsonl\":{\"hash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"lines\":1.0}}",
+            "valid": true
+        },
+        {
+            "name": "a count below 0",
+            "text": "{\"00000000000000aa.jsonl\": {\"hash\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"lines\": -1}}",
+            "valid": false
+        },
+        {
+            "name": "a count that is not whole",
+            "text": "{\"00000000000000aa.jsonl\": {\"hash\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"lines\": 1.5}}",
+            "valid": false
+        },
+        {
+            "name": "a count that is a text",
+            "text": "{\"00000000000000aa.jsonl\": {\"hash\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"lines\": \"1\"}}",
+            "valid": false
+        },
+        {
+            "name": "a hash in capital letters",
+            "text": "{\"00000000000000aa.jsonl\": {\"hash\": \"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"lines\": 1}}",
+            "valid": false
+        },
+        {
+            "name": "another key",
+            "text": "{\"00000000000000aa.jsonl\": {\"hash\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"lines\": 1, \"time\": \"x\"}}",
+            "valid": false
+        },
+        {
+            "name": "a name that is not a journal",
+            "text": "{\"notes.txt\": {\"hash\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"lines\": 1}}",
+            "valid": false
+        },
+        {
+            "name": "a name in capital letters",
+            "text": "{\"00000000000000AA.jsonl\": {\"hash\": \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"lines\": 1}}",
+            "valid": false
+        },
+        {
+            "name": "a list",
+            "text": "[]",
+            "valid": false
+        },
+        {
+            "name": "not JSON",
+            "text": "{",
+            "valid": false
+        }
+    ],
+    "journalLines": [
+        {
+            "name": "a note",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B/A.md\"}",
+            "valid": true
+        },
+        {
+            "name": "a folder",
+            "text": "{\"from\":\"Old\",\"kind\":\"folder\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"New/Old\"}",
+            "valid": true
+        },
+        {
+            "name": "the keys in another order and white space",
+            "text": " { \"to\" : \"B.md\", \"time\" : \"2031-05-01T08:00:00Z\", \"kind\" : \"note\", \"from\" : \"A.md\" } ",
+            "valid": true
+        },
+        {
+            "name": "a carriage return at the end",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B.md\"}\r",
+            "valid": true
+        },
+        {
+            "name": "a name outside ASCII",
+            "text": "{\"from\":\"Cr\u00e8me.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"\ud83c\udf31.md\"}",
+            "valid": true
+        },
+        {
+            "name": "a note whose new name does not end in .md",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"A.txt\"}",
+            "valid": false
+        },
+        {
+            "name": "a note whose name ends in .MD",
+            "text": "{\"from\":\"A.MD\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "the same path",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"A.md\"}",
+            "valid": false
+        },
+        {
+            "name": "a path that leaves its folder",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"../B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "a path with a backslash",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B\\\\C.md\"}",
+            "valid": false
+        },
+        {
+            "name": "a path with a slash at its start",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"/B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "a time with parts of a second",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00.5Z\",\"to\":\"B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "a time that is not a date",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-02-30T08:00:00Z\",\"to\":\"B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "another kind",
+            "text": "{\"from\":\"A.md\",\"kind\":\"file\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "another key",
+            "text": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B.md\",\"device\":\"x\"}",
+            "valid": false
+        },
+        {
+            "name": "a key two times",
+            "text": "{\"from\":\"A.md\",\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "a path that is not a text",
+            "text": "{\"from\":1,\"kind\":\"note\",\"time\":\"2031-05-01T08:00:00Z\",\"to\":\"B.md\"}",
+            "valid": false
+        },
+        {
+            "name": "a list",
+            "text": "[]",
+            "valid": false
+        }
+    ]
 }

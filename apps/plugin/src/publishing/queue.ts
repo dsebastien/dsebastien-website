@@ -308,8 +308,10 @@ export async function computeQueue(input: {
             continue
         }
         const note = notes.get(path)
-        if (note === undefined || ignored.has(path)) {
-            // Missing from this vault, in a folder of the deny list, or with the ignore property.
+        if (note === undefined || ignored.has(path) || moves.underGuard.has(path)) {
+            // Missing from this vault, in a folder of the deny list, with the
+            // ignore property, or moved under a guard by a line of a journal,
+            // also when this device still has the file (the guards win).
             lists.toRemove.push(path)
         } else if (note.sourceHash !== entry.sourceHash) {
             lists.changed.push(path)
@@ -374,7 +376,13 @@ export async function computeQueue(input: {
         },
         missing: sortByCodePoint(missing),
         new: sortByCodePoint(lists.new),
-        pairings: pairingsOf(missing, lists.new, manifest, notes),
+        // A note at the new path of a move waits for the publication of the move.
+        pairings: pairingsOf(
+            missing.filter((path) => !moves.moves.some((move) => move.to === path)),
+            lists.new,
+            manifest,
+            notes
+        ),
         renamed: moves.moves,
         technicalUpdates: sortByCodePoint(lists.technicalUpdates),
         toRemove: sortByCodePoint(lists.toRemove),

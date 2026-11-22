@@ -96,6 +96,22 @@ function sortMoves(moves: readonly Move[]): Move[] {
 
 /** The selection with each path one time, in the order of the canonical form. */
 export function normalSelection(selection: Selection): NormalSelection {
+    // A face can give data that the types do not hold: a pairing is an object
+    // with exactly a text `from` and a text `to`.
+    for (const pairing of selection.pair ?? []) {
+        const value: unknown = pairing
+        if (
+            typeof value !== 'object' ||
+            value === null ||
+            Object.keys(value).length !== 2 ||
+            typeof (value as Record<string, unknown>)['from'] !== 'string' ||
+            typeof (value as Record<string, unknown>)['to'] !== 'string'
+        ) {
+            throw new SelectionError(
+                'a pairing of the selection is not an object with a text "from" and a text "to"'
+            )
+        }
+    }
     return {
         hold: unique(selection.hold),
         include: unique(selection.include),
@@ -129,18 +145,6 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const { queue } = scan
     const refuse = (path: string, reason: string): never => {
         throw new SelectionError(`"${path}" ${reason}`)
-    }
-    for (const pairing of selection.pair) {
-        if (
-            typeof pairing !== 'object' ||
-            Object.keys(pairing).length !== 2 ||
-            typeof pairing.from !== 'string' ||
-            typeof pairing.to !== 'string'
-        ) {
-            throw new SelectionError(
-                'a pairing of the selection is not an object with a text "from" and a text "to"'
-            )
-        }
     }
     const pairFrom = selection.pair.map((pairing) => pairing.from)
     const pairTo = selection.pair.map((pairing) => pairing.to)
@@ -205,7 +209,18 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
             refuse(path, 'is not published: there is nothing to remove')
         }
     }
+    const pairedTo = new Set<string>()
     for (const { from, to } of selection.pair) {
+        if (pairedTo.has(to)) {
+            refuse(to, 'is the candidate of more than one pairing')
+        }
+        pairedTo.add(to)
+        if (queue.renamed.some((move) => move.to === from)) {
+            refuse(
+                from,
+                'is the new path of a move of a rename journal in this plan: publish the move first, then confirm the pairing'
+            )
+        }
         if (!onlyMissing.has(from)) {
             refuse(
                 from,

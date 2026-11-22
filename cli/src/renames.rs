@@ -458,3 +458,60 @@ pub fn moved_folder(folder: &str, lines: &[JournalLine]) -> Option<String> {
     }
     (path != folder).then_some(path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{lines_of, parse_markers, read_line};
+    use serde_json::Value;
+
+    /// The cases that the TypeScript implementation reads too
+    /// (`apps/plugin/src/publishing/renames.spec.ts`).
+    const CASES: &str = include_str!("../../fixtures/canonical/cases.json");
+
+    fn cases(key: &str) -> Vec<(String, String, bool)> {
+        let cases: Value = serde_json::from_str(CASES).expect("the cases file is JSON");
+        cases[key]
+            .as_array()
+            .expect("the cases file has the list")
+            .iter()
+            .map(|case| {
+                (
+                    case["name"].as_str().expect("a name").to_owned(),
+                    case["text"].as_str().expect("a text").to_owned(),
+                    case["valid"].as_bool().expect("a verdict"),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reads_a_read_marker_as_the_file_states() {
+        let cases = cases("markers");
+        assert!(cases.len() > 8);
+        for (name, text, valid) in cases {
+            let result = parse_markers(Some(&text));
+            assert_eq!(result.is_ok(), valid, "{name}");
+            if let Err(error) = result {
+                assert!(error.contains("renames.json"), "{name}: {error}");
+            }
+        }
+    }
+
+    #[test]
+    fn reads_a_line_of_a_journal_as_the_file_states() {
+        let cases = cases("journalLines");
+        assert!(cases.len() > 15);
+        for (name, text, valid) in cases {
+            let bytes = format!("{text}\n").into_bytes();
+            let lines = lines_of(&bytes);
+            assert_eq!(lines.len(), 1, "{name}");
+            assert_eq!(read_line(lines[0]).is_some(), valid, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_bytes_after_the_last_line_feed_are_no_line() {
+        assert_eq!(lines_of(b"{\"from\":\"A.md\"").len(), 0);
+        assert_eq!(lines_of(b"one\ntwo").len(), 1);
+    }
+}

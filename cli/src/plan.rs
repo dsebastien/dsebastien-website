@@ -309,7 +309,18 @@ fn refuse_paths(selection: &Selection) -> Result<(), String> {
 fn refuse_pairings(scan: &Scan, selection: &Selection) -> Result<(), String> {
     let queue = &scan.queue;
     let within = |list: &[String], path: &String| list.binary_search(path).is_ok();
+    let mut paired_to = BTreeSet::new();
     for Move { from, to } in &selection.pair {
+        if !paired_to.insert(to) {
+            return Err(format!(
+                "\"{to}\" is the candidate of more than one pairing"
+            ));
+        }
+        if queue.renamed.iter().any(|one| &one.to == from) {
+            return Err(format!(
+                "\"{from}\" is the new path of a move of a rename journal in this plan: publish the move first, then confirm the pairing"
+            ));
+        }
         if !within(&queue.missing, from) {
             return Err(format!(
                 "\"{from}\" is not a published note that is missing from this vault: it cannot be paired"
