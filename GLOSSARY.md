@@ -87,7 +87,7 @@ The record of each published note: identity, path, former paths, dates and state
 The record of the renames and moves of notes that Obsidian reported on one device. Each device has its own, and it travels with the vault.
 
 **Move**:
-The change of the path of a published or unpublished note that a rename journal or a pairing gives. The note keeps its identity, and its old path becomes a former path.
+The change of the path of a published note that a rename journal or a pairing gives. The note keeps its identity, and its old path becomes a former path.
 
 **Former path**:
 A path that a note had before a move. While the note is published, its address leads to the note; when the note is unpublished, its address is gone too.
