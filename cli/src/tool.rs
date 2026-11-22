@@ -58,8 +58,9 @@ pub struct Run<'a> {
 pub struct Outcome {
     /// The output of the command, in the canonical form.
     pub output: String,
-    /// The number of notes of the plan that were left out.
-    pub failed: usize,
+    /// What failed in a command that still wrote its output: notes of the
+    /// plan that were left out, or files that a takedown could not delete.
+    pub failure: Option<String>,
 }
 
 fn canonical(value: &Value) -> Result<String, String> {
@@ -147,7 +148,7 @@ fn refuse_when_behind(behind: u64) -> Result<(), String> {
 /// What the lock of the device holds, for a message: one line.
 fn lock_message(text: &str) -> String {
     format!(
-        "a publication runs on this device, or one stopped halfway (the lock holds {}). When no publication runs, remove the lock with the unlock command: the next plan or publish then puts the copy back",
+        "a publication runs on this device, or one stopped halfway (the lock holds {}). When no publication runs, remove the lock with the unlock command: the next plan, publish or takedown then puts the copy back",
         text.split_whitespace().collect::<Vec<_>>().join(" ")
     )
 }
@@ -192,7 +193,7 @@ fn with_lock<T>(
 }
 
 /// Removes the lock of the device that a run left when it stopped halfway.
-/// The next plan or publish puts the copy back. The result says whether a
+/// The next plan, publish or takedown puts the copy back. The result says whether a
 /// lock was there, in the canonical form.
 ///
 /// # Errors
@@ -347,7 +348,7 @@ fn recover(device: &Device, own_lock: &dyn Fn() -> Result<(), String>) -> Result
 pub fn status(device: &Device) -> Result<String, String> {
     refuse_when_locked(device)?;
     if matches!(read_journal(device)?, Some(RunJournal::Write { .. })) {
-        return Err("a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan or publish puts it back".to_owned());
+        return Err("a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan, publish or takedown puts it back".to_owned());
     }
     canonical(&to_value(&read_state(device, Fetch::None)?.scan.queue)?)
 }
@@ -490,10 +491,15 @@ fn store_plan(
         })?;
     }
     let computed = record_for(device, selection, Fetch::Try)?;
-    // The id names the record. It is outside the parity rule (TOOL-30).
+    Ok((store_record(device, &computed)?, computed))
+}
+
+/// Stores the record of a plan on the device. The result is its id, which
+/// names the record. It is outside the parity rule (TOOL-30).
+fn store_record(device: &Device, computed: &Computed) -> Result<String, String> {
     let id = sha256_hex(&computed.record)[..16].to_owned();
     device.store.save_plan(&id, &computed.record)?;
-    Ok((id, computed))
+    Ok(id)
 }
 
 /// Reads the selection of a stored record.
@@ -1037,6 +1043,23 @@ fn repair_storage(
 
 /// Every path of the content store that the publication of a plan can write
 /// or remove: the cleaned note and the manifest entry of each of its notes.
+/// The two files of a note in the content store: its cleaned note and its
+/// manifest entry. A forced removal and a takedown remove both (PUB-84).
+fn files_of_note(path: &str, id: &str) -> [String; 2] {
+    [format!("{NOTES_FOLDER}/{path}"), manifest_file(id)]
+}
+
+/// The keys of the attachments of the published entries of a manifest, with
+/// no guard check: a takedown reads no file of the vault.
+fn published_keys(manifest: &BTreeMap<String, ManifestEntry>) -> BTreeSet<String> {
+    manifest
+        .values()
+        .filter(|entry| entry.state == State::Published)
+        .flat_map(|entry| &entry.attachments)
+        .map(|attachment| key_of(&attachment.hash).to_owned())
+        .collect()
+}
+
 fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String> {
     let mut paths = BTreeSet::new();
     for path in plan
@@ -1046,12 +1069,11 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
         .chain(plan.update())
         .chain(plan.remove())
     {
-        paths.insert(format!("{NOTES_FOLDER}/{path}"));
         let id = scan
             .manifest
             .get(path)
             .map_or_else(|| note_id(path, time), |entry| entry.id.clone());
-        paths.insert(manifest_file(&id));
+        paths.extend(files_of_note(path, &id));
     }
     // The set gives its texts in the order of the code points.
     paths.into_iter().collect()
@@ -1075,7 +1097,7 @@ fn remove_forced(
                 .manifest
                 .get(path)
                 .ok_or("the note has no manifest entry")?;
-            for file in [format!("{NOTES_FOLDER}/{path}"), manifest_file(&entry.id)] {
+            for file in files_of_note(path, &entry.id) {
                 let removal = StoreFile {
                     path: file.clone(),
                     text: None,
@@ -1512,7 +1534,7 @@ fn apply(
                 "and the files of the copy are as they were before".to_owned()
             } else {
                 format!(
-                    "and these files of the copy could not be put back: {}. The next plan or publish puts them back",
+                    "and these files of the copy could not be put back: {}. The next plan, publish or takedown puts them back",
                     stayed.join(", ")
                 )
             };
@@ -1623,14 +1645,21 @@ fn report_of(
     }))?;
     Ok(Outcome {
         output,
-        failed: written.failed.len(),
+        failure: match written.failed.len() {
+            0 => None,
+            1 => Some("1 note of the plan was left out: the report says why".to_owned()),
+            count => Some(format!(
+                "{count} notes of the plan were left out: the report says why"
+            )),
+        },
     })
 }
 
 /// Unpublishes the named published notes in one step (PUB-80, R65): the plan
 /// of the selection that removes them and holds every other changed note is
-/// stored, then applied as `publish` applies a plan. Only the named notes
-/// leave, with the forced removals that every plan holds.
+/// stored, then applied as `publish` applies a plan, with one lock of the
+/// device for both. Only the named notes leave, with the forced removals that
+/// every plan holds.
 ///
 /// # Errors
 ///
@@ -1647,17 +1676,35 @@ pub fn unpublish(
         return Err("an unpublish names at least one note".to_owned());
     }
     let remove: BTreeSet<&String> = paths.iter().collect();
-    let (id, _) = store_plan(device, &|scan| {
-        let hold: Vec<String> = scan
-            .queue
-            .changed
-            .iter()
-            .filter(|path| !remove.contains(path))
-            .cloned()
-            .collect();
-        Selection::new(&[], &hold, paths)
-    })?;
-    publish(device, storage, &id, run)
+    let holder = json!({
+        "command": "publish",
+        "device": run.device,
+        "face": run.face,
+        "time": run.time,
+    });
+    with_lock(device, &holder, |own_lock| {
+        // A publication that stopped halfway is put back first, as a plan
+        // does.
+        recover(device, own_lock)?;
+        let selection = |scan: &Scan| {
+            let hold: Vec<String> = scan
+                .queue
+                .changed
+                .iter()
+                .filter(|path| !remove.contains(path))
+                .cloned()
+                .collect();
+            Selection::new(&[], &hold, paths)
+        };
+        let computed = record_for(device, &selection, Fetch::Must)?;
+        apply(
+            device,
+            storage,
+            &store_record(device, &computed)?,
+            run,
+            own_lock,
+        )
+    })
 }
 
 /// Takes the named notes down at once (`documentation/Canonical Form.md`, "A
@@ -1678,7 +1725,7 @@ pub fn takedown(
     storage: &AttachmentStorage,
     paths: &[String],
     run: &Run,
-) -> Result<String, String> {
+) -> Result<Outcome, String> {
     check_run(run)?;
     if paths.is_empty() {
         return Err("a takedown names at least one note".to_owned());
@@ -1699,18 +1746,18 @@ pub fn takedown(
         "time": run.time,
     });
     with_lock(device, &holder, |own_lock| {
-        take_down(device, storage, &named, run, own_lock)
+        take_down_locked(device, storage, &named, run, own_lock)
     })
 }
 
 /// The takedown of the named notes, with the lock of the device.
-fn take_down(
+fn take_down_locked(
     device: &Device,
     storage: &AttachmentStorage,
     named: &[String],
     run: &Run,
     own_lock: &dyn Fn() -> Result<(), String>,
-) -> Result<String, String> {
+) -> Result<Outcome, String> {
     // A publication that stopped halfway is put back first. When it stopped
     // after its push, the correction of the property is owed: the next
     // publication makes it.
@@ -1719,6 +1766,12 @@ fn take_down(
     // note, and the push would be refused.
     refuse_when_behind(device.store.verify(Fetch::Must)?.behind)?;
     let manifest = read_manifest(&device.store)?;
+    // First the files of the storage that no published note uses: a takedown
+    // that stopped after its push left the files of its notes there, and its
+    // notes have no entry any more, so this run stops below when it names
+    // them again. No other run could clean the storage when no publication
+    // can run (PUB-99).
+    let (early, _) = delete_unused(storage, &published_keys(&manifest));
     let mut paths = Vec::new();
     for path in named {
         let entry = manifest.get(path).ok_or_else(|| {
@@ -1726,8 +1779,7 @@ fn take_down(
                 "\"{path}\" has no manifest entry: it is not published and not unpublished, so there is nothing to take down"
             )
         })?;
-        paths.push(format!("{NOTES_FOLDER}/{path}"));
-        paths.push(manifest_file(&entry.id));
+        paths.extend(files_of_note(path, &entry.id));
     }
     sort_by_code_point(&mut paths);
     // The id names the takedown in the journal and in the message of its
@@ -1791,7 +1843,7 @@ fn take_down(
     device
         .store
         .save_journal(&journal_text(&RunJournal::Correct)?)?;
-    after_push(device, storage, manifest, named, owed)
+    after_push(device, storage, manifest, named, owed, early)
 }
 
 /// Removes the files of a takedown from the copy, and commits and pushes the
@@ -1821,41 +1873,57 @@ fn remove_and_push(
 
 /// What a takedown does after its push: the files of the attachment storage
 /// that no published note uses go, then the state property of the notes. The
-/// result is the takedown report, in the canonical form.
+/// result is the takedown report, in the canonical form, with a failure when
+/// the attachment storage gave a warning: a file that stays there can still
+/// be public.
 fn after_push(
     device: &Device,
     storage: &AttachmentStorage,
     mut manifest: BTreeMap<String, ManifestEntry>,
     named: &[String],
     owed: bool,
-) -> Result<String, String> {
+    early: Cleanup,
+) -> Result<Outcome, String> {
     for path in named {
         manifest.remove(path);
     }
     // The files go first: they are public. No file of the vault is read, so a
     // file under a guard that a published entry lists waits for the cleanup
     // of the next publication.
-    let used: BTreeSet<String> = manifest
-        .values()
-        .filter(|entry| entry.state == State::Published)
-        .flat_map(|entry| &entry.attachments)
-        .map(|attachment| key_of(&attachment.hash).to_owned())
-        .collect();
-    let (cleanup, _) = delete_unused(storage, &used);
+    let (cleanup, _) = delete_unused(storage, &published_keys(&manifest));
     let (property_removed, property_warnings) = remove_state(device, named);
     if !owed {
         device.store.remove_journal()?;
     }
-    let mut warnings = cleanup.warnings;
+    let mut deleted = early.deleted;
+    deleted.extend(cleanup.deleted);
+    sort_by_code_point(&mut deleted);
+    // The two cleanups give the same warning for a name that is not a key:
+    // it is written one time.
+    let mut warnings = early.warnings;
+    for warning in cleanup.warnings {
+        if !warnings.contains(&warning) {
+            warnings.push(warning);
+        }
+    }
+    let storage_warnings = warnings.len();
     warnings.extend(property_warnings);
     // A stable sort, by the path of each warning.
     warnings.sort_by(|one, two| one["path"].as_str().cmp(&two["path"].as_str()));
-    canonical(&json!({
-        "attachmentsDeleted": cleanup.deleted,
+    let output = canonical(&json!({
+        "attachmentsDeleted": deleted,
         "propertyRemoved": property_removed,
         "takenDown": named,
         "warnings": warnings,
-    }))
+    }))?;
+    Ok(Outcome {
+        output,
+        failure: (storage_warnings > 0).then(|| {
+            format!(
+                "the notes are taken down, but the attachment storage gave {storage_warnings} warning(s), and a file that stays there can still be public: the report says why. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses"
+            )
+        }),
+    })
 }
 
 /// Removes the state property of the notes that were taken down, when the

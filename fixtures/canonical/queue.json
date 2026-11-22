@@ -4992,6 +4992,17 @@
                 },
                 {
                     "do": "crash",
+                    "why": "the takedown stops after it removed the files from the copy, before its commit",
+                    "takedown": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "at": "write"
+                },
+                {
+                    "do": "unlock",
+                    "why": "the author removes the lock"
+                },
+                {
+                    "do": "crash",
                     "why": "the takedown stops after its commit, before its push",
                     "takedown": ["Notes/Plan.md"],
                     "time": "2031-06-02T08:00:00Z",
@@ -5141,8 +5152,25 @@
                     }
                 },
                 {
+                    "do": "takedown",
+                    "why": "the author runs the takedown again: it cleans the attachment storage first, then says that the note has no entry any more",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-05T08:00:00Z",
+                    "refused": true,
+                    "says": "has no manifest entry"
+                },
+                {
+                    "do": "expect",
+                    "why": "the file that no published note uses left the storage, also when the takedown stopped on the path",
+                    "vault": {
+                        "Notes/Plan.md": "---\npublic_note: true\n---\n# Plan\n\nThe [list](../Files/only.txt).\n"
+                    },
+                    "store": {},
+                    "attachmentStorage": {}
+                },
+                {
                     "do": "publish",
-                    "why": "the next publication corrects the property and cleans the storage",
+                    "why": "the next publication corrects the property",
                     "selection": {
                         "hold": [],
                         "include": [],
@@ -5150,9 +5178,7 @@
                     },
                     "time": "2031-06-05T08:00:00Z",
                     "report": {
-                        "attachmentsDeleted": [
-                            "3956f6fe324e4dcddddb0c09d36f37c8b50acfc2dda4d1bf9b41c49be83e69eb"
-                        ],
+                        "attachmentsDeleted": [],
                         "attachmentsUploaded": [],
                         "failed": [],
                         "forcedRemoved": [],

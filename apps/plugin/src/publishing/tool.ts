@@ -211,7 +211,7 @@ function forRun(device: Device): Device {
 
 /** What the lock of the device holds, for a message: one line. */
 function lockMessage(text: string): string {
-    return `a publication runs on this device, or one stopped halfway (the lock holds ${text.replace(/\s+/gu, ' ').trim()}). When no publication runs, remove the lock with the unlock command: the next plan or publish then puts the copy back`
+    return `a publication runs on this device, or one stopped halfway (the lock holds ${text.replace(/\s+/gu, ' ').trim()}). When no publication runs, remove the lock with the unlock command: the next plan, publish or takedown then puts the copy back`
 }
 
 /** Stops when the lock of the device is taken: the files of the copy can be half written. */
@@ -256,7 +256,7 @@ async function withLock<T>(
 
 /**
  * Removes the lock of the device that a run left when it stopped halfway. The
- * next plan or publish puts the copy back. True when a lock was there.
+ * next plan, publish or takedown puts the copy back. True when a lock was there.
  */
 export async function unlock(device: Device): Promise<boolean> {
     return await device.local.unlock()
@@ -360,7 +360,7 @@ export async function status(given: Device): Promise<PublicationQueue> {
     await refuseWhenLocked(device)
     if ((await readJournal(device))?.step === 'write') {
         throw new Error(
-            'a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan or publish puts it back'
+            'a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan, publish or takedown puts it back'
         )
     }
     const state = await readState(device, 'none')
@@ -395,13 +395,13 @@ interface Computed {
  */
 async function recordFor(
     device: Device,
-    selectionOf: NormalSelection | ((scan: Scan) => NormalSelection),
+    selectionFor: (scan: Scan) => NormalSelection,
     fetch: Fetch
 ): Promise<Computed> {
     const { scan, configurationHash, reached } = await readState(device, fetch)
     // An unpublish holds every changed note that it does not name: its
     // selection comes from the queue of the same scan.
-    const selection = typeof selectionOf === 'function' ? selectionOf(scan) : selectionOf
+    const selection = selectionFor(scan)
     const plan = computePlan(scan, selection)
     // The published notes got their type in the scan. The new ones of the plan
     // get theirs in one more question.
@@ -454,14 +454,6 @@ async function recordFor(
  * into the vault and nothing into the content of the store.
  */
 export async function plan(given: Device, selection: Selection): Promise<StoredPlan> {
-    return await storePlan(given, normalSelection(selection))
-}
-
-/** Computes the plan of a selection and stores it on the device. */
-async function storePlan(
-    given: Device,
-    selection: NormalSelection | ((scan: Scan) => NormalSelection)
-): Promise<StoredPlan> {
     const device = forRun(given)
     await refuseWhenLocked(device)
     // A publication that stopped halfway left files in the copy: they are put
@@ -469,11 +461,16 @@ async function storePlan(
     if ((await readJournal(device))?.step === 'write') {
         await withLock(device, { command: 'plan' }, (ownLock) => recover(device, ownLock))
     }
-    const computed = await recordFor(device, selection, 'try')
-    // The id names the record. It is outside the parity rule (TOOL-30).
+    const normal = normalSelection(selection)
+    const computed = await recordFor(device, () => normal, 'try')
+    return { id: await store(device, computed), plan: computed.plan, offline: !computed.reached }
+}
+
+/** Stores the record of a plan on the device. The result is its id, which names the record (outside the parity rule, TOOL-30). */
+async function store(device: Device, computed: Computed): Promise<string> {
     const id = sha256Hex(computed.record).slice(0, 16)
     await device.local.save(id, computed.record)
-    return { id, plan: computed.plan, offline: !computed.reached }
+    return id
 }
 
 /** Reads the selection of a stored record. It throws when the record is not one. */
@@ -769,6 +766,30 @@ async function usedKeys(
     return keys
 }
 
+/**
+ * The two files of a note in the content store: its cleaned note and its
+ * manifest entry. A forced removal and a takedown remove both (PUB-84).
+ */
+function filesOfNote(path: string, id: string): readonly [string, string] {
+    return [`${NOTES_FOLDER}/${path}`, manifestFile(id)]
+}
+
+/**
+ * The keys of the attachments of the published entries of a manifest, with
+ * no guard check: a takedown reads no file of the vault.
+ */
+function publishedKeys(manifest: ReadonlyMap<string, ManifestEntry>): Set<string> {
+    const keys = new Set<string>()
+    for (const entry of manifest.values()) {
+        if (entry.state === 'published') {
+            for (const attachment of entry.attachments) {
+                keys.add(keyOf(attachment.hash))
+            }
+        }
+    }
+    return keys
+}
+
 /** The form of the name of a file of the attachment storage: a key, or a key that is being written. */
 const STORAGE_NAME = /^(?:[0-9a-f]{64}|\.[0-9a-f]{64}\.part)$/
 
@@ -998,8 +1019,9 @@ async function repairStorage(
 function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[] {
     const paths = new Set<string>()
     for (const path of [...plan.forcedRemove, ...plan.publish, ...plan.update, ...plan.remove]) {
-        paths.add(`${NOTES_FOLDER}/${path}`)
-        paths.add(manifestFile(scan.manifest.get(path)?.id ?? noteId(path, time)))
+        for (const file of filesOfNote(path, scan.manifest.get(path)?.id ?? noteId(path, time))) {
+            paths.add(file)
+        }
     }
     return sortByCodePoint([...paths])
 }
@@ -1059,7 +1081,7 @@ async function writeAll(
             if (entry === undefined) {
                 throw new Error('the note has no manifest entry')
             }
-            for (const file of [`${NOTES_FOLDER}/${path}`, manifestFile(entry.id)]) {
+            for (const file of filesOfNote(path, entry.id)) {
                 if (await journal.apply({ path: file, text: undefined })) {
                     written.push(file)
                 }
@@ -1199,27 +1221,42 @@ function checkRun(run: Run): void {
 /**
  * Unpublishes the named published notes in one step (PUB-80, R65): the plan
  * of the selection that removes them and holds every other changed note is
- * stored, then applied as `publish` applies a plan. Only the named notes
- * leave, with the forced removals that every plan holds.
+ * stored, then applied as `publish` applies a plan, with one lock of the
+ * device for both. Only the named notes leave, with the forced removals that
+ * every plan holds.
  */
 export async function unpublish(
     given: Device,
     paths: readonly string[],
     run: Run
 ): Promise<PublicationReport> {
+    const device = forRun(given)
     checkRun(run)
     if (paths.length === 0) {
         throw new Error('an unpublish names at least one note')
     }
     const remove = new Set(paths)
-    const stored = await storePlan(given, (scan) =>
-        normalSelection({
-            include: [],
-            hold: scan.queue.changed.filter((path) => !remove.has(path)),
-            remove: [...remove]
-        })
-    )
-    return await publish(given, stored.id, run)
+    const holder: LockHolder = {
+        command: 'publish',
+        device: run.device,
+        face: run.face,
+        time: run.time
+    }
+    return await withLock(device, holder, async (ownLock) => {
+        // A publication that stopped halfway is put back first, as a plan does.
+        await recover(device, ownLock)
+        const computed = await recordFor(
+            device,
+            (scan) =>
+                normalSelection({
+                    include: [],
+                    hold: scan.queue.changed.filter((path) => !remove.has(path)),
+                    remove: [...remove]
+                }),
+            'must'
+        )
+        return await apply(device, await store(device, computed), run, ownLock)
+    })
 }
 
 /**
@@ -1252,11 +1289,11 @@ export async function takedown(
         face: run.face,
         time: run.time
     }
-    return await withLock(device, holder, (ownLock) => takeDown(device, named, run, ownLock))
+    return await withLock(device, holder, (ownLock) => takeDownLocked(device, named, run, ownLock))
 }
 
 /** The takedown of the named notes, with the lock of the device. */
-async function takeDown(
+async function takeDownLocked(
     device: Device,
     named: readonly string[],
     run: Run,
@@ -1270,6 +1307,12 @@ async function takeDown(
     // note, and the push would be refused.
     refuseWhenBehind((await device.store.verify('must')).behind)
     const manifest = await readManifest(device.store)
+    // First the files of the storage that no published note uses: a takedown
+    // that stopped after its push left the files of its notes there, and its
+    // notes have no entry any more, so this run stops below when it names
+    // them again. No other run could clean the storage when no publication
+    // can run (PUB-99).
+    const early = await deleteUnused(device, publishedKeys(manifest))
     const entries = named.map((path) => {
         const entry = manifest.get(path)
         if (entry === undefined) {
@@ -1284,9 +1327,7 @@ async function takeDown(
     const id = sha256Hex(
         toCanonicalJson({ manifest: await manifestHash(device), takedown: named })
     ).slice(0, 16)
-    const paths = sortByCodePoint(
-        entries.flatMap((entry) => [`${NOTES_FOLDER}/${entry.path}`, manifestFile(entry.id)])
-    )
+    const paths = sortByCodePoint(entries.flatMap((entry) => filesOfNote(entry.path, entry.id)))
     const head = await device.store.head()
     await ownLock()
     await device.local.saveJournal(
@@ -1345,16 +1386,28 @@ async function takeDown(
     // The files go first: they are public. No file of the vault is read, so a
     // file under a guard that a published entry lists waits for the cleanup of
     // the next publication.
-    const storage = await deleteUnused(device, await usedKeys(after, () => Promise.resolve(false)))
+    const storage = await deleteUnused(device, publishedKeys(after))
+    // The two cleanups give the same warning for a name that is not a key:
+    // it is written one time.
+    const storageWarnings = [...early.warnings]
+    for (const warning of storage.warnings) {
+        if (
+            !storageWarnings.some(
+                (one) => one.path === warning.path && one.message === warning.message
+            )
+        ) {
+            storageWarnings.push(warning)
+        }
+    }
     const property = await removeState(device, named)
     if (!owed) {
         await device.local.removeJournal()
     }
     return {
-        attachmentsDeleted: storage.deleted,
+        attachmentsDeleted: sortByCodePoint([...early.deleted, ...storage.deleted]),
         propertyRemoved: property.propertyRemoved,
         takenDown: named,
-        warnings: [...storage.warnings, ...property.warnings].sort((one, two) =>
+        warnings: [...storageWarnings, ...property.warnings].sort((one, two) =>
             compareCodePoints(one.path, two.path)
         )
     }
@@ -1437,7 +1490,8 @@ async function apply(
     if (record === undefined) {
         throw new Error(`there is no plan with the id ${id} on this device`)
     }
-    const current = await recordFor(device, selectionOf(record, id), 'must')
+    const selection = selectionOf(record, id)
+    const current = await recordFor(device, () => selection, 'must')
     const { scan } = current
     if (current.record !== record) {
         // The run fetched and the copy follows the content store: the
@@ -1494,7 +1548,7 @@ async function apply(
         const files =
             stayed.length === 0
                 ? 'and the files of the copy are as they were before'
-                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan or publish puts them back`
+                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan, publish or takedown puts them back`
         const storage =
             kept.length === 0
                 ? ''

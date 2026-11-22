@@ -15,6 +15,7 @@ import type { Device } from '../../plugin/src/publishing/ports.ts'
 import { plan, publish, status, takedown, unpublish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 import { createSearch, type Search } from './search/engine.ts'
+import { SITE_CHECKS_MODE } from './site-checks.ts'
 import { pagefindEngine } from './search/full-text.ts'
 import { partFile, type TitleRow } from './search/titles.ts'
 
@@ -176,7 +177,9 @@ beforeAll(async () => {
         time: '2031-05-03T00:00:00Z'
     })
     // A build of real notes: the strict mode of the tests is off.
-    const { SITE_CHECKS: _strict, ...real } = process.env
+    const real = Object.fromEntries(
+        Object.entries(process.env).filter(([name]) => name !== SITE_CHECKS_MODE)
+    )
     after = await build('after', real)
 }, 600_000)
 
@@ -261,6 +264,8 @@ describe('a takedown on the built site', () => {
         expect(files.size).toBeGreaterThan(50)
         for (const [file, text] of files) {
             expect(text.includes(COMPOST_TEXT), file).toBe(false)
+            // Its alias, which no other note writes.
+            expect(text.includes('Composting'), file).toBe(false)
             for (const path of [COMPOST, SOUND, BARREL]) {
                 expect(linksTo(text, canonicalPath(path)), `${file}: ${path}`).toBe(false)
             }
@@ -285,7 +290,8 @@ describe('a takedown on the built site', () => {
 
     test('leaves no text of the note in the cache of the build', async () => {
         // Astro keeps the markup of each note between two builds (AGENTS.md):
-        // a cached copy that the site controls (PUB-82).
+        // a cached copy that the site controls (PUB-82). The builds of the
+        // tests share this file; Bun runs the test files one after the other.
         const store = await readFile(DATA_STORE, 'utf8')
         expect(store.includes(COMPOST_TEXT)).toBe(false)
     })

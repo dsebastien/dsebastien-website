@@ -222,7 +222,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
             // The address of the content store, for the steps "offline" and "online".
             const address = await git(copy, 'remote', 'get-url', 'origin')
             let stoppedPlan = ''
-            // The plan of the last step that stored one, for a publish step with `stored`.
+            // The plan of the last `plan` step, for a publish step with `stored`.
             let storedPlan = ''
             const runAt = (time: string): Run => ({ time, device: 'garden-shed', face: 'plugin' })
             for (const [index, step] of scenario.steps.entries()) {

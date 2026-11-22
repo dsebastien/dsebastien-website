@@ -88,7 +88,7 @@ export function siteFindings(
     notes: ReadonlySet<string>,
     targetOf: (link: string) => LinkTarget
 ): Findings {
-    const findings: string[] = []
+    const stops: string[] = []
     const warnings: string[] = []
     const targets = new Map<string, LinkTarget>()
     const target = (link: string): LinkTarget => {
@@ -101,18 +101,18 @@ export function siteFindings(
     for (const [file, page] of pages) {
         if (!page.indexable) continue
         if (page.title === undefined || page.title.trim() === '') {
-            findings.push(`${file} has no title`)
+            stops.push(`${file} has no title`)
         } else if (titles.has(page.title)) {
-            findings.push(
+            stops.push(
                 `${file} and ${titles.get(page.title) ?? ''} share the title "${page.title}"`
             )
         } else {
             titles.set(page.title, file)
         }
         if (page.description === undefined || page.description.trim() === '') {
-            findings.push(`${file} has no description`)
+            stops.push(`${file} has no description`)
         } else if (descriptions.has(page.description)) {
-            findings.push(
+            stops.push(
                 `${file} and ${descriptions.get(page.description) ?? ''} share the description "${page.description}"`
             )
         } else {
@@ -150,7 +150,7 @@ export function siteFindings(
             )
         }
     }
-    return { stops: findings, warnings }
+    return { stops, warnings }
 }
 
 /**

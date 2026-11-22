@@ -181,7 +181,10 @@ enum Command {
     /// published or an unpublished note can be taken down. A stale plan, a
     /// failed publication and a missing Starter Kit do not stop it. Copies in
     /// browser caches and at crawlers cannot be recalled, and the text stays
-    /// in the history of the content store. It writes the takedown report.
+    /// in the history of the content store. It writes the takedown report,
+    /// and ends with an error after it when the attachment storage gave a
+    /// warning: a file that stays there can still be public. Each takedown
+    /// first deletes the files of the storage that no published note uses.
     Takedown {
         /// The folder of the vault.
         #[arg(long)]
@@ -214,7 +217,7 @@ enum Command {
 
     /// Removes the lock of this device that a publication left when it
     /// stopped halfway (a crash, a power cut). Run it only when no
-    /// publication runs. The next plan or publish puts the copy of the
+    /// publication runs. The next plan, publish or takedown puts the copy of the
     /// content store back. It writes whether a lock was there.
     Unlock {
         /// The folder of the copy of the content store on this device.
@@ -371,7 +374,10 @@ fn warn_when_offline(plan: &str) {
 }
 
 fn run(command: Command) -> Result<Outcome, String> {
-    let done = |output: String| Outcome { output, failed: 0 };
+    let done = |output: String| Outcome {
+        output,
+        failure: None,
+    };
     match command {
         Command::Status { places } => {
             let output = tool::status(&device(&places)?)?;
@@ -425,8 +431,7 @@ fn run(command: Command) -> Result<Outcome, String> {
                 device: &name.unwrap_or_else(host_name),
                 face: "command-line",
             },
-        )
-        .map(done),
+        ),
         Command::Unlock { content_store } => {
             if !content_store.is_dir() {
                 return Err(format!(
@@ -475,13 +480,7 @@ fn main() -> ExitCode {
     let written = run(Arguments::parse().command).and_then(|outcome| {
         write_output(&outcome.output).map_err(|error| error.to_string())?;
         // The report is written. The exit code says that it names a failure.
-        match outcome.failed {
-            0 => Ok(()),
-            1 => Err("1 note of the plan was left out: the report says why".to_owned()),
-            count => Err(format!(
-                "{count} notes of the plan were left out: the report says why"
-            )),
-        }
+        outcome.failure.map_or(Ok(()), Err)
     });
     match written {
         Ok(()) => ExitCode::SUCCESS,

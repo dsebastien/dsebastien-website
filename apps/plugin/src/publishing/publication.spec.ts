@@ -754,6 +754,20 @@ describe('takedown', () => {
         expect(await exists(join(setup.copy, '.git', 'vault-publish', 'journal.json'))).toBe(false)
     })
 
+    // The cleanup before the path check and the one after the push see the
+    // same name: the report says it one time.
+    test('a name of the storage that is not a key gives one warning', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        await writeFile(join(stores.attachmentStorage, 'notes.txt'), 'Not a file of the storage\n')
+
+        const report = await takedown(setup.device, [NOTE], LATER)
+
+        expect(report.takenDown).toEqual([NOTE])
+        expect(report.warnings.map((warning) => warning.path)).toEqual(['notes.txt'])
+    })
+
     test('a copy that is behind the content store stops the takedown, which says to pull', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)

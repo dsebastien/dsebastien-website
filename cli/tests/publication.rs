@@ -1514,3 +1514,36 @@ fn a_copy_that_is_behind_the_content_store_stops_the_takedown_which_says_to_pull
     assert!(setup.copy.join("notes").join(NOTE).exists());
     assert_eq!(picture(&setup.vault), vault);
 }
+
+/// A file of the attachment storage that the takedown cannot delete can stay
+/// public: the program writes the report, then ends with an error.
+#[test]
+fn a_takedown_whose_storage_gives_a_warning_writes_its_report_and_ends_with_an_error() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    // A file whose name is not a key: the storage may be the wrong folder.
+    fs::write(
+        setup.stores.attachment_storage().join("notes.txt"),
+        "Not a file of the storage\n",
+    )
+    .expect("the file is written");
+
+    let output = take_down(&setup, NOTE);
+
+    assert_eq!(output.status.code(), Some(1));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is written");
+    assert_eq!(report["takenDown"], serde_json::json!([NOTE]));
+    let warnings: Vec<&str> = report["warnings"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter_map(|warning| warning["path"].as_str())
+        .collect();
+    assert_eq!(warnings, ["notes.txt"]);
+    assert!(
+        errors_of(&output).contains("the attachment storage gave 1 warning(s)"),
+        "{}",
+        errors_of(&output)
+    );
+}
