@@ -16,6 +16,14 @@ const K = new Uint32Array([
 
 const rotate = (value: number, bits: number): number => (value >>> bits) | (value << (32 - bits))
 
+/**
+ * The length of a message in bits, as the two words of 32 bits at the end of
+ * its padding: the high word, then the low word.
+ */
+export function lengthWords(byteLength: number): [high: number, low: number] {
+    return [Math.floor(byteLength / 0x20000000), (byteLength * 8) >>> 0]
+}
+
 /** The SHA-256 of a text, as UTF-8, in 64 small hexadecimal digits. */
 export function sha256Hex(text: string): string {
     const bytes = new TextEncoder().encode(text)
@@ -25,8 +33,9 @@ export function sha256Hex(text: string): string {
     message.set(bytes)
     message[bytes.length] = 0x80
     const view = new DataView(message.buffer)
-    view.setUint32(length - 8, Math.floor(bytes.length / 0x20000000))
-    view.setUint32(length - 4, (bytes.length * 8) >>> 0)
+    const [high, low] = lengthWords(bytes.length)
+    view.setUint32(length - 8, high)
+    view.setUint32(length - 4, low)
     const hash = new Uint32Array([
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
         0x5be0cd19

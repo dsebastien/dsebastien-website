@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { sha256Hex } from './sha256.ts'
+import { lengthWords, sha256Hex } from './sha256.ts'
 
 // The SHA-256 of the resolver: the expected values were computed with sha256sum.
 describe('SHA-256 of a text', () => {
@@ -28,5 +28,19 @@ describe('SHA-256 of a text', () => {
         ]
     ])('%s', (_name, text, hash) => {
         expect(sha256Hex(text)).toBe(hash)
+    })
+})
+
+// A text of 2^29 bytes or more has a length in bits above 32 bits.
+describe('length field of SHA-256', () => {
+    test.each([
+        [0, 0, 0],
+        [3, 0, 24],
+        [0x12345678, 0, 0x91a2b3c0],
+        [0x20000000, 1, 0],
+        [0x20000001, 1, 8],
+        [0x60000000, 3, 0]
+    ])('%d bytes', (bytes, high, low) => {
+        expect(lengthWords(bytes)).toEqual([high, low])
     })
 })

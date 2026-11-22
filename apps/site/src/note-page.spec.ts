@@ -255,7 +255,7 @@ describe('build of a content store with one published note', () => {
             choices: {},
             notFound: '404.html',
             // No note was unpublished (URL-27, R64).
-            gone: { file: '410.html', paths: {}, folded: {}, names: {}, aliases: {} }
+            gone: { file: '410.html', longest: 0, paths: {}, folded: {}, names: {}, aliases: {} }
         })
     })
 })

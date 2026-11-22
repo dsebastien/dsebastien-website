@@ -12,10 +12,14 @@ const MARKDOWN_PREFIX = '/-/md/'
 /** The form of a weight of the `Accept` header: 0 to 1, with three decimals at most (RFC 9110). */
 const WEIGHT = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u
 
-/** A media range of an `Accept` header, in small letters, with its parameters and its weight. */
+/**
+ * A media range of an `Accept` header, in small letters, with its character
+ * set when it names one and its weight. The other parameters of a type (the
+ * `variant` of Markdown, RFC 7763) choose nothing here: the answer has one form.
+ */
 interface MediaRange {
     readonly type: string
-    readonly parameters: ReadonlyMap<string, string>
+    readonly charset: string | undefined
     readonly weight: number
 }
 
@@ -43,12 +47,16 @@ function splitOutsideQuotes(text: string, separator: string): string[] {
     return parts
 }
 
-/** The media ranges of an `Accept` header. A range with a weight in another form is left out. */
+/**
+ * The media ranges of an `Accept` header. The weight ends a range: a
+ * parameter after it is no parameter of the type (RFC 9110, section 12.4.2).
+ * A range with a weight in another form is left out.
+ */
 function rangesOf(accept: string): MediaRange[] {
     const ranges: MediaRange[] = []
     for (const item of splitOutsideQuotes(accept, ',')) {
         const [type = '', ...rest] = splitOutsideQuotes(item, ';').map((part) => part.trim())
-        const parameters = new Map<string, string>()
+        let charset: string | undefined
         let weight = 1
         for (const parameter of rest) {
             const at = parameter.indexOf('=')
@@ -59,37 +67,36 @@ function rangesOf(accept: string): MediaRange[] {
             const value = (at < 0 ? '' : parameter.slice(at + 1).trim()).replace(/^"(.*)"$/su, '$1')
             if (name === 'q') {
                 weight = WEIGHT.test(value) ? Number(value) : Number.NaN
-            } else if (name !== '') {
-                parameters.set(name, value.toLowerCase())
+                break
+            }
+            if (name === 'charset') {
+                charset = value.toLowerCase() === 'utf8' ? 'utf-8' : value.toLowerCase()
             }
         }
         if (type.includes('/') && !Number.isNaN(weight)) {
-            ranges.push({ type: type.toLowerCase(), parameters, weight })
+            ranges.push({ type: type.toLowerCase(), charset, weight })
         }
     }
     return ranges
 }
 
 /**
- * The weight of a type of the answers, which are always UTF-8 (RFC 9110,
- * section 12.5.1): the most specific range that matches it wins. A range of
- * the type with parameters matches when each one is the character set
- * `utf-8`; then comes the range of the type, then its group, then any type.
- * Among ranges of one rank, the first one wins. No range: 0.
+ * The range that gives its weight to a type of the answers, which are always
+ * UTF-8 (RFC 9110, section 12.5.1): the most specific range that matches it.
+ * The type with the character set `utf-8` comes first, then the type, then
+ * its group, then any type; the type with another character set does not
+ * match. Among ranges of one rank, the first one wins.
  */
-function weightOf(ranges: readonly MediaRange[], type: string): number {
+function rangeOf(
+    ranges: readonly MediaRange[],
+    type: string
+): { weight: number; exact: boolean } | undefined {
     const group = `${type.slice(0, type.indexOf('/'))}/*`
     const rank = (range: MediaRange): number => {
         if (range.type === type) {
-            if (range.parameters.size === 0) {
-                return 2
-            }
-            const matches = [...range.parameters].every(
-                ([name, value]) => name === 'charset' && value === 'utf-8'
-            )
-            return matches ? 3 : 0
+            return range.charset === undefined ? 3 : range.charset === 'utf-8' ? 4 : 0
         }
-        return range.type === group ? 1 : range.type === '*/*' ? 0.5 : 0
+        return range.type === group ? 2 : range.type === '*/*' ? 1 : 0
     }
     let best: MediaRange | undefined
     for (const range of ranges) {
@@ -97,7 +104,7 @@ function weightOf(ranges: readonly MediaRange[], type: string): number {
             best = range
         }
     }
-    return best?.weight ?? 0
+    return best === undefined ? undefined : { weight: best.weight, exact: rank(best) >= 3 }
 }
 
 /**
@@ -114,12 +121,17 @@ export function errorFormat(path: string, accept: string | null): 'html' | 'mark
         return 'html'
     }
     const ranges = rangesOf(accept)
-    // Markdown only when the header names it: a group or any type is no wish for Markdown.
-    const named = ranges.some((range) => range.type === 'text/markdown')
-    const markdown = weightOf(ranges, 'text/markdown')
+    // Markdown only when a range of Markdown itself matches: a group or any
+    // type is no wish for Markdown.
+    const markdown = rangeOf(ranges, 'text/markdown')
     // HTML is `text/html` or XHTML, whichever the header weighs more.
-    const html = Math.max(weightOf(ranges, 'text/html'), weightOf(ranges, 'application/xhtml+xml'))
-    return named && markdown > 0 && markdown >= html ? 'markdown' : 'html'
+    const html = Math.max(
+        rangeOf(ranges, 'text/html')?.weight ?? 0,
+        rangeOf(ranges, 'application/xhtml+xml')?.weight ?? 0
+    )
+    return markdown?.exact === true && markdown.weight > 0 && markdown.weight >= html
+        ? 'markdown'
+        : 'html'
 }
 
 /** The ways on from an error answer: the search and the home page. */

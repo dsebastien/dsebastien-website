@@ -240,10 +240,14 @@ function goneMapOf(removed: readonly SiteNote[], file: string): GoneMap {
             sorted([...texts].map(goneKey)).map((key): [string, true] => [key, true])
         )
     const { names, aliases } = namesAndAliases(ordered)
+    const paths = ordered.flatMap((note) => [canonicalPath(note.path), markdownPath(note.path)])
+    const folded = ordered.map((note) => foldedForm(note.path.slice(0, -'.md'.length)))
+    const texts = [...paths, ...folded, ...names.keys(), ...aliases.keys()]
     return {
         file,
-        paths: set(ordered.flatMap((note) => [canonicalPath(note.path), markdownPath(note.path)])),
-        folded: set(ordered.map((note) => foldedForm(note.path.slice(0, -'.md'.length)))),
+        longest: Math.max(0, ...texts.map((text) => text.length)),
+        paths: set(paths),
+        folded: set(folded),
         names: set(names.keys()),
         aliases: set(aliases.keys())
     }

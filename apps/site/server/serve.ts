@@ -43,6 +43,9 @@ const isSet = (value: unknown): boolean => everyValue(value, (item) => item === 
 const isGoneMap = (value: unknown): boolean =>
     isRecord(value) &&
     (value['file'] === undefined || isText(value['file'])) &&
+    typeof value['longest'] === 'number' &&
+    Number.isInteger(value['longest']) &&
+    value['longest'] >= 0 &&
     isSet(value['paths']) &&
     isSet(value['folded']) &&
     isSet(value['names']) &&

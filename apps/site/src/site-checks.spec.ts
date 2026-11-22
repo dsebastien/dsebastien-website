@@ -138,6 +138,7 @@ describe('the target of a link of a built page', () => {
             ...map,
             gone: {
                 file: '410.html',
+                longest: 6,
                 paths: { [goneKey('/Basil')]: true },
                 folded: { [goneKey('basil')]: true },
                 names: {},

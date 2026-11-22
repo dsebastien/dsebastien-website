@@ -197,6 +197,7 @@ describe('resolver of unpublished notes', () => {
         choice: (paths) => `choice:${paths.join('|')}`
     }
     const GONE: Resolution = { kind: 'gone', file: '410.html' }
+    const GONE_PART = { longest: 0, paths: {}, folded: {}, names: {}, aliases: {} }
     // Through JSON, as the build writes the map and the server reads it.
     const mapOf = (
         notes: { path: string; aliases: string[] }[],
@@ -303,6 +304,18 @@ describe('resolver of unpublished notes', () => {
                 mapOf([], [{ path: 'Shed/Secret plan.md', aliases: ['Hidden name'] }])
             )
         ).toEqual(GONE)
+    })
+
+    // A path longer than every text of the gone part is never hashed: a long
+    // request costs no hash (R64).
+    test('looks for no text longer than the longest text of the gone part', () => {
+        const map = mapOf([], [{ path: 'Mint.md', aliases: ['Garden mint'] }])
+        expect(map.gone?.longest).toBe('/-/md/Mint.md'.length)
+        const shorter: ResolverMap = { ...map, gone: { ...(map.gone ?? GONE_PART), longest: 3 } }
+        expect(resolve('/Mint', map)).toEqual(GONE)
+        expect(resolve('/Mint', shorter).kind).toBe('not-found')
+        expect(resolve('/-/md/Mint.md', shorter).kind).toBe('not-found')
+        expect(resolve(`/${'a'.repeat(10_000)}`, map).kind).toBe('not-found')
     })
 
     test('a map without unpublished notes has no gone page', () => {

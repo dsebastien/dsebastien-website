@@ -15,6 +15,9 @@ const PAGES = ['500.html']
 
 const STYLESHEET = /<link rel="stylesheet" href="([^"]+)"\s*\/?>/gu
 const FONT_FACE = /@font-face\{[^}]*\}/gu
+const STYLE = /<style\b[^>]*>([\s\S]*?)<\/style>/giu
+/** What loads a file in CSS: an address, an import, a set of images, a source. */
+const CSS_LOAD = /url\(|@import|image-set\(|(?<![\w-])src\(/iu
 const LOADING_ELEMENT =
     /<(?:img|picture|source|video|audio|track|iframe|frame|object|embed|image)\b/iu
 const SOURCE = /\s(?:src|srcset|data|poster|background)\s*=/iu
@@ -35,31 +38,36 @@ export async function selfContained(
 ): Promise<string> {
     const sheets = new Map<string, string>()
     for (const [, href = ''] of html.matchAll(STYLESHEET)) {
-        const css = (await read(href)).replaceAll(FONT_FACE, '')
-        if (/url\(/iu.test(css)) {
-            refuse(`the style sheet ${href} loads another file`)
-        }
-        if (/<\/style/iu.test(css)) {
-            refuse(`the style sheet ${href} would end its style element`)
-        }
-        sheets.set(href, css)
+        sheets.set(href, (await read(href)).replaceAll(FONT_FACE, ''))
     }
     const page = html.replaceAll(
         STYLESHEET,
         (_link, href: string) => `<style>${sheets.get(href) ?? ''}</style>`
     )
-    if (/<script/iu.test(page)) {
+    // The style is checked as CSS, and the rest of the page as HTML: a text
+    // of the CSS, such as the syntax "<image>" of a property, is no element.
+    const styles = [...page.matchAll(STYLE)].map(([, css = '']) => css)
+    for (const css of styles) {
+        if (CSS_LOAD.test(css)) {
+            refuse('its style loads another file')
+        }
+        if (/<\/style/iu.test(css)) {
+            refuse('its style would end its style element')
+        }
+    }
+    const markup = page.replaceAll(STYLE, '<style></style>')
+    if (/<script/iu.test(markup)) {
         refuse('it holds a script')
     }
-    if (/<link\b/iu.test(page) || /\/_astro\//u.test(page)) {
+    if (/<link\b/iu.test(markup) || /\/_astro\//u.test(markup)) {
         refuse('it names another file of the release')
     }
     // Every other way to load a file: an element that loads one, a source,
-    // a CSS address, and an address of an element that is no link.
-    if (LOADING_ELEMENT.test(page) || SOURCE.test(page) || /url\(/iu.test(page)) {
+    // a CSS address in an attribute, and an address of an element that is no link.
+    if (LOADING_ELEMENT.test(markup) || SOURCE.test(markup) || CSS_LOAD.test(markup)) {
         refuse('it loads another file')
     }
-    for (const [, element = ''] of page.matchAll(ADDRESS)) {
+    for (const [, element = ''] of markup.matchAll(ADDRESS)) {
         if (element.toLowerCase() !== 'a') {
             refuse(`its element ${element} names another file`)
         }

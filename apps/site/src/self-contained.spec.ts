@@ -65,6 +65,27 @@ describe('self-contained page', () => {
         expect(await rejectionOf(selfContained(html, bad))).toContain('server error page')
     })
 
+    test.each([
+        ['an import', '@import "/other.css";.a{color:red}'],
+        ['a set of images', '.a{background:image-set("/a.png" 1x)}'],
+        ['a source of a font', '@font-feature-values X{}.a{src:src("/a.woff2")}']
+    ])('refuses a style sheet with %s', async (_name, css) => {
+        const html = '<html><head><link rel="stylesheet" href="/_astro/bad.css"></head></html>'
+        expect(
+            await rejectionOf(selfContained(html, async () => await Promise.resolve(css)))
+        ).toContain('server error page')
+    })
+
+    // The HTML checks do not read the style: a CSS text such as the syntax
+    // of a property is no element (R64).
+    test('lets a style with the name of an element in a text pass', async () => {
+        const html = '<html><head><link rel="stylesheet" href="/_astro/site.css"></head></html>'
+        const css = '@property --a{syntax:"<image>";inherits:false}.b{content:" src=x"}'
+        expect(await selfContained(html, async () => await Promise.resolve(css))).toBe(
+            `<html><head><style>${css}</style></head></html>`
+        )
+    })
+
     test('refuses a style sheet that would end the style element', async () => {
         const html = '<html><head><link rel="stylesheet" href="/_astro/bad.css"></head></html>'
         const bad = async (): Promise<string> =>

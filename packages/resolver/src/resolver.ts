@@ -43,6 +43,11 @@ export interface ResolverMap {
 export interface GoneMap {
     /** The file of the gone page. */
     readonly file?: string
+    /**
+     * The length of the longest text of the sets, in UTF-16 units: a longer
+     * text of a request is never hashed, so a long path costs no hash.
+     */
+    readonly longest: number
     /** The canonical path and the Markdown path of each unpublished note, as written. */
     readonly paths: Readonly<Record<string, true>>
     /** The folded form of the text of each unpublished note. */
@@ -201,7 +206,7 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
         ...(map.gone?.file === undefined ? {} : { file: map.gone.file })
     }
     if (path.startsWith(PREFIX)) {
-        return own(map.gone?.paths, goneKey(path)) === undefined ? notFound : gone
+        return isGonePath(path, map.gone) ? gone : notFound
     }
     const published = resolvePublished(path, map, query)
     if (published !== undefined) {
@@ -246,19 +251,31 @@ function isGone(path: string, gone: GoneMap | undefined): boolean {
     if (gone === undefined) {
         return false
     }
-    if (own(gone.paths, goneKey(path)) !== undefined) {
+    if (isGonePath(path, gone)) {
         return true
     }
-    return readingsOf(path).some((reading) =>
-        formsOf(reading)
-            .map(foldedForm)
-            .some((form) => {
-                const key = goneKey(form)
-                return (
-                    own(gone.folded, key) !== undefined ||
-                    (!form.includes('/') && own(gone.names, key) !== undefined) ||
-                    own(gone.aliases, key) !== undefined
-                )
-            })
+    const forms = new Set(readingsOf(path).flatMap((reading) => formsOf(reading).map(foldedForm)))
+    for (const form of forms) {
+        if (form.length > gone.longest) {
+            continue
+        }
+        const key = goneKey(form)
+        if (
+            own(gone.folded, key) !== undefined ||
+            (!form.includes('/') && own(gone.names, key) !== undefined) ||
+            own(gone.aliases, key) !== undefined
+        ) {
+            return true
+        }
+    }
+    return false
+}
+
+/** True when a path, as written, is the canonical path or the Markdown path of an unpublished note. */
+function isGonePath(path: string, gone: GoneMap | undefined): boolean {
+    return (
+        gone !== undefined &&
+        path.length <= gone.longest &&
+        own(gone.paths, goneKey(path)) !== undefined
     )
 }

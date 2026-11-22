@@ -65,6 +65,26 @@ describe('form of an error answer', () => {
             'text/*;q=0.1, text/markdown;q=0.2, text/html;q=0.1',
             'markdown'
         ],
+        ['Markdown of a variant (RFC 7763)', '/Nothing', 'text/markdown;variant=GFM', 'markdown'],
+        [
+            'Markdown of a variant in UTF-8',
+            '/Nothing',
+            'text/markdown; variant=CommonMark; charset=UTF-8',
+            'markdown'
+        ],
+        ['UTF-8 written without its dash', '/Nothing', 'text/markdown;charset=utf8', 'markdown'],
+        [
+            'a parameter after the weight is no parameter of the type',
+            '/Nothing',
+            'text/markdown;q=0.5;charset=latin1',
+            'markdown'
+        ],
+        [
+            'a Markdown range of another character set gives no weight to Markdown',
+            '/Nothing',
+            'text/markdown;charset=latin1;q=0.5, */*;q=0.4',
+            'html'
+        ],
         ['a Markdown path', '/-/md/Nothing.md', null, 'markdown'],
         ['a Markdown path, asked as HTML', '/-/md/Nothing.md', 'text/html', 'markdown']
     ] as const)('%s', (_name, path, accept, format) => {
