@@ -1475,6 +1475,29 @@ fn apply(
     let selection = selection_of(&record, id)?;
     let current = record_for(device, &|_| selection.clone(), Fetch::Must)?;
     refuse_stale(device, storage, &current, &record, id)?;
+    apply_current(
+        device,
+        storage,
+        &Commit { plan: id, own_lock },
+        run,
+        owed,
+        &current,
+    )
+}
+
+/// The writes of a plan whose record was just computed, with the lock of the
+/// device: the journal, the files, the commit and the push, the correction of
+/// the property and the cleanup of the storage. `owed` is true when an earlier
+/// publication still owes its correction.
+fn apply_current(
+    device: &Device,
+    storage: &AttachmentStorage,
+    commit: &Commit,
+    run: &Run,
+    owed: bool,
+    current: &Computed,
+) -> Result<Outcome, String> {
+    let (id, own_lock) = (commit.plan, commit.own_lock);
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
     let paths = store_paths_of(&current.plan, &current.scan, run.time);
@@ -1510,9 +1533,9 @@ fn apply(
         device,
         &mut journal,
         &mut uploads,
-        &current,
+        current,
         run,
-        &Commit { plan: id, own_lock },
+        commit,
     ) {
         Ok(written) => written,
         // Another run took the copy: this run touches nothing of it any more,
@@ -1683,9 +1706,9 @@ pub fn unpublish(
         "time": run.time,
     });
     with_lock(device, &holder, |own_lock| {
-        // A publication that stopped halfway is put back first, as a plan
-        // does.
-        recover(device, own_lock)?;
+        // A publication that stopped halfway is put back first. When it
+        // stopped after its push, the correction of the property is owed.
+        let owed = recover(device, own_lock)?;
         let selection = |scan: &Scan| {
             let hold: Vec<String> = scan
                 .queue
@@ -1696,13 +1719,20 @@ pub fn unpublish(
                 .collect();
             Selection::new(&[], &hold, paths)
         };
+        // One fetch and one scan: the plan is applied as it was computed, so
+        // it cannot be stale.
         let computed = record_for(device, &selection, Fetch::Must)?;
-        apply(
+        let id = store_record(device, &computed)?;
+        apply_current(
             device,
             storage,
-            &store_record(device, &computed)?,
+            &Commit {
+                plan: &id,
+                own_lock,
+            },
             run,
-            own_lock,
+            owed,
+            &computed,
         )
     })
 }
@@ -1771,12 +1801,14 @@ fn take_down_locked(
     // notes have no entry any more, so this run stops below when it names
     // them again. No other run could clean the storage when no publication
     // can run (PUB-99).
+    own_lock()?;
     let (early, _) = delete_unused(storage, &published_keys(&manifest));
     let mut paths = Vec::new();
     for path in named {
         let entry = manifest.get(path).ok_or_else(|| {
             format!(
-                "\"{path}\" has no manifest entry: it is not published and not unpublished, so there is nothing to take down"
+                "\"{path}\" has no manifest entry: it is not published and not unpublished, so there is nothing to take down{}",
+                cleanup_lines(&early)
             )
         })?;
         paths.extend(files_of_note(path, &entry.id));
@@ -1895,35 +1927,63 @@ fn after_push(
     if !owed {
         device.store.remove_journal()?;
     }
+    // The two cleanups give the same warning for a name that is not a key:
+    // it is written one time.
+    let mut storage_warnings = merge_warnings(&early, &cleanup);
     let mut deleted = early.deleted;
     deleted.extend(cleanup.deleted);
     sort_by_code_point(&mut deleted);
-    // The two cleanups give the same warning for a name that is not a key:
-    // it is written one time.
-    let mut warnings = early.warnings;
-    for warning in cleanup.warnings {
-        if !warnings.contains(&warning) {
-            warnings.push(warning);
-        }
-    }
-    let storage_warnings = warnings.len();
-    warnings.extend(property_warnings);
+    let mut warnings = property_warnings;
     // A stable sort, by the path of each warning.
-    warnings.sort_by(|one, two| one["path"].as_str().cmp(&two["path"].as_str()));
+    for list in [&mut storage_warnings, &mut warnings] {
+        list.sort_by(|one, two| one["path"].as_str().cmp(&two["path"].as_str()));
+    }
+    let count = storage_warnings.len();
     let output = canonical(&json!({
         "attachmentsDeleted": deleted,
         "propertyRemoved": property_removed,
+        "storageWarnings": storage_warnings,
         "takenDown": named,
         "warnings": warnings,
     }))?;
     Ok(Outcome {
         output,
-        failure: (storage_warnings > 0).then(|| {
+        failure: (count > 0).then(|| {
             format!(
-                "the notes are taken down, but the attachment storage gave {storage_warnings} warning(s), and a file that stays there can still be public: the report says why. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses"
+                "the notes are taken down, but the attachment storage gave {count} warning(s), and a file that stays there can still be public: the report says why. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses"
             )
         }),
     })
+}
+
+/// The warnings of the two cleanups of a takedown, each one time. A warning
+/// of the first cleanup about a file that the second one deleted is left out.
+fn merge_warnings(early: &Cleanup, late: &Cleanup) -> Vec<Value> {
+    let mut merged: Vec<Value> = Vec::new();
+    for warning in early.warnings.iter().chain(&late.warnings) {
+        let deleted = warning["path"]
+            .as_str()
+            .is_some_and(|path| late.deleted.iter().any(|key| key == path));
+        if !deleted && !merged.contains(warning) {
+            merged.push(warning.clone());
+        }
+    }
+    merged
+}
+
+/// What the first cleanup of a takedown did, as the end of the message of a
+/// refusal.
+fn cleanup_lines(early: &Cleanup) -> String {
+    let deleted = if early.deleted.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nThe takedown deleted {} file(s) of the attachment storage that no published note uses: {}",
+            early.deleted.len(),
+            early.deleted.join(", ")
+        )
+    };
+    format!("{deleted}{}", warning_lines(&early.warnings))
 }
 
 /// Removes the state property of the notes that were taken down, when the

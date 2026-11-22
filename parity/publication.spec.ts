@@ -827,6 +827,7 @@ describe('parity of an unpublish and a takedown', () => {
         expect(JSON.parse(fromRust.takenDown)).toEqual({
             attachmentsDeleted: [IMAGE_KEY],
             propertyRemoved: [PLAN, TOUR],
+            storageWarnings: [],
             takenDown: [PLAN, TOUR, HELD],
             warnings: []
         })

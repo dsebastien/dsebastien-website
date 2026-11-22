@@ -765,7 +765,26 @@ describe('takedown', () => {
         const report = await takedown(setup.device, [NOTE], LATER)
 
         expect(report.takenDown).toEqual([NOTE])
-        expect(report.warnings.map((warning) => warning.path)).toEqual(['notes.txt'])
+        expect(report.storageWarnings.map((warning) => warning.path)).toEqual(['notes.txt'])
+        expect(report.warnings).toEqual([])
+    })
+
+    // A takedown that stopped after its push is finished in this way.
+    test('a path with no entry stops the takedown, whose message says what its cleanup of the storage deleted', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        const key = '0'.repeat(64)
+        await writeFile(join(stores.attachmentStorage, key), 'A left file\n')
+
+        const refusal = await rejectionOf(takedown(setup.device, [SECOND], LATER))
+
+        expect(refusal).toContain('has no manifest entry')
+        expect(refusal).toContain(
+            `The takedown deleted 1 file(s) of the attachment storage that no published note uses: ${key}`
+        )
+        expect(await exists(join(stores.attachmentStorage, key))).toBe(false)
+        expect(await exists(join(setup.copy, 'notes', NOTE))).toBe(true)
     })
 
     test('a copy that is behind the content store stops the takedown, which says to pull', async () => {

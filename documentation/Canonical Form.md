@@ -293,7 +293,7 @@ The parity tests compare the lists of paths and of keys. The texts (`reason`, `m
 
 ## An unpublish
 
-The `unpublish` command removes the named published notes through a normal publication, in one step (PUB-80, decision of the author R65). It makes the plan of the selection whose `remove` is the named paths, whose `hold` is every path of the list `changed` of the queue that is not named, and whose `include` is empty. It stores that plan as `plan` does, then applies it as `publish` applies a plan, and writes the publication report. So only the named notes leave, with the forced removals that every plan holds. The rules of the selection apply: a path that is not the path of a published note stops it, and so does a command with no path. A path named twice counts one time.
+The `unpublish` command removes the named published notes through a normal publication, in one step (PUB-80, decision of the author R65). It makes the plan of the selection whose `remove` is the named paths, whose `hold` is every path of the list `changed` of the queue that is not named, and whose `include` is empty. It takes the lock of the device as `publish` does, puts back a publication that stopped halfway, fetches the content store (it stops without a network), computes the plan from that one scan, stores it as `plan` does, and applies it as `publish` applies a plan, with no second computation: the plan cannot be stale. It writes the publication report. So only the named notes leave, with the forced removals that every plan holds. The rules of the selection apply: a path that is not the path of a published note stops it, and so does a command with no path. A path named twice counts one time.
 
 ## A takedown
 
@@ -320,18 +320,19 @@ The `takedown` command removes the named notes from the content store at once, w
 8. Then it removes the `public_note` property of each named note whose file is in the vault at exactly its path, by the rules of the correction of the property (a note in the flow form of YAML, or whose ignore property would read otherwise, is not written and gets a warning). It never reads or writes a file in a folder of the deny list of `configuration.json`. When that file cannot be read, no note is written, with a warning. A note that is not in the vault, or that has no such property, is left as it is.
 9. Then it removes the journal, or leaves it `correct` when an earlier publication still owes its correction.
 
-A warning of the attachment storage (steps 4 and 7) means that a file can still be public: the command writes its report, then ends with an error. A warning of the property does not.
+A warning of the attachment storage (steps 4 and 7) means that a file can still be public: it goes into `storageWarnings`, and the command writes its report, then ends with an error. A name that is not a key counts too: the folder can be the wrong one. A warning of the first cleanup about a file that the second one deleted is left out. A warning of the property goes into `warnings`, and the command ends with success. When a named path stops the takedown (step 1), its message says what the first cleanup deleted and the warnings that it gave.
 
 A link to the note in another published note stays, as plain text (business rule 5): it is the text of the other note, and the manifest entry of the other note keeps the link path. After a takedown, the note is a candidate again when its file is in the vault (decision of the author R65): only a path of `include` publishes it again, with a new id and a new `firstPublished`. Copies in browser caches and at crawlers cannot be recalled (PUB-86). The text of the note stays in the history of the content store: the removal from the history is issue 103 (decision of the author R65).
 
 The result of the command, as data in the canonical form. Every list of paths is sorted by path, and every list of keys in the order of the code points. The parity tests compare the lists.
 
-| Key                  | Value                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `attachmentsDeleted` | The keys of the files that the takedown deleted from the attachment storage              |
-| `propertyRemoved`    | The vault paths of the notes whose `public_note` property was removed                    |
-| `takenDown`          | The vault paths of the notes that left the content store                                 |
-| `warnings`           | What the author must know and what stopped nothing, each with its `path` and a `message` |
+| Key                  | Value                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `attachmentsDeleted` | The keys of the files that the takedown deleted from the attachment storage                             |
+| `propertyRemoved`    | The vault paths of the notes whose `public_note` property was removed                                   |
+| `storageWarnings`    | What the attachment storage gave, each with its `path` and a `message`: a file that can still be public |
+| `takenDown`          | The vault paths of the notes that left the content store                                                |
+| `warnings`           | What the author must know about the `public_note` property, each with its `path` and a `message`        |
 
 ## Failure cases
 

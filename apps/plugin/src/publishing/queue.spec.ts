@@ -48,6 +48,7 @@ interface ReportLists {
 interface TakedownLists {
     attachmentsDeleted: readonly string[]
     propertyRemoved: readonly string[]
+    storageWarnings: readonly string[]
     takenDown: readonly string[]
     warnings: readonly string[]
 }
@@ -324,6 +325,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     const report = await takedown(device, step.paths, runAt(step.time))
                     const lists: TakedownLists = {
                         ...report,
+                        storageWarnings: report.storageWarnings.map((entry) => entry.path),
                         warnings: report.warnings.map((entry) => entry.path)
                     }
                     expect(lists, label).toEqual(step.report)

@@ -342,8 +342,9 @@ fn text_of(path: &Path) -> Value {
 /// The lists of paths of a report, in the form of the shared file.
 fn report_lists(report: &Value) -> Value {
     let mut lists = report.clone();
-    // A takedown report has no `failed`.
-    for key in ["failed", "warnings"] {
+    // A takedown report has no `failed`, and a publication report no
+    // `storageWarnings`.
+    for key in ["failed", "storageWarnings", "warnings"] {
         if report.get(key).is_some() {
             lists[key] = json!(paths(&report[key]));
         }

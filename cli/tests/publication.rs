@@ -1534,7 +1534,8 @@ fn a_takedown_whose_storage_gives_a_warning_writes_its_report_and_ends_with_an_e
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("the report is written");
     assert_eq!(report["takenDown"], serde_json::json!([NOTE]));
-    let warnings: Vec<&str> = report["warnings"]
+    assert_eq!(report["warnings"], serde_json::json!([]));
+    let warnings: Vec<&str> = report["storageWarnings"]
         .as_array()
         .expect("a list")
         .iter()
@@ -1546,4 +1547,34 @@ fn a_takedown_whose_storage_gives_a_warning_writes_its_report_and_ends_with_an_e
         "{}",
         errors_of(&output)
     );
+}
+
+/// A takedown of a path with no entry stops, and its message says what its
+/// first cleanup of the storage deleted: a takedown that stopped after its
+/// push is finished in this way.
+#[test]
+fn a_takedown_of_a_path_with_no_entry_says_what_its_cleanup_of_the_storage_deleted() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    // A file that no published note uses, as a stopped takedown leaves it.
+    let key = "0".repeat(64);
+    fs::write(
+        setup.stores.attachment_storage().join(&key),
+        "A left file\n",
+    )
+    .expect("the file is written");
+
+    let output = take_down(&setup, SECOND);
+
+    assert_eq!(output.status.code(), Some(1));
+    let errors = errors_of(&output);
+    assert!(errors.contains("has no manifest entry"), "{errors}");
+    assert!(
+        errors.contains(&format!(
+            "The takedown deleted 1 file(s) of the attachment storage that no published note uses: {key}"
+        )),
+        "{errors}"
+    );
+    assert!(!setup.stores.attachment_storage().join(&key).exists());
+    assert!(setup.copy.join("notes").join(NOTE).exists());
 }

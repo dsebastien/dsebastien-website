@@ -86,9 +86,14 @@ export type TakedownReport = {
     readonly attachmentsDeleted: readonly string[]
     /** The notes whose state property was removed. */
     readonly propertyRemoved: readonly string[]
+    /**
+     * What the attachment storage gave: a file that can still be public. A
+     * face ends with an error after the report when this list is not empty.
+     */
+    readonly storageWarnings: readonly { readonly path: string; readonly message: string }[]
     /** The notes that left the content store with their manifest entries. */
     readonly takenDown: readonly string[]
-    /** What the author must know and what stopped nothing. */
+    /** What the author must know about the state property. */
     readonly warnings: readonly { readonly path: string; readonly message: string }[]
 }
 
@@ -1243,8 +1248,11 @@ export async function unpublish(
         time: run.time
     }
     return await withLock(device, holder, async (ownLock) => {
-        // A publication that stopped halfway is put back first, as a plan does.
-        await recover(device, ownLock)
+        // A publication that stopped halfway is put back first. When it
+        // stopped after its push, the correction of the property is owed.
+        const owed = (await recover(device, ownLock))?.step === 'correct'
+        // One fetch and one scan: the plan is applied as it was computed, so
+        // it cannot be stale.
         const computed = await recordFor(
             device,
             (scan) =>
@@ -1255,7 +1263,8 @@ export async function unpublish(
                 }),
             'must'
         )
-        return await apply(device, await store(device, computed), run, ownLock)
+        const id = await store(device, computed)
+        return await applyCurrent(device, id, run, ownLock, owed, computed)
     })
 }
 
@@ -1312,12 +1321,13 @@ async function takeDownLocked(
     // notes have no entry any more, so this run stops below when it names
     // them again. No other run could clean the storage when no publication
     // can run (PUB-99).
+    await ownLock()
     const early = await deleteUnused(device, publishedKeys(manifest))
     const entries = named.map((path) => {
         const entry = manifest.get(path)
         if (entry === undefined) {
             throw new Error(
-                `"${path}" has no manifest entry: it is not published and not unpublished, so there is nothing to take down`
+                `"${path}" has no manifest entry: it is not published and not unpublished, so there is nothing to take down${cleanupLines(early)}`
             )
         }
         return entry
@@ -1389,16 +1399,7 @@ async function takeDownLocked(
     const storage = await deleteUnused(device, publishedKeys(after))
     // The two cleanups give the same warning for a name that is not a key:
     // it is written one time.
-    const storageWarnings = [...early.warnings]
-    for (const warning of storage.warnings) {
-        if (
-            !storageWarnings.some(
-                (one) => one.path === warning.path && one.message === warning.message
-            )
-        ) {
-            storageWarnings.push(warning)
-        }
-    }
+    const storageWarnings = mergeWarnings(early, storage)
     const property = await removeState(device, named)
     if (!owed) {
         await device.local.removeJournal()
@@ -1406,11 +1407,51 @@ async function takeDownLocked(
     return {
         attachmentsDeleted: sortByCodePoint([...early.deleted, ...storage.deleted]),
         propertyRemoved: property.propertyRemoved,
+        storageWarnings: storageWarnings.sort(byPath),
         takenDown: named,
-        warnings: [...storageWarnings, ...property.warnings].sort((one, two) =>
-            compareCodePoints(one.path, two.path)
-        )
+        warnings: property.warnings.sort(byPath)
     }
+}
+
+/** The order of warnings: by their paths, in the order of the code points. */
+function byPath(one: { readonly path: string }, two: { readonly path: string }): number {
+    return compareCodePoints(one.path, two.path)
+}
+
+/**
+ * The warnings of the two cleanups of a takedown, each one time. A warning of
+ * the first cleanup about a file that the second one deleted is left out.
+ */
+function mergeWarnings(
+    early: { readonly warnings: readonly { path: string; message: string }[] },
+    late: {
+        readonly deleted: readonly string[]
+        readonly warnings: readonly { path: string; message: string }[]
+    }
+): { path: string; message: string }[] {
+    const deleted = new Set(late.deleted)
+    const merged: { path: string; message: string }[] = []
+    for (const warning of [...early.warnings, ...late.warnings]) {
+        const known = merged.some(
+            (one) => one.path === warning.path && one.message === warning.message
+        )
+        if (!known && !deleted.has(warning.path)) {
+            merged.push(warning)
+        }
+    }
+    return merged
+}
+
+/** What the first cleanup of a takedown did, as the end of the message of a refusal. */
+function cleanupLines(early: {
+    readonly deleted: readonly string[]
+    readonly warnings: readonly { path: string; message: string }[]
+}): string {
+    const deleted =
+        early.deleted.length === 0
+            ? ''
+            : `\nThe takedown deleted ${String(early.deleted.length)} file(s) of the attachment storage that no published note uses: ${early.deleted.join(', ')}`
+    return `${deleted}${warningLines(early.warnings)}`
 }
 
 /**
@@ -1492,8 +1533,8 @@ async function apply(
     }
     const selection = selectionOf(record, id)
     const current = await recordFor(device, () => selection, 'must')
-    const { scan } = current
     if (current.record !== record) {
+        const { scan } = current
         // The run fetched and the copy follows the content store: the
         // storage can be cleaned, so a file that came under a guard leaves it
         // also when the plan is stale.
@@ -1502,6 +1543,24 @@ async function apply(
             `the plan ${id} is stale: a note of the plan, the publication queue, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
     }
+    return await applyCurrent(device, id, run, ownLock, owed, current)
+}
+
+/**
+ * The writes of a plan whose record was just computed, with the lock of the
+ * device: the journal, the files, the commit and the push, the correction of
+ * the property and the cleanup of the storage. `owed` is true when an earlier
+ * publication still owes its correction.
+ */
+async function applyCurrent(
+    device: Device,
+    id: string,
+    run: Run,
+    ownLock: () => Promise<void>,
+    owed: boolean,
+    current: Computed
+): Promise<PublicationReport> {
+    const { scan } = current
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
     const paths = storePathsOf(current.plan, scan, run.time)
