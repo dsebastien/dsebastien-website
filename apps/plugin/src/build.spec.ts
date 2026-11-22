@@ -4,8 +4,9 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Acceptance criterion of issue 29: the plugin loads in a test vault and does
-// nothing yet.
+// Acceptance criterion of issue 29: the plugin loads in a test vault. Since
+// issue 37 it adds one thing to Obsidian: it records the renames of the vault
+// in the rename journal of the device.
 //
 // The test builds the plugin as a release and loads the bundle the way
 // Obsidian does: it requires `main.js`, makes the default export with an app
@@ -40,6 +41,27 @@ class Plugin {
         readonly app: unknown,
         readonly manifest: unknown
     ) {}
+}
+
+/** A folder of the vault, for the check `instanceof TFolder` of the plugin. */
+class TFolder {
+    constructor(readonly path: string) {}
+
+    get name(): string {
+        return this.path.slice(this.path.lastIndexOf('/') + 1)
+    }
+}
+
+/** A notice of Obsidian: the test keeps its message. */
+const notices: string[] = []
+class Notice {
+    constructor(readonly message: string) {
+        notices.push(message)
+    }
+
+    hide(): void {
+        notices.splice(notices.indexOf(this.message), 1)
+    }
 }
 for (const name of REGISTRATIONS) {
     Object.defineProperty(Plugin.prototype, name, {
@@ -103,22 +125,74 @@ describe('build of the plugin', () => {
 })
 
 describe('the built plugin', () => {
-    test('loads and does nothing yet', async () => {
-        await mock.module('obsidian', () => ({ Plugin }))
+    test('loads, and only records the renames of the vault in the journal of the device', async () => {
+        await mock.module('obsidian', () => ({ Notice, Plugin, TFolder }))
         const loaded: unknown = createRequire(import.meta.url)(join(outputPath(), 'main.js'))
         const Loaded = isRecord(loaded) ? loaded['default'] : undefined
         if (typeof Loaded !== 'function') {
             throw new Error('the bundle has no default export')
         }
+        // A vault of Obsidian in memory: its files, its events and the local storage.
+        const files = new Map<string, string>()
+        const listeners = new Map<string, (...values: unknown[]) => void>()
+        const storage = new Map<string, unknown>()
+        const app = {
+            vault: {
+                configDir: '.obsidian',
+                adapter: {
+                    exists: (path: string) =>
+                        Promise.resolve(files.has(path) || path.endsWith('/renames')),
+                    mkdir: () => Promise.resolve(),
+                    readBinary: (path: string) =>
+                        Promise.resolve(new TextEncoder().encode(files.get(path) ?? '').buffer),
+                    write: (path: string, data: string) => {
+                        files.set(path, data)
+                        return Promise.resolve()
+                    },
+                    append: (path: string, data: string) => {
+                        files.set(path, (files.get(path) ?? '') + data)
+                        return Promise.resolve()
+                    }
+                },
+                on: (name: string, listener: (...values: unknown[]) => void) => {
+                    listeners.set(name, listener)
+                    return { name }
+                }
+            },
+            loadLocalStorage: (key: string) => storage.get(key) ?? null,
+            saveLocalStorage: (key: string, data: unknown) => storage.set(key, data)
+        }
 
-        const plugin: unknown = Reflect.construct(Loaded, [{}, { id: 'dsebastien-vault-publish' }])
+        const plugin: unknown = Reflect.construct(Loaded, [app, { id: 'dsebastien-vault-publish' }])
         expect(plugin).toBeInstanceOf(Plugin)
         if (!isRecord(plugin) || typeof plugin['onload'] !== 'function') {
             throw new Error('the plugin has no onload method')
         }
         await Reflect.apply(plugin['onload'], plugin, [])
 
-        expect(calls).toEqual([])
+        expect(calls).toEqual(['registerEvent'])
+        expect([...listeners.keys()]).toEqual(['rename'])
+        listeners.get('rename')?.({ path: 'Notes/Alpha.md' }, 'Alpha.md')
+        listeners.get('rename')?.(new TFolder('Area'), 'Folder')
+        await Bun.sleep(20)
+        const [journal] = [...storage.values()]
+        expect(journal).toMatch(/^[0-9a-f]{16}\.jsonl$/u)
+        const text = files.get(
+            `.obsidian/plugins/dsebastien-vault-publish/renames/${String(journal)}`
+        )
+        expect(
+            text
+                ?.split('\n')
+                .filter((line) => line !== '')
+                .map((line) => {
+                    const { from, kind, to } = JSON.parse(line) as Record<string, string>
+                    return [from, kind, to]
+                })
+        ).toEqual([
+            ['Alpha.md', 'note', 'Notes/Alpha.md'],
+            ['Folder', 'folder', 'Area']
+        ])
+        expect(notices).toEqual([])
     })
 })
 
