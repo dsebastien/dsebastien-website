@@ -68,14 +68,18 @@ describe('the description of a note', () => {
         expect(long.endsWith('grow…')).toBe(true)
     })
 
-    test('is cut on whole characters, never in the middle of an emoji', () => {
+    test.each([
+        ['an emoji of one code point', '🌱'],
+        ['a family of joined emoji', '👨‍👩‍👧'],
+        ['a flag', '🇧🇪'],
+        ['a letter with a combining accent', 'e\u0301']
+    ])('is cut on whole characters, never inside %s', (_name, character) => {
         const cut = noteDescription({
             title: 'Seeds',
             properties: {},
-            html: `<p>${'🌱'.repeat(200)}</p>`
+            html: `<p>${character.repeat(200)}</p>`
         })
-        expect(Array.from(cut)).toHaveLength(DESCRIPTION_LENGTH)
-        expect(cut.isWellFormed()).toBe(true)
+        expect(cut).toBe(`${character.repeat(DESCRIPTION_LENGTH - 1)}…`)
     })
 
     test('is never empty', () => {

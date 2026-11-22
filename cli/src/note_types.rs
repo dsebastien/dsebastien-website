@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -197,34 +198,42 @@ const STARTER_KIT_ID: &str = "obsidian-starter-kit";
 /// The longest time that the program of the Starter Kit may take.
 const PROGRAM_LIMIT: Duration = Duration::from_secs(300);
 
-/// The program of the Starter Kit in a vault: in the folder of
-/// `.obsidian/plugins/` whose `manifest.json` has the id of the Starter Kit,
-/// as `osk-cli` itself finds the plugin (the folder of a plugin of the
-/// catalog is its id, a plugin installed by hand can have another name).
-/// Without such a folder, the folder named by the id, which the message of
-/// a missing program then names.
+/// The program of the Starter Kit in a vault, in the plugin folder that
+/// `osk-cli` itself takes: the folder named by the id of the Starter Kit when
+/// it has a `data.json`; else the first folder, by name, whose
+/// `manifest.json` has that id and that has a `data.json`; else the folder
+/// named by the id; else the first folder with that id. Without one, the
+/// folder named by the id, which the message of a missing program names.
 pub fn default_program(vault: &Path) -> PathBuf {
     let plugins = vault.join(".obsidian").join("plugins");
-    let mut folders: Vec<PathBuf> = std::fs::read_dir(&plugins).map_or_else(
+    let named = plugins.join(STARTER_KIT_ID);
+    let mut installed: Vec<PathBuf> = std::fs::read_dir(&plugins).map_or_else(
         |_| Vec::new(),
         |entries| {
             entries
                 .filter_map(Result::ok)
                 .map(|entry| entry.path())
+                .filter(|folder| folder.is_dir())
+                .filter(|folder| {
+                    std::fs::read_to_string(folder.join("manifest.json"))
+                        .ok()
+                        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                        .is_some_and(|manifest| manifest["id"] == STARTER_KIT_ID)
+                })
                 .collect()
         },
     );
-    folders.sort();
-    let has_id = |folder: &PathBuf| {
-        std::fs::read_to_string(folder.join("manifest.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .is_some_and(|manifest| manifest["id"] == STARTER_KIT_ID)
+    installed.sort();
+    let configured = |folder: &PathBuf| folder.join("data.json").is_file();
+    let folder = if configured(&named) {
+        named
+    } else if let Some(folder) = installed.iter().find(|folder| configured(folder)) {
+        folder.clone()
+    } else if named.is_dir() {
+        named
+    } else {
+        installed.into_iter().next().unwrap_or(named)
     };
-    let folder = folders
-        .into_iter()
-        .find(has_id)
-        .unwrap_or_else(|| plugins.join(STARTER_KIT_ID));
     if cfg!(windows) {
         folder.join("osk-cli-windows-x64.exe")
     } else {
@@ -304,13 +313,17 @@ impl StarterKit {
             });
         }
         let reader = |pipe: Option<Box<dyn Read + Send>>| {
-            pipe.map(|mut pipe| {
+            let (sender, receiver) = mpsc::channel();
+            if let Some(mut pipe) = pipe {
                 thread::spawn(move || {
                     let mut bytes = Vec::new();
                     let _ = pipe.read_to_end(&mut bytes);
-                    bytes
-                })
-            })
+                    let _ = sender.send(bytes);
+                });
+            } else {
+                let _ = sender.send(Vec::new());
+            }
+            receiver
         };
         let stdout = reader(
             child
@@ -337,16 +350,27 @@ impl StarterKit {
                     ));
                 }
                 Ok(None) => thread::sleep(Duration::from_millis(10)),
-                Err(error) => break Err(format!("its program could not run: {error}")),
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break Err(format!("its program could not run: {error}"));
+                }
             }
         };
-        let collect = |reader: Option<thread::JoinHandle<Vec<u8>>>| {
-            reader
-                .and_then(|reader| reader.join().ok())
-                .unwrap_or_default()
-        };
         let status = status?;
-        let (stdout, stderr) = (collect(stdout), collect(stderr));
+        // A child of the program can keep a pipe open after the program
+        // ended: the output is waited for within the limit only.
+        let collect = |reader: &mpsc::Receiver<Vec<u8>>| {
+            reader
+                .recv_timeout(limit.saturating_sub(started.elapsed()))
+                .map_err(|_| {
+                    format!(
+                        "the output of its program did not end within {} seconds",
+                        limit.as_secs()
+                    )
+                })
+        };
+        let (stdout, stderr) = (collect(&stdout)?, collect(&stderr)?);
         let output = Output {
             status,
             stdout,
@@ -373,12 +397,9 @@ fn answer_of_file(file: &Path, paths: &[String]) -> Result<Value, String> {
     use serde_json::{Map, json};
     use std::collections::BTreeSet;
 
-    let data = if file == Path::new("none") {
-        Value::Null
-    } else {
-        // The question is kept, so that a test sees which notes were asked.
-        let mut asked = file.as_os_str().to_owned();
-        asked.push(".asked");
+    // The question is kept first, when a test names a file for the questions,
+    // so that the test sees which notes were asked, also of a missing Starter Kit.
+    if let Some(asked) = std::env::var_os("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES_ASKED") {
         let line = format!("{}\n", Value::from(paths.to_vec()));
         std::fs::OpenOptions::new()
             .create(true)
@@ -386,6 +407,10 @@ fn answer_of_file(file: &Path, paths: &[String]) -> Result<Value, String> {
             .open(&asked)
             .and_then(|mut kept| kept.write_all(line.as_bytes()))
             .map_err(|error| format!("its test file of questions cannot be written ({error})"))?;
+    }
+    let data = if file == Path::new("none") {
+        Value::Null
+    } else {
         let text = std::fs::read_to_string(file)
             .map_err(|error| format!("its test file cannot be read ({error})"))?;
         serde_json::from_str(&text).map_err(|_| "its test file is not JSON".to_owned())?

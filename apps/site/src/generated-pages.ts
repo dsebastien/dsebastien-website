@@ -213,25 +213,39 @@ export function libraryOf(hubs: readonly NoteList[]): {
     }
 }
 
+/** A list as a message names it. */
+function listName(list: NoteList): string {
+    return {
+        type: `the type hub of the note type "${list.key}"`,
+        tag: `the page of the tag "${list.key}"`,
+        other: 'the list of the notes with no type'
+    }[list.kind]
+}
+
 /** The titles and the descriptions of the indexed generated pages: no note may take one (IDX-04). */
 export function generatedTexts(lists: readonly NoteList[]): {
     titles: Set<string>
     descriptions: Set<string>
 } {
     const library = libraryOf(lists.filter((list) => list.kind === 'type'))
-    const titles = new Set<string>([HOME.title, library.title])
+    // The page that has each title, to name both pages of a shared one.
+    const owners = new Map<string, string>([
+        [HOME.title, 'the home page'],
+        [library.title, 'the library']
+    ])
     const descriptions = new Set<string>([HOME.description, library.description])
     for (const list of lists) {
         if (!list.indexed) continue
         for (const page of list.pages) {
-            if (titles.has(page.title)) {
+            const owner = owners.get(page.title)
+            if (owner !== undefined) {
                 throw new Error(
-                    `two generated pages have the title "${page.title}" (IDX-04): give the note type "${list.key}" another label in the table of the site`
+                    `two generated pages have the title "${page.title}" (IDX-04): ${owner} and ${listName(list)}. Give a note type another label in the table of the site`
                 )
             }
-            titles.add(page.title)
+            owners.set(page.title, listName(list))
             descriptions.add(page.description)
         }
     }
-    return { titles, descriptions }
+    return { titles: new Set(owners.keys()), descriptions }
 }

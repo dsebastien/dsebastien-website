@@ -4100,6 +4100,10 @@
                     }
                 },
                 {
+                    "do": "asked",
+                    "why": "the questions so far are not checked here"
+                },
+                {
                     "do": "noteTypes",
                     "why": "the Starter Kit is missing",
                     "noteTypes": null
@@ -4204,7 +4208,14 @@
                 },
                 {
                     "do": "asked",
-                    "why": "the questions so far are not checked here"
+                    "why": "each run asks before it reads the answer, also of a missing Starter Kit or an answer that it refuses",
+                    "questions": [
+                        ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
+                        []
+                    ]
                 },
                 {
                     "do": "status",
@@ -4293,6 +4304,42 @@
                         ["Basil.md", "Tomato (Recipe).md"],
                         []
                     ]
+                },
+                {
+                    "do": "write",
+                    "why": "the author moves a published note into a folder of the deny list",
+                    "files": {
+                        "Locked/Basil.md": "---\npublic_note: true\n---\nBasil\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "its old path is gone",
+                    "paths": ["Basil.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the note waits for its removal",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Basil.md"],
+                        "unchanged": ["Tomato (Recipe).md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "a note in a folder of the deny list is never asked about",
+                    "questions": [["Tomato (Recipe).md"]]
                 }
             ]
         }

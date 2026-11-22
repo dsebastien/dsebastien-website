@@ -310,3 +310,103 @@ fn never_asks_the_program_about_a_note_under_a_guard() {
         "A.md\n"
     );
 }
+
+/// Two plugin folders with the id of the Starter Kit: the one that `osk-cli`
+/// takes runs, and the other one fails.
+#[cfg(unix)]
+fn two_plugins(published: &Published, folders: [(&str, bool, bool); 2]) {
+    let plugins = published.vault.join(".obsidian/plugins");
+    for (folder, configured, chosen) in folders {
+        let folder = plugins.join(folder);
+        fs::create_dir_all(&folder).expect("the folder can be made");
+        fs::write(
+            folder.join("manifest.json"),
+            r#"{"id": "obsidian-starter-kit"}"#,
+        )
+        .expect("the manifest can be written");
+        if configured {
+            fs::write(folder.join("data.json"), "{}").expect("the settings can be written");
+        }
+        if chosen {
+            script(
+                &folder.join("osk-cli"),
+                r#"{"noteTypes":[],"notes":[{"path":"A.md","noteType":null}]}"#,
+                0,
+            );
+        } else {
+            script(&folder.join("osk-cli"), "", 1);
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn takes_the_plugin_folder_named_by_the_id_when_it_has_settings() {
+    let published = Published::new();
+    two_plugins(
+        &published,
+        [
+            ("a-osk-backup", true, false),
+            ("obsidian-starter-kit", true, true),
+        ],
+    );
+
+    let output = published.status_with(None);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+}
+
+#[cfg(unix)]
+#[test]
+fn takes_a_plugin_folder_with_settings_over_one_without() {
+    let published = Published::new();
+    two_plugins(
+        &published,
+        [("a-old-copy", false, false), ("z-osk", true, true)],
+    );
+
+    let output = published.status_with(None);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+}
+
+#[cfg(unix)]
+#[test]
+fn never_asks_the_program_about_a_note_whose_path_holds_a_line_feed() {
+    let published = Published::new();
+    fs::write(published.vault.join("a\nb.md"), "Odd\n").expect("the note can be written");
+    let planned = published
+        .command("plan")
+        .args(["--include", "a\nb.md"])
+        .output()
+        .expect("the program starts");
+    assert!(planned.status.success(), "{}", errors_of(&planned));
+    let id = json_of(&planned)["id"].as_str().expect("an id").to_owned();
+    let done = published
+        .command("publish")
+        .arg("--attachment-storage")
+        .arg(published.stores.attachment_storage())
+        .args(["--plan", &id, "--time", "2031-07-02T08:00:00Z"])
+        .output()
+        .expect("the program starts");
+    assert!(done.status.success(), "{}", errors_of(&done));
+    let program = published.stores.root().join("kit").join("osk-cli");
+    script(
+        &program,
+        r#"{"noteTypes":[],"notes":[{"path":"A.md","noteType":null}]}"#,
+        0,
+    );
+
+    let output = published.status_with(Some(&program));
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(
+        json_of(&output)["unchanged"],
+        serde_json::json!(["A.md", "a\nb.md"])
+    );
+    assert_eq!(
+        fs::read_to_string(program.parent().expect("a folder").join("kept.input"))
+            .expect("the input was kept"),
+        "A.md\n"
+    );
+}

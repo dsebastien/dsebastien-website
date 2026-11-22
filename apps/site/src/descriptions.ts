@@ -108,15 +108,21 @@ function isSkipped(element: Element): boolean {
     return ['pre', 'svg', 'math', 'script', 'style', 'template', 'nav'].includes(element.tagName)
 }
 
-/** The text cut at a word end, with an end mark, when it is longer than the limit. */
+/** The characters of a text as a reader sees them: an emoji of several code points, a flag or a letter with its accent is one. */
+const GRAPHEMES = new Intl.Segmenter('en', { granularity: 'grapheme' })
+
+function graphemesOf(text: string): string[] {
+    return Array.from(GRAPHEMES.segment(text), (part) => part.segment)
+}
+
+/** The text cut at a word end, with an end mark, when it has more characters than the limit. */
 function cut(text: string): string {
-    if (Array.from(text).length <= DESCRIPTION_LENGTH) {
+    const characters = graphemesOf(text)
+    if (characters.length <= DESCRIPTION_LENGTH) {
         return text
     }
-    // Cut on code points, so that no emoji loses half of itself.
-    const room = Array.from(text)
-        .slice(0, DESCRIPTION_LENGTH - 1)
-        .join('')
+    // Cut on whole characters, so that no emoji or accent loses a part.
+    const room = characters.slice(0, DESCRIPTION_LENGTH - 1).join('')
     const end = room.lastIndexOf(' ')
     return `${(end > DESCRIPTION_LENGTH / 2 ? room.slice(0, end) : room).replace(/[\s,;:.]+$/u, '')}…`
 }

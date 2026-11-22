@@ -70,7 +70,14 @@ describe('a type hub after a rename of its type', () => {
     test('two hubs with one label stop the build, with the name of a type', () => {
         const other = { ...MOVIE, name: 'films' }
         expect(() => generatedTexts(typeHubsOf([note('A'), note('B', other)]))).toThrow(
-            'two generated pages have the title "Movies · Sébastien’s Notes"'
+            'two generated pages have the title "Movies · Sébastien’s Notes" (IDX-04): the type hub of the note type "films" and the type hub of the note type "movies"'
+        )
+    })
+
+    test('a type whose label is the one of the library stops the build, with both pages', () => {
+        const library = { ...MOVIE, name: 'shelves', many: 'Library' }
+        expect(() => generatedTexts(typeHubsOf([note('A', library)]))).toThrow(
+            'the library and the type hub of the note type "shelves"'
         )
     })
 })

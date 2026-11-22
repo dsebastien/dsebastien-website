@@ -214,6 +214,9 @@ impl Setup {
         }
         if let Some(answers) = &self.answers {
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", answers);
+            let mut asked = answers.as_os_str().to_owned();
+            asked.push(".asked");
+            program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES_ASKED", asked);
         }
         if command == "publish" {
             program

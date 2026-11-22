@@ -196,7 +196,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                 vault,
                 contentStore: copy,
                 attachmentStorage: stores.attachmentStorage,
-                noteTypes: fileNoteTypes(answers)
+                noteTypes: fileNoteTypes(answers, `${answers}.asked`)
             })
 
             // The address of the content store, for the steps "offline" and "online".
@@ -475,6 +475,66 @@ describe('status of the fixture vault', () => {
 
         expect((await status(setup.device)).new).toContain('Fresh.md')
     })
+
+    // The program of the Starter Kit reads one path per line, so a note whose
+    // path holds a line feed is never asked about and has no type (R61, first
+    // review of issue 49). Windows refuses such a name.
+    test.skipIf(process.platform === 'win32')(
+        'never asks the Starter Kit about a note whose path holds a line feed',
+        async () => {
+            await using stores = await makeTestStores()
+            const vault = join(stores.root, 'vault')
+            await mkdir(vault)
+            await writeFile(join(vault, 'A.md'), 'Alpha\n')
+            await writeFile(join(vault, 'a\nb.md'), 'Odd\n')
+            const copy = await makeContentStoreCopy(stores)
+            await pushToStore(copy, { 'configuration.json': JSON.stringify({ denyList: [] }) })
+            const answers = join(stores.root, 'note-types.json')
+            const asked = join(stores.root, 'note-types.asked')
+            await writeFile(
+                answers,
+                JSON.stringify({
+                    noteTypes: [
+                        { name: 'letters', displayName: 'Letters', prefix: '', suffix: '' }
+                    ],
+                    notes: { 'A.md': 'letters', 'a\nb.md': 'letters' }
+                })
+            )
+            const device = nodeDevice({
+                vault,
+                contentStore: copy,
+                attachmentStorage: stores.attachmentStorage,
+                noteTypes: fileNoteTypes(answers, asked)
+            })
+            const planned = await plan(device, { include: ['A.md', 'a\nb.md'] })
+            await publish(device, planned.id, {
+                time: '2031-06-01T08:00:00Z',
+                device: 'garden-shed',
+                face: 'plugin'
+            })
+
+            expect((await status(device)).unchanged).toEqual(['A.md', 'a\nb.md'])
+            expect(
+                (await textOf(asked))
+                    ?.split('\n')
+                    .filter((line) => line !== '')
+                    .map((line) => JSON.parse(line) as string[])
+            ).toEqual([[], ['A.md'], [], ['A.md'], ['A.md']])
+            const entries = await readdir(join(copy, 'manifest'))
+            const types = await Promise.all(
+                entries.map(async (name) => {
+                    const entry = JSON.parse(
+                        (await textOf(join(copy, 'manifest', name))) ?? '{}'
+                    ) as {
+                        path: string
+                        noteType?: { name: string }
+                    }
+                    return [entry.path, entry.noteType?.name ?? null]
+                })
+            )
+            expect(Object.fromEntries(types)).toEqual({ 'A.md': 'letters', 'a\nb.md': null })
+        }
+    )
 
     // When the scan listed the folder of each note again, this status took
     // about 20 s. It now takes far less than the budget, which leaves room for
