@@ -110,6 +110,19 @@ describe('CI workflow', () => {
         )
     })
 
+    // The budget of the first search (issue 51, R57): the invented corpus of
+    // full size is written first, in the job of the budgets.
+    test('runs the budget of the first search on the invented corpus, in the job of the budgets', async () => {
+        const jobs = readJobs(await readWorkflow())
+        const budgets = jobs.find((job) =>
+            readSteps(job).some((step) => step['run'] === 'bun run budgets')
+        )
+        const runs = readSteps(budgets ?? {}).map((step) => step['run'])
+        const corpus = runs.indexOf('bun run corpus')
+        expect(corpus).toBeGreaterThanOrEqual(0)
+        expect(runs.indexOf('bun run budgets:search')).toBeGreaterThan(corpus)
+    })
+
     test('lets no job and no step fail without failing the run', async () => {
         const jobs = readJobs(await readWorkflow())
         const tolerant = [...jobs, ...jobs.flatMap(readSteps)].filter(

@@ -135,7 +135,7 @@ describe('build of a content store with one published note', () => {
         const html = await readOutput(NOTE_FILE)
         // The label of the note type that the Starter Kit gives the note, a link to its hub (R61).
         expect(html).toContain(
-            '<a class="badge-link" href="/-/types/permanent-notes" aria-label="Permanent note: all Permanent notes" data-type-badge>Permanent note</a>'
+            '<a class="badge-link" href="/-/types/permanent-notes" aria-label="Permanent note: all Permanent notes" data-type-badge data-pagefind-meta="type">Permanent note</a>'
         )
         expect(html).toContain('Created <time datetime="2031-03-07">2031-03-07</time>')
         expect(html).toContain('Updated <time datetime="2031-03-07">2031-03-07</time>')
@@ -227,13 +227,15 @@ describe('build of a content store with one published note', () => {
         // of its tag and of the parent level of the tag are generated pages
         // (issue 49); the names of the files of the tags are the SHA-256 of
         // "type" and of "type/note", computed with sha256sum. The recent lists
-        // and the filter of the type of the note are generated pages too (issue 50).
+        // and the filter of the type of the note are generated pages too (issue 50),
+        // and so is the search page (issue 51).
         expect(map).toEqual({
             pages: {
                 '/': 'index.html',
                 [NOTE_URL]: NOTE_FILE,
                 '/10+Garden': '-/folder/e824100b642854a7.html',
                 '/-/library': '-/library.html',
+                '/-/search': '-/search.html',
                 '/-/recent/added': '-/recent/added.html',
                 '/-/recent/added/permanent-notes': '-/recent/added.permanent-notes.html',
                 '/-/recent/updated': '-/recent/updated.html',

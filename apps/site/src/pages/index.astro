@@ -2,6 +2,7 @@
 import { LIBRARY_PATH } from '@dsebastien-website/resolver'
 import { HOME } from '../generated-pages.ts'
 import { RECENT_ON_HOME, statsLine } from '../home.ts'
+import SearchForm from '../components/SearchForm.astro'
 import Page from '../layouts/Page.astro'
 import { publishedSite } from '../published-site.ts'
 import { SITE_NAME } from '../site.ts'
@@ -11,7 +12,8 @@ import { SITE_NAME } from '../site.ts'
 // type (the type hubs, the library and the notes with no type: the crawl path
 // from the home page to every note, NAV-07), the notes most recently added
 // and updated, and the stats line. The "start here" block stays out while no
-// note is featured; the search comes with issue 51, the newsletter with issue 57.
+// note is featured; the newsletter comes with issue 57. The hero has a search
+// form that opens the search page (R63).
 const site = await publishedSite()
 const recent = site.recentLists.filter((list) => list.key === 'added' || list.key === 'updated')
 
@@ -28,6 +30,9 @@ function counted(value: number, one: string, many: string): string {
             Thousands of connected notes about knowledge management, personal productivity, software
             and the books, movies and games that I read, watch and play.
         </p>
+        <div class='mt-8'>
+            <SearchForm id='home-search' />
+        </div>
     </section>
     {site.topics.length > 0 && (
         <section class='pb-12' aria-labelledby='topics'>

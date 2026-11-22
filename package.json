@@ -39,6 +39,7 @@
         "serve": "bun run --cwd apps/site serve",
         "site:fixture": "bun scripts/site-fixture.ts",
         "budgets": "bun scripts/page-budgets.ts",
+        "budgets:search": "bun scripts/search-budget.ts",
         "commit:lint": "commitlint --edit",
         "corpus": "bun scripts/generate-corpus.ts",
         "corpus:published": "bun scripts/export-published.ts"

@@ -35,6 +35,13 @@ export const PAGE_BUDGET = {
     requests: 3
 } as const
 
+/**
+ * The budget of the first search of a reader (R57, PERF-21): what the title
+ * index and the full-text index load for one query, with Brotli where the
+ * host compresses a file. A page loads nothing of the search before it.
+ */
+export const FIRST_SEARCH_BROTLI = 350_000
+
 /** A budget of the times of Lighthouse, for one preset. */
 export interface TimeBudget {
     /** Largest Contentful Paint, in milliseconds. */

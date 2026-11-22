@@ -19,6 +19,7 @@ import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
 import { recentListsOf } from './recent.ts'
 import { SitePages } from './rendering/page.ts'
+import { titleIndexOf, type TitleIndex } from './search/titles.ts'
 
 // The published notes of one build, read one time: the manifest, the cleaned
 // notes with their properties and the markup that Astro keeps, the pages of the build with their
@@ -57,6 +58,8 @@ export interface PublishedSite {
     readonly topics: readonly Linked[]
     /** What the stats line of the home page counts (R62). */
     readonly stats: SiteStats
+    /** The title index of the search: the display titles and the aliases of the notes (SRCH-02, R63). */
+    readonly titleIndex: TitleIndex
     /** The backlinks of a published note, in the order of a page (R59). */
     backlinksOf(vaultPath: string): readonly ShownBacklink[]
     /** The notes with more backlinks than a note page holds: each has a page with all of them. */
@@ -254,6 +257,17 @@ async function read(): Promise<PublishedSite> {
                     .map((list) => list.pages[0]?.notes[0]?.date?.datetime)
             )
         },
+        titleIndex: titleIndexOf(
+            notes.map((note) => {
+                const header = headers.get(note.vaultPath)
+                return {
+                    path: note.path,
+                    title: header?.title ?? note.title,
+                    aliases: note.aliases,
+                    type: header?.type?.one ?? ''
+                }
+            })
+        ),
         backlinksOf,
         notesWithBacklinksPage: () =>
             notes.filter((note) => pages.backlinks(note.vaultPath).length > BACKLINKS_ON_PAGE)

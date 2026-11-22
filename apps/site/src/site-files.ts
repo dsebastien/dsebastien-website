@@ -7,6 +7,7 @@ import {
     foldersOf,
     LIBRARY_PATH,
     resolverMapOf,
+    SEARCH_PATH,
     type ResolverMap,
     type SiteFiles,
     type SiteFolder
@@ -84,6 +85,9 @@ export function listPageFile(list: Pick<NoteList, 'kind' | 'key'>, page: number)
 /** The file of the library. */
 export const LIBRARY_FILE = '-/library.html'
 
+/** The file of the search page. */
+export const SEARCH_FILE = '-/search.html'
+
 /**
  * The resolver map of the site of these published notes.
  *
@@ -106,6 +110,7 @@ export function resolverMapFor(
         generated[backlinksPath(note.id)] = backlinksFile(note.id)
     }
     generated[LIBRARY_PATH] = LIBRARY_FILE
+    generated[SEARCH_PATH] = SEARCH_FILE
     for (const list of lists) {
         for (const page of list.pages) {
             generated[page.path] = listPageFile(list, page.number)

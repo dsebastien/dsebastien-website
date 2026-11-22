@@ -116,6 +116,13 @@ export function typeHubPath(name: string, page: number): string {
 export const LIBRARY_PATH = '/-/library'
 
 /**
+ * The path of the search page (SRCH-01, decision R63). A query in its
+ * address (`?q=compost`) starts a search; the files of its indexes are
+ * under `/-/search/`.
+ */
+export const SEARCH_PATH = '/-/search'
+
+/**
  * The path of a page of the list of the notes with no note type (decision
  * R61): `/-/other`, and `/page/<number>` after page 1. It is their crawl path.
  *

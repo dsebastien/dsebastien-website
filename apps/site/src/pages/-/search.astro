@@ -1,0 +1,74 @@
+---
+import { SEARCH_PATH } from '@dsebastien-website/resolver'
+import Page from '../../layouts/Page.astro'
+import { fullTitle } from '../../page-titles.ts'
+import { FULL_TEXT_BASE, TITLES_FOLDER } from '../../search/paths.ts'
+
+// The search page (SRCH-01, SRCH-02, decision R63): the titles and the
+// aliases answer as the reader types, from the title index, and the full
+// text answers a short time later, from the full-text index that loads at
+// the first search. The query is in the address (`?q=`), so a form of
+// another page and a shared link open the page with its results. Search
+// engines do not index it (IDX-22, item 179).
+---
+
+<Page
+    title={fullTitle('Search')}
+    description='Search the titles, the aliases and the text of the notes.'
+    path={SEARCH_PATH}
+    noindex
+>
+    <div class='max-w-3xl'>
+        <h1 class='text-3xl font-bold tracking-tight sm:text-4xl'>Search</h1>
+        <form
+            role='search'
+            action={SEARCH_PATH}
+            method='get'
+            class='mt-6 flex gap-2'
+            data-search-form
+        >
+            <label for='search-query' class='sr-only'>
+                Search the notes
+            </label>
+            <input
+                id='search-query'
+                class='field min-w-0'
+                type='search'
+                name='q'
+                placeholder='Titles, aliases and text'
+                enterkeyhint='search'
+                autocomplete='off'
+                spellcheck='false'
+                data-search-input
+                data-titles={TITLES_FOLDER}
+                data-full-text={FULL_TEXT_BASE}
+            />
+            <button class='button shrink-0' type='submit'>
+                Search
+            </button>
+        </form>
+        <noscript>
+            <p class='mt-4 text-muted'>The search needs JavaScript.</p>
+        </noscript>
+        <p class='mt-4 min-h-6 text-sm text-muted' aria-live='polite' data-search-status></p>
+        <section class='mt-6' aria-labelledby='search-titles' data-search-titles hidden>
+            <h2 id='search-titles' class='section-title'>
+                Titles
+            </h2>
+            <ol class='grid gap-1' data-search-list></ol>
+        </section>
+        <section class='mt-10' aria-labelledby='search-text' data-search-text hidden>
+            <h2 id='search-text' class='section-title'>
+                In the text
+            </h2>
+            <ol class='grid gap-1' data-search-list></ol>
+            <button class='button-quiet mt-4' type='button' data-search-more hidden>
+                More results
+            </button>
+        </section>
+    </div>
+    <script>
+        import { startSearchPage } from '../../search/search-page.ts'
+        startSearchPage(document)
+    </script>
+</Page>

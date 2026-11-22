@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'astro/config'
 import { notePageBudget } from './src/budgets.ts'
 import { markdownProcessor } from './src/rendering/markup.ts'
+import { searchIndex } from './src/search/search-index.ts'
 import { siteChecks } from './src/site-checks.ts'
 
 export default defineConfig({
@@ -19,8 +20,9 @@ export default defineConfig({
     },
     // A note page above the HTML budget gives a warning, not a stop (R57).
     // A shared title or description, or a note too far from the home page,
-    // stops the build (IDX-04, IDX-05, NAV-07, R61).
-    integrations: [notePageBudget(), siteChecks()],
+    // stops the build (IDX-04, IDX-05, NAV-07, R61). Then the full-text index
+    // of the note pages is written (SRCH-01, R63).
+    integrations: [notePageBudget(), siteChecks(), searchIndex()],
     vite: {
         plugins: [tailwindcss()]
     }

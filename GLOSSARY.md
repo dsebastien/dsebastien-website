@@ -173,6 +173,12 @@ The name of a note type on the site: a singular one for the badge and the title 
 **Library**:
 The generated page that lists the type hubs of the media types (movies, games, shows).
 
+**Title index**:
+The index of the search that holds the display titles and the aliases of the published notes. It answers before the full text loads.
+
+**Full-text index**:
+The index of the search that holds the text of the published notes.
+
 **Link card**:
 A link that shows as a card with the title, the source and a small image of its target.
 _Avoid_: bookmark, embed

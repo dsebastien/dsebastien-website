@@ -19,7 +19,9 @@ import { languageOf } from '../../../rendering/language.ts'
 // small screen the panel and the outline are folding blocks above the text.
 // Its file has the identity of the note as its name, which is plain ASCII on
 // every system and on every host. The resolver leads the canonical URL of the
-// note to this file.
+// note to this file. The full text of the search indexes the title, the
+// values of the properties and the text (`data-pagefind-body`, R63), with the
+// label of the note type.
 export const getStaticPaths = (async () => {
     const site = await publishedSite()
     return site.notes.map((note) => ({ params: { id: note.id }, props: { note, site } }))
@@ -55,6 +57,8 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
                 id={body.heading?.id}
                 data-note-title
                 data-heading={body.heading?.text}
+                data-pagefind-body
+                data-pagefind-meta='title'
                 class='max-w-4xl text-3xl font-bold tracking-tight break-words sm:text-5xl'
             >
                 {header.title}
@@ -66,6 +70,7 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
                         href={typeHubPath(header.type.name, 1)}
                         aria-label={`${header.type.one}: all ${header.type.many}`}
                         data-type-badge
+                        data-pagefind-meta='type'
                     >
                         {header.type.one}
                     </a>
@@ -112,7 +117,12 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
                     </nav>
                 </details>
             )}
-            <article class='note-text max-w-[72ch]' data-note-body set:html={body.html} />
+            <article
+                class='note-text max-w-[72ch]'
+                data-note-body
+                data-pagefind-body
+                set:html={body.html}
+            />
             {backlinks.length > 0 && (
                 <section
                     class='mt-12 max-w-[72ch]'

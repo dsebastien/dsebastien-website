@@ -1,10 +1,13 @@
 ---
+import { SEARCH_PATH } from '@dsebastien-website/resolver'
 import ModeSwitch from './ModeSwitch.astro'
 import { SITE_NAME } from '../site.ts'
 
 // The header of every page, from variant B of the mockups (R49): the site
-// name leads home, and the switch of the mode (NAV-01, MODE-01). The search
-// comes with its slice (issue 51).
+// name leads home, the link to the search page (SRCH-01, R63: a plain link,
+// so a page loads nothing of the search), and the switch of the mode (NAV-01,
+// MODE-01). On a small screen the link shows its icon, and its name stays.
+const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '/-/search.html'
 ---
 
 <header class='sticky top-0 z-40 border-b border-border bg-surface'>
@@ -19,6 +22,25 @@ import { SITE_NAME } from '../site.ts'
             <span>{SITE_NAME}</span>
         </a>
         <div class='ml-auto flex items-center gap-2'>
+            <a
+                class='button-quiet h-9 min-w-9 px-2 sm:px-3'
+                href={SEARCH_PATH}
+                aria-current={searching ? 'page' : undefined}
+                data-search-link
+            >
+                <svg
+                    class='h-5 w-5'
+                    viewBox='0 0 24 24'
+                    fill='none'
+                    stroke='currentColor'
+                    stroke-width='2'
+                    aria-hidden='true'
+                >
+                    <circle cx='11' cy='11' r='7'></circle>
+                    <path d='m20 20-3.5-3.5'></path>
+                </svg>
+                <span class='sr-only sm:not-sr-only'>Search</span>
+            </a>
             <ModeSwitch />
         </div>
     </div>

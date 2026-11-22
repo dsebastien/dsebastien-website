@@ -1,5 +1,5 @@
-import { readdir } from 'node:fs/promises'
-import { join, resolve as resolvePath } from 'node:path'
+import { readdir, stat } from 'node:fs/promises'
+import { join, resolve as resolvePath, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolve, type ResolverMap, type SiteFile } from '@dsebastien-website/resolver'
 
@@ -57,8 +57,12 @@ async function readResolverMap(dist: string): Promise<ResolverMap> {
     return map as unknown as ResolverMap
 }
 
-/** The folder of the style sheets and of the other files that the pages load. Astro names each file with a hash. */
-const ASSETS = '_astro'
+/**
+ * The folders of the files that the pages load: the style sheets and the
+ * scripts, which Astro names with a hash, and the indexes of the search
+ * (decision R63).
+ */
+const ASSET_FOLDERS = ['_astro', '-/search']
 
 // The kinds of files are maps, not objects: the end of a name such as
 // `constructor` is a key like any other.
@@ -66,6 +70,7 @@ const CONTENT_TYPES = new Map(
     Object.entries({
         css: 'text/css; charset=utf-8',
         js: 'text/javascript; charset=utf-8',
+        json: 'application/json; charset=utf-8',
         svg: 'image/svg+xml',
         png: 'image/png',
         webp: 'image/webp',
@@ -245,13 +250,21 @@ async function siteFileResponse(
 async function readAssets(
     dist: string
 ): Promise<{ get(path: string): Promise<Response> | undefined }> {
-    let names: string[]
-    try {
-        names = await readdir(join(dist, ASSETS))
-    } catch {
-        names = []
+    const files = new Map<string, string>()
+    for (const folder of ASSET_FOLDERS) {
+        let names: string[]
+        try {
+            names = await readdir(join(dist, folder), { recursive: true })
+        } catch {
+            names = []
+        }
+        for (const name of names) {
+            const file = join(dist, folder, name)
+            if ((await stat(file)).isFile()) {
+                files.set(`/${folder}/${name.split(sep).join('/')}`, file)
+            }
+        }
     }
-    const files = new Map(names.map((name) => [`/${ASSETS}/${name}`, join(dist, ASSETS, name)]))
     return {
         get(path) {
             const file = files.get(path)

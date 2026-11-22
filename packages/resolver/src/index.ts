@@ -25,6 +25,7 @@ export {
     recentPath,
     recentTypePath,
     type RecentKind,
+    SEARCH_PATH,
     tagPagePath,
     tagPath,
     typeHubPath

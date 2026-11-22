@@ -104,6 +104,13 @@ jobs:
             - name: Note page budgets
               run: bun run budgets
 
+            # The budget of the first search (R57), on the invented corpus of full size.
+            - name: Invented corpus
+              run: bun run corpus
+
+            - name: First search budget
+              run: bun run budgets:search
+
             # The reports of Lighthouse, to read why a time failed.
             - name: Reports of Lighthouse
               # Also after the time limit, which cancels the job.

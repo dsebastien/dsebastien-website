@@ -2,7 +2,9 @@
 import type { Scalar } from '../properties.ts'
 
 // One value of the properties panel (issue 48, PAGE-02): a text with its
-// links, a number, a truth value, a date or an object as JSON.
+// links, a number, a truth value, a date or an object as JSON. The full text
+// of the search leaves out a truth value, a date and JSON: every note has them,
+// so they would answer any search (R63).
 interface Props {
     value: Scalar
 }
@@ -27,6 +29,12 @@ const { value } = Astro.props
         )
     )}
 {value.kind === 'number' && <span class='font-mono'>{value.text}</span>}
-{value.kind === 'boolean' && value.text}
-{value.kind === 'date' && <time datetime={value.datetime}>{value.text}</time>}
-{value.kind === 'json' && <pre class='properties-json'>{value.text}</pre>}
+{value.kind === 'boolean' && <span data-pagefind-ignore>{value.text}</span>}
+{value.kind === 'date' && (
+    <time datetime={value.datetime} data-pagefind-ignore>
+        {value.text}
+    </time>
+)}
+{value.kind === 'json' && (
+    <pre class='properties-json' data-pagefind-ignore set:text={value.text} />
+)}

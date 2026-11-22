@@ -1,0 +1,30 @@
+---
+import { SEARCH_PATH } from '@dsebastien-website/resolver'
+
+// A search form that opens the search page with the query (SRCH-01, R63):
+// plain HTML, with no script, on the home page and the "not found" page.
+interface Props {
+    /** The id of the field, unique on its page. */
+    id: string
+}
+
+const { id } = Astro.props
+---
+
+<form role='search' action={SEARCH_PATH} method='get' class='flex w-full max-w-xl gap-2'>
+    <label for={id} class='sr-only'>
+        Search the notes
+    </label>
+    <input
+        id={id}
+        class='field min-w-0'
+        type='search'
+        name='q'
+        placeholder='Search the notes'
+        enterkeyhint='search'
+        autocomplete='off'
+    />
+    <button class='button shrink-0' type='submit'>
+        Search
+    </button>
+</form>

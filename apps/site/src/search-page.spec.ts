@@ -1,0 +1,354 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import type { Root } from 'hast'
+import { fromHtml } from 'hast-util-from-html'
+import { select, selectAll } from 'hast-util-select'
+import { toText } from 'hast-util-to-text'
+import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+    FIXTURE_NOTE_TYPES,
+    FIXTURE_VAULT,
+    copyFixtureVault,
+    makeContentStoreCopy,
+    makeTestStores,
+    type TestStores
+} from '@dsebastien-website/testing'
+import { canonicalPath, resolve, type ResolverMap } from '@dsebastien-website/resolver'
+import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
+import { brotliSize, PAGE_BUDGET } from './budgets.ts'
+import { createSearch } from './search/engine.ts'
+import { pagefindEngine } from './search/full-text.ts'
+import { foldedWords, partFile, type TitleRow } from './search/titles.ts'
+import { startServer } from '../server/serve.ts'
+
+// The search on the built site (issue 51, SRCH-01, SRCH-02, decision R63):
+// the search page, the links and the forms that lead to it, the title index
+// and the full-text index. The tool publishes the fixture vault but one note,
+// the site is built, and the tests read the output and search its indexes
+// with the code of the page. Only published notes are in an index.
+const SITE = fileURLToPath(new URL('..', import.meta.url))
+
+/** The note that the author did not select: it stays in the vault. */
+const NOT_SELECTED = '10 Garden/Winter plan (draft).md'
+/** The notes that a guard keeps in the vault (the deny list, `publish_ignore`). */
+const GUARDED = [
+    '10 Garden/Neighbour dispute.md',
+    '90 Locked Shed/Greenhouse alarm code.md',
+    '90 Locked Shed/Shed inventory.md'
+]
+const BARREL = '10 Garden/Rain barrel.md'
+const FILM = '20 Library/20.01 Films/The Lantern Keeper (2019).md'
+
+let stores: TestStores | undefined
+let outDir: string | undefined
+let exitCode = -1
+let map: ResolverMap | undefined
+/** The vault paths of the published notes. */
+const published = new Set<string>()
+
+function built(): { dir: string; map: ResolverMap } {
+    if (outDir === undefined || map === undefined) {
+        throw new Error('the site was not built')
+    }
+    return { dir: outDir, map }
+}
+
+/** The page that the resolver serves for a path of the site. */
+async function served(path: string): Promise<Root> {
+    const { dir, map: resolver } = built()
+    const resolution = resolve(path, resolver)
+    if (resolution.kind !== 'page' && resolution.kind !== 'not-found') {
+        throw new Error(`"${path}" is no page: ${resolution.kind}`)
+    }
+    if (resolution.file === undefined) {
+        throw new Error(`"${path}" has no file`)
+    }
+    return fromHtml(await readFile(join(dir, resolution.file), 'utf8'))
+}
+
+/** A file of the output, as JSON. */
+async function json(file: string): Promise<unknown> {
+    return JSON.parse(await readFile(join(built().dir, file), 'utf8')) as unknown
+}
+
+/** The search of the page, over the files of the output. */
+function searchOfOutput(): ReturnType<typeof createSearch> {
+    const dir = built().dir
+    return createSearch({
+        keys: async () => {
+            const index = (await json('-/search/titles.json')) as { keys: Record<string, boolean> }
+            return index.keys
+        },
+        part: async (key) => (await json(`-/search/titles/${partFile(key)}.json`)) as TitleRow[],
+        fullText: pagefindEngine(pathToFileURL(join(dir, '-', 'search', 'pagefind')).href + '/')
+    })
+}
+
+/** The words of the notes that stay in the vault and of no published note. */
+async function wordsOfNotesInTheVault(): Promise<string[]> {
+    const publishedWords = new Set<string>()
+    for (const path of published) {
+        for (const word of foldedWords(await readFile(join(FIXTURE_VAULT, path), 'utf8'))) {
+            publishedWords.add(word)
+        }
+    }
+    const words = new Set<string>()
+    for (const path of [NOT_SELECTED, ...GUARDED]) {
+        for (const word of foldedWords(await readFile(join(FIXTURE_VAULT, path), 'utf8'))) {
+            if (!publishedWords.has(word) && /^\p{L}{4,}$/u.test(word)) words.add(word)
+        }
+    }
+    return [...words]
+}
+
+beforeAll(async () => {
+    stores = await makeTestStores()
+    const vault = await copyFixtureVault(stores)
+    const contentStore = await makeContentStoreCopy(stores)
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
+    const queue = await status(device)
+    const include = queue.new.filter((path) => path !== NOT_SELECTED)
+    for (const path of include) published.add(path)
+    const planned = await plan(device, { include })
+    await publish(device, planned.id, {
+        time: '2031-05-01T00:00:00Z',
+        device: 'garden-shed',
+        face: 'command-line'
+    })
+    const cache = join(SITE, '.cache')
+    await mkdir(cache, { recursive: true })
+    outDir = await mkdtemp(join(cache, 'search-spec-'))
+    const child = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
+        cwd: SITE,
+        env: { ...process.env, CONTENT_STORE: contentStore },
+        stdout: 'ignore',
+        stderr: 'inherit'
+    })
+    exitCode = await child.exited
+    if (exitCode !== 0) return
+    map = JSON.parse(await readFile(join(outDir, '-', 'resolver-map.json'), 'utf8')) as ResolverMap
+}, 300_000)
+
+afterAll(async () => {
+    // Remove only the folders that this test made.
+    if (outDir !== undefined) {
+        await rm(outDir, { recursive: true, force: true })
+    }
+    await stores?.remove()
+})
+
+describe('build of the fixture vault with the search', () => {
+    test('completes, and the vault holds notes that are not published', () => {
+        expect(exitCode).toBe(0)
+        expect(published.has(NOT_SELECTED)).toBe(false)
+        for (const path of GUARDED) expect(published.has(path)).toBe(false)
+    })
+})
+
+describe('the search page (SRCH-01)', () => {
+    test('is under the reserved prefix, with its title, and search engines do not index it', async () => {
+        const page = await served('/-/search')
+        expect(toText(select('title', page) ?? page)).toBe('Search · Sébastien’s Notes')
+        expect(select('meta[name="robots"]', page)?.properties['content']).toBe('noindex, follow')
+        expect(select('h1', page)).toBeDefined()
+    })
+
+    test('has a search field that works with the query of its address', async () => {
+        const page = await served('/-/search')
+        const form = select('form[role="search"]', page)
+        expect(form?.properties['action']).toBe('/-/search')
+        const field = select('input[type="search"][name="q"]', form ?? page)
+        expect(field).toBeDefined()
+        // The field has a label.
+        const id = field?.properties['id'] ?? ''
+        expect(select(`label[for="${id}"]`, page)).toBeDefined()
+        // The results have a live region for the counts.
+        expect(select('[data-search-status][aria-live="polite"]', page)).toBeDefined()
+    })
+
+    test('loads its own script only, within the script budget of a page', async () => {
+        const { dir } = built()
+        const page = await served('/-/search')
+        const scripts = selectAll('script[src]', page).map((script) =>
+            String(script.properties['src'])
+        )
+        expect(scripts).toHaveLength(1)
+        let bytes = 0
+        for (const src of scripts) {
+            bytes += brotliSize(await readFile(join(dir, src)))
+        }
+        expect(bytes).toBeLessThanOrEqual(PAGE_BUDGET.scriptBrotli)
+    })
+})
+
+describe('the ways to the search page', () => {
+    test('the header of every page links to it', async () => {
+        for (const path of ['/', canonicalPath(BARREL), '/-/search', '/no/such/page']) {
+            const page = await served(path)
+            expect(select('header a[href="/-/search"]', page), path).toBeDefined()
+        }
+    })
+
+    test('the home page and the "not found" page have a search form that opens it', async () => {
+        for (const path of ['/', '/no/such/page']) {
+            const form = select('main form[role="search"]', await served(path))
+            expect(form?.properties['action'], path).toBe('/-/search')
+            expect(form?.properties['method'], path).toBe('get')
+            expect(select('input[name="q"]', form ?? fromHtml('')), path).toBeDefined()
+        }
+    })
+
+    test('the "not found" page fills its field with the words of the missing address', async () => {
+        const page = await served('/no/such/page')
+        const scripts = selectAll('main script:not([src])', page).map((script) => toText(script))
+        expect(scripts.some((script) => script.includes('"not-found-search"'))).toBe(true)
+        expect(select('#not-found-search', page)?.properties['value']).toBeUndefined()
+    })
+
+    test('a note page loads nothing of the search (R57)', async () => {
+        const page = await served(canonicalPath(BARREL))
+        const loads = [
+            ...selectAll('script[src]', page).map((element) => element.properties['src']),
+            ...selectAll('link[href]', page).map((element) => element.properties['href'])
+        ].map(String)
+        expect(loads.filter((url) => url.includes('search') || url.includes('pagefind'))).toEqual(
+            []
+        )
+    })
+})
+
+describe('the title index (SRCH-02)', () => {
+    test('answers with the display title, the type and an alias', async () => {
+        const search = searchOfOutput()
+        expect(await search.titles('lantern keep')).toEqual([
+            { text: 'The Lantern Keeper (2019)', path: canonicalPath(FILM), type: 'Movie' }
+        ])
+        expect(await search.titles('water butt')).toEqual([
+            {
+                text: 'Water butt',
+                path: canonicalPath(BARREL),
+                type: 'Permanent note',
+                aliasOf: 'Rain barrel'
+            }
+        ])
+    })
+
+    test('holds published notes only', async () => {
+        const { dir, map: resolver } = built()
+        const parts = await readdir(join(dir, '-', 'search', 'titles'))
+        expect(parts.length).toBeGreaterThan(10)
+        const paths = new Set<string>()
+        const texts = new Set<string>()
+        for (const part of parts) {
+            for (const row of (await json(`-/search/titles/${part}`)) as TitleRow[]) {
+                paths.add(row[1])
+                texts.add(row[0])
+            }
+        }
+        expect([...paths].sort()).toEqual([...published].map(canonicalPath).sort())
+        for (const path of paths) expect(resolver.pages[path], path).toBeDefined()
+        for (const text of ['Winter plan', 'Neighbour dispute', 'Shed inventory']) {
+            expect(
+                [...texts].some((one) => one.includes(text)),
+                text
+            ).toBe(false)
+        }
+    })
+})
+
+describe('the full-text index (SRCH-01)', () => {
+    test('finds a word of the text of a note, with its display title and its type', async () => {
+        const results = await searchOfOutput().fullText('gutter')
+        const hits = await results.hits(0, 10)
+        expect(hits.map((hit) => hit.path)).toContain(canonicalPath(BARREL))
+        const barrel = hits.find((hit) => hit.path === canonicalPath(BARREL))
+        expect(barrel?.title).toBe('Rain barrel')
+        expect(barrel?.type).toBe('Permanent note')
+        expect(barrel?.excerpt.some((part) => part.marked && /gutter/iu.test(part.text))).toBe(true)
+    })
+
+    test('holds published notes only', async () => {
+        const entry = (await json('-/search/pagefind/pagefind-entry.json')) as {
+            languages: Record<string, { page_count: number }>
+        }
+        expect(Object.values(entry.languages).map((language) => language.page_count)).toEqual([
+            published.size
+        ])
+        // The words of the notes that stay in the vault: a result is a
+        // published note with a word of the same start, never one of them.
+        const words = await wordsOfNotesInTheVault()
+        expect(words).toContain('spades')
+        const search = searchOfOutput()
+        const found = new Set<string>()
+        for (const word of [...words, 'the', 'garden', 'water', 'notes']) {
+            const results = await search.fullText(word)
+            for (const hit of await results.hits(0, results.total)) found.add(hit.path)
+        }
+        const publishedPaths = new Set([...published].map(canonicalPath))
+        expect(found.size).toBeGreaterThan(20)
+        expect([...found].filter((path) => !publishedPaths.has(path))).toEqual([])
+    })
+
+    test('indexes the title, the values of the properties and the text of a note page only', async () => {
+        const dir = join(built().dir, '-', 'search', 'pagefind')
+        const pagefind = (await import(join(dir, 'pagefind.js'))) as {
+            options(options: { basePath: string; baseUrl: string }): Promise<void>
+            search(query: string): Promise<{ results: { data(): Promise<unknown> }[] }>
+        }
+        await pagefind.options({ basePath: pathToFileURL(dir).href + '/', baseUrl: '/' })
+        const { results } = await pagefind.search('gutter')
+        const pages = (await Promise.all(results.map((result) => result.data()))) as {
+            url: string
+            content: string
+        }[]
+        const barrel = pages.find((page) => page.url === canonicalPath(BARREL))
+        const content = barrel?.content ?? ''
+        // The page shows the parts that the index leaves out.
+        const page = await served(canonicalPath(BARREL))
+        expect(select('[data-backlinks]', page)).toBeDefined()
+        expect(select('[data-properties]', page)).toBeDefined()
+        expect(content).toStartWith('Rain barrel.')
+        expect(content).toContain('A barrel of 200 liters under the gutter of the shed.')
+        // A value of a property: the alias.
+        expect(content).toContain('Water butt')
+        for (const text of [
+            '#type/',
+            'Notes that link here',
+            'On this page',
+            'Sébastien',
+            'Properties',
+            'Aliases',
+            'Skip to'
+        ]) {
+            expect(content, text).not.toContain(text)
+        }
+    })
+})
+
+describe('the files of the search on the plain server', () => {
+    test('are served with their types, and nothing else of the folder', async () => {
+        const { dir } = built()
+        const server = await startServer({ dist: dir, port: 0 })
+        try {
+            const keys = await fetch(`${server.url}/-/search/titles.json`)
+            expect(keys.status).toBe(200)
+            expect(keys.headers.get('content-type')).toStartWith('application/json')
+            const script = await fetch(`${server.url}/-/search/pagefind/pagefind.js`)
+            expect(script.status).toBe(200)
+            expect(script.headers.get('content-type')).toStartWith('text/javascript')
+            expect((await fetch(`${server.url}/-/search/titles/zz.json`)).status).toBe(404)
+            expect((await fetch(`${server.url}/-/search/../resolver-map.json`)).status).not.toBe(
+                500
+            )
+        } finally {
+            await server.stop()
+        }
+    })
+})
