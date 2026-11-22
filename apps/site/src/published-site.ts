@@ -11,7 +11,7 @@ import {
     type ListedNote,
     type NoteList
 } from './generated-pages.ts'
-import { topicsOf, type Linked, type SiteStats } from './home.ts'
+import { newestDay, topicsOf, type Linked, type SiteStats } from './home.ts'
 import { isSystemTag, refuseTagsThatTakePagePaths, tagsOfNote } from './lists.ts'
 import { noteHeader, type NoteHeader } from './note-header.ts'
 import { readProperties } from './note-properties.ts'
@@ -247,7 +247,12 @@ async function read(): Promise<PublishedSite> {
             notes: notes.length,
             types: lists.typeHubs.length,
             tags: lists.tagLists.filter((list) => !isSystemTag(list.key)).length,
-            lastUpdate: lists.recentLists[1]?.pages[0]?.notes[0]?.date?.shown ?? ''
+            // The newest day of "added" and "updated": a run that only adds notes is an update too.
+            lastUpdate: newestDay(
+                lists.recentLists
+                    .filter((list) => list.key === 'added' || list.key === 'updated')
+                    .map((list) => list.pages[0]?.notes[0]?.date?.datetime)
+            )
         },
         backlinksOf,
         notesWithBacklinksPage: () =>

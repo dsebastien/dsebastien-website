@@ -389,14 +389,13 @@ describe('the home page (NAV-02, R62)', () => {
         }
     })
 
-    test('ends with the stats line', async () => {
+    test('ends with the stats line, whose last update is the newest day of the two lists', async () => {
         const stats = textOf(select('[data-stats]', await served('/')))
         expect(stats).toMatch(
-            new RegExp(
-                `^${String(notes.size)} notes, \\d+ note types and \\d+ tags\\. Last update: \\d{4}-\\d{2}-\\d{2}\\.$`,
-                'u'
-            )
+            new RegExp(`^${String(notes.size)} notes, \\d+ note types and \\d+ tags\\. `, 'u')
         )
+        // The second run only added Wormery and edited one note: both on 2031-06-01.
+        expect(stats.endsWith('Last update: 2031-06-01.')).toBe(true)
     })
 })
 

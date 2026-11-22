@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ListedNote } from './generated-pages.ts'
-import { statsLine, topicsOf } from './home.ts'
+import { newestDay, statsLine, topicsOf } from './home.ts'
 
 const MAP = {
     name: 'maps-of-content',
@@ -68,6 +68,21 @@ describe('the stats line of the home page (NAV-02, R62)', () => {
     test('says one note, one type, one tag', () => {
         expect(statsLine({ notes: 1, types: 1, tags: 1, lastUpdate: '2031-05-02' })).toBe(
             '1 note, 1 note type and 1 tag. Last update: 2031-05-02.'
+        )
+    })
+})
+
+describe('the last update of the stats line (R62)', () => {
+    test('is the newest day of the two recent lists', () => {
+        // A run that only adds a note: "updated" does not hold it.
+        expect(newestDay(['2031-06-01', '2031-03-03'])).toBe('2031-06-01')
+        expect(newestDay([undefined, '2031-03-03'])).toBe('2031-03-03')
+    })
+
+    test('is left out of the line when no list has a note', () => {
+        expect(newestDay([undefined, undefined])).toBeUndefined()
+        expect(statsLine({ notes: 0, types: 0, tags: 0, lastUpdate: undefined })).toBe(
+            '0 notes, 0 note types and 0 tags.'
         )
     })
 })

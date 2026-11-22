@@ -44,15 +44,26 @@ export interface SiteStats {
     readonly notes: number
     readonly types: number
     readonly tags: number
-    /** The date of the newest update, as the recent list shows it. */
-    readonly lastUpdate: string
+    /** The newest day of the two recent lists, or `undefined` when they are empty. */
+    readonly lastUpdate: string | undefined
+}
+
+/** The newest of these days (`yyyy-mm-dd`), or `undefined` when none is given. */
+export function newestDay(days: readonly (string | undefined)[]): string | undefined {
+    return days
+        .filter((day): day is string => day !== undefined && day !== '')
+        .reduce<string | undefined>(
+            (newest, day) => (newest === undefined || day > newest ? day : newest),
+            undefined
+        )
 }
 
 function counted(value: number, one: string, many: string): string {
     return `${value.toLocaleString('en')} ${value === 1 ? one : many}`
 }
 
-/** The stats line of the home page: `20,734 notes, 34 note types and 856 tags. Last update: 2031-05-02.` */
+/** The stats line of the home page: `20,734 notes, 34 note types and 856 tags. Last update: 2031-05-02.` (no last update without one) */
 export function statsLine(stats: SiteStats): string {
-    return `${counted(stats.notes, 'note', 'notes')}, ${counted(stats.types, 'note type', 'note types')} and ${counted(stats.tags, 'tag', 'tags')}. Last update: ${stats.lastUpdate}.`
+    const last = stats.lastUpdate === undefined ? '' : ` Last update: ${stats.lastUpdate}.`
+    return `${counted(stats.notes, 'note', 'notes')}, ${counted(stats.types, 'note type', 'note types')} and ${counted(stats.tags, 'tag', 'tags')}.${last}`
 }

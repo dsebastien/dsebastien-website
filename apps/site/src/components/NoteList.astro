@@ -42,11 +42,7 @@ const summary = `${cut ?? `${notes}, ${order}`}${pages > 1 ? `, page ${String(pa
     </nav>
 )}
 {list.filters.length > 0 && (
-    <details
-        class='fold mt-6'
-        open={page.path !== list.pages[0]?.path || list.key.includes('/')}
-        data-filters
-    >
+    <details class='fold mt-6' open={list.key.includes('/')} data-filters>
         <summary class='fold-summary'>
             <span>Filter by note type</span>
             <span class='ml-auto text-sm font-normal text-muted'>{list.filters.length - 1}</span>
