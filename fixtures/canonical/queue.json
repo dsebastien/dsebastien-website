@@ -1553,6 +1553,225 @@
             ]
         },
         {
+            "name": "an unpublished note that comes under a guard leaves the manifest",
+            "denyList": ["Locked"],
+            "vault": {
+                "Keep.md": "Keep\n",
+                "Moves.md": "Moves\n",
+                "Marked.md": "Marked\n",
+                "Lost.md": "Lost\n",
+                "Private/Diary.md": "Diary\n",
+                "Locked/Old.md": "Old\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication of five notes",
+                    "selection": {
+                        "hold": [],
+                        "include": [
+                            "Keep.md",
+                            "Lost.md",
+                            "Marked.md",
+                            "Moves.md",
+                            "Private/Diary.md"
+                        ],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [
+                            "Keep.md",
+                            "Lost.md",
+                            "Marked.md",
+                            "Moves.md",
+                            "Private/Diary.md"
+                        ],
+                        "published": [
+                            "Keep.md",
+                            "Lost.md",
+                            "Marked.md",
+                            "Moves.md",
+                            "Private/Diary.md"
+                        ],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "four notes are unpublished: their manifest entries stay, in the state unpublished, and their addresses answer 410 (URL-27, decision R64)",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"]
+                    },
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "one unpublished note gets the ignore property, and one is moved into a folder below a folder of the deny list, with another letter case of its name",
+                    "files": {
+                        "Marked.md": "---\npublish_ignore: true\n---\nMarked\n",
+                        "Locked/Sub/moves.md": "Moves\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old path of the note that moved, and an unpublished note whose file is only missing from this vault",
+                    "paths": ["Moves.md", "Lost.md"]
+                },
+                {
+                    "do": "store",
+                    "why": "the folder of an unpublished note enters the deny list",
+                    "files": {
+                        "configuration.json": "{\n  \"denyList\": [\"Locked\", \"Private\"]\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a note that is not published is in no list of the queue, also under a guard",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Keep.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths holds the three unpublished notes under a guard as forced removals: the ignore property, the folder that entered the deny list, and the note whose name is now in a folder of the deny list. The unpublished note that is only missing is not one of them",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the removal of an unpublished note under a guard cannot be held",
+                    "selection": {
+                        "hold": ["Marked.md"],
+                        "include": [],
+                        "remove": []
+                    },
+                    "refused": true
+                },
+                {
+                    "do": "publish",
+                    "why": "the forced removal deletes the manifest entries, so the addresses of the three notes answer 404, as after a takedown (URL-28)",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": ["Marked.md", "Moves.md", "Private/Diary.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the three entries left the content store, the unpublished note that is only missing keeps its entry, and the published note stays",
+                    "vault": {
+                        "Keep.md": "---\npublic_note: true\n---\nKeep\n",
+                        "Marked.md": "---\npublish_ignore: true\n---\nMarked\n",
+                        "Locked/Sub/moves.md": "Moves\n"
+                    },
+                    "store": {
+                        "manifest/5505d23a3d0785f8.json": null,
+                        "manifest/243ba59c19e2bf5b.json": null,
+                        "manifest/442fcacd5e36e565.json": null,
+                        "notes/Marked.md": null,
+                        "notes/Moves.md": null,
+                        "notes/Private/Diary.md": null,
+                        "notes/Lost.md": null,
+                        "notes/Keep.md": "Keep\n",
+                        "manifest/e9c9059c0dc2c64b.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e9c9059c0dc2c64b\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Lost.md\",\n  \"sourceHash\": \"sha256:df95720f30005854597997cf33fef71a91f0642745b75f86adf9b5fd53e32708\",\n  \"state\": \"unpublished\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the next queue is the same: nothing waits",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Keep.md"],
+                        "behind": 0
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "and the next plan is empty",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                }
+            ]
+        },
+        {
             "name": "the links of a note",
             "denyList": ["Locked"],
             "vault": {

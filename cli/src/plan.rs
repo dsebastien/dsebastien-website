@@ -206,8 +206,13 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
         .filter(|path| !within(&forced, path))
         .cloned()
         .collect();
+    // An unpublished note under a guard leaves the manifest too (decision R64).
     let plan = PublicationPlan::new(
-        forced,
+        forced
+            .iter()
+            .chain(&scan.unpublished_under_guard)
+            .cloned()
+            .collect(),
         selection
             .include
             .iter()

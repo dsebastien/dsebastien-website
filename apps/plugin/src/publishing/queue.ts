@@ -91,6 +91,12 @@ export interface Scan {
     readonly configuration: Configuration
     /** The note type of each published note that the scan found and that no guard excludes, when it has one. */
     readonly noteTypes: ReadonlyMap<string, NoteType>
+    /**
+     * The vault paths of the unpublished notes that a guard excludes, sorted:
+     * forced removals of the next plan, so that their addresses answer 404 and
+     * no more 410 (decision R64). They are in no list of the queue.
+     */
+    readonly unpublishedUnderGuard: readonly string[]
 }
 
 /**
@@ -301,12 +307,25 @@ export async function computeQueue(input: {
     // a folder of the deny list, it has the ignore property, or its file is
     // missing and a note of its name is in a folder of the deny list (it moved
     // there). Every other one is only missing from this vault.
+    const movedUnderGuard = (path: string): boolean =>
+        deniedNames.has(guardName(path.slice(path.lastIndexOf('/') + 1)))
     const missing = lists.toRemove.filter(
         (path) =>
             guardOfPath(path, input.configuration) === undefined &&
             !ignored.has(path) &&
-            !deniedNames.has(guardName(path.slice(path.lastIndexOf('/') + 1)))
+            !movedUnderGuard(path)
     )
+    // An unpublished note under a guard, in the same three cases; for the
+    // third, the scan did not find its file (decision R64).
+    const unpublishedUnderGuard = [...input.manifest]
+        .filter(
+            ([path, entry]) =>
+                entry.state === 'unpublished' &&
+                (guardOfPath(path, input.configuration) !== undefined ||
+                    ignored.has(path) ||
+                    (!notes.has(path) && movedUnderGuard(path)))
+        )
+        .map(([path]) => path)
     const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
         counts: {
@@ -323,6 +342,7 @@ export async function computeQueue(input: {
     }
     return {
         queue,
+        unpublishedUnderGuard: sortByCodePoint(unpublishedUnderGuard),
         notes,
         ignored,
         index,

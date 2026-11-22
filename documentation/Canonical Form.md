@@ -185,12 +185,12 @@ A selection stops the plan in each of these cases:
 
 ## The publication plan
 
-| Key            | Value                                                                             | Order          |
-| -------------- | --------------------------------------------------------------------------------- | -------------- |
-| `forcedRemove` | The vault paths of the published notes that a guard excludes: the forced removals | Sorted by path |
-| `publish`      | The vault paths of the notes to publish                                           | Sorted by path |
-| `remove`       | The vault paths of the published notes to unpublish                               | Sorted by path |
-| `update`       | The vault paths of the published notes to update                                  | Sorted by path |
+| Key            | Value                                                                                         | Order          |
+| -------------- | --------------------------------------------------------------------------------------------- | -------------- |
+| `forcedRemove` | The vault paths of the notes with a manifest entry that a guard excludes: the forced removals | Sorted by path |
+| `publish`      | The vault paths of the notes to publish                                                       | Sorted by path |
+| `remove`       | The vault paths of the published notes to unpublish                                           | Sorted by path |
+| `update`       | The vault paths of the published notes to update                                              | Sorted by path |
 
 A later slice adds the edits of the configuration.
 
@@ -198,7 +198,7 @@ The plan of a selection:
 
 1. `publish`: the paths of `include` that are in the list `new` of the queue. A new candidate enters a plan only when its path is named.
 2. `update`: every path of the list `changed` of the queue that is not in `hold` and not in `remove`. So a plan without paths holds the changed notes only. A path of `include` that is in `changed` or in `unchanged` adds nothing.
-3. `forcedRemove`: every path of the list `toRemove` of the queue that a guard excludes. There are three cases. The path is in a folder of the deny list. The ignore property excludes the note. Or the scan did not find the file of the note, and a note with the same name, the letter case and the Unicode form ignored (the wider fold of rule 4 of section "Small letters"), is in a folder of the deny list: the note moved there. The tool compares names only and reads no file of such a folder, so a published note that is missing from this vault is removed too when another note of its name is in a folder of the deny list: the tool fails closed. A note that gets another name when it moves, or that moves into a folder below a deny list folder whose name starts with a dot, is only missing for the tool: the rename journal of a later slice gives the exact move. A published note whose file is only missing, with no note of its name in a folder of the deny list, is not a forced removal. No selection changes this list: every plan holds every forced removal, also a plan without paths (PUB-21 of the spec).
+3. `forcedRemove`: every path of the list `toRemove` of the queue that a guard excludes. There are three cases. The path is in a folder of the deny list. The ignore property excludes the note. Or the scan did not find the file of the note, and a note with the same name, the letter case and the Unicode form ignored (the wider fold of rule 4 of section "Small letters"), is in a folder of the deny list: the note moved there. The tool compares names only and reads no file of such a folder, so a published note that is missing from this vault is removed too when another note of its name is in a folder of the deny list: the tool fails closed. A note that gets another name when it moves, or that moves into a folder below a deny list folder whose name starts with a dot, is only missing for the tool: the rename journal of a later slice gives the exact move. A published note whose file is only missing, with no note of its name in a folder of the deny list, is not a forced removal. A note that was unpublished (its entry has the state `unpublished`) is a forced removal too when a guard excludes it in one of the same three cases (for the third: the scan did not find its file): its entry leaves the manifest, so its addresses answer 404 as after a takedown, and no more 410 (URL-28, decision R64). Such a note is in no list of the queue (rule 5 of the queue). No selection changes this list: every plan holds every forced removal, also a plan without paths (PUB-21 of the spec).
 4. `remove`: the paths of `remove` of the selection that are not in `forcedRemove`. A guard wins over an unpublish.
 
 Both implementations sort the four lists when they make a plan (`makePlan`, `PublicationPlan::new`), so no caller can give a plan in another order.
@@ -239,7 +239,7 @@ Before a plan is applied, its record is computed again from the selection. When 
 
 The `publish` command applies exactly one plan. It takes the lock of the device first, and puts back what a publication that stopped halfway left (see "Failure cases"). After the check of the record, and before its first write into the copy, it writes its run journal (see "Failure cases"). Then:
 
-1. First, for each note of `forcedRemove`, it removes `notes/<vault path>` and the manifest entry of the note. This is the takedown rule (PUB-84 of the spec): the note leaves the manifest with its former paths, so its URL answers 404 and no older name leads to it. When a forced removal fails, the publication stops: every file is put back as it was, nothing is committed, and the command fails. No note is published while a note under a guard stays live.
+1. First, for each note of `forcedRemove`, it removes `notes/<vault path>` (an unpublished note has no such file) and the manifest entry of the note. This is the takedown rule (PUB-84 of the spec): the note leaves the manifest with its former paths, so its URL answers 404 and no older name leads to it. When a forced removal fails, the publication stops: every file is put back as it was, nothing is committed, and the command fails. No note is published while a note under a guard stays live.
 2. For each note of `publish` and of `update`, it first uploads each attachment of the note whose key the attachment storage does not have yet (PUB-39): it reads the file from the vault again, and uploads its bytes under its key. A file whose bytes no longer have the hash of the record is not uploaded, and the note is left out (rule 4): the file changed since the plan. The storage is listed one time, just before the first upload, and a key that this run uploaded is not uploaded again. A publication with no upload never lists it, so a takedown never waits for the storage. Then it writes the cleaned note to `notes/<vault path>` and the manifest entry of the note. The cleaned note that it writes is the text whose hash the record holds, and the entry holds the links and the attachments of the record.
 3. For each note of `remove`, it removes `notes/<vault path>` and writes the manifest entry with the state `unpublished`.
 4. The uploads and the two files of a note of step 2 or 3 are one unit. When an upload or a write of the unit fails, the files of that note are put back as they were, the note is left out of the publication, and the report names it with the reason. The other notes are published. When the files of the note cannot be put back, the whole publication stops as in rule 6. An upload of a note that was left out stays in the storage until the cleanup of rule 8.
@@ -537,7 +537,7 @@ The entry of a note at a publication:
 2. A note that was unpublished and is published again keeps its entry: its `id`, its `firstPublished` and its `formerPaths` stay. Its state is `published` again, `lastPublished` is the time of the run, and the publication writes `aliases`, `cleanedHash`, `cleaningVersion`, `links`, `attachments`, `noteType` and `sourceHash`.
 3. An update writes `aliases`, `cleanedHash`, `cleaningVersion`, `links`, `attachments`, `noteType` and `sourceHash`. `lastPublished` is the time of the run when the hash of the source changed. A technical update does not move it (PUB-24 of the spec).
 4. An unpublish changes the state only. The entry keeps its `attachments`, but an unpublished note uses no file of the attachment storage.
-5. A forced removal removes the entry.
+5. A forced removal removes the entry, also the entry of an unpublished note (decision R64).
 
 The manifest is read strictly. The tool stops in each of these cases:
 

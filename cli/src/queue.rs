@@ -124,6 +124,10 @@ pub struct Scan {
     /// The note type of each published note that the scan found and that no
     /// guard excludes, when it has one.
     pub note_types: BTreeMap<String, NoteType>,
+    /// The vault paths of the unpublished notes that a guard excludes, sorted:
+    /// forced removals of the next plan, so that their addresses answer 404
+    /// and no more 410 (decision R64). They are in no list of the queue.
+    pub unpublished_under_guard: Vec<String>,
 }
 
 impl Scan {
@@ -278,20 +282,46 @@ fn missing_of(
     // missing and a note of its name is in a folder of the deny list (it moved
     // there: the names in small letters, hidden ones included). Every other
     // one is only missing from this vault. The list stays sorted.
-    let moved_under_guard = |path: &String| {
-        let name = guard_name(path.rsplit('/').next().unwrap_or(path));
-        #[allow(clippy::case_sensitive_file_extension_comparisons)]
-        let is_note = name.ends_with(".md");
-        is_note && denied_file_names.contains(&name)
-    };
     to_remove
         .iter()
         .filter(|path| {
             !in_deny_list(path, configuration)
                 && !ignored.contains(*path)
-                && !moved_under_guard(path)
+                && !moved_under_guard(path, denied_file_names)
         })
         .cloned()
+        .collect()
+}
+
+/// True when a note of the name of this path is in a folder of the deny list
+/// (the names in small letters, hidden ones included): the note may have
+/// moved there.
+fn moved_under_guard(path: &str, denied_file_names: &BTreeSet<String>) -> bool {
+    let name = guard_name(path.rsplit('/').next().unwrap_or(path));
+    #[allow(clippy::case_sensitive_file_extension_comparisons)]
+    let is_note = name.ends_with(".md");
+    is_note && denied_file_names.contains(&name)
+}
+
+/// The unpublished notes that a guard excludes, in the three cases of a
+/// published note; for the third, the scan did not find the file (decision
+/// R64). The map gives its paths in the order of the code points.
+fn unpublished_under_guard(
+    manifest: &BTreeMap<String, ManifestEntry>,
+    notes: &BTreeMap<String, ScannedNote>,
+    configuration: &Configuration,
+    ignored: &BTreeSet<String>,
+    denied_file_names: &BTreeSet<String>,
+) -> Vec<String> {
+    manifest
+        .iter()
+        .filter(|(path, entry)| {
+            entry.state == State::Unpublished
+                && (in_deny_list(path, configuration)
+                    || ignored.contains(*path)
+                    || (!notes.contains_key(*path) && moved_under_guard(path, denied_file_names)))
+        })
+        .map(|(path, _)| path.clone())
         .collect()
 }
 
@@ -411,6 +441,14 @@ pub fn compute_queue(
         &denied_file_names,
     );
     Ok(Scan {
+        // First: the fields below move what it reads.
+        unpublished_under_guard: unpublished_under_guard(
+            &manifest,
+            &notes,
+            &configuration,
+            &ignored,
+            &denied_file_names,
+        ),
         queue,
         notes,
         ignored,
