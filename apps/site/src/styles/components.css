@@ -99,6 +99,12 @@
         @apply bg-surface-elevated;
     }
 
+    /* The chip of the current page or the current filter: the accent, so it
+       stands out from the other chips and from their hover in both modes. */
+    .chip-current {
+        @apply inline-flex items-center gap-1 rounded-pill bg-secondary px-3 py-1 text-sm font-semibold text-on-secondary;
+    }
+
     .button {
         @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-colors;
     }

@@ -372,7 +372,7 @@ describe('the home page (NAV-02, R62)', () => {
         const topics = selectAll('[data-topics] a', await served('/')).map(
             (link) => link.properties['href']
         )
-        expect(topics).toEqual(['/10+Garden/Garden+index'])
+        expect(topics).toEqual(['/10+Garden/Compost+basics'])
     })
 
     test('shows the 10 notes most recently added and updated, newest first, with a link to each list', async () => {
@@ -423,15 +423,43 @@ describe('the recent pages (NAV-05, PUB-70, PUB-71, R62)', () => {
     test('list the notes updated, newest first; a note unchanged since the import keeps its updated date', async () => {
         const listed = listedDates(await served('/-/recent/updated'))
         expect(newestFirst(listed.map((item) => item.date))).toBe(true)
-        // The two notes of the second run, from A to Z; the edit moved one up
-        // (its updated property still says 2031-03-03).
-        expect(listed.slice(0, 2)).toEqual([
-            { path: '/10+Garden/Seed+swap+day', date: '2031-06-01' },
-            { path: '/10+Garden/Wormery', date: '2031-06-01' }
-        ])
-        for (const { path, date } of listed.slice(2, 15)) {
+        // The edit of the second run moved one note up (its updated property
+        // still says 2031-03-03). The note that the second run published for
+        // the first time is not here: it never changed.
+        expect(listed[0]).toEqual({ path: '/10+Garden/Seed+swap+day', date: '2031-06-01' })
+        expect(listed.map((item) => item.path)).not.toContain('/10+Garden/Wormery')
+        for (const { path, date } of listed.slice(1, 15)) {
             expect(date, path).toBe(await bandDate(path, 'updated'))
         }
+    })
+
+    test('say what each date is, in an ordered list, with a canonical link', async () => {
+        const added = await served('/-/recent/added')
+        expect(textOf(select('[data-listed-when]', added))).toBe('Added 2031-06-01')
+        expect(select('ol[data-list]', added)).toBeDefined()
+        expect(select('link[rel="canonical"]', added)?.properties['href']).toBe(
+            'https://notes.dsebastien.net/-/recent/added'
+        )
+        const updated = await served('/-/recent/updated')
+        expect(textOf(select('[data-listed-when]', updated))).toBe('Changed 2031-06-01')
+        const home = await served('/')
+        expect(textOf(select('[data-recent="added"] [data-listed-when]', home))).toBe(
+            'Added 2031-06-01'
+        )
+        expect(textOf(select('[data-recent="updated"] [data-listed-when]', home))).toBe(
+            'Changed 2031-06-01'
+        )
+    })
+
+    test('have a filter by note type: folded on a list, open on a filter page', async () => {
+        expect(
+            select('details[data-filters]', await served('/-/recent/added'))?.properties['open']
+        ).toBeUndefined()
+        expect(
+            select('details[data-filters]', await served('/-/recent/added/movies'))?.properties[
+                'open'
+            ]
+        ).toBe(true)
     })
 
     test('have a filter by note type: one page per type, not indexed', async () => {
@@ -446,6 +474,9 @@ describe('the recent pages (NAV-05, PUB-70, PUB-71, R62)', () => {
             '/20+Library/20.01+Films/The+Lantern+Keeper+(2019)',
             '/20+Library/20.01+Films/The+Quiet+Orchard+(2021)'
         ])
+        expect(select('link[rel="canonical"]', movies)?.properties['href']).toBe(
+            'https://notes.dsebastien.net/-/recent/added/movies'
+        )
         const filters = selectAll('[data-filters] a', movies).map((link) => link.properties['href'])
         expect(filters).toContain('/-/recent/added')
         expect(filters).toContain('/-/recent/added/permanent-notes')

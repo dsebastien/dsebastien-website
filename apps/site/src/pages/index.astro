@@ -102,12 +102,13 @@ function counted(value: number, one: string, many: string): string {
                                     {note.title}
                                 </a>
                                 {note.date !== undefined && (
-                                    <time
+                                    <span
                                         class='shrink-0 text-sm text-muted tabular-nums'
-                                        datetime={note.date.datetime}
+                                        data-listed-when
                                     >
-                                        {note.date.shown}
-                                    </time>
+                                        {list.key === 'added' ? 'Added' : 'Changed'}{' '}
+                                        <time datetime={note.date.datetime}>{note.date.shown}</time>
+                                    </span>
                                 )}
                             </li>
                         ))}

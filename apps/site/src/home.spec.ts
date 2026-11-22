@@ -49,6 +49,10 @@ describe('the entry points by topic of the home page (NAV-02, R62)', () => {
         ])
     })
 
+    test('leave out a map of content that no note links to', () => {
+        expect(topicsOf([{ note: note('Lonely map'), backlinks: 0 }])).toEqual([])
+    })
+
     test('are none without a map of content', () => {
         expect(topicsOf([{ note: note('Busy note', NOTE), backlinks: 3 }])).toEqual([])
     })

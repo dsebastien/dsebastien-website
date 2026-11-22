@@ -170,6 +170,13 @@ export function siteChecks(): AstroIntegration {
                 for (const file of new Set(Object.values(map.pages))) {
                     pages.set(file, readBuiltPage(await readFile(join(output, file), 'utf8')))
                 }
+                // The "not found" page is no path of the map, but a reader follows its links.
+                if (map.notFound !== undefined) {
+                    pages.set(
+                        map.notFound,
+                        readBuiltPage(await readFile(join(output, map.notFound), 'utf8'))
+                    )
+                }
                 const notes = new Set(
                     [...pages.keys()].filter((file) => file.startsWith('-/note/'))
                 )

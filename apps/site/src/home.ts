@@ -19,9 +19,14 @@ export interface Linked {
     readonly backlinks: number
 }
 
-/** The entry points by topic: the maps of content that most published notes link to, then A to Z. */
+/**
+ * The entry points by topic: the maps of content that most published notes
+ * link to, then A to Z. A map that no published note links to is left out.
+ */
 export function topicsOf(notes: readonly Linked[]): Linked[] {
-    const maps = notes.filter((item) => item.note.type?.name === MAPS_OF_CONTENT)
+    const maps = notes.filter(
+        (item) => item.note.type?.name === MAPS_OF_CONTENT && item.backlinks > 0
+    )
     const order = new Map(
         byTitle(maps.map((item) => item.note)).map((note, index) => [note, index])
     )

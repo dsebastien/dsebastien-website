@@ -101,17 +101,18 @@ function dayAfter(day: string): string {
 }
 
 /**
- * The date of a note of the import: its property, else the import. A
- * property more than one day after the import is a typo (a `2041` would stay
- * at the top for good): it takes the import. One day of margin, because the
- * import ran in UTC and the vault writes local times.
+ * The date of a note of the import: its property. A note with no valid
+ * property, or with one more than one day after the import (a typo such as
+ * `2041`), shows the day of the import and goes to the end of the list: its
+ * real date is not known. One day of margin, because the import ran in UTC
+ * and the vault writes local times.
  */
 function importDate(property: unknown, importRun: string): Dated {
     const run = runDate(importRun)
     const dated = propertyDated(property)
     return dated === undefined ||
         compareCodePoints(dated.date.datetime, dayAfter(run.date.datetime)) > 0
-        ? run
+        ? { date: run.date, key: '' }
         : dated
 }
 
@@ -154,12 +155,25 @@ export function recentListsOf(
     const lists: NoteList[] = []
     const filters: NoteList[] = []
     for (const kind of ['added', 'updated'] as const) {
+        // "Updated" holds the notes that changed after their first publication,
+        // and the notes of the import (R62): a new note is in "added" only.
+        const listed =
+            kind === 'added'
+                ? sources
+                : sources.filter(
+                      (source) =>
+                          source.lastPublished !== source.firstPublished ||
+                          source.firstPublished === importRun
+                  )
         const ordered = newestFirst(
-            sources.map((source) => ({ note: source.note, dated: datesOf[kind](source) }))
+            listed.map((source) => ({ note: source.note, dated: datesOf[kind](source) }))
         ).map(({ note, dated }) => ({ ...note, date: dated.date }))
+        // A filter for each type that this list holds.
+        const present = new Set(ordered.map((note) => note.type?.name))
+        const kindTypes = byLabel.filter(([name]) => present.has(name))
         const links: ListLink[] = [
             { label: 'All', path: recentPath(kind, 1) },
-            ...byLabel.map(([name, label]) => ({ label, path: recentTypePath(kind, name) }))
+            ...kindTypes.map(([name, label]) => ({ label, path: recentTypePath(kind, name) }))
         ]
         const newest = ordered.slice(0, RECENT_NOTES)
         const verb = kind === 'added' ? 'added' : 'updated'
@@ -183,7 +197,7 @@ export function recentListsOf(
                 true
             )
         })
-        for (const [name, label] of byLabel) {
+        for (const [name, label] of kindTypes) {
             const all = ordered.filter((note) => note.type?.name === name)
             const ofType = all.slice(0, RECENT_NOTES_OF_A_TYPE)
             const title = `${kind === 'added' ? 'Recently added' : 'Recently updated'}: ${label}`

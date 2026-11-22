@@ -109,27 +109,17 @@ describe('the notes most recently added (PUB-70, R62)', () => {
         ])
     })
 
-    test('an updated date on the day after the import stays: the import ran in UTC', () => {
-        const run = {
-            firstPublished: '2031-04-30T23:45:00Z',
-            lastPublished: '2031-04-30T23:45:00Z'
-        }
-        const sources = [
-            source('Alder', { ...run, updated: '2031-05-01T00:10' }),
-            source('Birch', { ...run, updated: '2031-05-01T00:30' })
-        ]
-        expect(shown(sources, 'updated', { importRun: run.firstPublished })).toEqual([
-            'Birch 2031-05-01',
-            'Alder 2031-05-01'
-        ])
-    })
-
     test('a created date after the import is never newer than the import', () => {
         const sources = [
             source('Typo', { created: '2041-01-01' }),
             source('Later', { firstPublished: '2031-06-01T00:00:00Z' })
         ]
         expect(shown(sources, 'added')).toEqual(['Later 2031-06-01', 'Typo 2031-05-01'])
+    })
+
+    test('a note of the import with no valid created date goes to the end', () => {
+        const sources = [source('Undated'), source('Dated', { created: '2024-01-01' })]
+        expect(shown(sources, 'added')).toEqual(['Dated 2024-01-01', 'Undated 2031-05-01'])
     })
 
     test('the same date gives the order of the titles from A to Z', () => {
@@ -148,17 +138,62 @@ describe('the notes most recently updated (PUB-71, R62)', () => {
             source('Alder', { lastPublished: '2031-06-02T00:00:00Z', updated: '2030-01-01' }),
             // Not changed since the import.
             source('Birch', { updated: '2026-10-12T14:30' }),
-            // Published after the import, never changed: its own publication.
+            // Published after the import, then changed.
             source('Cedar', {
                 firstPublished: '2031-05-20T00:00:00Z',
-                lastPublished: '2031-05-20T00:00:00Z',
+                lastPublished: '2031-05-25T00:00:00Z',
                 updated: '2020-01-01'
             })
         ]
         expect(shown(sources, 'updated')).toEqual([
             'Alder 2031-06-02',
-            'Cedar 2031-05-20',
+            'Cedar 2031-05-25',
             'Birch 2026-10-12'
+        ])
+    })
+
+    test('leave out a note that never changed after its first publication, but for the import', () => {
+        const sources = [
+            source('Alder', {
+                firstPublished: '2031-05-20T00:00:00Z',
+                lastPublished: '2031-05-20T00:00:00Z'
+            }),
+            source('Birch', { updated: '2026-10-12' })
+        ]
+        expect(shown(sources, 'updated')).toEqual(['Birch 2026-10-12'])
+        expect(list(sources, 'updated').total).toBe(1)
+        // No filter page for a type with no note in the list.
+        const movies = [
+            source(
+                'Alien',
+                { firstPublished: '2031-05-20T00:00:00Z', lastPublished: '2031-05-20T00:00:00Z' },
+                MOVIE
+            ),
+            ...sources
+        ]
+        expect(list(movies, 'updated').filters.map((filter) => filter.label)).toEqual([
+            'All',
+            'Permanent notes'
+        ])
+        expect(
+            recentListsOf(movies, { importRun: IMPORT }).some(
+                (item) => item.key === 'updated/movies'
+            )
+        ).toBe(false)
+    })
+
+    test('an updated date on the day after the import stays: the import ran in UTC', () => {
+        const run = {
+            firstPublished: '2031-04-30T23:45:00Z',
+            lastPublished: '2031-04-30T23:45:00Z'
+        }
+        const sources = [
+            source('Alder', { ...run, updated: '2031-05-01T00:10' }),
+            source('Birch', { ...run, updated: '2031-05-01T00:30' })
+        ]
+        expect(shown(sources, 'updated', { importRun: run.firstPublished })).toEqual([
+            'Birch 2031-05-01',
+            'Alder 2031-05-01'
         ])
     })
 })

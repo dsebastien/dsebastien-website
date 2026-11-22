@@ -42,53 +42,70 @@ const summary = `${cut ?? `${notes}, ${order}`}${pages > 1 ? `, page ${String(pa
     </nav>
 )}
 {list.filters.length > 0 && (
-    <nav class='mt-6 flex flex-wrap gap-2' aria-label='Filter by note type' data-filters>
-        {list.filters.map((filter) =>
-            filter.path === page.path ? (
-                <span class='chip bg-surface-elevated font-semibold' aria-current='page'>
-                    {filter.label}
-                </span>
-            ) : filter.path === list.pages[0]?.path ? (
-                <a
-                    class='chip bg-surface-elevated font-semibold'
-                    href={filter.path}
-                    aria-current='true'
-                >
-                    {filter.label}
-                </a>
-            ) : (
-                <a class='chip' href={filter.path}>
-                    {filter.label}
-                </a>
-            )
-        )}
-    </nav>
+    <details
+        class='fold mt-6'
+        open={page.path !== list.pages[0]?.path || list.key.includes('/')}
+        data-filters
+    >
+        <summary class='fold-summary'>
+            <span>Filter by note type</span>
+            <span class='ml-auto text-sm font-normal text-muted'>{list.filters.length - 1}</span>
+        </summary>
+        <nav class='flex flex-wrap gap-2 px-5 pb-4' aria-label='Filter by note type'>
+            {list.filters.map((filter) =>
+                filter.path === page.path ? (
+                    <span class='chip-current' aria-current='page'>
+                        {filter.label}
+                    </span>
+                ) : filter.path === list.pages[0]?.path ? (
+                    <a class='chip-current' href={filter.path} aria-current='true'>
+                        {filter.label}
+                    </a>
+                ) : (
+                    <a class='chip' href={filter.path}>
+                        {filter.label}
+                    </a>
+                )
+            )}
+        </nav>
+    </details>
 )}
-<ul class='mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3' data-list>
-    {page.notes.map((note) => (
-        <li>
-            <a class='card-link h-full' href={note.path} data-listed-note>
-                <span class='font-semibold break-words'>{note.title}</span>
-                {(list.kind === 'tag' || list.kind === 'recent') &&
-                    (note.type !== undefined || note.date !== undefined) && (
-                        <span class='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted'>
-                            {note.type !== undefined && <span class='badge'>{note.type.one}</span>}
-                            {note.date !== undefined && (
-                                <time datetime={note.date.datetime} data-listed-date>
-                                    {note.date.shown}
-                                </time>
+{(() => {
+    const List = list.kind === 'recent' ? 'ol' : 'ul'
+    const when = list.key.startsWith('added') ? 'Added' : 'Changed'
+    return (
+        <List class='mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3' data-list>
+            {page.notes.map((note) => (
+                <li>
+                    <a class='card-link h-full' href={note.path} data-listed-note>
+                        <span class='font-semibold break-words'>{note.title}</span>
+                        {(list.kind === 'tag' || list.kind === 'recent') &&
+                            (note.type !== undefined || note.date !== undefined) && (
+                                <span class='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted'>
+                                    {note.type !== undefined && (
+                                        <span class='badge'>{note.type.one}</span>
+                                    )}
+                                    {note.date !== undefined && (
+                                        <span data-listed-when>
+                                            {when}{' '}
+                                            <time datetime={note.date.datetime} data-listed-date>
+                                                {note.date.shown}
+                                            </time>
+                                        </span>
+                                    )}
+                                </span>
                             )}
-                        </span>
-                    )}
-            </a>
-        </li>
-    ))}
-</ul>
+                    </a>
+                </li>
+            ))}
+        </List>
+    )
+})()}
 {pages > 1 && (
     <nav class='mt-10 flex flex-wrap gap-2' aria-label='Pages' data-list-pages>
         {list.pages.map((other) =>
             other.number === page.number ? (
-                <span class='chip bg-surface-elevated font-semibold' aria-current='page'>
+                <span class='chip-current' aria-current='page'>
                     {other.number}
                 </span>
             ) : (
