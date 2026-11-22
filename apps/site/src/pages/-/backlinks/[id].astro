@@ -21,8 +21,7 @@ const title = site.headerOf(note.vaultPath).title
 const backlinks = site.backlinksOf(note.vaultPath)
 ---
 
-<Page title={`Notes that link to ${title}`}>
-    <meta slot='head' name='robots' content='noindex, follow' />
+<Page title={`Notes that link to ${title}`} noindex>
     <h1 class='text-3xl font-bold tracking-tight break-words'>
         Notes that link to{' '}
         <a class='link' href={note.path} data-backlinks-of>

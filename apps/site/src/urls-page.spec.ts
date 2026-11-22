@@ -4,12 +4,13 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
 import {
+    FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
     type TestStores
 } from '@dsebastien-website/testing'
-import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 
@@ -74,7 +75,12 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
     const planned = await plan(device, { include: table.notes.map((note) => note.path) })
     await publish(device, planned.id, {
         time: '2031-04-01T08:00:00Z',

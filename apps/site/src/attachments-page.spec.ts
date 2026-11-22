@@ -3,12 +3,13 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+    FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
     type TestStores
 } from '@dsebastien-website/testing'
-import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 
@@ -78,6 +79,7 @@ beforeAll(async () => {
     )
     const contentStore = await makeContentStoreCopy(stores)
     const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
         vault,
         contentStore,
         attachmentStorage: stores.attachmentStorage

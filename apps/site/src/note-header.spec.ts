@@ -49,33 +49,78 @@ describe('the display title of a note', () => {
     })
 })
 
-describe('the type badge of a note', () => {
-    test('names the note type of the first type tag', () => {
-        expect(
-            noteHeader({
+describe('the display title of a note with a note type', () => {
+    const book = { name: 'book-notes', displayName: 'Book Notes', suffix: ' (Book)' }
+    const wiki = { name: 'ai-wiki-articles', displayName: 'AI Wiki Articles', prefix: 'AI Wiki - ' }
+
+    test('is the file name without the suffix of its type', () => {
+        expect(noteHeader({ ...NOTE, fileName: 'Dune (Book)', noteType: book }).title).toBe('Dune')
+    })
+
+    test('is the file name without the prefix of its type', () => {
+        expect(noteHeader({ ...NOTE, fileName: 'AI Wiki - Mulch', noteType: wiki }).title).toBe(
+            'Mulch'
+        )
+    })
+
+    test('ignores a title property that repeats the file name with or without its suffix', () => {
+        for (const title of ['Dune (Book)', 'Dune']) {
+            const header = noteHeader({
                 ...NOTE,
-                properties: { tags: ['topic/soil', 'type/note', 'type/recipe'] }
-            }).type
-        ).toBe('Note')
+                fileName: 'Dune (Book)',
+                noteType: book,
+                properties: { title },
+                firstHeading: 'Dune, the novel'
+            })
+            expect(header.title, title).toBe('Dune, the novel')
+        }
     })
 
-    test('writes the words of a type with spaces', () => {
-        expect(noteHeader({ ...NOTE, properties: { tags: ['type/permanent_note'] } }).type).toBe(
-            'Permanent note'
+    test('keeps a file name that does not carry the affix, or that is only the affix', () => {
+        expect(noteHeader({ ...NOTE, fileName: 'Dune', noteType: book }).title).toBe('Dune')
+        expect(noteHeader({ ...NOTE, fileName: ' (Book)', noteType: book }).title).toBe(' (Book)')
+    })
+
+    test('keeps a prefix with a token of the Starter Kit: the site cannot tell the date', () => {
+        const posts = { name: 'social-posts', displayName: 'Social Posts', prefix: '{{date}} - ' }
+        expect(noteHeader({ ...NOTE, fileName: '2031-03-14 - Frost', noteType: posts }).title).toBe(
+            '2031-03-14 - Frost'
         )
-        expect(noteHeader({ ...NOTE, properties: { tags: ['#type/board-game'] } }).type).toBe(
-            'Board game'
-        )
     })
 
-    test('reads a tags property of one text', () => {
-        expect(noteHeader({ ...NOTE, properties: { tags: 'type/movie' } }).type).toBe('Movie')
+    test('gives the file name without the affixes for a title that two pages share', () => {
+        const header = noteHeader({
+            ...NOTE,
+            fileName: 'Garden letter 1 (Newsletter)',
+            noteType: {
+                name: 'own-newsletters',
+                displayName: 'Own Newsletters',
+                suffix: ' (Newsletter)'
+            },
+            firstHeading: 'The garden letter'
+        })
+        expect(header.title).toBe('The garden letter')
+        expect(header.bareName).toBe('Garden letter 1')
+    })
+})
+
+describe('the type badge of a note', () => {
+    test('is the label of its note type', () => {
+        const header = noteHeader({
+            ...NOTE,
+            noteType: { name: 'movies', displayName: 'Movies', suffix: ' (Movie)' }
+        })
+        expect(header.type).toEqual({ name: 'movies', one: 'Movie', many: 'Movies', media: true })
     })
 
-    test('is absent when the note has no type tag', () => {
-        expect(noteHeader({ ...NOTE, properties: { tags: ['topic/soil'] } }).type).toBeUndefined()
-        expect(noteHeader({ ...NOTE, properties: { tags: 'type/' } }).type).toBeUndefined()
-        expect(noteHeader(NOTE).type).toBeUndefined()
+    test('is the display name of a type that the table of the site does not know', () => {
+        expect(
+            noteHeader({ ...NOTE, noteType: { name: 'recipes', displayName: 'Recipes' } }).type?.one
+        ).toBe('Recipes')
+    })
+
+    test('is absent for a note with no type, whatever its tags say', () => {
+        expect(noteHeader({ ...NOTE, properties: { tags: ['type/movie'] } }).type).toBeUndefined()
     })
 })
 

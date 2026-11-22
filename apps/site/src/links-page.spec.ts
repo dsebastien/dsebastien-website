@@ -3,13 +3,14 @@ import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+    FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
     type TestStores
 } from '@dsebastien-website/testing'
-import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import type { Selection } from '../../plugin/src/publishing/plan.ts'
 import { plan, publish, type PublicationReport } from '../../plugin/src/publishing/tool.ts'
 import { startServer } from '../server/serve.ts'
@@ -139,7 +140,12 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
     const run = async (selection: Selection, time: string): Promise<void> => {
         const planned = await plan(device, selection)
         reports.push(

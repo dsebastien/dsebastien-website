@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { attachmentPath, canonicalPath } from '@dsebastien-website/resolver'
+import { isNoteType, type NoteType } from '../../plugin/src/publishing/note-types.ts'
 
 // The content store as the build reads it (BUILD-01 of the spec). The build
 // never reads the vault: the content store holds the cleaned notes and the
@@ -49,6 +50,8 @@ export interface PublishedNote {
     links: { link: string; path: string }[]
     /** The links of the note that lead to an attachment, with the hashed URL of the file and the size of an image. */
     attachments: PublishedAttachment[]
+    /** The note type of the note, as the Starter Kit gave it at the publication (decision R61). */
+    noteType?: NoteType
 }
 
 /** A link of a published note to an attachment. */
@@ -160,7 +163,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             !isTextList(entry['aliases']) ||
             !isTime(entry['firstPublished']) ||
             !isTime(entry['lastPublished']) ||
-            !isAttachmentList(entry['attachments'])
+            !isAttachmentList(entry['attachments']) ||
+            (entry['noteType'] !== undefined && !isNoteType(entry['noteType']))
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
         }
@@ -168,6 +172,7 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
             continue
         }
         const vaultPath = entry['path']
+        const noteType = entry['noteType']
         if (notes.has(vaultPath)) {
             throw new Error(`two entries of the manifest have the path "${vaultPath}"`)
         }
@@ -190,7 +195,8 @@ export async function readPublishedNotes(): Promise<PublishedNote[]> {
                 ...(item.width === undefined || item.height === undefined
                     ? {}
                     : { width: item.width, height: item.height })
-            }))
+            })),
+            ...(isNoteType(noteType) ? { noteType } : {})
         })
     }
     // In the order of the paths, so that two builds of one content store give

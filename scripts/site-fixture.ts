@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import {
+    FIXTURE_NOTE_TYPES,
     BUDGET_SAMPLE,
     copyFixtureVault,
     makeContentStoreCopy,
@@ -10,7 +11,7 @@ import {
     writeBudgetSample
 } from '@dsebastien-website/testing'
 import { canonicalPath } from '@dsebastien-website/resolver'
-import { nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import type { Subprocess } from 'bun'
 import { startServer, type Server } from '../apps/site/server/serve.ts'
@@ -72,7 +73,12 @@ try {
         await writeBudgetSample(vault)
     }
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
     const queue = await status(device)
     const planned = await plan(device, { include: queue.new })
     const report = await publish(device, planned.id, {

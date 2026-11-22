@@ -1,11 +1,17 @@
 ---
+import { LIBRARY_PATH } from '@dsebastien-website/resolver'
+import { HOME } from '../generated-pages.ts'
 import Page from '../layouts/Page.astro'
+import { publishedSite } from '../published-site.ts'
 import { SITE_NAME } from '../site.ts'
 
-// The home page. Its content and order come with its slice (issue 50).
+// The home page. Its full content and order come with its slice (issue 50).
+// It lists the type hubs now (issue 49, R61): the crawl path from the home
+// page to every note (NAV-07).
+const site = await publishedSite()
 ---
 
-<Page title={SITE_NAME} path='/'>
+<Page title={HOME.title} description={HOME.description} path='/'>
     <section class='py-12 sm:py-16'>
         <p class='text-sm font-semibold tracking-widest text-muted uppercase'>A digital garden</p>
         <h1 class='mt-3 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl'>{SITE_NAME}</h1>
@@ -14,4 +20,42 @@ import { SITE_NAME } from '../site.ts'
             and the things I read, watch and play. The home page comes with its slice.
         </p>
     </section>
+    {(site.typeHubs.length > 0 || site.otherNotes !== undefined) && (
+        <section class='pb-16' aria-labelledby='types'>
+            <h2 id='types' class='section-title'>
+                Browse by note type
+            </h2>
+            <ul class='grid gap-3 sm:grid-cols-2 lg:grid-cols-4' data-type-hubs>
+                {site.typeHubs.map((hub) => (
+                    <li>
+                        <a class='card-link h-full' href={hub.pages[0]?.path}>
+                            <span class='font-semibold'>{hub.label}</span>
+                            <span class='mt-1 block text-sm text-muted'>
+                                {hub.count.toLocaleString('en')}{' '}
+                                {hub.count === 1 ? 'note' : 'notes'}
+                            </span>
+                        </a>
+                    </li>
+                ))}
+                {site.otherNotes !== undefined && (
+                    <li>
+                        <a class='card-link h-full' href={site.otherNotes.pages[0]?.path}>
+                            <span class='font-semibold'>{site.otherNotes.label}</span>
+                            <span class='mt-1 block text-sm text-muted'>
+                                {site.otherNotes.count.toLocaleString('en')}{' '}
+                                {site.otherNotes.count === 1 ? 'note' : 'notes'}
+                            </span>
+                        </a>
+                    </li>
+                )}
+            </ul>
+            {site.library.hubs.length > 0 && (
+                <p class='mt-6'>
+                    <a class='link' href={LIBRARY_PATH}>
+                        The library: books, movies, shows and games
+                    </a>
+                </p>
+            )}
+        </section>
+    )}
 </Page>

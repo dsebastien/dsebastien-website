@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalPath } from '@dsebastien-website/resolver'
 import {
+    FIXTURE_NOTE_TYPES,
     checkHtml,
     copyFixtureVault,
     makeContentStoreCopy,
@@ -12,7 +13,7 @@ import {
     type MarkdownForm,
     type TestStores
 } from '@dsebastien-website/testing'
-import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 
@@ -49,7 +50,12 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
     const queue = await status(device)
     const planned = await plan(device, {
         include: queue.new.filter((path) => path !== NEVER_SELECTED)

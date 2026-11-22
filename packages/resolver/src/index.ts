@@ -19,6 +19,10 @@ export {
     backlinksPath,
     canonicalPath,
     folderPath,
+    LIBRARY_PATH,
     markdownPath,
-    tagPath
+    otherNotesPath,
+    tagPagePath,
+    tagPath,
+    typeHubPath
 } from './url.ts'

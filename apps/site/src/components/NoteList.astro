@@ -1,0 +1,63 @@
+---
+import { tagPagePath } from '@dsebastien-website/resolver'
+import type { ListPage, NoteList } from '../generated-pages.ts'
+
+// One page of a type hub or of a tag page (NAV-03, NAV-04, decision R61): its
+// notes from A to Z, the child tags of a tag, and a link to every page of the
+// list, so that a note is at most three links from the home page (NAV-07).
+interface Props {
+    list: NoteList
+    page: ListPage
+}
+
+const { list, page } = Astro.props
+const pages = list.pages.length
+---
+
+<p class='section-title'>{{ type: 'Type hub', tag: 'Tag', other: 'Notes' }[list.kind]}</p>
+<h1 class='text-3xl font-bold tracking-tight break-words sm:text-4xl' data-list-title>
+    {list.label}
+</h1>
+<p class='mt-2 text-muted'>
+    {list.count.toLocaleString('en')}
+    {list.count === 1 ? 'note' : 'notes'}, from A to Z
+    {pages > 1 && `, page ${String(page.number)} of ${String(pages)}`}.
+</p>
+{list.children.length > 0 && (
+    <nav class='mt-6 flex flex-wrap gap-2' aria-label='Nested tags' data-child-tags>
+        {list.children.map((child) => (
+            <a class='chip' href={tagPagePath(child, 1)}>
+                #{child}
+            </a>
+        ))}
+    </nav>
+)}
+<ul class='mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3' data-list>
+    {page.notes.map((note) => (
+        <li>
+            <a class='card-link h-full' href={note.path} data-listed-note>
+                <span class='font-semibold break-words'>{note.title}</span>
+                {list.kind === 'tag' && note.type !== undefined && (
+                    <span class='mt-2 block'>
+                        <span class='badge'>{note.type.one}</span>
+                    </span>
+                )}
+            </a>
+        </li>
+    ))}
+</ul>
+{pages > 1 && (
+    <nav class='mt-10 flex flex-wrap gap-2' aria-label='Pages' data-list-pages>
+        {list.pages.map((other) =>
+            other.number === page.number ? (
+                <span class='chip bg-surface-elevated font-semibold' aria-current='page'>
+                    {other.number}
+                </span>
+            ) : (
+                <a class='chip' href={other.path}>
+                    {other.number}
+                </a>
+            )
+        )}
+    </nav>
+)}

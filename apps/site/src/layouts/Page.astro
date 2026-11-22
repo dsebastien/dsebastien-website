@@ -10,6 +10,10 @@ import { modeScript, modeSwitchScript } from '../mode.ts'
 // The mode is set before any style (MODE-01): dark until the script runs.
 interface Props {
     title: string
+    /** The description of the page (IDX-05). Every indexable page has one. */
+    description?: string
+    /** True when search engines must not index the page; its links are followed (IDX-22). */
+    noindex?: boolean
     /** The canonical path of the page. The "not found" page has none. */
     path?: string
     /** The language of the page (REN-09). English when it is not given. */
@@ -18,7 +22,7 @@ interface Props {
     bare?: boolean
 }
 
-const { title, path, lang = 'en', bare = false } = Astro.props
+const { title, description, noindex = false, path, lang = 'en', bare = false } = Astro.props
 const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
 ---
 
@@ -29,6 +33,8 @@ const canonical = path === undefined ? undefined : new URL(path, Astro.site).hre
         <meta name='viewport' content='width=device-width, initial-scale=1' />
         <script is:inline set:html={modeScript} />
         <title>{title}</title>
+        {description !== undefined && <meta name='description' content={description} />}
+        {noindex && <meta name='robots' content='noindex, follow' />}
         {canonical !== undefined && <link rel='canonical' href={canonical} />}
         <slot name='head' />
     </head>

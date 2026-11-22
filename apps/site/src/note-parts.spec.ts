@@ -7,12 +7,13 @@ import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'no
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+    FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
     type TestStores
 } from '@dsebastien-website/testing'
-import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 
 // The parts of a note page that come from data (issue 48, PAGE-02 to PAGE-04,
@@ -87,7 +88,12 @@ beforeAll(async () => {
         ].join('\n')
     )
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
     const queue = await status(device)
     const planned = await plan(device, {
         include: queue.new.filter((path) => path !== NOT_PUBLISHED)

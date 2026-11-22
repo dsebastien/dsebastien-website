@@ -1,0 +1,27 @@
+---
+import type { GetStaticPaths } from 'astro'
+import NoteList from '../../../components/NoteList.astro'
+import Page from '../../../layouts/Page.astro'
+import { publishedSite } from '../../../published-site.ts'
+import { listPageId } from '../../../site-files.ts'
+
+// A page of the type hub of a note type (NAV-03, decision R61): its notes
+// from A to Z, 100 per page. The hubs are the crawl path to every note, so
+// every page of a hub is indexed (IDX-22). The resolver leads
+// `/-/types/<name>` and `/-/types/<name>/page/<number>` to these files.
+export const getStaticPaths = (async () => {
+    const site = await publishedSite()
+    return site.typeHubs.flatMap((list) =>
+        list.pages.map((page) => ({
+            params: { id: listPageId(list, page.number) },
+            props: { list, page }
+        }))
+    )
+}) satisfies GetStaticPaths
+
+const { list, page } = Astro.props
+---
+
+<Page title={page.title} description={page.description} path={page.path}>
+    <NoteList list={list} page={page} />
+</Page>

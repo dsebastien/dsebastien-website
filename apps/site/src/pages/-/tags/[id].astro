@@ -1,0 +1,28 @@
+---
+import type { GetStaticPaths } from 'astro'
+import NoteList from '../../../components/NoteList.astro'
+import Page from '../../../layouts/Page.astro'
+import { publishedSite } from '../../../published-site.ts'
+import { listPageId } from '../../../site-files.ts'
+
+// A page of a tag (NAV-04, decision R61): the notes of the tag and of its
+// nested tags from A to Z, 100 per page, with its child tags. A tag of the
+// system (`type/`, `zone/`) or a tag with fewer than 5 notes is not indexed
+// (IDX-22); its links are followed. The resolver leads `/-/tags/<tag>` and
+// `/-/tags/<tag>/page/<number>` to these files.
+export const getStaticPaths = (async () => {
+    const site = await publishedSite()
+    return site.tagLists.flatMap((list) =>
+        list.pages.map((page) => ({
+            params: { id: listPageId(list, page.number) },
+            props: { list, page }
+        }))
+    )
+}) satisfies GetStaticPaths
+
+const { list, page } = Astro.props
+---
+
+<Page title={page.title} description={page.description} path={page.path} noindex={!list.indexed}>
+    <NoteList list={list} page={page} />
+</Page>

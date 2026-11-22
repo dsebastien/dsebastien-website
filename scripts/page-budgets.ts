@@ -6,13 +6,14 @@ import { parseArgs } from 'node:util'
 import { brotliCompressSync, constants } from 'node:zlib'
 import { canonicalPath } from '@dsebastien-website/resolver'
 import {
+    FIXTURE_NOTE_TYPES,
     BUDGET_SAMPLE,
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
     writeBudgetSample
 } from '@dsebastien-website/testing'
-import { nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import { judgeTimes, TIME_BUDGET, type TimeBudget, type TimeRun } from '../apps/site/src/budgets.ts'
 import { startServer } from '../apps/site/server/serve.ts'
@@ -184,7 +185,12 @@ try {
     const vault = await copyFixtureVault(stores)
     await writeBudgetSample(vault)
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
     const queue = await status(device)
     const planned = await plan(device, { include: queue.new })
     await publish(device, planned.id, {

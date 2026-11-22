@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'astro/config'
 import { notePageBudget } from './src/budgets.ts'
 import { markdownProcessor } from './src/rendering/markup.ts'
+import { siteChecks } from './src/site-checks.ts'
 
 export default defineConfig({
     // The canonical host of the site: the canonical link of each page names it.
@@ -17,7 +18,9 @@ export default defineConfig({
         syntaxHighlight: false
     },
     // A note page above the HTML budget gives a warning, not a stop (R57).
-    integrations: [notePageBudget()],
+    // A shared title or description, or a note too far from the home page,
+    // stops the build (IDX-04, IDX-05, NAV-07, R61).
+    integrations: [notePageBudget(), siteChecks()],
     vite: {
         plugins: [tailwindcss()]
     }

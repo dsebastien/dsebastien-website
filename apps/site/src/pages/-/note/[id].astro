@@ -1,6 +1,6 @@
 ---
 import type { GetStaticPaths } from 'astro'
-import { backlinksPath } from '@dsebastien-website/resolver'
+import { backlinksPath, typeHubPath } from '@dsebastien-website/resolver'
 import latinFont from '@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2?url'
 import { BACKLINKS_ON_PAGE } from '../../../backlink-list.ts'
 import Backlinks from '../../../components/Backlinks.astro'
@@ -39,7 +39,13 @@ const backlinks = site.backlinksOf(note.vaultPath)
 const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
 ---
 
-<Page title={header.title} path={note.path} lang={languageOf(data)} bare>
+<Page
+    title={site.titleOf(note.vaultPath)}
+    description={site.descriptionOf(note.vaultPath)}
+    path={note.path}
+    lang={languageOf(data)}
+    bare
+>
     {/* `data-heading` keeps the text of the H1 of the note, which an old hash names (URL-14). */}
     {/* The text of the page uses this file: a late font moves the text (PERF-20, R57). */}
     <link slot='head' rel='preload' href={latinFont} as='font' type='font/woff2' crossorigin />
@@ -54,7 +60,11 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
                 {header.title}
             </h1>
             <p class='mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted'>
-                {header.type !== undefined && <span class='badge'>{header.type}</span>}
+                {header.type !== undefined && (
+                    <a class='badge' href={typeHubPath(header.type.name, 1)} data-type-badge>
+                        {header.type.one}
+                    </a>
+                )}
                 <span>
                     Created <time datetime={header.created.datetime}>{header.created.shown}</time>
                 </span>

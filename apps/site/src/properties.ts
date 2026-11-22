@@ -236,14 +236,20 @@ const TAG =
 /** A text of digits only, with or without levels: Obsidian reads no such tag. */
 const DIGITS_ONLY = /^[\p{Nd}/]+$/u
 
+/** The tag of a text of the `tags` property, without its `#`, or `undefined` when the text is no tag. */
+export function tagOfText(text: string): string | undefined {
+    const tag = text.trim().replace(/^#/u, '')
+    return TAG.test(tag) && !DIGITS_ONLY.test(tag) ? tag : undefined
+}
+
 /** The tags of a note as links to their tag pages. A text that is no tag stays a text. */
 function tagsOf(value: unknown): PropertyValue | undefined {
     const list = Array.isArray(value) ? value : [value]
     const items: Scalar[] = []
     for (const item of list) {
         const text = typeof item === 'string' ? item.trim() : ''
-        const tag = text.replace(/^#/u, '')
-        if (TAG.test(tag) && !DIGITS_ONLY.test(tag)) {
+        const tag = tagOfText(text)
+        if (tag !== undefined) {
             items.push({
                 kind: 'text',
                 pieces: [{ kind: 'tag', text: `#${tag}`, href: tagPath(tag) }]

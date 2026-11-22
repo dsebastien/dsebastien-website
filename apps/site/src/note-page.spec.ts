@@ -4,12 +4,13 @@ import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import {
+    FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
     type TestStores
 } from '@dsebastien-website/testing'
-import { nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 import { modeScript, modeSwitchScript } from './mode.ts'
@@ -57,7 +58,12 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     const contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({ vault, contentStore, attachmentStorage: stores.attachmentStorage })
+    const device = nodeDevice({
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+        vault,
+        contentStore,
+        attachmentStorage: stores.attachmentStorage
+    })
     const planned = await plan(device, { include: [NOTE] })
     await publish(device, planned.id, {
         time: '2031-04-01T08:00:00Z',
@@ -104,7 +110,10 @@ describe('build of a content store with one published note', () => {
 
     test('makes one page that holds the text of the note', async () => {
         const html = await readOutput(NOTE_FILE)
-        expect(html).toContain('<title>Frost dates explained</title>')
+        // The title of the page: the display title, the type word and the site name (IDX-01, R61).
+        expect(html).toContain(
+            '<title>Frost dates explained · Permanent note · Sébastien’s Notes</title>'
+        )
         expect(html).toMatch(/<h1[^>]*>Frost dates explained<\/h1>/)
         expect(html).toContain(
             '<p>The last frost date is the average day of the last frost in spring. Tender plants go out after it.</p>'
@@ -124,7 +133,10 @@ describe('build of a content store with one published note', () => {
 
     test('shows the type badge and the created and updated dates of the properties of the note', async () => {
         const html = await readOutput(NOTE_FILE)
-        expect(html).toMatch(/<span class="badge"[^>]*>Note<\/span>/u)
+        // The label of the note type that the Starter Kit gives the note, a link to its hub (R61).
+        expect(html).toContain(
+            '<a class="badge" href="/-/types/permanent-notes" data-type-badge>Permanent note</a>'
+        )
         expect(html).toContain('Created <time datetime="2031-03-07">2031-03-07</time>')
         expect(html).toContain('Updated <time datetime="2031-03-07">2031-03-07</time>')
     })
@@ -211,12 +223,19 @@ describe('build of a content store with one published note', () => {
         const map: unknown = JSON.parse(await readOutput('-/resolver-map.json'))
         // The folder of the note has no folder note, so it gets a generated
         // list. The name of its file is the SHA-256 of "10 Garden", computed
-        // with sha256sum.
+        // with sha256sum. The library, the type hub of the note and the pages
+        // of its tag and of the parent level of the tag are generated pages
+        // (issue 49); the names of the files of the tags are the SHA-256 of
+        // "type" and of "type/note", computed with sha256sum.
         expect(map).toEqual({
             pages: {
                 '/': 'index.html',
                 [NOTE_URL]: NOTE_FILE,
-                '/10+Garden': '-/folder/e824100b642854a7.html'
+                '/10+Garden': '-/folder/e824100b642854a7.html',
+                '/-/library': '-/library.html',
+                '/-/tags/type': '-/tags/1303c06b0b014d0c.html',
+                '/-/tags/type/note': '-/tags/8cf4e21b748bf742.html',
+                '/-/types/permanent-notes': '-/types/permanent-notes.html'
             },
             files: {
                 '/robots.txt': { file: 'robots.txt', type: 'text' },

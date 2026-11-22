@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { attachmentPath, backlinksPath, canonicalPath, tagPath } from './url.ts'
+import {
+    attachmentPath,
+    backlinksPath,
+    canonicalPath,
+    LIBRARY_PATH,
+    otherNotesPath,
+    tagPagePath,
+    tagPath,
+    typeHubPath
+} from './url.ts'
 
 // URL-01 of the spec: the canonical URL of a note is the URL that it has
 // today. Each segment of the vault path is percent-encoded, then `%20` is
@@ -76,6 +85,42 @@ describe('path of the page of a tag', () => {
         ['an underscore and a hyphen', 'type/permanent_note-v2', '/-/tags/type/permanent_note-v2']
     ])('%s', (_case, tag, expected) => {
         expect(tagPath(tag)).toBe(expected)
+    })
+})
+
+// The pages of a tag and of a type hub (NAV-03, NAV-04, decision R61): page 1
+// has no number, a later page ends with `/page/<number>`.
+describe('paths of the pages of a list', () => {
+    test('page 1 of a tag is the path of the tag', () => {
+        expect(tagPagePath('Media/Movie', 1)).toBe('/-/tags/media/movie')
+    })
+
+    test('a later page of a tag ends with its number', () => {
+        expect(tagPagePath('media/movie', 2)).toBe('/-/tags/media/movie/page/2')
+    })
+
+    test('page 1 of a type hub has no number, a later page ends with its number', () => {
+        expect(typeHubPath('movies', 1)).toBe('/-/types/movies')
+        expect(typeHubPath('permanent-notes', 49)).toBe('/-/types/permanent-notes/page/49')
+    })
+
+    test('is refused for a name that is not a canonical name of a note type', () => {
+        expect(() => typeHubPath('../movies', 1)).toThrow('canonical name')
+        expect(() => typeHubPath('Movies', 1)).toThrow('canonical name')
+    })
+
+    test('is refused for a page that is not a whole number from 1', () => {
+        expect(() => typeHubPath('movies', 0)).toThrow('page')
+        expect(() => tagPagePath('garden', 1.5)).toThrow('page')
+    })
+
+    test('the library is a generated page', () => {
+        expect(LIBRARY_PATH).toBe('/-/library')
+    })
+
+    test('the list of the notes with no type has its pages too', () => {
+        expect(otherNotesPath(1)).toBe('/-/other')
+        expect(otherNotesPath(3)).toBe('/-/other/page/3')
     })
 })
 

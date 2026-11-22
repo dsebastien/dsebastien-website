@@ -1,0 +1,26 @@
+---
+import type { GetStaticPaths } from 'astro'
+import NoteList from '../../../components/NoteList.astro'
+import Page from '../../../layouts/Page.astro'
+import { publishedSite } from '../../../published-site.ts'
+import { listPageId } from '../../../site-files.ts'
+
+// A page of the list of the notes with no note type (decision R61): their
+// crawl path from the home page, 100 notes per page, from A to Z. The
+// resolver leads `/-/other` and `/-/other/page/<number>` to these files.
+export const getStaticPaths = (async () => {
+    const list = (await publishedSite()).otherNotes
+    return (list?.pages ?? []).map((page) => ({
+        params: { id: listPageId(list ?? { kind: 'other', key: 'other' }, page.number) },
+        props: { list, page }
+    }))
+}) satisfies GetStaticPaths
+
+const { list, page } = Astro.props
+---
+
+{list !== undefined && (
+    <Page title={page.title} description={page.description} path={page.path}>
+        <NoteList list={list} page={page} />
+    </Page>
+)}

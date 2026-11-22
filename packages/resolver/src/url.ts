@@ -75,6 +75,55 @@ export function tagPath(tag: string): string {
     return `/-/tags/${smallLetters(tag).split('/').map(encodeURIComponent).join('/')}`
 }
 
+/** A canonical name of a note type (decision R61). */
+const TYPE_NAME = /^[a-z][a-z0-9_-]{0,63}$/u
+
+/** The part of the path of a page of a list: nothing for page 1, `/page/<number>` for a later one. */
+function pageSuffix(page: number): string {
+    if (!Number.isSafeInteger(page) || page < 1) {
+        throw new Error(`${String(page)} is not the number of a page`)
+    }
+    return page === 1 ? '' : `/page/${String(page)}`
+}
+
+/**
+ * The path of a page of the list of a tag (NAV-04, decision R61): the path of
+ * the tag, and `/page/<number>` after page 1.
+ *
+ * @param tag the tag without its `#`
+ * @param page the number of the page, from 1
+ */
+export function tagPagePath(tag: string, page: number): string {
+    return `${tagPath(tag)}${pageSuffix(page)}`
+}
+
+/**
+ * The path of a page of the type hub of a note type (NAV-03, decision R61):
+ * `/-/types/<name>`, and `/page/<number>` after page 1.
+ *
+ * @param name the canonical name of the note type
+ * @param page the number of the page, from 1
+ */
+export function typeHubPath(name: string, page: number): string {
+    if (!TYPE_NAME.test(name)) {
+        throw new Error(`"${name}" is not the canonical name of a note type`)
+    }
+    return `/-/types/${name}${pageSuffix(page)}`
+}
+
+/** The path of the library: the type hubs of the media types (NAV-03, decision R61). */
+export const LIBRARY_PATH = '/-/library'
+
+/**
+ * The path of a page of the list of the notes with no note type (decision
+ * R61): `/-/other`, and `/page/<number>` after page 1. It is their crawl path.
+ *
+ * @param page the number of the page, from 1
+ */
+export function otherNotesPath(page: number): string {
+    return `/-/other${pageSuffix(page)}`
+}
+
 /** The form of the identity of a note. */
 const NOTE_ID = /^[0-9a-f]{16}$/
 

@@ -5,12 +5,14 @@ import {
     choicesOf,
     folderPath,
     foldersOf,
+    LIBRARY_PATH,
     resolverMapOf,
     type ResolverMap,
     type SiteFiles,
     type SiteFolder
 } from '@dsebastien-website/resolver'
 import type { PublishedNote } from './content-store.ts'
+import type { NoteList } from './generated-pages.ts'
 
 // The files of the build, by what they are, and the resolver map that leads
 // each path of the site to one of them. A generated file lives under `-/`
@@ -63,13 +65,34 @@ export function backlinksFile(id: string): string {
 }
 
 /**
+ * The name of the file of a page of a list, without `.html`: the canonical
+ * name of a note type (`movies`), or a hash of a tag, which can hold any
+ * letter; then the number of a later page after a dot (`movies.2`).
+ */
+export function listPageId(list: Pick<NoteList, 'kind' | 'key'>, page: number): string {
+    const name = list.kind === 'tag' ? shortHash(list.key) : list.key
+    return page === 1 ? name : `${name}.${String(page)}`
+}
+
+/** The file of a page of a list, relative to the output of the build. */
+export function listPageFile(list: Pick<NoteList, 'kind' | 'key'>, page: number): string {
+    const folder = { type: 'types', tag: 'tags', other: 'other' }[list.kind]
+    return `-/${folder}/${listPageId(list, page)}.html`
+}
+
+/** The file of the library. */
+export const LIBRARY_FILE = '-/library.html'
+
+/**
  * The resolver map of the site of these published notes.
  *
  * @param withBacklinksPage the notes that have a page with every backlink
+ * @param lists the type hubs and the tag pages
  */
 export function resolverMapFor(
     notes: readonly PublishedNote[],
-    withBacklinksPage: readonly PublishedNote[] = []
+    withBacklinksPage: readonly PublishedNote[] = [],
+    lists: readonly NoteList[] = []
 ): ResolverMap {
     const attachments: Record<string, string> = {}
     for (const note of notes) {
@@ -80,6 +103,12 @@ export function resolverMapFor(
     const generated: Record<string, string> = {}
     for (const note of withBacklinksPage) {
         generated[backlinksPath(note.id)] = backlinksFile(note.id)
+    }
+    generated[LIBRARY_PATH] = LIBRARY_FILE
+    for (const list of lists) {
+        for (const page of list.pages) {
+            generated[page.path] = listPageFile(list, page.number)
+        }
     }
     return resolverMapOf(siteNotesOf(notes), siteFilesOf(notes), attachments, generated)
 }

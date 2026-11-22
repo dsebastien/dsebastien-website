@@ -40,7 +40,7 @@ export const getStaticPaths = (async () => {
 const { name, path, notes, folders } = Astro.props
 ---
 
-<Page title={name} path={path}>
+<Page title={name} path={path} noindex>
     <h1 class='text-3xl font-bold tracking-tight'>{name}</h1>
     {folders.length > 0 && (
         <section aria-labelledby='folders' class='mt-8'>
