@@ -184,13 +184,10 @@ export function startSearchPage(document: Document): void {
         siteSearch(input.dataset['titles'] ?? '', input.dataset['fullText'] ?? ''),
         view
     )
-    // An input method sends many events while a word is being composed: the
-    // search waits for the composed text.
-    input.addEventListener('input', (event) => {
-        if (event instanceof InputEvent && event.isComposing) return
-        session.type(input.value)
-    })
-    input.addEventListener('compositionend', () => {
+    // Every input event counts, also while a word is composed: Android
+    // keyboards compose each Latin word until the space. The pause of the
+    // session holds the full text back while the reader types.
+    input.addEventListener('input', () => {
         session.type(input.value)
     })
     form.addEventListener('submit', (event) => {
