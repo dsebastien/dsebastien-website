@@ -794,6 +794,10 @@ describe('takedown', () => {
         // Another device publishes after the last pull of this copy.
         const other = join(stores.root, 'other-device')
         await git('clone', '--quiet', stores.contentStore, other)
+        // A clone has no identity of its own: a machine with no global one cannot commit.
+        await git('-C', other, 'config', 'user.name', 'Test')
+        await git('-C', other, 'config', 'user.email', 'test@example.invalid')
+        await git('-C', other, 'config', 'commit.gpgsign', 'false')
         await writeFile(join(other, 'notes', 'Elsewhere.md'), 'A note of another device\n')
         await git('-C', other, 'add', '--', 'notes/Elsewhere.md')
         await git('-C', other, 'commit', '--quiet', '--message', 'A publication of another device')

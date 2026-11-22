@@ -1485,6 +1485,15 @@ fn a_copy_that_is_behind_the_content_store_stops_the_takedown_which_says_to_pull
     let other = setup.stores.root().join("other-device");
     let remote = text(setup.stores.content_store());
     git(&["clone", "--quiet", remote, text(&other)]);
+    // A clone has no identity of its own: a machine with no global one cannot
+    // commit.
+    for (key, value) in [
+        ("user.name", "Test"),
+        ("user.email", "test@example.invalid"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(&["-C", text(&other), "config", key, value]);
+    }
     fs::write(
         other.join("notes").join("Elsewhere.md"),
         "A note of another device\n",
