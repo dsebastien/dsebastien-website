@@ -22,6 +22,7 @@ mod note_types;
 mod order;
 mod plan;
 mod queue;
+mod renames;
 mod small_letters;
 mod tool;
 
@@ -34,6 +35,7 @@ use clap::{Args, Parser, Subcommand};
 
 use device::{AttachmentStorage, ContentStore, Vault};
 use plan::Selection;
+use queue::Move;
 use tool::{Device, Outcome, Run};
 
 #[derive(Parser)]
@@ -62,6 +64,12 @@ struct Places {
     /// (`osk-cli-windows-x64.exe` on Windows).
     #[arg(long, value_name = "PROGRAM")]
     osk_cli: Option<PathBuf>,
+
+    /// The folder of the rename journals that the plugin writes in the vault
+    /// (one file per device). The default is
+    /// `.obsidian/plugins/dsebastien-vault-publish/renames` in the vault.
+    #[arg(long, value_name = "FOLDER")]
+    renames: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -101,11 +109,21 @@ enum Command {
         #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
         remove: Vec<String>,
 
-        /// A JSON file with the selection, in the place of the three options
-        /// above: an object with the lists `include`, `hold` and `remove`,
-        /// each one optional. A large publication holds more paths than the
-        /// system takes as arguments of one command.
-        #[arg(long, value_name = "FILE", conflicts_with_all = ["include", "hold", "remove"])]
+        /// A pairing to confirm: the vault path of a published note that is
+        /// missing from this vault, then the path of the candidate that is
+        /// that note now (a rename that the plugin did not see). The entry
+        /// moves, its old path becomes a former path that redirects, and the
+        /// candidate is published as its update unless `--hold` names it.
+        /// Give the option one time per pairing.
+        #[arg(long, num_args = 2, value_names = ["FROM", "TO"], allow_hyphen_values = true)]
+        pair: Vec<String>,
+
+        /// A JSON file with the selection, in the place of the four options
+        /// above: an object with the lists `include`, `hold` and `remove` of
+        /// paths and `pair` of objects with `from` and `to`, each one
+        /// optional. A large publication holds more paths than the system
+        /// takes as arguments of one command.
+        #[arg(long, value_name = "FILE", conflicts_with_all = ["include", "hold", "remove", "pair"])]
         selection: Option<PathBuf>,
     },
 
@@ -236,21 +254,32 @@ fn device(places: &Places) -> Result<Device, String> {
         &places.vault,
         &places.content_store,
         places.osk_cli.as_deref(),
+        places.renames.as_deref(),
     )
 }
 
 /// The device of a vault and a copy of the content store. A takedown asks no
 /// Starter Kit: it gets the default program, which it never runs.
-fn device_of(vault: &Path, content_store: &Path, osk_cli: Option<&Path>) -> Result<Device, String> {
+fn device_of(
+    vault: &Path,
+    content_store: &Path,
+    osk_cli: Option<&Path>,
+    renames: Option<&Path>,
+) -> Result<Device, String> {
     for (name, folder) in [("vault", vault), ("content store", content_store)] {
         if !folder.is_dir() {
             return Err(format!("the {name} is not a folder: {}", folder.display()));
         }
     }
     let program = osk_cli.map_or_else(|| note_types::default_program(vault), Path::to_path_buf);
+    let renames = renames.map_or_else(
+        || vault.join(".obsidian").join(renames::JOURNAL_FOLDER),
+        Path::to_path_buf,
+    );
     Ok(Device {
         vault: Vault::new(vault),
         store: ContentStore::new(content_store),
+        renames: renames::RenameJournals::new(renames),
         note_types: note_types::StarterKit::new(&program, vault),
     })
 }
@@ -314,7 +343,7 @@ fn host_name() -> String {
 fn selection_from_file(file: &Path) -> Result<Selection, String> {
     let wrong = || {
         format!(
-            "the selection file {} must be an object with the lists \"include\", \"hold\" and \"remove\" of vault paths",
+            "the selection file {} must be an object with the lists \"include\", \"hold\" and \"remove\" of vault paths, and \"pair\" of objects with \"from\" and \"to\"",
             file.display()
         )
     };
@@ -328,7 +357,7 @@ fn selection_from_file(file: &Path) -> Result<Selection, String> {
     let object = value.as_object().ok_or_else(wrong)?;
     if object
         .keys()
-        .any(|key| !["include", "hold", "remove"].contains(&key.as_str()))
+        .any(|key| !["include", "hold", "pair", "remove"].contains(&key.as_str()))
     {
         return Err(wrong());
     }
@@ -343,11 +372,34 @@ fn selection_from_file(file: &Path) -> Result<Selection, String> {
                 .collect(),
         }
     };
+    let pair = match object.get("pair") {
+        None => Vec::new(),
+        Some(list) => list
+            .as_array()
+            .ok_or_else(wrong)?
+            .iter()
+            .map(|item| Move::of(item).ok_or_else(wrong))
+            .collect::<Result<Vec<Move>, String>>()?,
+    };
     Ok(Selection::new(
         &list("include")?,
         &list("hold")?,
         &list("remove")?,
+        &pair,
     ))
+}
+
+/// The pairings of the option `--pair`: its values two by two.
+fn pairings_of(values: &[String]) -> Vec<Move> {
+    values
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[from, to]| Move {
+            from: from.clone(),
+            to: to.clone(),
+        })
+        .collect()
 }
 
 /// `status` reads no network: it warns on the error output when the copy is
@@ -394,11 +446,12 @@ fn run(command: Command) -> Result<Outcome, String> {
             include,
             hold,
             remove,
+            pair,
             selection,
         } => {
             let selection = match selection {
                 Some(file) => selection_from_file(&file)?,
-                None => Selection::new(&include, &hold, &remove),
+                None => Selection::new(&include, &hold, &remove, &pairings_of(&pair)),
             };
             let output = tool::plan(&device(&places)?, &selection)?;
             warn_when_offline(&output);
@@ -428,7 +481,7 @@ fn run(command: Command) -> Result<Outcome, String> {
             time,
             device: name,
         } => tool::takedown(
-            &device_of(&vault, &content_store, None)?,
+            &device_of(&vault, &content_store, None, None)?,
             &storage(&attachment_storage),
             &path,
             &Run {

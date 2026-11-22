@@ -53,6 +53,7 @@ const MANIFEST_ENTRY: &str = r#"{
 const PLAN_RECORD: &str = r#"{
   "plan": {
     "forcedRemove": [],
+    "move": [],
     "publish": [
       "10 Garden/Frost dates explained.md"
     ],
@@ -64,10 +65,12 @@ const PLAN_RECORD: &str = r#"{
     "include": [
       "10 Garden/Frost dates explained.md"
     ],
+    "pair": [],
     "remove": []
   },
   "state": {
     "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",
+    "journals": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "notes": [
       {
@@ -78,7 +81,8 @@ const PLAN_RECORD: &str = r#"{
         "path": "10 Garden/Frost dates explained.md",
         "sourceHash": "sha256:0272965e3663dcff6c10306e1d6f76d41005e50d7cf9fa72db8fad03caa76e1b"
       }
-    ]
+    ],
+    "renames": "none"
   }
 }
 "#;
@@ -200,7 +204,7 @@ fn the_plan_names_the_included_note_and_has_an_id() {
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "forcedRemove": [], "publish": [NOTE], "remove": [], "update": [] })
+        serde_json::json!({ "forcedRemove": [], "move": [], "publish": [NOTE], "remove": [], "update": [] })
     );
     let id = plan["id"].as_str().expect("the plan has an id");
     assert_eq!(id.len(), 16);
@@ -383,7 +387,7 @@ fn a_published_note_that_did_not_change_adds_nothing_to_a_later_plan() {
     let plan: serde_json::Value = serde_json::from_slice(&again.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "forcedRemove": [], "publish": [], "remove": [], "update": [] })
+        serde_json::json!({ "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
     );
 }
 

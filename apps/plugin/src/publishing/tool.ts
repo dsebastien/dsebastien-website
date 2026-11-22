@@ -25,8 +25,10 @@ import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import type { Device, Fetch, LockHolder } from './ports.ts'
-import { computeQueue, noteTypesOf } from './queue.ts'
-import type { PublicationQueue, Scan } from './queue.ts'
+import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
+import type { Move, PublicationQueue, Scan } from './queue.ts'
+import { movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
+import type { JournalState } from './renames.ts'
 
 // The operations of the publishing tool. Every face calls these: the plugin,
 // and the tests in the place of the command line program, whose Rust twin is
@@ -65,6 +67,8 @@ export type PublicationReport = {
     readonly failed: readonly { readonly path: string; readonly reason: string }[]
     /** The notes that were removed because a guard excludes them. They left the manifest. */
     readonly forcedRemoved: readonly string[]
+    /** The moves of the publication: their old paths are former paths now (R66). */
+    readonly moved: readonly Move[]
     /** The notes whose state property was removed. */
     readonly propertyRemoved: readonly string[]
     /** The notes whose state property was set. */
@@ -134,7 +138,8 @@ function isOneLine(text: string): boolean {
 
 /** Reads the configuration and checks it against the vault. */
 async function readConfiguration(
-    device: Device
+    device: Device,
+    journals: JournalState
 ): Promise<{ configuration: Configuration; hash: string }> {
     const text = await device.store.read(CONFIGURATION_FILE)
     const configuration = parseConfiguration(text)
@@ -142,8 +147,14 @@ async function readConfiguration(
     // folder, or another letter case, would make its notes candidates (GATE-38).
     for (const folder of configuration.denyList) {
         if (!(await device.vault.hasFolder(folder))) {
+            // The rename journals can say where the folder went (PUB-91).
+            const moved = movedFolder(folder, journals.all)
+            const proposal =
+                moved !== undefined && (await device.vault.hasFolder(moved))
+                    ? `. The rename journal says that it was renamed to "${moved}": put "${moved}" in the deny list`
+                    : ''
             throw new Error(
-                `the deny list names "${folder}", which is not a folder of the vault. No publication is possible until the deny list is corrected`
+                `the deny list names "${folder}", which is not a folder of the vault. No publication is possible until the deny list is corrected${proposal}`
             )
         }
     }
@@ -163,6 +174,8 @@ async function manifestHash(device: Device): Promise<string> {
 interface State {
     readonly scan: Scan
     readonly configurationHash: string
+    /** The hash of `renames.json`, or `none`. */
+    readonly renamesHash: string
     /** The number of commits of the content store, at the last fetch, that the copy does not have. */
     readonly behind: number
     /** False when the run tried to fetch and the content store could not be reached. */
@@ -182,16 +195,20 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
     if (fetch !== 'none') {
         refuseWhenBehind(behind)
     }
-    const { configuration, hash } = await readConfiguration(device)
+    const renames = await device.store.read(RENAMES_FILE)
+    const journals = await readJournals(device.renames, parseMarkers(renames))
+    const { configuration, hash } = await readConfiguration(device, journals)
     const manifest = await readManifest(device.store)
     return {
         scan: await computeQueue({
             vault: device.vault,
             manifest,
+            journals,
             configuration,
             noteTypes: device.noteTypes
         }),
         configurationHash: hash,
+        renamesHash: renames === undefined ? 'none' : contentHash(renames),
         behind,
         reached
     }
@@ -404,14 +421,18 @@ async function recordFor(
     selectionFor: (scan: Scan) => NormalSelection,
     fetch: Fetch
 ): Promise<Computed> {
-    const { scan, configurationHash, reached } = await readState(device, fetch)
+    const { scan, configurationHash, renamesHash, reached } = await readState(device, fetch)
     // An unpublish holds every changed note that it does not name: its
     // selection comes from the queue of the same scan.
     const selection = selectionFor(scan)
     const plan = computePlan(scan, selection)
     // The published notes got their type in the scan. The new ones of the plan
     // get theirs in one more question.
-    const newTypes = await noteTypesOf(device.noteTypes, plan.publish)
+    // The candidates of the pairings get theirs in the same question (R66).
+    const newTypes = await noteTypesOf(
+        device.noteTypes,
+        sortByCodePoint([...plan.publish, ...selection.pair.map((pairing) => pairing.to)])
+    )
     const texts = new Map<string, NoteTexts>()
     const notes: {
         aliases: readonly string[]
@@ -450,7 +471,13 @@ async function recordFor(
     const record = toCanonicalJson({
         plan,
         selection,
-        state: { configuration: configurationHash, manifest: await manifestHash(device), notes }
+        state: {
+            configuration: configurationHash,
+            journals: scan.journals.hash,
+            manifest: await manifestHash(device),
+            notes,
+            renames: renamesHash
+        }
     })
     return { plan, reached, record, scan, texts }
 }
@@ -489,9 +516,24 @@ function selectionOf(record: string, id: string): NormalSelection {
     }
     const selection = isRecord(value) ? value['selection'] : undefined
     if (isRecord(selection)) {
-        const { hold, include, remove } = selection
-        if (isTextList(hold) && isTextList(include) && isTextList(remove)) {
-            return normalSelection({ hold, include, remove })
+        const { hold, include, pair, remove } = selection
+        if (
+            isTextList(hold) &&
+            isTextList(include) &&
+            isTextList(remove) &&
+            Array.isArray(pair) &&
+            pair.every(
+                (item) =>
+                    isRecord(item) &&
+                    typeof item['from'] === 'string' &&
+                    typeof item['to'] === 'string'
+            )
+        ) {
+            const pairs = (pair as Record<string, string>[]).map((item) => ({
+                from: item['from'] ?? '',
+                to: item['to'] ?? ''
+            }))
+            return normalSelection({ hold, include, pair: pairs, remove })
         }
     }
     throw new Error(`the stored plan ${id} cannot be read`)
@@ -1024,10 +1066,24 @@ async function repairStorage(
  */
 function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[] {
     const paths = new Set<string>()
+    // The entry of a pairing is still at its old path in the scan.
+    const ids = new Map([...scan.manifest].map(([path, entry]) => [path, entry.id]))
+    for (const { from, to } of plan.move) {
+        const id = ids.get(to) ?? ids.get(from)
+        if (id !== undefined) {
+            ids.set(to, id)
+            for (const file of [...filesOfNote(from, id), `${NOTES_FOLDER}/${to}`]) {
+                paths.add(file)
+            }
+        }
+    }
     for (const path of [...plan.forcedRemove, ...plan.publish, ...plan.update, ...plan.remove]) {
-        for (const file of filesOfNote(path, scan.manifest.get(path)?.id ?? noteId(path, time))) {
+        for (const file of filesOfNote(path, ids.get(path) ?? noteId(path, time))) {
             paths.add(file)
         }
+    }
+    if (scan.journals.read) {
+        paths.add(RENAMES_FILE)
     }
     return sortByCodePoint([...paths])
 }
@@ -1100,6 +1156,54 @@ async function writeAll(
             )
         }
     }
+    // The moves come next (R66): the published version moves as it is, and a
+    // move that fails stops the whole publication, as a forced removal does.
+    // The entry of a move of a journal is at its new path in the scan, and
+    // the entry of a pairing is still at its old path.
+    const journalMoves = new Set(scan.queue.renamed.map((move) => `${move.from}\n${move.to}`))
+    const removing = new Set(lists.remove)
+    const targets = new Set<string>()
+    for (const move of lists.move) {
+        try {
+            let entry: ManifestEntry | undefined
+            if (journalMoves.has(`${move.from}\n${move.to}`)) {
+                entry = manifest.get(move.to)
+            } else {
+                const before = manifest.get(move.from)
+                entry = before === undefined ? undefined : movedEntry(before, move.to)
+                manifest.delete(move.from)
+            }
+            if (entry === undefined) {
+                throw new Error('the note has no manifest entry')
+            }
+            manifest.set(move.to, entry)
+            targets.add(move.to)
+            const files: StoreFile[] = [
+                { path: manifestFile(entry.id), text: toCanonicalJson(entry) }
+            ]
+            if (entry.state === 'published') {
+                const from = `${NOTES_FOLDER}/${move.from}`
+                const text = await device.store.read(from)
+                if (text === undefined) {
+                    throw new Error(`the copy has no ${from}`)
+                }
+                files.push({ path: from, text: undefined })
+                if (!removing.has(move.to)) {
+                    files.push({ path: `${NOTES_FOLDER}/${move.to}`, text })
+                }
+            }
+            for (const file of files) {
+                if (await journal.apply(file)) {
+                    written.push(file.path)
+                }
+            }
+        } catch (error) {
+            throw new Stop(
+                `the note "${move.from}" could not be moved to "${move.to}" in the content store: ${messageOf(error)}`,
+                { cause: error }
+            )
+        }
+    }
     const failed: { path: string; reason: string }[] = []
     const done = { published: [] as string[], updated: [] as string[], removed: [] as string[] }
     const apply = async (path: string, list: string[], unit: () => Unit): Promise<void> => {
@@ -1114,6 +1218,13 @@ async function writeAll(
             if (error instanceof Stop) {
                 throw error
             }
+            // The move of the note already changed its files (rule 4 of a publication).
+            if (targets.has(path)) {
+                throw new Stop(
+                    `the note "${path}" moved, and its update failed: ${messageOf(error)}`,
+                    { cause: error }
+                )
+            }
             // A failure of one note leaves that note out (PUB-26).
             failed.push({ path, reason: messageOf(error) })
         }
@@ -1123,7 +1234,7 @@ async function writeAll(
         if (noteTexts === undefined) {
             throw new Error('the plan has no text for the note')
         }
-        const entry = entryOf(path, noteTexts, scan.manifest.get(path), run.time)
+        const entry = entryOf(path, noteTexts, manifest.get(path), run.time)
         return {
             files: [
                 { path: `${NOTES_FOLDER}/${path}`, text: noteTexts.cleaned },
@@ -1141,7 +1252,7 @@ async function writeAll(
     }
     for (const path of lists.remove) {
         await apply(path, done.removed, () => {
-            const entry = scan.manifest.get(path)
+            const entry = manifest.get(path)
             if (entry === undefined) {
                 throw new Error('the note has no manifest entry')
             }
@@ -1157,11 +1268,23 @@ async function writeAll(
         })
     }
 
+    // The read marker of the journals goes with the same commit (R66).
+    if (scan.journals.read) {
+        if (
+            await journal.apply({
+                path: RENAMES_FILE,
+                text: toCanonicalJson(scan.journals.markers)
+            })
+        ) {
+            written.push(RENAMES_FILE)
+        }
+    }
     const planned = new Set([...lists.update, ...lists.remove])
     const skipped = scan.queue.changed.filter((path) => !planned.has(path))
     const report = {
         failed: failed.sort((one, two) => compareCodePoints(one.path, two.path)),
         forcedRemoved: lists.forcedRemove,
+        moved: lists.move,
         ...done,
         skipped
     }
@@ -1169,17 +1292,17 @@ async function writeAll(
         await run.ownLock()
         await device.store.commitAndPush(
             [
-                `Publish: ${String(done.published.length)} new, ${String(done.updated.length)} updated, ${String(done.removed.length)} removed, ${String(lists.forcedRemove.length)} forced, ${String(skipped.length)} skipped`,
+                `Publish: ${String(done.published.length)} new, ${String(done.updated.length)} updated, ${String(done.removed.length)} removed, ${String(lists.forcedRemove.length)} forced, ${String(skipped.length)} skipped, ${String(lists.move.length)} moved`,
                 '',
                 `Device: ${run.device}`,
                 `Face: ${run.face}`,
                 // The recovery of a run that stopped halfway finds its commit by this line.
                 `Plan: ${run.plan}`
             ].join('\n'),
-            written
+            [...new Set(written)]
         )
     }
-    return { report, written, manifest }
+    return { report, written: [...new Set(written)], manifest }
 }
 
 /**
@@ -1677,6 +1800,7 @@ async function applyCurrent(
         attachmentsUploaded: sortByCodePoint([...uploads.uploaded, ...cleanup.uploaded]),
         ...correction,
         warnings: [
+            ...scan.renameWarnings,
             ...reservedAliasWarnings(current.texts, [...report.published, ...report.updated]),
             ...correction.warnings,
             ...cleanup.warnings

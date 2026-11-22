@@ -12,7 +12,7 @@ use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::manifest::State;
 use crate::names::{first_part, folded_form, is_reserved_root_name};
 use crate::order::sort_by_code_point;
-use crate::queue::Scan;
+use crate::queue::{Move, Scan};
 
 /// The notes that one publication publishes, updates and removes, as vault
 /// paths. Each list is sorted by path, in the order of the code points.
@@ -23,9 +23,19 @@ pub struct PublicationPlan {
     /// excludes, also unpublished ones (R64). No
     /// selection changes this list (PUB-21).
     forced_remove: Vec<String>,
+    /// The moves: of the new lines of the rename journals, and of the
+    /// pairings of the selection (R66). Sorted by `from`.
+    #[serde(rename = "move")]
+    moves: Vec<Move>,
     publish: Vec<String>,
     update: Vec<String>,
     remove: Vec<String>,
+}
+
+/// Moves sorted by `from`, then by `to`, each one time.
+fn sort_moves(moves: &mut Vec<Move>) {
+    moves.sort_by(|one, two| one.from.cmp(&two.from).then_with(|| one.to.cmp(&two.to)));
+    moves.dedup();
 }
 
 impl PublicationPlan {
@@ -33,20 +43,28 @@ impl PublicationPlan {
     /// canonical form here, so that no caller can give a plan in another order.
     pub fn new(
         mut forced_remove: Vec<String>,
+        mut moves: Vec<Move>,
         mut publish: Vec<String>,
         mut update: Vec<String>,
         mut remove: Vec<String>,
     ) -> Self {
+        sort_moves(&mut moves);
         sort_by_code_point(&mut forced_remove);
         sort_by_code_point(&mut publish);
         sort_by_code_point(&mut update);
         sort_by_code_point(&mut remove);
         Self {
             forced_remove,
+            moves,
             publish,
             update,
             remove,
         }
+    }
+
+    /// The moves of the plan, sorted by `from`.
+    pub fn moves(&self) -> &[Move] {
+        &self.moves
     }
 
     /// The vault paths of the notes with a manifest entry that a guard
@@ -81,6 +99,10 @@ pub struct Selection {
     /// The notes to publish. A new candidate enters a plan only through this
     /// list.
     include: Vec<String>,
+    /// The pairings that the author confirms: a published note that is
+    /// missing, and the candidate that is that note now (PUB-62, PUB-96).
+    /// Each one time, sorted by `from`.
+    pair: Vec<Move>,
     /// The published notes to unpublish.
     remove: Vec<String>,
 }
@@ -96,12 +118,20 @@ fn unique(paths: &[String]) -> Vec<String> {
 }
 
 impl Selection {
-    pub fn new(include: &[String], hold: &[String], remove: &[String]) -> Self {
+    pub fn new(include: &[String], hold: &[String], remove: &[String], pair: &[Move]) -> Self {
+        let mut pair = pair.to_vec();
+        sort_moves(&mut pair);
         Self {
             hold: unique(hold),
             include: unique(include),
+            pair,
             remove: unique(remove),
         }
+    }
+
+    /// The pairings of the selection, sorted by `from`.
+    pub fn pair(&self) -> &[Move] {
+        &self.pair
     }
 }
 
@@ -131,27 +161,7 @@ fn reason_out_of_queue(path: &str, scan: &Scan) -> String {
 pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPlan, String> {
     let queue = &scan.queue;
     let refuse = |path: &str, reason: &str| Err(format!("\"{path}\" {reason}"));
-    let mut all: Vec<&String> = selection
-        .hold
-        .iter()
-        .chain(&selection.include)
-        .chain(&selection.remove)
-        .collect();
-    for path in &all {
-        if !is_vault_path(path) {
-            return refuse(path, "is not a vault path");
-        }
-        // Letter case is never ignored in the logic.
-        #[allow(clippy::case_sensitive_file_extension_comparisons)]
-        let is_note = path.ends_with(".md");
-        if !is_note {
-            return refuse(path, "is not a note: its name does not end in .md");
-        }
-    }
-    all.sort_unstable();
-    if let Some(pair) = all.windows(2).find(|pair| pair[0] == pair[1]) {
-        return refuse(pair[0], "is in more than one list of the selection");
-    }
+    refuse_paths(selection)?;
 
     // Each list of the queue is sorted, so a binary search finds a path.
     let within = |list: &[String], path: &String| list.binary_search(path).is_ok();
@@ -207,6 +217,7 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             return refuse(path, "is not published: there is nothing to remove");
         }
     }
+    refuse_pairings(scan, selection)?;
 
     // A guard wins over an unpublish: the note leaves the manifest.
     let remove = selection
@@ -222,6 +233,14 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             .chain(&queue.unpublished_under_guard)
             .cloned()
             .collect(),
+        // Every move of the journals, which no selection holds, and the
+        // pairings (R66).
+        queue
+            .renamed
+            .iter()
+            .chain(&selection.pair)
+            .cloned()
+            .collect(),
         selection
             .include
             .iter()
@@ -232,12 +251,77 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             .changed
             .iter()
             .filter(|path| !within(&selection.hold, path) && !within(&selection.remove, path))
+            .chain(
+                selection
+                    .pair
+                    .iter()
+                    .map(|pairing| &pairing.to)
+                    .filter(|path| !within(&selection.hold, path)),
+            )
             .cloned()
             .collect(),
         remove,
     );
-    refuse_root_names(scan, &plan)?;
+    refuse_root_names(scan, &plan, &selection.pair)?;
     Ok(plan)
+}
+
+/// `Err` when a path of the selection is not the vault path of a note, or is
+/// in more than one list. The `to` of a pairing can be held.
+fn refuse_paths(selection: &Selection) -> Result<(), String> {
+    let refuse = |path: &str, reason: &str| Err(format!("\"{path}\" {reason}"));
+    // The `to` of a pairing can be held: the move happens, the update waits.
+    let held_to = |path: &String| selection.hold.contains(path);
+    let mut all: Vec<&String> = selection
+        .hold
+        .iter()
+        .chain(&selection.include)
+        .chain(&selection.remove)
+        .chain(selection.pair.iter().map(|pairing| &pairing.from))
+        .chain(
+            selection
+                .pair
+                .iter()
+                .map(|pairing| &pairing.to)
+                .filter(|path| !held_to(path)),
+        )
+        .collect();
+    for path in &all {
+        if !is_vault_path(path) {
+            return refuse(path, "is not a vault path");
+        }
+        // Letter case is never ignored in the logic.
+        #[allow(clippy::case_sensitive_file_extension_comparisons)]
+        let is_note = path.ends_with(".md");
+        if !is_note {
+            return refuse(path, "is not a note: its name does not end in .md");
+        }
+    }
+    all.sort_unstable();
+    if let Some(pair) = all.windows(2).find(|pair| pair[0] == pair[1]) {
+        return refuse(pair[0], "is in more than one list of the selection");
+    }
+    Ok(())
+}
+
+/// `Err` when a pairing of the selection does not pair a published note that
+/// is missing from this vault with a candidate that has no manifest entry.
+fn refuse_pairings(scan: &Scan, selection: &Selection) -> Result<(), String> {
+    let queue = &scan.queue;
+    let within = |list: &[String], path: &String| list.binary_search(path).is_ok();
+    for Move { from, to } in &selection.pair {
+        if !within(&queue.missing, from) {
+            return Err(format!(
+                "\"{from}\" is not a published note that is missing from this vault: it cannot be paired"
+            ));
+        }
+        if !within(&queue.new, to) || scan.manifest.contains_key(to) {
+            return Err(format!(
+                "\"{to}\" is not a candidate with no manifest entry: it cannot be paired"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The vault path of a note without `.md`: the text of its URL.
@@ -250,11 +334,15 @@ fn without_suffix(path: &str) -> &str {
 /// URL for the resolver (URL-09 of the spec, section "The root names of the
 /// site" of the canonical form). A plan without a new note never stops here,
 /// so no forced removal waits for these rules.
-fn refuse_root_names(scan: &Scan, plan: &PublicationPlan) -> Result<(), String> {
-    if plan.publish.is_empty() {
+fn refuse_root_names(scan: &Scan, plan: &PublicationPlan, pairs: &[Move]) -> Result<(), String> {
+    if plan.publish.is_empty() && pairs.is_empty() {
         return Ok(());
     }
-    for path in &plan.publish {
+    for path in plan
+        .publish
+        .iter()
+        .chain(pairs.iter().map(|pairing| &pairing.to))
+    {
         let name = without_suffix(path.rsplit('/').next().unwrap_or(path));
         if is_reserved_root_name(name) {
             return Err(format!(
@@ -272,6 +360,7 @@ fn refuse_root_names(scan: &Scan, plan: &PublicationPlan) -> Result<(), String> 
         .forced_remove
         .iter()
         .chain(&plan.remove)
+        .chain(pairs.iter().map(|pairing| &pairing.from))
         .map(String::as_str)
         .collect();
     let notes = scan
@@ -279,7 +368,8 @@ fn refuse_root_names(scan: &Scan, plan: &PublicationPlan) -> Result<(), String> 
         .values()
         .filter(|entry| entry.state == State::Published && !leaving.contains(entry.path.as_str()))
         .map(|entry| entry.path.as_str())
-        .chain(plan.publish.iter().map(String::as_str));
+        .chain(plan.publish.iter().map(String::as_str))
+        .chain(pairs.iter().map(|pairing| pairing.to.as_str()));
     // Each text of a URL: the path of each note, and each folder of it. A
     // note and a folder with the same text are one text: the note wins. The
     // set of `String` is in the order of the code points.

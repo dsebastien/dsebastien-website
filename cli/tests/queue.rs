@@ -249,6 +249,20 @@ impl Setup {
                 }
             }
         }
+        // A pairing: `--pair <from> <to>`. A path can start with a hyphen.
+        if let Some(pairs) = selection["pair"].as_array() {
+            for pairing in pairs {
+                arguments.push("--pair".to_owned());
+                for key in ["from", "to"] {
+                    arguments.push(
+                        pairing[key]
+                            .as_str()
+                            .expect("a path of a pairing is a text")
+                            .to_owned(),
+                    );
+                }
+            }
+        }
         let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
         self.run("plan", &arguments)
     }
@@ -458,8 +472,14 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
     match step["do"].as_str().expect("a step says what it does") {
         "write" => write_files(&setup.vault, &step["files"]),
         "delete" => {
+            // A path is a file, or a folder with everything in it.
             for path in paths(&step["paths"]) {
-                fs::remove_file(setup.vault.join(path)).expect("the file can be removed");
+                let path = setup.vault.join(path);
+                if path.is_dir() {
+                    fs::remove_dir_all(path).expect("the folder can be removed");
+                } else {
+                    fs::remove_file(path).expect("the file can be removed");
+                }
             }
         }
         // `{plan}` in the message is the plan of the last run that stopped.
@@ -630,7 +650,7 @@ fn the_status_of_an_empty_vault_is_the_empty_queue() {
     assert_eq!(errors_of(&output), "");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"new\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
+        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"new\": [],\n  \"pairings\": [],\n  \"renamed\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
     );
 }
 
@@ -2081,7 +2101,7 @@ fn the_commit_has_a_message_with_the_counts_the_device_and_the_face() {
         .expect("the message names the plan");
     assert_eq!(
         counts,
-        "Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped\n\nDevice: garden-shed\nFace: command-line"
+        "Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped, 0 moved\n\nDevice: garden-shed\nFace: command-line"
     );
     assert!(
         plan.len() == 16
@@ -2554,7 +2574,7 @@ fn a_forced_removal_goes_with_a_publication_of_another_note_and_the_commit_count
     assert_eq!(paths(&report["published"]), ["Welcome.md"]);
     assert_eq!(
         setup.git(&["log", "-1", "--format=%s"]),
-        "Publish: 1 new, 0 updated, 0 removed, 1 forced, 0 skipped"
+        "Publish: 1 new, 0 updated, 0 removed, 1 forced, 0 skipped, 0 moved"
     );
     assert!(!setup.copy.join("notes").join(SECOND).exists());
     assert!(
@@ -2593,7 +2613,7 @@ fn a_forced_removal_takes_a_published_note_that_was_moved_into_a_folder_of_the_d
 
     assert_eq!(
         planned["plan"],
-        json!({ "forcedRemove": [SECOND], "publish": [], "remove": [], "update": [] })
+        json!({ "forcedRemove": [SECOND], "move": [], "publish": [], "remove": [], "update": [] })
     );
     assert_eq!(paths(&report["forcedRemoved"]), [SECOND]);
     assert!(!setup.copy.join("notes").join(SECOND).exists());
@@ -2619,7 +2639,7 @@ fn a_forced_removal_does_not_take_a_published_note_whose_file_is_only_missing() 
 
     assert_eq!(
         json_of(&planned)["plan"],
-        json!({ "forcedRemove": [], "publish": [], "remove": [], "update": [] })
+        json!({ "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
     );
     assert_eq!(
         paths(&json_of(&held)["plan"]["forcedRemove"]),

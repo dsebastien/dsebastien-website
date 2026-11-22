@@ -16,8 +16,29 @@ use crate::guards::{guard_of, in_deny_list};
 use crate::hash::content_hash;
 use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
+use crate::names::{first_part, folded_form, is_reserved_root_name};
 use crate::note_types::{NoteType, StarterKit, note_types_of};
+use crate::renames::{JournalState, RenameWarning, fold_moves, former_paths_after};
 use crate::small_letters::guard_name;
+
+/// A move of a manifest entry: from its path to its new path.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Move {
+    pub from: String,
+    pub to: String,
+}
+
+impl Move {
+    /// Reads a move from data: an object with exactly a text `from` and a text
+    /// `to`. `None` in every other case.
+    pub fn of(value: &serde_json::Value) -> Option<Self> {
+        let object = value.as_object().filter(|object| object.len() == 2)?;
+        Some(Self {
+            from: object.get("from")?.as_str()?.to_owned(),
+            to: object.get("to")?.as_str()?.to_owned(),
+        })
+    }
+}
 
 /// The number of paths of each of the four lists.
 #[derive(Debug, Serialize)]
@@ -47,6 +68,12 @@ pub struct PublicationQueue {
     pub missing: Vec<String>,
     /// The candidates.
     pub new: Vec<String>,
+    /// The pairings to confirm: a published note that is missing and a
+    /// candidate with no manifest entry, with the same source (PUB-62).
+    pub pairings: Vec<Move>,
+    /// The moves of the new lines of the rename journals that the next
+    /// publication applies.
+    pub renamed: Vec<Move>,
     /// The notes of `changed` that the author did not edit: the cleaning step
     /// gives another result.
     pub technical_updates: Vec<String>,
@@ -73,6 +100,8 @@ impl PublicationQueue {
             },
             missing: Vec::new(),
             new: Vec::new(),
+            pairings: Vec::new(),
+            renamed: Vec::new(),
             technical_updates: Vec::new(),
             to_remove: Vec::new(),
             unchanged: Vec::new(),
@@ -123,8 +152,13 @@ pub struct Scan {
     /// The names of every file in the folders of the deny list, in small
     /// letters, hidden ones included.
     pub denied_file_names: BTreeSet<String>,
-    /// Every entry of the manifest, by the vault path of its note.
+    /// Every entry of the manifest after the moves of the rename journals, by
+    /// the vault path of its note.
     pub manifest: BTreeMap<String, ManifestEntry>,
+    /// The journals that the scan read: the plan writes their read marker.
+    pub journals: JournalState,
+    /// The warnings of the journals and of the moves, for the report.
+    pub rename_warnings: Vec<RenameWarning>,
     pub configuration: Configuration,
     /// The note type of each published note that the scan found and that no
     /// guard excludes, when it has one.
@@ -276,6 +310,8 @@ struct Guards<'a> {
     configuration: &'a Configuration,
     ignored: &'a BTreeSet<String>,
     denied_file_names: &'a BTreeSet<String>,
+    /// The entries that a line of a journal moved under a guard: the exact move.
+    moved_under: &'a BTreeSet<String>,
 }
 
 /// The paths of `to_remove` that are only missing from this vault: no
@@ -285,6 +321,7 @@ fn missing_of(to_remove: &[String], guards: &Guards) -> Vec<String> {
         configuration,
         ignored,
         denied_file_names,
+        moved_under,
     } = guards;
     // A published note waits for its removal under a guard when its path is
     // in a folder of the deny list, it has the ignore property, or its file is
@@ -296,6 +333,7 @@ fn missing_of(to_remove: &[String], guards: &Guards) -> Vec<String> {
         .filter(|path| {
             !in_deny_list(path, configuration)
                 && !ignored.contains(*path)
+                && !moved_under.contains(*path)
                 && !moved_under_guard(path, denied_file_names)
         })
         .cloned()
@@ -324,6 +362,7 @@ fn unpublished_under_guard(
         configuration,
         ignored,
         denied_file_names,
+        moved_under,
     } = guards;
     manifest
         .iter()
@@ -331,6 +370,7 @@ fn unpublished_under_guard(
             entry.state == State::Unpublished
                 && (in_deny_list(path, configuration)
                     || ignored.contains(*path)
+                    || moved_under.contains(*path)
                     || (!notes.contains_key(*path) && moved_under_guard(path, denied_file_names)))
         })
         .map(|(path, _)| path.clone())
@@ -347,51 +387,32 @@ fn unpublished_under_guard(
 /// read is never taken for a note without the ignore property.
 pub fn compute_queue(
     vault: &Vault,
-    manifest: BTreeMap<String, ManifestEntry>,
+    entries: &BTreeMap<String, ManifestEntry>,
+    journals: JournalState,
     configuration: Configuration,
     kit: &StarterKit,
 ) -> Result<Scan, String> {
-    // A `BTreeMap` of `String` keeps the order of the code points.
-    let mut notes = BTreeMap::new();
-    let mut ignored = BTreeSet::new();
-    // The link paths of the published notes: their links are computed again
-    // at each scan.
-    let mut link_paths: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let folded = fold_moves(entries.keys().cloned(), &journals.lines);
+    let published_paths = published_paths_of(entries, &folded.0);
     let (scanned, others) = scan_vault(vault, &configuration)?;
-    for path in scanned {
-        let text = vault
-            .read(&path)
-            .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?;
-        // `None`: the file went away during the scan.
-        let Some(text) = text else { continue };
-        // The scan left the folders of the deny list out, so only the ignore
-        // property is left.
-        if guard_of(&path, &text, &configuration).is_some() {
-            ignored.insert(path.clone());
-        }
-        let source = source_of(&text);
-        let published = manifest
-            .get(&path)
-            .is_some_and(|entry| entry.state == State::Published);
-        if published {
-            link_paths.insert(path.clone(), link_paths_of(&source));
-        }
-        notes.insert(
-            path,
-            ScannedNote {
-                text_hash: content_hash(&text),
-                source_hash: content_hash(&source),
-                state_is_set: set_property(&text, STATE_PROPERTY, "true") == text,
-                names_state: remove_property(&text, STATE_PROPERTY) != text,
-            },
-        );
-    }
+    let ScannedNotes {
+        notes,
+        ignored,
+        link_paths,
+    } = read_notes(vault, scanned, &configuration, &published_paths)?;
 
     // A link that Obsidian leads to a file under a guard must not lead to
     // another file of the same name. So the files of the deny list folders
     // are candidates too, by their paths alone, and such a target gives no
     // item.
     let (denied, denied_file_names) = scan_denied(vault, &configuration)?;
+    let moves = apply_moves(
+        entries,
+        folded,
+        |path| in_deny_list(path, &configuration) || ignored.contains(path),
+        |path| notes.contains_key(path),
+    );
+    let manifest = moves.manifest;
     let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
     let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
     let files = FileReader::default();
@@ -450,9 +471,14 @@ pub fn compute_queue(
         configuration: &configuration,
         ignored: &ignored,
         denied_file_names: &denied_file_names,
+        moved_under: &moves.under_guard,
     };
     queue.missing = missing_of(&queue.to_remove, &guards);
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
+    queue.pairings = pairings_of(&queue.missing, &queue.new, &manifest, &notes);
+    queue.renamed = moves.applied;
+    let mut rename_warnings = journals.warnings.clone();
+    rename_warnings.extend(moves.warnings);
     Ok(Scan {
         queue,
         notes,
@@ -463,7 +489,253 @@ pub fn compute_queue(
         others: others.into_iter().collect(),
         denied_file_names,
         manifest,
+        journals,
+        rename_warnings,
         configuration,
         note_types,
     })
+}
+
+/// The notes of a scan, read one time.
+struct ScannedNotes {
+    /// Every note of the scan, by its vault path. A `BTreeMap` of `String`
+    /// keeps the order of the code points.
+    notes: BTreeMap<String, ScannedNote>,
+    /// The notes that the ignore property excludes.
+    ignored: BTreeSet<String>,
+    /// The link paths of the published notes: their links are computed again
+    /// at each scan.
+    link_paths: BTreeMap<String, Vec<String>>,
+}
+
+/// Reads every note of the scan. A note that cannot be read stops the run.
+fn read_notes(
+    vault: &Vault,
+    scanned: Vec<String>,
+    configuration: &Configuration,
+    published_paths: &BTreeSet<String>,
+) -> Result<ScannedNotes, String> {
+    let mut notes = BTreeMap::new();
+    let mut ignored = BTreeSet::new();
+    let mut link_paths: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for path in scanned {
+        let text = vault
+            .read(&path)
+            .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?;
+        // `None`: the file went away during the scan.
+        let Some(text) = text else { continue };
+        // The scan left the folders of the deny list out, so only the ignore
+        // property is left.
+        if guard_of(&path, &text, configuration).is_some() {
+            ignored.insert(path.clone());
+        }
+        let source = source_of(&text);
+        if published_paths.contains(&path) {
+            link_paths.insert(path.clone(), link_paths_of(&source));
+        }
+        notes.insert(
+            path,
+            ScannedNote {
+                text_hash: content_hash(&text),
+                source_hash: content_hash(&source),
+                state_is_set: set_property(&text, STATE_PROPERTY, "true") == text,
+                names_state: remove_property(&text, STATE_PROPERTY) != text,
+            },
+        );
+    }
+    Ok(ScannedNotes {
+        notes,
+        ignored,
+        link_paths,
+    })
+}
+
+/// The paths that a published entry can have after the moves: its path and
+/// its last path of the fold.
+fn published_paths_of(
+    entries: &BTreeMap<String, ManifestEntry>,
+    positions: &BTreeMap<String, String>,
+) -> BTreeSet<String> {
+    let mut paths = BTreeSet::new();
+    for (path, entry) in entries {
+        if entry.state == State::Published {
+            paths.insert(path.clone());
+            paths.insert(positions.get(path).unwrap_or(path).clone());
+        }
+    }
+    paths
+}
+
+/// The pairings of the queue (PUB-62): a source hash of exactly one published
+/// note of `missing` and of exactly one candidate that has no manifest entry.
+fn pairings_of(
+    missing: &[String],
+    candidates: &[String],
+    manifest: &BTreeMap<String, ManifestEntry>,
+    notes: &BTreeMap<String, ScannedNote>,
+) -> Vec<Move> {
+    let mut gone: BTreeMap<&str, Vec<&String>> = BTreeMap::new();
+    for path in missing {
+        if let Some(entry) = manifest.get(path) {
+            gone.entry(entry.source_hash.as_str())
+                .or_default()
+                .push(path);
+        }
+    }
+    let mut found: BTreeMap<&str, Vec<&String>> = BTreeMap::new();
+    for path in candidates {
+        if let Some(note) = notes.get(path).filter(|_| !manifest.contains_key(path)) {
+            found
+                .entry(note.source_hash.as_str())
+                .or_default()
+                .push(path);
+        }
+    }
+    let mut pairings: Vec<Move> = gone
+        .iter()
+        .filter_map(
+            |(hash, from)| match (from.as_slice(), found.get(hash).map(Vec::as_slice)) {
+                ([from], Some([to])) => Some(Move {
+                    from: (*from).clone(),
+                    to: (*to).clone(),
+                }),
+                _ => None,
+            },
+        )
+        .collect();
+    pairings.sort_by(|one, two| one.from.cmp(&two.from));
+    pairings
+}
+
+/// The vault path of a note without `.md`: the text of its URL.
+fn without_suffix(path: &str) -> &str {
+    path.strip_suffix(".md").unwrap_or(path)
+}
+
+/// The moves of the rename journals.
+struct Moves {
+    /// The entries at their last paths.
+    manifest: BTreeMap<String, ManifestEntry>,
+    applied: Vec<Move>,
+    /// The entries that moved under a guard: they stay, and are forced
+    /// removals.
+    under_guard: BTreeSet<String>,
+    warnings: Vec<RenameWarning>,
+}
+
+/// The moves of the rename journals (`documentation/Canonical Form.md`, "The
+/// rename journal"): the entries at their last paths, the moves, the entries
+/// that moved under a guard, and the warnings of the moves that do not happen.
+fn apply_moves(
+    entries: &BTreeMap<String, ManifestEntry>,
+    (positions, fold_warnings): (BTreeMap<String, String>, Vec<RenameWarning>),
+    under_guard_at: impl Fn(&str) -> bool,
+    in_vault: impl Fn(&str) -> bool,
+) -> Moves {
+    let mut warnings = fold_warnings;
+    let mut under_guard = BTreeSet::new();
+    let mut last: BTreeMap<String, String> = BTreeMap::new();
+    let not_moved = |to: &str, why: &str| -> String {
+        format!("the rename journal moves the note to \"{to}\", {why}")
+    };
+    for from in entries.keys() {
+        let to = positions.get(from).unwrap_or(from).clone();
+        last.insert(from.clone(), from.clone());
+        if &to == from {
+            continue;
+        }
+        if under_guard_at(&to) {
+            // The exact move under a guard: a forced removal (R40, R66).
+            under_guard.insert(from.clone());
+            continue;
+        }
+        let vault_name = !to
+            .split('/')
+            .any(|part| part.starts_with('.') || part.contains('\u{fffd}'));
+        if (in_vault(from) && !in_vault(&to)) || !vault_name {
+            warnings.push(RenameWarning {
+                path: from.clone(),
+                message: not_moved(&to, "but the vault of this device does not show that move: it does not move, and it can show as a pairing"),
+            });
+            continue;
+        }
+        let name = without_suffix(to.rsplit('/').next().unwrap_or(&to));
+        if is_reserved_root_name(name)
+            || (to.contains('/') && is_reserved_root_name(first_part(&to)))
+        {
+            warnings.push(RenameWarning {
+                path: from.clone(),
+                message: not_moved(
+                    &to,
+                    "whose name is a reserved root name of the site: it does not move",
+                ),
+            });
+            continue;
+        }
+        last.insert(from.clone(), to);
+    }
+    // Two entries at one path, or two published entries with one folded form:
+    // the entries of the group that moved do not move, until no such group is
+    // left.
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (from, to) in &last {
+            groups
+                .entry(format!("path\n{to}"))
+                .or_default()
+                .push(from.clone());
+            if entries
+                .get(from)
+                .is_some_and(|entry| entry.state == State::Published)
+            {
+                groups
+                    .entry(format!("folded\n{}", folded_form(without_suffix(to))))
+                    .or_default()
+                    .push(from.clone());
+            }
+        }
+        for group in groups.values().filter(|group| group.len() > 1) {
+            for from in group {
+                let to = last.get(from).cloned().unwrap_or_default();
+                if &to != from {
+                    last.insert(from.clone(), from.clone());
+                    changed = true;
+                    warnings.push(RenameWarning {
+                        path: from.clone(),
+                        message: not_moved(&to, "where another note of the manifest is, or one that the site gives the same URL: it does not move"),
+                    });
+                }
+            }
+        }
+    }
+    let mut manifest = BTreeMap::new();
+    let mut moves = Vec::new();
+    for (from, to) in last {
+        let Some(entry) = entries.get(&from) else {
+            continue;
+        };
+        if to == from {
+            manifest.insert(from, entry.clone());
+        } else {
+            manifest.insert(to.clone(), moved_entry(entry, &to));
+            moves.push(Move { from, to });
+        }
+    }
+    Moves {
+        manifest,
+        applied: moves,
+        under_guard,
+        warnings,
+    }
+}
+
+/// The entry of a note that moves: its new path, and its former paths (rule
+/// 4 of the moves).
+pub fn moved_entry(entry: &ManifestEntry, to: &str) -> ManifestEntry {
+    let mut moved = entry.clone();
+    moved.former_paths = former_paths_after(&entry.former_paths, &entry.path, to);
+    to.clone_into(&mut moved.path);
+    moved
 }

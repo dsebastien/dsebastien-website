@@ -2,7 +2,8 @@ import { isVaultPath } from './configuration.ts'
 import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
 import { firstPart, foldedForm, isReservedRootName } from './names.ts'
 import { sortByCodePoint } from './order.ts'
-import type { Scan } from './queue.ts'
+import { compareCodePoints } from './order.ts'
+import type { Move, Scan } from './queue.ts'
 
 // The publication plan as data: the exact list of what one publication will
 // do. The rules are in `documentation/Canonical Form.md`, sections "The
@@ -18,6 +19,8 @@ import type { Scan } from './queue.ts'
 export type PublicationPlan = {
     /** The forced removals: the notes with a manifest entry that a guard excludes, also unpublished ones (R64). No selection changes this list (PUB-21). */
     readonly forcedRemove: readonly string[]
+    /** The moves: of the new lines of the rename journals, and of the pairings of the selection (R66). Sorted by `from`. */
+    readonly move: readonly Move[]
     readonly publish: readonly string[]
     readonly update: readonly string[]
     readonly remove: readonly string[]
@@ -31,12 +34,16 @@ export interface Selection {
     readonly hold?: readonly string[]
     /** The vault paths of the published notes to unpublish. */
     readonly remove?: readonly string[]
+    /** The pairings that the author confirms: a published note that is missing, and the candidate that is that note now (PUB-62, PUB-96). */
+    readonly pair?: readonly Move[]
 }
 
 /** A selection with its three lists, each path one time, sorted. It is a part of the record of a plan. */
 export type NormalSelection = {
     readonly hold: readonly string[]
     readonly include: readonly string[]
+    /** Each pairing one time, sorted by `from`. */
+    readonly pair: readonly Move[]
     readonly remove: readonly string[]
 }
 
@@ -51,12 +58,14 @@ export class SelectionError extends Error {
  */
 export function makePlan(lists: {
     forcedRemove: readonly string[]
+    move?: readonly Move[]
     publish: readonly string[]
     update: readonly string[]
     remove: readonly string[]
 }): PublicationPlan {
     return {
         forcedRemove: sortByCodePoint(lists.forcedRemove),
+        move: sortMoves(lists.move ?? []),
         publish: sortByCodePoint(lists.publish),
         update: sortByCodePoint(lists.update),
         remove: sortByCodePoint(lists.remove)
@@ -67,11 +76,30 @@ function unique(paths: readonly string[] | undefined): string[] {
     return sortByCodePoint([...new Set(paths ?? [])])
 }
 
+/** Moves sorted by `from`, then by `to`, each one time. */
+function sortMoves(moves: readonly Move[]): Move[] {
+    const seen = new Set<string>()
+    return [...moves]
+        .sort(
+            (one, two) => compareCodePoints(one.from, two.from) || compareCodePoints(one.to, two.to)
+        )
+        .filter((move) => {
+            const key = `${move.from}\n${move.to}`
+            if (seen.has(key)) {
+                return false
+            }
+            seen.add(key)
+            return true
+        })
+        .map(({ from, to }) => ({ from, to }))
+}
+
 /** The selection with each path one time, in the order of the canonical form. */
 export function normalSelection(selection: Selection): NormalSelection {
     return {
         hold: unique(selection.hold),
         include: unique(selection.include),
+        pair: sortMoves(selection.pair ?? []),
         remove: unique(selection.remove)
     }
 }
@@ -102,7 +130,29 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     const refuse = (path: string, reason: string): never => {
         throw new SelectionError(`"${path}" ${reason}`)
     }
-    const all = [...selection.hold, ...selection.include, ...selection.remove]
+    for (const pairing of selection.pair) {
+        if (
+            typeof pairing !== 'object' ||
+            Object.keys(pairing).length !== 2 ||
+            typeof pairing.from !== 'string' ||
+            typeof pairing.to !== 'string'
+        ) {
+            throw new SelectionError(
+                'a pairing of the selection is not an object with a text "from" and a text "to"'
+            )
+        }
+    }
+    const pairFrom = selection.pair.map((pairing) => pairing.from)
+    const pairTo = selection.pair.map((pairing) => pairing.to)
+    // The `to` of a pairing can be held: the move happens, the update waits.
+    const heldTo = new Set(selection.hold.filter((path) => pairTo.includes(path)))
+    const all = [
+        ...selection.hold,
+        ...selection.include,
+        ...selection.remove,
+        ...pairFrom,
+        ...pairTo.filter((path) => !heldTo.has(path))
+    ]
     for (const path of all) {
         if (!isVaultPath(path)) {
             refuse(path, 'is not a vault path')
@@ -155,18 +205,34 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
             refuse(path, 'is not published: there is nothing to remove')
         }
     }
+    for (const { from, to } of selection.pair) {
+        if (!onlyMissing.has(from)) {
+            refuse(
+                from,
+                'is not a published note that is missing from this vault: it cannot be paired'
+            )
+        }
+        if (!candidates.has(to) || scan.manifest.has(to)) {
+            refuse(to, 'is not a candidate with no manifest entry: it cannot be paired')
+        }
+    }
 
     const held = new Set(selection.hold)
     const removed = new Set(selection.remove)
     const plan = makePlan({
         // An unpublished note under a guard leaves the manifest too (decision R64).
         forcedRemove: [...forced, ...queue.unpublishedUnderGuard],
+        // Every move of the journals, which no selection holds, and the pairings (R66).
+        move: [...queue.renamed, ...selection.pair],
         publish: selection.include.filter((path) => candidates.has(path)),
-        update: queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
+        update: [
+            ...queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
+            ...pairTo.filter((path) => !held.has(path))
+        ],
         // A guard wins over an unpublish: the note leaves the manifest.
         remove: selection.remove.filter((path) => !underGuard.has(path))
     })
-    refuseRootNames(scan, plan)
+    refuseRootNames(scan, plan, selection.pair)
     return plan
 }
 
@@ -182,11 +248,11 @@ function withoutSuffix(path: string): string {
  * site" of the canonical form). A plan without a new note never stops here,
  * so no forced removal waits for these rules.
  */
-function refuseRootNames(scan: Scan, plan: PublicationPlan): void {
-    if (plan.publish.length === 0) {
+function refuseRootNames(scan: Scan, plan: PublicationPlan, pairs: readonly Move[]): void {
+    if (plan.publish.length === 0 && pairs.length === 0) {
         return
     }
-    for (const path of plan.publish) {
+    for (const path of [...plan.publish, ...pairs.map((pairing) => pairing.to)]) {
         const name = withoutSuffix(path.slice(path.lastIndexOf('/') + 1))
         if (isReservedRootName(name)) {
             throw new SelectionError(
@@ -199,12 +265,17 @@ function refuseRootNames(scan: Scan, plan: PublicationPlan): void {
             )
         }
     }
-    const leaving = new Set([...plan.forcedRemove, ...plan.remove])
+    const leaving = new Set([
+        ...plan.forcedRemove,
+        ...plan.remove,
+        ...pairs.map((pairing) => pairing.from)
+    ])
     const notes = [
         ...[...scan.manifest.values()]
             .filter((entry) => entry.state === 'published' && !leaving.has(entry.path))
             .map((entry) => entry.path),
-        ...plan.publish
+        ...plan.publish,
+        ...pairs.map((pairing) => pairing.to)
     ]
     // Each text of a URL: the path of each note, and each folder of it. A
     // note and a folder with the same text are one text: the note wins.

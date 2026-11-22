@@ -231,8 +231,9 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                 if (step.do === 'write') {
                     await writeFiles(vault, step.files)
                 } else if (step.do === 'delete') {
+                    // A path is a file, or a folder with everything in it.
                     for (const path of step.paths) {
-                        await rm(join(vault, path))
+                        await rm(join(vault, path), { recursive: true })
                     }
                 } else if (step.do === 'store') {
                     // `{plan}` in the message is the plan of the last run that stopped.
@@ -256,7 +257,13 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         const planned = await plan(device, step.selection)
                         storedPlan = planned.id
                         expect(planned.plan, label).toEqual(
-                            step.plan ?? { forcedRemove: [], publish: [], update: [], remove: [] }
+                            step.plan ?? {
+                                forcedRemove: [],
+                                move: [],
+                                publish: [],
+                                update: [],
+                                remove: []
+                            }
                         )
                         expect(planned.offline, label).toBe(step.offline ?? false)
                     }
@@ -1267,7 +1274,7 @@ describe('commit of a publication of the queue', () => {
         )
 
         expect(await git(setup.copy, 'log', '-1', '--format=%B')).toMatch(
-            /^Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped\n\nDevice: garden-shed\nFace: mcp-server\nPlan: [0-9a-f]{16}$/u
+            /^Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped, 0 moved\n\nDevice: garden-shed\nFace: mcp-server\nPlan: [0-9a-f]{16}$/u
         )
         // One commit, and the content store has it.
         expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('3')
@@ -1999,7 +2006,7 @@ describe('forced removal', () => {
         expect(report.removed).toEqual([])
         expect(report.published).toEqual(['Welcome.md'])
         expect(await git(setup.copy, 'log', '-1', '--format=%s')).toBe(
-            'Publish: 1 new, 0 updated, 0 removed, 1 forced, 0 skipped'
+            'Publish: 1 new, 0 updated, 0 removed, 1 forced, 0 skipped, 0 moved'
         )
         expect(await Bun.file(join(setup.copy, 'notes', SECOND)).exists()).toBe(false)
         expect(await Bun.file(join(setup.copy, 'manifest', `${SECOND_ID}.json`)).exists()).toBe(
@@ -2034,6 +2041,7 @@ describe('forced removal', () => {
 
         expect(planned.plan).toEqual({
             forcedRemove: [SECOND],
+            move: [],
             publish: [],
             remove: [],
             update: []
@@ -2056,7 +2064,13 @@ describe('forced removal', () => {
         const planned = await plan(setup.device, { include: [] })
 
         expect((await status(setup.device)).toRemove).toEqual([SECOND])
-        expect(planned.plan).toEqual({ forcedRemove: [], publish: [], remove: [], update: [] })
+        expect(planned.plan).toEqual({
+            forcedRemove: [],
+            move: [],
+            publish: [],
+            remove: [],
+            update: []
+        })
         expect(
             (await plan(setup.device, { include: [], hold: [SECOND] })).plan.forcedRemove
         ).toEqual([])

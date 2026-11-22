@@ -22,9 +22,11 @@ import type {
     Device,
     NoteTypes,
     LocalStore,
+    RenameJournals,
     Vault,
     VaultEntry
 } from '../ports.ts'
+import { JOURNAL_FOLDER } from '../renames.ts'
 
 // A device whose vault and whose copy of the content store are folders, with
 // the `git` program of the system (TOOL-12 of the spec). The tests and the
@@ -623,7 +625,8 @@ function gitContentStore(folder: string): ContentStore {
                     '--ignored',
                     '--',
                     'configuration.json',
-                    'manifest'
+                    'manifest',
+                    'renames.json'
                 ],
                 '',
                 COMPARE_OPTIONS
@@ -652,6 +655,7 @@ function gitContentStore(folder: string): ContentStore {
                 '--',
                 'configuration.json',
                 'manifest',
+                'renames.json',
                 'notes'
             )
             // Git status trusts the stat data of a file: an edit of the same
@@ -674,7 +678,8 @@ function gitContentStore(folder: string): ContentStore {
                     'HEAD',
                     '--',
                     'configuration.json',
-                    'manifest'
+                    'manifest',
+                    'renames.json'
                 )
                 const committed = tree
                     .split('\0')
@@ -1188,6 +1193,45 @@ function folderLocalStore(contentStore: string): LocalStore {
     }
 }
 
+/**
+ * The rename journals of a folder: its files, as they are. A folder that does
+ * not exist has none. A folder below it and a symbolic link are no journal.
+ */
+export function folderRenameJournals(folder: string): RenameJournals {
+    const missing = (error: unknown): boolean =>
+        error instanceof Error &&
+        'code' in error &&
+        (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+    return {
+        async list() {
+            try {
+                return (await readdir(folder, { withFileTypes: true }))
+                    .filter((entry) => entry.isFile())
+                    .map((entry) => entry.name)
+            } catch (error) {
+                if (missing(error)) {
+                    return []
+                }
+                throw error
+            }
+        },
+        async read(name) {
+            const path = join(folder, name)
+            try {
+                if (!(await lstat(path)).isFile()) {
+                    return undefined
+                }
+                return new Uint8Array(await readFile(path))
+            } catch (error) {
+                if (missing(error)) {
+                    return undefined
+                }
+                throw error
+            }
+        }
+    }
+}
+
 /** No note has a type: the answer of a Starter Kit with no note type. */
 export const NO_NOTE_TYPES: NoteTypes = {
     recognize: (paths) =>
@@ -1248,15 +1292,20 @@ export function fileNoteTypes(file: string, asked?: string): NoteTypes {
  * @param options.contentStore the folder of the copy of the content store: a git clone whose `origin` is the content store
  * @param options.attachmentStorage the folder of the attachment storage
  * @param options.noteTypes the Starter Kit of the device; by default no note has a type
+ * @param options.renames the folder of the rename journals; by default the one of the plugin in the vault
  */
 export function nodeDevice(options: {
     vault: string
     contentStore: string
     attachmentStorage: string
     noteTypes?: NoteTypes
+    renames?: string
 }): Device {
     return {
         vault: folderVault(options.vault),
+        renames: folderRenameJournals(
+            options.renames ?? join(options.vault, '.obsidian', JOURNAL_FOLDER)
+        ),
         store: gitContentStore(options.contentStore),
         attachments: folderAttachmentStorage(options.attachmentStorage),
         local: folderLocalStore(options.contentStore),

@@ -29,12 +29,17 @@ use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, compute_plan};
-use crate::queue::{Scan, compute_queue};
+use crate::queue::{Move, Scan, compute_queue, moved_entry};
+use crate::renames::{
+    JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
+};
 
 /// Everything that a publication needs on one device.
 pub struct Device {
     pub vault: Vault,
     pub store: ContentStore,
+    /// The rename journals of the vault (decision R66).
+    pub renames: RenameJournals,
     /// The Obsidian Starter Kit of the vault, which knows the note type of
     /// each note (decision R61).
     pub note_types: StarterKit,
@@ -74,7 +79,10 @@ fn to_value<T: Serialize>(value: &T) -> Result<Value, String> {
 
 /// Reads the configuration and checks it against the vault. It gives the
 /// configuration and the hash of its text, or `none`.
-fn read_configuration(device: &Device) -> Result<(Configuration, String), String> {
+fn read_configuration(
+    device: &Device,
+    journals: &JournalState,
+) -> Result<(Configuration, String), String> {
     let text = device.store.read(CONFIGURATION_FILE)?;
     let configuration = parse_configuration(text.as_deref())?;
     // A deny list entry that names no folder would exclude nothing: a renamed
@@ -82,8 +90,16 @@ fn read_configuration(device: &Device) -> Result<(Configuration, String), String
     // (GATE-38).
     for folder in &configuration.deny_list {
         if !device.vault.has_folder(folder) {
+            // The rename journals can say where the folder went (PUB-91).
+            let proposal = moved_folder(folder, &journals.all)
+                .filter(|moved| device.vault.has_folder(moved))
+                .map_or_else(String::new, |moved| {
+                    format!(
+                        ". The rename journal says that it was renamed to \"{moved}\": put \"{moved}\" in the deny list"
+                    )
+                });
             return Err(format!(
-                "the deny list names \"{folder}\", which is not a folder of the vault. No publication is possible until the deny list is corrected"
+                "the deny list names \"{folder}\", which is not a folder of the vault. No publication is possible until the deny list is corrected{proposal}"
             ));
         }
     }
@@ -106,6 +122,8 @@ fn manifest_hash(device: &Device) -> Result<String, String> {
 struct DeviceState {
     scan: Scan,
     configuration_hash: String,
+    /// The hash of `renames.json`, or `none`.
+    renames_hash: String,
     /// False when the run tried to fetch and the content store could not be
     /// reached.
     reached: bool,
@@ -123,13 +141,22 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
     if fetch != Fetch::None {
         refuse_when_behind(behind)?;
     }
-    let (configuration, configuration_hash) = read_configuration(device)?;
+    let renames = device.store.read(RENAMES_FILE)?;
+    let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
+    let (configuration, configuration_hash) = read_configuration(device, &journals)?;
     let manifest = read_manifest(&device.store)?;
-    let mut scan = compute_queue(&device.vault, manifest, configuration, &device.note_types)?;
+    let mut scan = compute_queue(
+        &device.vault,
+        &manifest,
+        journals,
+        configuration,
+        &device.note_types,
+    )?;
     scan.queue.behind = behind;
     Ok(DeviceState {
         scan,
         configuration_hash,
+        renames_hash: renames.map_or_else(|| "none".to_owned(), |text| content_hash(&text)),
         reached: verified.reached,
     })
 }
@@ -389,6 +416,7 @@ fn record_for(
     let DeviceState {
         scan,
         configuration_hash,
+        renames_hash,
         reached,
     } = read_state(device, fetch)?;
     // An unpublish holds every changed note that it does not name: its
@@ -397,7 +425,15 @@ fn record_for(
     let plan = compute_plan(&scan, selection)?;
     // The published notes got their type in the scan. The new ones of the
     // plan get theirs in one more question.
-    let new_types = note_types_of(&device.note_types, plan.publish())?;
+    // The candidates of the pairings get theirs in the same question (R66).
+    let mut question: Vec<String> = plan
+        .publish()
+        .iter()
+        .chain(selection.pair().iter().map(|pairing| &pairing.to))
+        .cloned()
+        .collect();
+    sort_by_code_point(&mut question);
+    let new_types = note_types_of(&device.note_types, &question)?;
     let mut texts = BTreeMap::new();
     for path in plan.publish().iter().chain(plan.update()) {
         let text = device
@@ -447,8 +483,10 @@ fn record_for(
         "selection": to_value(selection)?,
         "state": {
             "configuration": configuration_hash,
+            "journals": scan.journals.hash,
             "manifest": manifest_hash(device)?,
             "notes": notes,
+            "renames": renames_hash,
         },
     }))?;
     Ok(Computed {
@@ -515,10 +553,17 @@ fn selection_of(record: &str, id: &str) -> Result<Selection, String> {
             .map(|path| path.as_str().map(str::to_owned).ok_or_else(unreadable))
             .collect()
     };
+    let pair = value["selection"]["pair"]
+        .as_array()
+        .ok_or_else(unreadable)?
+        .iter()
+        .map(|item| Move::of(item).ok_or_else(unreadable))
+        .collect::<Result<Vec<Move>, String>>()?;
     Ok(Selection::new(
         &list("include")?,
         &list("hold")?,
         &list("remove")?,
+        &pair,
     ))
 }
 
@@ -529,7 +574,7 @@ fn number(digits: &str) -> u32 {
 
 /// True when the text is a real date and time in the canonical form: UTC, to
 /// the second.
-fn is_canonical_time(time: &str) -> bool {
+pub(crate) fn is_canonical_time(time: &str) -> bool {
     let pattern = b"dddd-dd-ddTdd:dd:ddZ";
     let formed = time.len() == pattern.len()
         && time
@@ -759,11 +804,11 @@ struct Unit {
 fn note_unit(
     path: &str,
     texts: &BTreeMap<String, NoteTexts>,
-    scan: &Scan,
+    before: Option<&ManifestEntry>,
     time: &str,
 ) -> Result<Unit, String> {
     let texts = texts.get(path).ok_or("the plan has no text for the note")?;
-    let entry = entry_of(path, texts, scan.manifest.get(path), time);
+    let entry = entry_of(path, texts, before, time);
     Ok(Unit {
         files: vec![
             StoreFile {
@@ -782,11 +827,8 @@ fn note_unit(
 
 /// The unit of a note to unpublish: its cleaned note goes, and its entry
 /// stays with another state.
-fn removal_unit(path: &str, scan: &Scan) -> Result<Unit, String> {
-    let entry = scan
-        .manifest
-        .get(path)
-        .ok_or("the note has no manifest entry")?;
+fn removal_unit(path: &str, before: Option<&ManifestEntry>) -> Result<Unit, String> {
+    let entry = before.ok_or("the note has no manifest entry")?;
     let unpublished = ManifestEntry {
         state: State::Unpublished,
         ..entry.clone()
@@ -1063,6 +1105,23 @@ fn published_keys(manifest: &BTreeMap<String, ManifestEntry>) -> BTreeSet<String
 
 fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String> {
     let mut paths = BTreeSet::new();
+    // The entry of a pairing is still at its old path in the scan.
+    let mut ids: BTreeMap<&str, String> = scan
+        .manifest
+        .iter()
+        .map(|(path, entry)| (path.as_str(), entry.id.clone()))
+        .collect();
+    for one in plan.moves() {
+        let id = ids
+            .get(one.to.as_str())
+            .or_else(|| ids.get(one.from.as_str()))
+            .cloned();
+        if let Some(id) = id {
+            paths.extend(files_of_note(&one.from, &id));
+            paths.insert(format!("{NOTES_FOLDER}/{}", one.to));
+            ids.insert(one.to.as_str(), id);
+        }
+    }
     for path in plan
         .forced_remove()
         .iter()
@@ -1070,11 +1129,14 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
         .chain(plan.update())
         .chain(plan.remove())
     {
-        let id = scan
-            .manifest
-            .get(path)
-            .map_or_else(|| note_id(path, time), |entry| entry.id.clone());
+        let id = ids
+            .get(path.as_str())
+            .cloned()
+            .unwrap_or_else(|| note_id(path, time));
         paths.extend(files_of_note(path, &id));
+    }
+    if scan.journals.read {
+        paths.insert(RENAMES_FILE.to_owned());
     }
     // The set gives its texts in the order of the code points.
     paths.into_iter().collect()
@@ -1267,6 +1329,70 @@ struct Commit<'a> {
     own_lock: &'a dyn Fn() -> Result<(), String>,
 }
 
+/// Applies the moves of a plan to the copy (R66): the published version moves
+/// as it is, and a move that fails stops the whole publication, as a forced
+/// removal does. The entry of a move of a journal is at its new path in the
+/// scan, and the entry of a pairing is still at its old path. The result is
+/// the new paths of the moves.
+fn apply_store_moves(
+    device: &Device,
+    journal: &mut Backup,
+    plan: &PublicationPlan,
+    scan: &Scan,
+    manifest: &mut BTreeMap<String, ManifestEntry>,
+    paths: &mut Vec<String>,
+) -> Result<BTreeSet<String>, String> {
+    let mut targets = BTreeSet::new();
+    for one in plan.moves() {
+        let mut step = || -> Result<(), String> {
+            let entry = if scan.queue.renamed.contains(one) {
+                manifest.get(&one.to).cloned()
+            } else {
+                manifest
+                    .remove(&one.from)
+                    .map(|before| moved_entry(&before, &one.to))
+            }
+            .ok_or("the note has no manifest entry")?;
+            manifest.insert(one.to.clone(), entry.clone());
+            let mut files = vec![StoreFile {
+                path: manifest_file(&entry.id),
+                text: Some(canonical(&to_value(&entry)?)?),
+            }];
+            if entry.state == State::Published {
+                let from = format!("{NOTES_FOLDER}/{}", one.from);
+                let text = device
+                    .store
+                    .read(&from)?
+                    .ok_or_else(|| format!("the copy has no {from}"))?;
+                files.push(StoreFile {
+                    path: from,
+                    text: None,
+                });
+                if !plan.remove().contains(&one.to) {
+                    files.push(StoreFile {
+                        path: format!("{NOTES_FOLDER}/{}", one.to),
+                        text: Some(text),
+                    });
+                }
+            }
+            for file in &files {
+                if journal.apply(file)? {
+                    paths.push(file.path.clone());
+                }
+            }
+            Ok(())
+        };
+        step().map_err(|error| {
+            format!(
+                "the note \"{}\" could not be moved to \"{}\" in the content store: {error}",
+                one.from, one.to
+            )
+        })?;
+        targets.insert(one.to.clone());
+    }
+    Ok(targets)
+}
+
 /// Writes the files of a plan into the copy, and commits and pushes them.
 /// The forced removals come first: when one fails, the whole publication
 /// stops. A note whose uploads or files fail is left out and reported
@@ -1289,6 +1415,10 @@ fn write_all(
     for path in plan.forced_remove() {
         manifest.remove(path);
     }
+    // The moves come next (R66).
+    let targets = apply_store_moves(device, journal, plan, scan, &mut manifest, &mut paths)?;
+    // The entries after the moves: each unit of a note starts from its entry.
+    let moved = manifest.clone();
     let mut failed = Vec::new();
     let mut done = Done::default();
     let mut apply = |path: &String, unit: Result<Unit, String>| -> Result<bool, String> {
@@ -1305,6 +1435,11 @@ fn write_all(
                 manifest.insert(path.clone(), entry);
                 Ok(true)
             }
+            // The move of the note already changed its files (rule 4 of a
+            // publication).
+            Err(Failure::Note(reason)) if targets.contains(path) => Err(format!(
+                "the note \"{path}\" moved, and its update failed: {reason}"
+            )),
             // A failure of one note leaves that note out (PUB-26).
             Err(Failure::Note(reason)) => {
                 failed.push(json!({ "path": path, "reason": reason }));
@@ -1314,20 +1449,33 @@ fn write_all(
         }
     };
     for path in plan.publish() {
-        if apply(path, note_unit(path, texts, scan, run.time))? {
+        if apply(path, note_unit(path, texts, moved.get(path), run.time))? {
             done.published.push(path.clone());
         }
     }
     for path in plan.update() {
-        if apply(path, note_unit(path, texts, scan, run.time))? {
+        if apply(path, note_unit(path, texts, moved.get(path), run.time))? {
             done.updated.push(path.clone());
         }
     }
     for path in plan.remove() {
-        if apply(path, removal_unit(path, scan))? {
+        if apply(path, removal_unit(path, moved.get(path)))? {
             done.removed.push(path.clone());
         }
     }
+    // The read marker of the journals goes with the same commit (R66).
+    if scan.journals.read {
+        let marker = StoreFile {
+            path: RENAMES_FILE.to_owned(),
+            text: Some(canonical(&to_value(&scan.journals.markers)?)?),
+        };
+        if journal.apply(&marker)? {
+            paths.push(RENAMES_FILE.to_owned());
+        }
+    }
+    // Each path one time, in the order of the writes.
+    let mut seen = BTreeSet::new();
+    paths.retain(|path| seen.insert(path.clone()));
     let skipped: Vec<String> = scan
         .queue
         .changed
@@ -1343,12 +1491,13 @@ fn write_all(
         // line `Plan:`.
         device.store.commit_and_push(
             &format!(
-                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped\n\nDevice: {}\nFace: {}\nPlan: {}",
+                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped, {} moved\n\nDevice: {}\nFace: {}\nPlan: {}",
                 done.published.len(),
                 done.updated.len(),
                 done.removed.len(),
                 plan.forced_remove().len(),
                 skipped.len(),
+                plan.moves().len(),
                 run.device,
                 run.face,
                 commit.plan
@@ -1600,6 +1749,7 @@ fn apply_current(
     report_of(
         &written,
         &current.plan,
+        &current.scan,
         &uploads.uploaded,
         reserved,
         correction,
@@ -1634,6 +1784,7 @@ fn reserved_alias_warnings<'a>(
 fn report_of(
     written: &Written,
     plan: &PublicationPlan,
+    scan: &Scan,
     uploads: &[String],
     reserved: Vec<Value>,
     correction: Correction,
@@ -1643,6 +1794,11 @@ fn report_of(
     uploaded.extend(cleanup.uploaded);
     sort_by_code_point(&mut uploaded);
     let mut warnings = reserved;
+    warnings.extend(
+        scan.rename_warnings
+            .iter()
+            .map(|warning| json!({ "message": warning.message, "path": warning.path })),
+    );
     warnings.extend(correction.warnings);
     warnings.extend(cleanup.warnings);
     // A stable sort, by the path of each warning.
@@ -1652,6 +1808,7 @@ fn report_of(
         "attachmentsUploaded": uploaded,
         "failed": written.failed,
         "forcedRemoved": plan.forced_remove(),
+        "moved": to_value(&plan.moves())?,
         "propertyRemoved": correction.property_removed,
         "propertySet": correction.property_set,
         "published": written.published,
@@ -1711,7 +1868,7 @@ pub fn unpublish(
                 .filter(|path| !remove.contains(path))
                 .cloned()
                 .collect();
-            Selection::new(&[], &hold, paths)
+            Selection::new(&[], &hold, paths, &[])
         };
         // One fetch and one scan: the plan is applied as it was computed, so
         // it cannot be stale.

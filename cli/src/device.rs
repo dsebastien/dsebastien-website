@@ -784,6 +784,7 @@ impl ContentStore {
                 "--",
                 "configuration.json",
                 "manifest",
+                "renames.json",
             ],
             &[],
         )?;
@@ -811,6 +812,7 @@ impl ContentStore {
             "--",
             "configuration.json",
             "manifest",
+            "renames.json",
             "notes",
         ])?;
         let edited = self.edited_files()?;
@@ -872,6 +874,7 @@ impl ContentStore {
             "--",
             "configuration.json",
             "manifest",
+            "renames.json",
         ])?;
         let present: Vec<(&str, &str)> = tree
             .split('\0')

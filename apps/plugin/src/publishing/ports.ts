@@ -192,9 +192,22 @@ export interface NoteTypes {
     recognize(paths: readonly string[]): Promise<unknown>
 }
 
+/**
+ * The rename journals of the vault (decision R66): the files of the folder of
+ * the journals in the plugin folder. The plugin appends to the journal of its
+ * device. The logic only reads them.
+ */
+export interface RenameJournals {
+    /** The names of the files of the folder, in any order. A folder that does not exist has none. */
+    list(): Promise<string[]>
+    /** The bytes of a file of the folder, as they are. `undefined` when it does not exist. */
+    read(name: string): Promise<Uint8Array | undefined>
+}
+
 /** Everything that a publication needs on one device. */
 export interface Device {
     readonly vault: Vault
+    readonly renames: RenameJournals
     readonly store: ContentStore
     readonly attachments: AttachmentStorage
     readonly local: LocalStore

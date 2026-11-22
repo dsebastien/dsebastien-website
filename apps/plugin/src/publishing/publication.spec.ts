@@ -70,6 +70,7 @@ const MANIFEST_ENTRY = `{
 const PLAN_RECORD = `{
   "plan": {
     "forcedRemove": [],
+    "move": [],
     "publish": [
       "${NOTE}"
     ],
@@ -81,10 +82,12 @@ const PLAN_RECORD = `{
     "include": [
       "${NOTE}"
     ],
+    "pair": [],
     "remove": []
   },
   "state": {
     "configuration": "${CONFIGURATION_HASH}",
+    "journals": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "manifest": "${EMPTY_MANIFEST_HASH}",
     "notes": [
       {
@@ -95,7 +98,8 @@ const PLAN_RECORD = `{
         "path": "${NOTE}",
         "sourceHash": "${NOTE_HASH}"
       }
-    ]
+    ],
+    "renames": "none"
   }
 }
 `
@@ -169,7 +173,13 @@ describe('plan of a first publication', () => {
 
         const planned = await plan(device, { include: [NOTE] })
 
-        expect(planned.plan).toEqual({ forcedRemove: [], publish: [NOTE], update: [], remove: [] })
+        expect(planned.plan).toEqual({
+            forcedRemove: [],
+            move: [],
+            publish: [NOTE],
+            update: [],
+            remove: []
+        })
         expect(planned.id).toMatch(/^[0-9a-f]{16}$/)
     })
 
@@ -204,6 +214,7 @@ describe('plan of a first publication', () => {
 
         expect((await plan(device, { include: [] })).plan).toEqual({
             forcedRemove: [],
+            move: [],
             publish: [],
             update: [],
             remove: []
@@ -344,7 +355,13 @@ describe('first publication of a note', () => {
 
         const planned = await plan(setup.device, { include: [NOTE] })
 
-        expect(planned.plan).toEqual({ forcedRemove: [], publish: [], update: [], remove: [] })
+        expect(planned.plan).toEqual({
+            forcedRemove: [],
+            move: [],
+            publish: [],
+            update: [],
+            remove: []
+        })
     })
 })
 

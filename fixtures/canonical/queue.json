@@ -33,7 +33,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -48,7 +50,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -71,7 +74,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -110,7 +114,9 @@
                         "toRemove": [],
                         "unchanged": ["Alpha.md", "Beta.md", "Folder/Gamma.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -143,7 +149,9 @@
                         "toRemove": ["Beta.md"],
                         "unchanged": ["Folder/Gamma.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -158,7 +166,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -173,7 +182,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -188,7 +198,8 @@
                         "forcedRemove": [],
                         "publish": ["Delta.md"],
                         "remove": [],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -203,7 +214,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -218,7 +230,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": ["Beta.md"],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -233,7 +246,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": ["Folder/Gamma.md"],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -248,7 +262,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": ["Alpha.md"],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -263,7 +278,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -278,7 +294,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -293,7 +310,8 @@
                         "forcedRemove": [],
                         "publish": ["Delta.md"],
                         "remove": [],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -496,7 +514,8 @@
                         "removed": ["Beta.md"],
                         "skipped": [],
                         "updated": ["Alpha.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -532,7 +551,9 @@
                         "toRemove": [],
                         "unchanged": ["Alpha.md", "Delta.md", "Folder/Gamma.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -563,7 +584,8 @@
                         "removed": [],
                         "skipped": ["Alpha.md"],
                         "updated": ["Folder/Gamma.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -594,7 +616,9 @@
                         "toRemove": [],
                         "unchanged": ["Delta.md", "Folder/Gamma.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -621,7 +645,9 @@
                         "toRemove": ["Folder/Gamma.md"],
                         "unchanged": ["Delta.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -636,7 +662,8 @@
                         "forcedRemove": ["Folder/Gamma.md"],
                         "publish": [],
                         "remove": [],
-                        "update": ["Alpha.md"]
+                        "update": ["Alpha.md"],
+                        "move": []
                     }
                 },
                 {
@@ -661,7 +688,8 @@
                         "forcedRemove": ["Folder/Gamma.md"],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -684,7 +712,8 @@
                         "removed": [],
                         "skipped": ["Alpha.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -715,7 +744,9 @@
                         "toRemove": [],
                         "unchanged": ["Delta.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 }
             ]
@@ -749,7 +780,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -764,7 +797,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -787,7 +821,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -820,7 +855,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -865,7 +901,9 @@
                         "toRemove": [],
                         "unchanged": ["Published.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -888,7 +926,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -920,7 +959,8 @@
                         "removed": ["Other.md"],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -951,7 +991,9 @@
                         "toRemove": [],
                         "unchanged": ["Published.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -974,7 +1016,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1016,7 +1059,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1050,7 +1094,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1073,7 +1119,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Edited.md", "Note.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1104,7 +1151,9 @@
                         "toRemove": [],
                         "unchanged": ["Edited.md", "Note.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 }
             ]
@@ -1136,7 +1185,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1159,7 +1210,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": ["Loose.md"]
+                        "warnings": ["Loose.md"],
+                        "moved": []
                     }
                 },
                 {
@@ -1187,7 +1239,9 @@
                         "toRemove": ["Nested.md", "Open.md"],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1210,7 +1264,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": ["Loose.md", "Nested.md"]
+                        "warnings": ["Loose.md", "Nested.md"],
+                        "moved": []
                     }
                 },
                 {
@@ -1244,7 +1299,9 @@
                         "toRemove": [],
                         "unchanged": ["Other.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1259,7 +1316,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 }
             ]
@@ -1314,7 +1372,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1355,7 +1414,9 @@
                         "toRemove": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1370,7 +1431,8 @@
                         "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
                         "publish": [],
                         "remove": [],
-                        "update": ["Keep.md"]
+                        "update": ["Keep.md"],
+                        "move": []
                     }
                 },
                 {
@@ -1425,7 +1487,8 @@
                         "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
                         "publish": [],
                         "remove": [],
-                        "update": ["Keep.md"]
+                        "update": ["Keep.md"],
+                        "move": []
                     }
                 },
                 {
@@ -1440,7 +1503,8 @@
                         "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
                         "publish": [],
                         "remove": ["Lost.md"],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -1463,7 +1527,8 @@
                         "removed": [],
                         "skipped": ["Keep.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1505,7 +1570,9 @@
                         "toRemove": ["Lost.md"],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1532,7 +1599,9 @@
                         "toRemove": ["Lost.md"],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1555,7 +1624,8 @@
                         "removed": [],
                         "skipped": ["Keep.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1620,7 +1690,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1643,7 +1714,8 @@
                         "removed": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1683,7 +1755,9 @@
                         "toRemove": [],
                         "unchanged": ["Keep.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": ["Marked.md", "Moves.md", "Private/Diary.md"]
+                        "unpublishedUnderGuard": ["Marked.md", "Moves.md", "Private/Diary.md"],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1698,7 +1772,8 @@
                         "forcedRemove": ["Marked.md", "Moves.md", "Private/Diary.md"],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -1732,7 +1807,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1772,7 +1848,9 @@
                         "toRemove": [],
                         "unchanged": ["Keep.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1787,7 +1865,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 }
             ]
@@ -1824,7 +1903,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1857,7 +1937,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1877,7 +1958,9 @@
                         "toRemove": [],
                         "unchanged": ["Hub.md", "Leaf.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1914,7 +1997,9 @@
                         "toRemove": [],
                         "unchanged": ["Leaf.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1937,7 +2022,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Hub.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -1966,7 +2052,9 @@
                         "toRemove": [],
                         "unchanged": ["Hub.md", "Leaf.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -1993,7 +2081,9 @@
                         "toRemove": ["Leaf.md"],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2008,7 +2098,8 @@
                         "forcedRemove": ["Leaf.md"],
                         "publish": [],
                         "remove": [],
-                        "update": ["Hub.md"]
+                        "update": ["Hub.md"],
+                        "move": []
                     }
                 },
                 {
@@ -2031,7 +2122,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Hub.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2076,7 +2168,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2109,7 +2203,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": ["Flow.md"]
+                        "warnings": ["Flow.md"],
+                        "moved": []
                     }
                 },
                 {
@@ -2143,7 +2238,9 @@
                         "toRemove": [],
                         "unchanged": ["Block.md", "Flow.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2166,7 +2263,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 }
             ]
@@ -2199,7 +2297,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2230,7 +2329,9 @@
                         "toRemove": [],
                         "unchanged": ["Two.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 }
             ]
@@ -2266,7 +2367,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2292,7 +2395,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2327,7 +2431,9 @@
                         "toRemove": [],
                         "unchanged": ["Notes/Plan.md", "Notes/Shed.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2356,7 +2462,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2383,7 +2491,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Notes/Plan.md", "Notes/Shed.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2431,7 +2540,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2454,7 +2565,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Notes/Plan.md", "Notes/Shed.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2502,7 +2614,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2527,7 +2641,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Notes/Plan.md", "Notes/Shed.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2564,7 +2679,8 @@
                         "removed": ["Notes/Plan.md"],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2610,7 +2726,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2642,7 +2759,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2667,7 +2786,8 @@
                         "removed": [],
                         "skipped": ["Pub/A.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2707,7 +2827,8 @@
                         "removed": [],
                         "skipped": ["Pub/A.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2739,7 +2860,8 @@
                         "removed": [],
                         "skipped": ["Pub/A.md", "Pub/B.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2788,7 +2910,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2823,7 +2946,9 @@
                         "toRemove": [],
                         "unchanged": ["Pub/D.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -2849,7 +2974,8 @@
                         "removed": [],
                         "skipped": ["Pub/A.md", "Pub/C.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2892,7 +3018,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -2966,7 +3093,8 @@
                         "forcedRemove": ["Hide.md"],
                         "publish": [],
                         "remove": [],
-                        "update": ["Edit.md"]
+                        "update": ["Edit.md"],
+                        "move": []
                     }
                 },
                 {
@@ -2996,7 +3124,9 @@
                         "toRemove": ["Hide.md"],
                         "unchanged": ["Keep.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -3019,7 +3149,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Edit.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3053,7 +3184,9 @@
                         "toRemove": [],
                         "unchanged": ["Edit.md", "Keep.md", "New.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 }
             ]
@@ -3086,7 +3219,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3135,7 +3269,8 @@
                         "forcedRemove": [],
                         "publish": ["Two.md"],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -3169,7 +3304,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3189,7 +3325,9 @@
                         "toRemove": [],
                         "unchanged": ["One.md", "Two.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 }
             ]
@@ -3245,7 +3383,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -3265,7 +3404,9 @@
                         "toRemove": [],
                         "unchanged": ["One.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -3288,7 +3429,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3320,7 +3462,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 }
             ]
@@ -3353,7 +3496,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3377,7 +3521,9 @@
                         "toRemove": [],
                         "unchanged": ["One.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -3392,7 +3538,8 @@
                         "forcedRemove": [],
                         "publish": ["Two.md"],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     },
                     "offline": true
                 },
@@ -3442,7 +3589,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 }
             ]
@@ -3480,7 +3628,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3518,7 +3667,8 @@
                         "removed": [],
                         "skipped": ["B.md"],
                         "updated": [],
-                        "warnings": ["one.png", "two.png"]
+                        "warnings": ["one.png", "two.png"],
+                        "moved": []
                     }
                 },
                 {
@@ -3550,7 +3700,8 @@
                         "removed": [],
                         "skipped": ["B.md"],
                         "updated": [],
-                        "warnings": ["two.png"]
+                        "warnings": ["two.png"],
+                        "moved": []
                     }
                 }
             ]
@@ -3584,7 +3735,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3628,7 +3780,8 @@
                         "forcedRemove": ["Hide.md"],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -3659,7 +3812,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3705,7 +3859,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -3728,7 +3883,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3776,7 +3932,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": ["Guide.md"]
+                        "warnings": ["Guide.md"],
+                        "moved": []
                     }
                 },
                 {
@@ -3833,7 +3990,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -3848,7 +4006,8 @@
                         "forcedRemove": [],
                         "publish": ["topic/Child.md"],
                         "remove": ["Topic.md"],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -3863,7 +4022,8 @@
                         "forcedRemove": [],
                         "publish": ["Keep/Plain.md"],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -3893,7 +4053,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Guide.md"],
-                        "warnings": ["Guide.md"]
+                        "warnings": ["Guide.md"],
+                        "moved": []
                     }
                 }
             ]
@@ -3929,7 +4090,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -3959,7 +4121,8 @@
                         "forcedRemove": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 }
             ]
@@ -3993,7 +4156,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4039,7 +4203,8 @@
                         "forcedRemove": ["Hide.md"],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -4071,7 +4236,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 }
             ]
@@ -4129,7 +4295,9 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4152,7 +4320,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4183,7 +4352,9 @@
                         "toRemove": [],
                         "unchanged": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4240,7 +4411,9 @@
                         "toRemove": [],
                         "unchanged": ["Tomato (Recipe).md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4263,7 +4436,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Basil.md", "Welcome.md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4328,7 +4502,9 @@
                         "toRemove": [],
                         "unchanged": ["Basil.md", "Welcome.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4351,7 +4527,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": ["Tomato (Recipe).md"],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4466,7 +4643,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -4497,7 +4675,9 @@
                         "toRemove": [],
                         "unchanged": ["Basil.md", "Tomato (Recipe).md", "Welcome.md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4529,7 +4709,9 @@
                         "toRemove": ["Welcome.md"],
                         "unchanged": ["Basil.md", "Tomato (Recipe).md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4557,7 +4739,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4599,7 +4782,9 @@
                         "toRemove": ["Basil.md"],
                         "unchanged": ["Tomato (Recipe).md"],
                         "behind": 0,
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4643,7 +4828,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4658,7 +4844,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -4746,7 +4933,9 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4821,7 +5010,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4847,7 +5037,8 @@
                         "removed": ["Notes/Old.md"],
                         "skipped": ["Notes/Kept.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -4879,7 +5070,9 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Drafts/Idea.md"],
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4922,7 +5115,9 @@
                         "technicalUpdates": [],
                         "toRemove": ["Drafts/Idea.md"],
                         "unchanged": [],
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -4969,7 +5164,9 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 }
             ]
@@ -5005,7 +5202,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -5102,7 +5300,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -5134,7 +5333,8 @@
                         "forcedRemove": [],
                         "publish": [],
                         "remove": [],
-                        "update": []
+                        "update": [],
+                        "move": []
                     }
                 },
                 {
@@ -5154,7 +5354,9 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": [],
-                        "unpublishedUnderGuard": []
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
                     }
                 },
                 {
@@ -5207,7 +5409,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -5250,7 +5453,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -5357,7 +5561,8 @@
                         "removed": [],
                         "skipped": [],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -5406,7 +5611,8 @@
                         "removed": ["Notes/Two.md"],
                         "skipped": ["Notes/One.md"],
                         "updated": [],
-                        "warnings": []
+                        "warnings": [],
+                        "moved": []
                     }
                 },
                 {
@@ -5417,6 +5623,1530 @@
                         "notes/Notes/One.md": "# One\n",
                         "notes/Notes/Two.md": null
                     }
+                }
+            ]
+        },
+        {
+            "name": "a move of the rename journal keeps the old path as a former path, and a chain folds into one (issue 37)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n",
+                "Beta.md": "See [[Alpha]].\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication of two notes",
+                    "time": "2031-05-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md", "Beta.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md", "Beta.md"],
+                        "published": ["Alpha.md", "Beta.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian moves Alpha.md into a folder, and the plugin records it in the journal of its device",
+                    "files": {
+                        "Notes/Alpha.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-05-02T08:00:00Z\",\"to\":\"Notes/Alpha.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Alpha.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the move is applied to the manifest: the note is unchanged at its new path, and the note that links to it is a technical update",
+                    "queue": {
+                        "changed": ["Beta.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": ["Beta.md"],
+                        "toRemove": [],
+                        "unchanged": ["Notes/Alpha.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Notes/Alpha.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths holds the move and the note whose link changed (PUB-23)",
+                    "selection": {
+                        "include": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Beta.md"],
+                        "move": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Notes/Alpha.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication moves the published version and updates the note that links to it",
+                    "time": "2031-05-03T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Beta.md"],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Notes/Alpha.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry keeps its id, its old path is a former path, and renames.json counts the line that was read",
+                    "vault": {},
+                    "store": {
+                        "notes/Alpha.md": null,
+                        "notes/Notes/Alpha.md": "Alpha\n",
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\"\n  ],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Notes/Alpha.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/94e2c97499374edd.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:927a14c36b9b7cdea37b2cb451f6b8618694960e63de29ac676bdbd57bf10f5b\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Alpha\",\n      \"path\": \"Notes/Alpha.md\"\n    }\n  ],\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:927a14c36b9b7cdea37b2cb451f6b8618694960e63de29ac676bdbd57bf10f5b\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:a98016874b89eac076ce1f2b9bb613a3963f075ffb6beff767636b3a22dfed6d\",\n    \"lines\": 1\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a line is read one time only: the next queue has no move",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Beta.md", "Notes/Alpha.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "after a restart of Obsidian, two more renames in the same journal, and Obsidian writes the new name into the link",
+                    "files": {
+                        "Delta.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-05-02T08:00:00Z\",\"to\":\"Notes/Alpha.md\"}\n{\"from\":\"Notes/Alpha.md\",\"kind\":\"note\",\"time\":\"2031-05-04T08:00:00Z\",\"to\":\"Gamma.md\"}\n{\"from\":\"Gamma.md\",\"kind\":\"note\",\"time\":\"2031-05-04T08:00:01Z\",\"to\":\"Delta.md\"}\n",
+                        "Beta.md": "---\npublic_note: true\n---\nSee [[Delta]].\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Notes/Alpha.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "a chain of two lines folds into one move, and the note that changed only in a link is a changed note",
+                    "queue": {
+                        "changed": ["Beta.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Delta.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Notes/Alpha.md",
+                                "to": "Delta.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the move and the edit of the link in one publication",
+                    "time": "2031-05-04T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Beta.md"],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Notes/Alpha.md",
+                                "to": "Delta.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the path in the middle of the chain was never live, so it is no former path",
+                    "vault": {},
+                    "store": {
+                        "notes/Notes/Alpha.md": null,
+                        "notes/Gamma.md": null,
+                        "notes/Delta.md": "Alpha\n",
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\",\n    \"Notes/Alpha.md\"\n  ],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Delta.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/94e2c97499374edd.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e48c7ac9179a7dd67123c848802856fb40652ff43f742adaf9a37056c6f0dad3\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-04T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Delta\",\n      \"path\": \"Delta.md\"\n    }\n  ],\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:e48c7ac9179a7dd67123c848802856fb40652ff43f742adaf9a37056c6f0dad3\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:9f8d1b6b7bbdb35c0744227cb54b320dc9e546476617a154e4a291de48fca46e\",\n    \"lines\": 3\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the note comes back to its first name",
+                    "files": {
+                        "Alpha.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-05-02T08:00:00Z\",\"to\":\"Notes/Alpha.md\"}\n{\"from\":\"Notes/Alpha.md\",\"kind\":\"note\",\"time\":\"2031-05-04T08:00:00Z\",\"to\":\"Gamma.md\"}\n{\"from\":\"Gamma.md\",\"kind\":\"note\",\"time\":\"2031-05-04T08:00:01Z\",\"to\":\"Delta.md\"}\n{\"from\":\"Delta.md\",\"kind\":\"note\",\"time\":\"2031-05-05T09:00:00Z\",\"to\":\"Alpha.md\"}\n",
+                        "Beta.md": "---\npublic_note: true\n---\nSee [[Alpha]].\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Delta.md"]
+                },
+                {
+                    "do": "publish",
+                    "why": "the move back",
+                    "time": "2031-05-05T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Beta.md"],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Delta.md",
+                                "to": "Alpha.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "a note that comes back to a former path loses that former path",
+                    "vault": {},
+                    "store": {
+                        "notes/Delta.md": null,
+                        "notes/Alpha.md": "Alpha\n",
+                        "manifest/cf5241e6a8903dea.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Notes/Alpha.md\",\n    \"Delta.md\"\n  ],\n  \"id\": \"cf5241e6a8903dea\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Alpha.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/94e2c97499374edd.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:927a14c36b9b7cdea37b2cb451f6b8618694960e63de29ac676bdbd57bf10f5b\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"94e2c97499374edd\",\n  \"lastPublished\": \"2031-05-05T08:00:00Z\",\n  \"links\": [\n    {\n      \"link\": \"Alpha\",\n      \"path\": \"Alpha.md\"\n    }\n  ],\n  \"path\": \"Beta.md\",\n  \"sourceHash\": \"sha256:927a14c36b9b7cdea37b2cb451f6b8618694960e63de29ac676bdbd57bf10f5b\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:c7adcd9581abef1f822321d0ba57ea30a37a0fb264450b6ff2bdf0433a126450\",\n    \"lines\": 4\n  }\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a rename that the plugin did not see shows as a pairing, and the author confirms it or pairs two notes by hand (issue 37)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n",
+                "Other.md": "Other\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md", "Other.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md", "Other.md"],
+                        "published": ["Alpha.md", "Other.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a script moves Alpha.md while Obsidian is closed: no line in a journal",
+                    "files": {
+                        "Moved/Alpha.md": "---\npublic_note: true\n---\nAlpha\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Alpha.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the missing note and the candidate with the same source are a pairing to confirm (PUB-62)",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "missing": ["Alpha.md"],
+                        "new": ["Moved/Alpha.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Alpha.md"],
+                        "unchanged": ["Other.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Moved/Alpha.md"
+                            }
+                        ],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths applies no pairing",
+                    "selection": {
+                        "include": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": [],
+                        "move": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the from of a pairing is a published note that is missing",
+                    "refused": true,
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "Moved/Alpha.md",
+                                "to": "Alpha.md"
+                            }
+                        ]
+                    },
+                    "says": "it cannot be paired"
+                },
+                {
+                    "do": "plan",
+                    "why": "the to of a pairing is a candidate with no manifest entry",
+                    "refused": true,
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Other.md"
+                            }
+                        ]
+                    },
+                    "says": "\"Other.md\" is not a candidate with no manifest entry"
+                },
+                {
+                    "do": "plan",
+                    "why": "a path of a pairing is in no other list",
+                    "refused": true,
+                    "selection": {
+                        "include": ["Moved/Alpha.md"],
+                        "pair": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Moved/Alpha.md"
+                            }
+                        ]
+                    },
+                    "says": "is in more than one list"
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan of a pairing moves the entry and updates the note from the vault",
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Moved/Alpha.md"
+                            }
+                        ]
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Moved/Alpha.md"],
+                        "move": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Moved/Alpha.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the author confirms the pairing",
+                    "time": "2031-06-02T08:00:00Z",
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Moved/Alpha.md"
+                            }
+                        ]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Moved/Alpha.md"],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Moved/Alpha.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry keeps its id and its first date, and the old path is a former path",
+                    "vault": {},
+                    "store": {
+                        "notes/Alpha.md": null,
+                        "notes/Moved/Alpha.md": "Alpha\n",
+                        "manifest/f8c0873be9a56965.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\"\n  ],\n  \"id\": \"f8c0873be9a56965\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Moved/Alpha.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": null
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a rename outside Obsidian together with an edit (PUB-96)",
+                    "files": {
+                        "Edited.md": "Other, edited\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Other.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "no pairing exists, because the content differs: the old path is missing and the new path a candidate, and nothing is removed",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "missing": ["Other.md"],
+                        "new": ["Edited.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Other.md"],
+                        "unchanged": ["Moved/Alpha.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the author pairs the two notes by hand",
+                    "time": "2031-06-03T08:00:00Z",
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "Other.md",
+                                "to": "Edited.md"
+                            }
+                        ]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Edited.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Edited.md"],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Other.md",
+                                "to": "Edited.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the edit moves the last date",
+                    "vault": {
+                        "Edited.md": "---\npublic_note: true\n---\nOther, edited\n"
+                    },
+                    "store": {
+                        "notes/Other.md": null,
+                        "notes/Edited.md": "Other, edited\n",
+                        "manifest/df143eb5a1b6efb5.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:f081f039f6da2178014e97d305bd8c331a5ee96631857264d0790eb183b08dcc\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Other.md\"\n  ],\n  \"id\": \"df143eb5a1b6efb5\",\n  \"lastPublished\": \"2031-06-03T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Edited.md\",\n  \"sourceHash\": \"sha256:f081f039f6da2178014e97d305bd8c331a5ee96631857264d0790eb183b08dcc\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a rename together with an edit: the move needs no selection, and a hold keeps the old text at the new path (issue 37)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md"],
+                        "published": ["Alpha.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian renames the note, and the author edits it",
+                    "files": {
+                        "Renamed.md": "---\npublic_note: true\n---\nAlpha, edited\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Renamed.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Alpha.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the moved note is a changed note at its new path",
+                    "queue": {
+                        "changed": ["Renamed.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Renamed.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a hold of the note holds its edit, not its move",
+                    "selection": {
+                        "include": [],
+                        "hold": ["Renamed.md"]
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": [],
+                        "move": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Renamed.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the move alone",
+                    "time": "2031-06-03T08:00:00Z",
+                    "selection": {
+                        "include": [],
+                        "hold": ["Renamed.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Renamed.md"],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Renamed.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the published version moved as it is: no new text is live",
+                    "vault": {},
+                    "store": {
+                        "notes/Alpha.md": null,
+                        "notes/Renamed.md": "Alpha\n",
+                        "manifest/f8c0873be9a56965.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\"\n  ],\n  \"id\": \"f8c0873be9a56965\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Renamed.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:30f98abd30a6233d4539422486f5e130d2e9422f7b9a9e419eb979d7090b4b81\",\n    \"lines\": 1\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the edit later",
+                    "time": "2031-06-04T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Renamed.md"],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the new text is live at the new path",
+                    "vault": {},
+                    "store": {
+                        "notes/Renamed.md": "Alpha, edited\n",
+                        "manifest/f8c0873be9a56965.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:74bcb206a02986227a8c72c433690632089df6399ebcbfa4a3b929b21356a0bf\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\"\n  ],\n  \"id\": \"f8c0873be9a56965\",\n  \"lastPublished\": \"2031-06-04T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Renamed.md\",\n  \"sourceHash\": \"sha256:74bcb206a02986227a8c72c433690632089df6399ebcbfa4a3b929b21356a0bf\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a folder rename moves every note below it, and a device publishes the renames of another one (issue 37)",
+            "denyList": [],
+            "vault": {
+                "Folder/One.md": "One\n",
+                "Folder/Sub/Two.md": "Two\n",
+                "Folder/Three.md": "Three\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication of two notes of the folder",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Folder/One.md", "Folder/Sub/Two.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Folder/One.md", "Folder/Sub/Two.md"],
+                        "published": ["Folder/One.md", "Folder/Sub/Two.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "another device renames the folder: one line for the folder, and one for a note in it, which repeats the move",
+                    "files": {
+                        "Area/One.md": "---\npublic_note: true\n---\nOne\n",
+                        "Area/Sub/Two.md": "---\npublic_note: true\n---\nTwo\n",
+                        "Area/Three.md": "Three\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000bb.jsonl": "{\"from\":\"Folder\",\"kind\":\"folder\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Area\"}\n{\"from\":\"Folder/One.md\",\"kind\":\"note\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Area/One.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old files are gone",
+                    "paths": ["Folder/One.md", "Folder/Sub/Two.md", "Folder/Three.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the line of the folder moves every published note below it",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": ["Area/Three.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Area/One.md", "Area/Sub/Two.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Folder/One.md",
+                                "to": "Area/One.md"
+                            },
+                            {
+                                "from": "Folder/Sub/Two.md",
+                                "to": "Area/Sub/Two.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "this device publishes the renames of the other one",
+                    "time": "2031-06-02T09:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Folder/One.md",
+                                "to": "Area/One.md"
+                            },
+                            {
+                                "from": "Folder/Sub/Two.md",
+                                "to": "Area/Sub/Two.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "both notes moved, and the journal of the other device is counted",
+                    "vault": {},
+                    "store": {
+                        "notes/Folder/One.md": null,
+                        "notes/Area/One.md": "One\n",
+                        "notes/Area/Sub/Two.md": "Two\n",
+                        "manifest/83ba265e88675a4e.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:82a5f8bf6ec19baad113b7f1744ba4163b6efbcbd73e79d9d98f129c63688c44\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Folder/One.md\"\n  ],\n  \"id\": \"83ba265e88675a4e\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Area/One.md\",\n  \"sourceHash\": \"sha256:82a5f8bf6ec19baad113b7f1744ba4163b6efbcbd73e79d9d98f129c63688c44\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/2476dab7f4bc9268.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Folder/Sub/Two.md\"\n  ],\n  \"id\": \"2476dab7f4bc9268\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Area/Sub/Two.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000bb.jsonl\": {\n    \"hash\": \"sha256:372beafcfd82428eb04fa4442367c302905d4be67b56117392912076185fd46d\",\n    \"lines\": 2\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "two devices rename the same note one after the other: the journal whose name comes first has the later line",
+                    "files": {
+                        "Area/Deux.md": "---\npublic_note: true\n---\nTwo\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Area/Sub/Dos.md\",\"kind\":\"note\",\"time\":\"2031-06-03T10:00:00Z\",\"to\":\"Area/Deux.md\"}\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000bb.jsonl": "{\"from\":\"Folder\",\"kind\":\"folder\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Area\"}\n{\"from\":\"Folder/One.md\",\"kind\":\"note\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Area/One.md\"}\n{\"from\":\"Area/Sub/Two.md\",\"kind\":\"note\",\"time\":\"2031-06-03T09:00:00Z\",\"to\":\"Area/Sub/Dos.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Area/Sub/Two.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the lines are taken in the order of their times, so the chain folds into one move",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": ["Area/Three.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Area/Deux.md", "Area/One.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Area/Sub/Two.md",
+                                "to": "Area/Deux.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication of the chain",
+                    "time": "2031-06-04T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Area/Sub/Two.md",
+                                "to": "Area/Deux.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the two former paths lead to the note, and both journals are counted",
+                    "vault": {},
+                    "store": {
+                        "notes/Area/Sub/Two.md": null,
+                        "notes/Area/Deux.md": "Two\n",
+                        "manifest/2476dab7f4bc9268.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Folder/Sub/Two.md\",\n    \"Area/Sub/Two.md\"\n  ],\n  \"id\": \"2476dab7f4bc9268\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Area/Deux.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:ba1a71d48e28a78a3756de851cc3b2db40f61211f989bdc3b939faa4304e1941\",\n    \"lines\": 1\n  },\n  \"00000000000000bb.jsonl\": {\n    \"hash\": \"sha256:67d055c2a88ed46014b6dde1573b17adecbc0173371e50fdf0a8700d989f8997\",\n    \"lines\": 3\n  }\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a rename of a folder of the deny list stops every run until the deny list holds it, and a move into it is a forced removal (issue 37)",
+            "denyList": ["Private"],
+            "vault": {
+                "Private/Secret.md": "Secret\n",
+                "Public.md": "Public\n",
+                "Note.md": "Note\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Note.md", "Public.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Note.md", "Public.md"],
+                        "published": ["Note.md", "Public.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian renames the folder of the deny list",
+                    "files": {
+                        "Hidden/Secret.md": "Secret\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Private\",\"kind\":\"folder\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Hidden\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Private"]
+                },
+                {
+                    "do": "status",
+                    "why": "the deny list names no folder: every run stops, and the journal proposes the new path (PUB-91)",
+                    "refused": true,
+                    "says": "The rename journal says that it was renamed to \"Hidden\": put \"Hidden\" in the deny list"
+                },
+                {
+                    "do": "plan",
+                    "why": "no plan either, so no note of that folder shows as a candidate",
+                    "refused": true,
+                    "selection": {
+                        "include": []
+                    },
+                    "says": "put \"Hidden\" in the deny list"
+                },
+                {
+                    "do": "store",
+                    "why": "the author puts the new path in the deny list",
+                    "files": {
+                        "configuration.json": "{\"denyList\": [\"Hidden\"]}"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note of the folder is no candidate",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Note.md", "Public.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian moves a note into the folder of the deny list with another name, and another note out of the way; a private note has the name of the second one",
+                    "files": {
+                        "Hidden/Kept.md": "---\npublic_note: true\n---\nNote\n",
+                        "Hidden/Public.md": "A private note\n",
+                        "Elsewhere/Public.md": "---\npublic_note: true\n---\nPublic\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Private\",\"kind\":\"folder\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Hidden\"}\n{\"from\":\"Note.md\",\"kind\":\"note\",\"time\":\"2031-06-03T08:00:00Z\",\"to\":\"Hidden/Kept.md\"}\n{\"from\":\"Public.md\",\"kind\":\"note\",\"time\":\"2031-06-03T09:00:00Z\",\"to\":\"Elsewhere/Public.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old files are gone",
+                    "paths": ["Note.md", "Public.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the journal gives the exact moves: one is under a guard, and the other is a move, also with a note of its name in the folder of the deny list",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Note.md"],
+                        "unchanged": ["Elsewhere/Public.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Public.md",
+                                "to": "Elsewhere/Public.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the note under the guard is a forced removal",
+                    "selection": {
+                        "include": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Note.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": [],
+                        "move": [
+                            {
+                                "from": "Public.md",
+                                "to": "Elsewhere/Public.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication",
+                    "time": "2031-06-04T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": ["Note.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Public.md",
+                                "to": "Elsewhere/Public.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the note under the guard left the manifest, and the other one moved",
+                    "vault": {
+                        "Hidden/Kept.md": "---\npublic_note: true\n---\nNote\n"
+                    },
+                    "store": {
+                        "notes/Note.md": null,
+                        "notes/Elsewhere/Public.md": "Public\n",
+                        "manifest/dc0c006dca986618.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:576a52f586a5704580bdeb7bfcd4600081089e2ba8cfb673250f5a8926b32257\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-06-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Public.md\"\n  ],\n  \"id\": \"dc0c006dca986618\",\n  \"lastPublished\": \"2031-06-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Elsewhere/Public.md\",\n  \"sourceHash\": \"sha256:576a52f586a5704580bdeb7bfcd4600081089e2ba8cfb673250f5a8926b32257\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/301e0e52e3087183.json": null,
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:63d4e6d89d09f099da4b1793c7435f3da63bcb612e8356b565d1d3559f6ad676\",\n    \"lines\": 3\n  }\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a line that is not valid, a line that is being written and a journal that was edited apply nothing (issue 37)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md"],
+                        "published": ["Alpha.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a journal with a line that is not a rename, a rename, and a line that is still being written; a file that is not a journal; a copy of the journal by a synchronization",
+                    "files": {
+                        "Beta.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "not a line\n{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Beta.md\"}\n{\"from\":\"Beta.md\",\"kind\":\"no",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/notes.txt": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Wrong.md\"}\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.sync-conflict.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Wrong.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Alpha.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the valid line moves the note; the line that is being written is not read yet",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Beta.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Beta.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the line that is not a rename gives a warning with the name of the journal",
+                    "time": "2031-07-02T09:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["00000000000000aa.jsonl"],
+                        "moved": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Beta.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the two lines are counted, and the line that is being written is not",
+                    "vault": {},
+                    "store": {
+                        "notes/Beta.md": "Alpha\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:1d40af2d1b888b0c61238023ad5080e808cc3894379838807af2bfc707c4147b\",\n    \"lines\": 2\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the journal of the device is replaced by an older copy with another line, and the note moves outside Obsidian",
+                    "files": {
+                        "Gamma.md": "Alpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Beta.md\",\"kind\":\"note\",\"time\":\"2031-07-03T08:00:00Z\",\"to\":\"Gamma.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Beta.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "a journal that was cut or edited applies no line: the note shows as a pairing",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "missing": ["Beta.md"],
+                        "new": ["Gamma.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["Beta.md"],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "Beta.md",
+                                "to": "Gamma.md"
+                            }
+                        ],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication counts the journal again, with a warning, and moves nothing",
+                    "time": "2031-07-03T09:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["00000000000000aa.jsonl"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the journal counts all its lines now",
+                    "vault": {},
+                    "store": {
+                        "notes/Beta.md": "Alpha\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:2eed2e6adb48581bd50a0f81fe004d16b42de7ede6ad6d4ea3380f64df6f64b8\",\n    \"lines\": 1\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the next publication gives no warning, and the author confirms the pairing",
+                    "time": "2031-07-04T08:00:00Z",
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "Beta.md",
+                                "to": "Gamma.md"
+                            }
+                        ]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Gamma.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Gamma.md"],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "Beta.md",
+                                "to": "Gamma.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the two old paths are former paths",
+                    "vault": {},
+                    "store": {
+                        "notes/Beta.md": null,
+                        "notes/Gamma.md": "Alpha\n",
+                        "manifest/aea530d10302396d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Alpha.md\",\n    \"Beta.md\"\n  ],\n  \"id\": \"aea530d10302396d\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Gamma.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a move that the vault does not show, a move to the path of another note and a move to a reserved name do not happen, and an unpublished note moves (issue 37)",
+            "denyList": [],
+            "vault": {
+                "A.md": "A\n",
+                "B.md": "B\n",
+                "C.md": "C\n",
+                "U.md": "U\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md", "B.md", "C.md", "U.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md", "B.md", "C.md", "U.md"],
+                        "published": ["A.md", "B.md", "C.md", "U.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the author unpublishes one note",
+                    "time": "2031-07-01T09:00:00Z",
+                    "paths": ["U.md"],
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["U.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["U.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the journal of another device arrives before its files: A.md moved and B.md took its name; C.md moved to a reserved folder; the unpublished note moved",
+                    "files": {
+                        "-/C.md": "C\n",
+                        "Gone/U.md": "U\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"Late.md\"}\n{\"from\":\"B.md\",\"kind\":\"note\",\"time\":\"2031-07-02T09:00:00Z\",\"to\":\"A.md\"}\n{\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-07-02T10:00:00Z\",\"to\":\"-/C.md\"}\n{\"from\":\"U.md\",\"kind\":\"note\",\"time\":\"2031-07-02T11:00:00Z\",\"to\":\"Gone/U.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old files that arrived are gone",
+                    "paths": ["C.md", "U.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the vault still has A.md, so A.md does not move, and B.md cannot take the path of its entry; the reserved name does not move; the unpublished entry moves",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 1,
+                            "unchanged": 2
+                        },
+                        "missing": ["C.md"],
+                        "new": ["-/C.md", "Gone/U.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["C.md"],
+                        "unchanged": ["A.md", "B.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "C.md",
+                                "to": "-/C.md"
+                            }
+                        ],
+                        "renamed": [
+                            {
+                                "from": "U.md",
+                                "to": "Gone/U.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "each move that does not happen gives a warning with the path of its note",
+                    "time": "2031-07-03T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["A.md", "B.md", "C.md"],
+                        "moved": [
+                            {
+                                "from": "U.md",
+                                "to": "Gone/U.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the unpublished entry has a former path, and its state stays",
+                    "vault": {},
+                    "store": {
+                        "notes/A.md": "A\n",
+                        "notes/B.md": "B\n",
+                        "notes/C.md": "C\n",
+                        "notes/Gone/U.md": null,
+                        "manifest/755099fbf094afaa.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:385cfb0cc262da1f7aeb6c3ab6c42af72acbb6f0175511e0ffc55d404779cdae\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"U.md\"\n  ],\n  \"id\": \"755099fbf094afaa\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Gone/U.md\",\n  \"sourceHash\": \"sha256:385cfb0cc262da1f7aeb6c3ab6c42af72acbb6f0175511e0ffc55d404779cdae\",\n  \"state\": \"unpublished\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:aaf118c84fee8929105b39f01c7138a951c0bdede09c911bbd77dacc6d750360\",\n    \"lines\": 4\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the lines were read: the next queue has no move",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 1,
+                            "unchanged": 2
+                        },
+                        "missing": ["C.md"],
+                        "new": ["-/C.md", "Gone/U.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["C.md"],
+                        "unchanged": ["A.md", "B.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "C.md",
+                                "to": "-/C.md"
+                            }
+                        ],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a pairing with a reserved name stops the plan, as a new note does",
+                    "refused": true,
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "C.md",
+                                "to": "-/C.md"
+                            }
+                        ]
+                    },
+                    "says": "is a reserved root name of the site"
                 }
             ]
         }

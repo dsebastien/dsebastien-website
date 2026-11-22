@@ -388,9 +388,14 @@ interface Tool {
 function reportLists(report: Record<string, unknown>): string {
     const pathsOf = (list: unknown): string[] =>
         Array.isArray(list)
-            ? list.map((item: unknown) =>
-                  typeof item === 'string' ? item : (item as { path: string }).path
-              )
+            ? list.map((item: unknown) => {
+                  if (typeof item === 'string') {
+                      return item
+                  }
+                  // A move: its two paths (R66).
+                  const { path, from, to } = item as { path?: string; from?: string; to?: string }
+                  return path ?? `${from ?? ''} -> ${to ?? ''}`
+              })
             : []
     return toCanonicalJson(
         Object.fromEntries(Object.keys(report).map((key) => [key, pathsOf(report[key])]))
@@ -440,7 +445,12 @@ function rustTool(vault: string, copy: string): Tool {
                 await run('plan', [
                     ...selection.include.map((path) => `--include=${path}`),
                     ...(selection.hold ?? []).map((path) => `--hold=${path}`),
-                    ...(selection.remove ?? []).map((path) => `--remove=${path}`)
+                    ...(selection.remove ?? []).map((path) => `--remove=${path}`),
+                    ...(selection.pair ?? []).flatMap((pairing) => [
+                        '--pair',
+                        pairing.from,
+                        pairing.to
+                    ])
                 ])
             ) as { id: string; plan: Record<string, CanonicalValue> }
             const report = JSON.parse(
@@ -669,6 +679,7 @@ describe('parity of the publication queue', () => {
             // The note that moved into a folder of the deny list, the note with
             // the ignore property, and the note in the new folder of the deny list.
             forcedRemove: [MOVED, GUARDED, DENIED],
+            move: [],
             publish: [NEW],
             remove: [UNPUBLISHED],
             update: [LINKING, EDITED, PLAN, TOUR, TECHNICAL, LINKS, EDITED_WINDOWS]
@@ -843,6 +854,132 @@ describe('parity of an unpublish and a takedown', () => {
     })
 })
 
+// Renames (issue 37, section 18.6 of the spec). Each implementation publishes
+// the notes, then the plugin of one device records a folder rename that moves
+// a published note and candidates, the plugin of another device records a
+// move with another name, and a move into a folder of the deny list with
+// another name; the author moves a note while Obsidian is closed and confirms
+// the pairing. Both must give the same queue, plan, report and stores.
+
+const JOURNALS = join('.obsidian', 'plugins', 'dsebastien-vault-publish', 'renames')
+const POND = '10 Garden/～ Pond.md'
+const TRELLIS = '10 Garden/Bean trellis.md'
+const THYME = '10 Garden/Herb bed/Thyme.md'
+const WELCOME = 'Welcome.md'
+
+interface Renames {
+    queue: string
+    publication: { plan: string; report: string }
+    after: string
+    left: Result
+}
+
+/** A line of a rename journal, as the plugin writes it. */
+function journalLine(from: string, to: string, time: string, kind = 'note'): string {
+    return `${JSON.stringify({ from, kind, time, to })}\n`
+}
+
+async function renames(toolOf: (vault: string, copy: string) => Tool): Promise<Renames> {
+    await using stores = await makeTestStores()
+    const vault = await copyFixtureVault(stores)
+    const copy = await makeContentStoreCopy(stores)
+    const tool = toolOf(vault, copy)
+    await tool.publish({ include: NOTES }, TIME)
+    const move = async (from: string, to: string): Promise<void> => {
+        await mkdir(dirname(join(vault, to)), { recursive: true })
+        await rename(join(vault, from), join(vault, to))
+    }
+    await move('10 Garden/Herb bed', '10 Garden/Herbs')
+    await move(POND, 'Water/Pond.md')
+    await move(TRELLIS, '90 Locked Shed/Trellis.md')
+    // A move while Obsidian is closed: no line.
+    await move(WELCOME, 'Home/Welcome.md')
+    await mkdir(join(vault, JOURNALS), { recursive: true })
+    await writeFile(
+        join(vault, JOURNALS, '00000000000000aa.jsonl'),
+        journalLine('10 Garden/Herb bed', '10 Garden/Herbs', LATER, 'folder') +
+            journalLine(TRELLIS, '90 Locked Shed/Trellis.md', LATER)
+    )
+    await writeFile(
+        join(vault, JOURNALS, '00000000000000bb.jsonl'),
+        journalLine(POND, 'Water/Pond.md', LATER)
+    )
+    const queue = await tool.status()
+    const publication = await tool.publish(
+        { include: [], pair: [{ from: WELCOME, to: 'Home/Welcome.md' }] },
+        LATEST
+    )
+    return { queue, publication, after: await tool.status(), left: await resultOf(vault, copy) }
+}
+
+describe('parity of renames', () => {
+    let fromTypeScript: Renames
+    let fromRust: Renames
+
+    beforeAll(async () => {
+        fromTypeScript = await renames(typescriptTool)
+        fromRust = await renames(rustTool)
+    }, 120_000)
+
+    test('both implementations give the same queues, plan and report', () => {
+        expect(fromRust.queue).toBe(fromTypeScript.queue)
+        expect(fromRust.publication).toEqual(fromTypeScript.publication)
+        expect(fromRust.after).toBe(fromTypeScript.after)
+    })
+
+    test('both implementations leave the same content store, vault, storage and plans', () => {
+        expect(fromRust.left).toEqual(fromTypeScript.left)
+    })
+
+    // The comparison must have something to compare. The expected values are stated by hand.
+    test('the moves, the pairing and the forced removal happened', () => {
+        const queue = JSON.parse(fromRust.queue) as Record<string, unknown>
+        expect(queue['renamed']).toEqual([
+            { from: THYME, to: '10 Garden/Herbs/Thyme.md' },
+            { from: POND, to: 'Water/Pond.md' }
+        ])
+        expect(queue['pairings']).toEqual([{ from: WELCOME, to: 'Home/Welcome.md' }])
+        expect(queue['missing']).toEqual([WELCOME])
+        const plan = JSON.parse(fromRust.publication.plan) as Record<string, unknown>
+        expect(plan['forcedRemove']).toEqual([TRELLIS])
+        expect(plan['move']).toEqual([
+            { from: THYME, to: '10 Garden/Herbs/Thyme.md' },
+            { from: POND, to: 'Water/Pond.md' },
+            { from: WELCOME, to: 'Home/Welcome.md' }
+        ])
+        const report = JSON.parse(fromRust.publication.report) as Record<string, string[]>
+        expect(report['moved']).toEqual([
+            `${THYME} -> 10 Garden/Herbs/Thyme.md`,
+            `${POND} -> Water/Pond.md`,
+            `${WELCOME} -> Home/Welcome.md`
+        ])
+        expect(report['forcedRemoved']).toEqual([TRELLIS])
+        const after = JSON.parse(fromRust.after) as Record<string, unknown>
+        expect(after['renamed']).toEqual([])
+        expect(after['pairings']).toEqual([])
+        expect(after['missing']).toEqual([])
+        const store = fromRust.left.store
+        expect(store['notes/Water/Pond.md']).toBeDefined()
+        expect(store[`notes/${POND}`]).toBeUndefined()
+        const entries = Object.entries(store)
+            .filter(([name]) => name.startsWith('manifest/'))
+            .map(([, text]) => JSON.parse(text) as { path: string; formerPaths: string[] })
+        expect(
+            Object.fromEntries(
+                entries
+                    .filter((entry) => entry.formerPaths.length > 0)
+                    .map((entry) => [entry.path, entry.formerPaths])
+            )
+        ).toEqual({
+            '10 Garden/Herbs/Thyme.md': [THYME],
+            'Home/Welcome.md': [WELCOME],
+            'Water/Pond.md': [POND]
+        })
+        expect(entries.map((entry) => entry.path)).not.toContain(TRELLIS)
+        expect(store['renames.json']).toBeDefined()
+    })
+})
+
 describe('parity of an empty queue', () => {
     test('both implementations write the empty queue of the canonical form', async () => {
         const queueOf = async (toolOf: (vault: string, copy: string) => Tool): Promise<string> => {
@@ -860,7 +997,7 @@ describe('parity of an empty queue', () => {
 
         expect(await queueOf(rustTool)).toBe(fromTypeScript)
         expect(fromTypeScript).toBe(
-            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "new": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
+            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "new": [],\n  "pairings": [],\n  "renamed": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
         )
     }, 120_000)
 })
@@ -891,7 +1028,7 @@ describe('parity of an empty plan', () => {
 
         expect(fromRust).toEqual(fromTypeScript)
         expect(fromRust.plans).toEqual([
-            '{\n  "plan": {\n    "forcedRemove": [],\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": []\n  }\n}\n'
+            '{\n  "plan": {\n    "forcedRemove": [],\n    "move": [],\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "pair": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "journals": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": [],\n    "renames": "none"\n  }\n}\n'
         ])
     }, 120_000)
 })

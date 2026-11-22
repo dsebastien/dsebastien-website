@@ -6,10 +6,13 @@ import { guardOf, guardOfPath } from './guards.ts'
 import { contentHash } from './hash.ts'
 import { LinkIndex, linkPathsOf, linksOfPaths, sameLinks } from './links.ts'
 import type { ManifestEntry } from './manifest.ts'
+import { firstPart, foldedForm, isReservedRootName } from './names.ts'
 import { askable, readNoteTypes, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
-import { sortByCodePoint } from './order.ts'
+import { compareCodePoints, sortByCodePoint } from './order.ts'
 import type { NoteTypes, Vault } from './ports.ts'
+import { foldMoves, formerPathsAfter } from './renames.ts'
+import type { JournalState, RenameWarning } from './renames.ts'
 import { guardName } from '@dsebastien-website/resolver'
 
 // The publication queue: what waits for a publication (PUB-18 of the spec).
@@ -45,6 +48,13 @@ export type QueueLists = {
     readonly missing: readonly string[]
     /** The candidates. */
     readonly new: readonly string[]
+    /**
+     * The pairings to confirm: a published note that is missing and a
+     * candidate with no manifest entry, with the same source (PUB-62).
+     */
+    readonly pairings: readonly Move[]
+    /** The moves of the new lines of the rename journals that the next publication applies. */
+    readonly renamed: readonly Move[]
     /** The notes of `changed` that the author did not edit: the cleaning step gives another result. */
     readonly technicalUpdates: readonly string[]
     /** The published notes that cannot stay published as they are. */
@@ -57,6 +67,10 @@ export type QueueLists = {
      */
     readonly unpublishedUnderGuard: readonly string[]
 }
+
+/** A move of a manifest entry: from its path to its new path. */
+// A type alias, not an interface: the canonical form takes any object of data.
+export type Move = { readonly from: string; readonly to: string }
 
 /** What the scan knows of one note. The text itself is not kept. */
 export interface ScannedNote {
@@ -92,8 +106,12 @@ export interface Scan {
      * plan holds.
      */
     readonly isGuardedFile: (path: string, hash: string) => Promise<boolean>
-    /** Every entry of the manifest, by the vault path of its note. */
+    /** Every entry of the manifest after the moves of the rename journals, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
+    /** The journals that the scan read: the plan writes their read marker. */
+    readonly journals: JournalState
+    /** The warnings of the journals and of the moves, for the report. */
+    readonly renameWarnings: readonly RenameWarning[]
     readonly configuration: Configuration
     /** The note type of each published note that the scan found and that no guard excludes, when it has one. */
     readonly noteTypes: ReadonlyMap<string, NoteType>
@@ -203,11 +221,21 @@ export async function scanDenied(
 export async function computeQueue(input: {
     vault: Vault
     manifest: ReadonlyMap<string, ManifestEntry>
+    journals: JournalState
     configuration: Configuration
     noteTypes: NoteTypes
 }): Promise<Scan> {
     const notes = new Map<string, ScannedNote>()
     const ignored = new Set<string>()
+    // The paths that a published entry can have after the moves.
+    const folded = foldMoves(input.manifest.keys(), input.journals.lines)
+    const publishedPaths = new Set<string>()
+    for (const [path, entry] of input.manifest) {
+        if (entry.state === 'published') {
+            publishedPaths.add(path)
+            publishedPaths.add(folded.positions.get(path) ?? path)
+        }
+    }
     // The link paths of the published notes: their links are computed again at each scan.
     const linkPaths = new Map<string, string[]>()
     const scanned = await scanVault(input.vault, input.configuration)
@@ -231,7 +259,7 @@ export async function computeQueue(input: {
             ignored.add(path)
         }
         const source = sourceOf(text)
-        if (input.manifest.get(path)?.state === 'published') {
+        if (publishedPaths.has(path)) {
             linkPaths.set(path, linkPathsOf(source))
         }
         notes.set(path, {
@@ -249,6 +277,14 @@ export async function computeQueue(input: {
         input.vault,
         input.configuration
     )
+    const moves = applyMoves(input.manifest, folded, {
+        underGuard: (path) =>
+            guardOfPath(path, input.configuration) !== undefined || ignored.has(path),
+        inVault: (path) => notes.has(path),
+        isVaultName: (path) =>
+            !path.split('/').some((part) => part.startsWith('.') || part.includes(REPLACEMENT))
+    })
+    const manifest = moves.manifest
     const index = new LinkIndex([...notes.keys(), ...scanned.others, ...denied])
     const guarded = new Set([...ignored, ...denied])
     const files = new FileReader(input.vault)
@@ -257,7 +293,7 @@ export async function computeQueue(input: {
     const noteTypes = await noteTypesOf(
         input.noteTypes,
         [...notes.keys()].filter(
-            (path) => input.manifest.get(path)?.state === 'published' && !ignored.has(path)
+            (path) => manifest.get(path)?.state === 'published' && !ignored.has(path)
         )
     )
     const lists = {
@@ -267,7 +303,7 @@ export async function computeQueue(input: {
         toRemove: [] as string[],
         unchanged: [] as string[]
     }
-    for (const [path, entry] of input.manifest) {
+    for (const [path, entry] of manifest) {
         if (entry.state !== 'published') {
             continue
         }
@@ -296,7 +332,7 @@ export async function computeQueue(input: {
         }
     }
     for (const path of notes.keys()) {
-        if (input.manifest.get(path)?.state !== 'published' && !ignored.has(path)) {
+        if (manifest.get(path)?.state !== 'published' && !ignored.has(path)) {
             lists.new.push(path)
         }
     }
@@ -313,16 +349,18 @@ export async function computeQueue(input: {
         (path) =>
             guardOfPath(path, input.configuration) === undefined &&
             !ignored.has(path) &&
+            !moves.underGuard.has(path) &&
             !movedUnderGuard(path)
     )
     // An unpublished note under a guard, in the same three cases; for the
     // third, the scan did not find its file (decision R64).
-    const unpublishedUnderGuard = [...input.manifest]
+    const unpublishedUnderGuard = [...manifest]
         .filter(
             ([path, entry]) =>
                 entry.state === 'unpublished' &&
                 (guardOfPath(path, input.configuration) !== undefined ||
                     ignored.has(path) ||
+                    moves.underGuard.has(path) ||
                     (!notes.has(path) && movedUnderGuard(path)))
         )
         .map(([path]) => path)
@@ -336,6 +374,8 @@ export async function computeQueue(input: {
         },
         missing: sortByCodePoint(missing),
         new: sortByCodePoint(lists.new),
+        pairings: pairingsOf(missing, lists.new, manifest, notes),
+        renamed: moves.moves,
         technicalUpdates: sortByCodePoint(lists.technicalUpdates),
         toRemove: sortByCodePoint(lists.toRemove),
         unchanged: sortByCodePoint(lists.unchanged),
@@ -365,8 +405,158 @@ export async function computeQueue(input: {
                 return true
             }
         },
-        manifest: input.manifest,
+        manifest,
+        journals: input.journals,
+        renameWarnings: [...input.journals.warnings, ...moves.warnings],
         configuration: input.configuration,
         noteTypes
     }
+}
+
+/**
+ * The pairings of the queue (PUB-62): a source hash of exactly one published
+ * note of `missing` and of exactly one candidate that has no manifest entry.
+ */
+function pairingsOf(
+    missing: readonly string[],
+    candidates: readonly string[],
+    manifest: ReadonlyMap<string, ManifestEntry>,
+    notes: ReadonlyMap<string, ScannedNote>
+): Move[] {
+    const group = (paths: Iterable<[string, string]>): Map<string, string[]> => {
+        const groups = new Map<string, string[]>()
+        for (const [hash, path] of paths) {
+            groups.set(hash, [...(groups.get(hash) ?? []), path])
+        }
+        return groups
+    }
+    const gone = group(
+        missing.flatMap((path): [string, string][] => {
+            const hash = manifest.get(path)?.sourceHash
+            return hash === undefined ? [] : [[hash, path]]
+        })
+    )
+    const found = group(
+        candidates.flatMap((path): [string, string][] => {
+            const hash = notes.get(path)?.sourceHash
+            return hash === undefined || manifest.has(path) ? [] : [[hash, path]]
+        })
+    )
+    const pairings: Move[] = []
+    for (const [hash, [from, ...others]] of gone) {
+        const [to, ...more] = found.get(hash) ?? []
+        if (from !== undefined && to !== undefined && others.length === 0 && more.length === 0) {
+            pairings.push({ from, to })
+        }
+    }
+    return pairings.sort((one, two) => compareCodePoints(one.from, two.from))
+}
+
+/** The vault path of a note without `.md`: the text of its URL. */
+function withoutSuffix(path: string): string {
+    return path.slice(0, -'.md'.length)
+}
+
+/**
+ * The moves of the rename journals (`documentation/Canonical Form.md`, "The
+ * rename journal"): the entries at their last paths, the moves, the entries
+ * that moved under a guard (they stay, and are forced removals), and the
+ * warnings of the moves that do not happen.
+ */
+export function applyMoves(
+    entries: ReadonlyMap<string, ManifestEntry>,
+    folded: ReturnType<typeof foldMoves>,
+    vault: {
+        underGuard: (path: string) => boolean
+        inVault: (path: string) => boolean
+        isVaultName: (path: string) => boolean
+    }
+): {
+    readonly manifest: Map<string, ManifestEntry>
+    readonly moves: Move[]
+    readonly underGuard: Set<string>
+    readonly warnings: RenameWarning[]
+} {
+    const warnings: RenameWarning[] = [...folded.warnings]
+    const underGuard = new Set<string>()
+    const final = new Map<string, string>()
+    for (const from of sortByCodePoint([...entries.keys()])) {
+        const to = folded.positions.get(from) ?? from
+        final.set(from, from)
+        if (to === from) {
+            continue
+        }
+        if (vault.underGuard(to)) {
+            // The exact move under a guard: a forced removal (R40, R66).
+            underGuard.add(from)
+            continue
+        }
+        if ((vault.inVault(from) && !vault.inVault(to)) || !vault.isVaultName(to)) {
+            warnings.push({
+                path: from,
+                message: `the rename journal moves the note to "${to}", but the vault of this device does not show that move: it does not move, and it can show as a pairing`
+            })
+            continue
+        }
+        const name = withoutSuffix(to.slice(to.lastIndexOf('/') + 1))
+        if (isReservedRootName(name) || (to.includes('/') && isReservedRootName(firstPart(to)))) {
+            warnings.push({
+                path: from,
+                message: `the rename journal moves the note to "${to}", whose name is a reserved root name of the site: it does not move`
+            })
+            continue
+        }
+        final.set(from, to)
+    }
+    // Two entries at one path, or two published entries with one folded form:
+    // the entries of the group that moved do not move, until no such group is left.
+    for (let changed = true; changed;) {
+        changed = false
+        const groups = new Map<string, string[]>()
+        const add = (key: string, from: string): void => {
+            groups.set(key, [...(groups.get(key) ?? []), from])
+        }
+        for (const [from, to] of final) {
+            add(`path\n${to}`, from)
+            if (entries.get(from)?.state === 'published') {
+                add(`folded\n${foldedForm(withoutSuffix(to))}`, from)
+            }
+        }
+        for (const group of groups.values()) {
+            if (group.length < 2) {
+                continue
+            }
+            for (const from of group) {
+                const to = final.get(from)
+                if (to !== undefined && to !== from) {
+                    final.set(from, from)
+                    changed = true
+                    warnings.push({
+                        path: from,
+                        message: `the rename journal moves the note to "${to}", where another note of the manifest is, or one that the site gives the same URL: it does not move`
+                    })
+                }
+            }
+        }
+    }
+    const manifest = new Map<string, ManifestEntry>()
+    const moves: Move[] = []
+    for (const [from, to] of final) {
+        const entry = entries.get(from)
+        if (entry === undefined) {
+            continue
+        }
+        if (to === from) {
+            manifest.set(from, entry)
+        } else {
+            manifest.set(to, movedEntry(entry, to))
+            moves.push({ from, to })
+        }
+    }
+    return { manifest, moves, underGuard, warnings }
+}
+
+/** The entry of a note that moves: its new path, and its former paths (rule 4 of the moves). */
+export function movedEntry(entry: ManifestEntry, to: string): ManifestEntry {
+    return { ...entry, path: to, formerPaths: formerPathsAfter(entry.formerPaths, entry.path, to) }
 }
