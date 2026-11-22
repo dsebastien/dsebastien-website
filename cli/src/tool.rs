@@ -1345,8 +1345,21 @@ fn apply_store_moves(
     paths: &mut Vec<String>,
 ) -> Result<BTreeSet<String>, String> {
     let mut targets = BTreeSet::new();
+    let fail = |one: &Move, error: String| {
+        format!(
+            "the note \"{}\" could not be moved to \"{}\" in the content store: {error}",
+            one.from, one.to
+        )
+    };
+    let keeps =
+        |one: &Move| !plan.remove().contains(&one.to) && !plan.forced_remove().contains(&one.to);
+    // In three phases, so that a move into a path that another move leaves,
+    // and a swap, lose no text: every old text is read first, then the old
+    // files that no move writes again are removed, then the new files are
+    // written.
+    let mut steps: Vec<(&Move, ManifestEntry, Option<String>)> = Vec::new();
     for one in plan.moves() {
-        let mut step = || -> Result<(), String> {
+        let mut read = || -> Result<(ManifestEntry, Option<String>), String> {
             let entry = if scan.queue.renamed.contains(one) {
                 manifest.get(&one.to).cloned()
             } else {
@@ -1356,26 +1369,50 @@ fn apply_store_moves(
             }
             .ok_or("the note has no manifest entry")?;
             manifest.insert(one.to.clone(), entry.clone());
+            let text = if entry.state == State::Published {
+                let from = format!("{NOTES_FOLDER}/{}", one.from);
+                Some(
+                    device
+                        .store
+                        .read(&from)?
+                        .ok_or_else(|| format!("the copy has no {from}"))?,
+                )
+            } else {
+                None
+            };
+            Ok((entry, text))
+        };
+        let (entry, text) = read().map_err(|error| fail(one, error))?;
+        targets.insert(one.to.clone());
+        steps.push((one, entry, text));
+    }
+    let rewritten: BTreeSet<&String> = steps
+        .iter()
+        .filter(|(one, _, text)| text.is_some() && keeps(one))
+        .map(|(one, _, _)| &one.to)
+        .collect();
+    for (one, _, text) in &steps {
+        if text.is_some() && !rewritten.contains(&one.from) {
+            let removal = StoreFile {
+                path: format!("{NOTES_FOLDER}/{}", one.from),
+                text: None,
+            };
+            if journal.apply(&removal).map_err(|error| fail(one, error))? {
+                paths.push(removal.path);
+            }
+        }
+    }
+    for (one, entry, text) in &steps {
+        let mut write = || -> Result<(), String> {
             let mut files = vec![StoreFile {
                 path: manifest_file(&entry.id),
-                text: Some(canonical(&to_value(&entry)?)?),
+                text: Some(canonical(&to_value(entry)?)?),
             }];
-            if entry.state == State::Published {
-                let from = format!("{NOTES_FOLDER}/{}", one.from);
-                let text = device
-                    .store
-                    .read(&from)?
-                    .ok_or_else(|| format!("the copy has no {from}"))?;
+            if let Some(text) = text.as_ref().filter(|_| keeps(one)) {
                 files.push(StoreFile {
-                    path: from,
-                    text: None,
+                    path: format!("{NOTES_FOLDER}/{}", one.to),
+                    text: Some(text.clone()),
                 });
-                if !plan.remove().contains(&one.to) && !plan.forced_remove().contains(&one.to) {
-                    files.push(StoreFile {
-                        path: format!("{NOTES_FOLDER}/{}", one.to),
-                        text: Some(text),
-                    });
-                }
             }
             for file in &files {
                 if journal.apply(file)? {
@@ -1384,20 +1421,14 @@ fn apply_store_moves(
             }
             Ok(())
         };
-        step().map_err(|error| {
-            format!(
-                "the note \"{}\" could not be moved to \"{}\" in the content store: {error}",
-                one.from, one.to
-            )
-        })?;
-        targets.insert(one.to.clone());
+        write().map_err(|error| fail(one, error))?;
     }
     Ok(targets)
 }
 
 /// Writes the files of a plan into the copy, and commits and pushes them.
-/// The forced removals come first: when one fails, the whole publication
-/// stops. A note whose uploads or files fail is left out and reported
+/// The moves come first, then the forced removals: when one fails, the whole
+/// publication stops. A note whose uploads or files fail is left out and reported
 /// (PUB-26).
 fn write_all(
     device: &Device,
@@ -1410,8 +1441,8 @@ fn write_all(
     let Computed {
         plan, scan, texts, ..
     } = computed;
-    // The forced removals come first, and they are no unit of one note: a
-    // failure stops the whole publication.
+    // The moves and the forced removals are no unit of one note: a failure
+    // stops the whole publication.
     // The moves come first (R66): a forced removal can take the new path of a
     // move. Then the forced removals.
     let mut paths = Vec::new();
@@ -1528,7 +1559,7 @@ fn write_all(
 /// stopped halfway left. It computes the record of the plan again: when the
 /// new record is not the stored one, the plan is stale and nothing is
 /// published. The run journal is written before the first write into the
-/// copy. The forced removals come first: when one fails, nothing is
+/// copy. The moves and the forced removals come first: when one fails, nothing is
 /// published. Then the attachments go to the attachment storage, and the
 /// cleaned notes and the manifest entries go to the content store in one
 /// commit, which is pushed. A note whose uploads or files fail is left out and

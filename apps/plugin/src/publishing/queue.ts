@@ -495,7 +495,24 @@ export function applyMoves(
             continue
         }
         if (vault.underGuard(to)) {
-            // The exact move under a guard: a forced removal (R40, R66).
+            // The exact move under a guard: a forced removal (R40, R66), also
+            // when this device still has the file (the guards win). But a line
+            // that is older than the first publication of a note that this
+            // device still has cannot be about that note: a folder line moves
+            // every path below the folder, also of a note published later.
+            const time = folded.times.get(from) ?? ''
+            const entry = entries.get(from)
+            if (
+                vault.inVault(from) &&
+                entry !== undefined &&
+                compareCodePoints(time, entry.firstPublished) < 0
+            ) {
+                warnings.push({
+                    path: from,
+                    message: `the rename journal moves the note to "${to}", but its line is older than the first publication of the note, and this device still has the note: it does not move`
+                })
+                continue
+            }
             underGuard.add(from)
             continue
         }

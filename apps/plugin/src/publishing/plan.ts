@@ -98,7 +98,11 @@ function sortMoves(moves: readonly Move[]): Move[] {
 export function normalSelection(selection: Selection): NormalSelection {
     // A face can give data that the types do not hold: a pairing is an object
     // with exactly a text `from` and a text `to`.
-    for (const pairing of selection.pair ?? []) {
+    const pairs: unknown = selection.pair ?? []
+    if (!Array.isArray(pairs)) {
+        throw new SelectionError('the pairings of the selection are not a list')
+    }
+    for (const pairing of pairs as unknown[]) {
         const value: unknown = pairing
         if (
             typeof value !== 'object' ||

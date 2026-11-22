@@ -315,7 +315,12 @@ function merged(
 export function foldMoves(
     paths: Iterable<string>,
     lines: readonly JournalLine[]
-): { readonly positions: Map<string, string>; readonly warnings: RenameWarning[] } {
+): {
+    readonly positions: Map<string, string>
+    /** The time of the last line that moved each entry that moved. */
+    readonly times: Map<string, string>
+    readonly warnings: RenameWarning[]
+} {
     // The entry at each current path, and the current path of each entry.
     const at = new Map<string, string>()
     const positions = new Map<string, string>()
@@ -323,11 +328,13 @@ export function foldMoves(
         at.set(path, path)
         positions.set(path, path)
     }
+    const times = new Map<string, string>()
     const warnings: RenameWarning[] = []
-    const moveTo = (entry: string, from: string, to: string): void => {
+    const moveTo = (entry: string, from: string, to: string, time: string): void => {
         at.delete(from)
         at.set(to, entry)
         positions.set(entry, to)
+        times.set(entry, time)
     }
     for (const line of lines) {
         if (line.kind === 'note') {
@@ -342,7 +349,7 @@ export function foldMoves(
                 })
                 continue
             }
-            moveTo(entry, line.from, line.to)
+            moveTo(entry, line.from, line.to, line.time)
             continue
         }
         const prefix = `${line.from}/`
@@ -369,9 +376,10 @@ export function foldMoves(
         for (const [entry, , target] of moved) {
             at.set(target, entry)
             positions.set(entry, target)
+            times.set(entry, line.time)
         }
     }
-    return { positions, warnings }
+    return { positions, times, warnings }
 }
 
 /** The former paths of an entry that moves from `from` to `to`: without `to`, with `from` at the end. */

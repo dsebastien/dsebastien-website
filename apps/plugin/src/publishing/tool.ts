@@ -1118,7 +1118,7 @@ interface Unit {
 
 /**
  * Writes the files of a plan into the copy, and commits and pushes them. The
- * forced removals come first: when one fails, the whole publication stops. A
+ * moves and the forced removals come first: when one fails, the whole publication stops. A
  * note whose uploads or files fail is left out and reported (PUB-26).
  */
 async function writeAll(
@@ -1145,6 +1145,16 @@ async function writeAll(
     const journalMoves = new Set(scan.queue.renamed.map((move) => `${move.from}\n${move.to}`))
     const removing = new Set([...lists.remove, ...lists.forcedRemove])
     const targets = new Set<string>()
+    // In three phases, so that a move into a path that another move leaves,
+    // and a swap, lose no text: every old text is read first, then the old
+    // files that no move writes again are removed, then the new files are
+    // written.
+    const steps: { move: Move; entry: ManifestEntry; text: string | undefined }[] = []
+    const fail = (move: Move, error: unknown): Stop =>
+        new Stop(
+            `the note "${move.from}" could not be moved to "${move.to}" in the content store: ${messageOf(error)}`,
+            { cause: error }
+        )
     for (const move of lists.move) {
         try {
             let entry: ManifestEntry | undefined
@@ -1160,19 +1170,43 @@ async function writeAll(
             }
             manifest.set(move.to, entry)
             targets.add(move.to)
-            const files: StoreFile[] = [
-                { path: manifestFile(entry.id), text: toCanonicalJson(entry) }
-            ]
+            let text: string | undefined
             if (entry.state === 'published') {
                 const from = `${NOTES_FOLDER}/${move.from}`
-                const text = await device.store.read(from)
+                text = await device.store.read(from)
                 if (text === undefined) {
                     throw new Error(`the copy has no ${from}`)
                 }
-                files.push({ path: from, text: undefined })
-                if (!removing.has(move.to)) {
-                    files.push({ path: `${NOTES_FOLDER}/${move.to}`, text })
+            }
+            steps.push({ move, entry, text })
+        } catch (error) {
+            throw fail(move, error)
+        }
+    }
+    const rewritten = new Set(
+        steps
+            .filter((step) => step.text !== undefined && !removing.has(step.move.to))
+            .map((step) => step.move.to)
+    )
+    for (const { move, text } of steps) {
+        try {
+            if (text !== undefined && !rewritten.has(move.from)) {
+                const from = `${NOTES_FOLDER}/${move.from}`
+                if (await journal.apply({ path: from, text: undefined })) {
+                    written.push(from)
                 }
+            }
+        } catch (error) {
+            throw fail(move, error)
+        }
+    }
+    for (const { move, entry, text } of steps) {
+        try {
+            const files: StoreFile[] = [
+                { path: manifestFile(entry.id), text: toCanonicalJson(entry) }
+            ]
+            if (text !== undefined && !removing.has(move.to)) {
+                files.push({ path: `${NOTES_FOLDER}/${move.to}`, text })
             }
             for (const file of files) {
                 if (await journal.apply(file)) {
@@ -1180,10 +1214,7 @@ async function writeAll(
                 }
             }
         } catch (error) {
-            throw new Stop(
-                `the note "${move.from}" could not be moved to "${move.to}" in the content store: ${messageOf(error)}`,
-                { cause: error }
-            )
+            throw fail(move, error)
         }
     }
     // Then the forced removals, which follow the takedown rule: the

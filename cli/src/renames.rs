@@ -366,14 +366,20 @@ fn merged(journals: &[Vec<JournalLine>]) -> Vec<JournalLine> {
     }
 }
 
+/// The fold of the lines of the journals over the paths of the manifest.
+pub struct Fold {
+    /// The last path of each entry, by its path in the manifest.
+    pub positions: BTreeMap<String, String>,
+    /// The time of the last line that moved each entry that moved.
+    pub times: BTreeMap<String, String>,
+    pub warnings: Vec<RenameWarning>,
+}
+
 /// The path of each manifest path after the lines, by the fold of the moves,
 /// and the warnings. A note moves when it is at `from`, and a folder moves
 /// each path below it. A move to a path that another entry holds does not
 /// happen, with a warning.
-pub fn fold_moves(
-    paths: impl Iterator<Item = String>,
-    lines: &[JournalLine],
-) -> (BTreeMap<String, String>, Vec<RenameWarning>) {
+pub fn fold_moves(paths: impl Iterator<Item = String>, lines: &[JournalLine]) -> Fold {
     // The entry at each current path, and the current path of each entry.
     let mut at: BTreeMap<String, String> = BTreeMap::new();
     let mut positions: BTreeMap<String, String> = BTreeMap::new();
@@ -381,6 +387,7 @@ pub fn fold_moves(
         at.insert(path.clone(), path.clone());
         positions.insert(path.clone(), path);
     }
+    let mut times: BTreeMap<String, String> = BTreeMap::new();
     let mut warnings = Vec::new();
     let blocked = |entry: &str, from: &str, to: &str| RenameWarning {
         path: entry.to_owned(),
@@ -399,6 +406,7 @@ pub fn fold_moves(
             }
             at.remove(&line.from);
             at.insert(line.to.clone(), entry.clone());
+            times.insert(entry.clone(), line.time.clone());
             positions.insert(entry, line.to.clone());
             continue;
         }
@@ -424,10 +432,15 @@ pub fn fold_moves(
         }
         for (entry, _, target) in moved {
             at.insert(target.clone(), entry.clone());
+            times.insert(entry.clone(), line.time.clone());
             positions.insert(entry, target);
         }
     }
-    (positions, warnings)
+    Fold {
+        positions,
+        times,
+        warnings,
+    }
 }
 
 /// The former paths of an entry that moves from `from` to `to`: without

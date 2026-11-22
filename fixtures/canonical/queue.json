@@ -7865,6 +7865,277 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "a move into a path that another move leaves, and a swap of two notes, keep both texts (issue 37)",
+            "denyList": [],
+            "vault": {
+                "A.md": "Alpha\n",
+                "B.md": "Beta\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-09-01T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md", "B.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md", "B.md"],
+                        "published": ["A.md", "B.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian renames B.md to C.md, then A.md to B.md",
+                    "files": {
+                        "C.md": "---\npublic_note: true\n---\nBeta\n",
+                        "B.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"B.md\",\"kind\":\"note\",\"time\":\"2031-09-02T08:00:00Z\",\"to\":\"C.md\"}\n{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-09-02T09:00:00Z\",\"to\":\"B.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["A.md"]
+                },
+                {
+                    "do": "publish",
+                    "why": "both moves in one publication",
+                    "time": "2031-09-03T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "A.md",
+                                "to": "B.md"
+                            },
+                            {
+                                "from": "B.md",
+                                "to": "C.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "each note keeps its text at its new path",
+                    "vault": {},
+                    "store": {
+                        "notes/A.md": null,
+                        "notes/B.md": "Alpha\n",
+                        "notes/C.md": "Beta\n",
+                        "manifest/8b1ce6056b6f2c90.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-09-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"A.md\"\n  ],\n  \"id\": \"8b1ce6056b6f2c90\",\n  \"lastPublished\": \"2031-09-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"B.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/6ca60db576bf00f9.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-09-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"B.md\"\n  ],\n  \"id\": \"6ca60db576bf00f9\",\n  \"lastPublished\": \"2031-09-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"C.md\",\n  \"sourceHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian swaps the two names through a third one",
+                    "files": {
+                        "B.md": "---\npublic_note: true\n---\nBeta\n",
+                        "C.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"B.md\",\"kind\":\"note\",\"time\":\"2031-09-02T08:00:00Z\",\"to\":\"C.md\"}\n{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-09-02T09:00:00Z\",\"to\":\"B.md\"}\n{\"from\":\"B.md\",\"kind\":\"note\",\"time\":\"2031-09-04T08:00:00Z\",\"to\":\"T.md\"}\n{\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-09-04T09:00:00Z\",\"to\":\"B.md\"}\n{\"from\":\"T.md\",\"kind\":\"note\",\"time\":\"2031-09-04T10:00:00Z\",\"to\":\"C.md\"}\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the swap",
+                    "time": "2031-09-05T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "B.md",
+                                "to": "C.md"
+                            },
+                            {
+                                "from": "C.md",
+                                "to": "B.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the two texts are swapped, and none is lost",
+                    "vault": {},
+                    "store": {
+                        "notes/B.md": "Beta\n",
+                        "notes/C.md": "Alpha\n",
+                        "notes/T.md": null,
+                        "manifest/8b1ce6056b6f2c90.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-09-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"A.md\",\n    \"B.md\"\n  ],\n  \"id\": \"8b1ce6056b6f2c90\",\n  \"lastPublished\": \"2031-09-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"C.md\",\n  \"sourceHash\": \"sha256:90c877f65b3141d28d51619fd2bbc862c49c48be4fab42386062f532e27e4fd6\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/6ca60db576bf00f9.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-09-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"C.md\"\n  ],\n  \"id\": \"6ca60db576bf00f9\",\n  \"lastPublished\": \"2031-09-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"B.md\",\n  \"sourceHash\": \"sha256:977fe4f3da44d8d29129d1135c219221a22a721b6c89862af2178da577ef9b4a\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a folder line into a folder of the deny list takes no note that was published after the line (issue 37)",
+            "denyList": ["Archive"],
+            "vault": {
+                "P/Old.md": "Old\n",
+                "Archive/Kept.md": "Kept\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-09-01T08:00:00Z",
+                    "selection": {
+                        "include": ["P/Old.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["P/Old.md"],
+                        "published": ["P/Old.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "this device did not get the move of the folder yet, and the author writes a new note in it",
+                    "files": {
+                        "P/New.md": "New\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "its publication, after the time of the line of the other device",
+                    "time": "2031-09-03T08:00:00Z",
+                    "selection": {
+                        "include": ["P/New.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["P/New.md"],
+                        "published": ["P/New.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the move of the other device arrives: the old note is in the folder of the deny list, the new one stays",
+                    "files": {
+                        "Archive/P/Old.md": "---\npublic_note: true\n---\nOld\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"P\",\"kind\":\"folder\",\"time\":\"2031-09-02T08:00:00Z\",\"to\":\"Archive/P\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["P/Old.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the old note is a forced removal; the line cannot be about the note published after it",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 1,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["P/Old.md"],
+                        "unchanged": ["P/New.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication removes the old note, and warns about the new one",
+                    "time": "2031-09-04T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": ["P/Old.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["P/New.md"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the new note stays live",
+                    "vault": {
+                        "P/New.md": "---\npublic_note: true\n---\nNew\n"
+                    },
+                    "store": {
+                        "notes/P/Old.md": null,
+                        "notes/P/New.md": "New\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:0f0038019874db3c2659beaa3aa34c2b6642157739f1da9bb8afb854358482a2\",\n    \"lines\": 1\n  }\n}\n"
+                    }
+                }
+            ]
         }
     ]
 }

@@ -18,7 +18,7 @@ use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
 use crate::names::{first_part, folded_form, is_reserved_root_name};
 use crate::note_types::{NoteType, StarterKit, note_types_of};
-use crate::renames::{JournalState, RenameWarning, fold_moves, former_paths_after};
+use crate::renames::{Fold, JournalState, RenameWarning, fold_moves, former_paths_after};
 use crate::small_letters::guard_name;
 
 /// A move of a manifest entry: from its path to its new path.
@@ -393,7 +393,7 @@ pub fn compute_queue(
     kit: &StarterKit,
 ) -> Result<Scan, String> {
     let folded = fold_moves(entries.keys().cloned(), &journals.lines);
-    let published_paths = published_paths_of(entries, &folded.0);
+    let published_paths = published_paths_of(entries, &folded.positions);
     let (scanned, others) = scan_vault(vault, &configuration)?;
     let ScannedNotes {
         notes,
@@ -640,7 +640,11 @@ struct Moves {
 /// that moved under a guard, and the warnings of the moves that do not happen.
 fn apply_moves(
     entries: &BTreeMap<String, ManifestEntry>,
-    (positions, fold_warnings): (BTreeMap<String, String>, Vec<RenameWarning>),
+    Fold {
+        positions,
+        times,
+        warnings: fold_warnings,
+    }: Fold,
     under_guard_at: impl Fn(&str) -> bool,
     in_vault: impl Fn(&str) -> bool,
 ) -> Moves {
@@ -657,7 +661,24 @@ fn apply_moves(
             continue;
         }
         if under_guard_at(&to) {
-            // The exact move under a guard: a forced removal (R40, R66).
+            // The exact move under a guard: a forced removal (R40, R66), also
+            // when this device still has the file (the guards win). But a
+            // line that is older than the first publication of a note that
+            // this device still has cannot be about that note: a folder line
+            // moves every path below the folder, also of a note published
+            // later.
+            let older = times.get(from).is_some_and(|time| {
+                entries
+                    .get(from)
+                    .is_some_and(|entry| *time < entry.first_published)
+            });
+            if in_vault(from) && older {
+                warnings.push(RenameWarning {
+                    path: from.clone(),
+                    message: not_moved(&to, "but its line is older than the first publication of the note, and this device still has the note: it does not move"),
+                });
+                continue;
+            }
             under_guard.insert(from.clone());
             continue;
         }
@@ -686,14 +707,42 @@ fn apply_moves(
         }
         last.insert(from.clone(), to);
     }
-    // Two entries at one path, or two published entries with one folded form:
-    // the entries of the group that moved do not move, until no such group is
-    // left.
+    revert_collisions(entries, &mut last, &mut warnings, &not_moved);
+    let mut manifest = BTreeMap::new();
+    let mut moves = Vec::new();
+    for (from, to) in last {
+        let Some(entry) = entries.get(&from) else {
+            continue;
+        };
+        if to == from {
+            manifest.insert(from, entry.clone());
+        } else {
+            manifest.insert(to.clone(), moved_entry(entry, &to));
+            moves.push(Move { from, to });
+        }
+    }
+    Moves {
+        manifest,
+        applied: moves,
+        under_guard,
+        warnings,
+    }
+}
+
+/// Two entries at one path, or two published entries with one folded form:
+/// the entries of the group that moved do not move, until no such group is
+/// left (rule 5 of the moves).
+fn revert_collisions(
+    entries: &BTreeMap<String, ManifestEntry>,
+    last: &mut BTreeMap<String, String>,
+    warnings: &mut Vec<RenameWarning>,
+    not_moved: &dyn Fn(&str, &str) -> String,
+) {
     let mut changed = true;
     while changed {
         changed = false;
         let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (from, to) in &last {
+        for (from, to) in last.iter() {
             groups
                 .entry(format!("path\n{to}"))
                 .or_default()
@@ -721,25 +770,6 @@ fn apply_moves(
                 }
             }
         }
-    }
-    let mut manifest = BTreeMap::new();
-    let mut moves = Vec::new();
-    for (from, to) in last {
-        let Some(entry) = entries.get(&from) else {
-            continue;
-        };
-        if to == from {
-            manifest.insert(from, entry.clone());
-        } else {
-            manifest.insert(to.clone(), moved_entry(entry, &to));
-            moves.push(Move { from, to });
-        }
-    }
-    Moves {
-        manifest,
-        applied: moves,
-        under_guard,
-        warnings,
     }
 }
 
