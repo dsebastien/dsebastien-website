@@ -186,7 +186,9 @@ enum Command {
     /// warning: a file that stays there can still be public. Each takedown
     /// first deletes the files of the storage that no published note uses.
     Takedown {
-        /// The folder of the vault.
+        /// The folder of the vault. The takedown reads only the named notes
+        /// in it, to remove their `public_note` property: on a device with
+        /// no copy of the vault, an empty folder works.
         #[arg(long)]
         vault: PathBuf,
 
@@ -199,8 +201,11 @@ enum Command {
         #[arg(long, value_name = "FOLDER")]
         attachment_storage: PathBuf,
 
-        /// The vault path of a note to take down, as the manifest names it.
-        /// Give the option one time per note.
+        /// The vault path of a note to take down, exactly as the manifest
+        /// names it (letter case, Unicode form, the end `.md`). A path that
+        /// the manifest does not name stops the whole takedown, and the
+        /// message names the paths of the manifest that it is close to. Give
+        /// the option one time per note.
         #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
         path: Vec<String>,
 

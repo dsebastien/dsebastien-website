@@ -4755,7 +4755,23 @@
                     "paths": ["Notes/Plan.md"],
                     "time": "2031-06-02T08:00:00Z",
                     "refused": true,
-                    "says": "has no manifest entry"
+                    "says": "is the path of no manifest entry"
+                },
+                {
+                    "do": "takedown",
+                    "why": "a path in another letter case is refused, and the refusal names the path of the manifest: a takedown never guesses",
+                    "paths": ["notes/shed.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "The manifest names: \"Notes/Shed.md\""
+                },
+                {
+                    "do": "takedown",
+                    "why": "so is a path without the end .md",
+                    "paths": ["Notes/Shed"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "The manifest names: \"Notes/Shed.md\""
                 },
                 {
                     "do": "takedown",
@@ -5160,7 +5176,7 @@
                     "paths": ["Notes/Plan.md"],
                     "time": "2031-06-05T08:00:00Z",
                     "refused": true,
-                    "says": "has no manifest entry"
+                    "says": "is the path of no manifest entry"
                 },
                 {
                     "do": "expect",

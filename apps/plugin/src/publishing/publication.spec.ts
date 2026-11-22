@@ -779,7 +779,7 @@ describe('takedown', () => {
 
         const refusal = await rejectionOf(takedown(setup.device, [SECOND], LATER))
 
-        expect(refusal).toContain('has no manifest entry')
+        expect(refusal).toContain('is the path of no manifest entry')
         expect(refusal).toContain(
             `The takedown deleted 1 file(s) of the attachment storage that no published note uses: ${key}`
         )

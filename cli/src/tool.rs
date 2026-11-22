@@ -25,6 +25,7 @@ use crate::links::{NoteLink, links_of};
 use crate::manifest::{
     MANIFEST_FOLDER, ManifestEntry, NOTES_FOLDER, State, manifest_file, note_id, read_manifest,
 };
+use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, compute_plan};
@@ -1529,14 +1530,7 @@ fn apply_current(
 
     let mut journal = Backup::new(&device.store);
     let mut uploads = Uploads::new(&device.vault, storage);
-    let written = match write_all(
-        device,
-        &mut journal,
-        &mut uploads,
-        current,
-        run,
-        commit,
-    ) {
+    let written = match write_all(device, &mut journal, &mut uploads, current, run, commit) {
         Ok(written) => written,
         // Another run took the copy: this run touches nothing of it any more,
         // or it would put its files back over the work of the other run.
@@ -1807,7 +1801,8 @@ fn take_down_locked(
     for path in named {
         let entry = manifest.get(path).ok_or_else(|| {
             format!(
-                "\"{path}\" has no manifest entry: it is not published and not unpublished, so there is nothing to take down{}",
+                "\"{path}\" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down{}{}",
+                near_paths(path, &manifest),
                 cleanup_lines(&early)
             )
         })?;
@@ -1959,31 +1954,73 @@ fn after_push(
 /// The warnings of the two cleanups of a takedown, each one time. A warning
 /// of the first cleanup about a file that the second one deleted is left out.
 fn merge_warnings(early: &Cleanup, late: &Cleanup) -> Vec<Value> {
+    let deleted: BTreeSet<&str> = late.deleted.iter().map(String::as_str).collect();
+    let mut seen = BTreeSet::new();
     let mut merged: Vec<Value> = Vec::new();
     for warning in early.warnings.iter().chain(&late.warnings) {
-        let deleted = warning["path"]
-            .as_str()
-            .is_some_and(|path| late.deleted.iter().any(|key| key == path));
-        if !deleted && !merged.contains(warning) {
+        let path = warning["path"].as_str().unwrap_or_default();
+        let key = (path.to_owned(), warning["message"].to_string());
+        if !deleted.contains(path) && seen.insert(key) {
             merged.push(warning.clone());
         }
     }
     merged
 }
 
+/// The paths of the manifest that a path names in another letter case or
+/// Unicode form, or without its end `.md`, as the end of the message of a
+/// refusal. The site resolves such an address to the note, so the refusal
+/// must never read as "already gone". A folded form names one note at most
+/// (URL contract, rule 9).
+fn near_paths(path: &str, manifest: &BTreeMap<String, ManifestEntry>) -> String {
+    let typed = path.trim();
+    let forms = [folded_form(typed), folded_form(&format!("{typed}.md"))];
+    // The map gives its keys in the order of the code points.
+    let near: Vec<String> = manifest
+        .keys()
+        .filter(|key| forms.contains(&folded_form(key)))
+        .map(|key| format!("\"{key}\""))
+        .collect();
+    if near.is_empty() {
+        String::new()
+    } else {
+        format!(". The manifest names: {}", near.join(", "))
+    }
+}
+
+/// The most lines of a list in the message of a refusal.
+const MOST_LINES: usize = 20;
+
 /// What the first cleanup of a takedown did, as the end of the message of a
 /// refusal.
 fn cleanup_lines(early: &Cleanup) -> String {
+    let more = |count: usize| {
+        if count > MOST_LINES {
+            format!(", and {} more", count - MOST_LINES)
+        } else {
+            String::new()
+        }
+    };
     let deleted = if early.deleted.is_empty() {
         String::new()
     } else {
         format!(
-            "\nThe takedown deleted {} file(s) of the attachment storage that no published note uses: {}",
+            "\nThe takedown deleted {} file(s) of the attachment storage that no published note uses: {}{}",
             early.deleted.len(),
-            early.deleted.join(", ")
+            early.deleted[..early.deleted.len().min(MOST_LINES)].join(", "),
+            more(early.deleted.len())
         )
     };
-    format!("{deleted}{}", warning_lines(&early.warnings))
+    let warnings = warning_lines(&early.warnings[..early.warnings.len().min(MOST_LINES)]);
+    let hidden = if early.warnings.len() > MOST_LINES {
+        format!(
+            "\n- and {} more warnings",
+            early.warnings.len() - MOST_LINES
+        )
+    } else {
+        String::new()
+    };
+    format!("{deleted}{warnings}{hidden}")
 }
 
 /// Removes the state property of the notes that were taken down, when the

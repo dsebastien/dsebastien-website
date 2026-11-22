@@ -1568,7 +1568,10 @@ fn a_takedown_of_a_path_with_no_entry_says_what_its_cleanup_of_the_storage_delet
 
     assert_eq!(output.status.code(), Some(1));
     let errors = errors_of(&output);
-    assert!(errors.contains("has no manifest entry"), "{errors}");
+    assert!(
+        errors.contains("is the path of no manifest entry"),
+        "{errors}"
+    );
     assert!(
         errors.contains(&format!(
             "The takedown deleted 1 file(s) of the attachment storage that no published note uses: {key}"

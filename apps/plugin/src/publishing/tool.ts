@@ -20,6 +20,7 @@ import type { NoteLink } from './links.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
 import type { NoteType } from './note-types.ts'
+import { foldedForm } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
@@ -1327,7 +1328,7 @@ async function takeDownLocked(
         const entry = manifest.get(path)
         if (entry === undefined) {
             throw new Error(
-                `"${path}" has no manifest entry: it is not published and not unpublished, so there is nothing to take down${cleanupLines(early)}`
+                `"${path}" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down${nearPaths(path, manifest)}${cleanupLines(early)}`
             )
         }
         return entry
@@ -1430,28 +1431,54 @@ function mergeWarnings(
     }
 ): { path: string; message: string }[] {
     const deleted = new Set(late.deleted)
+    const seen = new Set<string>()
     const merged: { path: string; message: string }[] = []
     for (const warning of [...early.warnings, ...late.warnings]) {
-        const known = merged.some(
-            (one) => one.path === warning.path && one.message === warning.message
-        )
-        if (!known && !deleted.has(warning.path)) {
+        const key = `${warning.path}\n${warning.message}`
+        if (!seen.has(key) && !deleted.has(warning.path)) {
+            seen.add(key)
             merged.push(warning)
         }
     }
     return merged
 }
 
+/**
+ * The paths of the manifest that a path names in another letter case or
+ * Unicode form, or without its end `.md`, as the end of the message of a
+ * refusal. The site resolves such an address to the note, so the refusal
+ * must never read as "already gone". A folded form names one note at most
+ * (URL contract, rule 9).
+ */
+function nearPaths(path: string, manifest: ReadonlyMap<string, ManifestEntry>): string {
+    const typed = path.trim()
+    const forms = new Set([foldedForm(typed), foldedForm(`${typed}.md`)])
+    const near = sortByCodePoint([...manifest.keys()].filter((key) => forms.has(foldedForm(key))))
+    return near.length === 0
+        ? ''
+        : `. The manifest names: ${near.map((key) => `"${key}"`).join(', ')}`
+}
+
+/** The most lines of a list in the message of a refusal. */
+const MOST_LINES = 20
+
 /** What the first cleanup of a takedown did, as the end of the message of a refusal. */
 function cleanupLines(early: {
     readonly deleted: readonly string[]
     readonly warnings: readonly { path: string; message: string }[]
 }): string {
+    const more = (count: number): string =>
+        count > MOST_LINES ? `, and ${String(count - MOST_LINES)} more` : ''
     const deleted =
         early.deleted.length === 0
             ? ''
-            : `\nThe takedown deleted ${String(early.deleted.length)} file(s) of the attachment storage that no published note uses: ${early.deleted.join(', ')}`
-    return `${deleted}${warningLines(early.warnings)}`
+            : `\nThe takedown deleted ${String(early.deleted.length)} file(s) of the attachment storage that no published note uses: ${early.deleted.slice(0, MOST_LINES).join(', ')}${more(early.deleted.length)}`
+    const warnings = warningLines(early.warnings.slice(0, MOST_LINES))
+    const hidden =
+        early.warnings.length > MOST_LINES
+            ? `\n- and ${String(early.warnings.length - MOST_LINES)} more warnings`
+            : ''
+    return `${deleted}${warnings}${hidden}`
 }
 
 /**
