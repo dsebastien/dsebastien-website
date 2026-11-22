@@ -230,6 +230,13 @@ describe('the ways to the search page', () => {
         expect(select('header [data-mode-switch]', page)?.properties['hidden']).toBe(true)
     })
 
+    test('the style sheet keeps the space of the scroll bar from the first paint (CLS, R57)', async () => {
+        const page = await served(canonicalPath(BARREL))
+        const sheet = String(select('link[rel="stylesheet"]', page)?.properties['href'])
+        const css = await readFile(join(built().dir, sheet), 'utf8')
+        expect(css).toMatch(/html\{[^}]*scrollbar-gutter:stable/u)
+    })
+
     test('the home page and the "not found" page have a search form that opens it', async () => {
         for (const path of ['/', '/no/such/page']) {
             const form = select('main form[role="search"]', await served(path))

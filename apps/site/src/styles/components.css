@@ -26,9 +26,13 @@
         cursor: not-allowed;
     }
 
-    /* The sticky header never hides the target of a link or the focus (WCAG 2.4.11). */
+    /* The sticky header never hides the target of a link or the focus (WCAG 2.4.11).
+       The space of the scroll bar is kept from the first paint: a page that
+       paints before all of its text arrived gets its scroll bar later, and the
+       centered layout moved by its width (a layout shift of 0.037, R57). */
     html {
         scroll-padding-top: 5rem;
+        scrollbar-gutter: stable;
     }
 
     :focus-visible {
