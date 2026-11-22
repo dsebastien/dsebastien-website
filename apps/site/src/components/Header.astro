@@ -7,6 +7,8 @@ import { SITE_NAME } from '../site.ts'
 // name leads home, the link to the search page (SRCH-01, R63: a plain link,
 // so a page loads nothing of the search), and the switch of the mode (NAV-01,
 // MODE-01). On a small screen the link shows its icon, and its name stays.
+// The switch comes first: it is hidden until its script runs, and it shows in
+// the free space at the left, so nothing moves (CLS, R57).
 const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '/-/search.html'
 ---
 
@@ -22,6 +24,7 @@ const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '
             <span>{SITE_NAME}</span>
         </a>
         <div class='ml-auto flex items-center gap-2'>
+            <ModeSwitch />
             <a
                 class='button-quiet h-9 min-w-9 px-2 sm:px-3'
                 href={SEARCH_PATH}
@@ -41,7 +44,6 @@ const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '
                 </svg>
                 <span class='sr-only sm:not-sr-only'>Search</span>
             </a>
-            <ModeSwitch />
         </div>
     </div>
 </header>

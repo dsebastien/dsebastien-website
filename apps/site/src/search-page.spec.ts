@@ -217,6 +217,22 @@ describe('the ways to the search page', () => {
         }
     })
 
+    test('the link of the header does not move when the switch of the mode shows (CLS, R57)', async () => {
+        // The switch is hidden until its script runs at the end of the page:
+        // nothing may stand after it in the row that it widens.
+        const page = await served(canonicalPath(BARREL))
+        const link = select('header [data-search-link]', page)
+        const row = selectAll('header div', page).find((element) =>
+            element.children.some((child) => child === link)
+        )
+        const items = (row?.children ?? []).filter((child) => child.type === 'element')
+        expect(items.map((item) => (item.type === 'element' ? item.tagName : ''))).toEqual([
+            'button',
+            'a'
+        ])
+        expect(select('header [data-mode-switch]', page)?.properties['hidden']).toBe(true)
+    })
+
     test('the home page and the "not found" page have a search form that opens it', async () => {
         for (const path of ['/', '/no/such/page']) {
             const form = select('main form[role="search"]', await served(path))
