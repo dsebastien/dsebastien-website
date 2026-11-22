@@ -21,7 +21,7 @@ These rules MUST be respected in all implementations, unless the author approves
 13. **This repository is public.** See the privacy section of `AGENTS.md`.
 14. **Properties.** Until an allow list per property key exists, every property of a published note is public. When an allow list exists, a property that is not on it never reaches any output.
 15. **Personal data of other people.** The properties of person notes are public for now, by decision of the author. The rule is reviewed when the allow list of rule 14 exists.
-16. **A takedown removes everything.** The page, the Markdown, the images, and every derived file, and it does not wait for a normal publication.
+16. **A takedown removes everything.** The page, the Markdown, the images, and every derived file, and it does not wait for a normal publication. A removal never blocks a build: a check of the built site that a takedown or an unpublish can fail by itself gives a warning, not a stop (R65).
 17. **Two implementations, one result.** For the same input, the TypeScript and the Rust implementation of the publishing logic write the same bytes in the canonical form (`Canonical Form.md`): the publication plan, the cleaned notes and the manifest. A change lands in both in the same commit. A parity test that fails blocks a release (ADR 0009).
 18. **The raw Markdown shows what the page shows.** The raw Markdown of a note (`/-/md/<path>.md`) is its cleaned note. Every filter of the page of a note (an allow list of properties, a content check, a hidden title) filters its raw Markdown in the same way, in the same step (decision of the author, R47).
 

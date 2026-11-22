@@ -14,6 +14,8 @@ minimumReleaseAge = 259200
 minimumReleaseAgeExcludes = ["@types/bun", "bun-types", "typescript"]
 
 [test]
+# Every build of the site that a test starts runs its checks in the strict mode.
+preload = ["./scripts/test-environment.ts"]
 coverage = false
 onlyFailures = true
 

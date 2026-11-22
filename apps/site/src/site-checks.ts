@@ -8,7 +8,15 @@ import type { AstroIntegration } from 'astro'
 // indexable page has a title and a description, no two indexable pages share
 // a title or a description, every indexable note is reachable from the home
 // page in at most four plain links, and no internal link of a page leads to
-// the "not found" page. A finding stops the build.
+// the "not found" page or to the gone page. A missing or shared title or
+// description stops the build. A note too far from the home page and a link
+// to no page are warnings (decision of the author R65): a takedown or an
+// unpublish can cause them alone, and a removal must never block a build. The
+// tests build in the strict mode (`SITE_CHECKS=strict`), where every finding
+// stops the build, so a change of the code that breaks a rule is caught.
+
+/** The name of the variable of the environment that gives the mode of the checks. */
+export const SITE_CHECKS_MODE = 'SITE_CHECKS'
 
 /** The most links from the home page to an indexable note (NAV-07). */
 export const MOST_LINKS_TO_A_NOTE = 4
@@ -60,6 +68,12 @@ export function readBuiltPage(html: string): BuiltPage {
     }
 }
 
+/** The findings of the checks: the ones that stop every build, and the warnings. */
+export interface Findings {
+    readonly stops: readonly string[]
+    readonly warnings: readonly string[]
+}
+
 /**
  * The findings of the checks on the pages of a site, by their files.
  *
@@ -73,8 +87,9 @@ export function siteFindings(
     home: string,
     notes: ReadonlySet<string>,
     targetOf: (link: string) => LinkTarget
-): string[] {
+): Findings {
     const findings: string[] = []
+    const warnings: string[] = []
     const targets = new Map<string, LinkTarget>()
     const target = (link: string): LinkTarget => {
         const known = targets.get(link) ?? targetOf(link)
@@ -108,7 +123,7 @@ export function siteFindings(
     for (const [file, page] of pages) {
         for (const link of new Set(page.links)) {
             if (target(link).kind === 'missing') {
-                findings.push(`${file} links to "${link}", which leads to no page`)
+                warnings.push(`${file} links to "${link}", which leads to no page`)
             }
         }
     }
@@ -130,12 +145,33 @@ export function siteFindings(
     }
     for (const file of notes) {
         if (pages.get(file)?.indexable === true && !depth.has(file)) {
-            findings.push(
+            warnings.push(
                 `${file} is an indexable note that the home page does not reach in ${String(MOST_LINKS_TO_A_NOTE)} links`
             )
         }
     }
-    return findings
+    return { stops: findings, warnings }
+}
+
+/**
+ * The verdict on the findings of a build: it throws when a finding stops the
+ * build, and in the strict mode of the tests also on a warning. Else each
+ * warning goes to the logger.
+ */
+export function judgeFindings(
+    findings: Findings,
+    strict: boolean,
+    logger: { warn(text: string): void }
+): void {
+    const stops = strict ? [...findings.stops, ...findings.warnings] : findings.stops
+    if (stops.length > 0) {
+        throw new Error(
+            `the built site breaks ${String(stops.length)} rule(s) of IDX-04, IDX-05, NAV-07 and its links:\n${stops.slice(0, 20).join('\n')}`
+        )
+    }
+    for (const warning of findings.warnings) {
+        logger.warn(warning)
+    }
 }
 
 /** Where a link of a page leads, through the resolver, after one redirect at most. */
@@ -158,7 +194,7 @@ export function fileOfLink(link: string, map: ResolverMap): LinkTarget {
     }
 }
 
-/** The checks of the built site, after a build. A finding stops the build. */
+/** The checks of the built site, after a build. */
 export function siteChecks(): AstroIntegration {
     return {
         name: 'site-checks',
@@ -188,13 +224,11 @@ export function siteChecks(): AstroIntegration {
                     notes,
                     (link) => fileOfLink(link, map)
                 )
-                if (findings.length > 0) {
-                    throw new Error(
-                        `the built site breaks ${String(findings.length)} rule(s) of IDX-04, IDX-05, NAV-07 and its links:\n${findings.slice(0, 20).join('\n')}`
-                    )
-                }
+                judgeFindings(findings, process.env[SITE_CHECKS_MODE] === 'strict', logger)
                 logger.info(
-                    `${String(pages.size)} pages: titles and descriptions unique, every indexable note within ${String(MOST_LINKS_TO_A_NOTE)} links of the home page, no link to a missing page`
+                    findings.warnings.length === 0
+                        ? `${String(pages.size)} pages: titles and descriptions unique, every indexable note within ${String(MOST_LINKS_TO_A_NOTE)} links of the home page, no link to a missing page`
+                        : `${String(pages.size)} pages: titles and descriptions unique, ${String(findings.warnings.length)} warning(s) of NAV-07 and the links`
                 )
             }
         }
