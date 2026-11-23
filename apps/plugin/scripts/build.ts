@@ -80,6 +80,8 @@ async function build(): Promise<void> {
         throw: true
     })
     await Bun.write(join(outDir, 'manifest.json'), Bun.file('manifest.json'))
+    // The style sheet of the publication center: Obsidian loads `styles.css`.
+    await Bun.write(join(outDir, 'styles.css'), Bun.file('styles.css'))
 }
 
 async function isFolder(path: string): Promise<boolean> {

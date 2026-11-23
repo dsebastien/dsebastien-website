@@ -1,0 +1,165 @@
+/*
+ * The publication center of Vault Publish (issue 39). Only the variables of
+ * the theme of Obsidian: the view follows the theme and the mode of the vault.
+ * Every part wraps, so the view also works in a narrow pane.
+ */
+
+.vault-publish-center {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2);
+    height: 100%;
+}
+
+.vault-publish-header,
+.vault-publish-filters,
+.vault-publish-summary,
+.vault-publish-footer,
+.vault-publish-tabs,
+.vault-publish-behind {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.vault-publish-state {
+    flex: 1 1 auto;
+    color: var(--text-muted);
+}
+
+.vault-publish-behind,
+.vault-publish-error {
+    flex-basis: 100%;
+    padding: var(--size-4-2);
+    border-radius: var(--radius-s);
+    border: 1px solid var(--background-modifier-error);
+    color: var(--text-normal);
+}
+
+.vault-publish-tab.is-active {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.vault-publish-filters input {
+    flex: 1 1 12em;
+    min-width: 0;
+}
+
+.vault-publish-summary {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.vault-publish-technical {
+    flex-basis: 100%;
+}
+
+.vault-publish-scroller {
+    flex: 1 1 18em;
+    min-height: 12em;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+}
+
+.vault-publish-spacer {
+    position: relative;
+}
+
+.vault-publish-rows {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+}
+
+.vault-publish-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+    padding-inline: var(--size-4-2);
+    box-sizing: border-box;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.vault-publish-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.vault-publish-box {
+    display: inline-block;
+    width: var(--checkbox-size, 1em);
+}
+
+.vault-publish-path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-normal);
+    cursor: pointer;
+}
+
+.vault-publish-note {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.vault-publish-empty {
+    padding: var(--size-4-4);
+    color: var(--text-muted);
+}
+
+.vault-publish-section-title {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--size-4-2);
+    font-weight: var(--font-semibold);
+}
+
+.vault-publish-pairing {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.vault-publish-panel,
+.vault-publish-moves {
+    padding: var(--size-4-2);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    overflow-wrap: anywhere;
+}
+
+.vault-publish-busy {
+    color: var(--text-muted);
+}
+
+.vault-publish-log {
+    max-height: 12em;
+    overflow-y: auto;
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+}
+
+.vault-publish-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-2-2);
+}
+
+.vault-publish-status-icon {
+    display: inline-flex;
+}
+
+.vault-publish-measures {
+    white-space: pre-wrap;
+    user-select: text;
+}

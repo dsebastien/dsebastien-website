@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // Acceptance criterion of issue 29: the plugin loads in a test vault. Since
-// issue 37 it adds one thing to Obsidian: it records the renames of the vault
-// in the rename journal of the device.
+// issue 37 it records the renames of the vault in the rename journal of the
+// device, and since issue 39 it adds the publication center: a view, its
+// commands, a settings tab and a status bar item. It runs no check at load.
 //
 // The test builds the plugin as a release and loads the bundle the way
 // Obsidian does: it requires `main.js`, makes the default export with an app
@@ -35,6 +36,8 @@ const REGISTRATIONS = [
 ] as const
 
 const calls: string[] = []
+/** The first argument of each registration, by its method. */
+const registered = new Map<string, unknown[]>()
 
 class Plugin {
     constructor(
@@ -42,6 +45,46 @@ class Plugin {
         readonly manifest: unknown
     ) {}
 }
+
+/** An element of the status bar: the test keeps its texts. */
+class StandInElement {
+    readonly texts: string[] = []
+    readonly attributes = new Map<string, string>()
+    hidden = false
+    addClass(): void {}
+    empty(): void {
+        this.texts.length = 0
+    }
+    hide(): void {
+        this.hidden = true
+    }
+    show(): void {
+        this.hidden = false
+    }
+    createSpan(options?: { text?: string }): StandInElement {
+        if (options?.text !== undefined) {
+            this.texts.push(options.text)
+        }
+        return new StandInElement()
+    }
+    setAttribute(name: string, value: string): void {
+        this.attributes.set(name, value)
+    }
+}
+const statusBar = new StandInElement()
+
+/** The classes of Obsidian that the plugin extends: the test never makes one. */
+class StandIn {
+    readonly standIn = true
+}
+class ItemView extends StandIn {}
+class Modal extends StandIn {}
+class FuzzySuggestModal extends StandIn {}
+class AbstractInputSuggest extends StandIn {}
+class Menu extends StandIn {}
+class Setting extends StandIn {}
+class PluginSettingTab extends StandIn {}
+function setIcon(): void {}
 
 /** A folder of the vault, for the check `instanceof TFolder` of the plugin. */
 class TFolder {
@@ -63,10 +106,12 @@ class Notice {
         notices.splice(notices.indexOf(this.message), 1)
     }
 }
-for (const name of REGISTRATIONS) {
+for (const name of [...REGISTRATIONS, 'register'] as const) {
     Object.defineProperty(Plugin.prototype, name, {
-        value: () => {
+        value: (first: unknown) => {
             calls.push(name)
+            registered.set(name, [...(registered.get(name) ?? []), first])
+            return name === 'addStatusBarItem' ? statusBar : undefined
         }
     })
 }
@@ -109,8 +154,12 @@ describe('build of the plugin', () => {
         expect(exitCode).toBe(0)
     })
 
-    test('writes the two files that Obsidian reads', async () => {
-        expect((await readdir(outputPath())).sort()).toEqual(['main.js', 'manifest.json'])
+    test('writes the three files that Obsidian reads', async () => {
+        expect((await readdir(outputPath())).sort()).toEqual([
+            'main.js',
+            'manifest.json',
+            'styles.css'
+        ])
     })
 
     test('names the plugin as the command line program, for desktop only', async () => {
@@ -125,8 +174,20 @@ describe('build of the plugin', () => {
 })
 
 describe('the built plugin', () => {
-    test('loads, and only records the renames of the vault in the journal of the device', async () => {
-        await mock.module('obsidian', () => ({ Notice, Plugin, TFolder }))
+    test('loads with its publication center, runs no check, and records the renames in the journal of the device', async () => {
+        await mock.module('obsidian', () => ({
+            AbstractInputSuggest,
+            FuzzySuggestModal,
+            ItemView,
+            Menu,
+            Modal,
+            Notice,
+            Plugin,
+            PluginSettingTab,
+            Setting,
+            TFolder,
+            setIcon
+        }))
         const loaded: unknown = createRequire(import.meta.url)(join(outputPath(), 'main.js'))
         const Loaded = isRecord(loaded) ? loaded['default'] : undefined
         if (typeof Loaded !== 'function') {
@@ -135,7 +196,9 @@ describe('the built plugin', () => {
         // A vault of Obsidian in memory: its files, its events and the local storage.
         const files = new Map<string, string>()
         const listeners = new Map<string, (...values: unknown[]) => void>()
+        const workspaceListeners = new Map<string, (...values: unknown[]) => void>()
         const storage = new Map<string, unknown>()
+        let asked = 0
         const app = {
             vault: {
                 configDir: '.obsidian',
@@ -159,6 +222,18 @@ describe('the built plugin', () => {
                     return { name }
                 }
             },
+            workspace: {
+                on: (name: string, listener: (...values: unknown[]) => void) => {
+                    workspaceListeners.set(name, listener)
+                    return { name }
+                },
+                getActiveFile: () => ({ path: 'Notes/Alpha.md' })
+            },
+            // A check would ask the Starter Kit: the load must not.
+            get plugins() {
+                asked += 1
+                return { plugins: {} }
+            },
             loadLocalStorage: (key: string) => storage.get(key) ?? null,
             saveLocalStorage: (key: string, data: unknown) => storage.set(key, data)
         }
@@ -170,12 +245,36 @@ describe('the built plugin', () => {
         }
         await Reflect.apply(plugin['onload'], plugin, [])
 
-        expect(calls).toEqual(['registerEvent'])
-        expect([...listeners.keys()]).toEqual(['rename'])
+        const count = (name: string): number => calls.filter((call) => call === name).length
+        expect(count('registerView')).toBe(1)
+        expect(registered.get('registerView')).toEqual(['publication-center'])
+        expect(count('addCommand')).toBe(6)
+        expect(
+            (registered.get('addCommand') ?? []).map((command) =>
+                isRecord(command) ? command['id'] : undefined
+            )
+        ).toEqual([
+            'open-publication-center',
+            'check-for-changes',
+            'unpublish-open-note',
+            'take-down-open-note',
+            'copy-live-address',
+            'show-measures'
+        ])
+        expect(count('addSettingTab')).toBe(1)
+        expect(count('addStatusBarItem')).toBe(1)
+        expect(count('addRibbonIcon')).toBe(1)
+        expect(count('loadData') + count('saveData')).toBe(0)
+        expect([...listeners.keys()].sort()).toEqual(['create', 'modify', 'rename'])
+        expect([...workspaceListeners.keys()]).toEqual(['file-open'])
+        // No check at the start of Obsidian (R67, PERF-06): the state of the
+        // open note is unknown until the first check.
+        expect(asked).toBe(0)
+        expect(statusBar.texts).toEqual(['State unknown'])
         listeners.get('rename')?.({ path: 'Notes/Alpha.md' }, 'Alpha.md')
         listeners.get('rename')?.(new TFolder('Area'), 'Folder')
         await Bun.sleep(20)
-        const [journal] = [...storage.values()]
+        const journal = storage.get('dsebastien-vault-publish-journal')
         expect(journal).toMatch(/^[0-9a-f]{16}\.jsonl$/u)
         const text = files.get(
             `.obsidian/plugins/dsebastien-vault-publish/renames/${String(journal)}`
@@ -236,7 +335,7 @@ describe('development build', () => {
 
         expect(build.exitCode).toBe(0)
         const copied = await readdir(join(build.vault, '.obsidian', 'plugins', ID))
-        expect(copied.sort()).toEqual(['.hotreload', 'main.js', 'manifest.json'])
+        expect(copied.sort()).toEqual(['.hotreload', 'main.js', 'manifest.json', 'styles.css'])
     }, 120_000)
 
     test('never follows the variable of the plugin template', async () => {
