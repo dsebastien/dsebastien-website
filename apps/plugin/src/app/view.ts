@@ -49,6 +49,7 @@ const GROUP_TEXT: Record<RowGroup, string> = {
     paired: 'paired',
     changed: '',
     technical: 'technical update',
+    movedEdited: 'moved, its new text waits for a tick',
     forced: 'a guard excludes it: every publication removes it',
     unpublishedUnderGuard: 'unpublished, a guard excludes it: its entry leaves the store',
     unpublish: 'will be unpublished',
@@ -60,6 +61,7 @@ const GROUP_TEXT: Record<RowGroup, string> = {
 const PUBLISHED_GROUPS = new Set<RowGroup>([
     'changed',
     'technical',
+    'movedEdited',
     'forced',
     'unpublish',
     'missing',
@@ -96,6 +98,8 @@ export class PublicationCenterView extends ItemView {
     #allRowsOf: { queue: unknown; choices: unknown; rows: Record<ViewList, Row[]> } | undefined
     /** The sections that the author opened, by their names: a render keeps them open. */
     readonly #open = new Set<string>()
+    /** The sections that showed one time: their default applies only then. */
+    readonly #seen = new Set<string>()
     // The parts of the view, made one time in `onOpen`.
     #header!: HTMLElement
     #message!: HTMLElement
@@ -194,8 +198,20 @@ export class PublicationCenterView extends ItemView {
     }
 
     /** A section that keeps its open state between two renders. */
-    #section(parent: HTMLElement, name: string, title: string): HTMLDetailsElement {
-        const section = parent.createEl('details')
+    #section(
+        parent: HTMLElement,
+        name: string,
+        title: string,
+        cls: string,
+        openByDefault = false
+    ): HTMLDetailsElement {
+        const section = parent.createEl('details', { cls })
+        if (!this.#seen.has(name)) {
+            this.#seen.add(name)
+            if (openByDefault) {
+                this.#open.add(name)
+            }
+        }
         if (this.#open.has(name)) {
             section.setAttribute('open', '')
         }
@@ -482,7 +498,12 @@ export class PublicationCenterView extends ItemView {
                     })
             )
         }
-        if (row.group === 'changed' || row.group === 'technical' || row.group === 'unchanged') {
+        if (
+            row.group === 'changed' ||
+            row.group === 'technical' ||
+            row.group === 'movedEdited' ||
+            row.group === 'unchanged'
+        ) {
             menu.addItem((item) =>
                 item
                     .setTitle('Unpublish with the next publication')
@@ -546,7 +567,8 @@ export class PublicationCenterView extends ItemView {
             const moves = this.#section(
                 this.#sections,
                 'moves',
-                `Moves: ${queue.renamed.length.toLocaleString()} (every publication applies them, the old addresses redirect)`
+                `Moves: ${queue.renamed.length.toLocaleString()} (every publication applies them, the old addresses redirect)`,
+                'vault-publish-moves'
             )
             for (const move of queue.renamed.slice(0, SECTION_LINES)) {
                 moves.createDiv({ text: `${move.from} → ${move.to}` })
@@ -569,7 +591,9 @@ export class PublicationCenterView extends ItemView {
             const box = this.#section(
                 this.#sections,
                 'pairings',
-                `Pairings: ${pairings.length.toLocaleString()}. A published note is missing, and a new note has its text. Confirm, and the old address redirects to the new note.`
+                `Pairings: ${pairings.length.toLocaleString()}. A published note is missing, and a new note has its text. Confirm, and the old address redirects to the new note.`,
+                'vault-publish-pairings',
+                true
             )
             for (const pairing of pairings.slice(0, SECTION_LINES)) {
                 const line = box.createEl('label', { cls: 'vault-publish-pairing' })

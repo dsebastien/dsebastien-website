@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -97,9 +97,17 @@ describe('the pull of the copy, after a run that stopped halfway', () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
         await pushFromAnotherDevice(stores, copy)
+        // A git program that refuses to run when the lock of the device is not there.
+        const program = join(stores.root, 'git-with-lock')
+        await writeFile(
+            program,
+            `#!/bin/sh\n[ -f "${join(copy, '.git', 'vault-publish', 'lock')}" ] || exit 3\nexec git "$@"\n`
+        )
+        await chmod(program, 0o755)
 
-        await pullContentStore({ contentStore: copy })
+        await pullContentStore({ contentStore: copy, git: program })
 
+        expect(await Bun.file(join(copy, 'renames.json')).text()).toBe('{}\n')
         expect(await Bun.file(join(copy, '.git', 'vault-publish', 'lock')).exists()).toBe(false)
     }, 60_000)
 })

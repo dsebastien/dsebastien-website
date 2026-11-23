@@ -366,3 +366,37 @@ describe('the ticks of the shown rows', () => {
         })
     })
 })
+
+describe('a moved note whose text is not the published text (R67)', () => {
+    const MOVED = queueOf({
+        changed: ['New place.md'],
+        movedEdited: ['New place.md'],
+        renamed: [{ from: 'Old place.md', to: 'New place.md' }]
+    })
+
+    test('is unticked by default, and a tick includes it', () => {
+        expect(rowsOf(MOVED, NO_CHOICES).changed).toEqual([
+            {
+                path: 'New place.md',
+                group: 'movedEdited',
+                checkable: true,
+                ticked: false,
+                locked: false
+            }
+        ])
+        expect(planOfChoices(MOVED, NO_CHOICES).update).toEqual([])
+        const ticked = toggleRow(MOVED, NO_CHOICES, 'New place.md')
+        expect(selectionOf(MOVED, ticked).include).toEqual(['New place.md'])
+        expect(planOfChoices(MOVED, ticked).update).toEqual(['New place.md'])
+        expect(
+            selectionOf(MOVED, setTicks(MOVED, NO_CHOICES, ['New place.md'], true)).include
+        ).toEqual(['New place.md'])
+        expect(reconcile(MOVED, ticked)).toEqual(ticked)
+    })
+
+    test('says that its text waits for a tick', () => {
+        expect(stateOfNote(MOVED, NO_CHOICES, 'New place.md', false).label).toBe(
+            'Live: moves to this path at the next publication, and its new text waits for a tick'
+        )
+    })
+})

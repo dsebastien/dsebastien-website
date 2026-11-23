@@ -16,7 +16,7 @@ import type { Move, QueueLists } from './queue.ts'
  * is missing from this vault are not, and a pairing is not confirmed.
  */
 export interface Choices {
-    /** The ticked candidates. */
+    /** The ticked candidates, and the ticked moved notes whose text changed (R67). */
     readonly include: readonly string[]
     /** The unticked changed notes that the author edited. */
     readonly hold: readonly string[]
@@ -64,10 +64,15 @@ function publishedOf(queue: QueueLists): Set<string> {
     return new Set([...queue.changed, ...queue.unchanged, ...queue.missing])
 }
 
-/** The changed notes that the author edited: a technical update has the one line of its own. */
+/** The changed notes that the author edited: a technical update has the one line of its own, a moved note whose text changed waits for a tick. */
 function editedOf(queue: QueueLists): string[] {
-    const technical = new Set(queue.technicalUpdates)
-    return queue.changed.filter((path) => !technical.has(path))
+    const other = new Set([...queue.technicalUpdates, ...queue.movedEdited])
+    return queue.changed.filter((path) => !other.has(path))
+}
+
+/** The paths that `include` can name: the candidates and the moved notes whose text changed. */
+function includableOf(queue: QueueLists): Set<string> {
+    return new Set([...queue.new, ...queue.movedEdited])
 }
 
 /** The selection of the choices, for `plan` of the logic. Each list is sorted by path. */
@@ -75,7 +80,7 @@ export function selectionOf(queue: QueueLists, choices: Choices): NormalSelectio
     const pairs = pairsOf(queue, choices)
     const pairFrom = new Set(pairs.map((pairing) => pairing.from))
     const pairTo = new Set(pairs.map((pairing) => pairing.to))
-    const candidates = new Set(queue.new)
+    const candidates = includableOf(queue)
     const published = publishedOf(queue)
     const remove = new Set(
         choices.unpublish.filter((path) => published.has(path) && !pairFrom.has(path))
@@ -150,6 +155,7 @@ export type RowGroup =
     | 'paired'
     | 'changed'
     | 'technical'
+    | 'movedEdited'
     | 'forced'
     | 'unpublishedUnderGuard'
     | 'unpublish'
@@ -183,6 +189,7 @@ export function rowsOf(queue: QueueLists, choices: Choices): Record<ViewList, Ro
     const pairTo = new Map(selection.pair.map((pairing) => [pairing.to, pairing.from]))
     const pairFrom = new Map(selection.pair.map((pairing) => [pairing.from, pairing.to]))
     const technical = new Set(queue.technicalUpdates)
+    const movedEdited = new Set(queue.movedEdited)
     const missing = new Set(queue.missing)
     const paired = (path: string, other: string): Row => ({
         ...row(path, 'paired', true, true),
@@ -201,9 +208,11 @@ export function rowsOf(queue: QueueLists, choices: Choices): Record<ViewList, Ro
         changed: queue.changed
             .filter((path) => !remove.has(path))
             .map((path) =>
-                technical.has(path)
-                    ? row(path, 'technical', !hold.has(path), true)
-                    : row(path, 'changed', !hold.has(path))
+                movedEdited.has(path)
+                    ? row(path, 'movedEdited', include.has(path))
+                    : technical.has(path)
+                      ? row(path, 'technical', !hold.has(path), true)
+                      : row(path, 'changed', !hold.has(path))
             ),
         toRemove: [
             ...queue.toRemove
@@ -246,6 +255,7 @@ export function toggleRow(queue: QueueLists, choices: Choices, path: string): Ch
     }
     switch (found.group) {
         case 'candidate':
+        case 'movedEdited':
             return { ...choices, include: flip(choices.include, path) }
         case 'changed':
             return { ...choices, hold: flip(choices.hold, path) }
@@ -280,7 +290,7 @@ export function setTicks(
         if (found === undefined || found.locked || !found.checkable || found.ticked === ticked) {
             continue
         }
-        if (found.group === 'candidate') {
+        if (found.group === 'candidate' || found.group === 'movedEdited') {
             if (ticked) include.add(path)
             else include.delete(path)
         } else if (found.group === 'changed') {
@@ -341,7 +351,7 @@ export function pairByHand(choices: Choices, from: string, to: string): Choices 
 
 /** The choices after a new check: a choice about a note that left its list is dropped. */
 export function reconcile(queue: QueueLists, choices: Choices): Choices {
-    const candidates = new Set(queue.new)
+    const candidates = includableOf(queue)
     const edited = new Set(editedOf(queue))
     const published = publishedOf(queue)
     return {
@@ -400,6 +410,7 @@ export type NoteStateKind =
     | 'changed'
     | 'technical'
     | 'moved'
+    | 'movedEdited'
     | 'new'
     | 'unpublish'
     | 'forced'
@@ -417,6 +428,8 @@ const LABELS: Record<NoteStateKind, string> = {
     changed: 'Live: changes not published',
     technical: 'Live: an update of its links or files waits',
     moved: 'Live: moves to this path at the next publication',
+    movedEdited:
+        'Live: moves to this path at the next publication, and its new text waits for a tick',
     new: 'Not published',
     unpublish: 'Will be unpublished',
     forced: 'Removal forced: a guard excludes it',
@@ -432,6 +445,9 @@ function kindOf(queue: QueueLists, choices: Choices, path: string): NoteStateKin
     }
     if (queue.toRemove.includes(path)) {
         return queue.missing.includes(path) ? undefined : 'forced'
+    }
+    if (queue.movedEdited.includes(path)) {
+        return 'movedEdited'
     }
     if (queue.renamed.some((move) => move.to === path)) {
         return 'moved'

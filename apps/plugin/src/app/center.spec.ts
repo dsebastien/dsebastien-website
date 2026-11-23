@@ -309,6 +309,35 @@ describe('the publication center', () => {
         expect(state.queue?.new).toContain(moved)
     }, 60_000)
 
+    test('a takedown asked during a publication that moves the note finds it at its new path', async () => {
+        await using stores = await makeTestStores()
+        const { vault, center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        const moved = '10 Garden/Moved/Frost dates explained.md'
+        await mkdir(join(vault, '10 Garden', 'Moved'), { recursive: true })
+        await rename(join(vault, NOTE), join(vault, moved))
+        await mkdir(join(vault, JOURNAL, '..'), { recursive: true })
+        await writeFile(
+            join(vault, JOURNAL),
+            `{"from":"${NOTE}","kind":"note","time":"2031-04-02T08:00:00Z","to":"${moved}"}\n`
+        )
+        await center.check()
+
+        // The publication applies the move; the takedown waits for its end.
+        const publishing = center.publish()
+        const takingDown = center.takedown([moved])
+        await Promise.all([publishing, takingDown])
+
+        const { state } = center
+        expect(state.error).toBeUndefined()
+        expect(state.report?.kind === 'takedown' ? state.report.report.takenDown : []).toEqual([
+            moved
+        ])
+        expect(state.queue?.new).toContain(moved)
+    }, 60_000)
+
     test('a takedown asked during a check runs after it', async () => {
         await using stores = await makeTestStores()
         const { center } = await setUp(stores)
@@ -369,8 +398,11 @@ describe('the publication center', () => {
 
         expect(center.state.report).toBeUndefined()
         expect(center.state.error).toBe(
-            `A new note changed after the check, so nothing was published: "${NOTE}". The lists are checked again: check them and publish again.`
+            `A new note changed after the check, so nothing was published and its tick is gone: "${NOTE}". The lists are checked again: check them, tick again and publish.`
         )
+        // A second click never publishes the other note unseen.
+        expect(center.state.choices.include).toEqual([])
+        expect(center.label()).toBe('Nothing to publish')
         expect(started).toEqual([])
         expect(await git('-C', copy, 'rev-parse', 'HEAD')).toBe(head)
         expect(center.stateOf(NOTE).label).toBe('Not published')

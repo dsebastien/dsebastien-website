@@ -11,7 +11,7 @@ import type { Choices, NoteState } from '../publishing/center.ts'
 import { SelectionError } from '../publishing/plan.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
 import type { Device } from '../publishing/ports.ts'
-import type { PublicationQueue } from '../publishing/queue.ts'
+import type { Move, PublicationQueue } from '../publishing/queue.ts'
 import { plan, publish, status, takedown, unlock } from '../publishing/tool.ts'
 import type { PublicationReport, StoredPlan, TakedownReport } from '../publishing/tool.ts'
 import { canonicalTime } from './rename-journal.ts'
@@ -137,6 +137,8 @@ export class PublicationCenter {
     #ownWrites: { paths: Set<string>; until: number } = { paths: new Set(), until: 0 }
     /** The activity that runs now, so that a takedown can wait for its end. */
     #current: Promise<void> = Promise.resolve()
+    /** False after a run changed the copy, until the next check: the queue is old then. */
+    #fresh = false
     /** The plan of the last queue and choices: a render asks for it more than one time. */
     #counted: { queue: PublicationQueue; choices: Choices; plan: PublicationPlan } | undefined
 
@@ -291,6 +293,7 @@ export class PublicationCenter {
             }
         }
         const queue = await status(device)
+        this.#fresh = true
         this.#set({
             queue,
             checkedAt: this.host.now(),
@@ -338,14 +341,7 @@ export class PublicationCenter {
             // A new note that changed after the check can be another note at
             // the same path: the author never saw it in the lists.
             const selection = selectionOf(queue, choices)
-            const fresh = [...expected.publish, ...selection.pair.map((one) => one.to)].filter(
-                (path) => this.#changed.has(path)
-            )
-            if (fresh.length > 0) {
-                throw new Error(
-                    `A new note changed after the check, so nothing was published: ${fresh.map((path) => `"${path}"`).join(', ')}. The lists are checked again: check them and publish again.`
-                )
-            }
+            this.#refuseChangedNewNotes(expected, selection.pair)
             const device = this.host.device()
             let stored: StoredPlan
             try {
@@ -359,6 +355,8 @@ export class PublicationCenter {
                 }
                 throw error
             }
+            // An edit during the scan of the plan counts too.
+            this.#refuseChangedNewNotes(expected, selection.pair)
             if (!samePlan(stored.plan, expected)) {
                 this.#set({ dryRun: stored })
                 throw new Error(
@@ -367,6 +365,7 @@ export class PublicationCenter {
             }
             this.#log(`Publication started: ${describePlan(expected)}`)
             this.host.started?.(describePlan(expected), clickedAt)
+            this.#fresh = false
             const report = await publish(device, stored.id, {
                 time: canonicalTime(this.host.now()),
                 device: this.host.deviceName,
@@ -384,9 +383,7 @@ export class PublicationCenter {
                     ]
                         .sort()
                         .map((path) => ({ path, url: addressOf(path) }))
-                },
-                // The choices that the author made while the run ran stay.
-                choices: this.#state.choices === choices ? NO_CHOICES : this.#state.choices
+                }
             })
             this.#log(
                 `Publication done: ${String(report.published.length)} new, ${String(report.updated.length)} updated, ${String(report.removed.length)} removed, ${String(report.forcedRemoved.length)} forced, ${String(report.moved.length)} moved, ${String(report.failed.length)} failed`
@@ -402,12 +399,19 @@ export class PublicationCenter {
         while (this.#state.activity !== 'idle') {
             await this.#current
         }
-        // A note that a move of the queue moved is still at its old path in
-        // the content store until the next publication.
-        const stored = paths.map((path) => this.storePathOf(path))
         await this.#run('taking down', 'Takedown', async () => {
+            const device = this.host.device()
+            // The queue tells where a note is in the content store: after a
+            // run that changed the copy, it is checked again first.
+            if (!this.#fresh) {
+                await this.#checkWith(device)
+            }
+            // A note that a move of the queue moved is still at its old path
+            // in the content store until the next publication.
+            const stored = paths.map((path) => this.storePathOf(path))
             this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
-            const report = await takedown(this.host.device(), stored, {
+            this.#fresh = false
+            const report = await takedown(device, stored, {
                 time: canonicalTime(this.host.now()),
                 device: this.host.deviceName,
                 face: 'plugin'
@@ -429,10 +433,37 @@ export class PublicationCenter {
     async pull(): Promise<void> {
         await this.#run('pulling', 'Pull', async () => {
             this.#log('Pull started: git pull --ff-only origin main')
+            this.#fresh = false
             await this.host.pull()
             this.#log('Pull done')
         })
         await this.#checkAfter()
+    }
+
+    /**
+     * Stops a publication when a new note of the plan, or the new note of a
+     * pairing, changed after the check: another note can have its path, which
+     * the author never saw in the lists. Its tick goes away, so a second click
+     * never publishes it unseen.
+     */
+    #refuseChangedNewNotes(expected: PublicationPlan, pairs: readonly Move[]): void {
+        const fresh = [...expected.publish, ...pairs.map((one) => one.to)].filter((path) =>
+            this.#changed.has(path)
+        )
+        if (fresh.length === 0) {
+            return
+        }
+        const gone = new Set(fresh)
+        this.#set({
+            choices: {
+                ...this.#state.choices,
+                include: this.#state.choices.include.filter((path) => !gone.has(path)),
+                pair: this.#state.choices.pair.filter((one) => !gone.has(one.to))
+            }
+        })
+        throw new Error(
+            `A new note changed after the check, so nothing was published and its tick is gone: ${fresh.map((path) => `"${path}"`).join(', ')}. The lists are checked again: check them, tick again and publish.`
+        )
     }
 
     /**
@@ -443,6 +474,7 @@ export class PublicationCenter {
      */
     async unlock(): Promise<void> {
         await this.#run('unlocking', 'Unlock', async () => {
+            this.#fresh = false
             const removed = await unlock(this.host.device())
             this.#log(
                 removed ? 'Unlock done: the lock was removed' : 'Unlock done: there was no lock'

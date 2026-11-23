@@ -30,6 +30,7 @@ const STATE_ICONS: Record<NoteStateKind, string> = {
     changed: 'pencil',
     technical: 'refresh-cw',
     moved: 'move-right',
+    movedEdited: 'move-right',
     new: 'circle',
     unpublish: 'minus-circle',
     forced: 'shield-alert',
@@ -219,7 +220,7 @@ export class VaultPublishPlugin extends Plugin {
                 const kind = path === undefined ? undefined : this.center.stateOf(path).kind
                 if (
                     path === undefined ||
-                    !['live', 'changed', 'technical', 'moved'].includes(kind ?? '')
+                    !['live', 'changed', 'technical', 'moved', 'movedEdited'].includes(kind ?? '')
                 ) {
                     return false
                 }
@@ -289,10 +290,11 @@ export class VaultPublishPlugin extends Plugin {
     }
 
     #confirmUnlock(): void {
+        const { error } = this.center.state
         new ConfirmModal(
             this.app,
             'Remove the lock of this device?',
-            'Remove the lock only when no publication runs on this device: not in Obsidian, and not in the command line program. A run that stopped halfway (a crash, Obsidian closed during a run) left it. The next dry run, publication or takedown then puts the copy of the content store back.',
+            `Remove the lock only when no publication runs on this device: not in Obsidian, and not in the command line program. The tool does not check it. A run that stopped halfway (a crash, Obsidian closed during a run) left it. The next dry run, publication or takedown then puts the copy of the content store back.${error === undefined ? '' : ` The last message: ${error}`}`,
             'Remove the lock',
             () => {
                 void this.center.unlock()

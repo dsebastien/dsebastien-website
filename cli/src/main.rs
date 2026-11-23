@@ -79,8 +79,10 @@ enum Command {
     /// updates; the notes to remove that are only missing from this vault; and
     /// the unpublished notes that a guard excludes, which the next publication
     /// removes; the moves of the rename journals that the next publication
-    /// applies (`renamed`), and the pairings to confirm (`pairings`). It
-    /// changes nothing in the vault and in the content store.
+    /// applies (`renamed`), the moved notes whose text is not the published
+    /// text, whose update waits for `--include` (`movedEdited`), and the
+    /// pairings to confirm (`pairings`). It changes nothing in the vault and
+    /// in the content store.
     Status {
         #[command(flatten)]
         places: Places,
@@ -88,7 +90,8 @@ enum Command {
 
     /// Computes a publication plan, stores it on this device and writes it
     /// with its id. It changes nothing in the vault and in the content store.
-    /// Without a path, the plan holds the changed notes only. Every plan holds
+    /// Without a path, the plan holds the changed notes only, but not the moved
+    /// notes whose text changed: `--include` names them. Every plan holds
     /// the moves of the rename journals, which cannot be held, and the forced
     /// removals: the published and the unpublished notes that a guard
     /// excludes.
