@@ -38,6 +38,7 @@
         "dev:plugin": "bun run --cwd apps/plugin dev",
         "serve": "bun run --cwd apps/site serve",
         "site:fixture": "bun scripts/site-fixture.ts",
+        "plugin:vault": "bun scripts/plugin-vault.ts",
         "budgets": "bun scripts/page-budgets.ts",
         "budgets:search": "bun scripts/search-budget.ts",
         "commit:lint": "commitlint --edit",
