@@ -23,6 +23,7 @@ export {
     canonicalPath,
     folderPath,
     LIBRARY_PATH,
+    SITE_ORIGIN,
     markdownPath,
     otherNotesPath,
     recentPath,

@@ -1,4 +1,5 @@
 import tailwindcss from '@tailwindcss/vite'
+import { SITE_ORIGIN } from '@dsebastien-website/resolver'
 import { defineConfig } from 'astro/config'
 import { notePageBudget } from './src/budgets.ts'
 import { markdownProcessor } from './src/rendering/markup.ts'
@@ -8,7 +9,7 @@ import { siteChecks } from './src/site-checks.ts'
 
 export default defineConfig({
     // The canonical host of the site: the canonical link of each page names it.
-    site: 'https://notes.dsebastien.net',
+    site: SITE_ORIGIN,
     // One file per page, with no folder and no slash at the end: the resolver
     // decides which URL leads to which file, not the layout of the output.
     build: { format: 'file' },

@@ -3,6 +3,9 @@ import { foldedForm } from './resolver.ts'
 // The URL function (MOD-04 of the spec): the one place that knows the
 // encoding of the canonical URL. Every output of the site uses it.
 
+/** The canonical host of the site: the build names it in each canonical link, the plugin in its reports. */
+export const SITE_ORIGIN = 'https://notes.dsebastien.net'
+
 /**
  * The canonical path of a note, from its vault path: the path part of its
  * canonical URL, with a slash at the start and no slash at the end.
