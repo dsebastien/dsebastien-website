@@ -517,6 +517,16 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
         async verify(fetch) {
             let reached = true
             await checkRoot()
+            // A folder with no origin is no clone of the content store (R67).
+            const origin = await git('remote', 'get-url', 'origin').then(
+                (url) => url,
+                () => ''
+            )
+            if (origin === '') {
+                throw new Error(
+                    `the copy of the content store has no origin: it is not a clone of the content store: ${folder}`
+                )
+            }
             const exists = (ref: string): Promise<boolean> =>
                 git('rev-parse', '--verify', '--quiet', ref).then(
                     () => true,

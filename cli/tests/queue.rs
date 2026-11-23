@@ -963,7 +963,7 @@ fn a_copy_that_converts_line_ends_is_the_copy_of_its_last_commit() {
 /// publication of the other device with a plain pull.
 #[test]
 fn a_first_publication_after_another_device_stops_and_the_copy_can_pull() {
-    let setup = copy_with_no_commit();
+    let setup = copy_of_a_new_content_store();
     let first = setup.stores.root().join("first");
     git(&[
         "clone",
@@ -1449,7 +1449,44 @@ fn the_advice_for_a_configuration_added_and_then_removed_from_the_disk_takes_it_
     );
     setup.git(&["rm", "--cached", "--quiet", "configuration.json"]);
 
-    assert!(setup.status()["new"].as_array().is_some());
+    // The index follows the last commit again: the run now stops because the
+    // content store has no configuration (R67).
+    let output = setup.run("status", &[]);
+    assert!(
+        errors_of(&output).contains("has no configuration.json"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
+/// A first publication into a content store with no commit cannot happen:
+/// the content store needs its configuration first (R67).
+#[test]
+fn a_copy_of_a_content_store_with_no_commit_stops_it_has_no_configuration() {
+    let stores = TestStores::new();
+    let vault = stores.copy_fixture_vault();
+    let copy = stores.root().join("copy");
+    git(&[
+        "clone",
+        "--quiet",
+        text(stores.content_store()),
+        text(&copy),
+    ]);
+    let setup = Setup {
+        stores,
+        vault,
+        copy,
+        answers: None,
+    };
+
+    let output = setup.plan(&json!({ "include": ["Welcome.md"] }));
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("has no configuration.json"),
+        "{}",
+        errors_of(&output)
+    );
 }
 
 #[test]
@@ -1707,30 +1744,6 @@ fn a_commit_that_fails_puts_every_file_back_when_git_cannot_write_its_index() {
     assert_eq!(paths(&queue["changed"]), ["Welcome.md"]);
 }
 
-/// With no commit, a file of the copy is not new for the publication only
-/// because no commit holds it. A copy whose manifest or configuration is in
-/// no commit stops before (see `a_copy_that_differs_from_its_last_commit_*`),
-/// so here it is a cleaned note that waits in the copy.
-#[test]
-fn a_commit_that_fails_keeps_the_files_that_a_copy_with_no_commit_held_before() {
-    let setup = copy_with_no_commit();
-    fs::create_dir(setup.copy.join("notes")).expect("the folder can be made");
-    fs::write(
-        setup.copy.join("notes").join("Welcome.md"),
-        "A text that was here before\n",
-    )
-    .expect("the file is written");
-    refuse_commits(&setup.copy);
-    let before = files_of(&setup.copy);
-    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
-
-    let output = setup.publish_plan(&id, TIME);
-
-    assert_eq!(output.status.code(), Some(1));
-    assert!(errors_of(&output).contains("commit"));
-    assert_eq!(files_of(&setup.copy), before);
-}
-
 /// The undo takes back the paths of the publication only.
 #[test]
 fn a_commit_that_fails_keeps_the_other_staged_work_of_the_copy() {
@@ -1833,59 +1846,6 @@ fn refuse_moves_after_a_commit(copy: &Path) {
     }
 }
 
-/// The same on a first publication: git cannot remove the branch that the
-/// failed publication made, and the content store has no branch yet.
-#[cfg(unix)]
-#[test]
-fn a_first_commit_that_git_cannot_take_back_stops_the_next_run() {
-    let setup = copy_with_no_commit();
-    refuse_moves_after_a_commit(&setup.copy);
-    let nowhere = setup.stores.root().join("nowhere");
-    setup.git(&["remote", "set-url", "--push", "origin", text(&nowhere)]);
-    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
-
-    let output = setup.publish_plan(&id, TIME);
-
-    assert_eq!(output.status.code(), Some(1));
-    assert!(
-        errors_of(&output).contains("refused"),
-        "{}",
-        errors_of(&output)
-    );
-    fs::remove_file(
-        setup
-            .copy
-            .join(".git")
-            .join("hooks")
-            .join("reference-transaction"),
-    )
-    .expect("the hook can be removed");
-    let output = setup.run("status", &[]);
-    assert_eq!(output.status.code(), Some(1));
-    assert!(
-        errors_of(&output).contains("stopped halfway"),
-        "{}",
-        errors_of(&output)
-    );
-    // The next plan takes the first commit back: the copy has no commit
-    // again.
-    let output = setup.plan(&json!({ "include": ["Welcome.md"] }));
-    assert!(output.status.success(), "{}", errors_of(&output));
-    assert_eq!(json_of(&output)["plan"]["publish"], json!(["Welcome.md"]));
-    let head = Command::new("git")
-        .args([
-            "-C",
-            text(&setup.copy),
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            "HEAD",
-        ])
-        .output()
-        .expect("git starts");
-    assert!(!head.status.success());
-}
-
 /// A commit of the copy that the content store has on another branch is not
 /// ahead of the content store.
 #[test]
@@ -1942,9 +1902,38 @@ fn a_file_of_the_manifest_or_the_configuration_that_is_missing_from_the_copy_sto
 }
 
 /// A clone of a content store that has no commit and no configuration.
-fn copy_with_no_commit() -> Setup {
+/// A copy of a content store whose only commit is an empty deny list: the
+/// content store needs its configuration (R67).
+fn copy_of_a_new_content_store() -> Setup {
     let stores = TestStores::new();
     let vault = stores.copy_fixture_vault();
+    let seed = stores.root().join("seed");
+    git(&[
+        "clone",
+        "--quiet",
+        text(stores.content_store()),
+        text(&seed),
+    ]);
+    for (key, value) in [
+        ("user.name", "Other"),
+        ("user.email", "other@example.invalid"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(&["-C", text(&seed), "config", key, value]);
+    }
+    git(&["-C", text(&seed), "checkout", "--quiet", "-B", "main"]);
+    fs::write(seed.join("configuration.json"), "{\"denyList\": []}\n")
+        .expect("the configuration is written");
+    git(&["-C", text(&seed), "add", "configuration.json"]);
+    git(&[
+        "-C",
+        text(&seed),
+        "commit",
+        "--quiet",
+        "--message",
+        "An empty deny list",
+    ]);
+    git(&["-C", text(&seed), "push", "--quiet", "origin", "HEAD:main"]);
     let copy = stores.root().join("copy");
     git(&[
         "clone",
@@ -1965,40 +1954,6 @@ fn copy_with_no_commit() -> Setup {
         copy,
         answers: None,
     }
-}
-
-#[test]
-fn a_commit_that_fails_leaves_nothing_in_a_copy_that_has_no_commit() {
-    let setup = copy_with_no_commit();
-    refuse_commits(&setup.copy);
-    let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
-
-    let output = setup.publish_plan(&id, TIME);
-
-    assert_eq!(output.status.code(), Some(1));
-    assert!(errors_of(&output).contains("commit"));
-    assert_eq!(setup.git(&["status", "--porcelain"]), "");
-    assert_eq!(paths(&setup.status()["unchanged"]), Vec::<String>::new());
-}
-
-#[test]
-fn a_copy_that_has_no_commit_takes_its_first_publication() {
-    let setup = copy_with_no_commit();
-
-    let report = setup.publish(&json!({ "include": ["Welcome.md"] }), TIME);
-
-    assert_eq!(paths(&report["published"]), ["Welcome.md"]);
-    assert_eq!(
-        git(&[
-            "--git-dir",
-            text(setup.stores.content_store()),
-            "rev-list",
-            "--count",
-            "main"
-        ]),
-        "1"
-    );
-    assert_eq!(setup.git(&["status", "--porcelain"]), "");
 }
 
 /// TEST-22: the review holds. The record of the plan holds the hash of each
@@ -2766,7 +2721,7 @@ fn other_device(setup: &Setup, name: &str) -> Setup {
 /// fetch is.
 #[test]
 fn a_copy_that_is_behind_stops_plan_and_publish_until_the_pull() {
-    let second = copy_with_no_commit();
+    let second = copy_of_a_new_content_store();
     let first = other_device(&second, "first");
     let waiting = second.plan_id(&json!({ "include": ["Welcome.md"] }));
     first.publish(&json!({ "include": [NOTE] }), TIME);
@@ -2820,7 +2775,7 @@ fn a_copy_whose_fetch_setting_was_changed_still_stops_plan_and_publish() {
             "+refs/heads/main:refs/remotes/upstream/main",
         ],
     ] {
-        let second = copy_with_no_commit();
+        let second = copy_of_a_new_content_store();
         let first = other_device(&second, "first");
         first.publish(&json!({ "include": [NOTE] }), TIME);
         second.git(&["pull", "--quiet", "--ff-only", "origin", "main"]);
@@ -2840,7 +2795,7 @@ fn a_copy_whose_fetch_setting_was_changed_still_stops_plan_and_publish() {
 
 #[test]
 fn a_copy_that_never_fetched_stops_plan_until_the_pull() {
-    let setup = copy_with_no_commit();
+    let setup = copy_of_a_new_content_store();
     setup.publish(&json!({ "include": [NOTE] }), TIME);
     let fresh = setup.stores.root().join("fresh");
     fs::create_dir(&fresh).expect("the folder can be made");

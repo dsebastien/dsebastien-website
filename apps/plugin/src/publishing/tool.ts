@@ -142,6 +142,13 @@ async function readConfiguration(
     journals: JournalState
 ): Promise<{ configuration: Configuration; hash: string }> {
     const text = await device.store.read(CONFIGURATION_FILE)
+    if (text === undefined) {
+        // A wrong folder must never read as a content store with an empty
+        // deny list: every private folder would be a candidate (R67).
+        throw new Error(
+            `the copy of the content store has no ${CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add ${CONFIGURATION_FILE} with the deny list ("denyList"), commit it and push it`
+        )
+    }
     const configuration = parseConfiguration(text)
     // A deny list entry that names no folder would exclude nothing: a renamed
     // folder, or another letter case, would make its notes candidates (GATE-38).

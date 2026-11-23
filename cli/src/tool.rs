@@ -84,6 +84,13 @@ fn read_configuration(
     journals: &JournalState,
 ) -> Result<(Configuration, String), String> {
     let text = device.store.read(CONFIGURATION_FILE)?;
+    if text.is_none() {
+        // A wrong folder must never read as a content store with an empty
+        // deny list: every private folder would be a candidate (R67).
+        return Err(format!(
+            "the copy of the content store has no {CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add {CONFIGURATION_FILE} with the deny list (\"denyList\"), commit it and push it"
+        ));
+    }
     let configuration = parse_configuration(text.as_deref())?;
     // A deny list entry that names no folder would exclude nothing: a renamed
     // folder, or another letter case, would make its notes candidates

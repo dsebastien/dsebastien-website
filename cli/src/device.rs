@@ -372,6 +372,16 @@ impl ContentStore {
     /// that the content store does not have.
     pub fn verify(&self, fetch: Fetch) -> Result<Verified, String> {
         self.check_root()?;
+        // A folder with no origin is no clone of the content store (R67).
+        let origin = self
+            .git_output(&["remote", "get-url", "origin"])
+            .unwrap_or_default();
+        if origin.trim().is_empty() {
+            return Err(format!(
+                "the copy of the content store has no origin: it is not a clone of the content store: {}",
+                self.folder.display()
+            ));
+        }
         let mut reached = true;
         if fetch != Fetch::None {
             match self.fetch_main() {

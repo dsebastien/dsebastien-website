@@ -1168,7 +1168,9 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         expect(message).not.toContain('git checkout HEAD -- configuration.json')
         await git(setup.copy, 'rm', '--cached', '--quiet', 'configuration.json')
 
-        expect((await status(setup.device)).new).toContain(NOTE)
+        // The index follows the last commit again: the run now stops because
+        // the content store has no configuration (R67).
+        expect(await rejectionOf(status(setup.device))).toContain('has no configuration.json')
     })
 
     test('the message never proposes to commit the removal of the configuration', async () => {
@@ -1402,6 +1404,25 @@ describe('git commands of a publication', () => {
 })
 
 describe('commit that fails', () => {
+    // A first publication into a content store with no commit cannot happen:
+    // the content store needs its configuration first (R67).
+    test('a copy of a content store with no commit stops: it has no configuration', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const copy = join(stores.root, 'copy')
+        await git(stores.root, 'clone', '--quiet', stores.contentStore, copy)
+        const device = nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+
+        expect(await rejectionOf(plan(device, { include: [NOTE] }))).toContain(
+            'has no configuration.json'
+        )
+        expect(await git(copy, 'status', '--porcelain')).toBe('')
+    })
+
     /** A hook of the copy that refuses every commit. */
     async function refuseCommits(copy: string): Promise<void> {
         const hook = join(copy, '.git', 'hooks', 'pre-commit')
@@ -1438,25 +1459,6 @@ describe('commit that fails', () => {
         expect(queue.unchanged).toEqual([])
     })
 
-    test('leaves nothing in a copy that has no commit', async () => {
-        await using stores = await makeTestStores()
-        const vault = await copyFixtureVault(stores)
-        // A clone of a content store that has no commit and no configuration.
-        const copy = await makeContentStoreCopyOf(stores, 'copy')
-        await refuseCommits(copy)
-        const device = nodeDevice({
-            vault,
-            contentStore: copy,
-            attachmentStorage: stores.attachmentStorage
-        })
-        const planned = await plan(device, { include: ['Welcome.md'] })
-
-        expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('commit')
-
-        expect(await git(copy, 'status', '--porcelain')).toBe('')
-        expect((await status(device)).unchanged).toEqual([])
-    })
-
     /** Every file of the copy but its git folder, with a hash of its bytes. */
     async function filesOf(copy: string): Promise<Record<string, string>> {
         return Object.fromEntries(
@@ -1483,30 +1485,6 @@ describe('commit that fails', () => {
         const queue = await status(setup.device)
         expect(queue.new).toContain(NOTE)
         expect(queue.changed).toEqual(['Welcome.md'])
-    })
-
-    // With no commit, a file of the copy is not new for the publication only
-    // because no commit holds it. A copy whose manifest or configuration is
-    // in no commit stops before (see "a copy that differs from its last
-    // commit"), so here it is a cleaned note that waits in the copy.
-    test('keeps the files that a copy with no commit held before', async () => {
-        await using stores = await makeTestStores()
-        const vault = await copyFixtureVault(stores)
-        const copy = await makeContentStoreCopyOf(stores, 'copy')
-        await mkdir(join(copy, 'notes'))
-        await writeFile(join(copy, 'notes', 'Welcome.md'), 'A text that was here before\n')
-        await refuseCommits(copy)
-        const device = nodeDevice({
-            vault,
-            contentStore: copy,
-            attachmentStorage: stores.attachmentStorage
-        })
-        const before = await filesOf(copy)
-        const planned = await plan(device, { include: ['Welcome.md'] })
-
-        expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('commit')
-
-        expect(await filesOf(copy)).toEqual(before)
     })
 
     // The undo takes back the paths of the publication only.
@@ -1589,45 +1567,6 @@ describe('commit that fails', () => {
         }
     )
 
-    // The same on a first publication: git cannot remove the branch that
-    // the failed publication made, and the content store has no branch yet.
-    test.skipIf(process.platform === 'win32')(
-        'a first commit that git cannot take back stops the next run',
-        async () => {
-            await using stores = await makeTestStores()
-            const vault = await copyFixtureVault(stores)
-            const copy = await makeContentStoreCopyOf(stores, 'copy')
-            const hooks = join(copy, '.git', 'hooks')
-            await mkdir(hooks, { recursive: true })
-            await writeFile(join(hooks, 'post-commit'), '#!/bin/sh\ntouch .git/committed\n')
-            await writeFile(
-                join(hooks, 'reference-transaction'),
-                '#!/bin/sh\nif [ "$1" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n'
-            )
-            await chmod(join(hooks, 'post-commit'), 0o755)
-            await chmod(join(hooks, 'reference-transaction'), 0o755)
-            await git(copy, 'remote', 'set-url', '--push', 'origin', join(stores.root, 'nowhere'))
-            const device = nodeDevice({
-                vault,
-                contentStore: copy,
-                attachmentStorage: stores.attachmentStorage
-            })
-            const planned = await plan(device, { include: ['Welcome.md'] })
-
-            expect(await rejectionOf(publish(device, planned.id, RUN))).toContain('refused')
-
-            await rm(join(hooks, 'reference-transaction'))
-            expect(await rejectionOf(status(device))).toContain('stopped halfway')
-            // The next plan takes the first commit back: the copy has no commit again.
-            expect((await plan(device, { include: ['Welcome.md'] })).plan.publish).toEqual([
-                'Welcome.md'
-            ])
-            expect(
-                await rejectionOf(git(copy, 'rev-parse', '--verify', '--quiet', 'HEAD'))
-            ).not.toBe('')
-        }
-    )
-
     // A commit of the copy that the content store has on another branch is
     // not ahead of the content store.
     test('a copy whose commits the content store has on another branch can publish', async () => {
@@ -1668,24 +1607,6 @@ describe('commit that fails', () => {
 
         await git(second, 'pull', '--quiet', '--ff-only', 'origin', 'main')
         expect((await status(secondDevice)).unchanged).toEqual(['Welcome.md'])
-    })
-
-    test('a copy that has no commit takes its first publication', async () => {
-        await using stores = await makeTestStores()
-        const vault = await copyFixtureVault(stores)
-        const copy = await makeContentStoreCopyOf(stores, 'copy')
-        const device = nodeDevice({
-            vault,
-            contentStore: copy,
-            attachmentStorage: stores.attachmentStorage
-        })
-        const planned = await plan(device, { include: ['Welcome.md'] })
-
-        const report = await publish(device, planned.id, RUN)
-
-        expect(report.published).toEqual(['Welcome.md'])
-        expect(await git(stores.contentStore, 'rev-list', '--count', 'main')).toBe('1')
-        expect(await git(copy, 'status', '--porcelain')).toBe('')
     })
 })
 
@@ -1864,6 +1785,20 @@ describe('correction of the state property', () => {
 
 /** A second clone of the content store: the copy of another device. */
 async function makeContentStoreCopyOf(stores: TestStores, name: string): Promise<string> {
+    // The content store needs its configuration (R67): an empty deny list,
+    // pushed one time from a clone of its own when the store has no commit.
+    if ((await git(stores.root, 'ls-remote', stores.contentStore, 'refs/heads/main')) === '') {
+        const seed = join(stores.root, `${name}-seed`)
+        await git(stores.root, 'clone', '--quiet', stores.contentStore, seed)
+        await git(seed, 'config', 'user.name', 'Other')
+        await git(seed, 'config', 'user.email', 'other@example.invalid')
+        await git(seed, 'config', 'commit.gpgsign', 'false')
+        await git(seed, 'checkout', '--quiet', '-B', 'main')
+        await writeFile(join(seed, 'configuration.json'), '{"denyList": []}\n')
+        await git(seed, 'add', 'configuration.json')
+        await git(seed, 'commit', '--quiet', '--message', 'An empty deny list')
+        await git(seed, 'push', '--quiet', 'origin', 'HEAD:main')
+    }
     const copy = join(stores.root, name)
     await git(stores.root, 'clone', '--quiet', stores.contentStore, copy)
     await git(copy, 'config', 'user.name', 'Other')

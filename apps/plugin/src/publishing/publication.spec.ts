@@ -474,7 +474,7 @@ describe('guards of a plan', () => {
         await refuses(setup, DENIED, 'cannot be read')
     })
 
-    test('only a content store without a configuration has an empty deny list', async () => {
+    test('a content store without a configuration stops the plan (R67)', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         // Removed from the content store too: a file that git has and the
@@ -483,9 +483,9 @@ describe('guards of a plan', () => {
         await git('-C', setup.copy, 'commit', '--quiet', '--message', 'No configuration')
         await git('-C', setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
 
-        const planned = await plan(setup.device, { include: [DENIED] })
-
-        expect(planned.plan.publish).toEqual([DENIED])
+        expect(await rejectionOf(plan(setup.device, { include: [DENIED] }))).toContain(
+            'has no configuration.json'
+        )
     })
 
     test('a configuration that is missing from the copy stops the plan', async () => {
@@ -1423,4 +1423,53 @@ describe('failure cases after the first review', () => {
         expect(await rejectionOf(plan(device, { include: [NOTE] }))).toContain('not the root')
         expect(await readdir(folder)).toEqual([])
     })
+})
+
+// A wrong folder in the settings of the plugin must never read as a content
+// store with an empty deny list (decision R67): every private folder would
+// show as new.
+describe('a folder that is not the copy of the content store', () => {
+    test('a copy with no configuration stops every run, and names the file', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const copy = join(stores.root, 'clone')
+        await git('clone', '--quiet', stores.contentStore, copy)
+        await git('-C', copy, 'config', 'user.name', 'Test')
+        await git('-C', copy, 'config', 'user.email', 'test@example.invalid')
+        await writeFile(join(copy, 'README.md'), 'Another repository\n')
+        await git('-C', copy, 'add', 'README.md')
+        await git('-C', copy, 'commit', '--quiet', '--message', 'Another repository')
+        await git('-C', copy, 'push', '--quiet', 'origin', 'HEAD:main')
+        const device = nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+
+        expect(await rejectionOf(status(device))).toContain('has no configuration.json')
+        expect(await rejectionOf(plan(device, { include: [] }))).toContain(
+            'has no configuration.json'
+        )
+    }, 60_000)
+
+    test('a copy with no origin stops every run', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const copy = join(stores.root, 'alone')
+        await mkdir(copy)
+        await git('-C', copy, 'init', '--quiet', '--initial-branch', 'main')
+        await git('-C', copy, 'config', 'user.name', 'Test')
+        await git('-C', copy, 'config', 'user.email', 'test@example.invalid')
+        await writeFile(join(copy, 'configuration.json'), '{"denyList": []}\n')
+        await git('-C', copy, 'add', 'configuration.json')
+        await git('-C', copy, 'commit', '--quiet', '--message', 'A repository with no origin')
+        const device = nodeDevice({
+            vault,
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+
+        expect(await rejectionOf(status(device))).toContain('has no origin')
+        expect(await rejectionOf(plan(device, { include: [] }))).toContain('has no origin')
+    }, 60_000)
 })

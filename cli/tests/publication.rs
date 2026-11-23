@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use support::{TestStores, git, text};
+use support::{TestStores, git, program, text};
 
 const NOTE: &str = "10 Garden/Frost dates explained.md";
 const SECOND: &str = "10 Garden/Compost basics.md";
@@ -543,7 +543,7 @@ fn a_configuration_that_is_a_folder_stops_the_plan() {
 }
 
 #[test]
-fn only_a_content_store_without_a_configuration_has_an_empty_deny_list() {
+fn a_content_store_without_a_configuration_stops_the_plan() {
     let setup = set_up();
     // Removed from the content store too: a file that git has and the copy
     // does not stops the tool.
@@ -561,7 +561,12 @@ fn only_a_content_store_without_a_configuration_has_an_empty_deny_list() {
 
     let output = setup.run("plan", &["--include", DENIED]);
 
-    assert!(output.status.success(), "{}", errors_of(&output));
+    assert!(!output.status.success());
+    assert!(
+        errors_of(&output).contains("has no configuration.json"),
+        "{}",
+        errors_of(&output)
+    );
 }
 
 #[test]
@@ -1593,4 +1598,101 @@ fn a_takedown_of_a_path_with_no_entry_says_what_its_cleanup_of_the_storage_delet
     );
     assert!(!setup.stores.attachment_storage().join(&key).exists());
     assert!(setup.copy.join("notes").join(NOTE).exists());
+}
+
+/// A wrong folder for the copy must never read as a content store with an
+/// empty deny list (decision R67).
+#[test]
+fn a_copy_with_no_configuration_stops_every_run() {
+    let stores = TestStores::new();
+    let vault = stores.copy_fixture_vault();
+    let copy = stores.root().join("clone");
+    git(&[
+        "clone",
+        "--quiet",
+        text(stores.content_store()),
+        text(&copy),
+    ]);
+    git(&["-C", text(&copy), "config", "user.name", "Test"]);
+    git(&[
+        "-C",
+        text(&copy),
+        "config",
+        "user.email",
+        "test@example.invalid",
+    ]);
+    fs::write(copy.join("README.md"), "Another repository\n").expect("the file is written");
+    git(&["-C", text(&copy), "add", "README.md"]);
+    git(&[
+        "-C",
+        text(&copy),
+        "commit",
+        "--quiet",
+        "--message",
+        "Another repository",
+    ]);
+    git(&["-C", text(&copy), "push", "--quiet", "origin", "HEAD:main"]);
+
+    let output = program()
+        .args([
+            "status",
+            "--vault",
+            text(&vault),
+            "--content-store",
+            text(&copy),
+        ])
+        .output()
+        .expect("the program runs");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("has no configuration.json"));
+}
+
+#[test]
+fn a_copy_with_no_origin_stops_every_run() {
+    let stores = TestStores::new();
+    let vault = stores.copy_fixture_vault();
+    let copy = stores.root().join("alone");
+    fs::create_dir(&copy).expect("the folder is made");
+    git(&[
+        "-C",
+        text(&copy),
+        "init",
+        "--quiet",
+        "--initial-branch",
+        "main",
+    ]);
+    git(&["-C", text(&copy), "config", "user.name", "Test"]);
+    git(&[
+        "-C",
+        text(&copy),
+        "config",
+        "user.email",
+        "test@example.invalid",
+    ]);
+    fs::write(copy.join("configuration.json"), "{\"denyList\": []}\n")
+        .expect("the file is written");
+    git(&["-C", text(&copy), "add", "configuration.json"]);
+    git(&[
+        "-C",
+        text(&copy),
+        "commit",
+        "--quiet",
+        "--message",
+        "No origin",
+    ]);
+
+    let output = program()
+        .args([
+            "status",
+            "--vault",
+            text(&vault),
+            "--content-store",
+            text(&copy),
+        ])
+        .output()
+        .expect("the program runs");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("has no origin"));
 }
