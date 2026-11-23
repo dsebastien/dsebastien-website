@@ -38,6 +38,7 @@ function queueOf(lists: Partial<PublicationQueue>): PublicationQueue {
         behind: 0,
         changed: [],
         missing: [],
+        movedEdited: [],
         new: [],
         pairings: [],
         renamed: [],

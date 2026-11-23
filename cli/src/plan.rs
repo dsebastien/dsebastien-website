@@ -251,6 +251,9 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             .changed
             .iter()
             .filter(|path| !within(&selection.hold, path) && !within(&selection.remove, path))
+            // The update of a moved note whose text changed waits for a tick
+            // (R67).
+            .filter(|path| !within(&queue.moved_edited, path) || within(&selection.include, path))
             .chain(
                 selection
                     .pair

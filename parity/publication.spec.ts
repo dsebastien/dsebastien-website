@@ -997,7 +997,7 @@ describe('parity of an empty queue', () => {
 
         expect(await queueOf(rustTool)).toBe(fromTypeScript)
         expect(fromTypeScript).toBe(
-            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "new": [],\n  "pairings": [],\n  "renamed": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
+            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "movedEdited": [],\n  "new": [],\n  "pairings": [],\n  "renamed": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
         )
     }, 120_000)
 })

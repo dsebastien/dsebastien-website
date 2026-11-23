@@ -66,6 +66,11 @@ pub struct PublicationQueue {
     /// no guard excludes: missing from this vault. Never selected by default
     /// (PUB-95).
     pub missing: Vec<String>,
+    /// The notes of `changed` at the new path of a move of `renamed` whose
+    /// source is not the published source: an edit after the rename, or
+    /// another note at that path. Their update waits until the selection
+    /// includes them (decision R67).
+    pub moved_edited: Vec<String>,
     /// The candidates.
     pub new: Vec<String>,
     /// The pairings to confirm: a published note that is missing and a
@@ -99,6 +104,7 @@ impl PublicationQueue {
                 unchanged: 0,
             },
             missing: Vec::new(),
+            moved_edited: Vec::new(),
             new: Vec::new(),
             pairings: Vec::new(),
             renamed: Vec::new(),
@@ -492,6 +498,7 @@ pub fn compute_queue(
         .cloned()
         .collect();
     queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
+    queue.moved_edited = moved_edited_of(&moves.applied, &queue.changed, &notes, &manifest);
     queue.renamed = moves.applied;
     let mut rename_warnings = journals.warnings.clone();
     rename_warnings.extend(moves.warnings);
@@ -629,6 +636,56 @@ fn without_suffix(path: &str) -> &str {
     path.strip_suffix(".md").unwrap_or(path)
 }
 
+/// The moved notes whose text changed: the paths of `changed` at the new
+/// path of a move whose source is not the published source. Their update
+/// waits for a tick (R67).
+fn moved_edited_of(
+    applied: &[Move],
+    changed: &[String],
+    notes: &BTreeMap<String, ScannedNote>,
+    manifest: &BTreeMap<String, ManifestEntry>,
+) -> Vec<String> {
+    let changed: BTreeSet<&String> = changed.iter().collect();
+    applied
+        .iter()
+        .map(|one| &one.to)
+        .filter(|path| {
+            changed.contains(path)
+                && notes.get(*path).map(|note| &note.source_hash)
+                    != manifest.get(*path).map(|entry| &entry.source_hash)
+        })
+        .cloned()
+        .collect::<BTreeSet<String>>()
+        .into_iter()
+        .collect()
+}
+
+/// True when an unpublished entry that a line moved away gives its path to a
+/// published note that moved into it: exactly one other entry is at its
+/// path, that entry is published, and the note of the scan at that path has
+/// its source (rules 5 and 6 of the moves).
+fn yields(
+    entries: &BTreeMap<String, ManifestEntry>,
+    left_behind: &BTreeSet<String>,
+    source_hash_at: &impl Fn(&str) -> Option<String>,
+    last: &BTreeMap<String, String>,
+    from: &String,
+) -> bool {
+    if !left_behind.contains(from) {
+        return false;
+    }
+    let mut holders = last
+        .iter()
+        .filter(|(other, to)| *to == from && *other != from);
+    let (Some((holder, _)), None) = (holders.next(), holders.next()) else {
+        return false;
+    };
+    entries.get(holder).is_some_and(|entry| {
+        entry.state == State::Published
+            && source_hash_at(from).as_deref() == Some(entry.source_hash.as_str())
+    })
+}
+
 /// True when the path is a path of the vault: no part starts with a dot or
 /// holds U+FFFD.
 fn is_vault_name(path: &str) -> bool {
@@ -638,9 +695,11 @@ fn is_vault_name(path: &str) -> bool {
 }
 
 /// True when the vault of this device shows the move of the entry from
-/// `from` to `to` (rule 2 of the moves): `to` is a path of the vault, and
-/// when the vault still has the file at `from`, the note at `to` has the text
-/// of the entry. Another note at `to` is never taken for the moved one.
+/// `from` to `to` (rule 2 of the moves): `to` is a path of the vault, and the
+/// note at `to` has the source of the entry, or the vault has no note at
+/// `from` any more, or a note at both paths with neither of them the source
+/// of the entry. In the last two cases the note at `to` can have another
+/// source: its update waits for a tick (`moved_edited`, decision R67).
 fn shows_move(
     in_vault: &impl Fn(&str) -> bool,
     source_hash_at: &impl Fn(&str) -> Option<String>,
@@ -648,8 +707,16 @@ fn shows_move(
     from: &str,
     to: &str,
 ) -> bool {
-    is_vault_name(to)
-        && (!in_vault(from) || source_hash_at(to).as_deref() == Some(entry.source_hash.as_str()))
+    if !is_vault_name(to) {
+        return false;
+    }
+    let published = Some(entry.source_hash.as_str());
+    if source_hash_at(to).as_deref() == published || !in_vault(from) {
+        return true;
+    }
+    // The old file is still there: it is the note when it has its source, or
+    // when the vault has no note at the new path yet.
+    source_hash_at(from).as_deref() != published && in_vault(to)
 }
 
 /// The moves of the rename journals.
@@ -728,12 +795,7 @@ fn apply_moves(
             .get(from)
             .is_none_or(|entry| entry.state != State::Published)
         {
-            // It leaves its path to another entry only when the vault of
-            // this device shows its move, as rule 2 asks of a published move,
-            // and when its line can be about it (rule 1).
-            if shown && !(in_vault(from) && older) {
-                left_behind.insert(from.clone());
-            }
+            left_behind.insert(from.clone());
             continue;
         }
         if !shown {
@@ -758,14 +820,17 @@ fn apply_moves(
         }
         last.insert(from.clone(), to);
     }
-    revert_collisions(entries, &mut last, &left_behind, &mut warnings, &not_moved);
+    let yields = |last: &BTreeMap<String, String>, from: &String| {
+        yields(entries, &left_behind, &source_hash_at, last, from)
+    };
+    revert_collisions(entries, &mut last, &yields, &mut warnings, &not_moved);
     // An unpublished entry whose path another entry took leaves the manifest
     // (rule 6 of the moves, issue 105): the published note took the path
     // that the unpublished note left.
-    let taken: BTreeSet<String> = last
-        .iter()
-        .filter(|(from, _)| !left_behind.contains(*from))
-        .map(|(_, to)| to.clone())
+    let leaving: BTreeSet<String> = last
+        .keys()
+        .filter(|from| yields(&last, from))
+        .cloned()
         .collect();
     let mut displaced = Vec::new();
     let mut manifest = BTreeMap::new();
@@ -774,7 +839,7 @@ fn apply_moves(
         let Some(entry) = entries.get(&from) else {
             continue;
         };
-        if left_behind.contains(&from) && taken.contains(&from) {
+        if leaving.contains(&from) {
             displaced.push(entry.clone());
             warnings.push(RenameWarning {
                 path: from,
@@ -804,7 +869,7 @@ fn apply_moves(
 fn revert_collisions(
     entries: &BTreeMap<String, ManifestEntry>,
     last: &mut BTreeMap<String, String>,
-    left_behind: &BTreeSet<String>,
+    yields: &dyn Fn(&BTreeMap<String, String>, &String) -> bool,
     warnings: &mut Vec<RenameWarning>,
     not_moved: &dyn Fn(&str, &str) -> String,
 ) {
@@ -812,7 +877,8 @@ fn revert_collisions(
     while changed {
         changed = false;
         let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (from, to) in last.iter().filter(|(from, _)| !left_behind.contains(*from)) {
+        let snapshot = last.clone();
+        for (from, to) in last.iter().filter(|(from, _)| !yields(&snapshot, from)) {
             groups
                 .entry(format!("path\n{to}"))
                 .or_default()

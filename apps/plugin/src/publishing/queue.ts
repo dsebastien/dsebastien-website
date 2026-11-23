@@ -46,6 +46,13 @@ export type QueueLists = {
      * guard excludes: missing from this vault. Never selected by default (PUB-95).
      */
     readonly missing: readonly string[]
+    /**
+     * The notes of `changed` at the new path of a move of `renamed` whose
+     * source is not the published source: an edit after the rename, or
+     * another note at that path. Their update waits until the selection
+     * includes them (decision R67).
+     */
+    readonly movedEdited: readonly string[]
     /** The candidates. */
     readonly new: readonly string[]
     /**
@@ -369,6 +376,7 @@ export async function computeQueue(input: {
                     (!notes.has(path) && movedUnderGuard(path)))
         )
         .map(([path]) => path)
+    const changedPaths = new Set(lists.changed)
     const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
         counts: {
@@ -378,6 +386,15 @@ export async function computeQueue(input: {
             unchanged: lists.unchanged.length
         },
         missing: sortByCodePoint(missing),
+        movedEdited: sortByCodePoint(
+            moves.moves
+                .map((move) => move.to)
+                .filter(
+                    (path) =>
+                        changedPaths.has(path) &&
+                        notes.get(path)?.sourceHash !== manifest.get(path)?.sourceHash
+                )
+        ),
         new: sortByCodePoint(lists.new),
         // A note at the new path of a move waits for the publication of the move.
         pairings: pairingsOf(
@@ -471,9 +488,11 @@ function withoutSuffix(path: string): string {
 
 /**
  * True when the vault of this device shows the move of the entry from `from`
- * to `to` (rule 2 of the moves): `to` is a path of the vault, and when the
- * vault still has the file at `from`, the note at `to` has the text of the
- * entry. Another note at `to` is never taken for the moved one.
+ * to `to` (rule 2 of the moves): `to` is a path of the vault, and the note at
+ * `to` has the source of the entry, or the vault has no note at `from` any
+ * more, or a note at both paths with neither of them the source of the entry.
+ * In the last two cases the note at `to` can have another source: its update
+ * waits for a tick (`movedEdited`, decision R67).
  */
 function showsMove(
     vault: {
@@ -488,7 +507,12 @@ function showsMove(
     if (!vault.isVaultName(to)) {
         return false
     }
-    return !vault.inVault(from) || vault.sourceHashAt(to) === entry.sourceHash
+    if (vault.sourceHashAt(to) === entry.sourceHash || !vault.inVault(from)) {
+        return true
+    }
+    // The old file is still there: it is the note when it has its source, or
+    // when the vault has no note at the new path yet.
+    return vault.sourceHashAt(from) !== entry.sourceHash && vault.inVault(to)
 }
 
 /**
@@ -553,18 +577,7 @@ export function applyMoves(
         // (R64), and a path that it had only while it was unpublished never
         // becomes a public former path. The guard rule above still applies.
         if (entries.get(from)?.state !== 'published') {
-            // It leaves its path to another entry only when the vault of this
-            // device shows its move, as rule 2 asks of a published move, and
-            // when its line can be about it (rule 1).
-            const entry = entries.get(from)
-            const shown = entry !== undefined && showsMove(vault, entry, from, to)
-            const older =
-                vault.inVault(from) &&
-                entry !== undefined &&
-                compareCodePoints(folded.times.get(from) ?? '', entry.firstPublished) < 0
-            if (shown && !older) {
-                leftBehind.add(from)
-            }
+            leftBehind.add(from)
             continue
         }
         const entry = entries.get(from)
@@ -585,6 +598,22 @@ export function applyMoves(
         }
         final.set(from, to)
     }
+    // An unpublished entry that a line moved away gives its path to a
+    // published note that moved into it, only when the note of the scan at
+    // that path has the source of that published entry (rules 5 and 6).
+    const yields = (from: string): boolean => {
+        if (!leftBehind.has(from)) {
+            return false
+        }
+        const holders = [...final].filter(([other, to]) => to === from && other !== from)
+        const [holder] = holders
+        const entry = holder === undefined ? undefined : entries.get(holder[0])
+        return (
+            holders.length === 1 &&
+            entry?.state === 'published' &&
+            vault.sourceHashAt(from) === entry.sourceHash
+        )
+    }
     // Two entries at one path, or two published entries with one folded form:
     // the entries of the group that moved do not move, until no such group is left.
     for (let changed = true; changed;) {
@@ -594,7 +623,7 @@ export function applyMoves(
             groups.set(key, [...(groups.get(key) ?? []), from])
         }
         for (const [from, to] of final) {
-            if (leftBehind.has(from)) {
+            if (yields(from)) {
                 continue
             }
             add(`path\n${to}`, from)
@@ -622,7 +651,7 @@ export function applyMoves(
     // An unpublished entry whose path another entry took leaves the manifest
     // (rule 6 of the moves, issue 105): the published note took the path
     // that the unpublished note left.
-    const taken = new Set([...final].filter(([from]) => !leftBehind.has(from)).map(([, to]) => to))
+    const leaving = new Set([...final.keys()].filter((from) => yields(from)))
     const displaced: ManifestEntry[] = []
     const manifest = new Map<string, ManifestEntry>()
     const moves: Move[] = []
@@ -631,7 +660,7 @@ export function applyMoves(
         if (entry === undefined) {
             continue
         }
-        if (leftBehind.has(from) && taken.has(from)) {
+        if (leaving.has(from)) {
             displaced.push(entry)
             warnings.push({
                 path: from,

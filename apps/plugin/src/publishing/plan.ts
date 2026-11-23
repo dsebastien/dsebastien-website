@@ -319,6 +319,9 @@ export function planLists(queue: QueueLists, selection: NormalSelection): Public
     const pairTo = selection.pair.map((pairing) => pairing.to)
     const held = new Set(selection.hold)
     const removed = new Set(selection.remove)
+    // The update of a moved note whose text changed waits for a tick (R67).
+    const included = new Set(selection.include)
+    const waiting = new Set(queue.movedEdited.filter((path) => !included.has(path)))
     return makePlan({
         // An unpublished note under a guard leaves the manifest too (decision R64).
         forcedRemove: [...forced, ...queue.unpublishedUnderGuard],
@@ -326,7 +329,9 @@ export function planLists(queue: QueueLists, selection: NormalSelection): Public
         move: [...queue.renamed, ...selection.pair],
         publish: selection.include.filter((path) => candidates.has(path)),
         update: [
-            ...queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
+            ...queue.changed.filter(
+                (path) => !held.has(path) && !removed.has(path) && !waiting.has(path)
+            ),
             ...pairTo.filter((path) => !held.has(path))
         ],
         // A guard wins over an unpublish: the note leaves the manifest.
