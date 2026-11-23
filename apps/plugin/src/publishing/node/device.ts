@@ -328,7 +328,7 @@ function waysOut(different: readonly { code: string; path: string }[], folder: s
 /** The content store cannot be reached: no network, or no such repository. */
 class Unreachable extends Error {}
 
-function gitContentStore(folder: string): ContentStore {
+function gitContentStore(folder: string, program = 'git'): ContentStore {
     /** Runs git in the copy. The input goes to its standard input. */
     const gitWith = async (
         args: readonly string[],
@@ -339,7 +339,7 @@ function gitContentStore(folder: string): ContentStore {
         // as a pattern that names other files too. No conversion of line
         // ends: a setting of the machine must never change the bytes of a
         // file of the store.
-        const running = run('git', [...options, ...args], {
+        const running = run(program, [...options, ...args], {
             cwd: folder,
             env: gitEnvironment(),
             maxBuffer: 1024 * 1024 * 1024
@@ -1299,6 +1299,7 @@ export function fileNoteTypes(file: string, asked?: string): NoteTypes {
  * @param options.attachmentStorage the folder of the attachment storage
  * @param options.noteTypes the Starter Kit of the device; by default no note has a type
  * @param options.renames the folder of the rename journals; by default the one of the plugin in the vault
+ * @param options.git the git program; by default `git` of the path of the system
  */
 export function nodeDevice(options: {
     vault: string
@@ -1306,15 +1307,53 @@ export function nodeDevice(options: {
     attachmentStorage: string
     noteTypes?: NoteTypes
     renames?: string
+    git?: string
 }): Device {
     return {
         vault: folderVault(options.vault),
         renames: folderRenameJournals(
             options.renames ?? join(options.vault, '.obsidian', JOURNAL_FOLDER)
         ),
-        store: gitContentStore(options.contentStore),
+        store: gitContentStore(options.contentStore, options.git),
         attachments: folderAttachmentStorage(options.attachmentStorage),
         local: folderLocalStore(options.contentStore),
         noteTypes: options.noteTypes ?? NO_NOTE_TYPES
+    }
+}
+
+/**
+ * Pulls the content store into the copy: exactly `git pull --ff-only origin
+ * main`, on a click of the author when another device published first
+ * (decision R67). The tool never pulls by itself (R46). It refuses to run
+ * while a run of the tool holds the lock of the device, and a pull that is
+ * not a fast-forward stops with the message of git.
+ *
+ * @param options.contentStore the folder of the copy of the content store
+ * @param options.git the git program; by default `git` of the path of the system
+ */
+export async function pullContentStore(options: {
+    contentStore: string
+    git?: string
+}): Promise<void> {
+    if ((await folderLocalStore(options.contentStore).readLock()) !== undefined) {
+        throw new Error(
+            `a run of the tool holds the lock of this device: pull when it ends (${options.contentStore})`
+        )
+    }
+    const program = options.git ?? 'git'
+    try {
+        await run(program, [...GIT_OPTIONS, 'pull', '--quiet', '--ff-only', 'origin', 'main'], {
+            cwd: options.contentStore,
+            env: gitEnvironment()
+        })
+    } catch (error) {
+        const stderr =
+            error instanceof Error && 'stderr' in error && typeof error.stderr === 'string'
+                ? error.stderr.trim()
+                : ''
+        throw new Error(
+            `git pull --ff-only origin main failed in ${options.contentStore} (${program}): ${stderr === '' ? codeOf(error) : stderr}`,
+            { cause: error }
+        )
     }
 }
