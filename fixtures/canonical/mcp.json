@@ -186,7 +186,7 @@
                 "id": null,
                 "error": {
                     "code": -32600,
-                    "message": "Invalid Request: the id must be a text or a number"
+                    "message": "Invalid Request: the id must be a text or a whole number"
                 }
             }
         },
@@ -199,9 +199,53 @@
                 "id": null,
                 "error": {
                     "code": -32600,
-                    "message": "Invalid Request: the id must be a text or a number"
+                    "message": "Invalid Request: the id must be a text or a whole number"
                 }
             }
+        },
+        {
+            "name": "an id that is a number with a fraction",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": 1.5, \"method\": \"ping\"}",
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request: the id must be a text or a whole number"
+                }
+            }
+        },
+        {
+            "name": "an id that is larger than a double holds exactly",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": 12345678901234567890, \"method\": \"ping\"}",
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request: the id must be a text or a whole number"
+                }
+            }
+        },
+        {
+            "name": "the largest id that both faces read exactly",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": 9007199254740991, \"method\": \"ping\"}",
+            "call": null,
+            "response": { "jsonrpc": "2.0", "id": 9007199254740991, "result": {} }
+        },
+        {
+            "name": "an id written with a fraction of zero, or as minus zero, is a whole number",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": -0, \"method\": \"ping\"}",
+            "call": null,
+            "response": { "jsonrpc": "2.0", "id": 0, "result": {} }
+        },
+        {
+            "name": "an id written as 2.0",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": 2.0, \"method\": \"ping\"}",
+            "call": null,
+            "response": { "jsonrpc": "2.0", "id": 2, "result": {} }
         },
         {
             "name": "a request with a method that is not a text",

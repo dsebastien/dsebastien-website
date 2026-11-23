@@ -394,6 +394,116 @@ describe('the MCP server of the plugin', () => {
         }
     }, 60_000)
 
+    test('two calls at one time: the check after the publication still runs', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            const planned = JSON.parse(
+                (await call('plan', { include: [NOTE] })).texts[0] ?? ''
+            ) as {
+                id: string
+            }
+
+            const [published, read] = await Promise.all([
+                call('publish', { plan: planned.id }),
+                call('status')
+            ])
+
+            expect(published.isError).toBe(false)
+            expect(read.isError).toBe(false)
+            expect(center.state.queue?.unchanged).toEqual([NOTE])
+            expect(center.state.log.map((line) => line.text).join('\n')).not.toContain('refused')
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
+
+    test('a new key refuses the old one at once', async () => {
+        await using stores = await makeTestStores()
+        const { server: first, center } = await setUp(stores)
+        await first.stop()
+        let key = KEY
+        const server = new LocalMcpServer({
+            port: 0,
+            key: () => key,
+            version: 'test',
+            operations: (one) => center.serve(one)
+        })
+        const port = await server.start()
+        try {
+            expect((await send(port, { body: PING })).status).toBe(200)
+            key = 'the-new-key'
+
+            expect((await send(port, { body: PING })).status).toBe(401)
+            expect(
+                (
+                    await send(port, {
+                        body: PING,
+                        headers: { Authorization: 'Bearer the-new-key' }
+                    })
+                ).status
+            ).toBe(200)
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('a note under a guard cannot be included through the server', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, copy } = await setUp(stores)
+        try {
+            const before = await lastCommit(copy)
+
+            const answer = await call('plan', { include: ['90 Locked Shed/Shed inventory.md'] })
+
+            expect(answer.isError).toBe(true)
+            expect(answer.texts[0]).toContain('90 Locked Shed/Shed inventory.md')
+            expect(await lastCommit(copy)).toBe(before)
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('an action of the author waits for a call that only reads', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            await center.check()
+            center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+            const read = call('status')
+            await center.dryRun()
+            await read
+
+            expect(center.state.error).toBeUndefined()
+            expect(center.state.dryRun?.plan.publish).toEqual([NOTE])
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('after a run of an agent, a ticked new note that changed still stops a publication of the view', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            await center.check()
+            center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+            // Another program writes the ticked note after the check.
+            center.noteChanged(NOTE)
+            const planned = JSON.parse(
+                (await call('plan', { include: [SECOND] })).texts[0] ?? ''
+            ) as { id: string }
+            expect((await call('publish', { plan: planned.id })).isError).toBe(false)
+
+            await center.publish()
+
+            expect(center.state.error).toContain('A new note changed after the check')
+            expect(center.state.queue?.new).toContain(NOTE)
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
+
     test('a port in use is an error that names it', async () => {
         await using stores = await makeTestStores()
         const { server, port, center } = await setUp(stores)

@@ -227,6 +227,29 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
     })
 }
 
+/// The largest whole number that both faces read exactly: the TypeScript face
+/// reads JSON numbers as doubles.
+const LARGEST_ID: i64 = 9_007_199_254_740_991;
+
+/// A number id as a whole number, when both faces read it exactly: a whole
+/// number from -(2^53 - 1) to 2^53 - 1, also when it is written `1.0` or
+/// `-0`.
+fn whole_number(number: &serde_json::Number) -> Option<i64> {
+    if let Some(whole) = number.as_i64() {
+        return (-LARGEST_ID..=LARGEST_ID).contains(&whole).then_some(whole);
+    }
+    let value = number.as_f64()?;
+    // A number with no fraction (its bits do not change when it is cut), in
+    // the range: then the cast is exact.
+    #[allow(clippy::cast_precision_loss)]
+    let largest = LARGEST_ID as f64;
+    if value.trunc().to_bits() != value.to_bits() || value.abs() > largest {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    Some(value as i64)
+}
+
 fn error_answer(id: &Value, code: i64, message: &str) -> String {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }).to_string()
 }
@@ -327,17 +350,20 @@ pub fn answer(
         ));
     };
     let id = object.get("id");
-    if let Some(id) = id
-        && !id.is_string()
-        && !id.is_number()
-    {
-        return Some(error_answer(
-            &Value::Null,
-            INVALID_REQUEST,
-            "Invalid Request: the id must be a text or a number",
-        ));
-    }
-    let shown = id.cloned().unwrap_or(Value::Null);
+    let shown = match id {
+        None => Value::Null,
+        Some(Value::String(text)) => Value::String(text.clone()),
+        Some(Value::Number(number)) if whole_number(number).is_some() => {
+            json!(whole_number(number))
+        }
+        Some(_) => {
+            return Some(error_answer(
+                &Value::Null,
+                INVALID_REQUEST,
+                "Invalid Request: the id must be a text or a whole number",
+            ));
+        }
+    };
     if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
         return Some(error_answer(
             &shown,
@@ -395,18 +421,35 @@ pub fn serve(
     info: &Info,
     operations: &mut dyn FnMut(&Call) -> Result<Outcome, String>,
 ) -> io::Result<()> {
-    for line in input.lines() {
-        let line = line?;
+    let mut input = input;
+    let mut bytes = Vec::new();
+    loop {
+        bytes.clear();
+        if input.read_until(b'\n', &mut bytes)? == 0 {
+            return Ok(());
+        }
+        // A line that is not UTF-8 is one message that is not JSON: the
+        // server answers it and goes on.
+        let line = String::from_utf8_lossy(&bytes);
+        let line = line.trim_end_matches(['\n', '\r']);
         if line.trim().is_empty() {
             continue;
         }
-        if let Some(answer) = answer(&line, info, operations) {
+        let answer = if std::str::from_utf8(&bytes).is_ok() {
+            answer(line, info, operations)
+        } else {
+            Some(error_answer(
+                &Value::Null,
+                PARSE_ERROR,
+                "Parse error: the message is not JSON",
+            ))
+        };
+        if let Some(answer) = answer {
             output.write_all(answer.as_bytes())?;
             output.write_all(b"\n")?;
             output.flush()?;
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -528,6 +571,21 @@ mod tests {
                 "the tool {name}"
             );
         }
+    }
+
+    #[test]
+    fn answers_a_line_that_is_not_utf_8_and_goes_on() {
+        let mut input = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"\xff\"}\n".to_vec();
+        input.extend_from_slice(b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\r\n");
+        let mut output = Vec::new();
+        let mut operations = |_: &Call| Err("no call".to_owned());
+
+        serve(input.as_slice(), &mut output, &INFO, &mut operations).expect("it serves");
+
+        assert_eq!(
+            String::from_utf8(output).expect("the output is text"),
+            "{\"error\":{\"code\":-32700,\"message\":\"Parse error: the message is not JSON\"},\"id\":null,\"jsonrpc\":\"2.0\"}\n{\"id\":2,\"jsonrpc\":\"2.0\",\"result\":{}}\n"
+        );
     }
 
     #[test]

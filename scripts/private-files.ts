@@ -61,7 +61,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** True when the text starts with a block of properties. A byte order mark can come first. */
 /**
  * True for a skill of the tool (TOOL-04): `skills/<name>/SKILL.md`, whose
  * first property is `name: <name>`. The standard of the skills wants
@@ -72,6 +71,7 @@ function isSkill(path: string, text: string): boolean {
     return match !== null && text.startsWith(`---\nname: ${String(match[1])}\n`)
 }
 
+/** True when the text starts with a block of properties. A byte order mark can come first. */
 function startsWithProperties(text: string): boolean {
     const start = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
     return /^---[ \t]*\r?\n/.test(start)

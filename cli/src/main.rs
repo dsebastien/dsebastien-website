@@ -497,14 +497,18 @@ fn operate(
 
 /// Serves the MCP server over the standard input and output (`mcp`).
 fn serve(places: &Places, attachment_storage: &Path, name: Option<String>) -> Result<(), String> {
-    let device = device(places)?;
+    // The places are checked at the start, so a wrong folder stops the
+    // program before the first message.
+    device(places)?;
     let storage = storage(attachment_storage);
     let name = name.unwrap_or_else(host_name);
     let info = mcp::Info {
         name: mcp::SERVER_NAME,
         version: env!("CARGO_PKG_VERSION"),
     };
-    let mut operations = |call: &mcp::Call| operate(&device, &storage, &name, call);
+    // A new device for each call: a device keeps the listing of each folder
+    // of the vault for one run, and one call is one run, as one command is.
+    let mut operations = |call: &mcp::Call| operate(&device(places)?, &storage, &name, call);
     mcp::serve(
         io::stdin().lock(),
         io::stdout().lock(),

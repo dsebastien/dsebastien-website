@@ -264,14 +264,17 @@ export async function answer(
     }
     const hasId = Object.hasOwn(value, 'id')
     const rawId = value['id']
-    if (hasId && typeof rawId !== 'string' && typeof rawId !== 'number') {
+    // A number id must be a whole number that a double holds exactly, so
+    // that both faces give it back as it came (the Rust face reads more).
+    if (hasId && typeof rawId !== 'string' && !Number.isSafeInteger(rawId)) {
         return errorAnswer(
             null,
             INVALID_REQUEST,
-            'Invalid Request: the id must be a text or a number'
+            'Invalid Request: the id must be a text or a whole number'
         )
     }
-    const id: Id = hasId ? (rawId as string | number) : null
+    // `-0` comes back as `0`, as in the Rust face.
+    const id: Id = hasId ? (rawId === 0 ? 0 : (rawId as string | number)) : null
     if (value['jsonrpc'] !== '2.0') {
         return errorAnswer(id, INVALID_REQUEST, 'Invalid Request: jsonrpc must be "2.0"')
     }

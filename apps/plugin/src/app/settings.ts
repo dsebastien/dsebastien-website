@@ -163,5 +163,5 @@ export function keyOf(secrets: Secrets, random: (size: number) => Uint8Array): s
 
 /** The command that adds the MCP server of this device to Claude Code. */
 export function claudeCommandOf(port: number, key: string): string {
-    return `claude mcp add --transport http vault-publish http://127.0.0.1:${String(port)}/mcp --header "Authorization: Bearer ${key}"`
+    return `claude mcp add --scope local --transport http vault-publish http://127.0.0.1:${String(port)}/mcp --header "Authorization: Bearer ${key}"`
 }

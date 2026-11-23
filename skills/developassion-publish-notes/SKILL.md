@@ -6,7 +6,7 @@ model: sonnet
 effort: medium
 argument-hint: '[<note path>...] [--unpublish|--takedown]'
 disable-model-invocation: true
-allowed-tools: Read AskUserQuestion Bash(dsebastien-vault-publish:*) mcp__vault-publish__status mcp__vault-publish__plan mcp__vault-publish__publish mcp__vault-publish__unpublish mcp__vault-publish__takedown mcp__vault-publish__unlock
+allowed-tools: Read AskUserQuestion mcp__vault-publish__status
 metadata:
     kind: effect
     capability: developassion.notes.publish
@@ -26,8 +26,9 @@ The publishing tool of the notes website takes notes of the vault to the content
 2. **Show the plan before a publication that does more than updates.** Give the lists of the plan (new, updated, unpublished, moved, forced removals) and wait for a yes. The id of the plan goes to `publish` unchanged.
 3. **A guard wins, and an agent never moves it.** Never edit `publish_ignore`, the deny list or `configuration.json` to make a note publishable, and never retry with other paths to get around a refusal. Report the message as it is.
 4. **An error stops the run.** Report the text of the tool word for word and stop. A stale plan is the one exception: make the plan again, show it, and wait for a yes again.
-5. **`unlock` only when the author confirms that no publication runs on this device**, in Obsidian or in the command line program. The tool does not check it.
-6. **Not on the real vault before the first publication.** Until the first publication to the preview host (issue 60 of the repository dsebastien-website) is done, run `publish`, `unpublish` and `takedown` only on a test vault (`bun run plugin:vault` in the repository). The tool also stops on a copy of the content store that has no `configuration.json`.
+5. **After a lost connection, read first.** When a call gets no answer (a reload of the plugin, a timeout), run `status` before anything else: the run can have ended without its answer.
+6. **`unlock` only when the author confirms that no publication runs on this device**, in Obsidian or in the command line program. The tool does not check it.
+7. **Not on the real vault before the first publication.** Until the first publication to the preview host (issue 60 of the repository dsebastien-website) is done, run `publish`, `unpublish` and `takedown` only on a test vault (`bun run plugin:vault` in the repository). The tool also stops on a copy of the content store that has no `configuration.json`.
 
 ## Faces
 
@@ -58,7 +59,7 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 | ---------------------------------------------------- | ------------------------------------------------------------------------ |
 | The plan is stale                                    | Plan again, show the new plan, wait for a yes (rule 4)                   |
 | A guard excludes a note, or a path is in no list     | Report it and stop. Never move the guard (rule 3)                        |
-| The copy is locked, or a publication stopped halfway | Ask the author whether a run is still going. Offer `unlock` (rule 5)     |
+| The copy is locked, or a publication stopped halfway | Ask the author whether a run is still going. Offer `unlock` (rule 6)     |
 | A run of the publication center runs already         | Wait, then call again                                                    |
 | A deny list entry names no folder of the vault       | Report it: the author renamed a private folder, and every run stops      |
 | The settings miss a folder                           | Ask the author to set it in the settings of Vault Publish on this device |

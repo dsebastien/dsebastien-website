@@ -248,7 +248,7 @@ describe('the key of the MCP server', () => {
 
     test('the command for Claude Code names the address and the key', () => {
         expect(claudeCommandOf(27126, 'k3y')).toBe(
-            'claude mcp add --transport http vault-publish http://127.0.0.1:27126/mcp --header "Authorization: Bearer k3y"'
+            'claude mcp add --scope local --transport http vault-publish http://127.0.0.1:27126/mcp --header "Authorization: Bearer k3y"'
         )
     })
 })

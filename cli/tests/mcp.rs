@@ -197,6 +197,42 @@ fn status_gives_the_output_of_the_status_command() {
 }
 
 #[test]
+fn each_call_reads_the_vault_again() {
+    let setup = set_up();
+    let mut server = setup.start();
+    let first = server.data("status", &json!({}));
+    let note = "10 Garden/Written during the session.md";
+    fs::write(
+        setup.vault.join(note),
+        "---\ntags:\n  - type/note\n---\n\n# Written during the session\n",
+    )
+    .expect("the note is written");
+
+    let second = server.data("status", &json!({}));
+
+    assert!(
+        !first["new"]
+            .as_array()
+            .expect("a list")
+            .contains(&json!(note))
+    );
+    assert!(
+        second["new"]
+            .as_array()
+            .expect("a list")
+            .contains(&json!(note))
+    );
+    assert_eq!(
+        serde_json::to_string(&second).expect("JSON"),
+        serde_json::to_string(
+            &serde_json::from_str::<Value>(&setup.command("status", &[])).expect("JSON")
+        )
+        .expect("JSON")
+    );
+    assert!(server.stop().success());
+}
+
+#[test]
 fn drives_a_whole_publication_through_the_tools() {
     let setup = set_up();
     let mut server = setup.start();

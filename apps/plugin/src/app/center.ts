@@ -266,9 +266,24 @@ export class PublicationCenter {
 
     /**
      * Runs one activity, when no other one runs. It refuses the activity
-     * with a line of the log otherwise.
+     * with a line of the log otherwise. A request of an agent that only
+     * reads is waited for: it never holds the author back (issue 41).
+     *
+     * With `after`, a check runs at the end, in the same activity, also when
+     * the work failed: a run that changed the copy makes the queue old, and
+     * no other activity may start between the run and its check. A check
+     * that fails keeps the failure of the run when there is one. After a run
+     * of an agent, the check keeps the marks of the ticked notes.
      */
-    async #run(activity: Activity, name: string, work: () => Promise<void>): Promise<void> {
+    async #run(
+        activity: Activity,
+        name: string,
+        work: () => Promise<void>,
+        after: 'none' | 'author' | 'agent' = 'none'
+    ): Promise<void> {
+        while (this.#state.activity === 'answering' && activity !== 'answering') {
+            await this.#current
+        }
         if (this.#state.activity !== 'idle') {
             const text = `${name} refused: a ${ACTIVITY_NAMES[this.#state.activity]} runs already`
             this.#log(text)
@@ -284,10 +299,22 @@ export class PublicationCenter {
         this.#set({ activity: activity })
         const running = (async () => {
             try {
-                await work()
-            } catch (error) {
-                this.#log(`${name} failed: ${messageOf(error)}`)
-                this.#set({ error: messageOf(error) })
+                try {
+                    await work()
+                } catch (error) {
+                    this.#log(`${name} failed: ${messageOf(error)}`)
+                    this.#set({ error: messageOf(error) })
+                }
+                if (after !== 'none') {
+                    try {
+                        await this.#check(after === 'agent')
+                    } catch (error) {
+                        this.#log(`Check failed: ${messageOf(error)}`)
+                        if (this.#state.error === undefined) {
+                            this.#set({ error: messageOf(error) })
+                        }
+                    }
+                }
             } finally {
                 this.#set({ activity: 'idle' })
             }
@@ -296,8 +323,15 @@ export class PublicationCenter {
         await running
     }
 
-    /** The check of the vault and of the copy: the four lists, the moves and the pairings. */
-    async #check(): Promise<void> {
+    /**
+     * The check of the vault and of the copy: the four lists, the moves and
+     * the pairings. The edits before it are no marks after it. With
+     * `keepTicked` (a check after a run of an agent, issue 41), the ticked new
+     * notes and the new notes of the ticked pairings stay marked: the author
+     * did not look at the lists, and a publication of the view must stop on
+     * them.
+     */
+    async #check(keepTicked = false): Promise<void> {
         this.#log('Check started')
         const device = this.host.device()
         // The edits before this check: they are marks again when it fails.
@@ -310,6 +344,16 @@ export class PublicationCenter {
                 this.#changed.add(path)
             }
             throw error
+        }
+        if (!keepTicked) {
+            return
+        }
+        const { choices } = this.#state
+        const ticked = new Set([...choices.include, ...choices.pair.map((one) => one.to)])
+        for (const path of before) {
+            if (ticked.has(path)) {
+                this.#changed.add(path)
+            }
         }
     }
 
@@ -366,52 +410,56 @@ export class PublicationCenter {
      * is published, and the view shows the new plan.
      */
     async publish(clickedAt?: number): Promise<void> {
-        await this.#run('publishing', 'Publication', async () => {
-            const { queue, choices } = this.#state
-            if (queue === undefined) {
-                throw new Error('check the vault first')
-            }
-            const expected = planOfChoices(queue, choices)
-            // A new note that changed after the check can be another note at
-            // the same path: the author never saw it in the lists.
-            const selection = selectionOf(queue, choices)
-            this.#refuseChangedNewNotes(queue, expected, selection.pair)
-            const device = this.host.device()
-            let stored: StoredPlan
-            try {
-                stored = await plan(device, selectionOf(queue, choices))
-            } catch (error) {
-                if (error instanceof SelectionError) {
+        await this.#run(
+            'publishing',
+            'Publication',
+            async () => {
+                const { queue, choices } = this.#state
+                if (queue === undefined) {
+                    throw new Error('check the vault first')
+                }
+                const expected = planOfChoices(queue, choices)
+                // A new note that changed after the check can be another note at
+                // the same path: the author never saw it in the lists.
+                const selection = selectionOf(queue, choices)
+                this.#refuseChangedNewNotes(queue, expected, selection.pair)
+                const device = this.host.device()
+                let stored: StoredPlan
+                try {
+                    stored = await plan(device, selectionOf(queue, choices))
+                } catch (error) {
+                    if (error instanceof SelectionError) {
+                        throw new Error(
+                            `The selection changed since the check, so nothing was published: ${error.message}. Check the lists and publish again.`,
+                            { cause: error }
+                        )
+                    }
+                    throw error
+                }
+                // An edit during the scan of the plan counts too.
+                this.#refuseChangedNewNotes(queue, expected, selection.pair)
+                if (!samePlan(stored.plan, expected)) {
+                    this.#set({ dryRun: stored })
                     throw new Error(
-                        `The selection changed since the check, so nothing was published: ${error.message}. Check the lists and publish again.`,
-                        { cause: error }
+                        `The plan changed since the check, so nothing was published. The plan is now: ${describePlan(stored.plan)} (${pathsOfPlan(stored.plan)}). Check the lists and publish again.`
                     )
                 }
-                throw error
-            }
-            // An edit during the scan of the plan counts too.
-            this.#refuseChangedNewNotes(queue, expected, selection.pair)
-            if (!samePlan(stored.plan, expected)) {
-                this.#set({ dryRun: stored })
-                throw new Error(
-                    `The plan changed since the check, so nothing was published. The plan is now: ${describePlan(stored.plan)} (${pathsOfPlan(stored.plan)}). Check the lists and publish again.`
-                )
-            }
-            this.#log(`Publication started: ${describePlan(expected)}`)
-            this.host.started?.(describePlan(expected), clickedAt)
-            this.#fresh = false
-            const report = await publish(device, stored.id, {
-                time: canonicalTime(this.host.now()),
-                device: this.host.deviceName,
-                face: 'plugin'
-            })
-            this.#wrote([...report.propertySet, ...report.propertyRemoved])
-            this.#set({
-                report: { kind: 'publication', report, addresses: addressesOf(report) }
-            })
-            this.#log(`Publication done: ${countsOf(report)}`)
-        })
-        await this.#checkAfter()
+                this.#log(`Publication started: ${describePlan(expected)}`)
+                this.host.started?.(describePlan(expected), clickedAt)
+                this.#fresh = false
+                const report = await publish(device, stored.id, {
+                    time: canonicalTime(this.host.now()),
+                    device: this.host.deviceName,
+                    face: 'plugin'
+                })
+                this.#wrote([...report.propertySet, ...report.propertyRemoved])
+                this.#set({
+                    report: { kind: 'publication', report, addresses: addressesOf(report) }
+                })
+                this.#log(`Publication done: ${countsOf(report)}`)
+            },
+            'author'
+        )
     }
 
     /**
@@ -425,48 +473,52 @@ export class PublicationCenter {
         while (this.#state.activity !== 'idle') {
             await this.#current
         }
-        await this.#run('taking down', 'Takedown', async () => {
-            const device = this.host.device()
-            // The queue tells where a note is in the content store: after a
-            // run that changed the copy, it is checked again first.
-            if (!this.#fresh || this.#changed.size > 0) {
-                // Nothing but the copy stops a takedown (PUB-99): a check that
-                // fails (a deny list entry that names no folder, a stopped
-                // run) leaves the last check.
-                try {
-                    await this.#checkWith(device)
-                } catch (error) {
-                    this.#log(
-                        `Takedown: the check before it failed, so it uses the last check (${messageOf(error)})`
+        await this.#run(
+            'taking down',
+            'Takedown',
+            async () => {
+                const device = this.host.device()
+                // The queue tells where a note is in the content store: after a
+                // run that changed the copy, it is checked again first.
+                if (!this.#fresh || this.#changed.size > 0) {
+                    // Nothing but the copy stops a takedown (PUB-99): a check that
+                    // fails (a deny list entry that names no folder, a stopped
+                    // run) leaves the last check.
+                    try {
+                        await this.#checkWith(device)
+                    } catch (error) {
+                        this.#log(
+                            `Takedown: the check before it failed, so it uses the last check (${messageOf(error)})`
+                        )
+                    }
+                }
+                // A note that a move of the queue moved is still at its old path
+                // in the content store until the next publication.
+                const stored = paths.map((path) => this.storePathOf(path))
+                if (shown !== undefined && stored.some((path, index) => path !== shown[index])) {
+                    throw new Error(
+                        `The note moved in the content store since its dialog opened, so nothing was taken down: open its dialog again (${stored.map((path) => `"${path}"`).join(', ')})`
                     )
                 }
-            }
-            // A note that a move of the queue moved is still at its old path
-            // in the content store until the next publication.
-            const stored = paths.map((path) => this.storePathOf(path))
-            if (shown !== undefined && stored.some((path, index) => path !== shown[index])) {
-                throw new Error(
-                    `The note moved in the content store since its dialog opened, so nothing was taken down: open its dialog again (${stored.map((path) => `"${path}"`).join(', ')})`
-                )
-            }
-            this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
-            this.#fresh = false
-            const report = await takedown(device, stored, {
-                time: canonicalTime(this.host.now()),
-                device: this.host.deviceName,
-                face: 'plugin'
-            })
-            this.#wrote(report.propertyRemoved)
-            this.#set({ report: { kind: 'takedown', report, addresses: [] } })
-            this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
-            if (report.storageWarnings.length > 0) {
-                // A file that stays in the storage can still be public (issue 38).
-                throw new Error(
-                    `The note was taken down, but the attachment storage gave warnings: a file can still be public. Take the note down again, or delete these files by hand: ${report.storageWarnings.map((one) => `${one.path}: ${one.message}`).join('. ')}`
-                )
-            }
-        })
-        await this.#checkAfter()
+                this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
+                this.#fresh = false
+                const report = await takedown(device, stored, {
+                    time: canonicalTime(this.host.now()),
+                    device: this.host.deviceName,
+                    face: 'plugin'
+                })
+                this.#wrote(report.propertyRemoved)
+                this.#set({ report: { kind: 'takedown', report, addresses: [] } })
+                this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
+                if (report.storageWarnings.length > 0) {
+                    // A file that stays in the storage can still be public (issue 38).
+                    throw new Error(
+                        `The note was taken down, but the attachment storage gave warnings: a file can still be public. Take the note down again, or delete these files by hand: ${report.storageWarnings.map((one) => `${one.path}: ${one.message}`).join('. ')}`
+                    )
+                }
+            },
+            'author'
+        )
     }
 
     /**
@@ -486,21 +538,24 @@ export class PublicationCenter {
         while (this.#state.activity !== 'idle') {
             await this.#current
         }
-        await this.#run(activity, `Agent ${call.tool}`, async () => {
-            try {
-                outcome = await this.#serve(call)
-            } catch (error) {
-                failure = error
-                throw error
-            }
-            if (outcome.failure !== undefined) {
-                // The report is written: the view shows what failed too.
-                throw new Error(outcome.failure)
-            }
-        })
-        if (activity !== 'answering') {
-            await this.#checkAfter()
-        }
+        await this.#run(
+            activity,
+            `Agent ${call.tool}`,
+            async () => {
+                try {
+                    outcome = await this.#serve(call)
+                } catch (error) {
+                    failure = error
+                    throw error
+                }
+                if (outcome.failure !== undefined) {
+                    // The report is written: the view shows what failed too.
+                    throw new Error(outcome.failure)
+                }
+            },
+            // A call that changed the copy checks again, in its own activity.
+            activity === 'answering' ? 'none' : 'agent'
+        )
         if (outcome !== undefined) {
             return outcome
         }
@@ -523,6 +578,9 @@ export class PublicationCenter {
             }
             case 'plan': {
                 this.#log('Agent plan')
+                // A plan can put back a publication that stopped halfway,
+                // which writes the copy: a takedown checks again first.
+                this.#fresh = false
                 const stored = await plan(device, {
                     include: call.include,
                     hold: call.hold,
@@ -581,13 +639,17 @@ export class PublicationCenter {
 
     /** Pulls the content store into the copy, on a click of the author (R67), then checks again. */
     async pull(): Promise<void> {
-        await this.#run('pulling', 'Pull', async () => {
-            this.#log('Pull started: git pull --ff-only origin main')
-            this.#fresh = false
-            await this.host.pull()
-            this.#log('Pull done')
-        })
-        await this.#checkAfter()
+        await this.#run(
+            'pulling',
+            'Pull',
+            async () => {
+                this.#log('Pull started: git pull --ff-only origin main')
+                this.#fresh = false
+                await this.host.pull()
+                this.#log('Pull done')
+            },
+            'author'
+        )
     }
 
     /**
@@ -632,23 +694,17 @@ export class PublicationCenter {
      * Only when no run of any face runs on this device.
      */
     async unlock(): Promise<void> {
-        await this.#run('unlocking', 'Unlock', async () => {
-            this.#fresh = false
-            const removed = await unlock(this.host.device())
-            this.#log(
-                removed ? 'Unlock done: the lock was removed' : 'Unlock done: there was no lock'
-            )
-        })
-        await this.#checkAfter()
-    }
-
-    /** A check after a run that changed the copy, unless the run failed before it changed anything. */
-    async #checkAfter(): Promise<void> {
-        const failed = this.#state.error
-        await this.check()
-        if (failed !== undefined && this.#state.error === undefined) {
-            // The failure of the run stays visible after the check.
-            this.#set({ error: failed })
-        }
+        await this.#run(
+            'unlocking',
+            'Unlock',
+            async () => {
+                this.#fresh = false
+                const removed = await unlock(this.host.device())
+                this.#log(
+                    removed ? 'Unlock done: the lock was removed' : 'Unlock done: there was no lock'
+                )
+            },
+            'author'
+        )
     }
 }
