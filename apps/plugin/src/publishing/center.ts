@@ -92,7 +92,12 @@ export function selectionOf(queue: QueueLists, choices: Choices): NormalSelectio
     ].filter((path) => !remove.has(path))
     return {
         include: sortByCodePoint([
-            ...new Set(choices.include.filter((path) => candidates.has(path) && !pairTo.has(path)))
+            ...new Set(
+                // A mark for the unpublish wins over a tick of the same note.
+                choices.include.filter(
+                    (path) => candidates.has(path) && !pairTo.has(path) && !remove.has(path)
+                )
+            )
         ]),
         hold: sortByCodePoint([...new Set(hold)]),
         remove: sortByCodePoint([...remove]),
@@ -269,8 +274,9 @@ export function toggleRow(queue: QueueLists, choices: Choices, path: string): Ch
 
 /**
  * The choices with every row of these paths ticked or unticked: "select
- * shown" and "unselect shown". A note that is missing from this vault is never
- * in a bulk choice: each one is a choice of its own (PUB-95).
+ * shown" and "unselect shown". A note that is missing from this vault
+ * (PUB-95) and a moved note whose text is not the published text (R67) are
+ * never in a bulk choice: each one is a choice of its own.
  */
 export function setTicks(
     queue: QueueLists,
@@ -290,7 +296,7 @@ export function setTicks(
         if (found === undefined || found.locked || !found.checkable || found.ticked === ticked) {
             continue
         }
-        if (found.group === 'candidate' || found.group === 'movedEdited') {
+        if (found.group === 'candidate') {
             if (ticked) include.add(path)
             else include.delete(path)
         } else if (found.group === 'changed') {

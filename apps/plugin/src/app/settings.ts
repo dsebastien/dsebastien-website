@@ -73,18 +73,27 @@ export function deviceOf(
     configDir: string,
     noteTypes: NoteTypes
 ): Device {
-    const contentStore = folderOf(settings.contentStore, 'the copy of the content store')
+    const { contentStore, git } = pullOptionsOf(settings)
     const attachmentStorage = folderOf(settings.attachmentStorage, 'the attachment storage')
-    const git = settings.git.trim()
-    if (git !== '' && !isAbsolute(git)) {
-        throw new Error(`The git program must be an absolute path: "${git}"`)
-    }
     return nodeDevice({
         vault,
         contentStore,
         attachmentStorage,
         noteTypes,
         renames: join(vault, configDir, JOURNAL_FOLDER),
-        ...(git === '' ? {} : { git })
+        ...(git === undefined ? {} : { git })
     })
+}
+
+/**
+ * The paths of the pull of the copy (`pullContentStore`), with the checks of
+ * the device: the folder of the copy and the git program are absolute paths.
+ */
+export function pullOptionsOf(settings: DeviceSettings): { contentStore: string; git?: string } {
+    const contentStore = folderOf(settings.contentStore, 'the copy of the content store')
+    const git = settings.git.trim()
+    if (git !== '' && !isAbsolute(git)) {
+        throw new Error(`The git program must be an absolute path: "${git}"`)
+    }
+    return git === '' ? { contentStore } : { contentStore, git }
 }

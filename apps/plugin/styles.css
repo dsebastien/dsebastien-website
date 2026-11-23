@@ -163,3 +163,9 @@
     white-space: pre-wrap;
     user-select: text;
 }
+
+/* A right-to-left mark in a file name never reorders the text around it. */
+.vault-publish-path,
+.vault-publish-name {
+    unicode-bidi: isolate;
+}

@@ -211,7 +211,8 @@ export class PublicationCenter {
 
     /** The path of a note in the content store: a note that a move of the queue moved is there at its old path. */
     storePathOf(path: string): string {
-        return this.#state.queue?.renamed.find((move) => move.to === path)?.from ?? path
+        const moves = [...(this.#state.queue?.renamed ?? []), ...this.#state.choices.pair]
+        return moves.find((move) => move.to === path)?.from ?? path
     }
 
     #wrote(paths: readonly string[]): void {
@@ -341,7 +342,7 @@ export class PublicationCenter {
             // A new note that changed after the check can be another note at
             // the same path: the author never saw it in the lists.
             const selection = selectionOf(queue, choices)
-            this.#refuseChangedNewNotes(expected, selection.pair)
+            this.#refuseChangedNewNotes(queue, expected, selection.pair)
             const device = this.host.device()
             let stored: StoredPlan
             try {
@@ -356,7 +357,7 @@ export class PublicationCenter {
                 throw error
             }
             // An edit during the scan of the plan counts too.
-            this.#refuseChangedNewNotes(expected, selection.pair)
+            this.#refuseChangedNewNotes(queue, expected, selection.pair)
             if (!samePlan(stored.plan, expected)) {
                 this.#set({ dryRun: stored })
                 throw new Error(
@@ -403,7 +404,7 @@ export class PublicationCenter {
             const device = this.host.device()
             // The queue tells where a note is in the content store: after a
             // run that changed the copy, it is checked again first.
-            if (!this.#fresh) {
+            if (!this.#fresh || this.#changed.size > 0) {
                 await this.#checkWith(device)
             }
             // A note that a move of the queue moved is still at its old path
@@ -422,7 +423,7 @@ export class PublicationCenter {
             if (report.storageWarnings.length > 0) {
                 // A file that stays in the storage can still be public (issue 38).
                 throw new Error(
-                    `the attachment storage gave warnings: a file can still be public. ${report.storageWarnings.map((one) => `${one.path}: ${one.message}`).join('. ')}`
+                    `The note was taken down, but the attachment storage gave warnings: a file can still be public. Take the note down again, or delete these files by hand: ${report.storageWarnings.map((one) => `${one.path}: ${one.message}`).join('. ')}`
                 )
             }
         })
@@ -446,10 +447,19 @@ export class PublicationCenter {
      * the author never saw in the lists. Its tick goes away, so a second click
      * never publishes it unseen.
      */
-    #refuseChangedNewNotes(expected: PublicationPlan, pairs: readonly Move[]): void {
-        const fresh = [...expected.publish, ...pairs.map((one) => one.to)].filter((path) =>
-            this.#changed.has(path)
-        )
+    #refuseChangedNewNotes(
+        queue: PublicationQueue,
+        expected: PublicationPlan,
+        pairs: readonly Move[]
+    ): void {
+        // A ticked moved note whose text is not the published text can be
+        // another note too (R67).
+        const moved = new Set(queue.movedEdited)
+        const fresh = [
+            ...expected.publish,
+            ...expected.update.filter((path) => moved.has(path)),
+            ...pairs.map((one) => one.to)
+        ].filter((path) => this.#changed.has(path))
         if (fresh.length === 0) {
             return
         }

@@ -8,7 +8,7 @@ import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
 import { Measures } from './measures.ts'
 import { journalName, RenameRecorder } from './rename-journal.ts'
-import { deviceOf, loadSettings, saveSettings } from './settings.ts'
+import { deviceOf, loadSettings, pullOptionsOf, saveSettings } from './settings.ts'
 import type { DeviceSettings } from './settings.ts'
 import { starterKitNoteTypes } from './starter-kit.ts'
 import type { PluginHost } from './starter-kit.ts'
@@ -83,13 +83,7 @@ export class VaultPublishPlugin extends Plugin {
                     // checks every step of it (starter-kit.ts).
                     starterKitNoteTypes(this.app as unknown as PluginHost)
                 ),
-            pull: () => {
-                const settings = loadSettings(this.app)
-                return pullContentStore({
-                    contentStore: settings.contentStore,
-                    ...(settings.git.trim() === '' ? {} : { git: settings.git.trim() })
-                })
-            },
+            pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
             now: () => new Date(),
             deviceName: hostname().replace(/\s+/gu, ' ').trim() || 'unnamed device',
             // The message that the publication started (PERF-04): its plan
@@ -225,8 +219,13 @@ export class VaultPublishPlugin extends Plugin {
                     return false
                 }
                 if (!checking) {
+                    const before = this.center.state.choices
                     this.center.choose((queue, choices) => markUnpublish(queue, choices, path))
-                    new Notice(`"${path}" is unpublished with the next publication`)
+                    new Notice(
+                        this.center.state.choices === before
+                            ? `"${path}" was already marked for its unpublish`
+                            : `"${path}" is marked: the next publication of the publication center unpublishes it. Obsidian does not keep the mark when it closes.`
+                    )
                 }
                 return true
             }

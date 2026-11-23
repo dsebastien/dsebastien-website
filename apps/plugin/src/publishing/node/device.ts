@@ -1356,7 +1356,18 @@ export async function pullContentStore(options: {
         )
     }
     try {
-        if ((await local.loadJournal()) !== undefined) {
+        // A journal at its step `correct` left a clean copy, which the push
+        // reached: a pull is safe then. Any other journal waits for the dry
+        // run that puts the copy back.
+        const journal = await local.loadJournal()
+        let step: unknown
+        try {
+            step =
+                journal === undefined ? undefined : (JSON.parse(journal) as { step?: unknown }).step
+        } catch {
+            step = undefined
+        }
+        if (journal !== undefined && step !== 'correct') {
             throw new Error(
                 `a publication stopped halfway on this device: make a dry run first, it puts the copy back (${options.contentStore})`
             )

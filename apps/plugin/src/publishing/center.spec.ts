@@ -388,10 +388,27 @@ describe('a moved note whose text is not the published text (R67)', () => {
         const ticked = toggleRow(MOVED, NO_CHOICES, 'New place.md')
         expect(selectionOf(MOVED, ticked).include).toEqual(['New place.md'])
         expect(planOfChoices(MOVED, ticked).update).toEqual(['New place.md'])
+        expect(reconcile(MOVED, ticked)).toEqual(ticked)
+    })
+
+    test('a mark for the unpublish wins over its tick, so the selection stays valid', () => {
+        const both = markUnpublish(
+            MOVED,
+            toggleRow(MOVED, NO_CHOICES, 'New place.md'),
+            'New place.md'
+        )
+        expect(selectionOf(MOVED, both)).toEqual({
+            include: [],
+            hold: [],
+            remove: ['New place.md'],
+            pair: []
+        })
+    })
+
+    test('is never in a bulk tick: each one is a choice of its own', () => {
         expect(
             selectionOf(MOVED, setTicks(MOVED, NO_CHOICES, ['New place.md'], true)).include
-        ).toEqual(['New place.md'])
-        expect(reconcile(MOVED, ticked)).toEqual(ticked)
+        ).toEqual([])
     })
 
     test('says that its text waits for a tick', () => {

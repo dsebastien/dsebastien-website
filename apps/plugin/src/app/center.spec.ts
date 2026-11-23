@@ -338,6 +338,59 @@ describe('the publication center', () => {
         expect(state.queue?.new).toContain(moved)
     }, 60_000)
 
+    test('publishes no ticked moved note that changed after the check', async () => {
+        await using stores = await makeTestStores()
+        const { vault, copy, center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        const moved = '10 Garden/Moved/Frost dates explained.md'
+        await mkdir(join(vault, '10 Garden', 'Moved'), { recursive: true })
+        await rm(join(vault, NOTE))
+        await writeFile(join(vault, moved), 'Another text at the new path.\n')
+        await mkdir(join(vault, JOURNAL, '..'), { recursive: true })
+        await writeFile(
+            join(vault, JOURNAL),
+            `{"from":"${NOTE}","kind":"note","time":"2031-04-02T08:00:00Z","to":"${moved}"}\n`
+        )
+        await center.check()
+        expect(center.state.queue?.movedEdited).toEqual([moved])
+        center.choose((queue, choices) => toggleRow(queue, choices, moved))
+        const head = await git('-C', copy, 'rev-parse', 'HEAD')
+        center.noteChanged(moved)
+
+        await center.publish()
+
+        expect(center.state.error).toContain('changed after the check')
+        expect(center.state.choices.include).toEqual([])
+        expect(await git('-C', copy, 'rev-parse', 'HEAD')).toBe(head)
+    }, 60_000)
+
+    test('a takedown after a rename with no check finds the note where the content store has it', async () => {
+        await using stores = await makeTestStores()
+        const { vault, center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        const moved = '10 Garden/Moved/Frost dates explained.md'
+        await mkdir(join(vault, '10 Garden', 'Moved'), { recursive: true })
+        await rename(join(vault, NOTE), join(vault, moved))
+        await mkdir(join(vault, JOURNAL, '..'), { recursive: true })
+        await writeFile(
+            join(vault, JOURNAL),
+            `{"from":"${NOTE}","kind":"note","time":"2031-04-02T08:00:00Z","to":"${moved}"}\n`
+        )
+        // Obsidian reports the rename; no check ran since.
+        center.noteChanged(moved)
+
+        await center.takedown([moved])
+
+        expect(center.state.error).toBeUndefined()
+        expect(
+            center.state.report?.kind === 'takedown' ? center.state.report.report.takenDown : []
+        ).toEqual([NOTE])
+    }, 60_000)
+
     test('a takedown asked during a check runs after it', async () => {
         await using stores = await makeTestStores()
         const { center } = await setUp(stores)

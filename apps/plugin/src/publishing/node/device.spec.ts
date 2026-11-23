@@ -85,12 +85,24 @@ describe('the pull of the copy, after a run that stopped halfway', () => {
         const copy = await makeContentStoreCopy(stores)
         await pushFromAnotherDevice(stores, copy)
         await mkdir(join(copy, '.git', 'vault-publish'), { recursive: true })
-        await writeFile(join(copy, '.git', 'vault-publish', 'journal.json'), '{}\n')
+        await writeFile(join(copy, '.git', 'vault-publish', 'journal.json'), '{"step":"write"}\n')
 
         expect(await rejectionOf(pullContentStore({ contentStore: copy }))).toContain(
             'a publication stopped halfway on this device'
         )
         expect(await Bun.file(join(copy, 'renames.json')).exists()).toBe(false)
+    }, 60_000)
+
+    test('runs after a publication that stopped after its push: the copy is clean then', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await pushFromAnotherDevice(stores, copy)
+        await mkdir(join(copy, '.git', 'vault-publish'), { recursive: true })
+        await writeFile(join(copy, '.git', 'vault-publish', 'journal.json'), '{"step":"correct"}\n')
+
+        await pullContentStore({ contentStore: copy })
+
+        expect(await Bun.file(join(copy, 'renames.json')).text()).toBe('{}\n')
     }, 60_000)
 
     test('takes the lock of the device while it runs, and gives it back', async () => {

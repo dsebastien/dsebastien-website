@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { deviceOf, loadSettings, saveSettings, SETTINGS_KEY } from './settings.ts'
+import { deviceOf, loadSettings, pullOptionsOf, saveSettings, SETTINGS_KEY } from './settings.ts'
 import type { DeviceStorage } from './rename-journal.ts'
 
 // The settings of a device (decision R67): the folder of the copy of the
@@ -133,5 +133,28 @@ describe('the device of the settings', () => {
             // Remove only the folder that this test made.
             await rm(folder, { recursive: true, force: true })
         }
+    })
+})
+
+describe('the pull of the settings', () => {
+    test('takes the same checked paths as the device', () => {
+        expect(
+            pullOptionsOf({
+                contentStore: ' /data/copy ',
+                attachmentStorage: '',
+                git: ' /usr/bin/git '
+            })
+        ).toEqual({ contentStore: '/data/copy', git: '/usr/bin/git' })
+        expect(
+            pullOptionsOf({ contentStore: '/data/copy', attachmentStorage: '', git: '' })
+        ).toEqual({
+            contentStore: '/data/copy'
+        })
+        expect(() =>
+            pullOptionsOf({ contentStore: 'copy', attachmentStorage: '', git: '' })
+        ).toThrow('The folder of the copy of the content store must be an absolute path: "copy"')
+        expect(() =>
+            pullOptionsOf({ contentStore: '/c', attachmentStorage: '', git: 'git' })
+        ).toThrow('The git program must be an absolute path: "git"')
     })
 })

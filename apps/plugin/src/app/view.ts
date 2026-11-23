@@ -80,6 +80,17 @@ export interface ViewHost {
     confirmUnlock(): void
 }
 
+/**
+ * Writes "from → to" with each path in an element of its own, isolated from
+ * the text around it: a right-to-left mark in a file name never reorders the
+ * other name.
+ */
+function names(parent: HTMLElement, from: string, to: string): void {
+    parent.createSpan({ cls: 'vault-publish-name', text: from, attr: { dir: 'auto' } })
+    parent.appendText(' → ')
+    parent.createSpan({ cls: 'vault-publish-name', text: to, attr: { dir: 'auto' } })
+}
+
 function timeOf(date: Date): string {
     return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
@@ -279,7 +290,34 @@ export class PublicationCenterView extends ItemView {
         })
     }
 
+    /** The key of the element that has the focus, so that a render can give it back. */
+    #focused(): string | undefined {
+        const active = this.contentEl.ownerDocument.activeElement
+        return active instanceof HTMLElement && this.contentEl.contains(active)
+            ? (active.getAttribute('data-focus') ?? undefined)
+            : undefined
+    }
+
+    /** Gives the focus back to the element of the key, when the render made it again. */
+    #refocus(key: string | undefined): void {
+        if (key === undefined) {
+            return
+        }
+        const found = [...this.contentEl.querySelectorAll('[data-focus]')].find(
+            (element) => element.getAttribute('data-focus') === key
+        )
+        if (found instanceof HTMLElement) {
+            found.focus()
+        }
+    }
+
     #render(): void {
+        const focused = this.#focused()
+        this.#renderAll()
+        this.#refocus(focused)
+    }
+
+    #renderAll(): void {
         const { center } = this.host
         const { state } = center
         const rows = this.#allRows()
@@ -287,7 +325,11 @@ export class PublicationCenterView extends ItemView {
         this.#message.empty()
         if (state.error !== undefined) {
             this.#message.createDiv({ cls: 'vault-publish-error', text: state.error })
-            if (state.error.includes('settings of Vault Publish')) {
+            if (
+                state.error.includes('settings of Vault Publish') ||
+                state.error.includes('must be an absolute path') ||
+                state.error.includes('copy of the content store')
+            ) {
                 const open = this.#message.createEl('button', { text: 'Open the settings' })
                 open.addEventListener('click', () => {
                     this.host.openSettings()
@@ -408,7 +450,9 @@ export class PublicationCenterView extends ItemView {
     #scheduleRows(): void {
         cancelAnimationFrame(this.#frame)
         this.#frame = requestAnimationFrame(() => {
+            const focused = this.#focused()
             this.#renderRows()
+            this.#refocus(focused)
         })
     }
 
@@ -437,12 +481,15 @@ export class PublicationCenterView extends ItemView {
 
     #renderRow(row: Row): void {
         const { center } = this.host
-        const line = this.#body.createDiv({ cls: 'vault-publish-row' })
+        const line = this.#body.createDiv({
+            cls: 'vault-publish-row',
+            attr: { 'data-path': row.path }
+        })
         line.style.height = `${String(ROW_HEIGHT)}px`
         if (row.checkable) {
             const box = line.createEl('input', {
                 type: 'checkbox',
-                attr: { 'aria-label': `Select ${row.path}` }
+                attr: { 'aria-label': `Select ${row.path}`, 'data-focus': `box\n${row.path}` }
             })
             box.checked = row.ticked
             box.disabled = row.locked
@@ -453,10 +500,27 @@ export class PublicationCenterView extends ItemView {
         } else {
             line.createSpan({ cls: 'vault-publish-box' })
         }
-        const path = line.createEl('a', { cls: 'vault-publish-path', text: row.path })
-        path.addEventListener('click', (event) => {
+        const path = line.createEl('a', {
+            cls: 'vault-publish-path',
+            text: row.path,
+            attr: {
+                'dir': 'auto',
+                'tabindex': '0',
+                'role': 'link',
+                'data-focus': `path\n${row.path}`
+            }
+        })
+        const open = (newLeaf: boolean): void => {
             if (row.group !== 'missing') {
-                this.#openNote(row.path, event.ctrlKey || event.metaKey)
+                this.#openNote(row.path, newLeaf)
+            }
+        }
+        path.addEventListener('click', (event) => {
+            open(event.ctrlKey || event.metaKey)
+        })
+        path.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                open(event.ctrlKey || event.metaKey)
             }
         })
         const note =
@@ -466,11 +530,18 @@ export class PublicationCenterView extends ItemView {
         }
         const more = line.createEl('button', {
             cls: 'clickable-icon vault-publish-more',
-            attr: { 'aria-label': `Actions for ${row.path}` }
+            attr: { 'aria-label': `Actions for ${row.path}`, 'data-focus': `more\n${row.path}` }
         })
         setIcon(more, 'more-horizontal')
         more.addEventListener('click', (event) => {
-            this.#menuOf(row).showAtMouseEvent(event)
+            const menu = this.#menuOf(row)
+            // A click from the keyboard has no position: the menu opens at its button.
+            if (event.detail === 0) {
+                const place = more.getBoundingClientRect()
+                menu.showAtPosition({ x: place.left, y: place.bottom })
+            } else {
+                menu.showAtMouseEvent(event)
+            }
         })
     }
 
@@ -571,7 +642,7 @@ export class PublicationCenterView extends ItemView {
                 'vault-publish-moves'
             )
             for (const move of queue.renamed.slice(0, SECTION_LINES)) {
-                moves.createDiv({ text: `${move.from} → ${move.to}` })
+                names(moves.createDiv(), move.from, move.to)
             }
             if (queue.renamed.length > SECTION_LINES) {
                 moves.createDiv({
@@ -599,9 +670,11 @@ export class PublicationCenterView extends ItemView {
                 const line = box.createEl('label', { cls: 'vault-publish-pairing' })
                 const confirm = line.createEl('input', { type: 'checkbox' })
                 confirm.checked = confirmed.has(key(pairing))
-                line.appendText(
-                    ` ${pairing.from} → ${pairing.to}${proposed.has(key(pairing)) ? '' : ' (by hand)'}`
-                )
+                line.appendText(' ')
+                names(line, pairing.from, pairing.to)
+                if (!proposed.has(key(pairing))) {
+                    line.appendText(' (by hand)')
+                }
                 confirm.addEventListener('change', () => {
                     this.#changed()
                     center.choose((_queue, current) => togglePairing(current, pairing))
@@ -621,13 +694,20 @@ export class PublicationCenterView extends ItemView {
         const { state } = center
         const counted = center.plan()
         const busy = state.activity !== 'idle'
-        const dry = this.#footer.createEl('button', { text: 'Dry run' })
+        const dry = this.#footer.createEl('button', {
+            text: 'Dry run',
+            attr: { 'data-focus': 'dry run' }
+        })
         dry.disabled = busy || counted === undefined
         dry.addEventListener('click', () => {
             void center.dryRun()
         })
         const label = center.label()
-        const publish = this.#footer.createEl('button', { cls: 'mod-cta', text: label })
+        const publish = this.#footer.createEl('button', {
+            cls: 'mod-cta',
+            text: label,
+            attr: { 'data-focus': 'publish' }
+        })
         publish.disabled =
             busy ||
             counted === undefined ||
@@ -673,9 +753,10 @@ export class PublicationCenterView extends ItemView {
         const { dryRun, report } = center.state
         if (dryRun !== undefined) {
             const panel = this.#panels.createDiv({ cls: 'vault-publish-panel' })
+            const stopped = center.state.error?.startsWith('The plan changed') === true
             panel.createDiv({
                 cls: 'vault-publish-section-title',
-                text: `Dry run: ${describePlan(dryRun.plan)}. Nothing was written.${dryRun.offline ? ' No network: the plan uses the last fetch.' : ''}`
+                text: `${stopped ? 'The plan of the vault now' : 'Dry run'}: ${describePlan(dryRun.plan)}. Nothing was published.${dryRun.offline ? ' No network: the plan uses the last fetch.' : ''}`
             })
             this.#renderPlan(panel, dryRun.plan)
         }
@@ -772,14 +853,18 @@ export class TakedownModal extends Modal {
     override onOpen(): void {
         this.setTitle('Take down this note now?')
         const { contentEl } = this
-        contentEl.createEl('p', { cls: 'vault-publish-path', text: this.path })
+        contentEl.createEl('p', {
+            cls: 'vault-publish-path',
+            text: this.path,
+            attr: { dir: 'auto' }
+        })
         if (this.stored !== this.path) {
             contentEl.createEl('p', {
                 text: `It is published at its old path "${this.stored}": its move waits for the next publication. The takedown removes it there.`
             })
         }
         contentEl.createEl('p', {
-            text: 'The note leaves the content store at once, with no plan: its page, its Markdown, its manifest entry with its former paths, and the attachments that no other published note uses. After the next build, every address of the note answers 404, with no redirect.'
+            text: 'If the content store has the note, it leaves it at once, with no plan: its page, its Markdown, its manifest entry with its former paths, and the attachments that no other published note uses. After the next build, every address of the note answers 404, with no redirect. A note that was never published is refused, and nothing changes.'
         })
         contentEl.createEl('p', {
             text: 'Copies in the caches of browsers and at crawlers cannot be recalled, and the text stays in the history of the content store.'
