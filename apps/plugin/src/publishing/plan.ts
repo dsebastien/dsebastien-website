@@ -3,7 +3,7 @@ import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
 import { firstPart, foldedForm, isReservedRootName } from './names.ts'
 import { sortByCodePoint } from './order.ts'
 import { compareCodePoints } from './order.ts'
-import type { Move, Scan } from './queue.ts'
+import type { Move, QueueLists, Scan } from './queue.ts'
 
 // The publication plan as data: the exact list of what one publication will
 // do. The rules are in `documentation/Canonical Form.md`, sections "The
@@ -236,21 +236,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
         }
     }
 
-    const held = new Set(selection.hold)
-    const removed = new Set(selection.remove)
-    const plan = makePlan({
-        // An unpublished note under a guard leaves the manifest too (decision R64).
-        forcedRemove: [...forced, ...queue.unpublishedUnderGuard],
-        // Every move of the journals, which no selection holds, and the pairings (R66).
-        move: [...queue.renamed, ...selection.pair],
-        publish: selection.include.filter((path) => candidates.has(path)),
-        update: [
-            ...queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
-            ...pairTo.filter((path) => !held.has(path))
-        ],
-        // A guard wins over an unpublish: the note leaves the manifest.
-        remove: selection.remove.filter((path) => !underGuard.has(path))
-    })
+    const plan = planLists(queue, selection)
     refuseRootNames(scan, plan, selection.pair)
     return plan
 }
@@ -317,4 +303,33 @@ function refuseRootNames(scan: Scan, plan: PublicationPlan, pairs: readonly Move
         }
         byFolded.set(folded, text)
     }
+}
+
+/**
+ * The lists of the plan of a selection, from the queue alone: what
+ * `computePlan` gives for a selection that it does not refuse. A face counts
+ * the plan of a selection with it before the author clicks (TOOL-21): the
+ * label of the publish button and the plan come from this one function.
+ */
+export function planLists(queue: QueueLists, selection: NormalSelection): PublicationPlan {
+    const onlyMissing = new Set(queue.missing)
+    const forced = queue.toRemove.filter((path) => !onlyMissing.has(path))
+    const underGuard = new Set(forced)
+    const candidates = new Set(queue.new)
+    const pairTo = selection.pair.map((pairing) => pairing.to)
+    const held = new Set(selection.hold)
+    const removed = new Set(selection.remove)
+    return makePlan({
+        // An unpublished note under a guard leaves the manifest too (decision R64).
+        forcedRemove: [...forced, ...queue.unpublishedUnderGuard],
+        // Every move of the journals, which no selection holds, and the pairings (R66).
+        move: [...queue.renamed, ...selection.pair],
+        publish: selection.include.filter((path) => candidates.has(path)),
+        update: [
+            ...queue.changed.filter((path) => !held.has(path) && !removed.has(path)),
+            ...pairTo.filter((path) => !held.has(path))
+        ],
+        // A guard wins over an unpublish: the note leaves the manifest.
+        remove: selection.remove.filter((path) => !underGuard.has(path))
+    })
 }
