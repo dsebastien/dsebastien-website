@@ -8467,6 +8467,109 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "an unpublished note whose move the vault of this device does not show yet keeps its path, and the published move into it does not happen (issue 39, review 1)",
+            "denyList": [],
+            "vault": {
+                "A.md": "U\n",
+                "C.md": "P\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md", "C.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md", "C.md"],
+                        "published": ["A.md", "C.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the author unpublishes the note at A.md",
+                    "time": "2031-07-01T09:00:00Z",
+                    "paths": ["A.md"],
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["A.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["A.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the journal of another device arrives before its files: A.md still holds the text of the unpublished note",
+                    "files": {
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"B.md\"}\n{\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-07-02T09:00:00Z\",\"to\":\"A.md\"}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the vault does not show the move of the unpublished note, so it keeps its path: the published note does not move, and the text of the unpublished note is never an update of the published one",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["A.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["C.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the move that does not happen gives a warning with the path of its note",
+                    "time": "2031-07-03T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["C.md"],
+                        "moved": []
+                    }
+                }
+            ]
         }
     ]
 }

@@ -699,7 +699,22 @@ fn apply_moves(
             .get(from)
             .is_none_or(|entry| entry.state != State::Published)
         {
-            left_behind.insert(from.clone());
+            // It leaves its path to another entry only when the vault of
+            // this device shows its move, as rule 2 asks of a published move,
+            // and when its line can be about it (rule 1).
+            let vault_name = !to
+                .split('/')
+                .any(|part| part.starts_with('.') || part.contains('\u{fffd}'));
+            let shown = !(in_vault(from) && !in_vault(&to)) && vault_name;
+            let older = in_vault(from)
+                && times.get(from).is_some_and(|time| {
+                    entries
+                        .get(from)
+                        .is_some_and(|entry| *time < entry.first_published)
+                });
+            if shown && !older {
+                left_behind.insert(from.clone());
+            }
             continue;
         }
         let vault_name = !to

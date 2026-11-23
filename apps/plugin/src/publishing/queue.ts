@@ -528,7 +528,18 @@ export function applyMoves(
         // (R64), and a path that it had only while it was unpublished never
         // becomes a public former path. The guard rule above still applies.
         if (entries.get(from)?.state !== 'published') {
-            leftBehind.add(from)
+            // It leaves its path to another entry only when the vault of this
+            // device shows its move, as rule 2 asks of a published move, and
+            // when its line can be about it (rule 1).
+            const entry = entries.get(from)
+            const shown = !(vault.inVault(from) && !vault.inVault(to)) && vault.isVaultName(to)
+            const older =
+                vault.inVault(from) &&
+                entry !== undefined &&
+                compareCodePoints(folded.times.get(from) ?? '', entry.firstPublished) < 0
+            if (shown && !older) {
+                leftBehind.add(from)
+            }
             continue
         }
         if ((vault.inVault(from) && !vault.inVault(to)) || !vault.isVaultName(to)) {
