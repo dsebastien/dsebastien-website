@@ -628,6 +628,14 @@ fn without_suffix(path: &str) -> &str {
     path.strip_suffix(".md").unwrap_or(path)
 }
 
+/// True when the path is a path of the vault: no part starts with a dot or
+/// holds U+FFFD.
+fn is_vault_name(path: &str) -> bool {
+    !path
+        .split('/')
+        .any(|part| part.starts_with('.') || part.contains('\u{fffd}'))
+}
+
 /// The moves of the rename journals.
 struct Moves {
     /// The entries at their last paths.
@@ -670,6 +678,12 @@ fn apply_moves(
         if &to == from {
             continue;
         }
+        // The line that moved the entry is older than its first publication.
+        let older = times.get(from).is_some_and(|time| {
+            entries
+                .get(from)
+                .is_some_and(|entry| *time < entry.first_published)
+        });
         if under_guard_at(&to) {
             // The exact move under a guard: a forced removal (R40, R66), also
             // when this device still has the file (the guards win). But a
@@ -677,11 +691,6 @@ fn apply_moves(
             // this device still has cannot be about that note: a folder line
             // moves every path below the folder, also of a note published
             // later.
-            let older = times.get(from).is_some_and(|time| {
-                entries
-                    .get(from)
-                    .is_some_and(|entry| *time < entry.first_published)
-            });
             if in_vault(from) && older {
                 warnings.push(RenameWarning {
                     path: from.clone(),
@@ -702,25 +711,13 @@ fn apply_moves(
             // It leaves its path to another entry only when the vault of
             // this device shows its move, as rule 2 asks of a published move,
             // and when its line can be about it (rule 1).
-            let vault_name = !to
-                .split('/')
-                .any(|part| part.starts_with('.') || part.contains('\u{fffd}'));
-            let shown = !(in_vault(from) && !in_vault(&to)) && vault_name;
-            let older = in_vault(from)
-                && times.get(from).is_some_and(|time| {
-                    entries
-                        .get(from)
-                        .is_some_and(|entry| *time < entry.first_published)
-                });
-            if shown && !older {
+            let shown = (in_vault(&to) || !in_vault(from)) && is_vault_name(&to);
+            if shown && !(in_vault(from) && older) {
                 left_behind.insert(from.clone());
             }
             continue;
         }
-        let vault_name = !to
-            .split('/')
-            .any(|part| part.starts_with('.') || part.contains('\u{fffd}'));
-        if (in_vault(from) && !in_vault(&to)) || !vault_name {
+        if (in_vault(from) && !in_vault(&to)) || !is_vault_name(&to) {
             warnings.push(RenameWarning {
                 path: from.clone(),
                 message: not_moved(&to, "but the vault of this device does not show that move: it does not move, and it can show as a pairing"),
