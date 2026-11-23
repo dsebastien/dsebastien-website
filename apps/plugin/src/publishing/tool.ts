@@ -165,7 +165,7 @@ async function readConfiguration(
             )
         }
     }
-    return { configuration, hash: text === undefined ? 'none' : contentHash(text) }
+    return { configuration, hash: contentHash(text) }
 }
 
 /** The hash of the manifest: each file with the hash of its text. */
