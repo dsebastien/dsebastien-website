@@ -90,7 +90,17 @@ export class VaultPublishPlugin extends Plugin {
                 })
             },
             now: () => new Date(),
-            deviceName: hostname().replace(/\s+/gu, ' ').trim() || 'unnamed device'
+            deviceName: hostname().replace(/\s+/gu, ' ').trim() || 'unnamed device',
+            // The message that the publication started (PERF-04): its plan
+            // is the plan of the label.
+            started: (label, clickedAt) => {
+                new Notice(`Vault Publish: publication started. ${label}`)
+                if (clickedAt !== undefined) {
+                    requestAnimationFrame(() => {
+                        this.measures.record('start', performance.now() - clickedAt)
+                    })
+                }
+            }
         })
         this.registerEvent(
             this.app.vault.on('rename', (file, oldPath) => {
@@ -103,17 +113,21 @@ export class VaultPublishPlugin extends Plugin {
                     )
                 })
                 if (isNote(file)) {
-                    this.center.noteChanged(file.path)
+                    this.#noteChanged(file.path)
                 }
             })
         )
-        const changed = (file: TAbstractFile): void => {
-            if (isNote(file)) {
-                this.center.noteChanged(file.path)
+        // Obsidian reports every file as made while it loads the vault: the
+        // edits count from the moment that the layout is ready.
+        this.app.workspace.onLayoutReady(() => {
+            const changed = (file: TAbstractFile): void => {
+                if (isNote(file)) {
+                    this.#noteChanged(file.path)
+                }
             }
-        }
-        this.registerEvent(this.app.vault.on('modify', changed))
-        this.registerEvent(this.app.vault.on('create', changed))
+            this.registerEvent(this.app.vault.on('modify', changed))
+            this.registerEvent(this.app.vault.on('create', changed))
+        })
 
         this.registerView(
             VIEW_TYPE,
@@ -128,6 +142,9 @@ export class VaultPublishPlugin extends Plugin {
                     },
                     openSettings: () => {
                         this.#openSettings()
+                    },
+                    confirmUnlock: () => {
+                        this.#confirmUnlock()
                     }
                 })
         )
@@ -222,7 +239,7 @@ export class VaultPublishPlugin extends Plugin {
                     return false
                 }
                 if (!checking) {
-                    new TakedownModal(this.app, path, () => {
+                    new TakedownModal(this.app, path, this.center.storePathOf(path), () => {
                         void this.center.takedown([path])
                     }).open()
                 }
@@ -245,12 +262,42 @@ export class VaultPublishPlugin extends Plugin {
             }
         })
         this.addCommand({
+            id: 'remove-lock',
+            name: 'Remove the lock of this device, after a run that stopped',
+            callback: () => {
+                this.#confirmUnlock()
+            }
+        })
+        this.addCommand({
             id: 'show-measures',
             name: 'Show the measures of the publication center',
             callback: () => {
                 new MeasuresModal(this.app, this.measures).open()
             }
         })
+    }
+
+    /** Updates the status bar item: the state of the open note. */
+    #updateStatus: () => void = () => undefined
+
+    /** A note changed in the vault: a mark for the status bar, with no render of the view. */
+    #noteChanged(path: string): void {
+        this.center.noteChanged(path)
+        if (this.#openNote() === path) {
+            this.#updateStatus()
+        }
+    }
+
+    #confirmUnlock(): void {
+        new ConfirmModal(
+            this.app,
+            'Remove the lock of this device?',
+            'Remove the lock only when no publication runs on this device: not in Obsidian, and not in the command line program. A run that stopped halfway (a crash, Obsidian closed during a run) left it. The next dry run, publication or takedown then puts the copy of the content store back.',
+            'Remove the lock',
+            () => {
+                void this.center.unlock()
+            }
+        ).open()
     }
 
     /** The status bar item with the state of the open note (TOOL-23, R67). */
@@ -277,6 +324,7 @@ export class VaultPublishPlugin extends Plugin {
         this.registerDomEvent(item, 'click', () => {
             void this.#openView(this.#openNote())
         })
+        this.#updateStatus = update
         this.registerEvent(this.app.workspace.on('file-open', update))
         this.register(this.center.subscribe(update))
         update()
@@ -386,6 +434,44 @@ class DeviceSettingTab extends PluginSettingTab {
                     })
                 })
             )
+    }
+}
+
+/** A question with one button for a step that is hard to take back. */
+class ConfirmModal extends Modal {
+    constructor(
+        app: App,
+        private readonly title: string,
+        private readonly text: string,
+        private readonly action: string,
+        private readonly confirm: () => void
+    ) {
+        super(app)
+    }
+
+    override onOpen(): void {
+        this.setTitle(this.title)
+        this.contentEl.createEl('p', { text: this.text })
+        new Setting(this.contentEl)
+            .addButton((button) =>
+                button.setButtonText('Cancel').onClick(() => {
+                    this.close()
+                })
+            )
+            .addButton((button) =>
+                button
+                    .setButtonText(this.action)
+                    .setDestructive()
+                    .setCta()
+                    .onClick(() => {
+                        this.close()
+                        this.confirm()
+                    })
+            )
+    }
+
+    override onClose(): void {
+        this.contentEl.empty()
     }
 }
 

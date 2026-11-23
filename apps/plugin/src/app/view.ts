@@ -25,13 +25,16 @@ import type { Measures } from './measures.ts'
 // behind SEAM-01 and SEAM-02, and the author checks this view by hand in a
 // test vault (section 18.1 of the spec).
 
-export const VIEW_TYPE = 'publication-center'
+export const VIEW_TYPE = 'dsebastien-vault-publish-center'
 
 /** The height of a row of the lists, in pixels: the virtual list needs one height (PERF-12). */
 const ROW_HEIGHT = 30
 
 /** The rows that the virtual list renders above and below the visible ones. */
 const MARGIN_ROWS = 10
+
+/** The most lines of a section that is not virtual: the moves, the pairings, a list of a report. */
+const SECTION_LINES = 200
 
 const LISTS: readonly { list: ViewList; label: string }[] = [
     { list: 'new', label: 'New' },
@@ -71,6 +74,8 @@ export interface ViewHost {
     takeOpenStart(): number | undefined
     /** Opens the settings tab of the plugin. */
     openSettings(): void
+    /** Asks the author to confirm the removal of the lock of the device, then removes it. */
+    confirmUnlock(): void
 }
 
 function timeOf(date: Date): string {
@@ -86,6 +91,11 @@ export class PublicationCenterView extends ItemView {
     #rows: Row[] = []
     #shown: Row[] = []
     #frame = 0
+    #renderFrame = 0
+    /** The rows of the last queue and choices: a scroll and a filter do not compute them again. */
+    #allRowsOf: { queue: unknown; choices: unknown; rows: Record<ViewList, Row[]> } | undefined
+    /** The sections that the author opened, by their names: a render keeps them open. */
+    readonly #open = new Set<string>()
     // The parts of the view, made one time in `onOpen`.
     #header!: HTMLElement
     #message!: HTMLElement
@@ -139,8 +149,12 @@ export class PublicationCenterView extends ItemView {
         this.#footer = root.createDiv({ cls: 'vault-publish-footer' })
         this.#panels = root.createDiv({ cls: 'vault-publish-panels' })
         this.#log = root.createEl('details', { cls: 'vault-publish-log' })
+        // One render per frame, however many changes of the state come in it.
         this.#unsubscribe = this.host.center.subscribe(() => {
-            this.#render()
+            cancelAnimationFrame(this.#renderFrame)
+            this.#renderFrame = requestAnimationFrame(() => {
+                this.#render()
+            })
         })
         // The lists show the last check at once, with its time (PERF-01). The
         // command that opens the view starts a new check: a view that
@@ -152,6 +166,7 @@ export class PublicationCenterView extends ItemView {
     override async onClose(): Promise<void> {
         this.#unsubscribe?.()
         cancelAnimationFrame(this.#frame)
+        cancelAnimationFrame(this.#renderFrame)
         await Promise.resolve()
     }
 
@@ -169,7 +184,38 @@ export class PublicationCenterView extends ItemView {
 
     #allRows(): Record<ViewList, Row[]> | undefined {
         const { queue, choices } = this.host.center.state
-        return queue === undefined ? undefined : rowsOf(queue, choices)
+        if (queue === undefined) {
+            return undefined
+        }
+        if (this.#allRowsOf?.queue !== queue || this.#allRowsOf.choices !== choices) {
+            this.#allRowsOf = { queue, choices, rows: rowsOf(queue, choices) }
+        }
+        return this.#allRowsOf.rows
+    }
+
+    /** A section that keeps its open state between two renders. */
+    #section(parent: HTMLElement, name: string, title: string): HTMLDetailsElement {
+        const section = parent.createEl('details')
+        if (this.#open.has(name)) {
+            section.setAttribute('open', '')
+        }
+        section.createEl('summary', { text: title })
+        section.addEventListener('toggle', () => {
+            if (section.open) {
+                this.#open.add(name)
+            } else {
+                this.#open.delete(name)
+            }
+        })
+        return section
+    }
+
+    /** Opens a note by its exact path: `#` and `^` in a file name are no part of a link. */
+    #openNote(path: string, newLeaf: boolean): void {
+        const file = this.app.vault.getFileByPath(path)
+        if (file !== null) {
+            void this.app.workspace.getLeaf(newLeaf).openFile(file)
+        }
     }
 
     #changed(): void {
@@ -229,6 +275,13 @@ export class PublicationCenterView extends ItemView {
                 const open = this.#message.createEl('button', { text: 'Open the settings' })
                 open.addEventListener('click', () => {
                     this.host.openSettings()
+                })
+            }
+            if (state.error.includes('a publication runs on this device, or one stopped halfway')) {
+                const unlock = this.#message.createEl('button', { text: 'Remove the lock…' })
+                unlock.disabled = state.activity !== 'idle'
+                unlock.addEventListener('click', () => {
+                    this.host.confirmUnlock()
                 })
             }
         }
@@ -387,7 +440,7 @@ export class PublicationCenterView extends ItemView {
         const path = line.createEl('a', { cls: 'vault-publish-path', text: row.path })
         path.addEventListener('click', (event) => {
             if (row.group !== 'missing') {
-                void this.app.workspace.openLinkText(row.path, '', event.ctrlKey || event.metaKey)
+                this.#openNote(row.path, event.ctrlKey || event.metaKey)
             }
         })
         const note =
@@ -413,7 +466,9 @@ export class PublicationCenterView extends ItemView {
                 item
                     .setTitle('Open the note')
                     .setIcon('file-text')
-                    .onClick(() => void this.app.workspace.openLinkText(row.path, '', false))
+                    .onClick(() => {
+                        this.#openNote(row.path, false)
+                    })
             )
         }
         if (PUBLISHED_GROUPS.has(row.group)) {
@@ -471,7 +526,7 @@ export class PublicationCenterView extends ItemView {
                     .setIcon('trash-2')
                     .setWarning(true)
                     .onClick(() => {
-                        new TakedownModal(this.app, row.path, () => {
+                        new TakedownModal(this.app, row.path, center.storePathOf(row.path), () => {
                             void center.takedown([row.path])
                         }).open()
                     })
@@ -488,39 +543,49 @@ export class PublicationCenterView extends ItemView {
             return
         }
         if (queue.renamed.length > 0) {
-            const moves = this.#sections.createEl('details', { cls: 'vault-publish-moves' })
-            moves.createEl('summary', {
-                text: `Moves: ${String(queue.renamed.length)} (every publication applies them, the old addresses redirect)`
-            })
-            for (const move of queue.renamed) {
+            const moves = this.#section(
+                this.#sections,
+                'moves',
+                `Moves: ${queue.renamed.length.toLocaleString()} (every publication applies them, the old addresses redirect)`
+            )
+            for (const move of queue.renamed.slice(0, SECTION_LINES)) {
                 moves.createDiv({ text: `${move.from} → ${move.to}` })
             }
+            if (queue.renamed.length > SECTION_LINES) {
+                moves.createDiv({
+                    text: `and ${(queue.renamed.length - SECTION_LINES).toLocaleString()} more`
+                })
+            }
         }
+        const key = (pairing: { from: string; to: string }): string =>
+            `${pairing.from}\n${pairing.to}`
+        const proposed = new Set(queue.pairings.map(key))
+        const confirmed = new Set(choices.pair.map(key))
         const pairings = [
             ...queue.pairings,
-            ...choices.pair.filter(
-                (one) =>
-                    !queue.pairings.some((other) => other.from === one.from && other.to === one.to)
-            )
+            ...choices.pair.filter((one) => !proposed.has(key(one)))
         ]
         if (pairings.length > 0) {
-            const box = this.#sections.createDiv({ cls: 'vault-publish-pairings' })
-            box.createDiv({
-                cls: 'vault-publish-section-title',
-                text: 'Pairings: a published note is missing, and a new note has its text. Confirm, and the old address redirects to the new note.'
-            })
-            for (const pairing of pairings) {
+            const box = this.#section(
+                this.#sections,
+                'pairings',
+                `Pairings: ${pairings.length.toLocaleString()}. A published note is missing, and a new note has its text. Confirm, and the old address redirects to the new note.`
+            )
+            for (const pairing of pairings.slice(0, SECTION_LINES)) {
                 const line = box.createEl('label', { cls: 'vault-publish-pairing' })
                 const confirm = line.createEl('input', { type: 'checkbox' })
-                confirm.checked = choices.pair.some(
-                    (one) => one.from === pairing.from && one.to === pairing.to
-                )
+                confirm.checked = confirmed.has(key(pairing))
                 line.appendText(
-                    ` ${pairing.from} → ${pairing.to}${queue.pairings.includes(pairing) ? '' : ' (by hand)'}`
+                    ` ${pairing.from} → ${pairing.to}${proposed.has(key(pairing)) ? '' : ' (by hand)'}`
                 )
                 confirm.addEventListener('change', () => {
                     this.#changed()
                     center.choose((_queue, current) => togglePairing(current, pairing))
+                })
+            }
+            if (pairings.length > SECTION_LINES) {
+                box.createDiv({
+                    text: `and ${(pairings.length - SECTION_LINES).toLocaleString()} more: filter the list "To remove" and pair by hand`
                 })
             }
         }
@@ -545,12 +610,7 @@ export class PublicationCenterView extends ItemView {
             label === 'Nothing to publish' ||
             (state.queue?.behind ?? 0) > 0
         publish.addEventListener('click', () => {
-            const started = performance.now()
-            new Notice(`Publication started: ${label}`)
-            requestAnimationFrame(() => {
-                this.host.measures.record('start', performance.now() - started)
-            })
-            void center.publish()
+            void center.publish(performance.now())
         })
         if (busy) {
             this.#footer.createSpan({
@@ -634,7 +694,7 @@ export class PublicationCenterView extends ItemView {
         if (report.addresses.length > 0) {
             const live = panel.createEl('details', { attr: { open: '' } })
             live.createEl('summary', {
-                text: `Published and updated: ${report.addresses.length.toLocaleString()} (live after the next build)`
+                text: `Published, updated and moved: ${report.addresses.length.toLocaleString()} (live after the next build)`
             })
             for (const address of report.addresses.slice(0, 500)) {
                 const line = live.createDiv()
@@ -672,9 +732,14 @@ export class PublicationCenterView extends ItemView {
 
 /** The dialog of a takedown (decision R67): the note, what goes, what stays, one button. */
 export class TakedownModal extends Modal {
+    /**
+     * @param path the vault path of the note
+     * @param stored the path of the note in the content store: its old path while its move waits for a publication
+     */
     constructor(
         app: App,
         private readonly path: string,
+        private readonly stored: string,
         private readonly confirm: () => void
     ) {
         super(app)
@@ -684,6 +749,11 @@ export class TakedownModal extends Modal {
         this.setTitle('Take down this note now?')
         const { contentEl } = this
         contentEl.createEl('p', { cls: 'vault-publish-path', text: this.path })
+        if (this.stored !== this.path) {
+            contentEl.createEl('p', {
+                text: `It is published at its old path "${this.stored}": its move waits for the next publication. The takedown removes it there.`
+            })
+        }
         contentEl.createEl('p', {
             text: 'The note leaves the content store at once, with no plan: its page, its Markdown, its manifest entry with its former paths, and the attachments that no other published note uses. After the next build, every address of the note answers 404, with no redirect.'
         })

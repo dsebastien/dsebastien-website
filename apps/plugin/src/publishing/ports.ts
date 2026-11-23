@@ -140,7 +140,8 @@ export interface AttachmentStorage {
 
 /**
  * Who holds the lock of the device: a publication, with its device, its face
- * and its time, or a plan while it puts the copy back.
+ * and its time, a plan while it puts the copy back, or the plugin while it
+ * fetches for a check or pulls the copy.
  */
 export type LockHolder =
     | {
@@ -150,6 +151,8 @@ export type LockHolder =
           readonly time: string
       }
     | { readonly command: 'plan' }
+    /** A face that fetches for a check, or pulls the copy (issue 39). */
+    | { readonly command: 'check' | 'pull' }
 
 /**
  * The files of this device: the plans, the lock and the run journal. They are

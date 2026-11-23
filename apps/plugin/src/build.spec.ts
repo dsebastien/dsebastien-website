@@ -197,6 +197,7 @@ describe('the built plugin', () => {
         const files = new Map<string, string>()
         const listeners = new Map<string, (...values: unknown[]) => void>()
         const workspaceListeners = new Map<string, (...values: unknown[]) => void>()
+        const layoutReady: (() => void)[] = []
         const storage = new Map<string, unknown>()
         let asked = 0
         const app = {
@@ -227,7 +228,11 @@ describe('the built plugin', () => {
                     workspaceListeners.set(name, listener)
                     return { name }
                 },
-                getActiveFile: () => ({ path: 'Notes/Alpha.md' })
+                getActiveFile: () => ({ path: 'Notes/Alpha.md' }),
+                // The edits count from the moment that the layout is ready.
+                onLayoutReady: (callback: () => void) => {
+                    layoutReady.push(callback)
+                }
             },
             // A check would ask the Starter Kit: the load must not.
             get plugins() {
@@ -247,8 +252,8 @@ describe('the built plugin', () => {
 
         const count = (name: string): number => calls.filter((call) => call === name).length
         expect(count('registerView')).toBe(1)
-        expect(registered.get('registerView')).toEqual(['publication-center'])
-        expect(count('addCommand')).toBe(6)
+        expect(registered.get('registerView')).toEqual(['dsebastien-vault-publish-center'])
+        expect(count('addCommand')).toBe(7)
         expect(
             (registered.get('addCommand') ?? []).map((command) =>
                 isRecord(command) ? command['id'] : undefined
@@ -259,12 +264,19 @@ describe('the built plugin', () => {
             'unpublish-open-note',
             'take-down-open-note',
             'copy-live-address',
+            'remove-lock',
             'show-measures'
         ])
         expect(count('addSettingTab')).toBe(1)
         expect(count('addStatusBarItem')).toBe(1)
         expect(count('addRibbonIcon')).toBe(1)
         expect(count('loadData') + count('saveData')).toBe(0)
+        // Obsidian reports every file as made while it loads the vault: the
+        // listeners of the edits wait for the layout.
+        expect([...listeners.keys()]).toEqual(['rename'])
+        for (const callback of layoutReady) {
+            callback()
+        }
         expect([...listeners.keys()].sort()).toEqual(['create', 'modify', 'rename'])
         expect([...workspaceListeners.keys()]).toEqual(['file-open'])
         // No check at the start of Obsidian (R67, PERF-06): the state of the

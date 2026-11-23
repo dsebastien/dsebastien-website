@@ -334,6 +334,15 @@ describe('the choices on the fixture vault', () => {
 })
 
 describe('the ticks of the shown rows', () => {
+    test('never tick a note that is missing from this vault: each one is a choice of its own (PUB-95)', () => {
+        const ticked = setTicks(QUEUE, NO_CHOICES, ['Garden/Gone.md'], true)
+        expect(selectionOf(QUEUE, ticked).remove).toEqual([])
+        const one = toggleRow(QUEUE, NO_CHOICES, 'Garden/Gone.md')
+        expect(selectionOf(QUEUE, setTicks(QUEUE, one, ['Garden/Gone.md'], false)).remove).toEqual([
+            'Garden/Gone.md'
+        ])
+    })
+
     test('tick or untick every row that the author can tick, and leave the locked rows', () => {
         const paths = [
             'Drafts/Idea.md',

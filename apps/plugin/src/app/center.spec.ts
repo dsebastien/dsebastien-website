@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -35,12 +35,15 @@ interface Setup {
     readonly vault: string
     readonly copy: string
     readonly center: PublicationCenter
+    /** The labels of the "started" messages of the publications. */
+    readonly started: string[]
 }
 
 async function setUp(stores: TestStores, configured = true): Promise<Setup> {
     const vault = await copyFixtureVault(stores)
     const copy = await makeContentStoreCopy(stores)
     let minute = 0
+    const started: string[] = []
     const center = new PublicationCenter({
         device: () => {
             if (!configured) {
@@ -56,10 +59,21 @@ async function setUp(stores: TestStores, configured = true): Promise<Setup> {
         pull: () => pullContentStore({ contentStore: copy }),
         // A clock that the test drives: one minute per question.
         now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
-        deviceName: 'garden-shed'
+        deviceName: 'garden-shed',
+        started: (label) => {
+            started.push(label)
+        }
     })
-    return { vault, copy, center }
+    return { vault, copy, center, started }
 }
+
+const JOURNAL = join(
+    '.obsidian',
+    'plugins',
+    'dsebastien-vault-publish',
+    'renames',
+    '00000000000000aa.jsonl'
+)
 
 describe('the publication center', () => {
     test('a check fills the four lists and says when it ran', async () => {
@@ -265,6 +279,156 @@ describe('the publication center', () => {
 
         expect(center.state.error).toContain('a publication runs on this device')
         expect(await Bun.file(fetched).exists()).toBe(false)
+    }, 60_000)
+
+    test('takes a moved note down by its new path, before the move is published', async () => {
+        await using stores = await makeTestStores()
+        const { vault, center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        const moved = '10 Garden/Moved/Frost dates explained.md'
+        await mkdir(join(vault, '10 Garden', 'Moved'), { recursive: true })
+        await rename(join(vault, NOTE), join(vault, moved))
+        await mkdir(join(vault, JOURNAL, '..'), { recursive: true })
+        await writeFile(
+            join(vault, JOURNAL),
+            `{"from":"${NOTE}","kind":"note","time":"2031-04-02T08:00:00Z","to":"${moved}"}\n`
+        )
+        await center.check()
+        expect(center.state.queue?.renamed).toEqual([{ from: NOTE, to: moved }])
+        expect(center.storePathOf(moved)).toBe(NOTE)
+
+        await center.takedown([moved])
+
+        const { state } = center
+        expect(state.error).toBeUndefined()
+        expect(state.report?.kind === 'takedown' ? state.report.report.takenDown : []).toEqual([
+            NOTE
+        ])
+        expect(state.queue?.new).toContain(moved)
+    }, 60_000)
+
+    test('a takedown asked during a check runs after it', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+
+        const checking = center.check()
+        const takingDown = center.takedown([NOTE])
+        await Promise.all([checking, takingDown])
+
+        expect(center.state.error).toBeUndefined()
+        expect(
+            center.state.report?.kind === 'takedown' ? center.state.report.report.takenDown : []
+        ).toEqual([NOTE])
+    }, 60_000)
+
+    test('an activity that another one refuses says why', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+
+        const checking = center.check()
+        const planning = center.dryRun()
+        await Promise.all([checking, planning])
+
+        expect(center.state.error).toBe(
+            'Dry run refused: a check runs already. Try again when it ends.'
+        )
+    }, 60_000)
+
+    test('keeps the choices that the author made while a publication ran', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, SECOND))
+        await center.publish()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        const publishing = center.publish()
+        center.choose((queue, choices) => markUnpublish(queue, choices, SECOND))
+        await publishing
+
+        expect(center.state.choices.unpublish).toEqual([SECOND])
+        expect(center.label()).toBe('Publish: 1 removal')
+    }, 60_000)
+
+    test('publishes no new note that changed after the check, and checks again', async () => {
+        await using stores = await makeTestStores()
+        const { copy, center, started } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        const head = await git('-C', copy, 'rev-parse', 'HEAD')
+        // Another note at the same path, made after the check.
+        center.noteChanged(NOTE)
+
+        await center.publish()
+
+        expect(center.state.report).toBeUndefined()
+        expect(center.state.error).toBe(
+            `A new note changed after the check, so nothing was published: "${NOTE}". The lists are checked again: check them and publish again.`
+        )
+        expect(started).toEqual([])
+        expect(await git('-C', copy, 'rev-parse', 'HEAD')).toBe(head)
+        expect(center.stateOf(NOTE).label).toBe('Not published')
+    }, 60_000)
+
+    test('says that a publication started only when its plan is the plan of the label', async () => {
+        await using stores = await makeTestStores()
+        const { center, started } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+
+        expect(started).toEqual(['Publish: 1 new'])
+    }, 60_000)
+
+    test('the corrections of the property after a publication are no edits', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+
+        // Obsidian reports the write of the property after the check.
+        center.noteChanged(NOTE)
+        expect(center.stateOf(NOTE).label).toBe('Live')
+        center.noteChanged(NOTE)
+        expect(center.stateOf(NOTE).label).toBe('Live (edited since the check)')
+    }, 60_000)
+
+    test('a check that fails keeps the marks of the edits', async () => {
+        await using stores = await makeTestStores()
+        const { copy, center } = await setUp(stores)
+        await center.check()
+        center.noteChanged(NOTE)
+        await mkdir(join(copy, '.git', 'vault-publish'), { recursive: true })
+        await writeFile(join(copy, '.git', 'vault-publish', 'lock'), '{"command":"plan"}\n')
+
+        await center.check()
+
+        expect(center.state.error).toContain('a publication runs on this device')
+        expect(center.stateOf(NOTE).label).toBe('Not published (edited since the check)')
+    }, 60_000)
+
+    test('removes the lock that a stopped run left, then checks again', async () => {
+        await using stores = await makeTestStores()
+        const { copy, center } = await setUp(stores)
+        const lock = join(copy, '.git', 'vault-publish', 'lock')
+        await mkdir(join(lock, '..'), { recursive: true })
+        await writeFile(lock, '{"command":"publish"}\n')
+        await center.check()
+        expect(center.state.error).toContain('a publication runs on this device')
+
+        await center.unlock()
+
+        expect(await Bun.file(lock).exists()).toBe(false)
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.queue?.new).toContain(NOTE)
     }, 60_000)
 
     test('says what is missing when the device has no settings', async () => {

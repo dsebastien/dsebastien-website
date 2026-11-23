@@ -257,7 +257,11 @@ export function toggleRow(queue: QueueLists, choices: Choices, path: string): Ch
     }
 }
 
-/** The choices with every row of these paths ticked or unticked: "select shown" and "unselect shown". */
+/**
+ * The choices with every row of these paths ticked or unticked: "select
+ * shown" and "unselect shown". A note that is missing from this vault is never
+ * in a bulk choice: each one is a choice of its own (PUB-95).
+ */
 export function setTicks(
     queue: QueueLists,
     choices: Choices,
@@ -282,7 +286,7 @@ export function setTicks(
         } else if (found.group === 'changed') {
             if (ticked) hold.delete(path)
             else hold.add(path)
-        } else if (found.group === 'unpublish' || found.group === 'missing') {
+        } else if (found.group === 'unpublish') {
             if (ticked) unpublish.add(path)
             else unpublish.delete(path)
         }

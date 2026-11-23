@@ -12,7 +12,7 @@ import { SelectionError } from '../publishing/plan.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
 import type { Device } from '../publishing/ports.ts'
 import type { PublicationQueue } from '../publishing/queue.ts'
-import { plan, publish, status, takedown } from '../publishing/tool.ts'
+import { plan, publish, status, takedown, unlock } from '../publishing/tool.ts'
 import type { PublicationReport, StoredPlan, TakedownReport } from '../publishing/tool.ts'
 import { canonicalTime } from './rename-journal.ts'
 
@@ -32,10 +32,30 @@ export interface CenterHost {
     now(): Date
     /** The name of this device, for the commit of a publication. One line of text. */
     readonly deviceName: string
+    /**
+     * Called when a publication starts: its plan is the plan of the label
+     * (PERF-04). `clickedAt` is the moment of the click, when the view gave it.
+     */
+    started?(label: string, clickedAt: number | undefined): void
 }
 
 /** What the controller does now. */
-export type Activity = 'idle' | 'checking' | 'planning' | 'publishing' | 'taking down' | 'pulling'
+export type Activity =
+    'idle' | 'checking' | 'planning' | 'publishing' | 'taking down' | 'pulling' | 'unlocking'
+
+/** The name of an activity in a message. */
+const ACTIVITY_NAMES: Record<Activity, string> = {
+    'idle': 'nothing',
+    'checking': 'check',
+    'planning': 'dry run',
+    'publishing': 'publication',
+    'taking down': 'takedown',
+    'pulling': 'pull',
+    'unlocking': 'unlock'
+}
+
+/** How long a write of the state property by a run is no edit, in milliseconds. */
+const OWN_WRITES = 10_000
 
 export interface LogLine {
     /** The time, in the canonical form. */
@@ -113,6 +133,12 @@ export class PublicationCenter {
     readonly #listeners = new Set<() => void>()
     /** The notes that changed after the last check began. */
     #changed = new Set<string>()
+    /** The notes whose state property the last run wrote, and until when their events are no edits. */
+    #ownWrites: { paths: Set<string>; until: number } = { paths: new Set(), until: 0 }
+    /** The activity that runs now, so that a takedown can wait for its end. */
+    #current: Promise<void> = Promise.resolve()
+    /** The plan of the last queue and choices: a render asks for it more than one time. */
+    #counted: { queue: PublicationQueue; choices: Choices; plan: PublicationPlan } | undefined
 
     constructor(private readonly host: CenterHost) {}
 
@@ -152,7 +178,13 @@ export class PublicationCenter {
     /** The plan of the choices, from the last queue: what the publish button states. */
     plan(): PublicationPlan | undefined {
         const { queue, choices } = this.#state
-        return queue === undefined ? undefined : planOfChoices(queue, choices)
+        if (queue === undefined) {
+            return undefined
+        }
+        if (this.#counted?.queue !== queue || this.#counted.choices !== choices) {
+            this.#counted = { queue, choices, plan: planOfChoices(queue, choices) }
+        }
+        return this.#counted.plan
     }
 
     /** The label of the publish button. */
@@ -161,10 +193,27 @@ export class PublicationCenter {
         return counted === undefined ? 'Check first' : describePlan(counted)
     }
 
-    /** A note was edited, made or renamed in the vault after the check. */
+    /**
+     * A note was edited, made or renamed in the vault after the check. It
+     * calls no listener: Obsidian reports every file at its start, and every
+     * write of the state property after a publication. The write of the state
+     * property by the last run is no edit (one event per note, for a short time).
+     */
     noteChanged(path: string): void {
+        // A monotonic clock of the face, not a time of the logic.
+        if (performance.now() < this.#ownWrites.until && this.#ownWrites.paths.delete(path)) {
+            return
+        }
         this.#changed.add(path)
-        this.#set({})
+    }
+
+    /** The path of a note in the content store: a note that a move of the queue moved is there at its old path. */
+    storePathOf(path: string): string {
+        return this.#state.queue?.renamed.find((move) => move.to === path)?.from ?? path
+    }
+
+    #wrote(paths: readonly string[]): void {
+        this.#ownWrites = { paths: new Set(paths), until: performance.now() + OWN_WRITES }
     }
 
     /** The state of a note at the last check (TOOL-23). */
@@ -185,34 +234,62 @@ export class PublicationCenter {
      */
     async #run(activity: Activity, name: string, work: () => Promise<void>): Promise<void> {
         if (this.#state.activity !== 'idle') {
-            this.#log(
-                `${name} refused: a ${this.#state.activity === 'checking' ? 'check' : this.#state.activity} runs already`
-            )
+            const text = `${name} refused: a ${ACTIVITY_NAMES[this.#state.activity]} runs already`
+            this.#log(text)
+            // A check that another activity refuses is no failure: every
+            // activity checks again at its end.
+            if (activity !== 'checking') {
+                this.#set({ error: `${text}. Try again when it ends.` })
+            }
             return
         }
         const { error: _old, ...rest } = this.#state
         this.#state = rest
         this.#set({ activity: activity })
-        try {
-            await work()
-        } catch (error) {
-            this.#log(`${name} failed: ${messageOf(error)}`)
-            this.#set({ error: messageOf(error) })
-        } finally {
-            this.#set({ activity: 'idle' })
-        }
+        const running = (async () => {
+            try {
+                await work()
+            } catch (error) {
+                this.#log(`${name} failed: ${messageOf(error)}`)
+                this.#set({ error: messageOf(error) })
+            } finally {
+                this.#set({ activity: 'idle' })
+            }
+        })()
+        this.#current = running
+        await running
     }
 
     /** The check of the vault and of the copy: the four lists, the moves and the pairings. */
     async #check(): Promise<void> {
         this.#log('Check started')
         const device = this.host.device()
+        // The edits before this check: they are marks again when it fails.
+        const before = this.#changed
         this.#changed = new Set()
+        try {
+            await this.#checkWith(device)
+        } catch (error) {
+            for (const path of before) {
+                this.#changed.add(path)
+            }
+            throw error
+        }
+    }
+
+    async #checkWith(device: Device): Promise<void> {
         // The copy is fetched first, when the network allows it, so that
         // `behind` is the state of now (PUB-30, PERF-16). Not while a run
         // holds the lock of the device: `status` then stops with its message.
-        const locked = (await device.local.readLock()) !== undefined
-        const fetched = locked ? { reached: true } : await device.store.verify('try')
+        const lock = await device.local.lock({ command: 'check' })
+        let fetched = { reached: true }
+        if (lock.taken) {
+            try {
+                fetched = await device.store.verify('try')
+            } finally {
+                await device.local.release(lock.text)
+            }
+        }
         const queue = await status(device)
         this.#set({
             queue,
@@ -251,14 +328,24 @@ export class PublicationCenter {
      * the vault first: when it is not the plan that the label states, nothing
      * is published, and the view shows the new plan.
      */
-    async publish(): Promise<void> {
+    async publish(clickedAt?: number): Promise<void> {
         await this.#run('publishing', 'Publication', async () => {
             const { queue, choices } = this.#state
             if (queue === undefined) {
                 throw new Error('check the vault first')
             }
             const expected = planOfChoices(queue, choices)
-            this.#log(`Publication started: ${describePlan(expected)}`)
+            // A new note that changed after the check can be another note at
+            // the same path: the author never saw it in the lists.
+            const selection = selectionOf(queue, choices)
+            const fresh = [...expected.publish, ...selection.pair.map((one) => one.to)].filter(
+                (path) => this.#changed.has(path)
+            )
+            if (fresh.length > 0) {
+                throw new Error(
+                    `A new note changed after the check, so nothing was published: ${fresh.map((path) => `"${path}"`).join(', ')}. The lists are checked again: check them and publish again.`
+                )
+            }
             const device = this.host.device()
             let stored: StoredPlan
             try {
@@ -278,11 +365,14 @@ export class PublicationCenter {
                     `The plan changed since the check, so nothing was published. The plan is now: ${describePlan(stored.plan)} (${pathsOfPlan(stored.plan)}). Check the lists and publish again.`
                 )
             }
+            this.#log(`Publication started: ${describePlan(expected)}`)
+            this.host.started?.(describePlan(expected), clickedAt)
             const report = await publish(device, stored.id, {
                 time: canonicalTime(this.host.now()),
                 device: this.host.deviceName,
                 face: 'plugin'
             })
+            this.#wrote([...report.propertySet, ...report.propertyRemoved])
             this.#set({
                 report: {
                     kind: 'publication',
@@ -295,7 +385,8 @@ export class PublicationCenter {
                         .sort()
                         .map((path) => ({ path, url: addressOf(path) }))
                 },
-                choices: NO_CHOICES
+                // The choices that the author made while the run ran stay.
+                choices: this.#state.choices === choices ? NO_CHOICES : this.#state.choices
             })
             this.#log(
                 `Publication done: ${String(report.published.length)} new, ${String(report.updated.length)} updated, ${String(report.removed.length)} removed, ${String(report.forcedRemoved.length)} forced, ${String(report.moved.length)} moved, ${String(report.failed.length)} failed`
@@ -306,13 +397,22 @@ export class PublicationCenter {
 
     /** Takes notes down at once, with no plan (PUB-81, TOOL-25). */
     async takedown(paths: readonly string[]): Promise<void> {
+        // A takedown does not wait for a publication (PUB-99), but one run
+        // at a time holds the copy: it runs at the end of the current one.
+        while (this.#state.activity !== 'idle') {
+            await this.#current
+        }
+        // A note that a move of the queue moved is still at its old path in
+        // the content store until the next publication.
+        const stored = paths.map((path) => this.storePathOf(path))
         await this.#run('taking down', 'Takedown', async () => {
-            this.#log(`Takedown started: ${paths.map((path) => `"${path}"`).join(', ')}`)
-            const report = await takedown(this.host.device(), paths, {
+            this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
+            const report = await takedown(this.host.device(), stored, {
                 time: canonicalTime(this.host.now()),
                 device: this.host.deviceName,
                 face: 'plugin'
             })
+            this.#wrote(report.propertyRemoved)
             this.#set({ report: { kind: 'takedown', report, addresses: [] } })
             this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
             if (report.storageWarnings.length > 0) {
@@ -331,6 +431,22 @@ export class PublicationCenter {
             this.#log('Pull started: git pull --ff-only origin main')
             await this.host.pull()
             this.#log('Pull done')
+        })
+        await this.#checkAfter()
+    }
+
+    /**
+     * Removes the lock that a run left when it stopped halfway (a crash, a
+     * power cut, Obsidian closed during a run), then checks again. The next
+     * dry run, publication or takedown puts the copy back (PUB-27, PUB-94).
+     * Only when no run of any face runs on this device.
+     */
+    async unlock(): Promise<void> {
+        await this.#run('unlocking', 'Unlock', async () => {
+            const removed = await unlock(this.host.device())
+            this.#log(
+                removed ? 'Unlock done: the lock was removed' : 'Unlock done: there was no lock'
+            )
         })
         await this.#checkAfter()
     }

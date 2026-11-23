@@ -1324,9 +1324,10 @@ export function nodeDevice(options: {
 /**
  * Pulls the content store into the copy: exactly `git pull --ff-only origin
  * main`, on a click of the author when another device published first
- * (decision R67). The tool never pulls by itself (R46). It refuses to run
- * while a run of the tool holds the lock of the device, and a pull that is
- * not a fast-forward stops with the message of git.
+ * (decision R67). The tool never pulls by itself (R46). It takes the lock of
+ * the device for the pull, refuses while another run holds it or while the
+ * run journal of a publication that stopped halfway is there, and a pull that
+ * is not a fast-forward stops with the message of git.
  *
  * @param options.contentStore the folder of the copy of the content store
  * @param options.git the git program; by default `git` of the path of the system
@@ -1335,25 +1336,38 @@ export async function pullContentStore(options: {
     contentStore: string
     git?: string
 }): Promise<void> {
-    if ((await folderLocalStore(options.contentStore).readLock()) !== undefined) {
+    const local = folderLocalStore(options.contentStore)
+    // The lock of the device holds the copy for the pull: no run of another
+    // face can start in the middle of it (PUB-27).
+    const lock = await local.lock({ command: 'pull' })
+    if (!lock.taken) {
         throw new Error(
             `a run of the tool holds the lock of this device: pull when it ends (${options.contentStore})`
         )
     }
-    const program = options.git ?? 'git'
     try {
-        await run(program, [...GIT_OPTIONS, 'pull', '--quiet', '--ff-only', 'origin', 'main'], {
-            cwd: options.contentStore,
-            env: gitEnvironment()
-        })
-    } catch (error) {
-        const stderr =
-            error instanceof Error && 'stderr' in error && typeof error.stderr === 'string'
-                ? error.stderr.trim()
-                : ''
-        throw new Error(
-            `git pull --ff-only origin main failed in ${options.contentStore} (${program}): ${stderr === '' ? codeOf(error) : stderr}`,
-            { cause: error }
-        )
+        if ((await local.loadJournal()) !== undefined) {
+            throw new Error(
+                `a publication stopped halfway on this device: make a dry run first, it puts the copy back (${options.contentStore})`
+            )
+        }
+        const program = options.git ?? 'git'
+        try {
+            await run(program, [...GIT_OPTIONS, 'pull', '--quiet', '--ff-only', 'origin', 'main'], {
+                cwd: options.contentStore,
+                env: gitEnvironment()
+            })
+        } catch (error) {
+            const stderr =
+                error instanceof Error && 'stderr' in error && typeof error.stderr === 'string'
+                    ? error.stderr.trim()
+                    : ''
+            throw new Error(
+                `git pull --ff-only origin main failed in ${options.contentStore} (${program}): ${stderr === '' ? codeOf(error) : stderr}`,
+                { cause: error }
+            )
+        }
+    } finally {
+        await local.release(lock.text)
     }
 }
