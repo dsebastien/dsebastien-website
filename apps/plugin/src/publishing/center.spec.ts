@@ -6,6 +6,7 @@ import {
     pairByHand,
     planOfChoices,
     reconcile,
+    setTicks,
     rowsOf,
     selectionOf,
     stateOfNote,
@@ -330,4 +331,28 @@ describe('the choices on the fixture vault', () => {
         expect(stored.plan).toEqual(planOfChoices(queue, choices))
         expect(describePlan(stored.plan)).toBe('Publish: 2 new')
     }, 60_000)
+})
+
+describe('the ticks of the shown rows', () => {
+    test('tick or untick every row that the author can tick, and leave the locked rows', () => {
+        const paths = [
+            'Drafts/Idea.md',
+            'Garden/Edited.md',
+            'Garden/Linked.md',
+            'Private/Moved in.md'
+        ]
+        const unticked = setTicks(QUEUE, NO_CHOICES, paths, false)
+        expect(selectionOf(QUEUE, unticked)).toEqual({
+            include: [],
+            hold: ['Garden/Edited.md'],
+            remove: [],
+            pair: []
+        })
+        expect(selectionOf(QUEUE, setTicks(QUEUE, unticked, paths, true))).toEqual({
+            include: ['Drafts/Idea.md'],
+            hold: [],
+            remove: [],
+            pair: []
+        })
+    })
 })

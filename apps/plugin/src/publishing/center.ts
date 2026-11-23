@@ -257,6 +257,39 @@ export function toggleRow(queue: QueueLists, choices: Choices, path: string): Ch
     }
 }
 
+/** The choices with every row of these paths ticked or unticked: "select shown" and "unselect shown". */
+export function setTicks(
+    queue: QueueLists,
+    choices: Choices,
+    paths: readonly string[],
+    ticked: boolean
+): Choices {
+    const rows = rowsOf(queue, choices)
+    const byPath = new Map(
+        [...rows.new, ...rows.changed, ...rows.toRemove].map((one) => [one.path, one])
+    )
+    const include = new Set(choices.include)
+    const hold = new Set(choices.hold)
+    const unpublish = new Set(choices.unpublish)
+    for (const path of paths) {
+        const found = byPath.get(path)
+        if (found === undefined || found.locked || !found.checkable || found.ticked === ticked) {
+            continue
+        }
+        if (found.group === 'candidate') {
+            if (ticked) include.add(path)
+            else include.delete(path)
+        } else if (found.group === 'changed') {
+            if (ticked) hold.delete(path)
+            else hold.add(path)
+        } else if (found.group === 'unpublish' || found.group === 'missing') {
+            if (ticked) unpublish.add(path)
+            else unpublish.delete(path)
+        }
+    }
+    return { ...choices, include: [...include], hold: [...hold], unpublish: [...unpublish] }
+}
+
 /** The choices after a tick or an untick of the one line of the technical updates. */
 export function toggleTechnical(choices: Choices): Choices {
     return { ...choices, holdTechnical: !choices.holdTechnical }
