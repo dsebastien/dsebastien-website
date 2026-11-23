@@ -283,6 +283,7 @@ export async function computeQueue(input: {
         underGuard: (path) =>
             guardOfPath(path, input.configuration) !== undefined || ignored.has(path),
         inVault: (path) => notes.has(path),
+        sourceHashAt: (path) => notes.get(path)?.sourceHash,
         isVaultName: (path) =>
             !path.split('/').some((part) => part.startsWith('.') || part.includes(REPLACEMENT))
     })
@@ -469,6 +470,28 @@ function withoutSuffix(path: string): string {
 }
 
 /**
+ * True when the vault of this device shows the move of the entry from `from`
+ * to `to` (rule 2 of the moves): `to` is a path of the vault, and when the
+ * vault still has the file at `from`, the note at `to` has the text of the
+ * entry. Another note at `to` is never taken for the moved one.
+ */
+function showsMove(
+    vault: {
+        inVault: (path: string) => boolean
+        isVaultName: (path: string) => boolean
+        sourceHashAt: (path: string) => string | undefined
+    },
+    entry: ManifestEntry,
+    from: string,
+    to: string
+): boolean {
+    if (!vault.isVaultName(to)) {
+        return false
+    }
+    return !vault.inVault(from) || vault.sourceHashAt(to) === entry.sourceHash
+}
+
+/**
  * The moves of the rename journals (`documentation/Canonical Form.md`, "The
  * rename journal"): the entries at their last paths, the moves, the entries
  * that moved under a guard (they stay, and are forced removals), and the
@@ -480,6 +503,8 @@ export function applyMoves(
     vault: {
         underGuard: (path: string) => boolean
         inVault: (path: string) => boolean
+        /** The source hash of the note of the scan at this path. */
+        sourceHashAt: (path: string) => string | undefined
         isVaultName: (path: string) => boolean
     }
 ): {
@@ -532,7 +557,7 @@ export function applyMoves(
             // device shows its move, as rule 2 asks of a published move, and
             // when its line can be about it (rule 1).
             const entry = entries.get(from)
-            const shown = !(vault.inVault(from) && !vault.inVault(to)) && vault.isVaultName(to)
+            const shown = entry !== undefined && showsMove(vault, entry, from, to)
             const older =
                 vault.inVault(from) &&
                 entry !== undefined &&
@@ -542,7 +567,8 @@ export function applyMoves(
             }
             continue
         }
-        if ((vault.inVault(from) && !vault.inVault(to)) || !vault.isVaultName(to)) {
+        const entry = entries.get(from)
+        if (entry === undefined || !showsMove(vault, entry, from, to)) {
             warnings.push({
                 path: from,
                 message: `the rename journal moves the note to "${to}", but the vault of this device does not show that move: it does not move, and it can show as a pairing`

@@ -414,6 +414,7 @@ pub fn compute_queue(
         folded,
         |path| in_deny_list(path, &configuration) || ignored.contains(path),
         |path| notes.contains_key(path),
+        |path| notes.get(path).map(|note| note.source_hash.clone()),
     );
     let manifest = moves.manifest;
     let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
@@ -636,6 +637,21 @@ fn is_vault_name(path: &str) -> bool {
         .any(|part| part.starts_with('.') || part.contains('\u{fffd}'))
 }
 
+/// True when the vault of this device shows the move of the entry from
+/// `from` to `to` (rule 2 of the moves): `to` is a path of the vault, and
+/// when the vault still has the file at `from`, the note at `to` has the text
+/// of the entry. Another note at `to` is never taken for the moved one.
+fn shows_move(
+    in_vault: &impl Fn(&str) -> bool,
+    source_hash_at: &impl Fn(&str) -> Option<String>,
+    entry: &ManifestEntry,
+    from: &str,
+    to: &str,
+) -> bool {
+    is_vault_name(to)
+        && (!in_vault(from) || source_hash_at(to).as_deref() == Some(entry.source_hash.as_str()))
+}
+
 /// The moves of the rename journals.
 struct Moves {
     /// The entries at their last paths.
@@ -662,6 +678,7 @@ fn apply_moves(
     }: Fold,
     under_guard_at: impl Fn(&str) -> bool,
     in_vault: impl Fn(&str) -> bool,
+    source_hash_at: impl Fn(&str) -> Option<String>,
 ) -> Moves {
     let mut warnings = fold_warnings;
     let mut under_guard = BTreeSet::new();
@@ -701,6 +718,9 @@ fn apply_moves(
             under_guard.insert(from.clone());
             continue;
         }
+        let shown = entries
+            .get(from)
+            .is_some_and(|entry| shows_move(&in_vault, &source_hash_at, entry, from, &to));
         // An unpublished entry does not move: its old address stays gone
         // (R64), and a path that it had only while it was unpublished never
         // becomes a public former path. The guard rule above still applies.
@@ -711,13 +731,12 @@ fn apply_moves(
             // It leaves its path to another entry only when the vault of
             // this device shows its move, as rule 2 asks of a published move,
             // and when its line can be about it (rule 1).
-            let shown = (in_vault(&to) || !in_vault(from)) && is_vault_name(&to);
             if shown && !(in_vault(from) && older) {
                 left_behind.insert(from.clone());
             }
             continue;
         }
-        if (in_vault(from) && !in_vault(&to)) || !is_vault_name(&to) {
+        if !shown {
             warnings.push(RenameWarning {
                 path: from.clone(),
                 message: not_moved(&to, "but the vault of this device does not show that move: it does not move, and it can show as a pairing"),

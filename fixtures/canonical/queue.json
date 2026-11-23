@@ -8570,6 +8570,101 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "a move to a path where the vault has another note, while it still has the old file, does not happen (issue 39, review 1)",
+            "denyList": [],
+            "vault": {
+                "C.md": "P\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["C.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["C.md"],
+                        "published": ["C.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the journal of another device moves the note to A.md, and this vault still has C.md and has another note at A.md that was never published",
+                    "files": {
+                        "A.md": "X\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"A.md\"}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the vault does not show the move: the other note is a candidate, never an update of the published note",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["A.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["C.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the moved note arrives at A.md, with its text, and the old file is still there",
+                    "files": {
+                        "A.md": "P\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "now the note at A.md has the text of the entry: the move happens",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["C.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["A.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "C.md",
+                                "to": "A.md"
+                            }
+                        ]
+                    }
+                }
+            ]
         }
     ]
 }
