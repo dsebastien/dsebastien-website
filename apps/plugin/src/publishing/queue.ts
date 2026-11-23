@@ -108,6 +108,8 @@ export interface Scan {
     readonly isGuardedFile: (path: string, hash: string) => Promise<boolean>
     /** Every entry of the manifest after the moves of the rename journals, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
+    /** The unpublished entries that leave the manifest because another entry moved into their paths (rule 6 of the moves). */
+    readonly displaced: readonly ManifestEntry[]
     /** The journals that the scan read: the plan writes their read marker. */
     readonly journals: JournalState
     /** The warnings of the journals and of the moves, for the report. */
@@ -414,6 +416,7 @@ export async function computeQueue(input: {
             }
         },
         manifest,
+        displaced: moves.displaced,
         journals: input.journals,
         renameWarnings: [...input.journals.warnings, ...moves.warnings],
         configuration: input.configuration,
@@ -483,11 +486,16 @@ export function applyMoves(
     readonly manifest: Map<string, ManifestEntry>
     readonly moves: Move[]
     readonly underGuard: Set<string>
+    /** The unpublished entries that leave the manifest: another entry moved into the path that their note left (rule 6 of the moves). */
+    readonly displaced: ManifestEntry[]
     readonly warnings: RenameWarning[]
 } {
     const warnings: RenameWarning[] = [...folded.warnings]
     const underGuard = new Set<string>()
     const final = new Map<string, string>()
+    // The unpublished entries that a line moved away and that stay at their
+    // paths: they do not count at their paths for the collisions.
+    const leftBehind = new Set<string>()
     for (const from of sortByCodePoint([...entries.keys()])) {
         const to = folded.positions.get(from) ?? from
         final.set(from, from)
@@ -520,6 +528,7 @@ export function applyMoves(
         // (R64), and a path that it had only while it was unpublished never
         // becomes a public former path. The guard rule above still applies.
         if (entries.get(from)?.state !== 'published') {
+            leftBehind.add(from)
             continue
         }
         if ((vault.inVault(from) && !vault.inVault(to)) || !vault.isVaultName(to)) {
@@ -548,6 +557,9 @@ export function applyMoves(
             groups.set(key, [...(groups.get(key) ?? []), from])
         }
         for (const [from, to] of final) {
+            if (leftBehind.has(from)) {
+                continue
+            }
             add(`path\n${to}`, from)
             if (entries.get(from)?.state === 'published') {
                 add(`folded\n${foldedForm(withoutSuffix(to))}`, from)
@@ -570,11 +582,24 @@ export function applyMoves(
             }
         }
     }
+    // An unpublished entry whose path another entry took leaves the manifest
+    // (rule 6 of the moves, issue 105): the published note took the path
+    // that the unpublished note left.
+    const taken = new Set([...final].filter(([from]) => !leftBehind.has(from)).map(([, to]) => to))
+    const displaced: ManifestEntry[] = []
     const manifest = new Map<string, ManifestEntry>()
     const moves: Move[] = []
     for (const [from, to] of final) {
         const entry = entries.get(from)
         if (entry === undefined) {
+            continue
+        }
+        if (leftBehind.has(from) && taken.has(from)) {
+            displaced.push(entry)
+            warnings.push({
+                path: from,
+                message: `the rename journal moves this unpublished note away, and another note moved into its path: its entry leaves the manifest, so its other old addresses answer 404 instead of 410`
+            })
             continue
         }
         if (to === from) {
@@ -584,7 +609,7 @@ export function applyMoves(
             moves.push({ from, to })
         }
     }
-    return { manifest, moves, underGuard, warnings }
+    return { manifest, moves, underGuard, displaced, warnings }
 }
 
 /** The entry of a note that moves: its new path, and its former paths (rule 4 of the moves). */

@@ -1140,11 +1140,37 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
             .unwrap_or_else(|| note_id(path, time));
         paths.extend(files_of_note(path, &id));
     }
+    for entry in &scan.displaced {
+        paths.insert(manifest_file(&entry.id));
+    }
     if scan.journals.read {
         paths.insert(RENAMES_FILE.to_owned());
     }
     // The set gives its texts in the order of the code points.
     paths.into_iter().collect()
+}
+
+/// Removes the manifest files of the unpublished entries whose paths a move
+/// took (rule 6 of the moves): they leave the manifest with the move. Their
+/// notes have no cleaned note in the store. The result is the paths that
+/// changed.
+fn remove_displaced(journal: &mut Backup, scan: &Scan) -> Result<Vec<String>, String> {
+    let mut changed = Vec::new();
+    for entry in &scan.displaced {
+        let removal = StoreFile {
+            path: manifest_file(&entry.id),
+            text: None,
+        };
+        if journal.apply(&removal).map_err(|error| {
+            format!(
+                "the entry of the unpublished note \"{}\" could not leave the manifest: {error}",
+                entry.path
+            )
+        })? {
+            changed.push(removal.path);
+        }
+    }
+    Ok(changed)
 }
 
 /// Applies the forced removals of a plan: the cleaned note and the manifest
@@ -1448,6 +1474,7 @@ fn write_all(
     let mut paths = Vec::new();
     let mut manifest = scan.manifest.clone();
     let targets = apply_store_moves(device, journal, plan, scan, &mut manifest, &mut paths)?;
+    paths.extend(remove_displaced(journal, scan)?);
     paths.extend(remove_forced(journal, plan, &manifest)?);
     for path in plan.forced_remove() {
         manifest.remove(path);

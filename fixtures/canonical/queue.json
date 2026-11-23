@@ -8312,6 +8312,161 @@
                     "says": "is a reserved root name of the site"
                 }
             ]
+        },
+        {
+            "name": "a published note that moves into the path that an unpublished note left takes it, and the unpublished entry leaves the manifest (issue 105)",
+            "denyList": [],
+            "vault": {
+                "A.md": "U\n",
+                "C.md": "P\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md", "C.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md", "C.md"],
+                        "published": ["A.md", "C.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the author unpublishes the note at A.md",
+                    "time": "2031-07-01T09:00:00Z",
+                    "paths": ["A.md"],
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["A.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["A.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the unpublished note moves to B.md, then the published note moves from C.md into its old path A.md",
+                    "files": {
+                        "B.md": "U\n",
+                        "A.md": "P\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"B.md\"}\n{\"from\":\"C.md\",\"kind\":\"note\",\"time\":\"2031-07-02T09:00:00Z\",\"to\":\"A.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file of the published note is gone",
+                    "paths": ["C.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the published note moves to A.md, and the unpublished note at its new path is a candidate with no entry: nothing shows the text of one note under the entry of the other",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["B.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["A.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [
+                            {
+                                "from": "C.md",
+                                "to": "A.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the move happens, and the unpublished entry leaves the manifest with a warning with its path",
+                    "time": "2031-07-03T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["A.md"],
+                        "moved": [
+                            {
+                                "from": "C.md",
+                                "to": "A.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the published note is at A.md with its old path as a former path, and the entry of the unpublished note is gone",
+                    "vault": {},
+                    "store": {
+                        "notes/A.md": "P\n",
+                        "notes/B.md": null,
+                        "notes/C.md": null,
+                        "manifest/380d33e7da18982e.json": null,
+                        "manifest/23f574b56ba7bdf3.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:852a478ece1b66d04d107ae488dd476a5a43b317f62729e25152e4bfba096cac\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"C.md\"\n  ],\n  \"id\": \"23f574b56ba7bdf3\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"A.md\",\n  \"sourceHash\": \"sha256:852a478ece1b66d04d107ae488dd476a5a43b317f62729e25152e4bfba096cac\",\n  \"state\": \"published\"\n}\n",
+                        "renames.json": "{\n  \"00000000000000aa.jsonl\": {\n    \"hash\": \"sha256:e1df8f58d81ee1cb45e0c63c0cc648a353eb4c048683a86121ae023b385433bd\",\n    \"lines\": 2\n  }\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the lines were read: the next queue has no move",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["B.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["A.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": []
+                    }
+                }
+            ]
         }
     ]
 }

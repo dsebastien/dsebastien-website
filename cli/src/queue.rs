@@ -155,6 +155,9 @@ pub struct Scan {
     /// Every entry of the manifest after the moves of the rename journals, by
     /// the vault path of its note.
     pub manifest: BTreeMap<String, ManifestEntry>,
+    /// The unpublished entries that leave the manifest because another entry
+    /// moved into their paths (rule 6 of the moves).
+    pub displaced: Vec<ManifestEntry>,
     /// The journals that the scan read: the plan writes their read marker.
     pub journals: JournalState,
     /// The warnings of the journals and of the moves, for the report.
@@ -501,6 +504,7 @@ pub fn compute_queue(
         others: others.into_iter().collect(),
         denied_file_names,
         manifest,
+        displaced: moves.displaced,
         journals,
         rename_warnings,
         configuration,
@@ -632,6 +636,9 @@ struct Moves {
     /// The entries that moved under a guard: they stay, and are forced
     /// removals.
     under_guard: BTreeSet<String>,
+    /// The unpublished entries that leave the manifest: another entry moved
+    /// into the path that their note left (rule 6 of the moves).
+    displaced: Vec<ManifestEntry>,
     warnings: Vec<RenameWarning>,
 }
 
@@ -651,6 +658,9 @@ fn apply_moves(
     let mut warnings = fold_warnings;
     let mut under_guard = BTreeSet::new();
     let mut last: BTreeMap<String, String> = BTreeMap::new();
+    // The unpublished entries that a line moved away and that stay at their
+    // paths: they do not count at their paths for the collisions.
+    let mut left_behind = BTreeSet::new();
     let not_moved = |to: &str, why: &str| -> String {
         format!("the rename journal moves the note to \"{to}\", {why}")
     };
@@ -689,6 +699,7 @@ fn apply_moves(
             .get(from)
             .is_none_or(|entry| entry.state != State::Published)
         {
+            left_behind.insert(from.clone());
             continue;
         }
         let vault_name = !to
@@ -716,13 +727,30 @@ fn apply_moves(
         }
         last.insert(from.clone(), to);
     }
-    revert_collisions(entries, &mut last, &mut warnings, &not_moved);
+    revert_collisions(entries, &mut last, &left_behind, &mut warnings, &not_moved);
+    // An unpublished entry whose path another entry took leaves the manifest
+    // (rule 6 of the moves, issue 105): the published note took the path
+    // that the unpublished note left.
+    let taken: BTreeSet<String> = last
+        .iter()
+        .filter(|(from, _)| !left_behind.contains(*from))
+        .map(|(_, to)| to.clone())
+        .collect();
+    let mut displaced = Vec::new();
     let mut manifest = BTreeMap::new();
     let mut moves = Vec::new();
     for (from, to) in last {
         let Some(entry) = entries.get(&from) else {
             continue;
         };
+        if left_behind.contains(&from) && taken.contains(&from) {
+            displaced.push(entry.clone());
+            warnings.push(RenameWarning {
+                path: from,
+                message: "the rename journal moves this unpublished note away, and another note moved into its path: its entry leaves the manifest, so its other old addresses answer 404 instead of 410".to_owned(),
+            });
+            continue;
+        }
         if to == from {
             manifest.insert(from, entry.clone());
         } else {
@@ -734,6 +762,7 @@ fn apply_moves(
         manifest,
         applied: moves,
         under_guard,
+        displaced,
         warnings,
     }
 }
@@ -744,6 +773,7 @@ fn apply_moves(
 fn revert_collisions(
     entries: &BTreeMap<String, ManifestEntry>,
     last: &mut BTreeMap<String, String>,
+    left_behind: &BTreeSet<String>,
     warnings: &mut Vec<RenameWarning>,
     not_moved: &dyn Fn(&str, &str) -> String,
 ) {
@@ -751,7 +781,7 @@ fn revert_collisions(
     while changed {
         changed = false;
         let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (from, to) in last.iter() {
+        for (from, to) in last.iter().filter(|(from, _)| !left_behind.contains(*from)) {
             groups
                 .entry(format!("path\n{to}"))
                 .or_default()

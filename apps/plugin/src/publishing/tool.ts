@@ -1086,6 +1086,9 @@ function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[]
             paths.add(file)
         }
     }
+    for (const entry of scan.displaced) {
+        paths.add(manifestFile(entry.id))
+    }
     if (scan.journals.read) {
         paths.add(RENAMES_FILE)
     }
@@ -1215,6 +1218,20 @@ async function writeAll(
             }
         } catch (error) {
             throw fail(move, error)
+        }
+    }
+    // An unpublished entry whose path a move took leaves the manifest with the
+    // move (rule 6 of the moves): its note has no cleaned note in the store.
+    for (const entry of scan.displaced) {
+        try {
+            if (await journal.apply({ path: manifestFile(entry.id), text: undefined })) {
+                written.push(manifestFile(entry.id))
+            }
+        } catch (error) {
+            throw new Stop(
+                `the entry of the unpublished note "${entry.path}" could not leave the manifest: ${messageOf(error)}`,
+                { cause: error }
+            )
         }
     }
     // Then the forced removals, which follow the takedown rule: the
