@@ -62,6 +62,9 @@ _Avoid_: dry run (the act that gives a publication plan)
 **Publication report**:
 The result of a publication, shown to the author: what is live, what failed, and the warnings.
 
+**Publication center**:
+The view of the plugin where the author reviews the publication queue, ticks what goes live, and starts a publication, an unpublish or a takedown.
+
 **Unpublish**:
 To remove a published note from the site through a normal publication.
 
