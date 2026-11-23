@@ -422,7 +422,7 @@ pub fn compute_queue(
         |path| notes.contains_key(path),
         |path| notes.get(path).map(|note| note.source_hash.clone()),
     );
-    let manifest = moves.manifest;
+    let mut manifest = moves.manifest;
     let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
     let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
     let files = FileReader::default();
@@ -498,7 +498,7 @@ pub fn compute_queue(
         .cloned()
         .collect();
     queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
-    queue.moved_edited = moved_edited_of(&moves.applied, &queue.changed, &notes, &manifest);
+    queue.moved_edited = hold_moved_edited(&moves.applied, &queue.changed, &notes, &mut manifest);
     queue.renamed = moves.applied;
     let mut rename_warnings = journals.warnings.clone();
     rename_warnings.extend(moves.warnings);
@@ -636,27 +636,32 @@ fn without_suffix(path: &str) -> &str {
     path.strip_suffix(".md").unwrap_or(path)
 }
 
-/// The moved notes whose text changed: the paths of `changed` at the new
-/// path of a move whose source is not the published source. Their update
-/// waits for a tick (R67).
-fn moved_edited_of(
+/// The moved notes whose text changed (R67): a note of `changed` at the new
+/// path of a move whose source is not the published source gets the mark of
+/// a held update, which the publication of the move writes, so the hold
+/// lasts until a selection includes the note. The result is the paths of
+/// `changed` whose entry has the mark, in the order of `changed`.
+fn hold_moved_edited(
     applied: &[Move],
     changed: &[String],
     notes: &BTreeMap<String, ScannedNote>,
-    manifest: &BTreeMap<String, ManifestEntry>,
+    manifest: &mut BTreeMap<String, ManifestEntry>,
 ) -> Vec<String> {
-    let changed: BTreeSet<&String> = changed.iter().collect();
-    applied
+    let listed: BTreeSet<&String> = changed.iter().collect();
+    for one in applied {
+        let differs = notes.get(&one.to).map(|note| &note.source_hash)
+            != manifest.get(&one.to).map(|entry| &entry.source_hash);
+        if listed.contains(&one.to)
+            && differs
+            && let Some(entry) = manifest.get_mut(&one.to)
+        {
+            entry.update_held = true;
+        }
+    }
+    changed
         .iter()
-        .map(|one| &one.to)
-        .filter(|path| {
-            changed.contains(path)
-                && notes.get(*path).map(|note| &note.source_hash)
-                    != manifest.get(*path).map(|entry| &entry.source_hash)
-        })
+        .filter(|path| manifest.get(*path).is_some_and(|entry| entry.update_held))
         .cloned()
-        .collect::<BTreeSet<String>>()
-        .into_iter()
         .collect()
 }
 

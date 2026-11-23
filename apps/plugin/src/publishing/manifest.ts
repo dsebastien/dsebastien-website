@@ -43,6 +43,12 @@ export type ManifestEntry = {
     readonly sourceHash: string
     /** `unpublished` after a publication removed the note. The entry stays: it keeps the identity of the note. */
     readonly state: 'published' | 'unpublished'
+    /**
+     * `true` when a move of a rename journal put the note at a path whose
+     * note had another source: its update waits until a selection includes
+     * it (decision R67). An entry with no held update has no such key.
+     */
+    readonly updateHeld?: true
 }
 
 /**
@@ -112,7 +118,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
     }
     const { aliases, attachments, cleanedHash, cleaningVersion, firstPublished, formerPaths } =
         value
-    const { id, lastPublished, links, noteType, path, sourceHash, state } = value
+    const { id, lastPublished, links, noteType, path, sourceHash, state, updateHeld } = value
     if (
         !isAliasList(aliases) ||
         !isAttachmentList(attachments, isVaultPath) ||
@@ -130,7 +136,8 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         typeof path !== 'string' ||
         !isNotePath(path) ||
         typeof sourceHash !== 'string' ||
-        (state !== 'published' && state !== 'unpublished')
+        (state !== 'published' && state !== 'unpublished') ||
+        (updateHeld !== undefined && updateHeld !== true)
     ) {
         throw new Error(`${file} is not a manifest entry`)
     }
@@ -163,7 +170,8 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
               }),
         path,
         sourceHash,
-        state
+        state,
+        ...(updateHeld === true ? { updateHeld } : {})
     }
 }
 

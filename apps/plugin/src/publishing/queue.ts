@@ -377,6 +377,19 @@ export async function computeQueue(input: {
         )
         .map(([path]) => path)
     const changedPaths = new Set(lists.changed)
+    // A moved note whose text is not the published text: the entry gets the
+    // mark of a held update, which the publication of the move writes, so
+    // the hold lasts until a selection includes the note (R67).
+    for (const { to } of moves.moves) {
+        const entry = manifest.get(to)
+        if (
+            entry !== undefined &&
+            changedPaths.has(to) &&
+            notes.get(to)?.sourceHash !== entry.sourceHash
+        ) {
+            manifest.set(to, { ...entry, updateHeld: true })
+        }
+    }
     const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
         counts: {
@@ -387,13 +400,7 @@ export async function computeQueue(input: {
         },
         missing: sortByCodePoint(missing),
         movedEdited: sortByCodePoint(
-            moves.moves
-                .map((move) => move.to)
-                .filter(
-                    (path) =>
-                        changedPaths.has(path) &&
-                        notes.get(path)?.sourceHash !== manifest.get(path)?.sourceHash
-                )
+            lists.changed.filter((path) => manifest.get(path)?.updateHeld === true)
         ),
         new: sortByCodePoint(lists.new),
         // A note at the new path of a move waits for the publication of the move.

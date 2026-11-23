@@ -769,6 +769,7 @@ fn entry_of(
             path: path.to_owned(),
             source_hash,
             state: State::Published,
+            update_held: false,
         };
     };
     // The identity and the first date stay. A technical update does not move
@@ -789,6 +790,8 @@ fn entry_of(
         note_type: texts.note_type.clone(),
         source_hash,
         state: State::Published,
+        // An update ends a held update (R67).
+        update_held: false,
         ..before.clone()
     }
 }

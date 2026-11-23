@@ -50,6 +50,11 @@ pub struct ManifestEntry {
     pub path: String,
     pub source_hash: String,
     pub state: State,
+    /// True when a move of a rename journal put the note at a path whose note
+    /// had another source: its update waits until a selection includes it
+    /// (decision R67). An entry with no held update has no such key.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub update_held: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -208,6 +213,12 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         None => None,
         Some(value) => Some(note_type_of_entry(value)?),
     };
+    // No key: no held update. The key holds `true` only.
+    let update_held = match entry.get("updateHeld") {
+        None => false,
+        Some(value) if value.as_bool() == Some(true) => true,
+        Some(_) => return None,
+    };
     Some(ManifestEntry {
         aliases,
         attachments: attachment_list(entry.get("attachments")?)?,
@@ -222,6 +233,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         path: text_of("path").filter(|path| is_note_path(path))?,
         source_hash: text_of("sourceHash")?,
         state,
+        update_held,
     })
 }
 
