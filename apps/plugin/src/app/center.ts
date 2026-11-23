@@ -65,7 +65,11 @@ const ACTIVITY_NAMES: Record<Activity, string> = {
     'answering': 'request of an agent'
 }
 
-/** The activity of each tool of the MCP server: a tool that reads only is answering. */
+/**
+ * The activity of each tool of the MCP server. `status` and `plan` are
+ * answering: they change nothing that the view shows (a plan can put back a
+ * publication that stopped halfway, which `status` refuses to read).
+ */
 const TOOL_ACTIVITIES: Record<ToolCall['tool'], Activity> = {
     status: 'answering',
     plan: 'answering',
@@ -115,6 +119,11 @@ export interface CenterState {
     readonly dryRun?: StoredPlan
     readonly report?: Report
     readonly log: readonly LogLine[]
+    /**
+     * The last line of the log of the last activity, before the check that
+     * ends it: the result that the notice at the end of a run shows.
+     */
+    readonly outcome?: string
     readonly choices: Choices
 }
 
@@ -294,8 +303,12 @@ export class PublicationCenter {
             }
             return
         }
-        const { error: _old, ...rest } = this.#state
-        this.#state = rest
+        // A request of an agent that only reads leaves the error of the
+        // author: only its own failure replaces it.
+        if (activity !== 'answering') {
+            const { error: _old, ...rest } = this.#state
+            this.#state = rest
+        }
         this.#set({ activity: activity })
         const running = (async () => {
             try {
@@ -304,6 +317,10 @@ export class PublicationCenter {
                 } catch (error) {
                     this.#log(`${name} failed: ${messageOf(error)}`)
                     this.#set({ error: messageOf(error) })
+                }
+                const outcome = this.#state.log.at(-1)?.text
+                if (outcome !== undefined) {
+                    this.#set({ outcome })
                 }
                 if (after !== 'none') {
                     try {
@@ -326,10 +343,10 @@ export class PublicationCenter {
     /**
      * The check of the vault and of the copy: the four lists, the moves and
      * the pairings. The edits before it are no marks after it. With
-     * `keepTicked` (a check after a run of an agent, issue 41), the ticked new
-     * notes and the new notes of the ticked pairings stay marked: the author
-     * did not look at the lists, and a publication of the view must stop on
-     * them.
+     * `keepTicked` (a check after a run of an agent, issue 41), the new
+     * notes, the moved notes whose text changed, and the notes that the
+     * author ticked stay marked: the author did not look at the lists, and a
+     * publication of the view must stop on them.
      */
     async #check(keepTicked = false): Promise<void> {
         this.#log('Check started')
@@ -348,10 +365,15 @@ export class PublicationCenter {
         if (!keepTicked) {
             return
         }
-        const { choices } = this.#state
-        const ticked = new Set([...choices.include, ...choices.pair.map((one) => one.to)])
+        const { choices, queue } = this.#state
+        const kept = new Set([
+            ...choices.include,
+            ...choices.pair.map((one) => one.to),
+            ...(queue?.new ?? []),
+            ...(queue?.movedEdited ?? [])
+        ])
         for (const path of before) {
-            if (ticked.has(path)) {
+            if (kept.has(path)) {
                 this.#changed.add(path)
             }
         }

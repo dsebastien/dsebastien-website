@@ -204,6 +204,26 @@
             }
         },
         {
+            "name": "an id that a double cannot hold is no JSON",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": 1e400, \"method\": \"ping\"}",
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32700, "message": "Parse error: the message is not JSON" }
+            }
+        },
+        {
+            "name": "an argument that a double cannot hold is no JSON, and makes no call",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": 40, \"method\": \"tools/call\", \"params\": {\"name\": \"plan\", \"arguments\": {\"include\": [-1e400]}}}",
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32700, "message": "Parse error: the message is not JSON" }
+            }
+        },
+        {
             "name": "an id that is a number with a fraction",
             "request": "{\"jsonrpc\": \"2.0\", \"id\": 1.5, \"method\": \"ping\"}",
             "call": null,

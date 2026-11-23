@@ -466,17 +466,19 @@ describe('the MCP server of the plugin', () => {
 
     test('an action of the author waits for a call that only reads', async () => {
         await using stores = await makeTestStores()
-        const { server, call, center } = await setUp(stores)
+        const { server, center } = await setUp(stores)
         try {
             await center.check()
             center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
 
-            const read = call('status')
+            // The read takes the activity at once, then the author clicks.
+            const read = center.serve({ tool: 'status' })
             await center.dryRun()
             await read
 
             expect(center.state.error).toBeUndefined()
             expect(center.state.dryRun?.plan.publish).toEqual([NOTE])
+            expect(center.state.log.map((line) => line.text).join('\n')).not.toContain('refused')
         } finally {
             await server.stop()
         }
@@ -503,6 +505,105 @@ describe('the MCP server of the plugin', () => {
             await server.stop()
         }
     }, 120_000)
+
+    test('after a run of an agent, a new note that changed and is ticked later still stops a publication', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            await center.check()
+            center.noteChanged(NOTE)
+            const planned = JSON.parse(
+                (await call('plan', { include: [SECOND] })).texts[0] ?? ''
+            ) as { id: string }
+            expect((await call('publish', { plan: planned.id })).isError).toBe(false)
+            center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+            await center.publish()
+
+            expect(center.state.error).toContain('A new note changed after the check')
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
+
+    test('the outcome of a run is its result, not the check after it', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            const planned = JSON.parse(
+                (await call('plan', { include: [NOTE] })).texts[0] ?? ''
+            ) as {
+                id: string
+            }
+            await call('publish', { plan: planned.id })
+
+            expect(center.state.outcome).toBe(
+                'Agent publication done: 1 new, 0 updated, 0 removed, 0 forced, 0 moved, 0 failed'
+            )
+            expect(center.state.log.at(-1)?.text).toStartWith('Check done:')
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
+
+    test('a read of an agent leaves the error of the author', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            await center.publish()
+            expect(center.state.error).toBe('check the vault first')
+
+            await call('status')
+
+            expect(center.state.error).toBe('check the vault first')
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('a body that is not UTF-8 is a message that is not JSON', async () => {
+        await using stores = await makeTestStores()
+        const { server, port } = await setUp(stores)
+        try {
+            const answer = await new Promise<string>((resolve, reject) => {
+                const outgoing = request(
+                    {
+                        host: '127.0.0.1',
+                        port,
+                        method: 'POST',
+                        path: '/mcp',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${KEY}`
+                        }
+                    },
+                    (incoming) => {
+                        const chunks: Buffer[] = []
+                        incoming.on('data', (chunk: Buffer) => chunks.push(chunk))
+                        incoming.on('end', () => {
+                            resolve(Buffer.concat(chunks).toString('utf8'))
+                        })
+                    }
+                )
+                outgoing.on('error', reject)
+                outgoing.end(
+                    Buffer.concat([
+                        Buffer.from('{"jsonrpc":"2.0","id":1,"method":"'),
+                        Buffer.from([0xff]),
+                        Buffer.from('"}')
+                    ])
+                )
+            })
+
+            expect(JSON.parse(answer)).toEqual({
+                jsonrpc: '2.0',
+                id: null,
+                error: { code: -32700, message: 'Parse error: the message is not JSON' }
+            })
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
 
     test('a port in use is an error that names it', async () => {
         await using stores = await makeTestStores()

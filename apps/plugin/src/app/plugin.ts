@@ -420,14 +420,14 @@ export class VaultPublishPlugin extends Plugin {
         let before = this.center.state.activity
         this.register(
             this.center.subscribe(() => {
-                const { activity, error, log } = this.center.state
+                const { activity, error, outcome } = this.center.state
                 if (
                     before !== 'idle' &&
                     before !== 'checking' &&
                     before !== 'answering' &&
                     activity === 'idle'
                 ) {
-                    new Notice(`Vault Publish: ${error ?? log.at(-1)?.text ?? 'done'}`)
+                    new Notice(`Vault Publish: ${error ?? outcome ?? 'done'}`)
                 }
                 before = activity
             })

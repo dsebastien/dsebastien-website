@@ -60,6 +60,5 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 | The plan is stale                                    | Plan again, show the new plan, wait for a yes (rule 4)                   |
 | A guard excludes a note, or a path is in no list     | Report it and stop. Never move the guard (rule 3)                        |
 | The copy is locked, or a publication stopped halfway | Ask the author whether a run is still going. Offer `unlock` (rule 6)     |
-| A run of the publication center runs already         | Wait, then call again                                                    |
 | A deny list entry names no folder of the vault       | Report it: the author renamed a private folder, and every run stops      |
 | The settings miss a folder                           | Ask the author to set it in the settings of Vault Publish on this device |

@@ -57,8 +57,12 @@ function sendText(
     response.end(text)
 }
 
-/** The body of a request as text, or `undefined` when it is larger than the limit. */
-function bodyOf(request: IncomingMessage): Promise<string | undefined> {
+/**
+ * The body of a request as text, `undefined` when it is larger than the
+ * limit, or `null` when it is not UTF-8: a bad byte must never become
+ * another character of a path (the Rust face refuses such a line too).
+ */
+function bodyOf(request: IncomingMessage): Promise<string | null | undefined> {
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = []
         let size = 0
@@ -73,7 +77,15 @@ function bodyOf(request: IncomingMessage): Promise<string | undefined> {
             }
         })
         request.on('end', () => {
-            resolve(tooLarge ? undefined : Buffer.concat(chunks).toString('utf8'))
+            if (tooLarge) {
+                resolve(undefined)
+                return
+            }
+            try {
+                resolve(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))
+            } catch {
+                resolve(null)
+            }
         })
         request.on('error', reject)
     })
@@ -212,7 +224,8 @@ export class LocalMcpServer {
             return
         }
         const text = await answer(
-            body,
+            // A body that is not UTF-8 is a message that is not JSON.
+            body ?? '\u0000',
             { name: SERVER_NAME, version: this.options.version },
             this.options.operations
         )

@@ -69,6 +69,17 @@ const INVALID_PARAMS = -32_602
 
 type Id = string | number | null
 
+/** True when a number of the value is not finite: `JSON.parse` reads 1e400 as Infinity. */
+function holdsInfinity(value: unknown): boolean {
+    if (typeof value === 'number') {
+        return !Number.isFinite(value)
+    }
+    if (typeof value === 'object' && value !== null) {
+        return Object.values(value).some(holdsInfinity)
+    }
+    return false
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -254,6 +265,10 @@ export async function answer(
     try {
         value = JSON.parse(message)
     } catch {
+        return errorAnswer(null, PARSE_ERROR, 'Parse error: the message is not JSON')
+    }
+    // A number that a double cannot hold (1e400) is no JSON for the Rust face.
+    if (holdsInfinity(value)) {
         return errorAnswer(null, PARSE_ERROR, 'Parse error: the message is not JSON')
     }
     if (Array.isArray(value)) {
