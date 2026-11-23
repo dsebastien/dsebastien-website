@@ -122,16 +122,20 @@ describe('check of private files', () => {
     })
 
     test('accepts a skill of the tool, and refuses a note in the form of a skill', async () => {
-        const skill = '---\nname: publish-notes\ndescription: A skill.\n---\n\n# Publish\n'
-        expect(await refusedPaths({ 'skills/publish-notes/SKILL.md': skill })).toEqual([])
+        const name = 'developassion-publish-notes'
+        const skill = `---\nname: ${name}\ndescription: A skill.\n---\n\n# Publish\n`
+        expect(await refusedPaths({ [`skills/${name}/SKILL.md`]: skill })).toEqual([])
         const notes = {
-            'skills/publish-notes/Other.md': skill,
+            [`skills/${name}/Other.md`]: skill,
             'skills/other-name/SKILL.md': skill,
-            'skills/publish-notes/references/SKILL.md': skill,
-            'Skills/publish-notes/SKILL.md': skill,
-            'documentation/publish-notes/SKILL.md': skill,
+            [`skills/${name}/references/SKILL.md`]: skill,
+            [`Skills/${name}/SKILL.md`]: skill,
+            [`documentation/${name}/SKILL.md`]: skill,
             'skills/a-note/SKILL.md': NOTE,
-            'skills/publish-notes/skill.md': skill
+            [`skills/${name}/skill.md`]: skill,
+            // A private skill of the vault, in the same form, is refused.
+            'skills/osk-private-skill/SKILL.md':
+                '---\nname: osk-private-skill\ndescription: A skill.\n---\n'
         }
         expect(await refusedPaths(notes)).toEqual(Object.keys(notes))
     })

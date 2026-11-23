@@ -121,7 +121,7 @@ export class LocalMcpServer {
                 if (code !== 'EADDRINUSE' || attempt >= TRIES) {
                     throw new Error(
                         code === 'EADDRINUSE'
-                            ? `the port ${String(this.options.port)} of ${MCP_HOST} is in use by another program: choose another port in the settings of Vault Publish`
+                            ? `the port ${String(this.options.port)} of ${MCP_HOST} is in use by another program, or by Vault Publish in another vault: choose another port in the settings of Vault Publish`
                             : `the MCP server cannot listen on ${MCP_HOST}:${String(this.options.port)}: ${error instanceof Error ? error.message : 'it failed'}`,
                         { cause: error }
                     )
@@ -178,9 +178,10 @@ export class LocalMcpServer {
             sendText(response, 403, 'A request of a web page is refused')
             return
         }
-        const host = request.headers.host
-        if (host !== `${MCP_HOST}:${port}` && host !== `localhost:${port}`) {
-            sendText(response, 403, `The Host must be ${MCP_HOST}:${port} or localhost:${port}`)
+        // Only 127.0.0.1: a client that asks `localhost` can reach another
+        // program that listens on [::1] at the same port, and give it the key.
+        if (request.headers.host !== `${MCP_HOST}:${port}`) {
+            sendText(response, 403, `The Host must be ${MCP_HOST}:${port}`)
             return
         }
         if (!holdsKey(request.headers.authorization, this.options.key())) {

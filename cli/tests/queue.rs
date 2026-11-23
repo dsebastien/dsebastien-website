@@ -2187,7 +2187,11 @@ fn a_note_that_fails_is_left_out_and_reported_and_the_other_notes_are_published(
 
     // The report is written, and the exit code says that it names a failure.
     assert_eq!(output.status.code(), Some(1));
-    assert!(errors_of(&output).contains("1 note of the plan was left out"));
+    assert!(
+        errors_of(&output).contains(&format!("1 note of the plan was left out: \"{blocked}\": ")),
+        "{}",
+        errors_of(&output)
+    );
     let report = json_of(&output);
     assert_eq!(paths(&report["published"]), [NOTE]);
     assert_eq!(paths(&report["failed"]), [blocked]);

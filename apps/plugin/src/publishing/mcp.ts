@@ -332,6 +332,11 @@ export function outcomeOfPlan(stored: StoredPlan): ToolOutcome {
     }
 }
 
+/** The items of a list of a report as one text, as in Rust: `"<path>": <text>`, joined with `; `. */
+function listed(items: readonly { readonly path: string; readonly text: string }[]): string {
+    return items.map((item) => `"${item.path}": ${item.text}`).join('; ')
+}
+
 /** The outcome of a publication: it failed when a note of the plan was left out, as in Rust. */
 export function outcomeOfPublication(report: PublicationReport): ToolOutcome {
     const output = toCanonicalJson(report)
@@ -339,12 +344,15 @@ export function outcomeOfPublication(report: PublicationReport): ToolOutcome {
     if (count === 0) {
         return { output }
     }
+    // The failure names each note with its reason, as in Rust: a client can
+    // cut the middle of a long report.
+    const notes = listed(report.failed.map((one) => ({ path: one.path, text: one.reason })))
     return {
         output,
         failure:
             count === 1
-                ? '1 note of the plan was left out: the report says why'
-                : `${String(count)} notes of the plan were left out: the report says why`
+                ? `1 note of the plan was left out: ${notes}`
+                : `${String(count)} notes of the plan were left out: ${notes}`
     }
 }
 
@@ -356,6 +364,6 @@ export function outcomeOfTakedown(report: TakedownReport): ToolOutcome {
         ? { output }
         : {
               output,
-              failure: `the notes are taken down, but the attachment storage gave ${String(count)} warning(s), and a file that stays there can still be public: the report says why. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses`
+              failure: `the notes are taken down, but the attachment storage gave ${String(count)} warning(s), and a file that stays there can still be public: ${listed(report.storageWarnings.map((one) => ({ path: one.path, text: one.message })))}. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses`
           }
 }

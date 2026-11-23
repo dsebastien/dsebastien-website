@@ -61,6 +61,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** The skills of this repository. A new skill is added here by hand. */
+const SKILLS: readonly string[] = ['developassion-publish-notes']
+
 /**
  * True for a skill of the tool (TOOL-04): `skills/<name>/SKILL.md`, whose
  * first property is `name: <name>`. The standard of the skills wants
@@ -68,7 +71,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function isSkill(path: string, text: string): boolean {
     const match = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/.exec(path)
-    return match !== null && text.startsWith(`---\nname: ${String(match[1])}\n`)
+    const name = match?.[1]
+    // Only the skills of this repository: the vault of the author holds many
+    // private skills of the same form.
+    return name !== undefined && SKILLS.includes(name) && text.startsWith(`---\nname: ${name}\n`)
 }
 
 /** True when the text starts with a block of properties. A byte order mark can come first. */

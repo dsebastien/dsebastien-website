@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { answer, MCP_TOOLS, PROTOCOL_VERSIONS, toolCallOf, TOOL_NAMES } from './mcp.ts'
+import {
+    answer,
+    MCP_TOOLS,
+    outcomeOfPublication,
+    outcomeOfTakedown,
+    PROTOCOL_VERSIONS,
+    toolCallOf,
+    TOOL_NAMES
+} from './mcp.ts'
 import type { ToolCall, ToolOutcome } from './mcp.ts'
 import definitions from './mcp-tools.json'
 
@@ -140,5 +148,50 @@ describe('the skill of the publishing tool (TOOL-04)', () => {
 
     test('has the name of its folder', () => {
         expect(text).toStartWith('---\nname: developassion-publish-notes\n')
+    })
+})
+
+describe('the failure texts of the tools', () => {
+    const report = {
+        attachmentsDeleted: [],
+        attachmentsUploaded: [],
+        failed: [
+            { path: 'a.md', reason: 'the upload failed' },
+            { path: 'b.md', reason: 'it cannot be read' }
+        ],
+        forcedRemoved: [],
+        moved: [],
+        propertyRemoved: [],
+        propertySet: [],
+        published: [],
+        removed: [],
+        skipped: [],
+        updated: [],
+        warnings: []
+    }
+
+    test('a publication names each note that was left out, with its reason', () => {
+        expect(outcomeOfPublication(report).failure).toBe(
+            '2 notes of the plan were left out: "a.md": the upload failed; "b.md": it cannot be read'
+        )
+        expect(
+            outcomeOfPublication({
+                ...report,
+                failed: [{ path: 'a.md', reason: 'the upload failed' }]
+            }).failure
+        ).toBe('1 note of the plan was left out: "a.md": the upload failed')
+        expect(outcomeOfPublication({ ...report, failed: [] }).failure).toBeUndefined()
+    })
+
+    test('a takedown names each file of the storage that gave a warning', () => {
+        expect(
+            outcomeOfTakedown({
+                attachmentsDeleted: [],
+                propertyRemoved: [],
+                storageWarnings: [{ path: 'k1', message: 'it cannot be deleted' }],
+                takenDown: ['a.md'],
+                warnings: []
+            }).failure
+        ).toContain('can still be public: "k1": it cannot be deleted. Correct the storage')
     })
 })

@@ -26,27 +26,27 @@ The publishing tool of the notes website takes notes of the vault to the content
 2. **Show the plan before a publication that does more than updates.** Give the lists of the plan (new, updated, unpublished, moved, forced removals) and wait for a yes. The id of the plan goes to `publish` unchanged.
 3. **A guard wins, and an agent never moves it.** Never edit `publish_ignore`, the deny list or `configuration.json` to make a note publishable, and never retry with other paths to get around a refusal. Report the message as it is.
 4. **An error stops the run.** Report the text of the tool word for word and stop. A stale plan is the one exception: make the plan again, show it, and wait for a yes again.
-5. **After a lost connection, read first.** When a call gets no answer (a reload of the plugin, a timeout), run `status` before anything else: the run can have ended without its answer.
-6. **`unlock` only when the author confirms that no publication runs on this device**, in Obsidian or in the command line program. The tool does not check it.
+5. **After a lost connection, read first, and treat a lock as a run that still goes.** When a call gets no answer (a reload of the plugin, a timeout), the run can go on without its answer. Wait, then run `status`. A lock error then means that the run still goes: wait and run `status` again. To know what a lost run did, ask the author to read the report of the publication center, or read the line `Plan: <id>` of the last commit of the copy.
+6. **`unlock` only after a restart.** Offer it only when the author confirms that Obsidian and the command line program were restarted after the time of the lock, so that no run can hold it. The tool does not check it. A publication that stopped halfway is no case for `unlock`: the next `plan` puts the copy back.
 7. **Not on the real vault before the first publication.** Until the first publication to the preview host (issue 60 of the repository dsebastien-website) is done, run `publish`, `unpublish` and `takedown` only on a test vault (`bun run plugin:vault` in the repository). The tool also stops on a copy of the content store that has no `configuration.json`.
 
 ## Faces
 
-| When                | Face                                                                                                                                                     |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Obsidian runs       | The MCP server of the plugin: `http://127.0.0.1:<port>/mcp` with the header `Authorization: Bearer <key>`. Settings of Vault Publish, "Copy the command" |
-| Obsidian is closed  | `dsebastien-vault-publish mcp --vault <vault> --content-store <copy> --attachment-storage <folder>`, over the standard input and output                  |
-| No MCP in the agent | The commands of the same names: `dsebastien-vault-publish status --vault <vault> --content-store <copy>`, and so on (`--help` gives every option)        |
+| When                | Face                                                                                                                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Obsidian runs       | The MCP server of the plugin: `http://127.0.0.1:<port>/mcp` with the header `Authorization: Bearer <key>`. Settings of Vault Publish, "Copy the command"                                                                |
+| Obsidian is closed  | `dsebastien-vault-publish mcp --vault <vault> --content-store <copy> --attachment-storage <folder>`, over the standard input and output. Add it with `claude mcp add vault-publish -- dsebastien-vault-publish mcp ...` |
+| No MCP in the agent | The commands of the same names: `dsebastien-vault-publish status --vault <vault> --content-store <copy>`, and so on (`--help` gives every option)                                                                       |
 
-The tools take the arguments of the commands: `plan` takes `include`, `hold`, `remove` and `pair` (a list of `{ "from", "to" }`); `publish` takes `plan` (the id); `unpublish` and `takedown` take `paths`. The places of the device are set one time: in the settings of the plugin, or as arguments of `mcp`. Ask the author for them; never guess a folder.
+The tools take the arguments of the commands: `plan` takes `include`, `hold`, `remove` and `pair` (a list of `{ "from", "to" }`); `publish` takes `plan` (the id); `unpublish` and `takedown` take `paths`. The places of the device are set one time: in the settings of the plugin, or as arguments of `mcp`. Ask the author for them; never guess a folder. Give the server the name `vault-publish` in both faces, so the tool names of this skill match. A call holds 1 MiB at most in the plugin: for a very large selection, use the command `plan --selection <file>`.
 
 ## Process
 
-1. Run `status`. Read `counts`, `changed`, `new`, `movedEdited`, `pairings`, `toRemove`, `missing` and `behind`.
+1. Run `status`. Read `counts`, `changed`, `new`, `movedEdited`, `pairings`, `toRemove`, `missing` and `behind`. A large result can come as a file: read `counts` first, then only the lists that you need.
 2. When `behind` is above 0, stop and ask the author to pull the copy first (the Pull button of the publication center, or `git pull --ff-only origin main` in the copy).
 3. Build the selection. By default a plan holds the `changed` notes only. Add to `include` the new notes that the author named, and the notes of `movedEdited` that the author confirmed (a moved note whose text changed can be another note at that path). Add to `hold` the changed notes that must wait.
 4. Run `plan`. When `offline` is true, say that the plan uses the last fetch. Show the plan as rule 2 says.
-5. Run `publish` with the id. Report `published`, `updated`, `removed`, `forcedRemoved`, `moved`, `failed` and `warnings`. A result with `isError` and a report means that a note was left out: give the `reason` of each entry of `failed`.
+5. Run `publish` with the id. Report `published`, `updated`, `removed`, `forcedRemoved`, `moved`, `failed` and `warnings`. A result with `isError` and a report means that a note was left out: its last text names each such note with its reason. Give them to the author.
 
 ## Unpublish and takedown
 
@@ -55,10 +55,11 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 
 ## Messages
 
-| The message says                                     | Do this                                                                  |
-| ---------------------------------------------------- | ------------------------------------------------------------------------ |
-| The plan is stale                                    | Plan again, show the new plan, wait for a yes (rule 4)                   |
-| A guard excludes a note, or a path is in no list     | Report it and stop. Never move the guard (rule 3)                        |
-| The copy is locked, or a publication stopped halfway | Ask the author whether a run is still going. Offer `unlock` (rule 6)     |
-| A deny list entry names no folder of the vault       | Report it: the author renamed a private folder, and every run stops      |
-| The settings miss a folder                           | Ask the author to set it in the settings of Vault Publish on this device |
+| The message says                                 | Do this                                                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| The plan is stale                                | Plan again, show the new plan, wait for a yes (rule 4)                               |
+| A guard excludes a note, or a path is in no list | Report it and stop. Never move the guard (rule 3)                                    |
+| The copy is locked                               | A run still goes: wait and run `status` again (rule 5). `unlock` only as rule 6 says |
+| A publication stopped halfway                    | Run `plan`: it puts the copy back. Then show the new plan (rule 2)                   |
+| A deny list entry names no folder of the vault   | Report it: the author renamed a private folder, and every run stops                  |
+| The settings miss a folder                       | Ask the author to set it in the settings of Vault Publish on this device             |

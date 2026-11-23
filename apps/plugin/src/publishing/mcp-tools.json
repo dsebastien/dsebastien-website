@@ -1,5 +1,5 @@
 {
-    "instructions": "The publishing tool of the notes website of the author. It publishes notes of the vault to the content store, from which the site is built. Use status to read the publication queue, plan to compute a publication plan with an id, and publish to apply exactly that plan. Publish alone only the new versions of notes that are already published. Include a new note, unpublish, pair or take down a note only when the author named that note. When a tool gives an error (a stale plan, a guard, a lock), report it to the author and stop. The skill developassion-publish-notes explains the process.",
+    "instructions": "The publishing tool of the notes website of the author. It publishes notes of the vault to the content store, from which the site is built. Use status to read the publication queue, plan to compute a publication plan with an id, and publish to apply exactly that plan. Publish alone only the new versions of notes that are already published. Include a new note, unpublish, pair or take down a note only when the author named that note. When a tool gives an error (a guard, a lock), report it to the author and stop. After a stale plan, make the plan again, show it to the author, and wait for a yes. The skill developassion-publish-notes explains the process.",
     "tools": [
         {
             "name": "status",

@@ -192,7 +192,7 @@ describe('the MCP server of the plugin', () => {
         }
     }, 60_000)
 
-    test('refuses a request of a web page: an Origin, or a Host that is not this computer', async () => {
+    test('refuses a request of a web page, and a Host that is not 127.0.0.1 at its port', async () => {
         await using stores = await makeTestStores()
         const { server, port } = await setUp(stores)
         try {
@@ -216,7 +216,8 @@ describe('the MCP server of the plugin', () => {
             expect(page.status).toBe(403)
             expect(rebound.status).toBe(403)
             expect(otherPort.status).toBe(403)
-            expect(local.status).toBe(200)
+            // A client that asks `localhost` can reach a program on [::1].
+            expect(local.status).toBe(403)
         } finally {
             await server.stop()
         }

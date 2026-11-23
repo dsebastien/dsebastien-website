@@ -1891,14 +1891,36 @@ fn report_of(
     }))?;
     Ok(Outcome {
         output,
+        // The failure names each note with its reason: a client can cut the
+        // middle of a long report (issue 41).
         failure: match written.failed.len() {
             0 => None,
-            1 => Some("1 note of the plan was left out: the report says why".to_owned()),
+            1 => Some(format!(
+                "1 note of the plan was left out: {}",
+                listed(&written.failed, "reason")
+            )),
             count => Some(format!(
-                "{count} notes of the plan were left out: the report says why"
+                "{count} notes of the plan were left out: {}",
+                listed(&written.failed, "reason")
             )),
         },
     })
+}
+
+/// The items of a list of the report as one text: each `path` with its text,
+/// `"<path>": <text>`, in the order of the list.
+fn listed(items: &[Value], key: &str) -> String {
+    items
+        .iter()
+        .map(|item| {
+            format!(
+                "\"{}\": {}",
+                item["path"].as_str().unwrap_or(""),
+                item[key].as_str().unwrap_or("")
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("; ")
 }
 
 /// Unpublishes the named published notes in one step (PUB-80, R65): the plan
@@ -2174,7 +2196,8 @@ fn after_push(
         output,
         failure: (count > 0).then(|| {
             format!(
-                "the notes are taken down, but the attachment storage gave {count} warning(s), and a file that stays there can still be public: the report says why. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses"
+                "the notes are taken down, but the attachment storage gave {count} warning(s), and a file that stays there can still be public: {}. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses",
+                listed(&storage_warnings, "message")
             )
         }),
     })
