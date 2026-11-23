@@ -1,0 +1,155 @@
+{
+    "instructions": "The publishing tool of the notes website of the author. It publishes notes of the vault to the content store, from which the site is built. Use status to read the publication queue, plan to compute a publication plan with an id, and publish to apply exactly that plan. Publish alone only the new versions of notes that are already published. Include a new note, unpublish, pair or take down a note only when the author named that note. When a tool gives an error (a stale plan, a guard, a lock), report it to the author and stop. The skill publish-notes explains the process.",
+    "tools": [
+        {
+            "name": "status",
+            "title": "Publication queue",
+            "description": "Gives the publication queue, as the status command of the command line program does: the new, the changed and the unchanged notes, and the notes to remove, with a count per list; the technical updates; the notes to remove that are only missing from this vault; the unpublished notes that a guard excludes; the moves of the rename journals that the next publication applies (renamed); the moved notes whose text is not the published text, whose update waits for an include (movedEdited); and the pairings to confirm (pairings). It changes nothing in the vault and in the content store.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "plan",
+            "title": "Publication plan",
+            "description": "Computes a publication plan, stores it on this device and gives it with its id, as the plan command of the command line program does. It changes nothing in the vault and in the content store. Without a path, the plan holds the changed notes only, but not the moved notes whose text changed: include names them. Every plan holds the moves of the rename journals, which cannot be held, and the forced removals: the published and the unpublished notes that a guard excludes. Name a new note in include, a note in remove or a pairing in pair only when the author named it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "include": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "The vault paths of the notes to publish. A note that was never published enters a plan only in this way."
+                    },
+                    "hold": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "The vault paths of the changed notes to leave out: their live version stays."
+                    },
+                    "remove": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "The vault paths of the published notes to unpublish."
+                    },
+                    "pair": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "from": {
+                                    "type": "string",
+                                    "description": "The vault path of a published note that is missing from this vault."
+                                },
+                                "to": {
+                                    "type": "string",
+                                    "description": "The vault path of the new note that is that note now."
+                                }
+                            },
+                            "required": ["from", "to"],
+                            "additionalProperties": false
+                        },
+                        "description": "The pairings to confirm: a rename that the plugin did not see. The entry moves, its old path becomes a former path that redirects, and the new note is published as its update unless hold names it."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "publish",
+            "title": "Publish a plan",
+            "description": "Applies exactly one plan, by its id, as the publish command of the command line program does: the moves come first, then the notes that a guard excludes leave the content store, the cleaned notes and the manifest go to the content store in one commit after the upload of their attachments, the commit is pushed, the public_note property of the notes of the vault is corrected, and the files of the attachment storage that no published note uses are deleted. It gives the publication report. It is an error when a note of the plan was left out, and it publishes nothing when the plan is stale or a forced removal fails.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$",
+                        "description": "The id that the plan tool gave."
+                    }
+                },
+                "required": ["plan"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "unpublish",
+            "title": "Unpublish notes",
+            "description": "Unpublishes the named published notes in one step, as the unpublish command of the command line program does: it makes the plan that removes them and holds every other changed note, and applies it. Only the named notes leave, with the forced removals that every plan holds. Their addresses then answer 410. It gives the publication report. Name only the notes that the author asked to unpublish.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1,
+                        "description": "The vault paths of the published notes to unpublish."
+                    }
+                },
+                "required": ["paths"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "takedown",
+            "title": "Take notes down",
+            "description": "Takes the named notes down at once, with no plan, as the takedown command of the command line program does: each note leaves the content store with its manifest entry and its former paths, in one commit that is pushed, so its addresses answer 404 after the next build. Then the files of the attachment storage that no published note uses are deleted, and the public_note property leaves the notes. A stale plan, a failed publication and a missing Starter Kit do not stop it. It gives the takedown report, and it is an error when the attachment storage gave a warning. Name only the notes that the author asked to take down.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1,
+                        "description": "The vault paths of the notes to take down, exactly as the manifest names them (letter case, Unicode form, the end .md)."
+                    }
+                },
+                "required": ["paths"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "unlock",
+            "title": "Remove the lock",
+            "description": "Removes the lock of this device that a publication left when it stopped halfway (a crash, a power cut), as the unlock command of the command line program does. Use it only when the author confirms that no publication runs on this device. The next plan, publish or takedown puts the copy of the content store back. It says whether a lock was there.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        }
+    ]
+}

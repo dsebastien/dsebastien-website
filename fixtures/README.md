@@ -12,6 +12,7 @@ Test data of the repository. Everything here is invented. Nothing comes from a r
 - `markdown-forms.json`: the forms of Obsidian Markdown of issue 12 (issue 26). Each form names an invented note of `vault/` and checks on the HTML that a conversion gives for that note alone. `packages/testing` reads it (`readMarkdownForms`, `checkHtml`). The notes are in `vault/50 Field guide/`, beside older notes that already held a form.
 - `canonical/note-types.json`: the shared cases of the note type of a note: answers of the Starter Kit that must be read or refused, and the `noteType` of a manifest entry.
 - `note-types.json`: the answers of an invented Obsidian Starter Kit for the fixture vault (decision R61): the types and the type of each note. A new note of the fixture vault gets its type here; a note that is not named has no type.
+- `canonical/mcp.json`: the shared cases of the MCP server of the publishing tool: one message of the client, the call that the server makes and the answer that it gives. Both faces read them, with a stand-in for the operations.
 - `canonical/queue.json`: the shared scenarios of the publication queue. Each scenario has its own small invented vault, written inside the file, so that a new note of the fixture vault changes no scenario.
 
 ## Rules

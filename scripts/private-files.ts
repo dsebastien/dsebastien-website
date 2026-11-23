@@ -62,6 +62,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** True when the text starts with a block of properties. A byte order mark can come first. */
+/**
+ * True for a skill of the tool (TOOL-04): `skills/<name>/SKILL.md`, whose
+ * first property is `name: <name>`. The standard of the skills wants
+ * properties, and a note of a vault never has this path and this first line.
+ */
+function isSkill(path: string, text: string): boolean {
+    const match = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/.exec(path)
+    return match !== null && text.startsWith(`---\nname: ${String(match[1])}\n`)
+}
+
 function startsWithProperties(text: string): boolean {
     const start = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
     return /^---[ \t]*\r?\n/.test(start)
@@ -122,7 +132,7 @@ async function reasonToRefuse(
     }
     if (MARKDOWN_ENDINGS.some((ending) => lowerPath.endsWith(ending))) {
         const text = await source.read(file.path)
-        if (text !== undefined && startsWithProperties(text)) {
+        if (text !== undefined && startsWithProperties(text) && !isSkill(file.path, text)) {
             return 'it is a note (a Markdown file with properties) outside the fixture vault. Notes exist only in the fixture vault, and they are invented'
         }
     }

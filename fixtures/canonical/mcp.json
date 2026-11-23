@@ -1,0 +1,823 @@
+{
+    "about": "The shared cases of the MCP server of the publishing tool (issue 41). Both faces read them: apps/plugin/src/publishing/mcp.spec.ts and cli/src/mcp.rs. A case gives one message of the client: an object, or a text when the message is not valid JSON. The test answers it with the server info {\"name\": \"dsebastien-vault-publish\", \"version\": \"test\"} and with a stand-in for the operations: it records the call that the server makes, and gives the outcome of the case (operation: output and failure, or error). call is the call that the server must make, or null when it must make none. response is the answer that the server must give, or null when it must give none. In response, the text \"<instructions>\" stands for the instructions of mcp-tools.json, and \"<tools>\" for its list of tools.",
+    "cases": [
+        {
+            "name": "initialize with a version that the server knows gives that version",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": { "name": "client", "version": "1" }
+                }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": { "tools": { "listChanged": false } },
+                    "serverInfo": { "name": "dsebastien-vault-publish", "version": "test" },
+                    "instructions": "<instructions>"
+                }
+            }
+        },
+        {
+            "name": "initialize with the oldest version that the server knows",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "initialize",
+                "params": { "protocolVersion": "2024-11-05", "capabilities": {} }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": { "tools": { "listChanged": false } },
+                    "serverInfo": { "name": "dsebastien-vault-publish", "version": "test" },
+                    "instructions": "<instructions>"
+                }
+            }
+        },
+        {
+            "name": "initialize with an unknown version gives the newest version",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": "start",
+                "method": "initialize",
+                "params": { "protocolVersion": "1999-01-01", "capabilities": {} }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": "start",
+                "result": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": { "tools": { "listChanged": false } },
+                    "serverInfo": { "name": "dsebastien-vault-publish", "version": "test" },
+                    "instructions": "<instructions>"
+                }
+            }
+        },
+        {
+            "name": "initialize with no parameters gives the newest version",
+            "request": { "jsonrpc": "2.0", "id": 3, "method": "initialize" },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": { "tools": { "listChanged": false } },
+                    "serverInfo": { "name": "dsebastien-vault-publish", "version": "test" },
+                    "instructions": "<instructions>"
+                }
+            }
+        },
+        {
+            "name": "a notification gets no answer",
+            "request": { "jsonrpc": "2.0", "method": "notifications/initialized" },
+            "call": null,
+            "response": null
+        },
+        {
+            "name": "a notification that the server does not know gets no answer",
+            "request": {
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+                "params": { "requestId": 4 }
+            },
+            "call": null,
+            "response": null
+        },
+        {
+            "name": "a notification of a tool call makes no call",
+            "request": {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": { "name": "unlock" }
+            },
+            "call": null,
+            "response": null
+        },
+        {
+            "name": "an answer of the client gets no answer",
+            "request": { "jsonrpc": "2.0", "id": 5, "result": {} },
+            "call": null,
+            "response": null
+        },
+        {
+            "name": "ping",
+            "request": { "jsonrpc": "2.0", "id": 0, "method": "ping" },
+            "call": null,
+            "response": { "jsonrpc": "2.0", "id": 0, "result": {} }
+        },
+        {
+            "name": "the list of tools",
+            "request": { "jsonrpc": "2.0", "id": 6, "method": "tools/list", "params": {} },
+            "call": null,
+            "response": { "jsonrpc": "2.0", "id": 6, "result": { "tools": "<tools>" } }
+        },
+        {
+            "name": "a method that the server does not know",
+            "request": { "jsonrpc": "2.0", "id": "a", "method": "resources/list" },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": "a",
+                "error": { "code": -32601, "message": "Method not found: resources/list" }
+            }
+        },
+        {
+            "name": "a message that is not JSON",
+            "request": "{\"jsonrpc\": \"2.0\", \"id\": 7, \"method\": ",
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32700, "message": "Parse error: the message is not JSON" }
+            }
+        },
+        {
+            "name": "a batch",
+            "request": "[{\"jsonrpc\": \"2.0\", \"id\": 8, \"method\": \"ping\"}]",
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32600, "message": "Invalid Request: a batch is not supported" }
+            }
+        },
+        {
+            "name": "a message that is not an object",
+            "request": "\"ping\"",
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request: the message must be an object"
+                }
+            }
+        },
+        {
+            "name": "another version of JSON-RPC",
+            "request": { "jsonrpc": "1.0", "id": 9, "method": "ping" },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "error": { "code": -32600, "message": "Invalid Request: jsonrpc must be \"2.0\"" }
+            }
+        },
+        {
+            "name": "an id that is not a text or a number",
+            "request": { "jsonrpc": "2.0", "id": { "one": 1 }, "method": "ping" },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request: the id must be a text or a number"
+                }
+            }
+        },
+        {
+            "name": "an id that is null",
+            "request": { "jsonrpc": "2.0", "id": null, "method": "ping" },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request: the id must be a text or a number"
+                }
+            }
+        },
+        {
+            "name": "a request with a method that is not a text",
+            "request": { "jsonrpc": "2.0", "id": 10, "method": 12 },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "error": { "code": -32600, "message": "Invalid Request: the method must be a text" }
+            }
+        },
+        {
+            "name": "a tool call with no parameters",
+            "request": { "jsonrpc": "2.0", "id": 11, "method": "tools/call" },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "error": {
+                    "code": -32602,
+                    "message": "Invalid params: tools/call needs the name of a tool"
+                }
+            }
+        },
+        {
+            "name": "a tool call with a name that is not a text",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": { "name": ["status"] }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "error": {
+                    "code": -32602,
+                    "message": "Invalid params: tools/call needs the name of a tool"
+                }
+            }
+        },
+        {
+            "name": "a tool that the server does not offer",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": { "name": "delete", "arguments": {} }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "error": { "code": -32602, "message": "Unknown tool: delete" }
+            }
+        },
+        {
+            "name": "status with no arguments",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": { "name": "status" }
+            },
+            "call": { "tool": "status" },
+            "operation": { "output": "{\"counts\": {}}\n" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "result": {
+                    "content": [{ "type": "text", "text": "{\"counts\": {}}\n" }],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "status with empty arguments",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "method": "tools/call",
+                "params": { "name": "status", "arguments": {} }
+            },
+            "call": { "tool": "status" },
+            "operation": { "output": "queue" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "result": { "content": [{ "type": "text", "text": "queue" }], "isError": false }
+            }
+        },
+        {
+            "name": "status with arguments that are null",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 16,
+                "method": "tools/call",
+                "params": { "name": "status", "arguments": null }
+            },
+            "call": { "tool": "status" },
+            "operation": { "output": "queue" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 16,
+                "result": { "content": [{ "type": "text", "text": "queue" }], "isError": false }
+            }
+        },
+        {
+            "name": "status refuses an argument",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 17,
+                "method": "tools/call",
+                "params": { "name": "status", "arguments": { "vault": "/elsewhere" } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 17,
+                "result": {
+                    "content": [{ "type": "text", "text": "status takes no argument \"vault\"" }],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "arguments that are not an object",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 18,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": ["10 Garden/Bean trellis.md"] }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 18,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "the arguments of plan must be an object" }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "plan with no arguments",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 19,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": {} }
+            },
+            "call": { "tool": "plan", "include": [], "hold": [], "remove": [], "pair": [] },
+            "operation": { "output": "plan" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 19,
+                "result": { "content": [{ "type": "text", "text": "plan" }], "isError": false }
+            }
+        },
+        {
+            "name": "plan with the four lists",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 20,
+                "method": "tools/call",
+                "params": {
+                    "name": "plan",
+                    "arguments": {
+                        "include": ["10 Garden/Bean trellis.md", "10 Garden/Compost basics.md"],
+                        "hold": ["10 Garden/Wormery.md"],
+                        "remove": ["-starts with a hyphen.md"],
+                        "pair": [{ "from": "10 Garden/Old.md", "to": "10 Garden/New.md" }]
+                    }
+                }
+            },
+            "call": {
+                "tool": "plan",
+                "include": ["10 Garden/Bean trellis.md", "10 Garden/Compost basics.md"],
+                "hold": ["10 Garden/Wormery.md"],
+                "remove": ["-starts with a hyphen.md"],
+                "pair": [{ "from": "10 Garden/Old.md", "to": "10 Garden/New.md" }]
+            },
+            "operation": { "output": "plan" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 20,
+                "result": { "content": [{ "type": "text", "text": "plan" }], "isError": false }
+            }
+        },
+        {
+            "name": "plan refuses a list that is not a list of texts",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "tools/call",
+                "params": {
+                    "name": "plan",
+                    "arguments": { "include": "10 Garden/Bean trellis.md" }
+                }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 21,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "the argument \"include\" of plan must be a list of vault paths"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "plan refuses a list with an item that is not a text",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": { "hold": ["one.md", 2] } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 22,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "the argument \"hold\" of plan must be a list of vault paths"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "plan refuses a pairing with another key",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 23,
+                "method": "tools/call",
+                "params": {
+                    "name": "plan",
+                    "arguments": { "pair": [{ "from": "a.md", "to": "b.md", "note": "why" }] }
+                }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 23,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "the argument \"pair\" of plan must be a list of objects with exactly \"from\" and \"to\", two vault paths"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "plan refuses a pairing with a path that is not a text",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 24,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": { "pair": [{ "from": "a.md", "to": 2 }] } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 24,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "the argument \"pair\" of plan must be a list of objects with exactly \"from\" and \"to\", two vault paths"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "plan refuses an argument that it does not know",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 25,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": { "selection": "/tmp/selection.json" } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 25,
+                "result": {
+                    "content": [{ "type": "text", "text": "plan takes no argument \"selection\"" }],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "the first argument that a tool does not take is named in the order of the code points",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 39,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": { "zeta": 1, "include": [], "alpha": 2 } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 39,
+                "result": {
+                    "content": [{ "type": "text", "text": "plan takes no argument \"alpha\"" }],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "a plan that the selection stops",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 26,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": { "include": ["90 Locked Shed/Key.md"] } }
+            },
+            "call": {
+                "tool": "plan",
+                "include": ["90 Locked Shed/Key.md"],
+                "hold": [],
+                "remove": [],
+                "pair": []
+            },
+            "operation": { "error": "a guard excludes \"90 Locked Shed/Key.md\"" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 26,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "a guard excludes \"90 Locked Shed/Key.md\"" }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "publish a plan by its id",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 27,
+                "method": "tools/call",
+                "params": { "name": "publish", "arguments": { "plan": "0123456789abcdef" } }
+            },
+            "call": { "tool": "publish", "plan": "0123456789abcdef" },
+            "operation": { "output": "report" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 27,
+                "result": { "content": [{ "type": "text", "text": "report" }], "isError": false }
+            }
+        },
+        {
+            "name": "publish with no plan",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 28,
+                "method": "tools/call",
+                "params": { "name": "publish", "arguments": {} }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 28,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "publish needs the argument \"plan\": the id that the plan tool gave"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "publish with a plan that is not a text",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 29,
+                "method": "tools/call",
+                "params": { "name": "publish", "arguments": { "plan": 123 } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 29,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "publish needs the argument \"plan\": the id that the plan tool gave"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "publish refuses the time of the command line program",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 30,
+                "method": "tools/call",
+                "params": {
+                    "name": "publish",
+                    "arguments": { "plan": "0123456789abcdef", "time": "2031-04-01T08:00:00Z" }
+                }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 30,
+                "result": {
+                    "content": [{ "type": "text", "text": "publish takes no argument \"time\"" }],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "a publication that left a note out is an error with its report",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 31,
+                "method": "tools/call",
+                "params": { "name": "publish", "arguments": { "plan": "fedcba9876543210" } }
+            },
+            "call": { "tool": "publish", "plan": "fedcba9876543210" },
+            "operation": {
+                "output": "report",
+                "failure": "1 note of the plan was left out: the report says why"
+            },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 31,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "report" },
+                        {
+                            "type": "text",
+                            "text": "1 note of the plan was left out: the report says why"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "unpublish the named notes",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 32,
+                "method": "tools/call",
+                "params": {
+                    "name": "unpublish",
+                    "arguments": { "paths": ["10 Garden/Bean trellis.md", "10 Garden/Wormery.md"] }
+                }
+            },
+            "call": {
+                "tool": "unpublish",
+                "paths": ["10 Garden/Bean trellis.md", "10 Garden/Wormery.md"]
+            },
+            "operation": { "output": "report" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 32,
+                "result": { "content": [{ "type": "text", "text": "report" }], "isError": false }
+            }
+        },
+        {
+            "name": "unpublish with an empty list goes to the operation, which refuses it",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 33,
+                "method": "tools/call",
+                "params": { "name": "unpublish", "arguments": { "paths": [] } }
+            },
+            "call": { "tool": "unpublish", "paths": [] },
+            "operation": { "error": "an unpublish names at least one note" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 33,
+                "result": {
+                    "content": [{ "type": "text", "text": "an unpublish names at least one note" }],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "unpublish with no paths",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 34,
+                "method": "tools/call",
+                "params": { "name": "unpublish", "arguments": {} }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 34,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "unpublish needs the argument \"paths\": a list of vault paths"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "take down the named notes",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 35,
+                "method": "tools/call",
+                "params": {
+                    "name": "takedown",
+                    "arguments": { "paths": ["10 Garden/Bean trellis.md"] }
+                }
+            },
+            "call": { "tool": "takedown", "paths": ["10 Garden/Bean trellis.md"] },
+            "operation": { "output": "report" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 35,
+                "result": { "content": [{ "type": "text", "text": "report" }], "isError": false }
+            }
+        },
+        {
+            "name": "a takedown with a warning of the storage is an error with its report",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 36,
+                "method": "tools/call",
+                "params": {
+                    "name": "takedown",
+                    "arguments": { "paths": ["10 Garden/Bean trellis.md"] }
+                }
+            },
+            "call": { "tool": "takedown", "paths": ["10 Garden/Bean trellis.md"] },
+            "operation": { "output": "report", "failure": "a file can still be public" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 36,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "report" },
+                        { "type": "text", "text": "a file can still be public" }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "takedown with paths that are not a list of texts",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 37,
+                "method": "tools/call",
+                "params": {
+                    "name": "takedown",
+                    "arguments": { "paths": "10 Garden/Bean trellis.md" }
+                }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 37,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "takedown needs the argument \"paths\": a list of vault paths"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "unlock",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 38,
+                "method": "tools/call",
+                "params": { "name": "unlock", "arguments": {} }
+            },
+            "call": { "tool": "unlock" },
+            "operation": { "output": "{\n  \"removed\": false\n}\n" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 38,
+                "result": {
+                    "content": [{ "type": "text", "text": "{\n  \"removed\": false\n}\n" }],
+                    "isError": false
+                }
+            }
+        }
+    ]
+}

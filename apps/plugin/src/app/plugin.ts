@@ -7,8 +7,21 @@ import { pullContentStore } from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
 import { Measures } from './measures.ts'
+import { LocalMcpServer, MCP_HOST } from './mcp-server.ts'
 import { journalName, RenameRecorder } from './rename-journal.ts'
-import { deviceOf, loadSettings, pullOptionsOf, saveSettings } from './settings.ts'
+import {
+    claudeCommandOf,
+    deviceOf,
+    isPort,
+    keyOf,
+    loadMcpSettings,
+    loadSettings,
+    MCP_KEY_SECRET,
+    newKey,
+    pullOptionsOf,
+    saveMcpSettings,
+    saveSettings
+} from './settings.ts'
 import type { DeviceSettings } from './settings.ts'
 import { starterKitNoteTypes } from './starter-kit.ts'
 import type { PluginHost } from './starter-kit.ts'
@@ -58,10 +71,19 @@ function isNote(file: TAbstractFile): boolean {
     return !(file instanceof TFolder) && file.path.endsWith('.md')
 }
 
+/** Random bytes of the system, for the key of the MCP server. */
+function randomBytes(size: number): Uint8Array {
+    return crypto.getRandomValues(new Uint8Array(size))
+}
+
 export class VaultPublishPlugin extends Plugin {
     readonly measures = new Measures()
     center!: PublicationCenter
     #openStart: number | undefined
+    #mcp: LocalMcpServer | undefined
+    #restarting: Promise<void> = Promise.resolve()
+    /** What the MCP server does now, for the settings tab. */
+    mcpState = 'off'
 
     override onload(): void {
         const started = performance.now()
@@ -151,7 +173,68 @@ export class VaultPublishPlugin extends Plugin {
         this.#addStatusBar()
         this.#watchRuns()
         this.#watchPauses()
+        void this.restartMcp()
         this.measures.record('load', performance.now() - started)
+    }
+
+    override onunload(): void {
+        // After the restart that runs, so that no server stays open.
+        void this.#restarting.then(() => this.#mcp?.stop())
+    }
+
+    /** The key of the MCP server of this device: the first start makes it. */
+    mcpKey(): string {
+        return keyOf(this.app.secretStorage, randomBytes)
+    }
+
+    /** Makes a new key: an agent with the old key is refused from now on. */
+    newMcpKey(): string {
+        const key = newKey(randomBytes)
+        this.app.secretStorage.setSecret(MCP_KEY_SECRET, key)
+        return key
+    }
+
+    /**
+     * Starts the MCP server of the tool with the settings of this device
+     * (issue 41, R68), or stops it when they turn it off. A start that fails
+     * shows a notice: the rest of the plugin works without the server.
+     */
+    restartMcp(): Promise<void> {
+        // One restart at a time: two quick changes in the settings tab must
+        // never leave a first server open.
+        this.#restarting = this.#restarting
+            .then(() => this.#restartMcp())
+            .catch((error: unknown) => {
+                this.mcpState = `not started: ${error instanceof Error ? error.message : 'it failed'}`
+                new Notice(`Vault Publish: the MCP server is ${this.mcpState}`)
+            })
+        return this.#restarting
+    }
+
+    async #restartMcp(): Promise<void> {
+        await this.#mcp?.stop()
+        this.#mcp = undefined
+        const settings = loadMcpSettings(this.app)
+        if (!settings.enabled) {
+            this.mcpState = 'off'
+            return
+        }
+        // The key exists before the first request.
+        this.mcpKey()
+        const server = new LocalMcpServer({
+            port: settings.port,
+            key: () => this.app.secretStorage.getSecret(MCP_KEY_SECRET),
+            version: this.manifest.version,
+            operations: (call) => this.center.serve(call)
+        })
+        this.#mcp = server
+        try {
+            const port = await server.start()
+            this.mcpState = `on, at http://${MCP_HOST}:${String(port)}/mcp`
+        } catch (error) {
+            this.mcpState = `not started: ${error instanceof Error ? error.message : 'it failed'}`
+            new Notice(`Vault Publish: the MCP server is ${this.mcpState}`)
+        }
     }
 
     async #openView(path?: string): Promise<void> {
@@ -424,6 +507,7 @@ class DeviceSettingTab extends PluginSettingTab {
                         save({ git: value })
                     })
             )
+        mcpRows(this.plugin, containerEl)
         new Setting(containerEl)
             .setName('Check the settings')
             .setDesc('Runs a check of the vault and of the copy with these settings.')
@@ -437,6 +521,86 @@ class DeviceSettingTab extends PluginSettingTab {
                 })
             )
     }
+}
+
+/** The rows of the MCP server in the settings tab. */
+function mcpRows(plugin: VaultPublishPlugin, containerEl: HTMLElement): void {
+    const settings = loadMcpSettings(plugin.app)
+    new Setting(containerEl).setName('MCP server').setHeading()
+    containerEl.createEl('p', {
+        text: 'An AI assistant on this computer can drive the publishing tool through this server: the same operations as the command line program (status, plan, publish, unpublish, takedown, unlock). It listens on 127.0.0.1 only and refuses a request without the key of this device.'
+    })
+    const running = new Setting(containerEl).setName('Run the MCP server')
+    const restart = (): void => {
+        running.setDesc('It restarts.')
+        void plugin.restartMcp().then(() => {
+            running.setDesc(`It is ${plugin.mcpState}.`)
+        })
+    }
+    running.setDesc(`It is ${plugin.mcpState}.`).addToggle((toggle) =>
+        toggle.setValue(settings.enabled).onChange((enabled) => {
+            saveMcpSettings(plugin.app, { ...loadMcpSettings(plugin.app), enabled })
+            restart()
+        })
+    )
+    let port = String(settings.port)
+    new Setting(containerEl)
+        .setName('Port')
+        .setDesc('A port from 1024 to 65535 on 127.0.0.1. Apply restarts the server.')
+        .addText((text) =>
+            text.setValue(port).onChange((value) => {
+                port = value
+            })
+        )
+        .addButton((button) =>
+            button.setButtonText('Apply').onClick(() => {
+                const value = Number(port.trim())
+                if (!isPort(value)) {
+                    new Notice(`Vault Publish: "${port}" is not a port from 1024 to 65535`)
+                    return
+                }
+                saveMcpSettings(plugin.app, { ...loadMcpSettings(plugin.app), port: value })
+                restart()
+            })
+        )
+    new Setting(containerEl)
+        .setName('Key')
+        .setDesc(
+            'The secret that an agent gives in the header Authorization: Bearer <key>. It stays in the secret storage of Obsidian on this device.'
+        )
+        .addButton((button) =>
+            button.setButtonText('Copy the key').onClick(() => {
+                void navigator.clipboard.writeText(plugin.mcpKey())
+                new Notice('Copied the key of the MCP server')
+            })
+        )
+        .addButton((button) =>
+            button
+                .setButtonText('Make a new key')
+                .setDestructive()
+                .onClick(() => {
+                    new ConfirmModal(
+                        plugin.app,
+                        'Make a new key?',
+                        'Every agent that uses the old key is refused from now on. Give the new key to the agents that you use.',
+                        'Make a new key',
+                        () => {
+                            plugin.newMcpKey()
+                            new Notice('Vault Publish: the MCP server has a new key')
+                        }
+                    ).open()
+                })
+        )
+    new Setting(containerEl)
+        .setName('Command for Claude Code')
+        .setDesc('Adds this server to Claude Code, with the port and the key of this device.')
+        .addButton((button) =>
+            button.setButtonText('Copy the command').onClick(() => {
+                const { port: current } = loadMcpSettings(plugin.app)
+                void navigator.clipboard.writeText(claudeCommandOf(current, plugin.mcpKey()))
+                new Notice('Copied the command for Claude Code: it holds the key')
+            })
+        )
 }
 
 /** A question with one button for a step that is hard to take back. */

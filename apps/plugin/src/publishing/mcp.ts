@@ -1,0 +1,343 @@
+import { toCanonicalJson } from './canonical.ts'
+import definitions from './mcp-tools.json'
+import { sortByCodePoint } from './order.ts'
+import type { Move } from './queue.ts'
+import type { PublicationReport, StoredPlan, TakedownReport } from './tool.ts'
+
+// The MCP server of the publishing tool (issue 41, TOOL-03, TOOL-27): the
+// messages of the protocol and the calls of the tools, with no transport. The
+// plugin serves it over HTTP on this computer (`app/mcp-server.ts`), and the
+// Rust twin (`cli/src/mcp.rs`) over the standard input and output. Both read
+// the tools from `mcp-tools.json` and pass the shared cases of
+// `fixtures/canonical/mcp.json`. A tool does what the command of the same name
+// of the command line program does, and gives the same output: no rule of the
+// publishing logic lives here. The controller of the publication center runs
+// the calls of the plugin (`app/center.ts`).
+
+/** The versions of the protocol that the server knows, the newest first. */
+export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'] as const
+
+/** The tools, as `tools/list` gives them. */
+export const MCP_TOOLS = definitions.tools
+
+/** The names of the tools: the names of the commands of the command line program, but `mcp`. */
+export const TOOL_NAMES = ['status', 'plan', 'publish', 'unpublish', 'takedown', 'unlock'] as const
+export type ToolName = (typeof TOOL_NAMES)[number]
+
+/** A call of a tool, with its arguments read. */
+export type ToolCall =
+    | { readonly tool: 'status' }
+    | {
+          readonly tool: 'plan'
+          readonly include: readonly string[]
+          readonly hold: readonly string[]
+          readonly remove: readonly string[]
+          readonly pair: readonly Move[]
+      }
+    | { readonly tool: 'publish'; readonly plan: string }
+    | { readonly tool: 'unpublish'; readonly paths: readonly string[] }
+    | { readonly tool: 'takedown'; readonly paths: readonly string[] }
+    | { readonly tool: 'unlock' }
+
+/** What a tool gives: the output of its command, and what failed in a command that still wrote its output. */
+export interface ToolOutcome {
+    readonly output: string
+    readonly failure?: string
+}
+
+/** Runs the call of a tool. A failure throws with the message for the agent. */
+export type Operations = (call: ToolCall) => Promise<ToolOutcome>
+
+export interface ServerInfo {
+    readonly name: string
+    readonly version: string
+}
+
+/** The name of the server in `initialize`. */
+export const SERVER_NAME = 'dsebastien-vault-publish'
+
+/** A tool call that the server cannot make: its message goes back to the agent as a tool error. */
+export class ArgumentError extends Error {}
+
+/** A tool that the server does not offer. */
+class UnknownTool extends Error {}
+
+const PARSE_ERROR = -32_700
+const INVALID_REQUEST = -32_600
+const METHOD_NOT_FOUND = -32_601
+const INVALID_PARAMS = -32_602
+
+type Id = string | number | null
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isTextList(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function isToolName(name: string): name is ToolName {
+    return (TOOL_NAMES as readonly string[]).includes(name)
+}
+
+/** The keys that each tool takes. */
+const ARGUMENTS: Record<ToolName, readonly string[]> = {
+    status: [],
+    plan: ['include', 'hold', 'remove', 'pair'],
+    publish: ['plan'],
+    unpublish: ['paths'],
+    takedown: ['paths'],
+    unlock: []
+}
+
+function listOf(args: Record<string, unknown>, key: string): readonly string[] {
+    const value = args[key]
+    if (value === undefined) {
+        return []
+    }
+    if (!isTextList(value)) {
+        throw new ArgumentError(`the argument "${key}" of plan must be a list of vault paths`)
+    }
+    return value
+}
+
+function pairsOf(args: Record<string, unknown>): readonly Move[] {
+    const value = args['pair']
+    if (value === undefined) {
+        return []
+    }
+    const wrong = new ArgumentError(
+        'the argument "pair" of plan must be a list of objects with exactly "from" and "to", two vault paths'
+    )
+    if (!Array.isArray(value)) {
+        throw wrong
+    }
+    return value.map((item: unknown) => {
+        if (
+            !isRecord(item) ||
+            Object.keys(item).length !== 2 ||
+            typeof item['from'] !== 'string' ||
+            typeof item['to'] !== 'string'
+        ) {
+            throw wrong
+        }
+        return { from: item['from'], to: item['to'] }
+    })
+}
+
+function pathsOf(tool: 'unpublish' | 'takedown', args: Record<string, unknown>): readonly string[] {
+    const value = args['paths']
+    if (!isTextList(value)) {
+        throw new ArgumentError(`${tool} needs the argument "paths": a list of vault paths`)
+    }
+    return value
+}
+
+/**
+ * The call of a tool with its arguments. It throws an `ArgumentError` with
+ * the message for the agent when the arguments do not fit the tool.
+ */
+export function toolCallOf(name: string, args: unknown): ToolCall {
+    if (!isToolName(name)) {
+        throw new UnknownTool(`Unknown tool: ${name}`)
+    }
+    const given = args ?? {}
+    if (!isRecord(given)) {
+        throw new ArgumentError(`the arguments of ${name} must be an object`)
+    }
+    // The first key that the tool does not take, in the order of the code
+    // points, as the Rust face finds it.
+    const other = sortByCodePoint(Object.keys(given)).find((key) => !ARGUMENTS[name].includes(key))
+    if (other !== undefined) {
+        throw new ArgumentError(`${name} takes no argument "${other}"`)
+    }
+    switch (name) {
+        case 'status':
+        case 'unlock':
+            return { tool: name }
+        case 'plan':
+            return {
+                tool: 'plan',
+                include: listOf(given, 'include'),
+                hold: listOf(given, 'hold'),
+                remove: listOf(given, 'remove'),
+                pair: pairsOf(given)
+            }
+        case 'publish': {
+            const id = given['plan']
+            if (typeof id !== 'string') {
+                throw new ArgumentError(
+                    'publish needs the argument "plan": the id that the plan tool gave'
+                )
+            }
+            return { tool: 'publish', plan: id }
+        }
+        case 'unpublish':
+        case 'takedown':
+            return { tool: name, paths: pathsOf(name, given) }
+    }
+}
+
+function messageOf(error: unknown): string {
+    return error instanceof Error ? error.message : 'it failed'
+}
+
+function errorAnswer(id: Id, code: number, message: string): string {
+    return JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } })
+}
+
+function resultAnswer(id: Id, result: unknown): string {
+    return JSON.stringify({ jsonrpc: '2.0', id, result })
+}
+
+function toolResult(texts: readonly string[], isError: boolean): unknown {
+    return { content: texts.map((text) => ({ type: 'text', text })), isError }
+}
+
+function initializeResult(params: unknown, info: ServerInfo): unknown {
+    const asked = isRecord(params) ? params['protocolVersion'] : undefined
+    const version =
+        typeof asked === 'string' && (PROTOCOL_VERSIONS as readonly string[]).includes(asked)
+            ? asked
+            : PROTOCOL_VERSIONS[0]
+    return {
+        protocolVersion: version,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: info.name, version: info.version },
+        instructions: definitions.instructions
+    }
+}
+
+async function callResult(id: Id, params: unknown, operations: Operations): Promise<string> {
+    const name = isRecord(params) ? params['name'] : undefined
+    if (!isRecord(params) || typeof name !== 'string') {
+        return errorAnswer(
+            id,
+            INVALID_PARAMS,
+            'Invalid params: tools/call needs the name of a tool'
+        )
+    }
+    let call: ToolCall
+    try {
+        call = toolCallOf(name, params['arguments'])
+    } catch (error) {
+        if (error instanceof UnknownTool) {
+            return errorAnswer(id, INVALID_PARAMS, error.message)
+        }
+        return resultAnswer(id, toolResult([messageOf(error)], true))
+    }
+    try {
+        const outcome = await operations(call)
+        return resultAnswer(
+            id,
+            outcome.failure === undefined
+                ? toolResult([outcome.output], false)
+                : toolResult([outcome.output, outcome.failure], true)
+        )
+    } catch (error) {
+        return resultAnswer(id, toolResult([messageOf(error)], true))
+    }
+}
+
+/**
+ * The answer to one message of the client, as one line of JSON, or
+ * `undefined` when the message needs none: a notification, or an answer of
+ * the client. A notification never calls a tool.
+ */
+export async function answer(
+    message: string,
+    info: ServerInfo,
+    operations: Operations
+): Promise<string | undefined> {
+    let value: unknown
+    try {
+        value = JSON.parse(message)
+    } catch {
+        return errorAnswer(null, PARSE_ERROR, 'Parse error: the message is not JSON')
+    }
+    if (Array.isArray(value)) {
+        return errorAnswer(null, INVALID_REQUEST, 'Invalid Request: a batch is not supported')
+    }
+    if (!isRecord(value)) {
+        return errorAnswer(null, INVALID_REQUEST, 'Invalid Request: the message must be an object')
+    }
+    const hasId = Object.hasOwn(value, 'id')
+    const rawId = value['id']
+    if (hasId && typeof rawId !== 'string' && typeof rawId !== 'number') {
+        return errorAnswer(
+            null,
+            INVALID_REQUEST,
+            'Invalid Request: the id must be a text or a number'
+        )
+    }
+    const id: Id = hasId ? (rawId as string | number) : null
+    if (value['jsonrpc'] !== '2.0') {
+        return errorAnswer(id, INVALID_REQUEST, 'Invalid Request: jsonrpc must be "2.0"')
+    }
+    const method = value['method']
+    if (!Object.hasOwn(value, 'method')) {
+        // An answer of the client: the server asks nothing, so it reads none.
+        if (Object.hasOwn(value, 'result') || Object.hasOwn(value, 'error')) {
+            return undefined
+        }
+        return hasId
+            ? errorAnswer(id, INVALID_REQUEST, 'Invalid Request: the method must be a text')
+            : undefined
+    }
+    if (typeof method !== 'string') {
+        return hasId
+            ? errorAnswer(id, INVALID_REQUEST, 'Invalid Request: the method must be a text')
+            : undefined
+    }
+    if (!hasId) {
+        return undefined
+    }
+    switch (method) {
+        case 'initialize':
+            return resultAnswer(id, initializeResult(value['params'], info))
+        case 'ping':
+            return resultAnswer(id, {})
+        case 'tools/list':
+            return resultAnswer(id, { tools: MCP_TOOLS })
+        case 'tools/call':
+            return await callResult(id, value['params'], operations)
+        default:
+            return errorAnswer(id, METHOD_NOT_FOUND, `Method not found: ${method}`)
+    }
+}
+
+/** The output of the `plan` tool, as the `plan` command writes it. */
+export function outcomeOfPlan(stored: StoredPlan): ToolOutcome {
+    return {
+        output: toCanonicalJson({ id: stored.id, offline: stored.offline, plan: stored.plan })
+    }
+}
+
+/** The outcome of a publication: it failed when a note of the plan was left out, as in Rust. */
+export function outcomeOfPublication(report: PublicationReport): ToolOutcome {
+    const output = toCanonicalJson(report)
+    const count = report.failed.length
+    if (count === 0) {
+        return { output }
+    }
+    return {
+        output,
+        failure:
+            count === 1
+                ? '1 note of the plan was left out: the report says why'
+                : `${String(count)} notes of the plan were left out: the report says why`
+    }
+}
+
+/** The outcome of a takedown: it failed when the attachment storage gave a warning, as in Rust. */
+export function outcomeOfTakedown(report: TakedownReport): ToolOutcome {
+    const output = toCanonicalJson(report)
+    const count = report.storageWarnings.length
+    return count === 0
+        ? { output }
+        : {
+              output,
+              failure: `the notes are taken down, but the attachment storage gave ${String(count)} warning(s), and a file that stays there can still be public: the report says why. Correct the storage, then run a takedown or a publication, which delete the files that no published note uses`
+          }
+}

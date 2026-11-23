@@ -1370,7 +1370,7 @@ All through SEAM-01 and SEAM-02. The rename journal is part of the vault state t
 
 ### 18.7 Tests on the real vault
 
-Three facts are tested on the real vault before the design of the plugin is final (tool K15): whether the `obsidian` command line program waits for a handler that runs long, whether a folder rename gives one event per file, and whether the REST and MCP server plugin exposes handlers that another plugin registered. The first and the third were asked before ADR 0009. The headless slice says which of them still matter (OPEN-12). It also writes a private report of what the guards exclude, and it gives the first numbers for section 16.1. Results with private counts stay outside this repository.
+Three facts are tested on the real vault before the design of the plugin is final (tool K15): whether the `obsidian` command line program waits for a handler that runs long, whether a folder rename gives one event per file, and whether the REST and MCP server plugin exposes handlers that another plugin registered. The first and the third were asked before ADR 0009. The headless slice says which of them still matter (OPEN-12). The third no longer matters: the plugin hosts its own MCP server (issue 41, decision R68). It also writes a private report of what the guards exclude, and it gives the first numbers for section 16.1. Results with private counts stay outside this repository.
 
 ### 18.8 Other tests
 

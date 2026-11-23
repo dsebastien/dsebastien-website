@@ -97,3 +97,71 @@ export function pullOptionsOf(settings: DeviceSettings): { contentStore: string;
     }
     return git === '' ? { contentStore } : { contentStore, git }
 }
+
+/** The settings of the MCP server of this device (issue 41, decision of the author R68). */
+export interface McpSettings {
+    /** True when the plugin starts its MCP server. On by default. */
+    readonly enabled: boolean
+    /** The port on 127.0.0.1. */
+    readonly port: number
+}
+
+/** The key of the settings of the MCP server in the local storage of Obsidian. */
+export const MCP_SETTINGS_KEY = 'dsebastien-vault-publish-mcp'
+
+/** The port of the MCP server on a new device: beside the Starter Kit (27125) and the REST API (27124). */
+export const DEFAULT_MCP_PORT = 27126
+
+/** The id of the key of the MCP server in the secret storage of Obsidian. */
+export const MCP_KEY_SECRET = 'dsebastien-vault-publish-mcp-key'
+
+/** True for a port that the server can take without the rights of the system. */
+export function isPort(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 1024 && value <= 65_535
+}
+
+/** The settings of the MCP server of this device. A value of another kind reads as the default. */
+export function loadMcpSettings(storage: DeviceStorage): McpSettings {
+    const kept = storage.loadLocalStorage(MCP_SETTINGS_KEY)
+    const field = (key: string): unknown =>
+        typeof kept === 'object' && kept !== null
+            ? (kept as Record<string, unknown>)[key]
+            : undefined
+    const enabled = field('enabled')
+    const port = field('port')
+    return {
+        enabled: typeof enabled === 'boolean' ? enabled : true,
+        port: isPort(port) ? port : DEFAULT_MCP_PORT
+    }
+}
+
+export function saveMcpSettings(storage: DeviceStorage, settings: McpSettings): void {
+    storage.saveLocalStorage(MCP_SETTINGS_KEY, { enabled: settings.enabled, port: settings.port })
+}
+
+/** What the plugin needs of the secret storage of Obsidian. */
+export interface Secrets {
+    getSecret(id: string): string | null
+    setSecret(id: string, secret: string): void
+}
+
+/** A new key: 32 random bytes in base64url. */
+export function newKey(random: (size: number) => Uint8Array): string {
+    return Buffer.from(random(32)).toString('base64url')
+}
+
+/** The key of the MCP server of this device. The first start makes it and keeps it in the secret storage. */
+export function keyOf(secrets: Secrets, random: (size: number) => Uint8Array): string {
+    const kept = secrets.getSecret(MCP_KEY_SECRET)
+    if (kept !== null && kept !== '') {
+        return kept
+    }
+    const key = newKey(random)
+    secrets.setSecret(MCP_KEY_SECRET, key)
+    return key
+}
+
+/** The command that adds the MCP server of this device to Claude Code. */
+export function claudeCommandOf(port: number, key: string): string {
+    return `claude mcp add --transport http vault-publish http://127.0.0.1:${String(port)}/mcp --header "Authorization: Bearer ${key}"`
+}

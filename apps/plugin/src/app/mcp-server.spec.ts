@@ -1,0 +1,419 @@
+import { describe, expect, test } from 'bun:test'
+import { request } from 'node:http'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import {
+    copyFixtureVault,
+    FIXTURE_NOTE_TYPES,
+    gitEnvironment,
+    makeContentStoreCopy,
+    makeTestStores
+} from '@dsebastien-website/testing'
+import type { TestStores } from '@dsebastien-website/testing'
+import { toCanonicalJson } from '../publishing/canonical.ts'
+import { fileNoteTypes, nodeDevice } from '../publishing/node/device.ts'
+import type { Device } from '../publishing/ports.ts'
+import { status } from '../publishing/tool.ts'
+import { toggleRow } from '../publishing/center.ts'
+import { PublicationCenter } from './center.ts'
+import { LocalMcpServer } from './mcp-server.ts'
+
+// The MCP server of the plugin (issue 41, TOOL-03): an HTTP server on this
+// computer, at http://127.0.0.1:<port>/mcp, with a key. Each tool call goes
+// through the controller of the publication center, so one run at a time
+// holds the copy, and the view shows what the agent did. The tests start it
+// on a free port, on a real device: a copy of the fixture vault, a copy of the
+// content store and an attachment storage made for the test.
+
+const KEY = 'a-key-for-the-tests'
+const NOTE = '10 Garden/Frost dates explained.md'
+const SECOND = '10 Garden/Compost basics.md'
+
+interface Answer {
+    readonly status: number
+    readonly headers: Record<string, string | string[] | undefined>
+    readonly body: string
+}
+
+function send(
+    port: number,
+    options: { method?: string; path?: string; headers?: Record<string, string>; body?: string }
+): Promise<Answer> {
+    return new Promise((resolve, reject) => {
+        const outgoing = request(
+            {
+                host: '127.0.0.1',
+                port,
+                method: options.method ?? 'POST',
+                path: options.path ?? '/mcp',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream',
+                    'Authorization': `Bearer ${KEY}`,
+                    ...options.headers
+                }
+            },
+            (incoming) => {
+                const chunks: Buffer[] = []
+                incoming.on('data', (chunk: Buffer) => chunks.push(chunk))
+                incoming.on('end', () => {
+                    resolve({
+                        status: incoming.statusCode ?? 0,
+                        headers: incoming.headers,
+                        body: Buffer.concat(chunks).toString('utf8')
+                    })
+                })
+            }
+        )
+        outgoing.on('error', reject)
+        outgoing.end(options.body)
+    })
+}
+
+interface Setup {
+    readonly vault: string
+    readonly copy: string
+    readonly device: Device
+    readonly center: PublicationCenter
+    readonly server: LocalMcpServer
+    readonly port: number
+    /** Calls a tool and gives the result of the answer. */
+    readonly call: (tool: string, args?: unknown) => Promise<{ texts: string[]; isError: boolean }>
+}
+
+async function setUp(stores: TestStores, key: string | null = KEY): Promise<Setup> {
+    const vault = await copyFixtureVault(stores)
+    const copy = await makeContentStoreCopy(stores)
+    const device = nodeDevice({
+        vault,
+        contentStore: copy,
+        attachmentStorage: stores.attachmentStorage,
+        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES)
+    })
+    let minute = 0
+    const center = new PublicationCenter({
+        device: () => device,
+        pull: () => Promise.resolve(),
+        now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
+        deviceName: 'garden-shed'
+    })
+    const server = new LocalMcpServer({
+        port: 0,
+        key: () => key,
+        version: 'test',
+        operations: (call) => center.serve(call)
+    })
+    const port = await server.start()
+    let id = 0
+    const call = async (
+        tool: string,
+        args: unknown = {}
+    ): Promise<{ texts: string[]; isError: boolean }> => {
+        id += 1
+        const answer = await send(port, {
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                id,
+                method: 'tools/call',
+                params: { name: tool, arguments: args }
+            })
+        })
+        expect(answer.status).toBe(200)
+        const parsed = JSON.parse(answer.body) as {
+            result: { content: { text: string }[]; isError: boolean }
+        }
+        return {
+            texts: parsed.result.content.map((item) => item.text),
+            isError: parsed.result.isError
+        }
+    }
+    return { vault, copy, device, center, server, port, call }
+}
+
+const PING = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' })
+
+async function lastCommit(copy: string): Promise<string> {
+    const child = Bun.spawn(['git', '-C', copy, 'log', '-1', '--format=%B'], {
+        env: gitEnvironment(),
+        stdout: 'pipe'
+    })
+    return await new Response(child.stdout).text()
+}
+
+describe('the MCP server of the plugin', () => {
+    test('answers on 127.0.0.1 at /mcp with the key', async () => {
+        await using stores = await makeTestStores()
+        const { server, port } = await setUp(stores)
+        try {
+            const answer = await send(port, { body: PING })
+
+            expect(answer.status).toBe(200)
+            expect(answer.headers['content-type']).toBe('application/json')
+            expect(JSON.parse(answer.body)).toEqual({ jsonrpc: '2.0', id: 1, result: {} })
+            expect(server.port).toBe(port)
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('refuses a request without the key or with another key', async () => {
+        await using stores = await makeTestStores()
+        const { server, port } = await setUp(stores)
+        try {
+            const none = await send(port, { body: PING, headers: { Authorization: '' } })
+            const other = await send(port, {
+                body: PING,
+                headers: { Authorization: 'Bearer another-key' }
+            })
+            const basic = await send(port, {
+                body: PING,
+                headers: { Authorization: `Basic ${KEY}` }
+            })
+
+            for (const answer of [none, other, basic]) {
+                expect(answer.status).toBe(401)
+                expect(answer.headers['www-authenticate']).toBe('Bearer')
+                expect(answer.body).toContain('key')
+            }
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('refuses every request when this device has no key', async () => {
+        await using stores = await makeTestStores()
+        const { server, port } = await setUp(stores, null)
+        try {
+            const answer = await send(port, { body: PING })
+
+            expect(answer.status).toBe(401)
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('refuses a request of a web page: an Origin, or a Host that is not this computer', async () => {
+        await using stores = await makeTestStores()
+        const { server, port } = await setUp(stores)
+        try {
+            const page = await send(port, {
+                body: PING,
+                headers: { Origin: 'https://example.com' }
+            })
+            const rebound = await send(port, {
+                body: PING,
+                headers: { Host: `garden.example:${String(port)}` }
+            })
+            const otherPort = await send(port, {
+                body: PING,
+                headers: { Host: `127.0.0.1:${String(port + 1)}` }
+            })
+            const local = await send(port, {
+                body: PING,
+                headers: { Host: `localhost:${String(port)}` }
+            })
+
+            expect(page.status).toBe(403)
+            expect(rebound.status).toBe(403)
+            expect(otherPort.status).toBe(403)
+            expect(local.status).toBe(200)
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('takes only a POST of JSON at /mcp, of 1 MiB at most', async () => {
+        await using stores = await makeTestStores()
+        const { server, port } = await setUp(stores)
+        try {
+            const read = await send(port, { method: 'GET' })
+            const elsewhere = await send(port, { path: '/other', body: PING })
+            const text = await send(port, {
+                body: PING,
+                headers: { 'Content-Type': 'text/plain' }
+            })
+            const large = await send(port, { body: ' '.repeat(1024 * 1024 + 1) })
+            const version = await send(port, {
+                body: PING,
+                headers: { 'MCP-Protocol-Version': '1999-01-01' }
+            })
+            const known = await send(port, {
+                body: PING,
+                headers: { 'MCP-Protocol-Version': '2025-06-18' }
+            })
+
+            expect(read.status).toBe(405)
+            expect(read.headers['allow']).toBe('POST')
+            expect(elsewhere.status).toBe(404)
+            expect(text.status).toBe(415)
+            expect(large.status).toBe(413)
+            expect(version.status).toBe(400)
+            expect(known.status).toBe(200)
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('a notification gets an empty answer 202', async () => {
+        await using stores = await makeTestStores()
+        const { server, port } = await setUp(stores)
+        try {
+            const answer = await send(port, {
+                body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })
+            })
+
+            expect(answer.status).toBe(202)
+            expect(answer.body).toBe('')
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('status gives the queue as the status command writes it', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, device } = await setUp(stores)
+        try {
+            const answer = await call('status')
+
+            expect(answer.isError).toBe(false)
+            expect(answer.texts).toEqual([toCanonicalJson(await status(device))])
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('drives a publication with paths to include, to hold and to remove (TEST-17)', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, vault, copy, center } = await setUp(stores)
+        try {
+            const first = await call('plan', { include: [NOTE, SECOND] })
+            const planned = JSON.parse(first.texts[0] ?? '') as {
+                id: string
+                plan: { publish: string[] }
+            }
+            expect(planned.plan.publish).toEqual([SECOND, NOTE])
+            const published = await call('publish', { plan: planned.id })
+            expect(published.isError).toBe(false)
+            expect(
+                (JSON.parse(published.texts[0] ?? '') as { published: string[] }).published
+            ).toEqual([SECOND, NOTE])
+            expect(await lastCommit(copy)).toContain('Device: garden-shed\nFace: mcp-server\n')
+            // The view shows what the agent did, and its queue is new.
+            expect(center.state.report?.kind).toBe('publication')
+            expect(center.state.queue?.unchanged).toEqual([SECOND, NOTE])
+
+            const source = join(vault, NOTE)
+            await writeFile(source, `${await readFile(source, 'utf8')}\nOne more line.\n`)
+            const held = await call('plan', { hold: [NOTE], remove: [SECOND] })
+            const plan = JSON.parse(held.texts[0] ?? '') as {
+                id: string
+                plan: { update: string[]; remove: string[] }
+            }
+            expect(plan.plan.update).toEqual([])
+            expect(plan.plan.remove).toEqual([SECOND])
+            const removed = await call('publish', { plan: plan.id })
+            const report = JSON.parse(removed.texts[0] ?? '') as {
+                removed: string[]
+                skipped: string[]
+            }
+            expect(report.removed).toEqual([SECOND])
+            expect(report.skipped).toEqual([NOTE])
+
+            const unpublished = await call('unpublish', { paths: [NOTE] })
+            expect(
+                (JSON.parse(unpublished.texts[0] ?? '') as { removed: string[] }).removed
+            ).toEqual([NOTE])
+            const takenDown = await call('takedown', { paths: [NOTE] })
+            expect(
+                (JSON.parse(takenDown.texts[0] ?? '') as { takenDown: string[] }).takenDown
+            ).toEqual([NOTE])
+            expect(await call('unlock')).toEqual({
+                texts: ['{\n  "removed": false\n}\n'],
+                isError: false
+            })
+            expect(center.state.log.map((line) => line.text)).toContain(
+                'Agent publication done: 2 new, 0 updated, 0 removed, 0 forced, 0 moved, 0 failed'
+            )
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
+
+    test('a tool error goes to the agent and to the view', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            const answer = await call('publish', { plan: '0123456789abcdef' })
+
+            expect(answer.isError).toBe(true)
+            expect(answer.texts[0]).toContain('0123456789abcdef')
+            expect(center.state.error).toBe(answer.texts[0])
+            expect(center.state.activity).toBe('idle')
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+
+    test('a call waits for the run of the view, then runs', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, center } = await setUp(stores)
+        try {
+            await center.check()
+            center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+            const publication = center.publish()
+
+            const answer = await call('status')
+            await publication
+
+            expect(answer.isError).toBe(false)
+            expect(
+                (JSON.parse(answer.texts[0] ?? '') as { unchanged: string[] }).unchanged
+            ).toEqual([NOTE])
+            expect(center.state.error).toBeUndefined()
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
+
+    test('a stopped server frees its port, and a new one takes it', async () => {
+        await using stores = await makeTestStores()
+        const { server, port, center } = await setUp(stores)
+        await server.stop()
+        expect(server.port).toBeUndefined()
+        const again = new LocalMcpServer({
+            port,
+            key: () => KEY,
+            version: 'test',
+            operations: (one) => center.serve(one)
+        })
+        try {
+            expect(await again.start()).toBe(port)
+            expect((await send(port, { body: PING })).status).toBe(200)
+        } finally {
+            await again.stop()
+        }
+    }, 60_000)
+
+    test('a port in use is an error that names it', async () => {
+        await using stores = await makeTestStores()
+        const { server, port, center } = await setUp(stores)
+        const second = new LocalMcpServer({
+            port,
+            key: () => KEY,
+            version: 'test',
+            operations: (one) => center.serve(one)
+        })
+        try {
+            let message = ''
+            try {
+                await second.start()
+            } catch (error) {
+                message = error instanceof Error ? error.message : ''
+            }
+            expect(message).toContain(String(port))
+            expect(second.port).toBeUndefined()
+        } finally {
+            await server.stop()
+        }
+    }, 60_000)
+})

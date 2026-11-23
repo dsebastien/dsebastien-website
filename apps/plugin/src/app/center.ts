@@ -1,4 +1,5 @@
 import { canonicalPath, SITE_ORIGIN } from '@dsebastien-website/resolver'
+import { toCanonicalJson } from '../publishing/canonical.ts'
 import {
     describePlan,
     NO_CHOICES,
@@ -11,9 +12,11 @@ import type { Choices, NoteState } from '../publishing/center.ts'
 import { SelectionError } from '../publishing/plan.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
 import type { Device } from '../publishing/ports.ts'
+import { outcomeOfPlan, outcomeOfPublication, outcomeOfTakedown } from '../publishing/mcp.ts'
+import type { ToolCall, ToolOutcome } from '../publishing/mcp.ts'
 import type { Move, PublicationQueue } from '../publishing/queue.ts'
-import { plan, publish, status, takedown, unlock } from '../publishing/tool.ts'
-import type { PublicationReport, StoredPlan, TakedownReport } from '../publishing/tool.ts'
+import { plan, publish, status, takedown, unlock, unpublish } from '../publishing/tool.ts'
+import type { PublicationReport, Run, StoredPlan, TakedownReport } from '../publishing/tool.ts'
 import { canonicalTime } from './rename-journal.ts'
 
 // The controller of the publication center (issue 39, decision R67): what the
@@ -41,7 +44,14 @@ export interface CenterHost {
 
 /** What the controller does now. */
 export type Activity =
-    'idle' | 'checking' | 'planning' | 'publishing' | 'taking down' | 'pulling' | 'unlocking'
+    | 'idle'
+    | 'checking'
+    | 'planning'
+    | 'publishing'
+    | 'taking down'
+    | 'pulling'
+    | 'unlocking'
+    | 'answering'
 
 /** The name of an activity in a message. */
 const ACTIVITY_NAMES: Record<Activity, string> = {
@@ -51,7 +61,18 @@ const ACTIVITY_NAMES: Record<Activity, string> = {
     'publishing': 'publication',
     'taking down': 'takedown',
     'pulling': 'pull',
-    'unlocking': 'unlock'
+    'unlocking': 'unlock',
+    'answering': 'request of an agent'
+}
+
+/** The activity of each tool of the MCP server: a tool that reads only is answering. */
+const TOOL_ACTIVITIES: Record<ToolCall['tool'], Activity> = {
+    status: 'answering',
+    plan: 'answering',
+    publish: 'publishing',
+    unpublish: 'publishing',
+    takedown: 'taking down',
+    unlock: 'unlocking'
 }
 
 /** How long a write of the state property by a run is no edit, in milliseconds. */
@@ -107,6 +128,18 @@ function messageOf(error: unknown): string {
 /** The live address of a note. */
 export function addressOf(path: string): string {
     return `${SITE_ORIGIN}${canonicalPath(path)}`
+}
+
+/** The live addresses of the notes that a publication published, updated or moved (story 92). */
+function addressesOf(report: PublicationReport): Address[] {
+    return [...report.published, ...report.updated, ...report.moved.map((move) => move.to)]
+        .sort()
+        .map((path) => ({ path, url: addressOf(path) }))
+}
+
+/** The counts of a publication, for the log. */
+function countsOf(report: PublicationReport): string {
+    return `${String(report.published.length)} new, ${String(report.updated.length)} updated, ${String(report.removed.length)} removed, ${String(report.forcedRemoved.length)} forced, ${String(report.moved.length)} moved, ${String(report.failed.length)} failed`
 }
 
 function samePlan(one: PublicationPlan, two: PublicationPlan): boolean {
@@ -374,21 +407,9 @@ export class PublicationCenter {
             })
             this.#wrote([...report.propertySet, ...report.propertyRemoved])
             this.#set({
-                report: {
-                    kind: 'publication',
-                    report,
-                    addresses: [
-                        ...report.published,
-                        ...report.updated,
-                        ...report.moved.map((move) => move.to)
-                    ]
-                        .sort()
-                        .map((path) => ({ path, url: addressOf(path) }))
-                }
+                report: { kind: 'publication', report, addresses: addressesOf(report) }
             })
-            this.#log(
-                `Publication done: ${String(report.published.length)} new, ${String(report.updated.length)} updated, ${String(report.removed.length)} removed, ${String(report.forcedRemoved.length)} forced, ${String(report.moved.length)} moved, ${String(report.failed.length)} failed`
-            )
+            this.#log(`Publication done: ${countsOf(report)}`)
         })
         await this.#checkAfter()
     }
@@ -446,6 +467,116 @@ export class PublicationCenter {
             }
         })
         await this.#checkAfter()
+    }
+
+    /**
+     * Runs a call of a tool of the MCP server (issue 41, TOOL-03), as the
+     * command of the same name of the command line program does, with the
+     * face "mcp-server". It waits for the end of the current activity, so one
+     * run at a time holds the copy. The log, the report and the error show
+     * what the agent did, and a call that changed the copy checks again. A
+     * failure throws, with its message for the agent.
+     */
+    async serve(call: ToolCall): Promise<ToolOutcome> {
+        let outcome: ToolOutcome | undefined
+        let failure: unknown
+        const activity = TOOL_ACTIVITIES[call.tool]
+        // The loop and the start of the run are one step: no other activity
+        // starts between them.
+        while (this.#state.activity !== 'idle') {
+            await this.#current
+        }
+        await this.#run(activity, `Agent ${call.tool}`, async () => {
+            try {
+                outcome = await this.#serve(call)
+            } catch (error) {
+                failure = error
+                throw error
+            }
+            if (outcome.failure !== undefined) {
+                // The report is written: the view shows what failed too.
+                throw new Error(outcome.failure)
+            }
+        })
+        if (activity !== 'answering') {
+            await this.#checkAfter()
+        }
+        if (outcome !== undefined) {
+            return outcome
+        }
+        throw failure instanceof Error
+            ? failure
+            : new Error(`a ${ACTIVITY_NAMES[this.#state.activity]} runs already: try again`)
+    }
+
+    async #serve(call: ToolCall): Promise<ToolOutcome> {
+        const device = this.host.device()
+        const run: Run = {
+            time: canonicalTime(this.host.now()),
+            device: this.host.deviceName,
+            face: 'mcp-server'
+        }
+        switch (call.tool) {
+            case 'status': {
+                this.#log('Agent status')
+                return { output: toCanonicalJson(await status(device)) }
+            }
+            case 'plan': {
+                this.#log('Agent plan')
+                const stored = await plan(device, {
+                    include: call.include,
+                    hold: call.hold,
+                    remove: call.remove,
+                    pair: call.pair
+                })
+                this.#log(`Agent plan ${stored.id}: ${describePlan(stored.plan)}`)
+                return outcomeOfPlan(stored)
+            }
+            case 'publish':
+            case 'unpublish': {
+                this.#log(
+                    call.tool === 'publish'
+                        ? `Agent publication started: plan ${call.plan}`
+                        : `Agent unpublish started: ${call.paths.map((path) => `"${path}"`).join(', ')}`
+                )
+                this.#fresh = false
+                const report =
+                    call.tool === 'publish'
+                        ? await publish(device, call.plan, run)
+                        : await unpublish(device, call.paths, run)
+                this.#wrote([...report.propertySet, ...report.propertyRemoved])
+                this.#set({
+                    report: {
+                        kind: 'publication',
+                        report,
+                        addresses: addressesOf(report)
+                    }
+                })
+                this.#log(`Agent publication done: ${countsOf(report)}`)
+                return outcomeOfPublication(report)
+            }
+            case 'takedown': {
+                this.#log(
+                    `Agent takedown started: ${call.paths.map((path) => `"${path}"`).join(', ')}`
+                )
+                this.#fresh = false
+                const report = await takedown(device, call.paths, run)
+                this.#wrote(report.propertyRemoved)
+                this.#set({ report: { kind: 'takedown', report, addresses: [] } })
+                this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)
+                return outcomeOfTakedown(report)
+            }
+            case 'unlock': {
+                this.#fresh = false
+                const removed = await unlock(device)
+                this.#log(
+                    removed
+                        ? 'Agent unlock done: the lock was removed'
+                        : 'Agent unlock done: there was no lock'
+                )
+                return { output: toCanonicalJson({ removed }) }
+            }
+        }
     }
 
     /** Pulls the content store into the copy, on a click of the author (R67), then checks again. */

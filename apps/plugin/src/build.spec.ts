@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -199,6 +200,19 @@ describe('the built plugin', () => {
         const workspaceListeners = new Map<string, (...values: unknown[]) => void>()
         const layoutReady: (() => void)[] = []
         const storage = new Map<string, unknown>()
+        // The MCP server of the plugin (issue 41) starts at the load: on a
+        // free port, never on the port of the author.
+        const port = await new Promise<number>((resolve) => {
+            const probe = createServer()
+            probe.listen(0, '127.0.0.1', () => {
+                const address = probe.address()
+                probe.close(() => {
+                    resolve(typeof address === 'object' && address !== null ? address.port : 0)
+                })
+            })
+        })
+        storage.set('dsebastien-vault-publish-mcp', { enabled: true, port })
+        const secrets = new Map<string, string>()
         let asked = 0
         const app = {
             vault: {
@@ -240,10 +254,17 @@ describe('the built plugin', () => {
                 return { plugins: {} }
             },
             loadLocalStorage: (key: string) => storage.get(key) ?? null,
-            saveLocalStorage: (key: string, data: unknown) => storage.set(key, data)
+            saveLocalStorage: (key: string, data: unknown) => storage.set(key, data),
+            secretStorage: {
+                getSecret: (id: string) => secrets.get(id) ?? null,
+                setSecret: (id: string, secret: string) => secrets.set(id, secret)
+            }
         }
 
-        const plugin: unknown = Reflect.construct(Loaded, [app, { id: 'dsebastien-vault-publish' }])
+        const plugin: unknown = Reflect.construct(Loaded, [
+            app,
+            { id: 'dsebastien-vault-publish', version: '0.0.0' }
+        ])
         expect(plugin).toBeInstanceOf(Plugin)
         if (!isRecord(plugin) || typeof plugin['onload'] !== 'function') {
             throw new Error('the plugin has no onload method')
@@ -304,6 +325,33 @@ describe('the built plugin', () => {
             ['Folder', 'folder', 'Area']
         ])
         expect(notices).toEqual([])
+
+        // The MCP server answers with the key that the load made, and the
+        // unload stops it.
+        const key = secrets.get('dsebastien-vault-publish-mcp-key')
+        expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/)
+        const ping = (): Promise<Response> =>
+            fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${String(key)}`
+                },
+                body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' })
+            })
+        let answer = await ping().catch(() => undefined)
+        for (let tries = 0; answer === undefined && tries < 50; tries++) {
+            await Bun.sleep(20)
+            answer = await ping().catch(() => undefined)
+        }
+        expect(answer?.status).toBe(200)
+        expect(await answer?.json()).toEqual({ jsonrpc: '2.0', id: 1, result: {} })
+        if (typeof plugin['onunload'] !== 'function') {
+            throw new Error('the plugin has no onunload method')
+        }
+        Reflect.apply(plugin['onunload'], plugin, [])
+        await Bun.sleep(50)
+        expect(await ping().catch(() => 'stopped')).toBe('stopped')
     })
 })
 

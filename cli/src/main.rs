@@ -17,6 +17,7 @@ mod images;
 mod json;
 mod links;
 mod manifest;
+mod mcp;
 mod names;
 mod note_types;
 mod order;
@@ -247,6 +248,28 @@ enum Command {
         device: Option<String>,
     },
 
+    /// Serves the MCP server of the tool over the standard input and output,
+    /// one message of JSON per line, until the input ends (TOOL-03). Its tools
+    /// are the commands of this program, with the same output: status, plan,
+    /// publish, unpublish, takedown and unlock. The places of this device are
+    /// given here, one time. A run takes the time of the clock and the name
+    /// of the device, and its face is "mcp-server". Errors of the program go
+    /// to the error output.
+    Mcp {
+        #[command(flatten)]
+        places: Places,
+
+        /// The folder of the attachment storage, for the tools publish,
+        /// unpublish and takedown.
+        #[arg(long, value_name = "FOLDER")]
+        attachment_storage: PathBuf,
+
+        /// The name of this device, for the message of the commit. The
+        /// default is the name of the host.
+        #[arg(long, value_name = "NAME")]
+        device: Option<String>,
+    },
+
     /// Removes the lock of this device that a publication left when it
     /// stopped halfway (a crash, a power cut). Run it only when no
     /// publication runs. The next plan, publish or takedown puts the copy of the
@@ -439,6 +462,58 @@ fn warn_when_offline(plan: &str) {
     }
 }
 
+/// Runs the call of a tool of the MCP server, as the command of the same name
+/// does.
+fn operate(
+    device: &Device,
+    attachment_storage: &AttachmentStorage,
+    name: &str,
+    call: &mcp::Call,
+) -> Result<Outcome, String> {
+    let done = |output: String| Outcome {
+        output,
+        failure: None,
+    };
+    let time = now();
+    let run = Run {
+        time: &time,
+        device: name,
+        face: "mcp-server",
+    };
+    match call {
+        mcp::Call::Status => tool::status(device).map(done),
+        mcp::Call::Plan {
+            include,
+            hold,
+            remove,
+            pair,
+        } => tool::plan(device, &Selection::new(include, hold, remove, pair)).map(done),
+        mcp::Call::Publish { plan } => tool::publish(device, attachment_storage, plan, &run),
+        mcp::Call::Unpublish { paths } => tool::unpublish(device, attachment_storage, paths, &run),
+        mcp::Call::Takedown { paths } => tool::takedown(device, attachment_storage, paths, &run),
+        mcp::Call::Unlock => tool::unlock(&device.store).map(done),
+    }
+}
+
+/// Serves the MCP server over the standard input and output (`mcp`).
+fn serve(places: &Places, attachment_storage: &Path, name: Option<String>) -> Result<(), String> {
+    let device = device(places)?;
+    let storage = storage(attachment_storage);
+    let name = name.unwrap_or_else(host_name);
+    let info = mcp::Info {
+        name: mcp::SERVER_NAME,
+        version: env!("CARGO_PKG_VERSION"),
+    };
+    let mut operations = |call: &mcp::Call| operate(&device, &storage, &name, call);
+    mcp::serve(
+        io::stdin().lock(),
+        io::stdout().lock(),
+        &info,
+        &mut operations,
+    )
+    .map_err(|error| error.to_string())
+}
+
 fn run(command: Command) -> Result<Outcome, String> {
     let done = |output: String| Outcome {
         output,
@@ -499,6 +574,11 @@ fn run(command: Command) -> Result<Outcome, String> {
                 face: "command-line",
             },
         ),
+        Command::Mcp {
+            places,
+            attachment_storage,
+            device: name,
+        } => serve(&places, &attachment_storage, name).map(|()| done(String::new())),
         Command::Unlock { content_store } => {
             if !content_store.is_dir() {
                 return Err(format!(
@@ -555,5 +635,26 @@ fn main() -> ExitCode {
             eprintln!("error: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn the_tools_of_the_mcp_server_are_the_other_commands() {
+        // TEST-17: what the MCP server can do, the program can do, and the
+        // reverse. The TypeScript face checks its tools against the same file.
+        let mut commands: Vec<String> = Arguments::command()
+            .get_subcommands()
+            .map(|command| command.get_name().to_owned())
+            .filter(|name| name != "mcp")
+            .collect();
+        commands.sort_unstable();
+        let mut tools = mcp::TOOL_NAMES.to_vec();
+        tools.sort_unstable();
+        assert_eq!(commands, tools);
     }
 }

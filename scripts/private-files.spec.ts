@@ -121,6 +121,21 @@ describe('check of private files', () => {
         expect(findPrivateFiles(repository(files))).rejects.toThrow('no list of files')
     })
 
+    test('accepts a skill of the tool, and refuses a note in the form of a skill', async () => {
+        const skill = '---\nname: publish-notes\ndescription: A skill.\n---\n\n# Publish\n'
+        expect(await refusedPaths({ 'skills/publish-notes/SKILL.md': skill })).toEqual([])
+        const notes = {
+            'skills/publish-notes/Other.md': skill,
+            'skills/other-name/SKILL.md': skill,
+            'skills/publish-notes/references/SKILL.md': skill,
+            'Skills/publish-notes/SKILL.md': skill,
+            'documentation/publish-notes/SKILL.md': skill,
+            'skills/a-note/SKILL.md': NOTE,
+            'skills/publish-notes/skill.md': skill
+        }
+        expect(await refusedPaths(notes)).toEqual(Object.keys(notes))
+    })
+
     test('says why it refuses a file', async () => {
         const [violation] = await findPrivateFiles(repository({ '.private/export.csv': 'a,b\n' }))
         expect(violation?.reason).toContain('private folder ".private"')
