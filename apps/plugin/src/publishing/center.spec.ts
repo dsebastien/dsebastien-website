@@ -41,6 +41,7 @@ function queueOf(lists: Partial<PublicationQueue>): PublicationQueue {
         movedEdited: [],
         new: [],
         pairings: [],
+        proposals: [],
         renamed: [],
         technicalUpdates: [],
         toRemove: [],
@@ -79,7 +80,8 @@ describe('the selection of the ticks', () => {
             remove: [],
             pair: []
         })
-        expect(planOfChoices(QUEUE, NO_CHOICES)).toEqual({
+        expect(planOfChoices(QUEUE, NO_CHOICES, [])).toEqual({
+            edits: [],
             forcedRemove: ['Private/Moved in.md', 'Private/Old.md'],
             move: [{ from: 'Garden/Before.md', to: 'Garden/Moved.md' }],
             publish: [],
@@ -98,7 +100,7 @@ describe('the selection of the ticks', () => {
             remove: [],
             pair: []
         })
-        expect(planOfChoices(QUEUE, choices)).toMatchObject({
+        expect(planOfChoices(QUEUE, choices, [])).toMatchObject({
             publish: ['Drafts/Idea.md'],
             update: []
         })
@@ -114,7 +116,7 @@ describe('the selection of the ticks', () => {
             remove: ['Garden/Edited.md', 'Garden/Gone.md', 'Garden/Stable.md'],
             pair: []
         })
-        expect(planOfChoices(QUEUE, choices)).toMatchObject({
+        expect(planOfChoices(QUEUE, choices, [])).toMatchObject({
             update: ['Garden/Linked.md'],
             remove: ['Garden/Edited.md', 'Garden/Gone.md', 'Garden/Stable.md']
         })
@@ -133,7 +135,7 @@ describe('the selection of the ticks', () => {
             remove: [],
             pair: [{ from: 'Garden/Gone.md', to: 'Garden/Renamed outside.md' }]
         })
-        expect(planOfChoices(QUEUE, choices)).toMatchObject({
+        expect(planOfChoices(QUEUE, choices, [])).toMatchObject({
             move: [
                 { from: 'Garden/Before.md', to: 'Garden/Moved.md' },
                 { from: 'Garden/Gone.md', to: 'Garden/Renamed outside.md' }
@@ -171,6 +173,7 @@ describe('the label of the publish button', () => {
     test('states each part of the plan', () => {
         expect(
             describePlan({
+                edits: [],
                 forcedRemove: ['a.md', 'b.md'],
                 move: [{ from: 'c.md', to: 'd.md' }],
                 publish: ['e.md'],
@@ -182,7 +185,14 @@ describe('the label of the publish button', () => {
 
     test('says when a plan does nothing', () => {
         expect(
-            describePlan({ forcedRemove: [], move: [], publish: [], update: [], remove: [] })
+            describePlan({
+                edits: [],
+                forcedRemove: [],
+                move: [],
+                publish: [],
+                update: [],
+                remove: []
+            })
         ).toBe('Nothing to publish')
     })
 })
@@ -329,7 +339,7 @@ describe('the choices on the fixture vault', () => {
 
         const stored = await plan(device, selectionOf(queue, choices))
 
-        expect(stored.plan).toEqual(planOfChoices(queue, choices))
+        expect(stored.plan).toEqual(planOfChoices(queue, choices, []))
         expect(describePlan(stored.plan)).toBe('Publish: 2 new')
     }, 60_000)
 })
@@ -384,10 +394,10 @@ describe('a moved note whose text is not the published text (R67)', () => {
                 locked: false
             }
         ])
-        expect(planOfChoices(MOVED, NO_CHOICES).update).toEqual([])
+        expect(planOfChoices(MOVED, NO_CHOICES, []).update).toEqual([])
         const ticked = toggleRow(MOVED, NO_CHOICES, 'New place.md')
         expect(selectionOf(MOVED, ticked).include).toEqual(['New place.md'])
-        expect(planOfChoices(MOVED, ticked).update).toEqual(['New place.md'])
+        expect(planOfChoices(MOVED, ticked, []).update).toEqual(['New place.md'])
         expect(reconcile(MOVED, ticked)).toEqual(ticked)
     })
 

@@ -1,5 +1,5 @@
 {
-    "instructions": "The publishing tool of the notes website of the author. It publishes notes of the vault to the content store, from which the site is built. Use status to read the publication queue, plan to compute a publication plan with an id, and publish to apply exactly that plan. Publish alone only the new versions of notes that are already published. Include a new note, unpublish, pair or take down a note only when the author named that note. When a tool gives an error (a guard, a lock), report it to the author and stop. After a stale plan, make the plan again, show it to the author, and wait for a yes. The skill developassion-publish-notes explains the process.",
+    "instructions": "The publishing tool of the notes website of the author. It publishes notes of the vault to the content store, from which the site is built. Use status to read the publication queue, plan to compute a publication plan with an id, and publish to apply exactly that plan. Publish alone only the new versions of notes that are already published. Include a new note, unpublish, pair or take down a note only when the author named that note. Use guards to read the deny list, the open proposals and the edits since the last publication. deny and ignore make the guards stricter and apply at once, unless they take a note off the site; allow and unignore make them looser. An edit that does not apply is stored as a proposal, which only the author confirms, in the publication center of Obsidian. Never edit configuration.json or the publish_ignore property yourself. When a tool gives an error (a guard, a lock), report it to the author and stop. After a stale plan, make the plan again, show it to the author, and wait for a yes. The skill developassion-publish-notes explains the process.",
     "tools": [
         {
             "name": "status",
@@ -24,17 +24,23 @@
                 "properties": {
                     "include": {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                            "type": "string"
+                        },
                         "description": "The vault paths of the notes to publish. A note that was never published enters a plan only in this way."
                     },
                     "hold": {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                            "type": "string"
+                        },
                         "description": "The vault paths of the changed notes to leave out: their live version stays."
                     },
                     "remove": {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                            "type": "string"
+                        },
                         "description": "The vault paths of the published notes to unpublish."
                     },
                     "pair": {
@@ -98,7 +104,9 @@
                 "properties": {
                     "paths": {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                            "type": "string"
+                        },
                         "minItems": 1,
                         "description": "The vault paths of the published notes to unpublish."
                     }
@@ -122,7 +130,9 @@
                 "properties": {
                     "paths": {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                            "type": "string"
+                        },
                         "minItems": 1,
                         "description": "The vault paths of the notes to take down, exactly as the manifest names them (letter case, Unicode form, the end .md)."
                     }
@@ -134,6 +144,108 @@
                 "readOnlyHint": false,
                 "destructiveHint": true,
                 "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "guards",
+            "title": "Read the guards",
+            "description": "Gives the guards, as the guards command of the command line program does: the deny list of folders (denyList), the open proposals that wait for the author (proposals), and the edits of the guards since the last publication (edits). It also works when a deny list entry names no folder, which stops every publication. It changes nothing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "deny",
+            "title": "Deny a folder",
+            "description": "Adds a folder to the deny list, as the deny command of the command line program does: no note of the folder can be published. It applies at once when no published or unpublished note of the site is in the folder. Else it is stored as a proposal, with the notes that would leave the site (removes), and only the author can confirm it, in Obsidian. The edit is logged in the content store and pushed. It gives the event (edit), whose state is applied or proposed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The vault path of the folder, exactly as the vault names it."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "allow",
+            "title": "Allow a folder",
+            "description": "Proposes to remove a folder from the deny list, as the allow command of the command line program does. It never applies at once: it is stored as a proposal, logged in the content store and pushed, and only the author can confirm it, in Obsidian. It gives the event (edit), whose state is proposed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The vault path of the folder, exactly as the deny list names it."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "ignore",
+            "title": "Ignore a note",
+            "description": "Sets the publish_ignore property of a note, as the ignore command of the command line program does: the note can never be published. It applies at once when the note is not on the site (no manifest entry). Else it is stored as a proposal, with the note in removes, and only the author can confirm it, in Obsidian. The edit is logged in the content store and pushed. It gives the event (edit), whose state is applied or proposed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The vault path of the note."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "unignore",
+            "title": "Stop ignoring a note",
+            "description": "Proposes to remove the publish_ignore property of a note, as the unignore command of the command line program does. It never applies at once: it is stored as a proposal, logged in the content store and pushed, and only the author can confirm it, in Obsidian. It gives the event (edit), whose state is proposed. The note is then a candidate, which a plan publishes only when include names it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The vault path of the note."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
                 "openWorldHint": true
             }
         },

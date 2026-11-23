@@ -13,7 +13,7 @@ import type { TestStores } from '@dsebastien-website/testing'
 import { toCanonicalJson } from '../publishing/canonical.ts'
 import { fileNoteTypes, nodeDevice } from '../publishing/node/device.ts'
 import type { Device } from '../publishing/ports.ts'
-import { status } from '../publishing/tool.ts'
+import { guards, status } from '../publishing/tool.ts'
 import { toggleRow } from '../publishing/center.ts'
 import { PublicationCenter } from './center.ts'
 import { LocalMcpServer } from './mcp-server.ts'
@@ -628,4 +628,109 @@ describe('the MCP server of the plugin', () => {
             await server.stop()
         }
     }, 60_000)
+
+    test('guards and the edits of the guards go through the server, with the face mcp-server (issue 42)', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, copy, device, center } = await setUp(stores)
+        try {
+            const read = await call('guards')
+            expect(read).toEqual({
+                texts: [toCanonicalJson(await guards(device))],
+                isError: false
+            })
+            expect(JSON.parse(read.texts[0] ?? '')).toEqual({
+                denyList: ['80 Templates', '90 Locked Shed'],
+                edits: [],
+                proposals: []
+            })
+
+            const denied = await call('deny', { path: '30 People' })
+            expect(denied.isError).toBe(false)
+            const event = (JSON.parse(denied.texts[0] ?? '') as { edit: Record<string, unknown> })
+                .edit
+            expect(event).toMatchObject({
+                action: 'deny',
+                face: 'mcp-server',
+                device: 'garden-shed',
+                path: '30 People',
+                state: 'applied'
+            })
+            expect((await lastCommit(copy)).trimEnd()).toBe(
+                `Edit: deny (applied)\n\nDevice: garden-shed\nFace: mcp-server\nPlan: ${String(event['id'])}`
+            )
+
+            const allowed = await call('allow', { path: '90 Locked Shed' })
+            expect(JSON.parse(allowed.texts[0] ?? '')).toMatchObject({
+                edit: { action: 'allow', state: 'proposed' }
+            })
+            // The view shows the proposal, which only the author decides.
+            expect(center.state.queue?.proposals.map((one) => one.path)).toEqual(['90 Locked Shed'])
+
+            const refused = await call('unignore', { path: NOTE })
+            expect(refused.isError).toBe(true)
+            expect(refused.texts[0]).toContain('does not exclude')
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
+
+    test('a plan without paths holds changed notes only, and a first publication, an unpublish and a takedown happen only for the named paths (TEST-25)', async () => {
+        await using stores = await makeTestStores()
+        const { server, call, vault, center } = await setUp(stores)
+        try {
+            // No path: no new note is published.
+            const empty = JSON.parse((await call('plan')).texts[0] ?? '') as {
+                plan: { publish: string[]; update: string[]; remove: string[] }
+            }
+            expect(empty.plan.publish).toEqual([])
+            expect(empty.plan.update).toEqual([])
+            expect(empty.plan.remove).toEqual([])
+
+            // The first publication of exactly the named notes.
+            const first = JSON.parse(
+                (await call('plan', { include: [NOTE, SECOND] })).texts[0] ?? ''
+            ) as { id: string }
+            const published = JSON.parse(
+                (await call('publish', { plan: first.id })).texts[0] ?? ''
+            ) as { published: string[] }
+            expect(published.published).toEqual([SECOND, NOTE])
+            expect(center.state.queue?.unchanged).toEqual([SECOND, NOTE])
+
+            // Both notes change: a plan without paths updates them, and adds no new note.
+            for (const path of [NOTE, SECOND]) {
+                const source = join(vault, path)
+                await writeFile(source, `${await readFile(source, 'utf8')}\nOne more line.\n`)
+            }
+            const changed = JSON.parse((await call('plan')).texts[0] ?? '') as {
+                plan: { publish: string[]; update: string[]; remove: string[] }
+            }
+            expect(changed.plan).toMatchObject({
+                publish: [],
+                update: [SECOND, NOTE],
+                remove: []
+            })
+
+            // An unpublish of one note removes that note only, and holds the other one.
+            const unpublished = JSON.parse(
+                (await call('unpublish', { paths: [NOTE] })).texts[0] ?? ''
+            ) as { removed: string[]; updated: string[]; skipped: string[]; published: string[] }
+            expect(unpublished.removed).toEqual([NOTE])
+            expect(unpublished.updated).toEqual([])
+            expect(unpublished.published).toEqual([])
+            expect(unpublished.skipped).toEqual([SECOND])
+
+            // A takedown of one note takes that note only.
+            const takenDown = JSON.parse(
+                (await call('takedown', { paths: [SECOND] })).texts[0] ?? ''
+            ) as { takenDown: string[] }
+            expect(takenDown.takenDown).toEqual([SECOND])
+            const queue = center.state.queue
+            expect(queue?.changed).toEqual([])
+            expect(queue?.unchanged).toEqual([])
+            expect(queue?.new).toContain(NOTE)
+            expect(queue?.new).toContain(SECOND)
+        } finally {
+            await server.stop()
+        }
+    }, 120_000)
 })

@@ -11,8 +11,9 @@
 mod support;
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use serde_json::{Value, json};
 
@@ -218,7 +219,7 @@ impl Setup {
             asked.push(".asked");
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES_ASKED", asked);
         }
-        if ["publish", "takedown", "unpublish"].contains(&command) {
+        if ["publish", "takedown", "unpublish", "mcp"].contains(&command) {
             program
                 .arg("--attachment-storage")
                 .arg(self.stores.attachment_storage());
@@ -312,6 +313,49 @@ impl Setup {
         );
         let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
         self.run_with(command, &arguments, crash)
+    }
+
+    /// Calls one tool of the MCP server of the program (the face
+    /// `mcp-server`), at the time of the step. The result is the result of
+    /// the call: its texts and whether it is an error.
+    fn call_tool(&self, tool: &str, arguments: &Value, time: &str) -> Value {
+        let mut program = support::program();
+        program
+            .arg("mcp")
+            .arg("--vault")
+            .arg(&self.vault)
+            .arg("--content-store")
+            .arg(&self.copy)
+            .arg("--attachment-storage")
+            .arg(self.stores.attachment_storage())
+            .arg("--device")
+            .arg("garden-shed")
+            // The server takes the time of the clock: the switch of the debug
+            // build gives it the time of the step.
+            .env("DSEBASTIEN_VAULT_PUBLISH_TEST_TIME", time)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(answers) = &self.answers {
+            program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", answers);
+        }
+        let mut child = program.spawn().expect("the program starts");
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": { "name": tool, "arguments": arguments },
+        });
+        child
+            .stdin
+            .take()
+            .expect("the input is a pipe")
+            .write_all(format!("{request}\n").as_bytes())
+            .expect("the request is written");
+        let output = child.wait_with_output().expect("the program ends");
+        assert!(output.status.success(), "{}", errors_of(&output));
+        let answer: Value = serde_json::from_slice(&output.stdout).expect("the answer is JSON");
+        answer["result"].clone()
     }
 
     fn git(&self, arguments: &[&str]) -> String {
@@ -443,6 +487,70 @@ fn check_files(setup: &Setup, step: &Value, label: &str) {
     }
 }
 
+/// The step `edit` (issue 42): an edit of the guards from the face of the
+/// step, at its time, on the device `garden-shed`. It gives its event, or is
+/// refused with the text of `says`.
+fn run_edit_step(setup: &Setup, step: &Value, label: &str) {
+    let action = step["action"].as_str().expect("an edit has an action");
+    let path = step["path"].as_str().expect("an edit has a path");
+    let time = step["time"].as_str().expect("an edit has a time");
+    let refused = step["refused"] == json!(true);
+    match step["face"].as_str().expect("an edit has a face") {
+        "command-line" => {
+            let output = setup.run(
+                action,
+                &[
+                    &format!("--path={path}"),
+                    "--time",
+                    time,
+                    "--device",
+                    "garden-shed",
+                ],
+            );
+            if refused {
+                assert_refused_saying(&output, step, label);
+            } else {
+                assert!(output.status.success(), "{label}: {}", errors_of(&output));
+                assert_eq!(
+                    json_of(&output),
+                    json!({ "edit": step["event"] }),
+                    "{label}"
+                );
+            }
+        }
+        "mcp-server" => {
+            let result = setup.call_tool(action, &json!({ "path": path }), time);
+            let first = result["content"][0]["text"]
+                .as_str()
+                .expect("the result has a text");
+            assert_eq!(result["isError"], json!(refused), "{label}: {first}");
+            if refused {
+                let says = step["says"].as_str().expect("a refusal says why");
+                assert!(first.contains(says), "{label}: {first}");
+            } else {
+                let output: Value = serde_json::from_str(first).expect("the output is JSON");
+                assert_eq!(output, json!({ "edit": step["event"] }), "{label}");
+            }
+        }
+        other => panic!("{label}: the face \"{other}\" is not known"),
+    }
+}
+
+/// The steps of issue 42: `edit`, and `guards`, which states the output of
+/// the command. False for every other step.
+fn run_guards_step(setup: &Setup, step: &Value, label: &str) -> bool {
+    match step["do"].as_str() {
+        Some("edit") => run_edit_step(setup, step, label),
+        Some("guards") => {
+            let output = setup.run("guards", &[]);
+            assert!(output.status.success(), "{label}: {}", errors_of(&output));
+            assert_eq!(json_of(&output), step["guards"], "{label}");
+        }
+        _ => return false,
+    }
+    true
+}
+
 /// The steps of issue 38 on the paths of a step: `takedown`, `unpublish`,
 /// and a `crash` of a takedown. False for every other step.
 fn run_removal_step(setup: &Setup, step: &Value, label: &str) -> bool {
@@ -466,7 +574,7 @@ fn run_removal_step(setup: &Setup, step: &Value, label: &str) -> bool {
 }
 
 fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
-    if run_removal_step(setup, step, label) {
+    if run_removal_step(setup, step, label) || run_guards_step(setup, step, label) {
         return;
     }
     match step["do"].as_str().expect("a step says what it does") {
@@ -600,7 +708,9 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
             "asked",
             "crash",
             "delete",
+            "edit",
             "expect",
+            "guards",
             "lose",
             "noteTypes",
             "offline",
@@ -650,7 +760,7 @@ fn the_status_of_an_empty_vault_is_the_empty_queue() {
     assert_eq!(errors_of(&output), "");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"movedEdited\": [],\n  \"new\": [],\n  \"pairings\": [],\n  \"renamed\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
+        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"movedEdited\": [],\n  \"new\": [],\n  \"pairings\": [],\n  \"proposals\": [],\n  \"renamed\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
     );
 }
 
@@ -2572,7 +2682,7 @@ fn a_forced_removal_takes_a_published_note_that_was_moved_into_a_folder_of_the_d
 
     assert_eq!(
         planned["plan"],
-        json!({ "forcedRemove": [SECOND], "move": [], "publish": [], "remove": [], "update": [] })
+        json!({ "edits": [], "forcedRemove": [SECOND], "move": [], "publish": [], "remove": [], "update": [] })
     );
     assert_eq!(paths(&report["forcedRemoved"]), [SECOND]);
     assert!(!setup.copy.join("notes").join(SECOND).exists());
@@ -2598,7 +2708,7 @@ fn a_forced_removal_does_not_take_a_published_note_whose_file_is_only_missing() 
 
     assert_eq!(
         json_of(&planned)["plan"],
-        json!({ "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
+        json!({ "edits": [], "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
     );
     assert_eq!(
         paths(&json_of(&held)["plan"]["forcedRemove"]),

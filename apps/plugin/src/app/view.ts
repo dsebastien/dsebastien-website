@@ -13,6 +13,7 @@ import {
     toggleTechnical
 } from '../publishing/center.ts'
 import type { Filter, Row, RowGroup, ViewList } from '../publishing/center.ts'
+import type { EditAction, EditEvent } from '../publishing/edits.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
 import { FolderSuggest } from './folder-suggest.ts'
 import { addressOf } from './center.ts'
@@ -67,6 +68,30 @@ const PUBLISHED_GROUPS = new Set<RowGroup>([
     'missing',
     'unchanged'
 ])
+
+/** What the view says of the action of an edit of the guards (R69). */
+const ACTION_TEXT: Record<EditAction, string> = {
+    deny: 'Deny the folder',
+    allow: 'Allow the folder',
+    ignore: 'Ignore the note',
+    unignore: 'Stop ignoring the note'
+}
+
+/**
+ * Writes one event of the edits of the guards: its action, its path in an
+ * element of its own (isolated from the text around it), its state, the
+ * notes that it takes off the site, and who asked for it.
+ */
+function eventLine(parent: HTMLElement, event: EditEvent): void {
+    parent.appendText(`${ACTION_TEXT[event.action]} `)
+    parent.createSpan({ cls: 'vault-publish-name', text: event.path, attr: { dir: 'auto' } })
+    const removes = event.removes?.length ?? 0
+    const leave =
+        removes === 0
+            ? ''
+            : ` · ${removes.toLocaleString()} ${removes === 1 ? 'note leaves' : 'notes leave'} the site`
+    parent.appendText(` · ${event.state}${leave} · ${event.face}, ${event.device}, ${event.time}`)
+}
 
 /** What the view needs of the plugin. */
 export interface ViewHost {
@@ -687,6 +712,85 @@ export class PublicationCenterView extends ItemView {
                 })
             }
         }
+        this.#renderProposals(queue.proposals)
+        const edits = center.plan()?.edits ?? []
+        if (edits.length > 0) {
+            const box = this.#section(
+                this.#sections,
+                'edits',
+                `Edits of the guards since the last publication: ${edits.length.toLocaleString()} (the next publication shows them as published)`,
+                'vault-publish-moves'
+            )
+            for (const event of edits.slice(0, SECTION_LINES)) {
+                eventLine(box.createDiv({ cls: 'vault-publish-event' }), event)
+            }
+            if (edits.length > SECTION_LINES) {
+                box.createDiv({
+                    text: `and ${(edits.length - SECTION_LINES).toLocaleString()} more`
+                })
+            }
+        }
+    }
+
+    /**
+     * The open proposals of the edits of the guards (R69): only the author
+     * confirms or rejects them, here. A proposal that takes notes off the
+     * site opens a dialog that names them first.
+     */
+    #renderProposals(proposals: readonly EditEvent[]): void {
+        if (proposals.length === 0) {
+            return
+        }
+        const { center } = this.host
+        const busy = center.state.activity !== 'idle'
+        const box = this.#section(
+            this.#sections,
+            'proposals',
+            `Proposals: ${proposals.length.toLocaleString()}. An agent asked for these edits of the guards, and only you decide.`,
+            'vault-publish-moves vault-publish-proposals',
+            true
+        )
+        for (const proposal of proposals.slice(0, SECTION_LINES)) {
+            const line = box.createDiv({
+                cls: 'vault-publish-proposal',
+                attr: { 'data-proposal': proposal.id }
+            })
+            eventLine(line.createSpan({ cls: 'vault-publish-event' }), proposal)
+            const actions = line.createSpan({ cls: 'vault-publish-proposal-actions' })
+            const confirm = actions.createEl('button', {
+                text: 'Confirm',
+                attr: {
+                    'aria-label': `Confirm: ${ACTION_TEXT[proposal.action]} ${proposal.path}`,
+                    'data-focus': `confirm\n${proposal.id}`
+                }
+            })
+            confirm.disabled = busy
+            confirm.addEventListener('click', () => {
+                if ((proposal.removes?.length ?? 0) === 0) {
+                    void center.confirmProposal(proposal)
+                    return
+                }
+                new ConfirmProposalModal(this.app, proposal, () => {
+                    void center.confirmProposal(proposal)
+                }).open()
+            })
+            const reject = actions.createEl('button', {
+                text: 'Reject',
+                attr: {
+                    'aria-label': `Reject: ${ACTION_TEXT[proposal.action]} ${proposal.path}`,
+                    'data-focus': `reject\n${proposal.id}`
+                }
+            })
+            reject.disabled = busy
+            reject.addEventListener('click', () => {
+                void center.rejectProposal(proposal)
+            })
+        }
+        if (proposals.length > SECTION_LINES) {
+            box.createDiv({
+                text: `and ${(proposals.length - SECTION_LINES).toLocaleString()} more: decide these first`
+            })
+        }
     }
 
     #renderFooter(): void {
@@ -733,6 +837,18 @@ export class PublicationCenterView extends ItemView {
             ['Forced removals', plan.forcedRemove],
             ['Moves', plan.move.map((move) => `${move.from} → ${move.to}`)]
         ]
+        if (plan.edits.length > 0) {
+            const part = parent.createEl('details')
+            part.createEl('summary', {
+                text: `Edits of the guards: ${plan.edits.length.toLocaleString()}`
+            })
+            for (const event of plan.edits.slice(0, 500)) {
+                eventLine(part.createDiv({ cls: 'vault-publish-event' }), event)
+            }
+            if (plan.edits.length > 500) {
+                part.createDiv({ text: `and ${String(plan.edits.length - 500)} more` })
+            }
+        }
         for (const [title, paths] of parts) {
             if (paths.length === 0) {
                 continue
@@ -886,6 +1002,60 @@ export class TakedownModal extends Modal {
                         this.confirm()
                     })
             )
+    }
+
+    override onClose(): void {
+        this.contentEl.empty()
+    }
+}
+
+/**
+ * The dialog of the confirmation of a proposal that takes notes off the site
+ * (R69): the edit, the notes that leave, one button. Escape and the close
+ * button of the dialog cancel it.
+ */
+export class ConfirmProposalModal extends Modal {
+    constructor(
+        app: App,
+        private readonly proposal: EditEvent,
+        private readonly confirm: () => void
+    ) {
+        super(app)
+    }
+
+    override onOpen(): void {
+        const { proposal } = this
+        const removes = proposal.removes ?? []
+        this.setTitle('Confirm this edit of the guards?')
+        const { contentEl } = this
+        eventLine(contentEl.createEl('p'), proposal)
+        contentEl.createEl('p', {
+            text: `${removes.length === 1 ? 'This note leaves' : `These ${removes.length.toLocaleString()} notes leave`} the site at the next publication, as forced removals that no plan can hold. After the next build, every address of ${removes.length === 1 ? 'it' : 'them'} answers 404, with no redirect:`
+        })
+        const list = contentEl.createDiv({ cls: 'vault-publish-moves' })
+        for (const path of removes.slice(0, SECTION_LINES)) {
+            list.createDiv({ cls: 'vault-publish-name', text: path, attr: { dir: 'auto' } })
+        }
+        if (removes.length > SECTION_LINES) {
+            list.createDiv({
+                text: `and ${(removes.length - SECTION_LINES).toLocaleString()} more`
+            })
+        }
+        contentEl.createEl('p', {
+            text: 'When the edit would take other notes away now, nothing is applied, and the publication center says so.'
+        })
+        new Setting(contentEl).addButton((button) =>
+            button
+                .setButtonText(
+                    `Confirm: ${removes.length.toLocaleString()} ${removes.length === 1 ? 'note leaves' : 'notes leave'}`
+                )
+                .setDestructive()
+                .setCta()
+                .onClick(() => {
+                    this.close()
+                    this.confirm()
+                })
+        )
     }
 
     override onClose(): void {

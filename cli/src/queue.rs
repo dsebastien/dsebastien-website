@@ -11,6 +11,7 @@ use crate::attachments::{FileReader, attachments_of};
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, source_of};
 use crate::configuration::Configuration;
 use crate::device::{Entry, Vault};
+use crate::edits::{EditLog, Event};
 use crate::frontmatter::{remove_property, set_property};
 use crate::guards::{guard_of, in_deny_list};
 use crate::hash::content_hash;
@@ -76,6 +77,9 @@ pub struct PublicationQueue {
     /// The pairings to confirm: a published note that is missing and a
     /// candidate with no manifest entry, with the same source (PUB-62).
     pub pairings: Vec<Move>,
+    /// The open proposals of the log of the edits of the guards, in the order
+    /// of the log (R69). Apart from the four lists: they are not counted.
+    pub proposals: Vec<Event>,
     /// The moves of the new lines of the rename journals that the next
     /// publication applies.
     pub renamed: Vec<Move>,
@@ -107,6 +111,7 @@ impl PublicationQueue {
             moved_edited: Vec::new(),
             new: Vec::new(),
             pairings: Vec::new(),
+            proposals: Vec::new(),
             renamed: Vec::new(),
             technical_updates: Vec::new(),
             to_remove: Vec::new(),
@@ -169,6 +174,9 @@ pub struct Scan {
     /// The warnings of the journals and of the moves, for the report.
     pub rename_warnings: Vec<RenameWarning>,
     pub configuration: Configuration,
+    /// The log of the edits of the guards (R69): the queue shows its open
+    /// proposals, and the plan its events since the last publication.
+    pub edits: EditLog,
     /// The note type of each published note that the scan found and that no
     /// guard excludes, when it has one.
     pub note_types: BTreeMap<String, NoteType>,
@@ -265,7 +273,7 @@ fn scan_vault(
 /// also below a name that starts with a dot or that is not valid Unicode: a
 /// file moved there is still under the guard. Obsidian does not show them, so
 /// they are no candidates of a link.
-fn scan_denied(
+pub fn scan_denied(
     vault: &Vault,
     configuration: &Configuration,
 ) -> Result<(Vec<String>, BTreeSet<String>), String> {
@@ -516,6 +524,7 @@ pub fn compute_queue(
         journals,
         rename_warnings,
         configuration,
+        edits: EditLog::default(),
         note_types,
     })
 }

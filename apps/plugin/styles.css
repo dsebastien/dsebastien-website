@@ -137,6 +137,31 @@
     overflow-wrap: anywhere;
 }
 
+.vault-publish-proposal {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-2);
+    padding-block: var(--size-2-2);
+}
+
+.vault-publish-proposal + .vault-publish-proposal {
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.vault-publish-event {
+    flex: 1 1 16em;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.vault-publish-proposal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-4-2);
+}
+
 .vault-publish-busy {
     color: var(--text-muted);
 }

@@ -11,11 +11,31 @@ import {
 import type { Choices, NoteState } from '../publishing/center.ts'
 import { SelectionError } from '../publishing/plan.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
+import { isNoteEdit } from '../publishing/edits.ts'
+import type { EditEvent } from '../publishing/edits.ts'
 import type { Device } from '../publishing/ports.ts'
-import { outcomeOfPlan, outcomeOfPublication, outcomeOfTakedown } from '../publishing/mcp.ts'
+import {
+    outcomeOfEdit,
+    outcomeOfGuards,
+    outcomeOfPlan,
+    outcomeOfPublication,
+    outcomeOfTakedown
+} from '../publishing/mcp.ts'
 import type { ToolCall, ToolOutcome } from '../publishing/mcp.ts'
 import type { Move, PublicationQueue } from '../publishing/queue.ts'
-import { plan, publish, status, takedown, unlock, unpublish } from '../publishing/tool.ts'
+import {
+    confirmProposal,
+    edit,
+    guards,
+    plan,
+    publish,
+    rejectProposal,
+    status,
+    statusWithEdits,
+    takedown,
+    unlock,
+    unpublish
+} from '../publishing/tool.ts'
 import type { PublicationReport, Run, StoredPlan, TakedownReport } from '../publishing/tool.ts'
 import { canonicalTime } from './rename-journal.ts'
 
@@ -52,6 +72,7 @@ export type Activity =
     | 'pulling'
     | 'unlocking'
     | 'answering'
+    | 'editing'
 
 /** The name of an activity in a message. */
 const ACTIVITY_NAMES: Record<Activity, string> = {
@@ -62,7 +83,8 @@ const ACTIVITY_NAMES: Record<Activity, string> = {
     'taking down': 'takedown',
     'pulling': 'pull',
     'unlocking': 'unlock',
-    'answering': 'request of an agent'
+    'answering': 'request of an agent',
+    'editing': 'edit of the guards'
 }
 
 /**
@@ -76,6 +98,11 @@ const TOOL_ACTIVITIES: Record<ToolCall['tool'], Activity> = {
     publish: 'publishing',
     unpublish: 'publishing',
     takedown: 'taking down',
+    guards: 'answering',
+    deny: 'editing',
+    allow: 'editing',
+    ignore: 'editing',
+    unignore: 'editing',
     unlock: 'unlocking'
 }
 
@@ -110,6 +137,12 @@ export type Report =
 export interface CenterState {
     /** The queue of the last check, or `undefined` before the first one. */
     readonly queue?: PublicationQueue
+    /**
+     * The events of the edits of the guards since the last publication, at
+     * the last check (R69): the plan shows them, and the publication marks
+     * them as shown.
+     */
+    readonly edits?: readonly EditEvent[]
     /** When the last check ended. */
     readonly checkedAt?: Date
     readonly activity: Activity
@@ -182,7 +215,14 @@ export class PublicationCenter {
     /** False after a run changed the copy, until the next check: the queue is old then. */
     #fresh = false
     /** The plan of the last queue and choices: a render asks for it more than one time. */
-    #counted: { queue: PublicationQueue; choices: Choices; plan: PublicationPlan } | undefined
+    #counted:
+        | {
+              queue: PublicationQueue
+              choices: Choices
+              edits: readonly EditEvent[] | undefined
+              plan: PublicationPlan
+          }
+        | undefined
 
     constructor(private readonly host: CenterHost) {}
 
@@ -221,12 +261,21 @@ export class PublicationCenter {
 
     /** The plan of the choices, from the last queue: what the publish button states. */
     plan(): PublicationPlan | undefined {
-        const { queue, choices } = this.#state
+        const { queue, choices, edits } = this.#state
         if (queue === undefined) {
             return undefined
         }
-        if (this.#counted?.queue !== queue || this.#counted.choices !== choices) {
-            this.#counted = { queue, choices, plan: planOfChoices(queue, choices) }
+        if (
+            this.#counted?.queue !== queue ||
+            this.#counted.choices !== choices ||
+            this.#counted.edits !== edits
+        ) {
+            this.#counted = {
+                queue,
+                choices,
+                edits,
+                plan: planOfChoices(queue, choices, edits ?? [])
+            }
         }
         return this.#counted.plan
     }
@@ -392,10 +441,11 @@ export class PublicationCenter {
                 await device.local.release(lock.text)
             }
         }
-        const queue = await status(device)
+        const { queue, edits } = await statusWithEdits(device)
         this.#fresh = true
         this.#set({
             queue,
+            edits,
             checkedAt: this.host.now(),
             choices: reconcile(queue, this.#state.choices)
         })
@@ -436,11 +486,11 @@ export class PublicationCenter {
             'publishing',
             'Publication',
             async () => {
-                const { queue, choices } = this.#state
+                const { queue, choices, edits } = this.#state
                 if (queue === undefined) {
                     throw new Error('check the vault first')
                 }
-                const expected = planOfChoices(queue, choices)
+                const expected = planOfChoices(queue, choices, edits ?? [])
                 // A new note that changed after the check can be another note at
                 // the same path: the author never saw it in the lists.
                 const selection = selectionOf(queue, choices)
@@ -646,6 +696,23 @@ export class PublicationCenter {
                 this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)
                 return outcomeOfTakedown(report)
             }
+            case 'guards': {
+                this.#log('Agent guards')
+                return outcomeOfGuards(await guards(device))
+            }
+            case 'deny':
+            case 'allow':
+            case 'ignore':
+            case 'unignore': {
+                this.#log(`Agent edit started: ${call.tool} "${call.path}"`)
+                this.#fresh = false
+                const event = await edit(device, { action: call.tool, path: call.path }, run)
+                if (event.state === 'applied' && call.tool === 'ignore') {
+                    this.#wrote([call.path])
+                }
+                this.#log(`Agent edit done: ${call.tool} "${call.path}" (${event.state})`)
+                return outcomeOfEdit(event)
+            }
             case 'unlock': {
                 this.#fresh = false
                 const removed = await unlock(device)
@@ -657,6 +724,51 @@ export class PublicationCenter {
                 return { output: toCanonicalJson({ removed }) }
             }
         }
+    }
+
+    /**
+     * The author confirms an open proposal of an edit of the guards (R69),
+     * then checks again. `removes` is the list of the notes that would leave
+     * the site, as the view showed it: when the edit would take other notes
+     * away now, nothing is applied.
+     */
+    async confirmProposal(proposal: EditEvent): Promise<void> {
+        await this.#decide(proposal, 'Confirm', (device, run) =>
+            confirmProposal(device, { proposal: proposal.id, removes: proposal.removes ?? [] }, run)
+        )
+    }
+
+    /** The author rejects an open proposal of an edit of the guards (R69), then checks again. */
+    async rejectProposal(proposal: EditEvent): Promise<void> {
+        await this.#decide(proposal, 'Reject', (device, run) =>
+            rejectProposal(device, proposal.id, run)
+        )
+    }
+
+    async #decide(
+        proposal: EditEvent,
+        name: 'Confirm' | 'Reject',
+        work: (device: Device, run: Run) => Promise<EditEvent>
+    ): Promise<void> {
+        await this.#run(
+            'editing',
+            name,
+            async () => {
+                const device = this.host.device()
+                this.#log(`${name} started: ${proposal.action} "${proposal.path}"`)
+                this.#fresh = false
+                const event = await work(device, {
+                    time: canonicalTime(this.host.now()),
+                    device: this.host.deviceName,
+                    face: 'plugin'
+                })
+                if (event.state === 'confirmed' && isNoteEdit(event.action)) {
+                    this.#wrote([event.path])
+                }
+                this.#log(`${name} done: ${event.action} "${event.path}" (${event.state})`)
+            },
+            'author'
+        )
     }
 
     /** Pulls the content store into the copy, on a click of the author (R67), then checks again. */

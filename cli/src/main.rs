@@ -10,6 +10,7 @@ mod canonical;
 mod clean;
 mod configuration;
 mod device;
+mod edits;
 mod frontmatter;
 mod guards;
 mod hash;
@@ -71,6 +72,28 @@ struct Places {
     /// `.obsidian/plugins/dsebastien-vault-publish/renames` in the vault.
     #[arg(long, value_name = "FOLDER")]
     renames: Option<PathBuf>,
+}
+
+/// The options of an edit of the guards (R69).
+#[derive(Args)]
+struct EditArguments {
+    #[command(flatten)]
+    places: Places,
+
+    /// The folder (deny, allow) or the vault path of the note (ignore,
+    /// unignore), exactly as the vault names it.
+    #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+    path: String,
+
+    /// The time of the run, in UTC and to the second, for example
+    /// 2031-04-01T08:00:00Z. The default is the time of the clock.
+    #[arg(long)]
+    time: Option<String>,
+
+    /// The name of this device, for the log and the message of the commit.
+    /// The default is the name of the host.
+    #[arg(long, value_name = "NAME")]
+    device: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -248,10 +271,66 @@ enum Command {
         device: Option<String>,
     },
 
+    /// Writes the guards: the deny list (`denyList`), the open proposals that
+    /// wait for the author (`proposals`), and the edits of the guards since
+    /// the last publication (`edits`). It reads no network, and it also works
+    /// when a deny list entry names no folder, which stops every
+    /// publication. It changes nothing.
+    Guards {
+        /// The folder of the vault.
+        #[arg(long)]
+        vault: PathBuf,
+
+        /// The folder of the copy of the content store on this device.
+        #[arg(long)]
+        content_store: PathBuf,
+    },
+
+    /// Adds a folder to the deny list: no note of the folder can be
+    /// published. It applies at once when it takes no manifest entry away;
+    /// else it is a proposal, with the notes that would leave the site
+    /// (`removes`), which only the author confirms, in the view of the
+    /// plugin. The edit is logged in `edits.json` of the content store, in
+    /// one commit that is pushed. It writes the event (`edit`).
+    Deny {
+        #[command(flatten)]
+        edit: EditArguments,
+    },
+
+    /// Proposes to remove a folder from the deny list. It never applies at
+    /// once: only the author confirms it, in the view of the plugin. The
+    /// proposal is logged in `edits.json` of the content store, in one commit
+    /// that is pushed. It writes the event (`edit`).
+    Allow {
+        #[command(flatten)]
+        edit: EditArguments,
+    },
+
+    /// Sets the `publish_ignore` property of a note: the note can never be
+    /// published. It applies at once, with the property written into the
+    /// note, when the note has no manifest entry; else it is a proposal, which
+    /// only the author confirms, in the view of the plugin. The edit is
+    /// logged in `edits.json` of the content store, in one commit that is
+    /// pushed. It writes the event (`edit`).
+    Ignore {
+        #[command(flatten)]
+        edit: EditArguments,
+    },
+
+    /// Proposes to remove the `publish_ignore` property of a note. It never
+    /// applies at once: only the author confirms it, in the view of the
+    /// plugin. The proposal is logged in `edits.json` of the content store, in
+    /// one commit that is pushed. It writes the event (`edit`).
+    Unignore {
+        #[command(flatten)]
+        edit: EditArguments,
+    },
+
     /// Serves the MCP server of the tool over the standard input and output,
     /// one message of JSON per line, until the input ends (TOOL-03). Its tools
     /// are the commands of this program, with the same output: status, plan,
-    /// publish, unpublish, takedown and unlock. The places of this device are
+    /// publish, unpublish, takedown, guards, deny, allow, ignore, unignore
+    /// and unlock. The places of this device are
     /// given here, one time. A run takes the time of the clock and the name
     /// of the device, and its face is "mcp-server". Errors of the program go
     /// to the error output.
@@ -325,7 +404,15 @@ fn storage(folder: &Path) -> AttachmentStorage {
 
 /// The time of the clock in the canonical form: UTC, cut to the second. The
 /// program reads the clock here, one time. The logic never does.
+///
+/// A switch of the debug build for the tests of the MCP server, which takes
+/// no time of its own: `DSEBASTIEN_VAULT_PUBLISH_TEST_TIME` gives the time of
+/// every run. The release build has no switch.
 fn now() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(time) = std::env::var("DSEBASTIEN_VAULT_PUBLISH_TEST_TIME") {
+        return time;
+    }
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
@@ -491,6 +578,8 @@ fn operate(
         mcp::Call::Publish { plan } => tool::publish(device, attachment_storage, plan, &run),
         mcp::Call::Unpublish { paths } => tool::unpublish(device, attachment_storage, paths, &run),
         mcp::Call::Takedown { paths } => tool::takedown(device, attachment_storage, paths, &run),
+        mcp::Call::Guards => tool::guards(device).map(done),
+        mcp::Call::Edit { action, path } => tool::edit(device, action, path, &run).map(done),
         mcp::Call::Unlock => tool::unlock(&device.store).map(done),
     }
 }
@@ -516,6 +605,24 @@ fn serve(places: &Places, attachment_storage: &Path, name: Option<String>) -> Re
         &mut operations,
     )
     .map_err(|error| error.to_string())
+}
+
+/// Runs an edit of the guards from the command line.
+fn run_edit(action: &str, edit: EditArguments) -> Result<Outcome, String> {
+    let output = tool::edit(
+        &device(&edit.places)?,
+        action,
+        &edit.path,
+        &Run {
+            time: &edit.time.unwrap_or_else(now),
+            device: &edit.device.unwrap_or_else(host_name),
+            face: "command-line",
+        },
+    )?;
+    Ok(Outcome {
+        output,
+        failure: None,
+    })
 }
 
 fn run(command: Command) -> Result<Outcome, String> {
@@ -578,6 +685,14 @@ fn run(command: Command) -> Result<Outcome, String> {
                 face: "command-line",
             },
         ),
+        Command::Guards {
+            vault,
+            content_store,
+        } => tool::guards(&device_of(&vault, &content_store, None, None)?).map(done),
+        Command::Deny { edit } => run_edit("deny", edit),
+        Command::Allow { edit } => run_edit("allow", edit),
+        Command::Ignore { edit } => run_edit("ignore", edit),
+        Command::Unignore { edit } => run_edit("unignore", edit),
         Command::Mcp {
             places,
             attachment_storage,

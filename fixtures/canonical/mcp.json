@@ -865,6 +865,207 @@
             }
         },
         {
+            "name": "guards with no arguments",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "tools/call",
+                "params": { "name": "guards" }
+            },
+            "call": { "tool": "guards" },
+            "operation": {
+                "output": "{\n  \"denyList\": [\n    \"90 Locked Shed\"\n  ],\n  \"edits\": [],\n  \"proposals\": []\n}\n"
+            },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 41,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "{\n  \"denyList\": [\n    \"90 Locked Shed\"\n  ],\n  \"edits\": [],\n  \"proposals\": []\n}\n"
+                        }
+                    ],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "guards refuses an argument",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "tools/call",
+                "params": { "name": "guards", "arguments": { "path": "90 Locked Shed" } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 42,
+                "result": {
+                    "content": [{ "type": "text", "text": "guards takes no argument \"path\"" }],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "deny a folder",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 43,
+                "method": "tools/call",
+                "params": { "name": "deny", "arguments": { "path": "20 Kitchen" } }
+            },
+            "call": { "tool": "deny", "path": "20 Kitchen" },
+            "operation": { "output": "edit" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 43,
+                "result": { "content": [{ "type": "text", "text": "edit" }], "isError": false }
+            }
+        },
+        {
+            "name": "allow a folder",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 44,
+                "method": "tools/call",
+                "params": { "name": "allow", "arguments": { "path": "90 Locked Shed" } }
+            },
+            "call": { "tool": "allow", "path": "90 Locked Shed" },
+            "operation": { "output": "edit" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 44,
+                "result": { "content": [{ "type": "text", "text": "edit" }], "isError": false }
+            }
+        },
+        {
+            "name": "ignore a note",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 45,
+                "method": "tools/call",
+                "params": { "name": "ignore", "arguments": { "path": "10 Garden/Bean trellis.md" } }
+            },
+            "call": { "tool": "ignore", "path": "10 Garden/Bean trellis.md" },
+            "operation": { "output": "edit" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 45,
+                "result": { "content": [{ "type": "text", "text": "edit" }], "isError": false }
+            }
+        },
+        {
+            "name": "unignore a note",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 46,
+                "method": "tools/call",
+                "params": { "name": "unignore", "arguments": { "path": "10 Garden/Wormery.md" } }
+            },
+            "call": { "tool": "unignore", "path": "10 Garden/Wormery.md" },
+            "operation": { "output": "edit" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 46,
+                "result": { "content": [{ "type": "text", "text": "edit" }], "isError": false }
+            }
+        },
+        {
+            "name": "deny with no path",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 47,
+                "method": "tools/call",
+                "params": { "name": "deny", "arguments": {} }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 47,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "deny needs the argument \"path\": the vault path of the folder"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "unignore with a path that is not a text",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 48,
+                "method": "tools/call",
+                "params": { "name": "unignore", "arguments": { "path": ["10 Garden/Wormery.md"] } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 48,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "unignore needs the argument \"path\": the vault path of the note"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "allow refuses a list of paths",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 49,
+                "method": "tools/call",
+                "params": {
+                    "name": "allow",
+                    "arguments": { "path": "90 Locked Shed", "paths": ["90 Locked Shed"] }
+                }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 49,
+                "result": {
+                    "content": [{ "type": "text", "text": "allow takes no argument \"paths\"" }],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "an edit that the tool refuses is an error for the agent",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 50,
+                "method": "tools/call",
+                "params": { "name": "ignore", "arguments": { "path": "90 Locked Shed/Key.md" } }
+            },
+            "call": { "tool": "ignore", "path": "90 Locked Shed/Key.md" },
+            "operation": {
+                "error": "\"90 Locked Shed/Key.md\" is in a folder of the deny list: the tool never reads or writes a file there"
+            },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 50,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "\"90 Locked Shed/Key.md\" is in a folder of the deny list: the tool never reads or writes a file there"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
             "name": "unlock",
             "request": {
                 "jsonrpc": "2.0",

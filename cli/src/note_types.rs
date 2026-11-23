@@ -190,6 +190,9 @@ pub struct StarterKit {
     program: PathBuf,
     /// The folder of the vault.
     vault: PathBuf,
+    /// False for a Starter Kit that gives no note a type and is never asked
+    /// (`StarterKit::none`).
+    asked: bool,
 }
 
 /// The id of the Starter Kit plugin in Obsidian.
@@ -270,6 +273,19 @@ impl StarterKit {
         Self {
             program: program.to_path_buf(),
             vault: vault.to_path_buf(),
+            asked: true,
+        }
+    }
+
+    /// A Starter Kit that gives no note a type, and is never asked. What an
+    /// edit of the guards takes away does not depend on the note types, so
+    /// an edit never asks the Starter Kit, and a missing one does not stop
+    /// it (R69).
+    pub fn none() -> Self {
+        Self {
+            program: PathBuf::new(),
+            vault: PathBuf::new(),
+            asked: false,
         }
     }
 
@@ -456,6 +472,9 @@ pub fn note_types_of(
     kit: &StarterKit,
     paths: &[String],
 ) -> Result<BTreeMap<String, NoteType>, String> {
+    if !kit.asked {
+        return Ok(BTreeMap::new());
+    }
     let question = askable(paths);
     let answer = kit.recognize(&question).map_err(|error| {
         format!(

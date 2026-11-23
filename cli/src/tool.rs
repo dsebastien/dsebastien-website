@@ -15,6 +15,10 @@ use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, par
 use crate::device::{
     AttachmentStorage, ContentStore, Fetch, Lock, Recovery, Vault, crash_point, steal_point,
 };
+use crate::edits::{
+    ACTIONS, EDITS_FILE, EditLog, Event, EventFacts, edit_output, event_value, is_looser,
+    parse_edits,
+};
 use crate::frontmatter::{
     Aliases, aliases_of, has_flow_properties, names_in_properties, remove_property, set_property,
 };
@@ -28,11 +32,12 @@ use crate::manifest::{
 use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
-use crate::plan::{PublicationPlan, Selection, compute_plan};
-use crate::queue::{Move, Scan, compute_queue, moved_entry};
+use crate::plan::{PublicationPlan, Selection, compute_plan, forced_removals};
+use crate::queue::{Move, Scan, compute_queue, moved_entry, scan_denied};
 use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
 };
+use crate::small_letters::guard_name;
 
 /// Everything that a publication needs on one device.
 pub struct Device {
@@ -151,6 +156,7 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
     let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
     let (configuration, configuration_hash) = read_configuration(device, &journals)?;
     let manifest = read_manifest(&device.store)?;
+    let edits = read_edits(device)?;
     let mut scan = compute_queue(
         &device.vault,
         &manifest,
@@ -159,12 +165,20 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
         &device.note_types,
     )?;
     scan.queue.behind = behind;
+    scan.queue.proposals = edits.open_proposals();
+    scan.edits = edits;
     Ok(DeviceState {
         scan,
         configuration_hash,
         renames_hash: renames.map_or_else(|| "none".to_owned(), |text| content_hash(&text)),
         reached: verified.reached,
     })
+}
+
+/// The log of the edits of the guards, read strictly: a log that is not
+/// valid stops every run (R69).
+fn read_edits(device: &Device) -> Result<EditLog, String> {
+    parse_edits(device.store.read(EDITS_FILE)?.as_deref())
 }
 
 /// `Err` when the copy is behind the content store: a copy that did not pull
@@ -282,6 +296,8 @@ fn journal_text(journal: &RunJournal) -> Result<String, String> {
 fn is_store_path(path: &str) -> bool {
     is_vault_path(path)
         && (path == RENAMES_FILE
+            || path == CONFIGURATION_FILE
+            || path == EDITS_FILE
             || path.starts_with(&format!("{NOTES_FOLDER}/"))
             || (path.starts_with(&format!("{MANIFEST_FOLDER}/")) && path.split('/').count() == 2))
 }
@@ -624,7 +640,7 @@ fn is_plan_id(id: &str) -> bool {
 
 /// True when the text is one line with something to read: no control
 /// character, and not only spaces (U+0020).
-fn is_one_line(text: &str) -> bool {
+pub(crate) fn is_one_line(text: &str) -> bool {
     !text.chars().any(char::is_control) && text.chars().any(|character| character != ' ')
 }
 
@@ -1155,6 +1171,9 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
     if scan.journals.read {
         paths.insert(RENAMES_FILE.to_owned());
     }
+    if !plan.edits().is_empty() {
+        paths.insert(EDITS_FILE.to_owned());
+    }
     // The set gives its texts in the order of the code points.
     paths.into_iter().collect()
 }
@@ -1461,6 +1480,38 @@ fn apply_store_moves(
     Ok(targets)
 }
 
+/// Writes the two markers of a publication, in its commit: the read marker of
+/// the rename journals (R66), and the log of the edits of the guards with the
+/// events that the plan showed (R69), so that the next plan shows only the
+/// newer ones. A publication never makes the log. The result is the paths
+/// that changed.
+fn write_markers(
+    journal: &mut Backup,
+    plan: &PublicationPlan,
+    scan: &Scan,
+) -> Result<Vec<String>, String> {
+    let mut files = Vec::new();
+    if scan.journals.read {
+        files.push(StoreFile {
+            path: RENAMES_FILE.to_owned(),
+            text: Some(canonical(&to_value(&scan.journals.markers)?)?),
+        });
+    }
+    if !plan.edits().is_empty() {
+        files.push(StoreFile {
+            path: EDITS_FILE.to_owned(),
+            text: Some(scan.edits.shown(plan.edits().len()).text()?),
+        });
+    }
+    let mut changed = Vec::new();
+    for file in files {
+        if journal.apply(&file)? {
+            changed.push(file.path);
+        }
+    }
+    Ok(changed)
+}
+
 /// Writes the files of a plan into the copy, and commits and pushes them.
 /// The moves come first, then the forced removals: when one fails, the whole
 /// publication stops. A note whose uploads or files fail is left out and reported
@@ -1534,16 +1585,7 @@ fn write_all(
             done.removed.push(path.clone());
         }
     }
-    // The read marker of the journals goes with the same commit (R66).
-    if scan.journals.read {
-        let marker = StoreFile {
-            path: RENAMES_FILE.to_owned(),
-            text: Some(canonical(&to_value(&scan.journals.markers)?)?),
-        };
-        if journal.apply(&marker)? {
-            paths.push(RENAMES_FILE.to_owned());
-        }
-    }
+    paths.extend(write_markers(journal, plan, scan)?);
     // Each path one time, in the order of the writes.
     let mut seen = BTreeSet::new();
     paths.retain(|path| seen.insert(path.clone()));
@@ -2318,4 +2360,467 @@ fn remove_state(device: &Device, paths: &[String]) -> (Vec<String>, Vec<Value>) 
         }
     }
     (removed, warnings)
+}
+
+/// Reads the configuration without the check of GATE-38: an entry that names
+/// no folder does not stop the reading command `guards` nor an edit, because
+/// an edit is how an agent corrects it (PUB-91, R69). It gives the
+/// configuration and its text as data, to keep its other keys.
+fn read_raw_configuration(device: &Device) -> Result<(Configuration, Value), String> {
+    let Some(text) = device.store.read(CONFIGURATION_FILE)? else {
+        return Err(format!(
+            "the copy of the content store has no {CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add {CONFIGURATION_FILE} with the deny list (\"denyList\"), commit it and push it"
+        ));
+    };
+    let configuration = parse_configuration(Some(&text))?;
+    let value = parse_json(&text).map_err(|_| format!("{CONFIGURATION_FILE} is not JSON"))?;
+    Ok((configuration, value))
+}
+
+/// The events of the log as data, as the file holds them.
+fn events_of(events: &[Event]) -> Result<Vec<Value>, String> {
+    events.iter().map(event_value).collect()
+}
+
+/// The guards, as data in the canonical form (R69): the deny list, the open
+/// proposals and the events since the last publication. It reads no network,
+/// takes no lock and writes nothing, and it reads the configuration without
+/// the check of GATE-38, so that an agent can read a deny list that stops
+/// every publication, and correct it with an edit (PUB-91).
+///
+/// # Errors
+///
+/// The copy, the configuration or the log cannot be trusted.
+pub fn guards(device: &Device) -> Result<String, String> {
+    device.store.verify(Fetch::None)?;
+    let (configuration, _) = read_raw_configuration(device)?;
+    let log = read_edits(device)?;
+    canonical(&json!({
+        "denyList": configuration.deny_list,
+        "edits": events_of(log.since())?,
+        "proposals": events_of(&log.open_proposals())?,
+    }))
+}
+
+/// True when a part of the path is a name that is not part of the vault:
+/// hidden, or not valid Unicode.
+fn is_outside_vault(path: &str) -> bool {
+    path.split('/')
+        .any(|part| part.starts_with('.') || part.contains('\u{fffd}'))
+}
+
+/// Edits the guards (`documentation/Canonical Form.md`, "The edits of the
+/// guards"; GATE-40, R69): `deny` adds a folder to the deny list, `allow`
+/// removes one, `ignore` sets the ignore property of a note, `unignore`
+/// removes it. A stricter edit that takes no manifest entry away applies at
+/// once; every other edit is a proposal, which only the author confirms, in
+/// the view. The event goes into the log `edits.json` of the content store,
+/// with `configuration.json` for a `deny` that applies, in one commit that is
+/// pushed. An `ignore` that applies writes the property into the note first.
+/// The result is the event, in the canonical form.
+///
+/// # Errors
+///
+/// An input is wrong, the edit breaks a rule of rule 3, the lock is taken,
+/// the copy is behind the content store or cannot be reached or trusted, or
+/// the commit or the push fails: then nothing is applied.
+pub fn edit(device: &Device, action: &str, path: &str, run: &Run) -> Result<String, String> {
+    check_run(run)?;
+    if !ACTIONS.contains(&action) {
+        return Err(format!(
+            "\"{action}\" is not an edit of the guards: the edits are deny, allow, ignore and unignore"
+        ));
+    }
+    let holder = json!({
+        "command": "edit",
+        "device": run.device,
+        "face": run.face,
+        "time": run.time,
+    });
+    with_lock(device, &holder, |own_lock| {
+        edit_locked(device, action, path, run, own_lock)
+    })
+}
+
+/// What an edit reads of the copy, with the lock.
+struct EditContext {
+    configuration: Configuration,
+    /// The configuration as data, to keep its other keys.
+    value: Value,
+    log: EditLog,
+}
+
+/// The note of an `ignore` or an `unignore`: its text as the check read it,
+/// and its text after the write.
+struct NoteEdit {
+    before: String,
+    after: String,
+}
+
+/// The edit of the guards, with the lock of the device.
+fn edit_locked(
+    device: &Device,
+    action: &str,
+    path: &str,
+    run: &Run,
+    own_lock: &dyn Fn() -> Result<(), String>,
+) -> Result<String, String> {
+    // A run that stopped halfway is put back first. When it stopped after its
+    // push, the correction of the property is owed: the next publication
+    // makes it.
+    let owed = recover(device, own_lock)?;
+    // The copy must follow the content store: the edit reads the deny list,
+    // the manifest and the log, and its push would be refused.
+    refuse_when_behind(device.store.verify(Fetch::Must)?.behind)?;
+    let (configuration, value) = read_raw_configuration(device)?;
+    let context = EditContext {
+        configuration,
+        value,
+        log: read_edits(device)?,
+    };
+    let (removes, note) = check_edit(device, &context, action, path)?;
+    let applies = !is_looser(action) && removes.is_empty();
+    let event = Event::new(EventFacts {
+        action,
+        path,
+        state: if applies { "applied" } else { "proposed" },
+        removes,
+        time: run.time,
+        device: run.device,
+        face: run.face,
+    })?;
+    let mut files = Vec::new();
+    if applies && action == "deny" {
+        // The deny list keeps its order: the folder goes at its end. Every
+        // other key of the file stays (rule 8).
+        let mut value = context.value.clone();
+        if let Some(list) = value.get_mut("denyList").and_then(Value::as_array_mut) {
+            list.push(json!(path));
+        }
+        files.push(StoreFile {
+            path: CONFIGURATION_FILE.to_owned(),
+            text: Some(canonical(&value).map_err(|error| {
+                format!("{CONFIGURATION_FILE} cannot be written in the canonical form: {error}")
+            })?),
+        });
+    }
+    files.push(StoreFile {
+        path: EDITS_FILE.to_owned(),
+        text: Some(context.log.with_event(event.clone()).text()?),
+    });
+    // An `ignore` that applies writes the property first (rule 6): a stricter
+    // guard is safe, also when the commit fails.
+    let note = note.filter(|_| applies && action == "ignore");
+    let failed = if let Some(note) = &note {
+        own_lock()?;
+        write_ignore(device, path, note)?;
+        format!(
+            "The {IGNORE_PROPERTY} property stays in the note \"{path}\" (a stricter guard is safe), but the log of the edits has no event for it"
+        )
+    } else {
+        "Nothing is applied".to_owned()
+    };
+    commit_edit(device, &event, &files, run, owed, own_lock, &failed)?;
+    edit_output(&event)
+}
+
+/// The run journal after an edit: `correct` while an earlier publication
+/// still owes its correction, else none.
+fn settle_edit(device: &Device, owed: bool) -> Result<(), String> {
+    if owed {
+        device
+            .store
+            .save_journal(&journal_text(&RunJournal::Correct)?)
+    } else {
+        device.store.remove_journal()
+    }
+}
+
+/// Writes the files of an edit into the copy with its run journal (`paths`:
+/// `configuration.json` and `edits.json`, `plan`: the id of the event), and
+/// commits and pushes them (rule 5). When the commit or the push fails, the
+/// files are put back. `failed` is the end of the message after a failure:
+/// what is applied, or not.
+fn commit_edit(
+    device: &Device,
+    event: &Event,
+    files: &[StoreFile],
+    run: &Run,
+    owed: bool,
+    own_lock: &dyn Fn() -> Result<(), String>,
+    failed: &str,
+) -> Result<(), String> {
+    let head = device.store.head();
+    own_lock()?;
+    device
+        .store
+        .save_journal(&journal_text(&RunJournal::Write {
+            correction_owed: owed,
+            head: head.clone(),
+            paths: vec![CONFIGURATION_FILE.to_owned(), EDITS_FILE.to_owned()],
+            plan: event.id.clone(),
+        })?)?;
+    let mut journal = Backup::new(&device.store);
+    let message = format!(
+        "Edit: {} ({})\n\nDevice: {}\nFace: {}\nPlan: {}",
+        event.action, event.state, run.device, run.face, event.id
+    );
+    if let Err(error) = write_and_push(device, &mut journal, files, &message, own_lock) {
+        // Another run took the copy: this run touches nothing of it any more.
+        if error == LOCK_LOST {
+            return Err(error);
+        }
+        let stayed = journal.put_all_back();
+        // A file that could not be put back, or a commit that git could not
+        // take back, stays in the journal, so the next run puts it back.
+        if stayed.is_empty() && device.store.head() == head {
+            settle_edit(device, owed)?;
+        }
+        let files = if stayed.is_empty() {
+            "and the files of the copy are as they were before".to_owned()
+        } else {
+            format!(
+                "and these files of the copy could not be put back: {}. The next plan, publish, takedown or edit puts them back",
+                stayed.join(", ")
+            )
+        };
+        return Err(format!("{error}. {failed}, {files}"));
+    }
+    crash_point("push");
+    // The push arrived. When another run took the copy, this run changes
+    // nothing more: the other run owns the journal.
+    own_lock()?;
+    settle_edit(device, owed)
+}
+
+/// Writes the files of an edit into the copy, and commits and pushes them.
+/// The recovery of a run that stopped halfway finds the commit by the line
+/// `Plan:` of its message.
+fn write_and_push(
+    device: &Device,
+    journal: &mut Backup,
+    files: &[StoreFile],
+    message: &str,
+    own_lock: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    let mut written = Vec::new();
+    for file in files {
+        if journal.apply(file)? {
+            written.push(file.path.clone());
+        }
+    }
+    crash_point("write");
+    steal_point("commit", &device.store);
+    own_lock()?;
+    device.store.commit_and_push(message, &written)
+}
+
+/// Writes the ignore property into a note (rules 6 and 9 of "The edits of the
+/// guards"): the note is read again first, and it is not written when its
+/// text is not the text that the check read.
+fn write_ignore(device: &Device, path: &str, note: &NoteEdit) -> Result<(), String> {
+    let now = device
+        .vault
+        .read(path)
+        .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?;
+    if now.as_deref() != Some(note.before.as_str()) {
+        return Err(format!(
+            "\"{path}\" changed since the check of the edit, and it is not written. Nothing is applied: run the edit again"
+        ));
+    }
+    device.vault.write(path, &note.after).map_err(|error| {
+        format!(
+            "the {IGNORE_PROPERTY} property could not be written into \"{path}\": {error}. Nothing is applied"
+        )
+    })
+}
+
+/// The scan of the vault for the entries that an edit takes away: the queue
+/// after the moves of the journals. A deny list entry that names no folder
+/// lists no file, so it does not stop the scan. The entries that an edit
+/// takes away do not depend on the note types: the Starter Kit is not asked.
+fn edit_scan(device: &Device, context: &EditContext) -> Result<Scan, String> {
+    let renames = device.store.read(RENAMES_FILE)?;
+    let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
+    let deny_list = context
+        .configuration
+        .deny_list
+        .iter()
+        .filter(|folder| device.vault.has_folder(folder))
+        .cloned()
+        .collect();
+    compute_queue(
+        &device.vault,
+        &read_manifest(&device.store)?,
+        journals,
+        Configuration { deny_list },
+        &StarterKit::none(),
+    )
+}
+
+/// The entries that a `deny` of the folder takes away (rule 2): the forced
+/// removals with the new deny list that are not forced removals with the
+/// deny list of now, on the queue of the same scan, after the moves (rule 3
+/// of the plan). With the folder on the deny list, an entry is a forced
+/// removal when its path is in the folder, or when the scan did not find its
+/// note and a note of its name is in the folder (hidden names included).
+fn deny_removes(
+    device: &Device,
+    context: &EditContext,
+    scan: &Scan,
+    folder: &str,
+) -> Result<Vec<String>, String> {
+    let forced: BTreeSet<String> = forced_removals(scan).into_iter().collect();
+    let (_, names) = scan_denied(
+        &device.vault,
+        &Configuration {
+            deny_list: vec![folder.to_owned()],
+        },
+    )?;
+    let mut removes: Vec<String> = scan
+        .manifest
+        .keys()
+        .filter(|path| !forced.contains(*path) && !in_deny_list(path, &context.configuration))
+        .filter(|path| {
+            let name = guard_name(path.rsplit('/').next().unwrap_or(path));
+            // Letter case is never ignored in the logic.
+            #[allow(clippy::case_sensitive_file_extension_comparisons)]
+            let is_note = name.ends_with(".md");
+            path.starts_with(&format!("{folder}/"))
+                || (!scan.notes.contains_key(*path) && is_note && names.contains(&name))
+        })
+        .cloned()
+        .collect();
+    sort_by_code_point(&mut removes);
+    Ok(removes)
+}
+
+/// Checks an edit by rule 3 of "The edits of the guards", and computes the
+/// entries that it takes away (rule 2), with the note of an `ignore` or an
+/// `unignore`. An open proposal with the same action and the same path stops
+/// it too.
+fn check_edit(
+    device: &Device,
+    context: &EditContext,
+    action: &str,
+    path: &str,
+) -> Result<(Vec<String>, Option<NoteEdit>), String> {
+    if !is_vault_path(path) {
+        return Err(format!(
+            "\"{path}\" is not a vault path: write it as \"Folder/Sub folder\" or \"Folder/Note.md\", relative to the root of the vault"
+        ));
+    }
+    let deny_list = &context.configuration.deny_list;
+    let listed = deny_list.iter().any(|folder| folder == path);
+    let mut note = None;
+    match action {
+        "deny" if listed => {
+            return Err(format!("\"{path}\" is already in the deny list"));
+        }
+        "deny" if is_outside_vault(path) || !device.vault.has_folder(path) => {
+            return Err(format!(
+                "\"{path}\" is not a folder of the vault, with exactly that name (letter case and Unicode form)"
+            ));
+        }
+        "allow" if !listed => {
+            return Err(format!("\"{path}\" is not an entry of the deny list"));
+        }
+        "ignore" | "unignore" => note = Some(check_note(device, context, action, path)?),
+        _ => {}
+    }
+    if context
+        .log
+        .open_proposals()
+        .iter()
+        .any(|proposal| proposal.action == action && proposal.path == path)
+    {
+        return Err(format!(
+            "there is already an open proposal to {action} \"{path}\": the author confirms or rejects it in the publication center of Obsidian"
+        ));
+    }
+    let removes = match action {
+        "deny" => deny_removes(device, context, &edit_scan(device, context)?, path)?,
+        "ignore" if edit_scan(device, context)?.manifest.contains_key(path) => {
+            vec![path.to_owned()]
+        }
+        _ => Vec::new(),
+    };
+    Ok((removes, note))
+}
+
+/// Checks an edit of the ignore property of a note (rule 3), and gives its
+/// text and its text after the write (rule 9).
+fn check_note(
+    device: &Device,
+    context: &EditContext,
+    action: &str,
+    path: &str,
+) -> Result<NoteEdit, String> {
+    // Letter case is never ignored in the logic.
+    #[allow(clippy::case_sensitive_file_extension_comparisons)]
+    let is_note = path.ends_with(".md");
+    if !is_note {
+        return Err(format!(
+            "\"{path}\" is not a note: its name does not end in .md"
+        ));
+    }
+    // The tool never reads or writes a file in a folder of the deny list.
+    if in_deny_list(path, &context.configuration) {
+        return Err(format!(
+            "\"{path}\" is in a folder of the deny list: the tool never reads or writes a file there"
+        ));
+    }
+    let text = if is_outside_vault(path) {
+        None
+    } else {
+        device
+            .vault
+            .read(path)
+            .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?
+    };
+    let Some(text) = text else {
+        return Err(format!(
+            "there is no note at \"{path}\" in the vault, with exactly that path"
+        ));
+    };
+    let excluded = names_in_properties(&text, IGNORE_PROPERTY);
+    if action == "ignore" {
+        if excluded {
+            return Err(format!(
+                "the {IGNORE_PROPERTY} property already excludes \"{path}\""
+            ));
+        }
+        if has_flow_properties(&text) {
+            return Err(format!(
+                "the properties of \"{path}\" are in the flow form of YAML ({{ }} or [ ]), and the tool does not write into that form: the author sets the {IGNORE_PROPERTY} property by hand"
+            ));
+        }
+        let after = set_property(&text, IGNORE_PROPERTY, "true");
+        // A write never leaves a guard in a state that the edit did not state
+        // (rule 9).
+        if !names_in_properties(&after, IGNORE_PROPERTY) {
+            return Err(format!(
+                "the {IGNORE_PROPERTY} property cannot be written so that it excludes \"{path}\": the author sets it by hand"
+            ));
+        }
+        return Ok(NoteEdit {
+            before: text,
+            after,
+        });
+    }
+    if !excluded {
+        return Err(format!(
+            "the {IGNORE_PROPERTY} property does not exclude \"{path}\""
+        ));
+    }
+    let after = remove_property(&text, IGNORE_PROPERTY);
+    if names_in_properties(&after, IGNORE_PROPERTY) {
+        return Err(format!(
+            "\"{path}\" would still be excluded after the removal of the {IGNORE_PROPERTY} property: the key is in the value of another property, in the flow form, or in a form that the removal does not touch. The author edits the note by hand"
+        ));
+    }
+    Ok(NoteEdit {
+        before: text,
+        after,
+    })
 }

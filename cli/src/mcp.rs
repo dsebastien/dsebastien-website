@@ -23,14 +23,22 @@ pub const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-2
 
 /// The names of the tools: the names of the commands of the program, but
 /// `mcp`.
-pub const TOOL_NAMES: [&str; 6] = [
+pub const TOOL_NAMES: [&str; 11] = [
     "status",
     "plan",
     "publish",
     "unpublish",
     "takedown",
+    "guards",
+    "deny",
+    "allow",
+    "ignore",
+    "unignore",
     "unlock",
 ];
+
+/// The tools that edit the guards: each takes one path (R69).
+const EDIT_TOOLS: [&str; 4] = ["deny", "allow", "ignore", "unignore"];
 
 /// The name of the server in `initialize`.
 pub const SERVER_NAME: &str = "dsebastien-vault-publish";
@@ -64,6 +72,12 @@ pub enum Call {
     Takedown {
         paths: Vec<String>,
     },
+    Guards,
+    /// An edit of the guards: `deny`, `allow`, `ignore` or `unignore`.
+    Edit {
+        action: &'static str,
+        path: String,
+    },
     Unlock,
 }
 
@@ -77,6 +91,8 @@ impl Call {
             Self::Publish { .. } => "publish",
             Self::Unpublish { .. } => "unpublish",
             Self::Takedown { .. } => "takedown",
+            Self::Guards => "guards",
+            Self::Edit { action, .. } => action,
             Self::Unlock => "unlock",
         }
     }
@@ -85,7 +101,8 @@ impl Call {
     #[cfg(test)]
     fn to_value(&self) -> Value {
         let mut value = match self {
-            Self::Status | Self::Unlock => json!({}),
+            Self::Status | Self::Guards | Self::Unlock => json!({}),
+            Self::Edit { path, .. } => json!({ "path": path }),
             Self::Plan {
                 include,
                 hold,
@@ -125,6 +142,7 @@ fn arguments_of(tool: &str) -> &'static [&'static str] {
         "plan" => &["include", "hold", "remove", "pair"],
         "publish" => &["plan"],
         "unpublish" | "takedown" => &["paths"],
+        "deny" | "allow" | "ignore" | "unignore" => &["path"],
         _ => &[],
     }
 }
@@ -197,8 +215,26 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
             "{name} takes no argument \"{other}\""
         )));
     }
+    if let Some(action) = EDIT_TOOLS.into_iter().find(|tool| *tool == name) {
+        let path = arguments
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                let what = if name == "deny" || name == "allow" {
+                    "the vault path of the folder"
+                } else {
+                    "the vault path of the note"
+                };
+                Refusal::Arguments(format!("{name} needs the argument \"path\": {what}"))
+            })?;
+        return Ok(Call::Edit {
+            action,
+            path: path.to_owned(),
+        });
+    }
     Ok(match name {
         "status" => Call::Status,
+        "guards" => Call::Guards,
         "unlock" => Call::Unlock,
         "plan" => Call::Plan {
             include: list_of(arguments, "include")?,
@@ -221,6 +257,7 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
         "unpublish" => Call::Unpublish {
             paths: paths_of(name, arguments)?,
         },
+
         _ => Call::Takedown {
             paths: paths_of(name, arguments)?,
         },
@@ -563,6 +600,7 @@ mod tests {
             let arguments = match name {
                 "publish" => json!({ "plan": "0123456789abcdef" }),
                 "unpublish" | "takedown" => json!({ "paths": ["a.md"] }),
+                "deny" | "allow" | "ignore" | "unignore" => json!({ "path": "a.md" }),
                 _ => json!({}),
             };
             let call = call_of(name, Some(&arguments));

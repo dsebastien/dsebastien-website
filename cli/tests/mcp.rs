@@ -177,6 +177,11 @@ fn initializes_and_lists_the_tools_of_the_commands() {
             "publish",
             "unpublish",
             "takedown",
+            "guards",
+            "deny",
+            "allow",
+            "ignore",
+            "unignore",
             "unlock"
         ]
     );
@@ -278,6 +283,40 @@ fn drives_a_whole_publication_through_the_tools() {
     assert_eq!(report["takenDown"], json!([NOTE]));
     let unlocked = server.data("unlock", &json!({}));
     assert_eq!(unlocked, json!({ "removed": false }));
+    assert!(server.stop().success());
+}
+
+/// The edits of the guards (issue 42): `guards` gives what its command
+/// gives, and an edit through the server has the face `mcp-server`.
+#[test]
+fn reads_and_edits_the_guards_as_the_commands_do() {
+    let setup = set_up();
+    let expected = setup.command("guards", &[]);
+    let mut server = setup.start();
+
+    let (texts, is_error) = server.call("guards", &json!({}));
+    let edit = server.data("deny", &json!({ "path": "10 Garden/Herb bed" }));
+    let after = server.data("guards", &json!({}));
+    let (missing, missing_is_error) = server.call("ignore", &json!({}));
+
+    assert!(!is_error, "{texts:?}");
+    assert_eq!(texts, [expected]);
+    assert_eq!(edit["edit"]["action"], "deny");
+    assert_eq!(edit["edit"]["state"], "applied");
+    assert_eq!(edit["edit"]["face"], "mcp-server");
+    assert_eq!(edit["edit"]["device"], "garden-shed");
+    assert_eq!(after["edits"], json!([edit["edit"]]));
+    assert_eq!(
+        after["denyList"],
+        json!(["80 Templates", "90 Locked Shed", "10 Garden/Herb bed"])
+    );
+    let message = git(&["-C", text(&setup.copy), "log", "-1", "--format=%B"]);
+    assert!(
+        message.starts_with("Edit: deny (applied)\n\nDevice: garden-shed\nFace: mcp-server\n"),
+        "{message}"
+    );
+    assert!(missing_is_error);
+    assert!(missing[0].contains("\"path\""), "{missing:?}");
     assert!(server.stop().success());
 }
 

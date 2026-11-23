@@ -771,8 +771,8 @@ impl ContentStore {
         Ok(files)
     }
 
-    /// `Err` when `configuration.json` and `manifest/` in the copy are not
-    /// exactly the files of its last commit.
+    /// `Err` when `configuration.json`, `manifest/`, `renames.json` and
+    /// `edits.json` in the copy are not exactly the files of its last commit.
     fn check_files(&self) -> Result<(), String> {
         // The tool reads the state from the files of the copy, so they must be
         // the files of its last commit: a file removed, edited, added or
@@ -795,6 +795,7 @@ impl ContentStore {
                 "configuration.json",
                 "manifest",
                 "renames.json",
+                "edits.json",
             ],
             &[],
         )?;
@@ -823,6 +824,7 @@ impl ContentStore {
             "configuration.json",
             "manifest",
             "renames.json",
+            "edits.json",
             "notes",
         ])?;
         let edited = self.edited_files()?;
@@ -862,7 +864,8 @@ impl ContentStore {
         ))
     }
 
-    /// The files of `configuration.json` and `manifest/` whose text is not the
+    /// The files of `configuration.json`, `manifest/`, `renames.json` and
+    /// `edits.json` whose text is not the
     /// text of the last commit. Git status trusts the stat data of a file: an
     /// edit of the same size in the same second can look unchanged. So each
     /// file is compared with the commit by its hash, with the line ends
@@ -885,6 +888,7 @@ impl ContentStore {
             "configuration.json",
             "manifest",
             "renames.json",
+            "edits.json",
         ])?;
         let present: Vec<(&str, &str)> = tree
             .split('\0')
@@ -1526,9 +1530,26 @@ fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
     if let Some(way) = &unwritable_way {
         ways.push(way);
     }
+    // The log of the edits of the guards (R69): only the tool writes it.
+    let edits: Vec<&str> = different
+        .iter()
+        .filter(|(_, path)| *path == "edits.json")
+        .map(|(code, _)| *code)
+        .collect();
+    if edits.contains(&"skipped") {
+        ways.push("Let git compare edits.json again (git update-index --no-skip-worktree --no-assume-unchanged edits.json)");
+    } else if edits.iter().any(|code| *code == "??" || *code == "!!") {
+        ways.push("Remove edits.json: the last commit has no such file, and only the tool writes the log of the edits of the guards");
+    } else if edits.iter().any(|code| code.starts_with('A')) {
+        ways.push("Take edits.json out of the index and remove it (git rm --cached --quiet edits.json): the last commit has no such file, and only the tool writes the log of the edits of the guards");
+    } else if !edits.is_empty() {
+        ways.push("Put edits.json back with git checkout HEAD -- edits.json: only the tool writes the log of the edits of the guards");
+    }
     let manifest: Vec<&str> = different
         .iter()
-        .filter(|(_, path)| *path != "configuration.json" && !path.starts_with("notes/"))
+        .filter(|(_, path)| {
+            *path != "configuration.json" && *path != "edits.json" && !path.starts_with("notes/")
+        })
         .map(|(code, _)| *code)
         .collect();
     if manifest.contains(&"skipped") {

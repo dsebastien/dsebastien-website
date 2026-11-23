@@ -1,3 +1,4 @@
+import type { EditEvent } from './edits.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { planLists } from './plan.ts'
 import type { NormalSelection, PublicationPlan } from './plan.ts'
@@ -108,26 +109,32 @@ export function selectionOf(queue: QueueLists, choices: Choices): NormalSelectio
 }
 
 /**
- * The plan of the choices, from the queue alone, with the function that makes
- * every plan (`planLists`): the publish button states it (TOOL-21). A
- * publication makes the plan again from the vault, and stops when it differs.
+ * The plan of the choices, from the queue and the events of the edits of the
+ * guards since the last publication (R69), with the function that makes every
+ * plan (`planLists`): the publish button states it (TOOL-21). A publication
+ * makes the plan again from the vault, and stops when it differs.
  */
-export function planOfChoices(queue: QueueLists, choices: Choices): PublicationPlan {
-    return planLists(queue, selectionOf(queue, choices))
+export function planOfChoices(
+    queue: QueueLists,
+    choices: Choices,
+    edits: readonly EditEvent[]
+): PublicationPlan {
+    return planLists(queue, selectionOf(queue, choices), edits)
 }
 
 function counted(count: number, one: string, many: string): string {
     return `${String(count)} ${count === 1 ? one : many}`
 }
 
-/** True when the plan publishes, updates, removes and moves nothing. */
+/** True when the plan publishes, updates, removes and moves nothing, and shows no edit of the guards. */
 export function isEmptyPlan(plan: PublicationPlan): boolean {
     return (
         plan.publish.length +
             plan.update.length +
             plan.remove.length +
             plan.forcedRemove.length +
-            plan.move.length ===
+            plan.move.length +
+            plan.edits.length ===
         0
     )
 }
@@ -145,7 +152,9 @@ export function describePlan(plan: PublicationPlan): string {
             plan.forcedRemove.length,
             counted(plan.forcedRemove.length, 'forced removal', 'forced removals')
         ],
-        [plan.move.length, counted(plan.move.length, 'move', 'moves')]
+        [plan.move.length, counted(plan.move.length, 'move', 'moves')],
+        // The publication marks them as shown (R69).
+        [plan.edits.length, counted(plan.edits.length, 'edit of the guards', 'edits of the guards')]
     ] as const
     return `Publish: ${parts
         .filter(([count]) => count > 0)

@@ -577,3 +577,90 @@ describe('the publication center', () => {
         expect(center.stateOf(NOTE).label).toBe('Not published')
     }, 60_000)
 })
+
+describe('the edits of the guards in the publication center (issue 42)', () => {
+    const PEOPLE = '30 People'
+    const LOCKED = '90 Locked Shed'
+    const GARDEN = '10 Garden'
+
+    test('an edit of an agent shows in the plan of the label, and the publication marks it as shown', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+
+        const outcome = await center.serve({ tool: 'deny', path: PEOPLE })
+
+        const event = (JSON.parse(outcome.output) as { edit: { state: string; id: string } }).edit
+        expect(event.state).toBe('applied')
+        expect(center.state.edits?.map((one) => one.id)).toEqual([event.id])
+        expect(center.plan()?.edits.map((one) => one.id)).toEqual([event.id])
+        expect(center.label()).toBe('Publish: 1 edit of the guards')
+        expect(center.state.log.map((line) => line.text)).toContain(
+            `Agent edit done: deny "${PEOPLE}" (applied)`
+        )
+
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.edits).toEqual([])
+        expect(center.label()).toBe('Nothing to publish')
+    }, 120_000)
+
+    test('the author rejects a proposal, and it leaves the open proposals', async () => {
+        await using stores = await makeTestStores()
+        const { center, copy } = await setUp(stores)
+        await center.serve({ tool: 'allow', path: LOCKED })
+        const [proposal] = center.state.queue?.proposals ?? []
+        expect(proposal?.state).toBe('proposed')
+        if (proposal === undefined) return
+
+        await center.rejectProposal(proposal)
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.queue?.proposals).toEqual([])
+        expect(await git('-C', copy, 'log', '-1', '--format=%B')).toContain(
+            'Edit: allow (rejected)\n\nDevice: garden-shed\nFace: plugin\n'
+        )
+    }, 120_000)
+
+    test('the author confirms a proposal that takes notes off the site, with the notes that the view showed', async () => {
+        await using stores = await makeTestStores()
+        const { center, copy } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        await center.serve({ tool: 'deny', path: GARDEN })
+        const [proposal] = center.state.queue?.proposals ?? []
+        expect(proposal?.removes).toEqual([NOTE])
+        if (proposal === undefined) return
+
+        await center.confirmProposal(proposal)
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.queue?.proposals).toEqual([])
+        expect(center.state.queue?.toRemove).toEqual([NOTE])
+        expect(
+            (
+                JSON.parse(await Bun.file(join(copy, 'configuration.json')).text()) as {
+                    denyList: string[]
+                }
+            ).denyList
+        ).toEqual(['80 Templates', LOCKED, GARDEN])
+    }, 120_000)
+
+    test('a confirmation from a view that showed other notes stops, and says why', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        await center.serve({ tool: 'deny', path: GARDEN })
+        const [proposal] = center.state.queue?.proposals ?? []
+        if (proposal === undefined) throw new Error('no proposal')
+
+        await center.confirmProposal({ ...proposal, removes: [] })
+
+        expect(center.state.error).toContain('changed since the view showed them')
+        expect(center.state.queue?.proposals).toEqual([proposal])
+    }, 120_000)
+})

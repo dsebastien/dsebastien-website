@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import {
     answer,
     MCP_TOOLS,
+    outcomeOfEdit,
+    outcomeOfGuards,
     outcomeOfPublication,
     outcomeOfTakedown,
     PROTOCOL_VERSIONS,
@@ -90,10 +92,15 @@ describe('the tools of the MCP server', () => {
     test('are the operations of the command line program (TOOL-03, TEST-17)', () => {
         // The Rust face compares its tools with its commands (`cli/src/mcp.rs`).
         expect([...TOOL_NAMES].sort()).toEqual([
+            'allow',
+            'deny',
+            'guards',
+            'ignore',
             'plan',
             'publish',
             'status',
             'takedown',
+            'unignore',
             'unlock',
             'unpublish'
         ])
@@ -105,7 +112,9 @@ describe('the tools of the MCP server', () => {
                 ? { plan: '0123456789abcdef' }
                 : name === 'unpublish' || name === 'takedown'
                   ? { paths: ['a.md'] }
-                  : {}
+                  : name === 'deny' || name === 'allow' || name === 'ignore' || name === 'unignore'
+                    ? { path: 'a.md' }
+                    : {}
         expect(toolCallOf(name, args).tool).toBe(name)
     })
 
@@ -193,5 +202,28 @@ describe('the failure texts of the tools', () => {
                 warnings: []
             }).failure
         ).toContain('can still be public: "k1": it cannot be deleted. Correct the storage')
+    })
+})
+
+describe('the output of the tools of the guards (issue 42)', () => {
+    const event = {
+        action: 'deny',
+        device: 'garden-shed',
+        face: 'mcp-server',
+        id: '34f508006aa66095',
+        path: 'Private',
+        state: 'applied',
+        time: '2031-06-01T09:00:00Z'
+    } as const
+
+    test('guards gives the deny list, the edits and the proposals, as the command writes them', () => {
+        expect(outcomeOfGuards({ denyList: ['Private'], edits: [event], proposals: [] })).toEqual({
+            output: `{\n  "denyList": [\n    "Private"\n  ],\n  "edits": [\n    {\n      "action": "deny",\n      "device": "garden-shed",\n      "face": "mcp-server",\n      "id": "34f508006aa66095",\n      "path": "Private",\n      "state": "applied",\n      "time": "2031-06-01T09:00:00Z"\n    }\n  ],\n  "proposals": []\n}\n`
+        })
+    })
+
+    test('an edit gives its event under the key edit', () => {
+        expect(JSON.parse(outcomeOfEdit(event).output)).toEqual({ edit: event })
+        expect(outcomeOfEdit(event).failure).toBeUndefined()
     })
 })

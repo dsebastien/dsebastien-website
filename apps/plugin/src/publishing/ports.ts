@@ -139,13 +139,14 @@ export interface AttachmentStorage {
 }
 
 /**
- * Who holds the lock of the device: a publication, with its device, its face
- * and its time, a plan while it puts the copy back, or the plugin while it
+ * Who holds the lock of the device: a publication, a takedown or an edit of
+ * the guards, with its device, its face and its time, a plan while it puts the copy back, or the plugin while it
  * fetches for a check or pulls the copy.
  */
 export type LockHolder =
     | {
-          readonly command: 'publish' | 'takedown'
+          /** `edit` for an edit of the guards (R69), which takes the lock in the same way. */
+          readonly command: 'publish' | 'takedown' | 'edit'
           readonly device: string
           readonly face: string
           readonly time: string

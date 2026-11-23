@@ -52,6 +52,7 @@ const MANIFEST_ENTRY: &str = r#"{
 
 const PLAN_RECORD: &str = r#"{
   "plan": {
+    "edits": [],
     "forcedRemove": [],
     "move": [],
     "publish": [
@@ -204,7 +205,7 @@ fn the_plan_names_the_included_note_and_has_an_id() {
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "forcedRemove": [], "move": [], "publish": [NOTE], "remove": [], "update": [] })
+        serde_json::json!({ "edits": [], "forcedRemove": [], "move": [], "publish": [NOTE], "remove": [], "update": [] })
     );
     let id = plan["id"].as_str().expect("the plan has an id");
     assert_eq!(id.len(), 16);
@@ -387,7 +388,7 @@ fn a_published_note_that_did_not_change_adds_nothing_to_a_later_plan() {
     let plan: serde_json::Value = serde_json::from_slice(&again.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
+        serde_json::json!({ "edits": [], "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
     );
 }
 

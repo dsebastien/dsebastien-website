@@ -676,6 +676,7 @@ describe('parity of the publication queue', () => {
 
     test('the publication does what the selection says', () => {
         expect(JSON.parse(fromRust.publication.plan)).toEqual({
+            edits: [],
             // The note that moved into a folder of the deny list, the note with
             // the ignore property, and the note in the new folder of the deny list.
             forcedRemove: [MOVED, GUARDED, DENIED],
@@ -997,7 +998,7 @@ describe('parity of an empty queue', () => {
 
         expect(await queueOf(rustTool)).toBe(fromTypeScript)
         expect(fromTypeScript).toBe(
-            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "movedEdited": [],\n  "new": [],\n  "pairings": [],\n  "renamed": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
+            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "movedEdited": [],\n  "new": [],\n  "pairings": [],\n  "proposals": [],\n  "renamed": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
         )
     }, 120_000)
 })
@@ -1028,7 +1029,7 @@ describe('parity of an empty plan', () => {
 
         expect(fromRust).toEqual(fromTypeScript)
         expect(fromRust.plans).toEqual([
-            '{\n  "plan": {\n    "forcedRemove": [],\n    "move": [],\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "pair": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "journals": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": [],\n    "renames": "none"\n  }\n}\n'
+            '{\n  "plan": {\n    "edits": [],\n    "forcedRemove": [],\n    "move": [],\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "pair": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "journals": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": [],\n    "renames": "none"\n  }\n}\n'
         ])
     }, 120_000)
 })

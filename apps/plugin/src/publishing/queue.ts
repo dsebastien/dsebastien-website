@@ -1,6 +1,8 @@
 import { attachmentsOf, FileReader, sameAttachments } from './attachments.ts'
 import { CLEANING_VERSION, sourceOf, STATE_PROPERTY } from './clean.ts'
 import type { Configuration } from './configuration.ts'
+import { openProposals } from './edits.ts'
+import type { EditEvent, EditsLog } from './edits.ts'
 import { removeProperty, setProperty } from './frontmatter.ts'
 import { guardOf, guardOfPath } from './guards.ts'
 import { contentHash } from './hash.ts'
@@ -60,6 +62,11 @@ export type QueueLists = {
      * candidate with no manifest entry, with the same source (PUB-62).
      */
     readonly pairings: readonly Move[]
+    /**
+     * The open proposals of the edits of the guards (`edits.json`), in the
+     * order of the log (R69). Apart from the four lists: they are not counted.
+     */
+    readonly proposals: readonly EditEvent[]
     /** The moves of the new lines of the rename journals that the next publication applies. */
     readonly renamed: readonly Move[]
     /** The notes of `changed` that the author did not edit: the cleaning step gives another result. */
@@ -122,6 +129,8 @@ export interface Scan {
     /** The warnings of the journals and of the moves, for the report. */
     readonly renameWarnings: readonly RenameWarning[]
     readonly configuration: Configuration
+    /** The log of the edits of the guards that the scan read (R69): a plan shows its new events. */
+    readonly edits: EditsLog
     /** The note type of each published note that the scan found and that no guard excludes, when it has one. */
     readonly noteTypes: ReadonlyMap<string, NoteType>
 }
@@ -233,6 +242,8 @@ export async function computeQueue(input: {
     journals: JournalState
     configuration: Configuration
     noteTypes: NoteTypes
+    /** The log of the edits of the guards (R69). */
+    edits: EditsLog
 }): Promise<Scan> {
     const notes = new Map<string, ScannedNote>()
     const ignored = new Set<string>()
@@ -410,6 +421,7 @@ export async function computeQueue(input: {
             manifest,
             notes
         ),
+        proposals: openProposals(input.edits),
         renamed: moves.moves,
         technicalUpdates: sortByCodePoint(lists.technicalUpdates),
         toRemove: sortByCodePoint(lists.toRemove),
@@ -445,6 +457,7 @@ export async function computeQueue(input: {
         journals: input.journals,
         renameWarnings: [...input.journals.warnings, ...moves.warnings],
         configuration: input.configuration,
+        edits: input.edits,
         noteTypes
     }
 }

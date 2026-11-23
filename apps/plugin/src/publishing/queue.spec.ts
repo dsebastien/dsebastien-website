@@ -13,12 +13,13 @@ import {
     rejectionOf,
     type TestStores
 } from '@dsebastien-website/testing'
+import type { EditAction, EditEvent } from './edits.ts'
 import { fileNoteTypes, nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
 import type { Device } from './ports.ts'
 import type { PublicationQueue } from './queue.ts'
-import { plan, publish, status, takedown, unlock, unpublish } from './tool.ts'
-import type { Run } from './tool.ts'
+import { edit, guards, plan, publish, status, takedown, unlock, unpublish } from './tool.ts'
+import type { Face, GuardsReport, Run } from './tool.ts'
 
 // The publication queue (issue 33): the four lists, the selection, the plan,
 // the publication of updates and removals, and the correction of the state
@@ -87,6 +88,25 @@ type Step = { why: string } & (
     | { do: 'unpublish'; paths: string[]; time: string; refused: true; says?: string }
     | { do: 'crash'; selection: Selection; time: string; at: CrashPoint; takedown?: never }
     | { do: 'crash'; takedown: string[]; time: string; at: CrashPoint }
+    | {
+          do: 'edit'
+          action: EditAction
+          path: string
+          time: string
+          face: Face
+          event: EditEvent
+          refused?: never
+      }
+    | {
+          do: 'edit'
+          action: EditAction
+          path: string
+          time: string
+          face: Face
+          refused: true
+          says: string
+      }
+    | { do: 'guards'; guards: GuardsReport }
     | { do: 'unlock' }
     | { do: 'offline' }
     | { do: 'online' }
@@ -258,6 +278,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         storedPlan = planned.id
                         expect(planned.plan, label).toEqual(
                             step.plan ?? {
+                                edits: [],
                                 forcedRemove: [],
                                 move: [],
                                 publish: [],
@@ -285,6 +306,19 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         face: 'plugin'
                     })
                     await stopped.reached
+                } else if (step.do === 'edit') {
+                    // An edit of the guards runs on the device garden-shed, from the face of the step.
+                    const request = { action: step.action, path: step.path }
+                    const run: Run = { time: step.time, device: 'garden-shed', face: step.face }
+                    if (step.refused === true) {
+                        expect(await rejectionOf(edit(device, request, run)), label).toContain(
+                            step.says
+                        )
+                    } else {
+                        expect(await edit(device, request, run), label).toEqual(step.event)
+                    }
+                } else if (step.do === 'guards') {
+                    expect(await guards(device), label).toEqual(step.guards)
                 } else if (step.do === 'unlock') {
                     expect(await unlock(device), label).toBe(true)
                 } else if (step.do === 'offline') {
@@ -389,7 +423,9 @@ describe('shared scenarios of the publication queue', () => {
             'asked',
             'crash',
             'delete',
+            'edit',
             'expect',
+            'guards',
             'lose',
             'noteTypes',
             'offline',
@@ -1975,6 +2011,7 @@ describe('forced removal', () => {
         const report = await publish(setup.device, planned.id, { ...RUN, time: LATER })
 
         expect(planned.plan).toEqual({
+            edits: [],
             forcedRemove: [SECOND],
             move: [],
             publish: [],
@@ -2000,6 +2037,7 @@ describe('forced removal', () => {
 
         expect((await status(setup.device)).toRemove).toEqual([SECOND])
         expect(planned.plan).toEqual({
+            edits: [],
             forcedRemove: [],
             move: [],
             publish: [],

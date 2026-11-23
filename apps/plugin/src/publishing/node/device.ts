@@ -287,8 +287,27 @@ function waysOut(different: readonly { code: string; path: string }[], folder: s
                         : 'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
         )
     }
+    // The log of the edits of the guards (R69): only the tool writes it.
+    const edits = different.filter((entry) => entry.path === 'edits.json')
+    if (edits.some((entry) => entry.code === 'skipped')) {
+        ways.push(
+            'Let git compare edits.json again (git update-index --no-skip-worktree --no-assume-unchanged edits.json)'
+        )
+    } else if (edits.some((entry) => entry.code.startsWith('A') && entry.code.includes('D'))) {
+        ways.push(
+            'Take edits.json out of the index (git rm --cached --quiet edits.json): the last commit has no such file'
+        )
+    } else if (edits.some((entry) => entry.code === '??' || entry.code === '!!')) {
+        ways.push('Remove edits.json: the last commit has no such file')
+    } else if (edits.length > 0) {
+        ways.push(
+            'Put edits.json back with git checkout HEAD -- edits.json: only the tool writes the log of the edits of the guards'
+        )
+    }
     const manifest = different.filter(
-        (entry) => !['configuration.json'].includes(entry.path) && !entry.path.startsWith('notes/')
+        (entry) =>
+            !['configuration.json', 'edits.json'].includes(entry.path) &&
+            !entry.path.startsWith('notes/')
     )
     const notes = different.filter((entry) => entry.path.startsWith('notes/'))
     if (notes.some((entry) => entry.code === 'skipped')) {
@@ -635,6 +654,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                     '--ignored',
                     '--',
                     'configuration.json',
+                    'edits.json',
                     'manifest',
                     'renames.json'
                 ],
@@ -664,6 +684,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                 '-z',
                 '--',
                 'configuration.json',
+                'edits.json',
                 'manifest',
                 'renames.json',
                 'notes'
@@ -688,6 +709,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                     'HEAD',
                     '--',
                     'configuration.json',
+                    'edits.json',
                     'manifest',
                     'renames.json'
                 )

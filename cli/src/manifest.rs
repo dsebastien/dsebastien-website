@@ -104,7 +104,7 @@ const LARGEST_EXACT_FLOAT: f64 = 9_007_199_254_740_991.0;
 /// A whole number from 0, as the TypeScript twin reads it: every number is a
 /// floating point number there, so `1.0`, `1e0` and `-0` are whole numbers
 /// too.
-fn whole_number(value: &Value) -> Option<u64> {
+pub fn whole_number(value: &Value) -> Option<u64> {
     if value.is_u64() || value.is_i64() {
         return value.as_u64().filter(|number| *number <= LARGEST_EXACT);
     }

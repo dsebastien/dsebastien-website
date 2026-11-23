@@ -1,4 +1,6 @@
 import { isVaultPath } from './configuration.ts'
+import { eventsSince } from './edits.ts'
+import type { EditEvent } from './edits.ts'
 import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
 import { firstPart, foldedForm, isReservedRootName } from './names.ts'
 import { sortByCodePoint } from './order.ts'
@@ -17,6 +19,12 @@ import type { Move, QueueLists, Scan } from './queue.ts'
 // A type alias, not an interface: the canonical form takes any object of data,
 // and an interface is not one for the compiler.
 export type PublicationPlan = {
+    /**
+     * The events of the edits of the guards that no publication showed yet,
+     * in the order of the log (R69, GATE-07, GATE-40). A new event makes a
+     * stored plan stale, and the publication marks them as shown.
+     */
+    readonly edits: readonly EditEvent[]
     /** The forced removals: the notes with a manifest entry that a guard excludes, also unpublished ones (R64). No selection changes this list (PUB-21). */
     readonly forcedRemove: readonly string[]
     /** The moves: of the new lines of the rename journals, and of the pairings of the selection (R66). Sorted by `from`. */
@@ -57,6 +65,7 @@ export class SelectionError extends Error {
  * canonical form here, so that no caller can give a plan in another order.
  */
 export function makePlan(lists: {
+    edits?: readonly EditEvent[]
     forcedRemove: readonly string[]
     move?: readonly Move[]
     publish: readonly string[]
@@ -64,6 +73,8 @@ export function makePlan(lists: {
     remove: readonly string[]
 }): PublicationPlan {
     return {
+        // The events keep the order of the log.
+        edits: [...(lists.edits ?? [])],
         forcedRemove: sortByCodePoint(lists.forcedRemove),
         move: sortMoves(lists.move ?? []),
         publish: sortByCodePoint(lists.publish),
@@ -236,7 +247,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
         }
     }
 
-    const plan = planLists(queue, selection)
+    const plan = planLists(queue, selection, eventsSince(scan.edits))
     refuseRootNames(scan, plan, selection.pair)
     return plan
 }
@@ -306,12 +317,17 @@ function refuseRootNames(scan: Scan, plan: PublicationPlan, pairs: readonly Move
 }
 
 /**
- * The lists of the plan of a selection, from the queue alone: what
- * `computePlan` gives for a selection that it does not refuse. A face counts
- * the plan of a selection with it before the author clicks (TOOL-21): the
- * label of the publish button and the plan come from this one function.
+ * The lists of the plan of a selection, from the queue and the events of the
+ * edits of the guards since the last publication: what `computePlan` gives
+ * for a selection that it does not refuse. A face counts the plan of a
+ * selection with it before the author clicks (TOOL-21): the label of the
+ * publish button and the plan come from this one function.
  */
-export function planLists(queue: QueueLists, selection: NormalSelection): PublicationPlan {
+export function planLists(
+    queue: QueueLists,
+    selection: NormalSelection,
+    edits: readonly EditEvent[]
+): PublicationPlan {
     const onlyMissing = new Set(queue.missing)
     const forced = queue.toRemove.filter((path) => !onlyMissing.has(path))
     const underGuard = new Set(forced)
@@ -323,6 +339,7 @@ export function planLists(queue: QueueLists, selection: NormalSelection): Public
     const included = new Set(selection.include)
     const waiting = new Set(queue.movedEdited.filter((path) => !included.has(path)))
     return makePlan({
+        edits,
         // An unpublished note under a guard leaves the manifest too (decision R64).
         forcedRemove: [...forced, ...queue.unpublishedUnderGuard],
         // Every move of the journals, which no selection holds, and the pairings (R66).

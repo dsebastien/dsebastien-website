@@ -69,6 +69,7 @@ const MANIFEST_ENTRY = `{
 
 const PLAN_RECORD = `{
   "plan": {
+    "edits": [],
     "forcedRemove": [],
     "move": [],
     "publish": [
@@ -174,6 +175,7 @@ describe('plan of a first publication', () => {
         const planned = await plan(device, { include: [NOTE] })
 
         expect(planned.plan).toEqual({
+            edits: [],
             forcedRemove: [],
             move: [],
             publish: [NOTE],
@@ -213,6 +215,7 @@ describe('plan of a first publication', () => {
         const { device } = await setUp(stores)
 
         expect((await plan(device, { include: [] })).plan).toEqual({
+            edits: [],
             forcedRemove: [],
             move: [],
             publish: [],
@@ -356,6 +359,7 @@ describe('first publication of a note', () => {
         const planned = await plan(setup.device, { include: [NOTE] })
 
         expect(planned.plan).toEqual({
+            edits: [],
             forcedRemove: [],
             move: [],
             publish: [],

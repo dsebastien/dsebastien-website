@@ -3,8 +3,21 @@ import type { Attachment } from './attachments.ts'
 import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
 import { linksOf } from './links.ts'
+import type { CanonicalValue } from './canonical.ts'
 import { CONFIGURATION_FILE, isVaultPath, parseConfiguration } from './configuration.ts'
 import type { Configuration } from './configuration.ts'
+import {
+    EDIT_ACTIONS,
+    EDITS_FILE,
+    editsText,
+    eventsSince,
+    isLooser,
+    makeEvent,
+    openProposals,
+    parseEdits,
+    withEvent
+} from './edits.ts'
+import type { EditAction, EditEvent, EditsLog } from './edits.ts'
 import {
     aliasesOf,
     hasFlowProperties,
@@ -24,11 +37,14 @@ import { foldedForm } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
-import type { Device, Fetch, LockHolder } from './ports.ts'
-import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
+import type { Device, Fetch, LockHolder, NoteTypes } from './ports.ts'
+import { computeQueue, movedEntry, noteTypesOf, scanDenied } from './queue.ts'
 import type { Move, PublicationQueue, Scan } from './queue.ts'
 import { movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
 import type { JournalState } from './renames.ts'
+import { FACES, isCanonicalTime, isOneLine } from './run.ts'
+import type { Face } from './run.ts'
+import { guardName } from '@dsebastien-website/resolver'
 
 // The operations of the publishing tool. Every face calls these: the plugin,
 // and the tests in the place of the command line program, whose Rust twin is
@@ -42,9 +58,8 @@ export interface StoredPlan {
     readonly offline: boolean
 }
 
-/** The faces of the tool that can start a publication. */
-export const FACES = ['plugin', 'command-line', 'mcp-server'] as const
-export type Face = (typeof FACES)[number]
+export { FACES } from './run.ts'
+export type { Face } from './run.ts'
 
 /** What a face gives to a publication. The logic reads no clock and no name of the system. */
 export interface Run {
@@ -105,9 +120,6 @@ export type TakedownReport = {
 /** The form of the id of a plan: 16 hexadecimal digits. An id is never used as a path in another form. */
 const PLAN_ID = /^[0-9a-f]{16}$/
 
-/** A time in the canonical form: UTC, to the second. */
-const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
-
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -120,27 +132,8 @@ function messageOf(error: unknown): string {
     return error instanceof Error ? error.message : 'it failed'
 }
 
-/** True when the text is a real date and time in the canonical form. */
-function isCanonicalTime(time: string): boolean {
-    if (!TIME.test(time)) {
-        return false
-    }
-    const date = new Date(time)
-    // A date that does not exist (month 13, day 31 of a short month) does not
-    // come back as the same text.
-    return !Number.isNaN(date.getTime()) && `${date.toISOString().slice(0, 19)}Z` === time
-}
-
-/** True when the text is one line with something to read: no control character, and not only spaces (U+0020). */
-function isOneLine(text: string): boolean {
-    return !/\p{Cc}/u.test(text) && /[^ ]/u.test(text)
-}
-
-/** Reads the configuration and checks it against the vault. */
-async function readConfiguration(
-    device: Device,
-    journals: JournalState
-): Promise<{ configuration: Configuration; hash: string }> {
+/** The text of the configuration. It throws when the copy has none. */
+async function configurationText(device: Device): Promise<string> {
     const text = await device.store.read(CONFIGURATION_FILE)
     if (text === undefined) {
         // A wrong folder must never read as a content store with an empty
@@ -149,6 +142,15 @@ async function readConfiguration(
             `the copy of the content store has no ${CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add ${CONFIGURATION_FILE} with the deny list ("denyList"), commit it and push it`
         )
     }
+    return text
+}
+
+/** Reads the configuration and checks it against the vault. */
+async function readConfiguration(
+    device: Device,
+    journals: JournalState
+): Promise<{ configuration: Configuration; hash: string }> {
+    const text = await configurationText(device)
     const configuration = parseConfiguration(text)
     // A deny list entry that names no folder would exclude nothing: a renamed
     // folder, or another letter case, would make its notes candidates (GATE-38).
@@ -205,6 +207,8 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
     const renames = await device.store.read(RENAMES_FILE)
     const journals = await readJournals(device.renames, parseMarkers(renames))
     const { configuration, hash } = await readConfiguration(device, journals)
+    // A log that is not valid stops every run (R69).
+    const edits = parseEdits(await device.store.read(EDITS_FILE))
     const manifest = await readManifest(device.store)
     return {
         scan: await computeQueue({
@@ -212,7 +216,8 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
             manifest,
             journals,
             configuration,
-            noteTypes: device.noteTypes
+            noteTypes: device.noteTypes,
+            edits
         }),
         configurationHash: hash,
         renamesHash: renames === undefined ? 'none' : contentHash(renames),
@@ -314,11 +319,13 @@ function journalText(journal: RunJournal): string {
     return toCanonicalJson(head === undefined ? rest : { ...rest, head })
 }
 
-/** True when the path is a path of a note or of a manifest entry in the content store. */
+/** True when the path is a path of the content store that a run can write: a note, a manifest entry, or a file of the store. */
 function isStorePath(path: string): boolean {
     return (
         isVaultPath(path) &&
         (path === RENAMES_FILE ||
+            path === CONFIGURATION_FILE ||
+            path === EDITS_FILE ||
             path.startsWith(`${NOTES_FOLDER}/`) ||
             (path.startsWith(`${MANIFEST_FOLDER}/`) && path.split('/').length === 2))
     )
@@ -387,6 +394,17 @@ async function recover(
  * writes nothing into the vault and nothing into the content store.
  */
 export async function status(given: Device): Promise<PublicationQueue> {
+    return (await statusWithEdits(given)).queue
+}
+
+/**
+ * The publication queue, and the events of the edits of the guards that the
+ * next plan shows (R69), from one read of the copy: the publication center
+ * states the plan of the choices with both.
+ */
+export async function statusWithEdits(
+    given: Device
+): Promise<{ readonly queue: PublicationQueue; readonly edits: readonly EditEvent[] }> {
     const device = forRun(given)
     await refuseWhenLocked(device)
     if ((await readJournal(device))?.step === 'write') {
@@ -395,7 +413,10 @@ export async function status(given: Device): Promise<PublicationQueue> {
         )
     }
     const state = await readState(device, 'none')
-    return { ...state.scan.queue, behind: state.behind }
+    return {
+        queue: { ...state.scan.queue, behind: state.behind },
+        edits: eventsSince(state.scan.edits)
+    }
 }
 
 /** The source, the cleaned note, the aliases, the links, the attachments and the note type of one note of a plan. */
@@ -1100,6 +1121,10 @@ function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[]
     if (scan.journals.read) {
         paths.add(RENAMES_FILE)
     }
+    // The publication marks the events of the plan as shown (R69).
+    if (plan.edits.length > 0) {
+        paths.add(EDITS_FILE)
+    }
     return sortByCodePoint([...paths])
 }
 
@@ -1338,6 +1363,18 @@ async function writeAll(
             })
         ) {
             written.push(RENAMES_FILE)
+        }
+    }
+    // The events that the plan showed are marked as shown, in the same
+    // commit, so the next plan shows only the newer ones (R69). A
+    // publication never makes the file.
+    if (lists.edits.length > 0) {
+        const log: EditsLog = {
+            edits: scan.edits.edits,
+            published: scan.edits.published + lists.edits.length
+        }
+        if (await journal.apply({ path: EDITS_FILE, text: editsText(log) })) {
+            written.push(EDITS_FILE)
         }
     }
     const planned = new Set([...lists.update, ...lists.remove])
@@ -1867,4 +1904,570 @@ async function applyCurrent(
             ...cleanup.warnings
         ].sort((one, two) => compareCodePoints(one.path, two.path))
     }
+}
+
+/** What the `guards` command gives (`documentation/Canonical Form.md`, "The edits of the guards"). */
+// A type alias, not an interface: the canonical form takes any object of data.
+export type GuardsReport = {
+    /** The deny list of the configuration, in its order. */
+    readonly denyList: readonly string[]
+    /** The events since the last publication, as the plan shows them. */
+    readonly edits: readonly EditEvent[]
+    /** The open proposals, as the queue shows them. */
+    readonly proposals: readonly EditEvent[]
+}
+
+/**
+ * The guards (R69): the deny list, the events of the edits of the guards
+ * since the last publication, and the open proposals. It reads no network,
+ * takes no lock and writes nothing. It reads the configuration without the
+ * check of GATE-38, so an agent can read a deny list that stops every
+ * publication, and correct it with an edit (PUB-91).
+ */
+export async function guards(given: Device): Promise<GuardsReport> {
+    const device = forRun(given)
+    await device.store.verify('none')
+    const configuration = parseConfiguration(await configurationText(device))
+    const log = parseEdits(await device.store.read(EDITS_FILE))
+    return {
+        denyList: configuration.denyList,
+        edits: eventsSince(log),
+        proposals: openProposals(log)
+    }
+}
+
+/** An edit of the guards: its action and its path (a folder, or the vault path of a note). */
+export interface EditRequest {
+    readonly action: EditAction
+    readonly path: string
+}
+
+/** What the author confirms: the id of the proposal, and the notes that would leave the site as the view showed them. */
+export interface Confirmation {
+    readonly proposal: string
+    readonly removes: readonly string[]
+}
+
+/**
+ * A Starter Kit that gives no note a type: the entries that an edit takes
+ * away do not depend on the note types, so an edit never asks the Starter
+ * Kit, and a missing one does not stop it.
+ */
+const NO_NOTE_TYPES: NoteTypes = {
+    recognize: (paths) =>
+        Promise.resolve({ noteTypes: [], notes: paths.map((path) => ({ path, noteType: null })) })
+}
+
+/** What an edit reads of the copy, with the lock. */
+interface EditContext {
+    readonly configurationText: string
+    readonly configuration: Configuration
+    readonly log: EditsLog
+}
+
+/** What the check of an edit found. */
+interface CheckedEdit {
+    /** The vault paths of the manifest entries that the edit takes away, sorted. */
+    readonly removes: readonly string[]
+    /** For an edit of a note: its text as the check read it, and its text after the write. */
+    readonly note?: { readonly before: string; readonly after: string }
+}
+
+/** The replacement character: it stands for bytes of a name that are not valid Unicode. */
+const NOT_UNICODE = String.fromCharCode(0xfffd)
+
+/** True when a part of the path is a name that is not part of the vault: hidden, or not valid Unicode. */
+function isOutsideVault(path: string): boolean {
+    return path.split('/').some((part) => part.startsWith('.') || part.includes(NOT_UNICODE))
+}
+
+function checkAction(action: string): void {
+    if (!(EDIT_ACTIONS as readonly string[]).includes(action)) {
+        throw new Error(
+            `"${action}" is not an edit of the guards: the edits are deny, allow, ignore and unignore`
+        )
+    }
+}
+
+/** The lock of an edit. */
+function editHolder(run: Run): LockHolder {
+    return { command: 'edit', device: run.device, face: run.face, time: run.time }
+}
+
+/**
+ * The start of an edit, with the lock: a run that stopped halfway is put
+ * back, and the copy must follow the content store, as for a publication.
+ * The result is true when a correction of the property is owed.
+ */
+async function prepareEdit(device: Device, ownLock: () => Promise<void>): Promise<boolean> {
+    const owed = (await recover(device, ownLock))?.step === 'correct'
+    refuseWhenBehind((await device.store.verify('must')).behind)
+    return owed
+}
+
+async function editContext(device: Device): Promise<EditContext> {
+    const text = await configurationText(device)
+    return {
+        configurationText: text,
+        // No check of GATE-38: an edit is how an agent corrects a deny list
+        // entry that names no folder (PUB-91).
+        configuration: parseConfiguration(text),
+        log: parseEdits(await device.store.read(EDITS_FILE))
+    }
+}
+
+/**
+ * The scan of the vault for the entries that an edit takes away: the queue
+ * after the moves of the journals. A deny list entry that names no folder
+ * lists no file, so it does not stop the scan.
+ */
+async function editScan(device: Device, context: EditContext): Promise<Scan> {
+    const renames = await device.store.read(RENAMES_FILE)
+    const journals = await readJournals(device.renames, parseMarkers(renames))
+    const present: string[] = []
+    for (const folder of context.configuration.denyList) {
+        if (await device.vault.hasFolder(folder)) {
+            present.push(folder)
+        }
+    }
+    return await computeQueue({
+        vault: device.vault,
+        manifest: await readManifest(device.store),
+        journals,
+        configuration: { denyList: present },
+        noteTypes: NO_NOTE_TYPES,
+        edits: context.log
+    })
+}
+
+/**
+ * The entries that a `deny` of the folder takes away: the forced removals
+ * with the new deny list that are not forced removals with the deny list of
+ * now, on the queue of the same scan, after the moves (rule 3 of the plan).
+ */
+async function denyRemoves(
+    device: Device,
+    context: EditContext,
+    scan: Scan,
+    folder: string
+): Promise<string[]> {
+    const missing = new Set(scan.queue.missing)
+    const forced = new Set([
+        ...scan.queue.toRemove.filter((path) => !missing.has(path)),
+        ...scan.queue.unpublishedUnderGuard
+    ])
+    // The names of the notes of the folder, hidden names included: a note
+    // whose file is missing and whose name is there moved there.
+    const { names } = await scanDenied(device.vault, { denyList: [folder] })
+    const noteNames = new Set([...names].filter((name) => name.endsWith('.md')))
+    const removes: string[] = []
+    for (const path of scan.manifest.keys()) {
+        if (forced.has(path) || guardOfPath(path, context.configuration) !== undefined) {
+            continue
+        }
+        const name = guardName(path.slice(path.lastIndexOf('/') + 1))
+        if (path.startsWith(`${folder}/`) || (!scan.notes.has(path) && noteNames.has(name))) {
+            removes.push(path)
+        }
+    }
+    return sortByCodePoint(removes)
+}
+
+/**
+ * Checks an edit by rule 3 of "The edits of the guards", and computes the
+ * entries that it takes away. With `open`, an open proposal with the same
+ * action and the same path stops it too. It throws with the reason.
+ */
+async function checkEdit(
+    device: Device,
+    context: EditContext,
+    action: EditAction,
+    path: string,
+    open: boolean
+): Promise<CheckedEdit> {
+    if (!isVaultPath(path)) {
+        throw new Error(
+            `"${path}" is not a vault path: write it as "Folder/Sub folder" or "Folder/Note.md", relative to the root of the vault`
+        )
+    }
+    const { denyList } = context.configuration
+    let checked: CheckedEdit = { removes: [] }
+    if (action === 'deny') {
+        if (denyList.includes(path)) {
+            throw new Error(`"${path}" is already in the deny list`)
+        }
+        if (isOutsideVault(path) || !(await device.vault.hasFolder(path))) {
+            throw new Error(
+                `"${path}" is not a folder of the vault, with exactly that name (letter case and Unicode form)`
+            )
+        }
+    } else if (action === 'allow') {
+        if (!denyList.includes(path)) {
+            throw new Error(`"${path}" is not an entry of the deny list`)
+        }
+    } else {
+        checked = { removes: [], note: await checkNoteEdit(device, context, action, path) }
+    }
+    if (
+        open &&
+        openProposals(context.log).some(
+            (proposal) => proposal.action === action && proposal.path === path
+        )
+    ) {
+        throw new Error(
+            `there is already an open proposal to ${action} "${path}": the author confirms or rejects it in the publication center of Obsidian`
+        )
+    }
+    if (action === 'deny') {
+        const scan = await editScan(device, context)
+        return { removes: await denyRemoves(device, context, scan, path) }
+    }
+    if (action === 'ignore') {
+        const scan = await editScan(device, context)
+        return { ...checked, removes: scan.manifest.has(path) ? [path] : [] }
+    }
+    return checked
+}
+
+/** Checks an edit of the ignore property of a note. The result is the text of the note and its text after the write. */
+async function checkNoteEdit(
+    device: Device,
+    context: EditContext,
+    action: 'ignore' | 'unignore',
+    path: string
+): Promise<{ before: string; after: string }> {
+    if (!path.endsWith('.md')) {
+        throw new Error(`"${path}" is not a note: its name does not end in .md`)
+    }
+    if (guardOfPath(path, context.configuration) !== undefined) {
+        throw new Error(
+            `"${path}" is in a folder of the deny list: the tool never reads or writes a file there`
+        )
+    }
+    const text = isOutsideVault(path) ? undefined : await device.vault.read(path)
+    if (text === undefined) {
+        throw new Error(`there is no note at "${path}" in the vault, with exactly that path`)
+    }
+    const excluded = namesInProperties(text, IGNORE_PROPERTY)
+    if (action === 'ignore') {
+        if (excluded) {
+            throw new Error(`the ${IGNORE_PROPERTY} property already excludes "${path}"`)
+        }
+        if (hasFlowProperties(text)) {
+            throw new Error(
+                `the properties of "${path}" are in the flow form of YAML ({ } or [ ]), and the tool does not write into that form: the author sets the ${IGNORE_PROPERTY} property by hand`
+            )
+        }
+        const after = setProperty(text, IGNORE_PROPERTY, 'true')
+        // A write never leaves a guard in a state that the edit did not state.
+        if (!namesInProperties(after, IGNORE_PROPERTY)) {
+            throw new Error(
+                `the ${IGNORE_PROPERTY} property cannot be written so that it excludes "${path}": the author sets it by hand`
+            )
+        }
+        return { before: text, after }
+    }
+    if (!excluded) {
+        throw new Error(`the ${IGNORE_PROPERTY} property does not exclude "${path}"`)
+    }
+    const after = removeProperty(text, IGNORE_PROPERTY)
+    if (namesInProperties(after, IGNORE_PROPERTY)) {
+        throw new Error(
+            `"${path}" would still be excluded after the removal of the ${IGNORE_PROPERTY} property: the key is in the value of another property, in the flow form, or in a form that the removal does not touch. The author edits the note by hand`
+        )
+    }
+    return { before: text, after }
+}
+
+/** The configuration with another deny list, in the canonical form, with every other key of the file kept. */
+function configurationWith(text: string, denyList: readonly string[]): string {
+    const value = parseJson(text)
+    if (!isRecord(value)) {
+        throw new Error(`${CONFIGURATION_FILE} is not an object`)
+    }
+    try {
+        return toCanonicalJson({ ...(value as Record<string, CanonicalValue>), denyList })
+    } catch (error) {
+        throw new Error(
+            `${CONFIGURATION_FILE} cannot be written in the canonical form: ${messageOf(error)}`,
+            { cause: error }
+        )
+    }
+}
+
+/**
+ * Writes the ignore property of a note as the check computed it. The note
+ * is read again first, and it is not written when its text is not the text
+ * that the check read (rule 9).
+ */
+async function writeIgnore(
+    device: Device,
+    path: string,
+    note: { readonly before: string; readonly after: string }
+): Promise<void> {
+    if ((await device.vault.read(path)) !== note.before) {
+        throw new Error(`"${path}" changed since the check of the edit, and it is not written`)
+    }
+    await device.vault.write(path, note.after)
+}
+
+/** The journal after an edit: `correct` while a correction of the property is owed, else none. */
+async function settleEdit(device: Device, owed: boolean): Promise<void> {
+    if (owed) {
+        await device.local.saveJournal(journalText({ step: 'correct' }))
+    } else {
+        await device.local.removeJournal()
+    }
+}
+
+/**
+ * Writes the event into the log, and the configuration when it changes, in
+ * one commit that is checked and pushed, with the run journal (rule 5). When
+ * the commit or the push fails, the files are put back. `failed` is the end
+ * of the message after a failure: what is applied, or not.
+ */
+async function commitEvent(
+    device: Device,
+    context: EditContext,
+    event: EditEvent,
+    configuration: string | undefined,
+    run: Run,
+    owed: boolean,
+    ownLock: () => Promise<void>,
+    failed: string
+): Promise<void> {
+    const head = await device.store.head()
+    await ownLock()
+    await device.local.saveJournal(
+        journalText({
+            step: 'write',
+            correctionOwed: owed,
+            head,
+            paths: [CONFIGURATION_FILE, EDITS_FILE],
+            plan: event.id
+        })
+    )
+    const backup = new Backup(device.store)
+    try {
+        const written: string[] = []
+        if (
+            configuration !== undefined &&
+            (await backup.apply({ path: CONFIGURATION_FILE, text: configuration }))
+        ) {
+            written.push(CONFIGURATION_FILE)
+        }
+        if (
+            await backup.apply({ path: EDITS_FILE, text: editsText(withEvent(context.log, event)) })
+        ) {
+            written.push(EDITS_FILE)
+        }
+        await ownLock()
+        await device.store.commitAndPush(
+            [
+                `Edit: ${event.action} (${event.state})`,
+                '',
+                `Device: ${run.device}`,
+                `Face: ${run.face}`,
+                // The recovery of a run that stopped halfway finds its commit by this line.
+                `Plan: ${event.id}`
+            ].join('\n'),
+            written
+        )
+    } catch (error) {
+        // Another run took the copy: this run touches nothing of it any more.
+        if (error instanceof LockLost) {
+            throw error
+        }
+        const stayed = await backup.putAllBack()
+        // A file that could not be put back, or a commit that git could not
+        // take back, stays in the journal, so the next run puts it back.
+        if (stayed.length === 0 && (await device.store.head()) === head) {
+            await settleEdit(device, owed)
+        }
+        const files =
+            stayed.length === 0
+                ? 'and the files of the copy are as they were before'
+                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan, publish, takedown or edit puts them back`
+        throw new Error(`${messageOf(error)}. ${failed}, ${files}`, { cause: error })
+    }
+    await ownLock()
+    await settleEdit(device, owed)
+}
+
+/**
+ * Applies an event: the property of a note first for an `ignore` (a
+ * stricter guard is safe, rule 6), then the commit of the event with the
+ * configuration for a `deny` or an `allow`, then the removal of the
+ * property for a confirmed `unignore` (rule 7).
+ */
+async function applyEvent(
+    device: Device,
+    context: EditContext,
+    event: EditEvent,
+    checked: CheckedEdit,
+    run: Run,
+    owed: boolean,
+    ownLock: () => Promise<void>
+): Promise<void> {
+    const applies = event.state === 'applied' || event.state === 'confirmed'
+    const { denyList } = context.configuration
+    const configuration = !applies
+        ? undefined
+        : event.action === 'deny'
+          ? configurationWith(context.configurationText, [...denyList, event.path])
+          : event.action === 'allow'
+            ? configurationWith(
+                  context.configurationText,
+                  denyList.filter((folder) => folder !== event.path)
+              )
+            : undefined
+    const note = checked.note
+    const propertyFirst = applies && event.action === 'ignore' && note !== undefined
+    if (propertyFirst) {
+        await writeIgnore(device, event.path, note)
+    }
+    await commitEvent(
+        device,
+        context,
+        event,
+        configuration,
+        run,
+        owed,
+        ownLock,
+        propertyFirst
+            ? `The ${IGNORE_PROPERTY} property stays in the note "${event.path}" (a stricter guard is safe), but the log of the edits has no event for it`
+            : 'Nothing is applied'
+    )
+    if (applies && event.action === 'unignore' && note !== undefined) {
+        try {
+            await writeIgnore(device, event.path, note)
+        } catch (error) {
+            throw new Error(
+                `the confirmation is in the log of the edits, but the ${IGNORE_PROPERTY} property could not be removed from "${event.path}", so the guard stays closed: remove the property by hand (${messageOf(error)})`,
+                { cause: error }
+            )
+        }
+    }
+}
+
+/**
+ * An edit of the guards by an agent or the author (R69): `deny` and `ignore`
+ * apply at once when they take no manifest entry away, and else they are a
+ * proposal with the list `removes`; `allow` and `unignore` are always a
+ * proposal. It takes the lock of the device, puts back a run that stopped
+ * halfway, fetches the content store and stops when the copy is behind. The
+ * event goes into `edits.json` in one commit that is pushed. The result is
+ * the event.
+ */
+export async function edit(given: Device, request: EditRequest, run: Run): Promise<EditEvent> {
+    const device = forRun(given)
+    checkRun(run)
+    checkAction(request.action)
+    return await withLock(device, editHolder(run), async (ownLock) => {
+        const owed = await prepareEdit(device, ownLock)
+        const context = await editContext(device)
+        const checked = await checkEdit(device, context, request.action, request.path, true)
+        const proposed = isLooser(request.action) || checked.removes.length > 0
+        const event = makeEvent({
+            action: request.action,
+            device: run.device,
+            face: run.face,
+            path: request.path,
+            removes: proposed ? checked.removes : [],
+            state: proposed ? 'proposed' : 'applied',
+            time: run.time
+        })
+        await applyEvent(device, context, event, checked, run, owed, ownLock)
+        return event
+    })
+}
+
+/** Only the author decides a proposal, in the view (rule 7). */
+function checkAuthor(run: Run): void {
+    if (run.face !== 'plugin') {
+        throw new Error(
+            'only the author confirms or rejects a proposal, in the publication center of Obsidian: the command line program and the MCP server cannot'
+        )
+    }
+}
+
+/** The open proposal with this id. It throws when there is none. */
+function openProposalOf(context: EditContext, id: string): EditEvent {
+    const found = openProposals(context.log).find((event) => event.id === id)
+    if (found === undefined) {
+        throw new Error(
+            `"${id}" is not an open proposal: the author or another device decided it already, or the log of the edits has no such proposal. Check again`
+        )
+    }
+    return found
+}
+
+/**
+ * The author confirms a proposal, in the view (rule 7). The edit is checked
+ * again, and its list `removes` is computed again: when it is not the list
+ * that the view showed, nothing is applied, as for a stale plan. The result
+ * is the event of the confirmation.
+ */
+export async function confirmProposal(
+    given: Device,
+    confirmation: Confirmation,
+    run: Run
+): Promise<EditEvent> {
+    const device = forRun(given)
+    checkRun(run)
+    checkAuthor(run)
+    return await withLock(device, editHolder(run), async (ownLock) => {
+        const owed = await prepareEdit(device, ownLock)
+        const context = await editContext(device)
+        const proposal = openProposalOf(context, confirmation.proposal)
+        const checked = await checkEdit(device, context, proposal.action, proposal.path, false)
+        const seen = sortByCodePoint([...new Set(confirmation.removes)])
+        if (
+            seen.length !== checked.removes.length ||
+            seen.some((path, index) => path !== checked.removes[index])
+        ) {
+            const now =
+                checked.removes.length === 0
+                    ? 'none'
+                    : checked.removes.map((path) => `"${path}"`).join(', ')
+            throw new Error(
+                `the notes that the proposal takes off the site changed since the view showed them (now: ${now}), so nothing is applied: check again, and look at the proposal again`
+            )
+        }
+        const event = makeEvent({
+            action: proposal.action,
+            device: run.device,
+            face: run.face,
+            path: proposal.path,
+            proposal: proposal.id,
+            removes: checked.removes,
+            state: 'confirmed',
+            time: run.time
+        })
+        await applyEvent(device, context, event, checked, run, owed, ownLock)
+        return event
+    })
+}
+
+/** The author rejects a proposal, in the view (rule 7): only its event is written. The result is the event. */
+export async function rejectProposal(given: Device, id: string, run: Run): Promise<EditEvent> {
+    const device = forRun(given)
+    checkRun(run)
+    checkAuthor(run)
+    return await withLock(device, editHolder(run), async (ownLock) => {
+        const owed = await prepareEdit(device, ownLock)
+        const context = await editContext(device)
+        const proposal = openProposalOf(context, id)
+        const event = makeEvent({
+            action: proposal.action,
+            device: run.device,
+            face: run.face,
+            path: proposal.path,
+            proposal: proposal.id,
+            state: 'rejected',
+            time: run.time
+        })
+        await applyEvent(device, context, event, { removes: [] }, run, owed, ownLock)
+        return event
+    })
 }

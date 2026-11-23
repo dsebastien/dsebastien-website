@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::configuration::is_vault_path;
+use crate::edits::Event;
 use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::manifest::State;
 use crate::names::{first_part, folded_form, is_reserved_root_name};
@@ -30,6 +31,10 @@ pub struct PublicationPlan {
     publish: Vec<String>,
     update: Vec<String>,
     remove: Vec<String>,
+    /// The events of the log of the edits of the guards that no publication
+    /// showed yet, in the order of the log (GATE-07, GATE-40, R69). A new
+    /// event makes a stored plan stale.
+    edits: Vec<Event>,
 }
 
 /// Moves sorted by `from`, then by `to`, each one time.
@@ -47,6 +52,7 @@ impl PublicationPlan {
         mut publish: Vec<String>,
         mut update: Vec<String>,
         mut remove: Vec<String>,
+        edits: Vec<Event>,
     ) -> Self {
         sort_moves(&mut moves);
         sort_by_code_point(&mut forced_remove);
@@ -59,7 +65,14 @@ impl PublicationPlan {
             publish,
             update,
             remove,
+            edits,
         }
+    }
+
+    /// The events of the edits of the guards that the plan shows, in the
+    /// order of the log.
+    pub fn edits(&self) -> &[Event] {
+        &self.edits
     }
 
     /// The moves of the plan, sorted by `from`.
@@ -264,9 +277,26 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             .cloned()
             .collect(),
         remove,
+        scan.edits.since().to_vec(),
     );
     refuse_root_names(scan, &plan, &selection.pair)?;
     Ok(plan)
+}
+
+/// The forced removals of the plan of a scan (rule 3 of the plan): the
+/// published notes that a guard excludes, and the unpublished ones (R64),
+/// sorted by path. No selection changes them.
+pub fn forced_removals(scan: &Scan) -> Vec<String> {
+    let queue = &scan.queue;
+    let mut forced: Vec<String> = queue
+        .to_remove
+        .iter()
+        .filter(|path| queue.missing.binary_search(path).is_err())
+        .chain(&queue.unpublished_under_guard)
+        .cloned()
+        .collect();
+    sort_by_code_point(&mut forced);
+    forced
 }
 
 /// `Err` when a path of the selection is not the vault path of a note, or is

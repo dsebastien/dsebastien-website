@@ -1,8 +1,9 @@
 import { toCanonicalJson } from './canonical.ts'
+import type { EditAction, EditEvent } from './edits.ts'
 import definitions from './mcp-tools.json'
 import { sortByCodePoint } from './order.ts'
 import type { Move } from './queue.ts'
-import type { PublicationReport, StoredPlan, TakedownReport } from './tool.ts'
+import type { GuardsReport, PublicationReport, StoredPlan, TakedownReport } from './tool.ts'
 
 // The MCP server of the publishing tool (issue 41, TOOL-03, TOOL-27): the
 // messages of the protocol and the calls of the tools, with no transport. The
@@ -21,7 +22,19 @@ export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '202
 export const MCP_TOOLS = definitions.tools
 
 /** The names of the tools: the names of the commands of the command line program, but `mcp`. */
-export const TOOL_NAMES = ['status', 'plan', 'publish', 'unpublish', 'takedown', 'unlock'] as const
+export const TOOL_NAMES = [
+    'status',
+    'plan',
+    'publish',
+    'unpublish',
+    'takedown',
+    'guards',
+    'deny',
+    'allow',
+    'ignore',
+    'unignore',
+    'unlock'
+] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
 /** A call of a tool, with its arguments read. */
@@ -37,6 +50,8 @@ export type ToolCall =
     | { readonly tool: 'publish'; readonly plan: string }
     | { readonly tool: 'unpublish'; readonly paths: readonly string[] }
     | { readonly tool: 'takedown'; readonly paths: readonly string[] }
+    | { readonly tool: 'guards' }
+    | { readonly tool: EditAction; readonly path: string }
     | { readonly tool: 'unlock' }
 
 /** What a tool gives: the output of its command, and what failed in a command that still wrote its output. */
@@ -99,6 +114,11 @@ const ARGUMENTS: Record<ToolName, readonly string[]> = {
     publish: ['plan'],
     unpublish: ['paths'],
     takedown: ['paths'],
+    guards: [],
+    deny: ['path'],
+    allow: ['path'],
+    ignore: ['path'],
+    unignore: ['path'],
     unlock: []
 }
 
@@ -165,8 +185,21 @@ export function toolCallOf(name: string, args: unknown): ToolCall {
     }
     switch (name) {
         case 'status':
+        case 'guards':
         case 'unlock':
             return { tool: name }
+        case 'deny':
+        case 'allow':
+        case 'ignore':
+        case 'unignore': {
+            const path = given['path']
+            if (typeof path !== 'string') {
+                throw new ArgumentError(
+                    `${name} needs the argument "path": the vault path of ${name === 'ignore' || name === 'unignore' ? 'the note' : 'the folder'}`
+                )
+            }
+            return { tool: name, path }
+        }
         case 'plan':
             return {
                 tool: 'plan',
@@ -335,6 +368,16 @@ export function outcomeOfPlan(stored: StoredPlan): ToolOutcome {
 /** The items of a list of a report as one text, as in Rust: `"<path>": <text>`, joined with `; `. */
 function listed(items: readonly { readonly path: string; readonly text: string }[]): string {
     return items.map((item) => `"${item.path}": ${item.text}`).join('; ')
+}
+
+/** The output of the `guards` tool, as the `guards` command writes it. */
+export function outcomeOfGuards(report: GuardsReport): ToolOutcome {
+    return { output: toCanonicalJson(report) }
+}
+
+/** The output of a tool that edits the guards, as the command of the same name writes it: its event. */
+export function outcomeOfEdit(event: EditEvent): ToolOutcome {
+    return { output: toCanonicalJson({ edit: event }) }
 }
 
 /** The outcome of a publication: it failed when a note of the plan was left out, as in Rust. */
