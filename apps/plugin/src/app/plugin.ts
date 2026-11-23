@@ -154,6 +154,9 @@ export class VaultPublishPlugin extends Plugin {
         if (path !== undefined && leaf.view instanceof PublicationCenterView) {
             leaf.view.showNote(path)
         }
+        // The lists show the last check at once, and a new check runs in the
+        // background (PERF-01, R67).
+        void this.center.check()
     }
 
     #openSettings(): void {

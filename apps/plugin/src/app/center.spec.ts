@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -252,6 +252,19 @@ describe('the publication center', () => {
 
         expect(center.state.error).toBeUndefined()
         expect(center.state.queue?.behind).toBe(0)
+    }, 60_000)
+
+    test('a check while a run holds the lock fetches nothing and says why', async () => {
+        await using stores = await makeTestStores()
+        const { copy, center } = await setUp(stores)
+        await mkdir(join(copy, '.git', 'vault-publish'), { recursive: true })
+        await writeFile(join(copy, '.git', 'vault-publish', 'lock'), '{"command":"plan"}\n')
+        const fetched = join(copy, '.git', 'FETCH_HEAD')
+
+        await center.check()
+
+        expect(center.state.error).toContain('a publication runs on this device')
+        expect(await Bun.file(fetched).exists()).toBe(false)
     }, 60_000)
 
     test('says what is missing when the device has no settings', async () => {

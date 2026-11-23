@@ -142,10 +142,10 @@ export class PublicationCenterView extends ItemView {
         this.#unsubscribe = this.host.center.subscribe(() => {
             this.#render()
         })
+        // The lists show the last check at once, with its time (PERF-01). The
+        // command that opens the view starts a new check: a view that
+        // Obsidian restores at its start runs none (R67, PERF-06).
         this.#render()
-        // The lists show the last check at once, with its time, and a new
-        // check runs in the background (PERF-01, R67).
-        void this.host.center.check()
         await Promise.resolve()
     }
 

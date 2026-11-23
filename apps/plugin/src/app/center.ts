@@ -209,8 +209,10 @@ export class PublicationCenter {
         const device = this.host.device()
         this.#changed = new Set()
         // The copy is fetched first, when the network allows it, so that
-        // `behind` is the state of now (PUB-30, PERF-16).
-        const fetched = await device.store.verify('try')
+        // `behind` is the state of now (PUB-30, PERF-16). Not while a run
+        // holds the lock of the device: `status` then stops with its message.
+        const locked = (await device.local.readLock()) !== undefined
+        const fetched = locked ? { reached: true } : await device.store.verify('try')
         const queue = await status(device)
         this.#set({
             queue,
