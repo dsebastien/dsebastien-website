@@ -1500,6 +1500,24 @@ fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
             "When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
         });
     }
+    // The log of the edits of the guards (R69): only the tool writes it.
+    let edits: Vec<&str> = different
+        .iter()
+        .filter(|(_, path)| *path == "edits.json")
+        .map(|(code, _)| *code)
+        .collect();
+    if edits.contains(&"skipped") {
+        ways.push("Let git compare edits.json again (git update-index --no-skip-worktree --no-assume-unchanged edits.json)");
+    } else if edits
+        .iter()
+        .any(|code| code.starts_with('A') && code.contains('D'))
+    {
+        ways.push("Take edits.json out of the index (git rm --cached --quiet edits.json): the last commit has no such file");
+    } else if edits.iter().any(|code| *code == "??" || *code == "!!") {
+        ways.push("Remove edits.json: the last commit has no such file");
+    } else if !edits.is_empty() {
+        ways.push("Put edits.json back with git checkout HEAD -- edits.json: only the tool writes the log of the edits of the guards");
+    }
     let notes: Vec<&str> = different
         .iter()
         .filter(|(_, path)| path.starts_with("notes/"))
@@ -1529,21 +1547,6 @@ fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
     }
     if let Some(way) = &unwritable_way {
         ways.push(way);
-    }
-    // The log of the edits of the guards (R69): only the tool writes it.
-    let edits: Vec<&str> = different
-        .iter()
-        .filter(|(_, path)| *path == "edits.json")
-        .map(|(code, _)| *code)
-        .collect();
-    if edits.contains(&"skipped") {
-        ways.push("Let git compare edits.json again (git update-index --no-skip-worktree --no-assume-unchanged edits.json)");
-    } else if edits.iter().any(|code| *code == "??" || *code == "!!") {
-        ways.push("Remove edits.json: the last commit has no such file, and only the tool writes the log of the edits of the guards");
-    } else if edits.iter().any(|code| code.starts_with('A')) {
-        ways.push("Take edits.json out of the index and remove it (git rm --cached --quiet edits.json): the last commit has no such file, and only the tool writes the log of the edits of the guards");
-    } else if !edits.is_empty() {
-        ways.push("Put edits.json back with git checkout HEAD -- edits.json: only the tool writes the log of the edits of the guards");
     }
     let manifest: Vec<&str> = different
         .iter()

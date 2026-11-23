@@ -90,3 +90,37 @@ export function parseJson(text: string): unknown {
     checkStructure(text)
     return value
 }
+
+/**
+ * True when a number of the JSON text has a fraction or an exponent (`1.0`,
+ * `1e3`): the Rust reader refuses such a number where it wants a whole
+ * number, and TypeScript reads `1.0` as `1`, so a text with one cannot be
+ * written again in the same bytes by both. The text is valid JSON.
+ */
+export function hasNumberThatIsNotWhole(text: string): boolean {
+    let at = 0
+    while (at < text.length) {
+        const character = text[at] ?? ''
+        if (character === '"') {
+            let end = at + 1
+            while (end < text.length && text[end] !== '"') {
+                end += text[end] === '\\' ? 2 : 1
+            }
+            at = end + 1
+            continue
+        }
+        if (character === '-' || (character >= '0' && character <= '9')) {
+            let end = at + 1
+            while (end < text.length && /[0-9.eE+-]/u.test(text[end] ?? '')) {
+                end += 1
+            }
+            if (/[.eE]/u.test(text.slice(at, end))) {
+                return true
+            }
+            at = end
+            continue
+        }
+        at += 1
+    }
+    return false
+}

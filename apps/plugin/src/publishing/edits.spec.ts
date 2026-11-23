@@ -228,6 +228,22 @@ describe('the strict read of edits.json', () => {
             'a proposal key on a proposal',
             textOf({ edits: [{ ...ALLOW, proposal: DENY.id }], published: 0 }),
             'has a proposal'
+        ],
+        [
+            'a confirmation that the face plugin did not write',
+            textOf({
+                edits: [PROPOSAL, makeEvent({ ...CONFIRMED, face: 'mcp-server' })],
+                published: 0
+            }),
+            'only the face plugin decides'
+        ],
+        [
+            'a rejection of the command line program',
+            textOf({
+                edits: [ALLOW, makeEvent({ ...REJECTED, face: 'command-line' })],
+                published: 0
+            }),
+            'only the face plugin decides'
         ]
     ])('refuses %s', (_name, text, says) => {
         let message = ''

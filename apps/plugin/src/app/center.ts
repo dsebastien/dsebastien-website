@@ -25,6 +25,7 @@ import type { ToolCall, ToolOutcome } from '../publishing/mcp.ts'
 import type { Move, PublicationQueue } from '../publishing/queue.ts'
 import {
     confirmProposal,
+    reviewProposal,
     edit,
     guards,
     plan,
@@ -36,7 +37,13 @@ import {
     unlock,
     unpublish
 } from '../publishing/tool.ts'
-import type { PublicationReport, Run, StoredPlan, TakedownReport } from '../publishing/tool.ts'
+import type {
+    ProposalReview,
+    PublicationReport,
+    Run,
+    StoredPlan,
+    TakedownReport
+} from '../publishing/tool.ts'
 import { canonicalTime } from './rename-journal.ts'
 
 // The controller of the publication center (issue 39, decision R67): what the
@@ -73,6 +80,7 @@ export type Activity =
     | 'unlocking'
     | 'answering'
     | 'editing'
+    | 'reviewing'
 
 /** The name of an activity in a message. */
 const ACTIVITY_NAMES: Record<Activity, string> = {
@@ -84,7 +92,8 @@ const ACTIVITY_NAMES: Record<Activity, string> = {
     'pulling': 'pull',
     'unlocking': 'unlock',
     'answering': 'request of an agent',
-    'editing': 'edit of the guards'
+    'editing': 'edit of the guards',
+    'reviewing': 'review of a proposal'
 }
 
 /**
@@ -727,14 +736,27 @@ export class PublicationCenter {
     }
 
     /**
-     * The author confirms an open proposal of an edit of the guards (R69),
-     * then checks again. `removes` is the list of the notes that would leave
-     * the site, as the view showed it: when the edit would take other notes
-     * away now, nothing is applied.
+     * The proposal with the entries that it takes away now (rule 7): the
+     * dialog of a confirmation opens with this list, computed again when it
+     * opens. `undefined` when the review failed: the error says why.
      */
-    async confirmProposal(proposal: EditEvent): Promise<void> {
+    async reviewProposal(proposal: EditEvent): Promise<ProposalReview | undefined> {
+        let review: ProposalReview | undefined
+        await this.#run('reviewing', 'Review', async () => {
+            review = await reviewProposal(this.host.device(), proposal.id)
+        })
+        return review
+    }
+
+    /**
+     * The author confirms an open proposal of an edit of the guards (R69),
+     * then checks again. `removes` is the list of the entries that would
+     * leave the content store, as the dialog showed it: when the edit would
+     * take other entries away now, nothing is applied.
+     */
+    async confirmProposal(proposal: EditEvent, removes: readonly string[]): Promise<void> {
         await this.#decide(proposal, 'Confirm', (device, run) =>
-            confirmProposal(device, { proposal: proposal.id, removes: proposal.removes ?? [] }, run)
+            confirmProposal(device, { proposal: proposal.id, removes }, run)
         )
     }
 

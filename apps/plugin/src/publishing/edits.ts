@@ -229,6 +229,10 @@ function readEvent(item: unknown, refuse: (why: string) => never): EditEvent {
     if (decision !== (proposal !== undefined)) {
         return refuse('has a proposal when it is no decision, or no proposal when it is one')
     }
+    // Only the author decides a proposal, in the view (rule 7).
+    if (decision && face !== 'plugin') {
+        return refuse(`is a decision with the face ${face}, but only the face plugin decides`)
+    }
     if (proposal !== undefined && (typeof proposal !== 'string' || !EVENT_ID.test(proposal))) {
         return refuse('has no proposal of 16 small hexadecimal digits')
     }

@@ -33,11 +33,10 @@ use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, compute_plan, forced_removals};
-use crate::queue::{Move, Scan, compute_queue, moved_entry, scan_denied};
+use crate::queue::{Move, Scan, compute_queue, compute_queue_with, moved_entry};
 use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
 };
-use crate::small_letters::guard_name;
 
 /// Everything that a publication needs on one device.
 pub struct Device {
@@ -2366,7 +2365,7 @@ fn remove_state(device: &Device, paths: &[String]) -> (Vec<String>, Vec<Value>) 
 /// no folder does not stop the reading command `guards` nor an edit, because
 /// an edit is how an agent corrects it (PUB-91, R69). It gives the
 /// configuration and its text as data, to keep its other keys.
-fn read_raw_configuration(device: &Device) -> Result<(Configuration, Value), String> {
+fn read_raw_configuration(device: &Device) -> Result<(Configuration, Value, String), String> {
     let Some(text) = device.store.read(CONFIGURATION_FILE)? else {
         return Err(format!(
             "the copy of the content store has no {CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add {CONFIGURATION_FILE} with the deny list (\"denyList\"), commit it and push it"
@@ -2374,7 +2373,7 @@ fn read_raw_configuration(device: &Device) -> Result<(Configuration, Value), Str
     };
     let configuration = parse_configuration(Some(&text))?;
     let value = parse_json(&text).map_err(|_| format!("{CONFIGURATION_FILE} is not JSON"))?;
-    Ok((configuration, value))
+    Ok((configuration, value, text))
 }
 
 /// The events of the log as data, as the file holds them.
@@ -2384,7 +2383,8 @@ fn events_of(events: &[Event]) -> Result<Vec<Value>, String> {
 
 /// The guards, as data in the canonical form (R69): the deny list, the open
 /// proposals and the events since the last publication. It reads no network,
-/// takes no lock and writes nothing, and it reads the configuration without
+/// takes no lock (it stops while the lock of the device is taken, as `status`
+/// does) and writes nothing, and it reads the configuration without
 /// the check of GATE-38, so that an agent can read a deny list that stops
 /// every publication, and correct it with an edit (PUB-91).
 ///
@@ -2392,8 +2392,10 @@ fn events_of(events: &[Event]) -> Result<Vec<Value>, String> {
 ///
 /// The copy, the configuration or the log cannot be trusted.
 pub fn guards(device: &Device) -> Result<String, String> {
+    // The files of the copy can be half written while a run holds the lock.
+    refuse_when_locked(device)?;
     device.store.verify(Fetch::None)?;
-    let (configuration, _) = read_raw_configuration(device)?;
+    let (configuration, _, _) = read_raw_configuration(device)?;
     let log = read_edits(device)?;
     canonical(&json!({
         "denyList": configuration.deny_list,
@@ -2447,6 +2449,8 @@ struct EditContext {
     configuration: Configuration,
     /// The configuration as data, to keep its other keys.
     value: Value,
+    /// The text of the configuration.
+    text: String,
     log: EditLog,
 }
 
@@ -2472,10 +2476,11 @@ fn edit_locked(
     // The copy must follow the content store: the edit reads the deny list,
     // the manifest and the log, and its push would be refused.
     refuse_when_behind(device.store.verify(Fetch::Must)?.behind)?;
-    let (configuration, value) = read_raw_configuration(device)?;
+    let (configuration, value, text) = read_raw_configuration(device)?;
     let context = EditContext {
         configuration,
         value,
+        text,
         log: read_edits(device)?,
     };
     let (removes, note) = check_edit(device, &context, action, path)?;
@@ -2625,74 +2630,114 @@ fn write_ignore(device: &Device, path: &str, note: &NoteEdit) -> Result<(), Stri
         .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?;
     if now.as_deref() != Some(note.before.as_str()) {
         return Err(format!(
-            "\"{path}\" changed since the check of the edit, and it is not written. Nothing is applied: run the edit again"
+            "\"{path}\" changed since the check of the edit, and it is not written"
         ));
     }
-    device.vault.write(path, &note.after).map_err(|error| {
-        format!(
-            "the {IGNORE_PROPERTY} property could not be written into \"{path}\": {error}. Nothing is applied"
-        )
-    })
+    device.vault.write(path, &note.after)
 }
 
-/// The scan of the vault for the entries that an edit takes away: the queue
-/// after the moves of the journals. A deny list entry that names no folder
-/// lists no file, so it does not stop the scan. The entries that an edit
-/// takes away do not depend on the note types: the Starter Kit is not asked.
-fn edit_scan(device: &Device, context: &EditContext) -> Result<Scan, String> {
+/// A scan of the vault for the entries that an edit takes away: the queue
+/// after the moves of the journals, with this deny list, and with one more
+/// note read as excluded by the ignore property. A deny list entry that names
+/// no folder lists no file, so it does not stop the scan. The entries that an
+/// edit takes away do not depend on the note types: the Starter Kit is not
+/// asked.
+fn edit_scan(
+    device: &Device,
+    deny_list: &[String],
+    also_ignored: Option<&str>,
+) -> Result<Scan, String> {
     let renames = device.store.read(RENAMES_FILE)?;
     let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
-    let deny_list = context
-        .configuration
-        .deny_list
+    let deny_list = deny_list
         .iter()
         .filter(|folder| device.vault.has_folder(folder))
         .cloned()
         .collect();
-    compute_queue(
+    compute_queue_with(
         &device.vault,
         &read_manifest(&device.store)?,
         journals,
         Configuration { deny_list },
         &StarterKit::none(),
+        also_ignored,
     )
 }
 
-/// The entries that a `deny` of the folder takes away (rule 2): the forced
-/// removals with the new deny list that are not forced removals with the
-/// deny list of now, on the queue of the same scan, after the moves (rule 3
-/// of the plan). With the folder on the deny list, an entry is a forced
-/// removal when its path is in the folder, or when the scan did not find its
-/// note and a note of its name is in the folder (hidden names included).
-fn deny_removes(
+/// The entries that an edit takes away (rule 2), never guessed: the vault is
+/// scanned two times, as it is and with the edit applied (the new deny list,
+/// or the note read as excluded by the ignore property), and the result is
+/// the forced removals (rule 3 of the plan) of the second scan that are not
+/// forced removals of the first one, sorted by path. So a note that a line of
+/// a rename journal moves under the new guard, an unpublished entry whose
+/// note has a new name there, and a missing note with a name in the new
+/// folder all count, as the next publication counts them.
+fn removes_of(
     device: &Device,
     context: &EditContext,
-    scan: &Scan,
-    folder: &str,
+    action: &str,
+    path: &str,
 ) -> Result<Vec<String>, String> {
-    let forced: BTreeSet<String> = forced_removals(scan).into_iter().collect();
-    let (_, names) = scan_denied(
-        &device.vault,
-        &Configuration {
-            deny_list: vec![folder.to_owned()],
-        },
-    )?;
-    let mut removes: Vec<String> = scan
-        .manifest
-        .keys()
-        .filter(|path| !forced.contains(*path) && !in_deny_list(path, &context.configuration))
-        .filter(|path| {
-            let name = guard_name(path.rsplit('/').next().unwrap_or(path));
-            // Letter case is never ignored in the logic.
-            #[allow(clippy::case_sensitive_file_extension_comparisons)]
-            let is_note = name.ends_with(".md");
-            path.starts_with(&format!("{folder}/"))
-                || (!scan.notes.contains_key(*path) && is_note && names.contains(&name))
-        })
-        .cloned()
+    let deny_list = &context.configuration.deny_list;
+    let after = match action {
+        "deny" => {
+            let mut more = deny_list.clone();
+            more.push(path.to_owned());
+            edit_scan(device, &more, None)?
+        }
+        "ignore" => edit_scan(device, deny_list, Some(path))?,
+        _ => return Ok(Vec::new()),
+    };
+    let now: BTreeSet<String> = forced_removals(&edit_scan(device, deny_list, None)?)
+        .into_iter()
+        .collect();
+    let mut removes: Vec<String> = forced_removals(&after)
+        .into_iter()
+        .filter(|forced| !now.contains(forced))
         .collect();
     sort_by_code_point(&mut removes);
     Ok(removes)
+}
+
+/// `Err` when `configuration.json` has a number with a fraction or an
+/// exponent (rule 8): TypeScript cannot tell `1.0` from `1`, so the two
+/// implementations would write other bytes. Only the numbers outside the
+/// texts of the file count.
+fn refuse_inexact_numbers(text: &str) -> Result<(), String> {
+    let mut characters = text.chars().peekable();
+    let mut in_text = false;
+    while let Some(character) = characters.next() {
+        if in_text {
+            match character {
+                '\\' => {
+                    characters.next();
+                }
+                '"' => in_text = false,
+                _ => {}
+            }
+            continue;
+        }
+        if character == '"' {
+            in_text = true;
+            continue;
+        }
+        if character == '-' || character.is_ascii_digit() {
+            let mut number = String::from(character);
+            while let Some(next) = characters
+                .peek()
+                .filter(|next| next.is_ascii_digit() || matches!(next, '.' | 'e' | 'E' | '+' | '-'))
+            {
+                number.push(*next);
+                characters.next();
+            }
+            if number.contains(['.', 'e', 'E']) {
+                return Err(format!(
+                    "{CONFIGURATION_FILE} has the number {number}, with a fraction or an exponent: the tool cannot write it again with the same bytes in both implementations, so nothing is applied. Write it as a whole number with no exponent, commit {CONFIGURATION_FILE} and push it"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Checks an edit by rule 3 of "The edits of the guards", and computes the
@@ -2722,6 +2767,9 @@ fn check_edit(
                 "\"{path}\" is not a folder of the vault, with exactly that name (letter case and Unicode form)"
             ));
         }
+        // Before any write: the configuration must be written again with the
+        // same bytes in both implementations (rule 8).
+        "deny" => refuse_inexact_numbers(&context.text)?,
         "allow" if !listed => {
             return Err(format!("\"{path}\" is not an entry of the deny list"));
         }
@@ -2738,14 +2786,7 @@ fn check_edit(
             "there is already an open proposal to {action} \"{path}\": the author confirms or rejects it in the publication center of Obsidian"
         ));
     }
-    let removes = match action {
-        "deny" => deny_removes(device, context, &edit_scan(device, context)?, path)?,
-        "ignore" if edit_scan(device, context)?.manifest.contains_key(path) => {
-            vec![path.to_owned()]
-        }
-        _ => Vec::new(),
-    };
-    Ok((removes, note))
+    Ok((removes_of(device, context, action, path)?, note))
 }
 
 /// Checks an edit of the ignore property of a note (rule 3), and gives its

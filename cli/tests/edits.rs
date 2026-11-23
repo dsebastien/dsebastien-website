@@ -104,7 +104,7 @@ impl Setup {
             program.arg("--vault").arg(&self.vault);
         }
         program.arg("--content-store").arg(&self.copy);
-        if command == "publish" {
+        if command == "publish" || command == "unpublish" {
             program
                 .arg("--attachment-storage")
                 .arg(self.stores.attachment_storage());
@@ -707,4 +707,147 @@ fn a_log_in_the_copy_that_is_not_the_file_of_its_last_commit_stops_every_run() {
         .expect("the time is set");
     let status = setup.run("status", &[]);
     assert!(status.status.success(), "{}", errors_of(&status));
+}
+
+/// The removes of a proposed edit, or a failure with the message.
+fn removes(output: &Output) -> Value {
+    assert!(output.status.success(), "{}", errors_of(output));
+    let event = &json_of(output)["edit"];
+    assert_eq!(event["state"], "proposed", "{event}");
+    event["removes"].clone()
+}
+
+/// `removes` is never guessed (review round 1): the forced removals of a
+/// scan with the edit applied that are not forced removals now.
+#[test]
+fn a_published_note_that_a_journal_moves_into_the_folder_is_taken_away() {
+    let setup = set_up();
+    setup.publish(&[NOTE]);
+    // The journal of another device moves the note into the folder; this
+    // device still has its old file.
+    let moved = setup.vault.join(FOLDER).join("Frost dates explained.md");
+    fs::copy(setup.vault.join(NOTE), &moved).expect("the note is copied");
+    let journals = setup
+        .vault
+        .join(".obsidian/plugins/dsebastien-vault-publish/renames");
+    fs::create_dir_all(&journals).expect("the folder can be made");
+    fs::write(
+        journals.join("00000000000000aa.jsonl"),
+        format!(
+            "{{\"from\":\"{NOTE}\",\"kind\":\"note\",\"time\":\"2031-04-01T09:00:00Z\",\"to\":\"{FOLDER}/Frost dates explained.md\"}}\n"
+        ),
+    )
+    .expect("the journal is written");
+
+    assert_eq!(removes(&setup.edit("deny", FOLDER)), json!([NOTE]));
+}
+
+#[test]
+fn a_missing_note_with_its_name_in_the_folder_in_another_case_or_form_is_taken_away() {
+    let setup = set_up();
+    let cafe = "10 Garden/Café.md";
+    fs::write(setup.vault.join(cafe), "Coffee grounds\n").expect("the note is written");
+    setup.publish(&[NOTE, cafe]);
+    // Moved with no journal, in other letters and in the decomposed form.
+    fs::rename(
+        setup.vault.join(NOTE),
+        setup.vault.join(FOLDER).join("FROST DATES explained.md"),
+    )
+    .expect("the note is moved");
+    fs::rename(
+        setup.vault.join(cafe),
+        setup.vault.join(FOLDER).join("CAFE\u{301}.md"),
+    )
+    .expect("the note is moved");
+    let status = setup.run("status", &[]);
+    assert_eq!(json_of(&status)["missing"], json!([cafe, NOTE]));
+
+    assert_eq!(removes(&setup.edit("deny", FOLDER)), json!([cafe, NOTE]));
+}
+
+#[test]
+fn an_unpublished_entry_in_the_folder_is_taken_away() {
+    let setup = set_up();
+    setup.publish(&[NOTE]);
+    let output = setup.run(
+        "unpublish",
+        &[
+            &format!("--path={NOTE}"),
+            "--time",
+            LATER,
+            "--device",
+            "garden-shed",
+        ],
+    );
+    assert!(output.status.success(), "{}", errors_of(&output));
+
+    assert_eq!(removes(&setup.edit("deny", "10 Garden")), json!([NOTE]));
+    assert_eq!(removes(&setup.edit("ignore", NOTE)), json!([NOTE]));
+}
+
+#[test]
+fn an_entry_that_a_guard_takes_away_already_is_not_in_removes() {
+    let setup = set_up();
+    let mint = "10 Garden/Herb bed/Mint.md";
+    setup.publish(&[NOTE, mint]);
+    setup.commit_file(
+        "configuration.json",
+        &format!("{{\"denyList\": [\"80 Templates\", \"90 Locked Shed\", \"{FOLDER}\"]}}\n"),
+    );
+
+    // The folder above a folder of the deny list: only the note that the
+    // new entry takes away.
+    assert_eq!(removes(&setup.edit("deny", "10 Garden")), json!([NOTE]));
+    // A folder below a folder of the deny list takes nothing more away.
+    let inner = setup.edit("deny", "90 Locked Shed/Attachments");
+    assert!(inner.status.success(), "{}", errors_of(&inner));
+    assert_eq!(json_of(&inner)["edit"]["state"], "applied");
+}
+
+#[test]
+fn guards_stop_while_the_lock_of_the_device_is_taken() {
+    let setup = set_up();
+    fs::create_dir_all(setup.local_file("")).expect("the folder can be made");
+    fs::write(setup.local_file("lock"), "{\"command\":\"publish\"}\n").expect("the lock is made");
+
+    assert_refused(&setup.run("guards", &[]), "unlock");
+}
+
+/// Rule 8: TypeScript cannot tell `1.0` from `1`, so a number with a fraction
+/// or an exponent in the configuration stops a deny before any write.
+#[test]
+fn a_number_with_a_fraction_or_an_exponent_in_the_configuration_stops_a_deny() {
+    let setup = set_up();
+    for number in ["1e2", "1.0", "-2.5E-3"] {
+        setup.commit_file(
+            "configuration.json",
+            &format!(
+                "{{\"denyList\": [\"80 Templates\", \"90 Locked Shed\"], \"version\": {number}}}\n"
+            ),
+        );
+        let before = setup.state();
+
+        let output = setup.edit("deny", FOLDER);
+
+        assert_refused(&output, "with a fraction or an exponent");
+        assert!(
+            errors_of(&output).contains(number),
+            "{}",
+            errors_of(&output)
+        );
+        assert_eq!(setup.state(), before);
+    }
+    // A text that looks like such a number, and a whole number, are kept.
+    setup.commit_file(
+        "configuration.json",
+        "{\"denyList\": [\"80 Templates\", \"90 Locked Shed\"], \"note\": \"1.5e3\", \"version\": -3}\n",
+    );
+    let output = setup.edit("deny", FOLDER);
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(
+        read(&setup.copy.join("configuration.json")),
+        format!(
+            "{{\n  \"denyList\": [\n    \"80 Templates\",\n    \"90 Locked Shed\",\n    \"{FOLDER}\"\n  ],\n  \"note\": \"1.5e3\",\n  \"version\": -3\n}}\n"
+        )
+    );
 }

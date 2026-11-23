@@ -15,6 +15,7 @@ import {
 import type { Filter, Row, RowGroup, ViewList } from '../publishing/center.ts'
 import type { EditAction, EditEvent } from '../publishing/edits.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
+import type { ProposalReview } from '../publishing/tool.ts'
 import { FolderSuggest } from './folder-suggest.ts'
 import { addressOf } from './center.ts'
 import type { PublicationCenter } from './center.ts'
@@ -83,14 +84,28 @@ const ACTION_TEXT: Record<EditAction, string> = {
  * notes that it takes off the site, and who asked for it.
  */
 function eventLine(parent: HTMLElement, event: EditEvent): void {
+    const name = (text: string): void => {
+        parent.createSpan({ cls: 'vault-publish-name', text, attr: { dir: 'auto' } })
+    }
     parent.appendText(`${ACTION_TEXT[event.action]} `)
-    parent.createSpan({ cls: 'vault-publish-name', text: event.path, attr: { dir: 'auto' } })
+    name(event.path)
     const removes = event.removes?.length ?? 0
     const leave =
         removes === 0
             ? ''
-            : ` · ${removes.toLocaleString()} ${removes === 1 ? 'note leaves' : 'notes leave'} the site`
-    parent.appendText(` · ${event.state}${leave} · ${event.face}, ${event.device}, ${event.time}`)
+            : ` · ${removes.toLocaleString()} ${removes === 1 ? 'entry leaves' : 'entries leave'} the content store`
+    parent.appendText(` · ${event.state}${leave} · `)
+    // The names of the face and of the device are isolated too: a
+    // right-to-left mark in the name of a device never reorders the line.
+    name(event.face)
+    parent.appendText(', ')
+    name(event.device)
+    parent.appendText(`, ${event.time}`)
+}
+
+/** A text isolated from the text around it in an attribute (U+2068 and U+2069): an aria-label has no element of its own. */
+function isolated(text: string): string {
+    return `\u2068${text}\u2069`
 }
 
 /** What the view needs of the plugin. */
@@ -760,24 +775,27 @@ export class PublicationCenterView extends ItemView {
             const confirm = actions.createEl('button', {
                 text: 'Confirm',
                 attr: {
-                    'aria-label': `Confirm: ${ACTION_TEXT[proposal.action]} ${proposal.path}`,
+                    'aria-label': `Confirm: ${ACTION_TEXT[proposal.action]} ${isolated(proposal.path)}`,
                     'data-focus': `confirm\n${proposal.id}`
                 }
             })
             confirm.disabled = busy
             confirm.addEventListener('click', () => {
-                if ((proposal.removes?.length ?? 0) === 0) {
-                    void center.confirmProposal(proposal)
-                    return
-                }
-                new ConfirmProposalModal(this.app, proposal, () => {
-                    void center.confirmProposal(proposal)
-                }).open()
+                // Every confirmation opens a dialog, with the entries that the
+                // edit takes away computed again now (rule 7).
+                void center.reviewProposal(proposal).then((review) => {
+                    if (review === undefined) {
+                        return
+                    }
+                    new ConfirmProposalModal(this.app, review, () => {
+                        void center.confirmProposal(review.proposal, review.removes)
+                    }).open()
+                })
             })
             const reject = actions.createEl('button', {
                 text: 'Reject',
                 attr: {
-                    'aria-label': `Reject: ${ACTION_TEXT[proposal.action]} ${proposal.path}`,
+                    'aria-label': `Reject: ${ACTION_TEXT[proposal.action]} ${isolated(proposal.path)}`,
                     'data-focus': `reject\n${proposal.id}`
                 }
             })
@@ -1010,52 +1028,71 @@ export class TakedownModal extends Modal {
 }
 
 /**
- * The dialog of the confirmation of a proposal that takes notes off the site
- * (R69): the edit, the notes that leave, one button. Escape and the close
+ * The dialog of the confirmation of a proposal (R69, rule 7): the edit, what
+ * opens for a looser edit, or the entries that would leave the content store,
+ * computed again when the dialog opens, and one button. Escape and the close
  * button of the dialog cancel it.
  */
 export class ConfirmProposalModal extends Modal {
     constructor(
         app: App,
-        private readonly proposal: EditEvent,
+        private readonly review: ProposalReview,
         private readonly confirm: () => void
     ) {
         super(app)
     }
 
     override onOpen(): void {
-        const { proposal } = this
-        const removes = proposal.removes ?? []
+        const { proposal, removes } = this.review
         this.setTitle('Confirm this edit of the guards?')
         const { contentEl } = this
         eventLine(contentEl.createEl('p'), proposal)
-        contentEl.createEl('p', {
-            text: `${removes.length === 1 ? 'This note leaves' : `These ${removes.length.toLocaleString()} notes leave`} the site at the next publication, as forced removals that no plan can hold. After the next build, every address of ${removes.length === 1 ? 'it' : 'them'} answers 404, with no redirect:`
-        })
-        const list = contentEl.createDiv({ cls: 'vault-publish-moves' })
-        for (const path of removes.slice(0, SECTION_LINES)) {
-            list.createDiv({ cls: 'vault-publish-name', text: path, attr: { dir: 'auto' } })
-        }
-        if (removes.length > SECTION_LINES) {
-            list.createDiv({
-                text: `and ${(removes.length - SECTION_LINES).toLocaleString()} more`
+        const one = removes.length === 1
+        if (proposal.action === 'allow') {
+            contentEl.createEl('p', {
+                text: 'The notes of this folder become candidates: they show in the list New. Nothing is published until you tick a note and publish it.'
+            })
+        } else if (proposal.action === 'unignore') {
+            contentEl.createEl('p', {
+                text: 'The note becomes a candidate: it shows in the list New. Nothing is published until you tick it and publish it.'
+            })
+        } else if (removes.length === 0) {
+            contentEl.createEl('p', {
+                text: 'No entry of the content store leaves with this edit now: the guard only keeps notes from the site from now on.'
+            })
+        } else {
+            contentEl.createEl('p', {
+                text: `${one ? 'This entry leaves' : `These ${removes.length.toLocaleString()} entries leave`} the content store at the next publication, as forced removals that no plan can hold. After the next build, the address of a published note answers 404, with no redirect, and the address of an unpublished note goes from 410 to 404:`
+            })
+            const list = contentEl.createDiv({ cls: 'vault-publish-moves' })
+            for (const path of removes.slice(0, SECTION_LINES)) {
+                list.createDiv({ cls: 'vault-publish-name', text: path, attr: { dir: 'auto' } })
+            }
+            if (removes.length > SECTION_LINES) {
+                list.createDiv({
+                    text: `and ${(removes.length - SECTION_LINES).toLocaleString()} more`
+                })
+            }
+            contentEl.createEl('p', {
+                text: 'When the edit would take other entries away when you confirm, nothing is applied: open this dialog again.'
             })
         }
-        contentEl.createEl('p', {
-            text: 'When the edit would take other notes away now, nothing is applied, and the publication center says so.'
-        })
-        new Setting(contentEl).addButton((button) =>
+        new Setting(contentEl).addButton((button) => {
             button
                 .setButtonText(
-                    `Confirm: ${removes.length.toLocaleString()} ${removes.length === 1 ? 'note leaves' : 'notes leave'}`
+                    removes.length === 0
+                        ? 'Confirm'
+                        : `Confirm: ${removes.length.toLocaleString()} ${one ? 'entry leaves' : 'entries leave'}`
                 )
-                .setDestructive()
                 .setCta()
                 .onClick(() => {
                     this.close()
                     this.confirm()
                 })
-        )
+            if (removes.length > 0) {
+                button.setDestructive()
+            }
+        })
     }
 
     override onClose(): void {

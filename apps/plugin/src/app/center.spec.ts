@@ -634,7 +634,12 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
         expect(proposal?.removes).toEqual([NOTE])
         if (proposal === undefined) return
 
-        await center.confirmProposal(proposal)
+        // The dialog opens with the entries that the edit takes away now.
+        const review = await center.reviewProposal(proposal)
+        expect(review).toEqual({ proposal, removes: [NOTE] })
+        if (review === undefined) return
+
+        await center.confirmProposal(review.proposal, review.removes)
 
         expect(center.state.error).toBeUndefined()
         expect(center.state.queue?.proposals).toEqual([])
@@ -648,7 +653,7 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
         ).toEqual(['80 Templates', LOCKED, GARDEN])
     }, 120_000)
 
-    test('a confirmation from a view that showed other notes stops, and says why', async () => {
+    test('a confirmation from a dialog that showed other entries stops, and a new dialog shows the entries of now', async () => {
         await using stores = await makeTestStores()
         const { center } = await setUp(stores)
         await center.check()
@@ -657,10 +662,35 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
         await center.serve({ tool: 'deny', path: GARDEN })
         const [proposal] = center.state.queue?.proposals ?? []
         if (proposal === undefined) throw new Error('no proposal')
+        const shown = await center.reviewProposal(proposal)
+        expect(shown?.removes).toEqual([NOTE])
+        // Another note of the folder goes live after the dialog opened.
+        center.choose((queue, choices) => toggleRow(queue, choices, SECOND))
+        await center.publish()
 
-        await center.confirmProposal({ ...proposal, removes: [] })
+        await center.confirmProposal(proposal, shown?.removes ?? [])
 
-        expect(center.state.error).toContain('changed since the view showed them')
+        expect(center.state.error).toContain('changed since the dialog showed them')
         expect(center.state.queue?.proposals).toEqual([proposal])
+        const again = await center.reviewProposal(proposal)
+        expect(again?.removes).toEqual([SECOND, NOTE])
+        await center.confirmProposal(proposal, again?.removes ?? [])
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.queue?.toRemove).toEqual([SECOND, NOTE])
+    }, 120_000)
+
+    test('the review of a looser proposal gives no entry, and its confirmation makes the folder notes candidates', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.serve({ tool: 'allow', path: LOCKED })
+        const [proposal] = center.state.queue?.proposals ?? []
+        if (proposal === undefined) throw new Error('no proposal')
+
+        const review = await center.reviewProposal(proposal)
+        expect(review?.removes).toEqual([])
+        await center.confirmProposal(proposal, [])
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.queue?.new.some((path) => path.startsWith(`${LOCKED}/`))).toBe(true)
     }, 120_000)
 })

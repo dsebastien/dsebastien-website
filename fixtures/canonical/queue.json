@@ -10195,6 +10195,162 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "the removes of an edit count every forced removal that it makes (issue 42, review round 1)",
+            "denyList": [],
+            "vault": {
+                "A/X.md": "X\n",
+                "A/U.md": "U\n",
+                "Keep.md": "Keep\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "three notes go live",
+                    "selection": {
+                        "include": ["A/U.md", "A/X.md", "Keep.md"]
+                    },
+                    "time": "2031-07-01T07:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A/U.md", "A/X.md", "Keep.md"],
+                        "published": ["A/U.md", "A/X.md", "Keep.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "one of them is unpublished: its entry stays, with the state unpublished",
+                    "paths": ["A/U.md"],
+                    "time": "2031-07-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["A/U.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["A/U.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the journal of another device moves the published note into Mixed, but this device still has its old file; and the unpublished note gets a new name in Mixed",
+                    "files": {
+                        "Mixed/X.md": "---\npublic_note: true\n---\nX\n",
+                        "Mixed/New.md": "U\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A/X.md\",\"kind\":\"note\",\"time\":\"2031-07-01T09:00:00Z\",\"to\":\"Mixed/X.md\"}\n{\"from\":\"A/U.md\",\"kind\":\"note\",\"time\":\"2031-07-01T09:00:00Z\",\"to\":\"Mixed/New.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file of the unpublished note is gone",
+                    "paths": ["A/U.md"]
+                },
+                {
+                    "do": "edit",
+                    "why": "the ignore property on the new name of the unpublished note would take its entry away: a proposal",
+                    "action": "ignore",
+                    "path": "Mixed/New.md",
+                    "time": "2031-07-01T10:00:00Z",
+                    "face": "mcp-server",
+                    "event": {
+                        "action": "ignore",
+                        "path": "Mixed/New.md",
+                        "state": "proposed",
+                        "face": "mcp-server",
+                        "time": "2031-07-01T10:00:00Z",
+                        "removes": ["A/U.md"],
+                        "device": "garden-shed",
+                        "id": "29eed24507670e4d"
+                    }
+                },
+                {
+                    "do": "edit",
+                    "why": "a deny of Mixed would take away the published note that the journal moves there, and the unpublished entry: a proposal that names both",
+                    "action": "deny",
+                    "path": "Mixed",
+                    "time": "2031-07-01T11:00:00Z",
+                    "face": "mcp-server",
+                    "event": {
+                        "action": "deny",
+                        "path": "Mixed",
+                        "state": "proposed",
+                        "face": "mcp-server",
+                        "time": "2031-07-01T11:00:00Z",
+                        "removes": ["A/U.md", "A/X.md"],
+                        "device": "garden-shed",
+                        "id": "371cd2abef99f8c9"
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "the author confirms the deny in the view of another device",
+                    "files": {
+                        "configuration.json": "{\n  \"denyList\": [\n    \"Mixed\"\n  ]\n}\n",
+                        "edits.json": "{\n  \"edits\": [\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"29eed24507670e4d\",\n      \"path\": \"Mixed/New.md\",\n      \"removes\": [\n        \"A/U.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-07-01T10:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"371cd2abef99f8c9\",\n      \"path\": \"Mixed\",\n      \"removes\": [\n        \"A/U.md\",\n        \"A/X.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-07-01T11:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"plugin\",\n      \"id\": \"0c3edb5bc67aa285\",\n      \"path\": \"Mixed\",\n      \"proposal\": \"371cd2abef99f8c9\",\n      \"removes\": [\n        \"A/U.md\",\n        \"A/X.md\"\n      ],\n      \"state\": \"confirmed\",\n      \"time\": \"2031-07-01T12:00:00Z\"\n    }\n  ],\n  \"published\": 0\n}\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the forced removals of the plan are exactly the removes that the proposal named",
+                    "selection": {},
+                    "plan": {
+                        "edits": [
+                            {
+                                "action": "ignore",
+                                "path": "Mixed/New.md",
+                                "state": "proposed",
+                                "face": "mcp-server",
+                                "time": "2031-07-01T10:00:00Z",
+                                "removes": ["A/U.md"],
+                                "device": "garden-shed",
+                                "id": "29eed24507670e4d"
+                            },
+                            {
+                                "action": "deny",
+                                "path": "Mixed",
+                                "state": "proposed",
+                                "face": "mcp-server",
+                                "time": "2031-07-01T11:00:00Z",
+                                "removes": ["A/U.md", "A/X.md"],
+                                "device": "garden-shed",
+                                "id": "371cd2abef99f8c9"
+                            },
+                            {
+                                "action": "deny",
+                                "path": "Mixed",
+                                "state": "confirmed",
+                                "face": "plugin",
+                                "time": "2031-07-01T12:00:00Z",
+                                "removes": ["A/U.md", "A/X.md"],
+                                "proposal": "371cd2abef99f8c9",
+                                "device": "garden-shed",
+                                "id": "0c3edb5bc67aa285"
+                            }
+                        ],
+                        "forcedRemove": ["A/U.md", "A/X.md"],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                }
+            ]
         }
     ]
 }

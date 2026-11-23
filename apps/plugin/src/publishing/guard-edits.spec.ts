@@ -21,8 +21,10 @@ import {
     plan,
     publish,
     rejectProposal,
+    reviewProposal,
     status,
-    unlock
+    unlock,
+    unpublish
 } from './tool.ts'
 import type { Run } from './tool.ts'
 
@@ -378,6 +380,172 @@ describe('the copy must hold the edits.json of its last commit', () => {
     }, 60_000)
 })
 
+/** The journal of another device in the vault: its lines move notes. */
+const JOURNAL = '.obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl'
+
+function journalLine(from: string, to: string): string {
+    return `${JSON.stringify({ from, kind: 'note', time: '2031-06-01T08:30:00Z', to })}\n`
+}
+
+describe('the removes of an edit: two scans, as is and with the edit applied (rule 2)', () => {
+    test('a published note that a journal moves into the folder, while this device still has the old file', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
+        const published = (await textOf(join(vault, 'Notes/Public.md'))) ?? ''
+        await writeFiles(vault, {
+            'Private/Public.md': published,
+            [JOURNAL]: journalLine('Notes/Public.md', 'Private/Public.md')
+        })
+        // As is, the note moves: no forced removal.
+        expect((await status(device)).renamed).toEqual([
+            { from: 'Notes/Public.md', to: 'Private/Public.md' }
+        ])
+
+        const event = await edit(device, { action: 'deny', path: 'Private' }, AGENT)
+
+        expect(event.state).toBe('proposed')
+        expect(event.removes).toEqual(['Notes/Public.md'])
+    }, 60_000)
+
+    test('a missing published note whose name is in the folder, also in another letter case', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await publishNotes(device, ['Notes/Public.md', 'Notes/Draft.md'], '2031-06-01T08:00:00Z')
+        // Moved with no line of a journal: only the names tell.
+        await rm(join(vault, 'Notes/Public.md'))
+        await rm(join(vault, 'Notes/Draft.md'))
+        await writeFiles(vault, { 'Private/Public.md': 'Public\n', 'Private/DRAFT.md': 'Draft\n' })
+        expect((await status(device)).missing).toEqual(['Notes/Draft.md', 'Notes/Public.md'])
+
+        const event = await edit(device, { action: 'deny', path: 'Private' }, AGENT)
+
+        expect(event.removes).toEqual(['Notes/Draft.md', 'Notes/Public.md'])
+    }, 60_000)
+
+    test('an unpublished entry in the folder, and one whose journal line gives it a new name there', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, { 'Private/Old.md': 'Old\n' })
+        await publishNotes(
+            device,
+            ['Private/Diary.md', 'Private/Old.md', 'Notes/Draft.md'],
+            '2031-06-01T08:00:00Z'
+        )
+        for (const path of ['Private/Diary.md', 'Notes/Draft.md']) {
+            await unpublish(device, [path], { ...AUTHOR, time: '2031-06-01T08:10:00Z' })
+        }
+        // The unpublished draft gets a new name in the folder.
+        await rm(join(vault, 'Notes/Draft.md'))
+        await writeFiles(vault, {
+            'Private/Renamed draft.md': 'Draft\n',
+            [JOURNAL]: journalLine('Notes/Draft.md', 'Private/Renamed draft.md')
+        })
+
+        const event = await edit(device, { action: 'deny', path: 'Private' }, AGENT)
+
+        expect(event.removes).toEqual(['Notes/Draft.md', 'Private/Diary.md', 'Private/Old.md'])
+    }, 120_000)
+
+    test('an ignore of a note that a journal moved names the entry where the publication removes it', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
+        const published = (await textOf(join(vault, 'Notes/Public.md'))) ?? ''
+        await rm(join(vault, 'Notes/Public.md'))
+        await writeFiles(vault, {
+            'Notes/Moved.md': published,
+            [JOURNAL]: journalLine('Notes/Public.md', 'Notes/Moved.md')
+        })
+
+        const event = await edit(device, { action: 'ignore', path: 'Notes/Moved.md' }, AGENT)
+
+        // The move under the guard does not happen: the entry leaves at its old path.
+        expect(event.removes).toEqual(['Notes/Public.md'])
+    }, 60_000)
+
+    test('nested deny entries: a folder above an entry counts only the entries that are not under a guard yet', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, { 'Mixed/Sub/Deep.md': 'Deep\n' })
+        await publishNotes(device, ['Mixed/Shown.md', 'Mixed/Sub/Deep.md'], '2031-06-01T08:00:00Z')
+        const sub = await edit(device, { action: 'deny', path: 'Mixed/Sub' }, AGENT)
+        expect(sub.removes).toEqual(['Mixed/Sub/Deep.md'])
+        await confirmProposal(device, { proposal: sub.id, removes: ['Mixed/Sub/Deep.md'] }, AUTHOR)
+
+        const above = await edit(
+            device,
+            { action: 'deny', path: 'Mixed' },
+            {
+                ...AGENT,
+                time: '2031-06-01T11:00:00Z'
+            }
+        )
+
+        expect(above.removes).toEqual(['Mixed/Shown.md'])
+        // A folder below an entry takes nothing more away: it applies at once.
+        await writeFiles(vault, { 'Locked/Inner/Hidden.md': 'Hidden\n' })
+        const below = await edit(device, { action: 'deny', path: 'Locked/Inner' }, AGENT)
+        expect(below.state).toBe('applied')
+        expect(below.removes).toBeUndefined()
+    }, 120_000)
+
+    test('a folder in another letter case or Unicode form is not the folder of the vault', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, { 'Caf\u00e9/Note.md': 'Note\n' })
+
+        for (const path of ['private', 'PRIVATE', 'Cafe\u0301']) {
+            expect(await rejectionOf(edit(device, { action: 'deny', path }, AGENT))).toContain(
+                'is not a folder of the vault'
+            )
+        }
+        expect((await edit(device, { action: 'deny', path: 'Caf\u00e9' }, AGENT)).state).toBe(
+            'applied'
+        )
+    }, 60_000)
+})
+
+describe('the reads and the configuration of an edit', () => {
+    test('guards stops while the lock of the device is taken, as status does', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores)
+        const lock = await device.local.lock({ command: 'plan' })
+
+        expect(await rejectionOf(guards(device))).toContain('a publication runs on this device')
+        await device.local.release(lock.text)
+        expect((await guards(device)).denyList).toEqual(['Locked'])
+    }, 60_000)
+
+    test.each([['1.0'], ['1e3'], ['-2.5E-1']])(
+        'a configuration with the number %s stops a deny, and writes nothing',
+        async (number) => {
+            await using stores = await makeTestStores()
+            const { copy, device } = await setUp(
+                stores,
+                `{"denyList": ["Locked"], "version": ${number}}`
+            )
+
+            expect(
+                await rejectionOf(edit(device, { action: 'deny', path: 'Private' }, AGENT))
+            ).toContain('a number with a fraction or an exponent')
+            expect(await textOf(join(copy, 'edits.json'))).toBeNull()
+        },
+        60_000
+    )
+
+    test('a deny keeps every other key of the configuration, in the canonical form', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores, '{"version": 2, "denyList": ["Locked"], "a": "b"}')
+
+        await edit(device, { action: 'deny', path: 'Private' }, AGENT)
+
+        expect(await inStore(stores, 'configuration.json')).toBe(
+            '{\n  "a": "b",\n  "denyList": [\n    "Locked",\n    "Private"\n  ],\n  "version": 2\n}\n'
+        )
+    }, 60_000)
+})
+
 describe('the plan and the edits', () => {
     test('a new event makes a stored plan stale, and the new plan shows it', async () => {
         await using stores = await makeTestStores()
@@ -485,12 +653,15 @@ describe('the decisions of the author', () => {
             confirmProposal(device, { proposal: proposal.id, removes: ['Mixed/Shown.md'] }, AUTHOR)
         )
 
-        expect(message).toContain('changed since the view showed them')
+        expect(message).toContain('changed since the dialog showed them')
         expect(message).toContain('"Mixed/Other.md", "Mixed/Shown.md"')
         expect(await inStore(stores, 'configuration.json')).toBe(CONFIGURATION)
+        // A new dialog shows the entries of now, and confirms with them.
+        const review = await reviewProposal(device, proposal.id)
+        expect(review).toEqual({ proposal, removes: ['Mixed/Other.md', 'Mixed/Shown.md'] })
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: ['Mixed/Shown.md', 'Mixed/Other.md'] },
+            { proposal: proposal.id, removes: review.removes },
             AUTHOR
         )
         expect(confirmed.removes).toEqual(['Mixed/Other.md', 'Mixed/Shown.md'])

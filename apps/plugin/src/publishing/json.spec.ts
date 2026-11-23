@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { parseJson } from './json.ts'
+import { hasNumberThatIsNotWhole, parseJson } from './json.ts'
 import { parseManifestEntry } from './manifest.ts'
 
 // The JSON files of the content store are read in the same way by both
@@ -55,4 +55,17 @@ describe('the version of the cleaning step in a manifest entry', () => {
             }
         }
     )
+})
+
+describe('a number with a fraction or an exponent in a JSON text', () => {
+    test.each([
+        ['{"a": 1.0}', true],
+        ['{"a": 1e3}', true],
+        ['{"a": [2, -2.5E-1]}', true],
+        ['{"a": 10, "b": -3, "c": [0]}', false],
+        ['{"a": "1.0 and 1e3 in a text", "b\\"1.5": 2}', false],
+        ['{"denyList": ["Folder 1.5"]}', false]
+    ])('%s: %p', (text, expected) => {
+        expect(hasNumberThatIsNotWhole(text)).toBe(expected)
+    })
 })

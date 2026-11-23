@@ -273,7 +273,7 @@ fn scan_vault(
 /// also below a name that starts with a dot or that is not valid Unicode: a
 /// file moved there is still under the guard. Obsidian does not show them, so
 /// they are no candidates of a link.
-pub fn scan_denied(
+fn scan_denied(
     vault: &Vault,
     configuration: &Configuration,
 ) -> Result<(Vec<String>, BTreeSet<String>), String> {
@@ -409,6 +409,24 @@ pub fn compute_queue(
     configuration: Configuration,
     kit: &StarterKit,
 ) -> Result<Scan, String> {
+    compute_queue_with(vault, entries, journals, configuration, kit, None)
+}
+
+/// The queue of `compute_queue`, with one more note read as excluded by the
+/// ignore property: the second scan of an `ignore` (rule 2 of "The edits of
+/// the guards"), which computes the forced removals with the edit applied.
+///
+/// # Errors
+///
+/// As `compute_queue`.
+pub fn compute_queue_with(
+    vault: &Vault,
+    entries: &BTreeMap<String, ManifestEntry>,
+    journals: JournalState,
+    configuration: Configuration,
+    kit: &StarterKit,
+    also_ignored: Option<&str>,
+) -> Result<Scan, String> {
     let folded = fold_moves(entries.keys().cloned(), &journals.lines);
     let published_paths = published_paths_of(entries, &folded.positions);
     let (scanned, others) = scan_vault(vault, &configuration)?;
@@ -416,7 +434,13 @@ pub fn compute_queue(
         notes,
         ignored,
         link_paths,
-    } = read_notes(vault, scanned, &configuration, &published_paths)?;
+    } = read_notes(
+        vault,
+        scanned,
+        &configuration,
+        &published_paths,
+        also_ignored,
+    )?;
 
     // A link that Obsidian leads to a file under a guard must not lead to
     // another file of the same name. So the files of the deny list folders
@@ -481,14 +505,7 @@ pub fn compute_queue(
             }
         }
     }
-    for path in notes.keys() {
-        let published = manifest
-            .get(path)
-            .is_some_and(|entry| entry.state == State::Published);
-        if !published && !ignored.contains(path) {
-            queue.new.push(path.clone());
-        }
-    }
+    queue.new = candidates_of(&notes, &manifest, &ignored);
     queue.count();
     let guards = Guards {
         configuration: &configuration,
@@ -529,6 +546,25 @@ pub fn compute_queue(
     })
 }
 
+/// The candidates: the notes of the scan that are not published and that
+/// the ignore property does not exclude, in the order of the code points.
+fn candidates_of(
+    notes: &BTreeMap<String, ScannedNote>,
+    manifest: &BTreeMap<String, ManifestEntry>,
+    ignored: &BTreeSet<String>,
+) -> Vec<String> {
+    notes
+        .keys()
+        .filter(|path| {
+            !manifest
+                .get(*path)
+                .is_some_and(|entry| entry.state == State::Published)
+                && !ignored.contains(*path)
+        })
+        .cloned()
+        .collect()
+}
+
 /// The notes of a scan, read one time.
 struct ScannedNotes {
     /// Every note of the scan, by its vault path. A `BTreeMap` of `String`
@@ -547,6 +583,7 @@ fn read_notes(
     scanned: Vec<String>,
     configuration: &Configuration,
     published_paths: &BTreeSet<String>,
+    also_ignored: Option<&str>,
 ) -> Result<ScannedNotes, String> {
     let mut notes = BTreeMap::new();
     let mut ignored = BTreeSet::new();
@@ -559,7 +596,7 @@ fn read_notes(
         let Some(text) = text else { continue };
         // The scan left the folders of the deny list out, so only the ignore
         // property is left.
-        if guard_of(&path, &text, configuration).is_some() {
+        if guard_of(&path, &text, configuration).is_some() || also_ignored == Some(path.as_str()) {
             ignored.insert(path.clone());
         }
         let source = source_of(&text);

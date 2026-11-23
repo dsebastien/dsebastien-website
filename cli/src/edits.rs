@@ -281,6 +281,12 @@ fn read_event(value: &Value, place: usize) -> Result<Event, String> {
         )));
     }
     let decision = state == "confirmed" || state == "rejected";
+    // Only the author decides a proposal, in the view (rule 7).
+    if decision && face != "plugin" {
+        return Err(wrong(&format!(
+            "is a decision of the face \"{face}\": only the author decides a proposal, in the view (the face plugin)"
+        )));
+    }
     let proposal = match object.get("proposal") {
         None if decision => return Err(wrong("decides no proposal: it has no \"proposal\"")),
         None => None,
@@ -600,6 +606,16 @@ mod tests {
             refusal(&text_with(&[value(&first), value(&other)], 0))
                 .contains("another action or path")
         );
+        // A decision of another face than the view.
+        for face in ["command-line", "mcp-server"] {
+            let mut agent = decision(&first, "confirmed", "2031-06-01T15:00:00Z");
+            agent.face = face.to_owned();
+            agent.id = event_id(&agent).expect("the event has an id");
+            assert!(
+                refusal(&text_with(&[value(&first), value(&agent)], 0))
+                    .contains("only the author decides")
+            );
+        }
         // A proposal that comes again after its rejection, with the same id,
         // is open again, and can be decided again.
         let log = log_of(vec![first.clone(), rejected.clone(), first.clone()], 0);
