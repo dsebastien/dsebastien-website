@@ -411,6 +411,22 @@ describe('a moved note whose text is not the published text (R67)', () => {
         ).toEqual([])
     })
 
+    test('a tick of it wins over the hold of the technical updates', () => {
+        const both = queueOf({
+            changed: ['New place.md'],
+            movedEdited: ['New place.md'],
+            technicalUpdates: ['New place.md'],
+            renamed: [{ from: 'Old place.md', to: 'New place.md' }]
+        })
+        const choices = toggleTechnical(toggleRow(both, NO_CHOICES, 'New place.md'))
+        expect(selectionOf(both, choices)).toEqual({
+            include: ['New place.md'],
+            hold: [],
+            remove: [],
+            pair: []
+        })
+    })
+
     test('says that its text waits for a tick', () => {
         expect(stateOfNote(MOVED, NO_CHOICES, 'New place.md', false).label).toBe(
             'Live: moves to this path at the next publication, and its new text waits for a tick'

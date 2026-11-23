@@ -86,9 +86,11 @@ export function selectionOf(queue: QueueLists, choices: Choices): NormalSelectio
         choices.unpublish.filter((path) => published.has(path) && !pairFrom.has(path))
     )
     const edited = new Set(editedOf(queue))
+    const ticked = new Set(choices.include)
     const hold = [
         ...choices.hold.filter((path) => edited.has(path)),
-        ...(choices.holdTechnical ? queue.technicalUpdates : [])
+        // A ticked moved note wins over the hold of the technical updates.
+        ...(choices.holdTechnical ? queue.technicalUpdates.filter((path) => !ticked.has(path)) : [])
     ].filter((path) => !remove.has(path))
     return {
         include: sortByCodePoint([

@@ -391,6 +391,45 @@ describe('the publication center', () => {
         ).toEqual([NOTE])
     }, 60_000)
 
+    test('a check that fails never stops a takedown (PUB-99)', async () => {
+        await using stores = await makeTestStores()
+        const { copy, center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        // A deny list entry that names no folder stops every check (GATE-38).
+        await writeFile(join(copy, 'configuration.json'), '{"denyList": ["No such folder"]}\n')
+        await git('-C', copy, 'commit', '--quiet', '--all', '--message', 'A wrong deny list')
+        await git('-C', copy, 'push', '--quiet', 'origin', 'HEAD:main')
+        center.noteChanged(SECOND)
+
+        await center.takedown([NOTE], [NOTE])
+
+        expect(
+            center.state.report?.kind === 'takedown' ? center.state.report.report.takenDown : []
+        ).toEqual([NOTE])
+        expect(
+            center.state.log.some((line) =>
+                line.text.startsWith(
+                    'Takedown: the check before it failed, so it uses the last check'
+                )
+            )
+        ).toBe(true)
+    }, 60_000)
+
+    test('a takedown whose note moved since its dialog stops, and says so', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+
+        await center.takedown([NOTE], ['10 Garden/Elsewhere.md'])
+
+        expect(center.state.report?.kind).toBe('publication')
+        expect(center.state.error).toContain('open its dialog again')
+    }, 60_000)
+
     test('a takedown asked during a check runs after it', async () => {
         await using stores = await makeTestStores()
         const { center } = await setUp(stores)

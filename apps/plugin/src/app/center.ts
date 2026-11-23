@@ -393,8 +393,12 @@ export class PublicationCenter {
         await this.#checkAfter()
     }
 
-    /** Takes notes down at once, with no plan (PUB-81, TOOL-25). */
-    async takedown(paths: readonly string[]): Promise<void> {
+    /**
+     * Takes notes down at once, with no plan (PUB-81, TOOL-25). `shown` is
+     * the path of each note in the content store as its dialog named it: the
+     * takedown stops when a check finds another one.
+     */
+    async takedown(paths: readonly string[], shown?: readonly string[]): Promise<void> {
         // A takedown does not wait for a publication (PUB-99), but one run
         // at a time holds the copy: it runs at the end of the current one.
         while (this.#state.activity !== 'idle') {
@@ -405,11 +409,25 @@ export class PublicationCenter {
             // The queue tells where a note is in the content store: after a
             // run that changed the copy, it is checked again first.
             if (!this.#fresh || this.#changed.size > 0) {
-                await this.#checkWith(device)
+                // Nothing but the copy stops a takedown (PUB-99): a check that
+                // fails (a deny list entry that names no folder, a stopped
+                // run) leaves the last check.
+                try {
+                    await this.#checkWith(device)
+                } catch (error) {
+                    this.#log(
+                        `Takedown: the check before it failed, so it uses the last check (${messageOf(error)})`
+                    )
+                }
             }
             // A note that a move of the queue moved is still at its old path
             // in the content store until the next publication.
             const stored = paths.map((path) => this.storePathOf(path))
+            if (shown !== undefined && stored.some((path, index) => path !== shown[index])) {
+                throw new Error(
+                    `The note moved in the content store since its dialog opened, so nothing was taken down: open its dialog again (${stored.map((path) => `"${path}"`).join(', ')})`
+                )
+            }
             this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
             this.#fresh = false
             const report = await takedown(device, stored, {

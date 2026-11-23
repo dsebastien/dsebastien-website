@@ -618,8 +618,9 @@ export class PublicationCenterView extends ItemView {
                     .setIcon('trash-2')
                     .setWarning(true)
                     .onClick(() => {
-                        new TakedownModal(this.app, row.path, center.storePathOf(row.path), () => {
-                            void center.takedown([row.path])
+                        const stored = center.storePathOf(row.path)
+                        new TakedownModal(this.app, row.path, stored, () => {
+                            void center.takedown([row.path], [stored])
                         }).open()
                     })
             )

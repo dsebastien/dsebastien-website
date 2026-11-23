@@ -239,8 +239,9 @@ export class VaultPublishPlugin extends Plugin {
                     return false
                 }
                 if (!checking) {
-                    new TakedownModal(this.app, path, this.center.storePathOf(path), () => {
-                        void this.center.takedown([path])
+                    const stored = this.center.storePathOf(path)
+                    new TakedownModal(this.app, path, stored, () => {
+                        void this.center.takedown([path], [stored])
                     }).open()
                 }
                 return true
