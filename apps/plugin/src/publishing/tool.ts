@@ -60,6 +60,8 @@ export interface StoredPlan {
     readonly listsNotRefreshed: readonly string[]
     /** The notes of the plan with a live query block, which the page drops (REN-14). */
     readonly liveQueries: readonly string[]
+    /** The notes whose text the refresh changed, for the author. Outside the parity rule. */
+    readonly listsRefreshed: readonly string[]
     /** Why the refresh did not refresh a note, for the author. Outside the parity rule. */
     readonly refreshProblems: readonly { readonly path: string; readonly message: string }[]
 }
@@ -552,7 +554,7 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     )
     let refresh: RefreshResult = {
         refreshed: new Set(),
-        written: new Set(),
+        written: new Map(),
         wrote: false,
         problems: []
     }
@@ -568,6 +570,7 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
         plan: computed.plan,
         offline: !reached,
         ...listsOfPlan(computed, refresh.refreshed),
+        listsRefreshed: sortByCodePoint([...refresh.written.keys()]),
         refreshProblems: refresh.problems
     }
 }

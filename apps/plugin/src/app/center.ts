@@ -370,19 +370,26 @@ export class PublicationCenter {
                     } finally {
                         const events = this.#duringRefresh
                         this.#duringRefresh = undefined
-                        const written = new Set(result?.written ?? [])
+                        const writes = new Map(result?.written ?? [])
                         for (const path of events) {
-                            // The first event of a note that the refresh wrote is
-                            // its write; any other event is an edit.
-                            if (!written.delete(path) && !this.#isOwnWrite(path)) {
+                            // One event for each write of the refresh is that
+                            // write; any other event is an edit.
+                            const left = writes.get(path) ?? 0
+                            if (left > 0) {
+                                writes.set(path, left - 1)
+                            } else if (!this.#isOwnWrite(path)) {
                                 this.#changed.add(path)
                             }
                         }
-                        // A write whose event has not come yet.
-                        this.#wrote([...written])
+                        // The writes whose events have not come yet: one slot each.
+                        for (const [path, left] of writes) {
+                            for (let count = 0; count < left; count += 1) {
+                                this.#wrote([path])
+                            }
+                        }
                         if (result !== undefined && result.written.size > 0) {
                             this.#log(
-                                `Lists refreshed by the Dataview Serializer: ${[...result.written].map((path) => `"${path}"`).join(', ')}`
+                                `Lists refreshed by the Dataview Serializer: ${[...result.written.keys()].map((path) => `"${path}"`).join(', ')}`
                             )
                         }
                     }

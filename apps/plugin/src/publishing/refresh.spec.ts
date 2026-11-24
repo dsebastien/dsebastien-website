@@ -48,7 +48,7 @@ async function setUp(
             const refreshed = new Set<string>()
             const problems: { path: string; message: string }[] = []
             let wrote = false
-            const written = new Set<string>()
+            const written = new Map<string, number>()
             for (const path of paths) {
                 const result = outcome(path)
                 if (result === 'failed') {
@@ -66,7 +66,7 @@ async function setUp(
                         )
                     )
                     wrote = true
-                    written.add(path)
+                    written.set(path, 1)
                 }
                 refreshed.add(path)
             }

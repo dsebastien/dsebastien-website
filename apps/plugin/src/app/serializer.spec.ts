@@ -25,6 +25,7 @@ function note(
     return {
         path,
         resolvedPath: outcome === 'not-found' || outcome === 'not-run' ? null : path,
+        writes: outcome === 'updated' ? 1 : 0,
         outcome,
         errors: more.errors ?? [],
         skipped: more.skipped ?? []
@@ -68,7 +69,7 @@ describe('the Dataview Serializer in Obsidian', () => {
         expect(asked).toEqual(['kept', ['A.md', 'B.md', 'C.md']])
         // A note in which the serializer finds no query to run is not refreshed.
         expect([...result.refreshed].sort()).toEqual(['A.md', 'B.md'])
-        expect([...result.written]).toEqual(['A.md'])
+        expect([...result.written]).toEqual([['A.md', 1]])
         expect(result.wrote).toBe(true)
         expect(result.problems).toEqual([
             { path: 'C.md', message: 'the Dataview Serializer found no query to run in this note' }
@@ -97,13 +98,74 @@ describe('the Dataview Serializer in Obsidian', () => {
             host(
                 serializer(() => ({
                     state: 'ready',
-                    notes: [{ path: 'A.md', outcome: 'updated', errors: [], skipped: [] }]
+                    notes: [
+                        {
+                            path: 'A.md',
+                            resolvedPath: 'A.md',
+                            outcome: 'updated',
+                            errors: [],
+                            skipped: []
+                        }
+                    ]
                 }))
             )
         )
 
         expect((await lists.refresh(['A.md'])).problems[0]?.message).toContain('answer')
     })
+
+    test('a note written in two passes counts two writes', async () => {
+        const lists = listsOf(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [{ ...(note('A.md', 'updated') as object), writes: 2 }]
+                }))
+            )
+        )
+
+        expect([...(await lists.refresh(['A.md'])).written]).toEqual([['A.md', 2]])
+    })
+
+    test('a note that a pass wrote before a later pass failed is a write', async () => {
+        const lists = listsOf(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [
+                        {
+                            ...(note('A.md', 'failed', {
+                                errors: [{ query: 'LIST', message: 'boom' }]
+                            }) as object),
+                            writes: 1
+                        }
+                    ]
+                }))
+            )
+        )
+
+        const result = await lists.refresh(['A.md'])
+
+        expect(result.wrote).toBe(true)
+        expect([...result.written]).toEqual([['A.md', 1]])
+        expect(result.refreshed.size).toBe(0)
+    })
+
+    test.each([[-1], [1.5], ['1'], [undefined]])(
+        'an answer whose writes is %p cannot be read',
+        async (writes) => {
+            const lists = listsOf(
+                host(
+                    serializer(() => ({
+                        state: 'ready',
+                        notes: [{ ...(note('A.md', 'updated') as object), writes }]
+                    }))
+                )
+            )
+
+            expect((await lists.refresh(['A.md'])).problems[0]?.message).toContain('answer')
+        }
+    )
 
     test('a conflict counts as a write: the plan is computed again', async () => {
         const lists = listsOf(

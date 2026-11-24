@@ -939,7 +939,12 @@ export class PublicationCenterView extends ItemView {
                             `${path}: ${reasons.get(path) ?? 'the Dataview Serializer did not refresh it'}`
                     )
                 ],
-                ['Live query blocks (not on the page)', dryRun.liveQueries]
+                ['Live query blocks (not on the page)', dryRun.liveQueries],
+                // The rows that the refresh added can come from any note (ADR 0011).
+                [
+                    'Lists refreshed by the Dataview Serializer (check their rows)',
+                    dryRun.listsRefreshed
+                ]
             ]
             for (const [title, items] of lists) {
                 if (items.length === 0) {

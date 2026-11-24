@@ -226,8 +226,11 @@ export interface ListRefresh {
 export interface RefreshResult {
     /** The paths whose lists are refreshed: updated or already up to date, with no error and no skipped query. */
     readonly refreshed: ReadonlySet<string>
-    /** The paths of the notes that the refresh wrote. */
-    readonly written: ReadonlySet<string>
+    /**
+     * The notes that the refresh wrote, each with the number of its writes:
+     * the serializer can write one note in more than one pass.
+     */
+    readonly written: ReadonlyMap<string, number>
     /**
      * True when the refresh wrote a note, or may have written one (an error,
      * a note that changed during the refresh, an answer that cannot be read):

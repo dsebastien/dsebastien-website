@@ -722,6 +722,8 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
             lateEvent?: boolean
             /** The refresh throws after its write. */
             throws?: boolean
+            /** The serializer writes the frozen note this many times (passes). */
+            writes?: number
         } = {}
     ): Promise<{
         center: PublicationCenter
@@ -730,7 +732,13 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
         /** The events that Obsidian reports after the refresh returned. */
         late: string[]
     }> {
-        const { refreshes = true, editedDuring, lateEvent = false, throws = false } = options
+        const {
+            refreshes = true,
+            editedDuring,
+            lateEvent = false,
+            throws = false,
+            writes = 1
+        } = options
         const late: string[] = []
         const vault = await copyFixtureVault(stores)
         const copy = await makeContentStoreCopy(stores)
@@ -759,10 +767,12 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
                                 )
                             )
                             // Obsidian reports the write of the serializer as an edit.
-                            if (lateEvent) {
-                                late.push(FROZEN)
-                            } else {
-                                center.noteChanged(FROZEN)
+                            for (let count = 0; count < writes; count += 1) {
+                                if (lateEvent) {
+                                    late.push(FROZEN)
+                                } else {
+                                    center.noteChanged(FROZEN)
+                                }
                             }
                             wrote = true
                         }
@@ -775,7 +785,7 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
                         }
                         return {
                             refreshed: new Set(refreshes ? paths : []),
-                            written: new Set(wrote ? [FROZEN] : []),
+                            written: new Map(wrote ? [[FROZEN, writes]] : []),
                             wrote,
                             problems: refreshes
                                 ? []
@@ -887,5 +897,32 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
 
         expect(center.state.error).toContain('the serializer stopped')
         expect(center.stateOf(FROZEN).label).toContain('edited since the check')
+    }, 60_000)
+
+    test('a note that the serializer wrote in three passes is no edit', async () => {
+        await using stores = await makeTestStores()
+        const { center, copy } = await setUpWithLists(stores, { writes: 3 })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
+        expect(await Bun.file(join(copy, 'notes', FROZEN)).text()).toContain(ROW)
+    }, 60_000)
+
+    test('the late events of a note written in two passes are no edit either', async () => {
+        await using stores = await makeTestStores()
+        const { center, late } = await setUpWithLists(stores, { writes: 2, lateEvent: true })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+        await center.dryRun()
+        for (const path of late.splice(0)) {
+            center.noteChanged(path)
+        }
+
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
     }, 60_000)
 })

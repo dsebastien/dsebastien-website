@@ -75,7 +75,7 @@ function changedByObsidian(path: string, normalize: (path: string) => string): b
 function noneRefreshed(paths: readonly string[], message: string, wrote: boolean): RefreshResult {
     return {
         refreshed: new Set(),
-        written: new Set(),
+        written: new Map(),
         wrote,
         problems: paths.map((path) => ({ path, message }))
     }
@@ -105,7 +105,7 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
         return undefined
     }
     const refreshed = new Set<string>()
-    const written = new Set<string>()
+    const written = new Map<string, number>()
     const problems: { path: string; message: string }[] = []
     let wrote = false
     for (const [index, path] of paths.entries()) {
@@ -114,6 +114,8 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
             !isRecord(entry) ||
             entry['path'] !== path ||
             (entry['resolvedPath'] !== null && typeof entry['resolvedPath'] !== 'string') ||
+            !Number.isSafeInteger(entry['writes']) ||
+            (entry['writes'] as number) < 0 ||
             typeof entry['outcome'] !== 'string' ||
             !isListOf(entry['errors'], ['query', 'message']) ||
             !isListOf(entry['skipped'], ['query', 'reason'])
@@ -124,12 +126,15 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
         if (!REFRESHED.has(outcome) && !NOT_REFRESHED.has(outcome)) {
             return undefined
         }
-        if (outcome === 'updated' || outcome === 'conflict') {
+        // `writes`: how many times the serializer wrote the note in this call
+        // (one pass or more), also when a later pass failed.
+        const writes = entry['writes'] as number
+        if (writes > 0 || outcome === 'conflict') {
             // A conflict: another write changed the note during the refresh.
             wrote = true
         }
-        if (outcome === 'updated' && typeof entry['resolvedPath'] === 'string') {
-            written.add(entry['resolvedPath'])
+        if (writes > 0 && typeof entry['resolvedPath'] === 'string') {
+            written.set(entry['resolvedPath'], writes)
         }
         if (state !== 'ready') {
             problems.push({ path, message: `${STATES.get(state) ?? state}${staleOf(answer)}` })
