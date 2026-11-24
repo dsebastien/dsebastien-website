@@ -34,7 +34,7 @@ Do not mix them:
     - `adr/`: architecture decision records, `0001-slug.md`, one short paragraph each
     - `plans/`: specs and plans
     - `research/`: dated, cited fact files
-    - `history/`: one file per day, `yyyy-mm-dd.md`
+    - `history/`: the day files up to 2026-11-24. No new file: the history of the work is kept outside this repository.
 
 ## Agent workflow
 
@@ -43,9 +43,8 @@ Do not mix them:
 Read these in order before any change:
 
 1. `documentation/Business Rules.md`: mandatory invariants.
-2. The most recent `documentation/history/yyyy-mm-dd.md`: what was done last and open blockers.
-3. Active plans under `documentation/plans/`.
-4. `GLOSSARY.md` and `documentation/adr/`, when they exist. Use the glossary terms in code, tickets and documents.
+2. Active plans under `documentation/plans/`.
+3. `GLOSSARY.md` and `documentation/adr/`, when they exist. Use the glossary terms in code, tickets and documents.
 
 ### Working method
 
@@ -72,7 +71,6 @@ Configuration for those skills:
 4. The reviewer of the documents and of the consistency runs on Sonnet. The reviewer that tries to break the change runs on the strongest model.
 5. While a review runs, the implementer starts the next ticket that an agent can do alone, in its own git worktree.
 6. The random parity cases live in the repository (issue 112), so that a reviewer does not write that harness again.
-7. The facts of the history file (commits, counts of tests, closed issues) come from a script (issue 113).
 
 ### Definition of done
 
@@ -86,7 +84,6 @@ A change is done only when all of these hold:
 - `bun run build` completes.
 - When Rust code changed: `bun run rust:format:check`, `bun run rust:lint` and `bun run rust:test` pass.
 - The CI workflow passes on the branch. For the first milestone (decision R43), a ticket is merged when every other point passes on the machine, with no wait for CI. When CI fails after the merge, correct it before the next ticket.
-- The file of the day in `documentation/history/` says what was done, which decisions were made, and what is open.
 - The plan that drove the work is updated or closed.
 - `documentation/` matches the code.
 
