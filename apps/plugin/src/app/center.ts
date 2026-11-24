@@ -358,7 +358,7 @@ export class PublicationCenter {
                         result = await lists.refresh(paths)
                         return result
                     } finally {
-                        const events = this.#duringRefresh ?? []
+                        const events = this.#duringRefresh
                         this.#duringRefresh = undefined
                         const written = new Set(result?.written ?? [])
                         for (const path of events) {

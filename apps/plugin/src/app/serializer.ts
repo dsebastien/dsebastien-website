@@ -65,7 +65,7 @@ function isListOf(value: unknown, keys: readonly string[]): value is Record<stri
  * (issue 110): such a path is not asked.
  */
 function changedByObsidian(path: string): boolean {
-    return path.normalize('NFC') !== path || /[  ]/u.test(path)
+    return path.normalize('NFC') !== path || /[\u00a0\u202f]/u.test(path)
 }
 
 /** The same message for every path: no note is refreshed. */
@@ -132,12 +132,12 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
         } else if (errors.length > 0) {
             problems.push({
                 path,
-                message: `a query failed: ${errors.map((error) => (error['query'] === '' ? error['message'] : `${error['query']}: ${error['message']}`)).join('; ')}`
+                message: `a query failed: ${errors.map((error) => (error['query'] === '' ? String(error['message']) : `${String(error['query'])}: ${String(error['message'])}`)).join('; ')}`
             })
         } else if (skipped.length > 0) {
             problems.push({
                 path,
-                message: `a query kept its old output: ${skipped.map((query) => `${query['query']}: ${query['reason']}`).join('; ')}`
+                message: `a query kept its old output: ${skipped.map((query) => `${String(query['query'])}: ${String(query['reason'])}`).join('; ')}`
             })
         } else {
             problems.push({ path, message: NOT_REFRESHED.get(outcome) ?? outcome })
