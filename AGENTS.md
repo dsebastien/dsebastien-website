@@ -290,4 +290,6 @@ The renames (issue 37): the plugin records each rename of Obsidian in the rename
 
 The publication center (issue 39): a view of the plugin with the four lists, their counts, the filters and the ticks, the moves and the pairings, a publish button that states the plan, a dry run, the publication, the unpublish and the takedown in the background, a pull of the copy, the run log and the report; the state of the open note in the status bar; the settings of the device; the measures of the budgets by hand.
 
+The hosting (issue 21): the choice of the spec is confirmed by a prototype at full size (`documentation/research/2026-11-24-hosting-prototype.md`, R75). The URL contract over HTTP is one handler that knows no host, the plain local server and the Worker of the host are its adapters, and `bun run urls` runs the URL table on a host by its address. A reader gets an attachment through the Worker.
+
 Not set up yet: the deployment, the lint rules of the Obsidian plugin catalog (the plugin is a tool for the author first).
