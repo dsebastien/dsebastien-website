@@ -403,7 +403,7 @@ export class PublicationCenter {
         if (stored.listsNotRefreshed.length > 0) {
             const reasons = new Map(stored.refreshProblems.map((one) => [one.path, one.message]))
             this.#log(
-                `Lists not refreshed, published as saved: ${stored.listsNotRefreshed.map((path) => `"${path}": ${reasons.get(path) ?? 'the Dataview Serializer did not refresh it'}`).join('; ')}`
+                `Lists not refreshed, published as they are in the note now: ${stored.listsNotRefreshed.map((path) => `"${path}": ${reasons.get(path) ?? 'the Dataview Serializer did not refresh it'}`).join('; ')}`
             )
         }
         if (stored.liveQueries.length > 0) {

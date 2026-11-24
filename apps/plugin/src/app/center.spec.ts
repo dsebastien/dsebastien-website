@@ -815,7 +815,7 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
         expect(center.state.dryRun?.liveQueries).toEqual([LIVE])
         const log = center.state.log.map((line) => line.text)
         expect(log).toContain(
-            `Lists not refreshed, published as saved: "${FROZEN}": not refreshed here`
+            `Lists not refreshed, published as they are in the note now: "${FROZEN}": not refreshed here`
         )
         expect(log).toContain(`Live query blocks, not on the page: "${LIVE}"`)
     }, 60_000)

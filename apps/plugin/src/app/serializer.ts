@@ -129,8 +129,10 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
         // `writes`: how many times the serializer wrote the note in this call
         // (one pass or more), also when a later pass failed.
         const writes = entry['writes'] as number
-        if (writes > 0 || outcome === 'conflict') {
-            // A conflict: another write changed the note during the refresh.
+        if (writes > 0 || outcome === 'updated' || outcome === 'conflict') {
+            // `updated` with no write: another program brought the refreshed
+            // text during the refresh. A conflict: another write changed the
+            // note. Either way the text is not the one of the first scan.
             wrote = true
         }
         if (writes > 0 && typeof entry['resolvedPath'] === 'string') {

@@ -114,6 +114,23 @@ describe('the Dataview Serializer in Obsidian', () => {
         expect((await lists.refresh(['A.md'])).problems[0]?.message).toContain('answer')
     })
 
+    test('an update with no write of its own makes the plan be computed again', async () => {
+        const lists = listsOf(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [{ ...(note('A.md', 'updated') as object), writes: 0 }]
+                }))
+            )
+        )
+
+        const result = await lists.refresh(['A.md'])
+
+        expect(result.wrote).toBe(true)
+        expect(result.written.size).toBe(0)
+        expect([...result.refreshed]).toEqual(['A.md'])
+    })
+
     test('a note written in two passes counts two writes', async () => {
         const lists = listsOf(
             host(

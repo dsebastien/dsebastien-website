@@ -933,7 +933,7 @@ export class PublicationCenterView extends ItemView {
             const reasons = new Map(dryRun.refreshProblems.map((one) => [one.path, one.message]))
             const lists: [string, readonly string[]][] = [
                 [
-                    'Lists not refreshed (published as saved)',
+                    'Lists not refreshed (published as they are in the note now)',
                     dryRun.listsNotRefreshed.map(
                         (path) =>
                             `${path}: ${reasons.get(path) ?? 'the Dataview Serializer did not refresh it'}`
