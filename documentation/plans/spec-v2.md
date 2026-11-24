@@ -1431,6 +1431,7 @@ No dates. Each step needs the ones before it.
 | SW-17 | The preview host is `noindex` and uses a test analytics id. The production release has no `noindex` on indexable pages                                                                                                                                                        | v1 11.2, seo SEO-023            |
 | SW-18 | The stats pages and the stats tooling work (STAT-01), and the former stats host redirects (URL-17) Removed from the gate by R70: the stats pages come after the switch (issue 58). The stats script still reads the manifest before the switch (DEP-06, SW-11).               | v1 8.4 story 100, decisions R20 |
 | SW-19 | A parity run of the two implementations on the real vault of the author passes (TOOL-06). Its results stay private                                                                                                                                                            | ADR 0009                        |
+| SW-20 | The zone features that rewrite HTML are off for the host of the notes (issue 118, `documentation/Configuration.md`): a page has an `ETag` and answers 304 with compression, and a page with an email address has the bytes of the build                                       | R75, issue 118                  |
 
 ### 19.3 Switch of the notes domain
 
