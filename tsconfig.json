@@ -55,6 +55,13 @@
     // The site has its own tsconfig.json that extends this file, and its own
     // check script (`astro check`). It is not part of this project. The plugin
     // is plain TypeScript and is part of it.
-    "include": ["scripts/**/*", "packages/**/*", "parity/**/*", "apps/plugin/**/*", "*.config.ts"],
+    "include": [
+        "prototype/**/*",
+        "scripts/**/*",
+        "packages/**/*",
+        "parity/**/*",
+        "apps/plugin/**/*",
+        "*.config.ts"
+    ],
     "exclude": ["node_modules", "dist", ".astro", ".content", ".cache"]
 }
