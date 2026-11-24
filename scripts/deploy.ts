@@ -1,8 +1,13 @@
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { headersFile, targetFrom, workerConfiguration } from '../apps/site/worker/deployment.ts'
+import {
+    checkOutput,
+    headersFile,
+    targetFrom,
+    workerConfiguration
+} from '../apps/site/worker/deployment.ts'
 
 // The deployment of a release (issue 30, HOST-01): it puts the output of a
 // build on a host as one new Worker version. It runs on the machine that
@@ -12,7 +17,7 @@ import { headersFile, targetFrom, workerConfiguration } from '../apps/site/worke
 //
 // `--target` names a private JSON file with the names of the host (see
 // `DeployTarget` in `apps/site/worker/deployment.ts`): it is never in this
-// repository. `--content-store` builds the site from a copy of the content
+// repository. `--content-store` builds the site from the copy of the content
 // store first; `--dist` deploys an output that is built already. The command
 // writes the `_headers` file into the output and the wrangler configuration
 // into `.cache/deploy/<worker>/`, then runs `wrangler deploy`. wrangler reads
@@ -73,17 +78,12 @@ async function main(): Promise<void> {
         await run(['bun', 'run', 'build:site'], { CONTENT_STORE: store })
         dist = join(SITE, 'dist')
     }
-    if (!(await isFolder(dist))) {
-        throw new Error(`${dist} is not a folder`)
+    const problem = await checkOutput(dist)
+    if (problem !== undefined) {
+        throw new Error(problem)
     }
-
-    const headers = headersFile(target)
-    const headersPath = join(dist, '_headers')
-    if (headers === '') {
-        await rm(headersPath, { force: true })
-    } else {
-        await writeFile(headersPath, headers)
-    }
+    // The whole file, over any file of that name in the output.
+    await writeFile(join(dist, '_headers'), headersFile(target))
 
     const folder = join(ROOT, '.cache', 'deploy', target.worker)
     await mkdir(folder, { recursive: true })

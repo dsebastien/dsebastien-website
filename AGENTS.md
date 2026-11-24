@@ -292,6 +292,6 @@ The publication center (issue 39): a view of the plugin with the four lists, the
 
 The hosting (issue 21): the choice of the spec is confirmed by a prototype at full size (`documentation/research/2026-11-24-hosting-prototype.md`, R75). The URL contract over HTTP is one handler that knows no host, the plain local server and the Worker of the host are its adapters, and `bun run urls` runs the URL table on a host by its address. A reader gets an attachment through the Worker.
 
-The private places (issue 30, R76): a private content store, and a command that builds and deploys a release from the machine that publishes to a preview host that is never indexed.
+The private places (issue 30, R76): a command that builds and deploys a release from the machine that publishes to a preview host that is never indexed. The content store and the names of the host are private, outside this repository.
 
 Not set up yet: the deployment after a publication (issue 32), the lint rules of the Obsidian plugin catalog (the plugin is a tool for the author first).

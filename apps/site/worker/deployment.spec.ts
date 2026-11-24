@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { headersFile, targetFrom, workerConfiguration } from './deployment.ts'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { checkOutput, headersFile, targetFrom, workerConfiguration } from './deployment.ts'
 
 // The deployment of a release to a host (issue 30): the configuration of the
 // Worker that wrangler deploys, and the `_headers` file of the static files.
@@ -39,6 +42,15 @@ describe('the target of a deployment', () => {
         expect(() => targetFrom({ ...PREVIEW, token: 'x' })).toThrow('token')
     })
 
+    test.each(['constructor', 'toString', '__proto__'])(
+        'refuses a target with the inherited name %s',
+        (key) => {
+            expect(() =>
+                targetFrom(JSON.parse(`{"${key}": 1, ${JSON.stringify(PREVIEW).slice(1)}`))
+            ).toThrow(key)
+        }
+    )
+
     test('refuses a target that is not an object', () => {
         expect(() => targetFrom([])).toThrow('target')
     })
@@ -59,13 +71,15 @@ describe('the configuration of the Worker', () => {
         })
     })
 
-    test('serves a host of its own zone as a custom domain', () => {
+    // A custom domain lets wrangler replace a DNS record of the zone without a question
+    // when it runs with no terminal: a wrong host would take over a live name.
+    test('serves a host of its own zone through a route too, never as a custom domain', () => {
         const configuration = workerConfiguration(
             { ...PREVIEW, host: 'notes.origin.example', noindex: false },
             PATHS
         )
         expect(configuration.routes).toEqual([
-            { pattern: 'notes.origin.example', custom_domain: true }
+            { pattern: 'notes.origin.example/*', zone_name: 'origin.example' }
         ])
         expect(configuration.vars).toEqual({ NOINDEX: 'false' })
     })
@@ -90,5 +104,39 @@ describe('the headers file of the static files', () => {
 
     test('is empty on a host that is indexed', () => {
         expect(headersFile({ ...PREVIEW, noindex: false })).toBe('')
+    })
+})
+
+describe('the output that a deployment puts on the host', () => {
+    const CACHE = fileURLToPath(new URL('../../../.cache', import.meta.url))
+
+    async function withFolder(run: (folder: string) => Promise<void>): Promise<void> {
+        await mkdir(CACHE, { recursive: true })
+        const folder = await mkdtemp(join(CACHE, 'deployment-spec-'))
+        try {
+            await run(folder)
+        } finally {
+            await rm(folder, { recursive: true, force: true })
+        }
+    }
+
+    test('accepts the output of a build: a folder with a resolver map', async () => {
+        await withFolder(async (folder) => {
+            await mkdir(join(folder, '-'))
+            await writeFile(join(folder, '-', 'resolver-map.json'), '{}')
+            expect(await checkOutput(folder)).toBeUndefined()
+        })
+    })
+
+    // An empty `--dist` is the working folder: the whole clone would go to the host.
+    test('refuses a folder that is not the output of a build', async () => {
+        await withFolder(async (folder) => {
+            await writeFile(join(folder, 'package.json'), '{}')
+            expect(await checkOutput(folder)).toContain('resolver map')
+        })
+    })
+
+    test('refuses a path that is not a folder', async () => {
+        expect(await checkOutput(join(CACHE, 'no-such-folder'))).toContain('not a folder')
     })
 })

@@ -4,6 +4,10 @@
 // kept in a private place: no name of an account or of a host is in this
 // repository. `scripts/deploy.ts` writes both files and runs wrangler.
 
+import { stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { RESOLVER_MAP_FILE } from '@dsebastien-website/resolver'
+
 /** Where a release goes. */
 export interface DeployTarget {
     /** The account of the host: 32 hexadecimal digits. */
@@ -15,9 +19,9 @@ export interface DeployTarget {
     /** The host name that readers ask for. */
     readonly host: string
     /**
-     * The zone of the account that serves the host. When the host is not a
-     * name of this zone (a custom hostname of another zone), the Worker gets a
-     * route of this zone; else the host is a custom domain of the Worker.
+     * The zone of the account whose route sends the host to the Worker: a
+     * custom hostname of this zone (Cloudflare for SaaS), or a name of the
+     * zone that has a proxied DNS record.
      */
     readonly zone: string
     /** True on a preview host: every answer says `noindex` (IDX-26). */
@@ -44,7 +48,7 @@ export function targetFrom(value: unknown): DeployTarget {
     }
     const fields: Record<string, unknown> = { ...value }
     for (const key of Object.keys(fields)) {
-        if (!(key in CHECKS)) {
+        if (!Object.hasOwn(CHECKS, key)) {
             throw new Error(`the target of a deployment has an unknown field: ${key}`)
         }
     }
@@ -64,9 +68,10 @@ export function targetFrom(value: unknown): DeployTarget {
 }
 
 /** A route of the Worker, as wrangler takes it. */
-export type WorkerRoute =
-    | { readonly pattern: string; readonly zone_name: string }
-    | { readonly pattern: string; readonly custom_domain: true }
+export interface WorkerRoute {
+    readonly pattern: string
+    readonly zone_name: string
+}
 
 /** The configuration of the Worker, as wrangler takes it. */
 export interface WorkerConfiguration {
@@ -96,7 +101,10 @@ export interface WorkerConfiguration {
  * only by its exact name (`html_handling` and `not_found_handling` are
  * `none`): with another value they redirect the `.html` paths and the Worker
  * answers 500 (issue 117). The Worker runs first for every path but the
- * folders of the files that the pages load.
+ * folders of the files that the pages load. The host is always a route of
+ * the zone, never a custom domain: wrangler replaces the DNS record of a
+ * custom domain without a question when it runs with no terminal, so a wrong
+ * host would take over a live name. A route changes no DNS record.
  *
  * @param paths `main`: the entry of the Worker; `dist`: the output of the build.
  */
@@ -104,7 +112,6 @@ export function workerConfiguration(
     target: DeployTarget,
     paths: { readonly main: string; readonly dist: string }
 ): WorkerConfiguration {
-    const ownZone = target.host === target.zone || target.host.endsWith(`.${target.zone}`)
     return {
         name: target.worker,
         account_id: target.accountId,
@@ -112,11 +119,7 @@ export function workerConfiguration(
         compatibility_date: '2026-11-01',
         workers_dev: false,
         preview_urls: false,
-        routes: [
-            ownZone
-                ? { pattern: target.host, custom_domain: true }
-                : { pattern: `${target.host}/*`, zone_name: target.zone }
-        ],
+        routes: [{ pattern: `${target.host}/*`, zone_name: target.zone }],
         assets: {
             directory: paths.dist,
             binding: 'ASSETS',
@@ -131,10 +134,28 @@ export function workerConfiguration(
 }
 
 /**
- * The `_headers` file of the static files. It covers the files that the
- * host gives without the Worker (`/_astro/`, `/-/search/`): the Worker marks
- * its own answers.
+ * The whole `_headers` file of the static files: the deployment writes it
+ * into the output, over any file of that name. It marks every static file;
+ * that is what covers the files that the host gives without the Worker
+ * (`/_astro/`, `/-/search/`), because the Worker marks its own answers.
  */
 export function headersFile(target: DeployTarget): string {
     return target.noindex ? '/*\n  X-Robots-Tag: noindex\n' : ''
+}
+
+/**
+ * Why a folder is not the output of a build, or `undefined` when it is. A
+ * deployment puts the whole folder on the host: a wrong folder (an empty
+ * `--dist` is the working folder) would publish files that are no release.
+ */
+export async function checkOutput(folder: string): Promise<string | undefined> {
+    const kind = await stat(folder).catch(() => undefined)
+    if (kind?.isDirectory() !== true) {
+        return `${folder} is not a folder`
+    }
+    const map = await stat(join(folder, RESOLVER_MAP_FILE)).catch(() => undefined)
+    if (map?.isFile() !== true) {
+        return `${folder} is not the output of a build: it has no resolver map (${RESOLVER_MAP_FILE})`
+    }
+    return undefined
 }
