@@ -1,0 +1,350 @@
+import { errorFormat, errorText, type ErrorStatus } from './errors.ts'
+import { resolve, type ResolverMap, type SiteFile } from './resolver.ts'
+
+// The answer of a request (MOD-09 and HOST-02 of the spec): the URL contract
+// over HTTP, in plain TypeScript with the `Request` and `Response` of the web
+// platform. It knows no host. The files of a release and of the attachment
+// storage are behind a port (`Release`): the plain local server gives them
+// from folders, the edge from the static files and the object storage of the
+// host. So both give the same answers, and the tests of the URL contract run
+// against both.
+
+/** A part of a file: its first and its last byte. */
+export interface ByteRange {
+    readonly start: number
+    readonly end: number
+}
+
+/** A file as a host stores it: a file of a release, or a file of the attachment storage. */
+export interface StoredFile {
+    /** The size of the whole file, in bytes. */
+    readonly size: number
+    /** The entity tag of the file, with its quotes. It changes when the file changes. */
+    readonly tag: string
+    /** The bytes of the file, or of a part of it. */
+    readonly read: (range?: ByteRange) => BodyInit | Promise<BodyInit>
+}
+
+/** The files of one release of the site, as a host gives them. */
+export interface Release {
+    /** The resolver map of the release. */
+    readonly map: ResolverMap
+    /**
+     * A file of the output of the build, by its name in the resolver map.
+     * `undefined` when the release lacks it.
+     */
+    readonly file: (name: string) => Promise<StoredFile | undefined>
+    /**
+     * A file that the pages load (a style sheet, a script, a file of the
+     * search), by the path of its URL. `undefined` when the path names no
+     * such file, `'missing'` when the release names the file and lacks it.
+     */
+    readonly asset: (path: string) => Promise<StoredFile | 'missing' | undefined>
+    /**
+     * A file of the attachment storage, by its key. `undefined` when the
+     * storage lacks it. A host without an attachment storage has no such
+     * function: an attachment then answers 404.
+     */
+    readonly attachment?: (key: string) => Promise<StoredFile | undefined>
+    /**
+     * The server error page, read before any request: a failure never
+     * depends on a file of the release, which can be the missing file
+     * (NAV-20).
+     */
+    readonly serverErrorPage?: string
+    /** Takes the detail of a failure, which never goes into an answer. */
+    readonly report?: (error: unknown) => void
+}
+
+const HTML = 'text/html; charset=utf-8'
+const TEXT = 'text/plain; charset=utf-8'
+
+// The kinds of files are maps, not objects: the end of a name such as
+// `constructor` is a key like any other.
+const ASSET_TYPES = new Map(
+    Object.entries({
+        css: 'text/css; charset=utf-8',
+        js: 'text/javascript; charset=utf-8',
+        json: 'application/json; charset=utf-8',
+        svg: 'image/svg+xml',
+        png: 'image/png',
+        webp: 'image/webp',
+        woff2: 'font/woff2'
+    })
+)
+
+/** The kinds of the attachments, by the end of their names. Every other file is plain bytes. */
+const ATTACHMENT_TYPES = new Map(
+    Object.entries({
+        '3gp': 'video/3gpp',
+        'avif': 'image/avif',
+        'bmp': 'image/bmp',
+        'flac': 'audio/flac',
+        'gif': 'image/gif',
+        'jpeg': 'image/jpeg',
+        'jpg': 'image/jpeg',
+        'm4a': 'audio/mp4',
+        'mkv': 'video/x-matroska',
+        'mov': 'video/quicktime',
+        'mp3': 'audio/mpeg',
+        'mp4': 'video/mp4',
+        'ogg': 'audio/ogg',
+        'ogv': 'video/ogg',
+        'pdf': 'application/pdf',
+        'png': 'image/png',
+        'svg': 'image/svg+xml',
+        'wav': 'audio/wav',
+        'webm': 'video/webm',
+        'webp': 'image/webp'
+    })
+)
+
+/** The kinds of the files of the site that are not pages. */
+const FILE_TYPES: Record<SiteFile['type'], string> = {
+    markdown: 'text/markdown; charset=utf-8',
+    text: TEXT
+}
+
+/** The end of a name after its last dot, in small letters. */
+function extensionOf(name: string): string {
+    return name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+}
+
+/**
+ * The part of a file that a range request asks for. `undefined` when the
+ * request asks for the whole file: no range, or a range in a form that the
+ * handler does not take (several ranges), which HTTP lets a server answer
+ * with the whole file. `null` when the range is outside the file.
+ */
+function rangeOf(header: string | null, size: number): ByteRange | undefined | null {
+    const match = header === null ? null : /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+    if (match === null) {
+        return undefined
+    }
+    const [, first = '', last = ''] = match
+    if (first === '' && last === '') {
+        return undefined
+    }
+    if (first === '') {
+        // The last bytes of the file.
+        const length = Number(last)
+        return length === 0 || size === 0
+            ? null
+            : { start: Math.max(size - length, 0), end: size - 1 }
+    }
+    const start = Number(first)
+    const end = last === '' ? size - 1 : Math.min(Number(last), size - 1)
+    return start >= size || end < start ? null : { start, end }
+}
+
+/**
+ * The answer for an attachment: the whole file, or the part that a range
+ * request asks for (HOST-05). The content of a hashed URL never changes, so
+ * it can be kept for a year. An attachment is never a page: it runs no
+ * script and loads nothing, also an SVG that is opened alone.
+ */
+async function attachmentResponse(
+    request: Request,
+    file: StoredFile,
+    name: string
+): Promise<Response> {
+    const type = ATTACHMENT_TYPES.get(extensionOf(name)) ?? 'application/octet-stream'
+    const headers: Record<string, string> = {
+        'accept-ranges': 'bytes',
+        'cache-control': 'public, max-age=31536000, immutable',
+        'content-type': type,
+        'x-content-type-options': 'nosniff'
+    }
+    // An SVG or any other file opened alone runs no script. The viewer of a
+    // browser refuses a PDF in a sandbox, and it runs the PDF apart anyway.
+    if (type !== 'application/pdf') {
+        headers['content-security-policy'] =
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    }
+    const range = rangeOf(request.headers.get('range'), file.size)
+    if (range === null) {
+        return new Response(null, {
+            status: 416,
+            headers: { ...headers, 'content-range': `bytes */${String(file.size)}` }
+        })
+    }
+    if (range === undefined) {
+        return new Response(await file.read(), { headers })
+    }
+    return new Response(await file.read(range), {
+        status: 206,
+        headers: {
+            ...headers,
+            'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(file.size)}`
+        }
+    })
+}
+
+/**
+ * The headers of every error answer: it is never kept, and its form follows
+ * the `Accept` header (NAV-21, decision R64).
+ */
+const ERROR_HEADERS = { 'cache-control': 'no-store', 'vary': 'Accept' } as const
+
+/** The short Markdown text of an error answer, for an agent (NAV-21). */
+function errorMarkdown(
+    status: ErrorStatus,
+    origin: string,
+    suggestions: readonly string[] = []
+): Response {
+    return new Response(errorText(status, origin, suggestions), {
+        status,
+        headers: { 'content-type': 'text/markdown; charset=utf-8', ...ERROR_HEADERS }
+    })
+}
+
+/** A short text with the status of an error, for a release without the page of that error. */
+function errorPlain(status: ErrorStatus, text: string): Response {
+    return new Response(text, { status, headers: { 'content-type': TEXT, ...ERROR_HEADERS } })
+}
+
+/**
+ * The answer when the release lacks a file that the resolver map names, and
+ * for every other failure: the server error page, or its short text, with no
+ * detail of the failure (URL-33, NAV-20).
+ */
+function serverError(
+    format: 'html' | 'markdown',
+    page: string | undefined,
+    origin: string
+): Response {
+    if (format === 'markdown') {
+        return errorMarkdown(500, origin)
+    }
+    return page === undefined
+        ? errorPlain(500, errorText(500, origin))
+        : new Response(page, { status: 500, headers: { 'content-type': HTML, ...ERROR_HEADERS } })
+}
+
+/**
+ * A file of the output of the build: a page or another file of the site. It
+ * answers 304 when the request names its tag (URL-18). A client checks it
+ * again at each use, so a new publication shows at once. With the status of
+ * an error, it is the page of that error: never kept, and never 304.
+ */
+async function siteFileResponse(
+    request: Request,
+    file: StoredFile,
+    type: string,
+    status: 200 | 404 | 410 = 200
+): Promise<Response> {
+    if (status !== 200) {
+        return new Response(await file.read(), {
+            status,
+            headers: { 'content-type': type, ...ERROR_HEADERS }
+        })
+    }
+    const headers = {
+        'content-type': type,
+        'cache-control': 'public, max-age=0, must-revalidate',
+        'etag': file.tag
+    }
+    const wanted = request.headers.get('if-none-match')
+    if (wanted !== null && wanted.split(',').some((item) => item.trim() === file.tag)) {
+        return new Response(null, { status: 304, headers })
+    }
+    return new Response(await file.read(), { headers })
+}
+
+/**
+ * The handler of a release: the answer of each request, through the
+ * resolver. Each file comes from the resolver map or from the files that the
+ * pages load, never from the request.
+ */
+export function siteHandler(release: Release): (request: Request) => Promise<Response> {
+    /** The answer of a request. `undefined` when the release lacks a file that it names. */
+    async function answer(
+        request: Request,
+        pathname: string,
+        search: string,
+        origin: string,
+        format: 'html' | 'markdown'
+    ): Promise<Response | undefined> {
+        // A file of the build comes first: an alias or a variant never hides it.
+        const asset = await release.asset(pathname)
+        if (asset === 'missing') {
+            return undefined
+        }
+        if (asset !== undefined) {
+            return new Response(await asset.read(), {
+                headers: {
+                    'content-type':
+                        ASSET_TYPES.get(extensionOf(pathname)) ?? 'application/octet-stream'
+                }
+            })
+        }
+        const resolution = resolve(pathname, release.map, search)
+        /** A file of the release as an answer. `undefined` when the release lacks it. */
+        const fileOf = async (
+            name: string,
+            type: string,
+            status: 200 | 404 | 410 = 200
+        ): Promise<Response | undefined> => {
+            const file = await release.file(name)
+            return file === undefined
+                ? undefined
+                : await siteFileResponse(request, file, type, status)
+        }
+        switch (resolution.kind) {
+            case 'not-found':
+                if (format === 'markdown') {
+                    return errorMarkdown(404, origin, resolution.suggestions)
+                }
+                return resolution.file === undefined
+                    ? errorPlain(404, 'Not found\n')
+                    : await fileOf(resolution.file, HTML, 404)
+            case 'gone':
+                // An unpublished note (URL-27, NAV-19).
+                if (format === 'markdown') {
+                    return errorMarkdown(410, origin)
+                }
+                return resolution.file === undefined
+                    ? errorPlain(410, errorText(410, origin))
+                    : await fileOf(resolution.file, HTML, 410)
+            case 'attachment': {
+                if (release.attachment === undefined) {
+                    return errorPlain(404, 'Not found\n')
+                }
+                const file = await release.attachment(resolution.key)
+                // The map names the file, so the storage lacks it: a failure
+                // of the release, never "not found" that a cache keeps (URL-33).
+                return file === undefined
+                    ? undefined
+                    : await attachmentResponse(request, file, resolution.name)
+            }
+            case 'redirect':
+                return new Response(null, {
+                    status: resolution.status,
+                    headers: {
+                        'location': resolution.location,
+                        'cache-control': resolution.cacheControl
+                    }
+                })
+            case 'file':
+                return await fileOf(resolution.file, FILE_TYPES[resolution.type])
+            case 'page':
+                return await fileOf(resolution.file, HTML)
+        }
+    }
+
+    return async (request) => {
+        // The path is read as it is requested, with its percent-encoding.
+        const { pathname, search, origin } = new URL(request.url)
+        const format = errorFormat(pathname, request.headers.get('accept'))
+        try {
+            return (
+                (await answer(request, pathname, search, origin, format)) ??
+                serverError(format, release.serverErrorPage, origin)
+            )
+        } catch (error) {
+            // The detail goes to the log of the host, never to the answer.
+            release.report?.(error)
+            return serverError(format, release.serverErrorPage, origin)
+        }
+    }
+}

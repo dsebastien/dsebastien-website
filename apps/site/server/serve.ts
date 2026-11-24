@@ -3,19 +3,20 @@ import { readdir } from 'node:fs/promises'
 import { join, relative, resolve as resolvePath, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
-    errorFormat,
     errorText,
-    resolve,
     SERVER_ERROR_FILE,
-    type ErrorStatus,
+    siteHandler,
     type ResolverMap,
-    type SiteFile
+    type SiteFile,
+    type StoredFile
 } from '@dsebastien-website/resolver'
 
 // The plain server (MOD-09 and HOST-02 of the spec): it serves the output of
 // the build through the resolver, as the edge does on the real host. It is
-// for local work and for the tests of the URL contract. It is not a server
-// for production.
+// an adapter of the handler of the site (`siteHandler` of the resolver
+// package, which holds the URL contract): it gives the files of the output
+// and of the attachment storage from folders. It is for local work and for
+// the tests of the URL contract. It is not a server for production.
 //
 //   bun run serve [--dist <folder>] [--port <number>] [--attachments <folder>]
 //
@@ -85,225 +86,20 @@ async function readResolverMap(dist: string): Promise<ResolverMap> {
  */
 const ASSET_FOLDERS = ['_astro', '-/search']
 
-// The kinds of files are maps, not objects: the end of a name such as
-// `constructor` is a key like any other.
-const CONTENT_TYPES = new Map(
-    Object.entries({
-        css: 'text/css; charset=utf-8',
-        js: 'text/javascript; charset=utf-8',
-        json: 'application/json; charset=utf-8',
-        svg: 'image/svg+xml',
-        png: 'image/png',
-        webp: 'image/webp',
-        woff2: 'font/woff2'
-    })
-)
-
-/** The kinds of the attachments, by the end of their names. Every other file is plain bytes. */
-const ATTACHMENT_TYPES = new Map(
-    Object.entries({
-        '3gp': 'video/3gpp',
-        'avif': 'image/avif',
-        'bmp': 'image/bmp',
-        'flac': 'audio/flac',
-        'gif': 'image/gif',
-        'jpeg': 'image/jpeg',
-        'jpg': 'image/jpeg',
-        'm4a': 'audio/mp4',
-        'mkv': 'video/x-matroska',
-        'mov': 'video/quicktime',
-        'mp3': 'audio/mpeg',
-        'mp4': 'video/mp4',
-        'ogg': 'audio/ogg',
-        'ogv': 'video/ogg',
-        'pdf': 'application/pdf',
-        'png': 'image/png',
-        'svg': 'image/svg+xml',
-        'wav': 'audio/wav',
-        'webm': 'video/webm',
-        'webp': 'image/webp'
-    })
-)
-
 /**
- * The part of a file that a range request asks for, as the first and the
- * last byte. `undefined` when the request asks for the whole file: no range,
- * or a range in a form that the server does not take (several ranges), which
- * HTTP lets a server answer with the whole file. `null` when the range is
- * outside the file.
+ * A file of a folder of this machine. Its tag is its size and its time.
+ * `undefined` when the file does not exist.
  */
-function rangeOf(
-    header: string | null,
-    size: number
-): { start: number; end: number } | undefined | null {
-    const match = header === null ? null : /^bytes=(\d*)-(\d*)$/.exec(header.trim())
-    if (match === null) {
-        return undefined
-    }
-    const [, first = '', last = ''] = match
-    if (first === '' && last === '') {
-        return undefined
-    }
-    if (first === '') {
-        // The last bytes of the file.
-        const length = Number(last)
-        return length === 0 || size === 0
-            ? null
-            : { start: Math.max(size - length, 0), end: size - 1 }
-    }
-    const start = Number(first)
-    const end = last === '' ? size - 1 : Math.min(Number(last), size - 1)
-    return start >= size || end < start ? null : { start, end }
-}
-
-/**
- * The answer for an attachment: the whole file, or the part that a range
- * request asks for (HOST-05). The content of a hashed URL never changes, so
- * it can be kept for a year. An attachment is never a page: it runs no
- * script and loads nothing, also an SVG that is opened alone.
- */
-async function attachmentResponse(
-    request: Request,
-    file: string,
-    name: string,
-    fail: () => Response
-): Promise<Response> {
+async function storedFile(file: string): Promise<StoredFile | undefined> {
     const blob = Bun.file(file)
     if (!(await blob.exists())) {
-        // The map names the file, so the storage lacks it: a failure of the
-        // release, never "not found" that a cache keeps (URL-33).
-        return fail()
+        return undefined
     }
-    const size = blob.size
-    const type =
-        ATTACHMENT_TYPES.get(name.slice(name.lastIndexOf('.') + 1).toLowerCase()) ??
-        'application/octet-stream'
-    const headers: Record<string, string> = {
-        'accept-ranges': 'bytes',
-        'cache-control': 'public, max-age=31536000, immutable',
-        'content-type': type,
-        'x-content-type-options': 'nosniff'
+    return {
+        size: blob.size,
+        tag: `"${blob.size.toString(16)}-${blob.lastModified.toString(16)}"`,
+        read: (range) => (range === undefined ? blob : blob.slice(range.start, range.end + 1))
     }
-    // An SVG or any other file opened alone runs no script. The viewer of a
-    // browser refuses a PDF in a sandbox, and it runs the PDF apart anyway.
-    if (type !== 'application/pdf') {
-        headers['content-security-policy'] =
-            "default-src 'none'; style-src 'unsafe-inline'; sandbox"
-    }
-    const range = rangeOf(request.headers.get('range'), size)
-    if (range === null) {
-        return new Response(null, {
-            status: 416,
-            headers: { ...headers, 'content-range': `bytes */${String(size)}` }
-        })
-    }
-    if (range === undefined) {
-        return new Response(blob, { headers })
-    }
-    return new Response(blob.slice(range.start, range.end + 1), {
-        status: 206,
-        headers: {
-            ...headers,
-            'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(size)}`
-        }
-    })
-}
-
-/**
- * The headers of every error answer: it is never kept, and its form follows
- * the `Accept` header (NAV-21, decision R64).
- */
-const ERROR_HEADERS = { 'cache-control': 'no-store', 'vary': 'Accept' } as const
-
-/** The short Markdown text of an error answer, for an agent (NAV-21). */
-function errorMarkdown(
-    status: ErrorStatus,
-    origin: string,
-    suggestions: readonly string[] = []
-): Response {
-    return new Response(errorText(status, origin, suggestions), {
-        status,
-        headers: { 'content-type': 'text/markdown; charset=utf-8', ...ERROR_HEADERS }
-    })
-}
-
-/** A plain "not found", for a build with no "not found" page and for an attachment without a storage. */
-function notFound(): Response {
-    return new Response('Not found\n', {
-        status: 404,
-        headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
-    })
-}
-
-/**
- * The answer when the release lacks a file that the resolver map names, and
- * for every other failure: the server error page that the server read at its
- * start, or its short text, with no detail of the failure (URL-33, NAV-20).
- *
- * @param page the server error page, or `undefined` when the build had none
- */
-function serverError(
-    format: 'html' | 'markdown',
-    page: string | undefined,
-    origin: string
-): Response {
-    if (format === 'markdown') {
-        return errorMarkdown(500, origin)
-    }
-    return page === undefined
-        ? new Response(errorText(500, origin), {
-              status: 500,
-              headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
-          })
-        : new Response(page, {
-              status: 500,
-              headers: { 'content-type': 'text/html; charset=utf-8', ...ERROR_HEADERS }
-          })
-}
-
-/** The kinds of the files of the site that are not pages. */
-const FILE_TYPES: Record<SiteFile['type'], string> = {
-    markdown: 'text/markdown; charset=utf-8',
-    text: 'text/plain; charset=utf-8'
-}
-
-/**
- * A file of the output of the build: a page or another file of the site. It
- * has a tag of its size and of its time, and it answers 304 when the request
- * names that tag (URL-18). A client checks it again at each use, so a new
- * publication shows at once.
- */
-async function siteFileResponse(
-    request: Request,
-    file: string,
-    type: string,
-    fail: () => Response,
-    status = 200
-): Promise<Response> {
-    const blob = Bun.file(file)
-    if (!(await blob.exists())) {
-        // The map names the file, so the release lacks it: a failure of the
-        // release, never a page "not found" that a cache keeps (URL-33).
-        return fail()
-    }
-    const tag = `"${blob.size.toString(16)}-${blob.lastModified.toString(16)}"`
-    const headers: Record<string, string> =
-        status === 200
-            ? {
-                  'content-type': type,
-                  'cache-control': 'public, max-age=0, must-revalidate',
-                  'etag': tag
-              }
-            : { 'content-type': type, ...ERROR_HEADERS }
-    const wanted = request.headers.get('if-none-match')
-    if (
-        status === 200 &&
-        wanted !== null &&
-        wanted.split(',').some((item) => item.trim() === tag)
-    ) {
-        return new Response(null, { status: 304, headers })
-    }
-    return new Response(blob, { status, headers })
 }
 
 /**
@@ -311,9 +107,7 @@ async function siteFileResponse(
  * from the output of the build one time: the server gives a file of that list
  * and nothing else, so a request can never name a file itself.
  */
-async function readAssets(
-    dist: string
-): Promise<{ get(path: string, fail: () => Response): Promise<Response> | undefined }> {
+async function readAssets(dist: string): Promise<Map<string, string>> {
     const files = new Map<string, string>()
     for (const folder of ASSET_FOLDERS) {
         const root = join(dist, folder)
@@ -331,24 +125,7 @@ async function readAssets(
             }
         }
     }
-    return {
-        get(path, fail) {
-            const file = files.get(path)
-            if (file === undefined) {
-                return undefined
-            }
-            const type =
-                CONTENT_TYPES.get(file.split('.').at(-1) ?? '') ?? 'application/octet-stream'
-            const blob = Bun.file(file)
-            // A file of the list that is gone since the start is a failure
-            // of the release (URL-33).
-            return blob
-                .exists()
-                .then((exists) =>
-                    exists ? new Response(blob, { headers: { 'content-type': type } }) : fail()
-                )
-        }
-    }
+    return files
 }
 
 /** A running server. */
@@ -379,71 +156,25 @@ export async function startServer(options: {
     const errorPage = Bun.file(join(dist, SERVER_ERROR_FILE))
     const serverErrorPage = (await errorPage.exists()) ? await errorPage.text() : undefined
 
-    /** The answer of a request, through the resolver. */
-    async function answer(
-        request: Request,
-        pathname: string,
-        search: string,
-        origin: string,
-        fail: () => Response
-    ): Promise<Response> {
-        // A file of the build comes first: an alias or a variant never hides it.
-        const asset = assets.get(pathname, fail)
-        if (asset !== undefined) {
-            return await asset
+    const handle = siteHandler({
+        map,
+        // The name comes from the resolver map, never from the request.
+        file: (name) => storedFile(join(dist, name)),
+        async asset(path) {
+            const file = assets.get(path)
+            // A file of the list that is gone since the start is a failure
+            // of the release (URL-33).
+            return file === undefined ? undefined : ((await storedFile(file)) ?? 'missing')
+        },
+        ...(storage === undefined
+            ? {}
+            : { attachment: (key: string) => storedFile(join(storage, key)) }),
+        ...(serverErrorPage === undefined ? {} : { serverErrorPage }),
+        // The detail goes to the log of the machine, never to the answer.
+        report: (error) => {
+            console.error(error)
         }
-        const resolution = resolve(pathname, map, search)
-        const format = errorFormat(pathname, request.headers.get('accept'))
-        const html = 'text/html; charset=utf-8'
-        // Each file comes from the resolver map or from the list of the
-        // assets, never from the request.
-        switch (resolution.kind) {
-            case 'not-found':
-                if (format === 'markdown') {
-                    return errorMarkdown(404, origin, resolution.suggestions)
-                }
-                return resolution.file === undefined
-                    ? notFound()
-                    : await siteFileResponse(request, join(dist, resolution.file), html, fail, 404)
-            case 'gone':
-                // An unpublished note (URL-27, NAV-19).
-                if (format === 'markdown') {
-                    return errorMarkdown(410, origin)
-                }
-                return resolution.file === undefined
-                    ? new Response(errorText(410, origin), {
-                          status: 410,
-                          headers: { 'content-type': 'text/plain; charset=utf-8', ...ERROR_HEADERS }
-                      })
-                    : await siteFileResponse(request, join(dist, resolution.file), html, fail, 410)
-            case 'attachment':
-                return storage === undefined
-                    ? notFound()
-                    : await attachmentResponse(
-                          request,
-                          join(storage, resolution.key),
-                          resolution.name,
-                          fail
-                      )
-            case 'redirect':
-                return new Response(null, {
-                    status: resolution.status,
-                    headers: {
-                        'location': resolution.location,
-                        'cache-control': resolution.cacheControl
-                    }
-                })
-            case 'file':
-                return await siteFileResponse(
-                    request,
-                    join(dist, resolution.file),
-                    FILE_TYPES[resolution.type],
-                    fail
-                )
-            case 'page':
-                return await siteFileResponse(request, join(dist, resolution.file), html, fail)
-        }
-    }
+    })
 
     const server = Bun.serve({
         hostname: '127.0.0.1',
@@ -452,26 +183,20 @@ export async function startServer(options: {
         // detail, never the error page of Bun with the paths of the machine
         // (NAV-20).
         error(error) {
-            // The detail goes to the log of the machine, never to the answer.
             console.error(error)
-            return serverError('html', serverErrorPage, this.url.origin)
+            return new Response(serverErrorPage ?? errorText(500, this.url.origin), {
+                status: 500,
+                headers: {
+                    'content-type':
+                        serverErrorPage === undefined
+                            ? 'text/plain; charset=utf-8'
+                            : 'text/html; charset=utf-8',
+                    'cache-control': 'no-store',
+                    'vary': 'Accept'
+                }
+            })
         },
-        async fetch(request) {
-            // The path is read as it is requested, with its percent-encoding.
-            const { pathname, search, origin } = new URL(request.url)
-            const fail = (): Response =>
-                serverError(
-                    errorFormat(pathname, request.headers.get('accept')),
-                    serverErrorPage,
-                    origin
-                )
-            try {
-                return await answer(request, pathname, search, origin, fail)
-            } catch (error) {
-                console.error(error)
-                return fail()
-            }
-        }
+        fetch: handle
     })
     return {
         url: `http://127.0.0.1:${String(server.port)}`,
