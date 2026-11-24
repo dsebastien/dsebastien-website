@@ -525,7 +525,8 @@ async function recordFor(
 
 /**
  * Computes a publication plan and stores it on the device. It writes nothing
- * into the vault and nothing into the content of the store.
+ * into the content of the store, and nothing into the vault but the frozen
+ * lists that the refresh of the device updates first (PUB-35, R71).
  */
 export async function plan(given: Device, selection: Selection): Promise<StoredPlan> {
     const device = forRun(given)
@@ -542,7 +543,12 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     // final (PUB-35, R71): when the refresh wrote a note, the plan is
     // computed again, so the record holds the refreshed text (PUB-92).
     const paths = sortByCodePoint([...computed.plan.publish, ...computed.plan.update])
-    let refresh: RefreshResult = { refreshed: new Set(), wrote: false, problems: [] }
+    let refresh: RefreshResult = {
+        refreshed: new Set(),
+        written: new Set(),
+        wrote: false,
+        problems: []
+    }
     if (device.lists !== undefined && paths.length > 0) {
         refresh = await device.lists.refresh(paths)
         if (refresh.wrote) {

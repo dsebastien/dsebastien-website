@@ -62,10 +62,10 @@
             "listToRefresh": false
         },
         {
-            "name": "a marker without the space after its colon is no marker",
-            "source": "<!-- QueryToSerialize:LIST -->\n<!-- IQ:=1 -->\n",
+            "name": "a block marker needs no space after its colon, an inline marker does",
+            "source": "<!-- QueryToSerialize:LIST -->\n",
             "liveQuery": false,
-            "listToRefresh": false
+            "listToRefresh": true
         },
         {
             "name": "a marker without the space after the comment opening is no marker",
@@ -238,6 +238,54 @@
         {
             "name": "the lines of the properties are read too",
             "source": "---\nnote: \"<!-- QueryToSerialize: LIST -->\"\n---\nText\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "an inline marker without the space after its colon is no marker",
+            "source": "<!-- IQ:=1 -->\n<!-- dataview-serializer-iq:=1 -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "the other syntax of a block marker needs no space either",
+            "source": "<!-- dataview-serializer-query:LIST -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "an empty source",
+            "source": "",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a live fence that is never closed",
+            "source": "```dataview\nLIST\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "an info word that is not ASCII",
+            "source": "```dätaview\nLIST\n```\n```DATAVİEW\nLIST\n```\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a lone carriage return does not end a line",
+            "source": "```dataview\rLIST\r```\r",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a write-once query that never ran is not counted (a known limit)",
+            "source": "<!-- QueryToSerializeOnce: LIST -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a marker in inline code is counted (a known limit)",
+            "source": "Use `<!-- QueryToSerialize: LIST -->` like this\n",
             "liveQuery": false,
             "listToRefresh": true
         }

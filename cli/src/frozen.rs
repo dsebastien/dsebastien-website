@@ -11,8 +11,8 @@ const LIVE_WORDS: [&str; 5] = ["dataview", "dataviewjs", "base", "bases", "query
 /// edit. The markers of the queries that the author froze on purpose (manual,
 /// once, once and eject) are not here (K14 of the study).
 const REFRESH_MARKERS: [&str; 6] = [
-    "<!-- QueryToSerialize: ",
-    "<!-- dataview-serializer-query: ",
+    "<!-- QueryToSerialize:",
+    "<!-- dataview-serializer-query:",
     "<!-- IQ: ",
     "<!-- dataview-serializer-iq: ",
     "<!-- DataviewJSToSerialize:",

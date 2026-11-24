@@ -17,7 +17,13 @@ function note(
         skipped?: { query: string; reason: string }[]
     } = {}
 ): unknown {
-    return { path, outcome, errors: more.errors ?? [], skipped: more.skipped ?? [] }
+    return {
+        path,
+        resolvedPath: outcome === 'not-found' || outcome === 'not-run' ? null : path,
+        outcome,
+        errors: more.errors ?? [],
+        skipped: more.skipped ?? []
+    }
 }
 
 function serializer(answer: (paths: string[]) => unknown, asked: unknown[] = []): unknown {
@@ -55,9 +61,121 @@ describe('the Dataview Serializer in Obsidian', () => {
         const result = await lists.refresh(['A.md', 'B.md', 'C.md'])
 
         expect(asked).toEqual(['kept', ['A.md', 'B.md', 'C.md']])
-        expect([...result.refreshed].sort()).toEqual(['A.md', 'B.md', 'C.md'])
+        // A note with no query to run has no list: it is not in listsNotRefreshed anyway.
+        expect([...result.refreshed].sort()).toEqual(['A.md', 'B.md'])
+        expect([...result.written]).toEqual(['A.md'])
         expect(result.wrote).toBe(true)
-        expect(result.problems).toEqual([])
+        expect(result.problems).toEqual([
+            { path: 'C.md', message: 'the Dataview Serializer found no query to run in this note' }
+        ])
+    })
+
+    test('a note that the serializer found at another path is not refreshed', async () => {
+        const lists = serializerLists(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [{ ...(note('A.md', 'updated') as object), resolvedPath: 'B.md' }]
+                }))
+            )
+        )
+
+        const result = await lists.refresh(['A.md'])
+
+        expect(result.refreshed.size).toBe(0)
+        expect(result.wrote).toBe(true)
+        expect(result.problems[0]?.message).toContain('another file')
+    })
+
+    test('an answer without resolvedPath cannot be read', async () => {
+        const lists = serializerLists(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [{ path: 'A.md', outcome: 'updated', errors: [], skipped: [] }]
+                }))
+            )
+        )
+
+        expect((await lists.refresh(['A.md'])).problems[0]?.message).toContain('answer')
+    })
+
+    test('a conflict counts as a write: the plan is computed again', async () => {
+        const lists = serializerLists(
+            host(serializer(() => ({ state: 'ready', notes: [note('A.md', 'conflict')] })))
+        )
+
+        const result = await lists.refresh(['A.md'])
+
+        expect(result.wrote).toBe(true)
+        expect(result.written.size).toBe(0)
+        expect(result.refreshed.size).toBe(0)
+    })
+
+    test('a path that Obsidian changes is not asked (issue 110)', async () => {
+        const asked: unknown[] = []
+        const lists = serializerLists(
+            host(
+                serializer(
+                    (paths) => ({
+                        state: 'ready',
+                        notes: paths.map((path) => note(path, 'unchanged'))
+                    }),
+                    asked
+                )
+            )
+        )
+
+        const result = await lists.refresh(['a\u00a0b.md', 'c\u202fd.md', 'e\u0301.md', 'A.md'])
+
+        expect(asked).toEqual(['kept', ['A.md']])
+        expect([...result.refreshed]).toEqual(['A.md'])
+        expect(result.problems.map((problem) => problem.path)).toEqual([
+            'a\u00a0b.md',
+            'c\u202fd.md',
+            'e\u0301.md'
+        ])
+    })
+
+    test('a serializer that does not answer in time refreshes no note', async () => {
+        const lists = serializerLists(host(serializer(() => new Promise(() => undefined))), 20)
+
+        const result = await lists.refresh(['A.md'])
+
+        expect(result.refreshed.size).toBe(0)
+        expect(result.wrote).toBe(true)
+        expect(result.problems[0]?.message).toContain('did not answer within')
+    })
+
+    test.each([['toString'], ['constructor'], ['__proto__']])(
+        'the name %s of an object is no state and no outcome',
+        async (name) => {
+            const asState = serializerLists(
+                host(serializer(() => ({ state: name, notes: [note('A.md', 'updated')] })))
+            )
+            const asOutcome = serializerLists(
+                host(serializer(() => ({ state: 'ready', notes: [note('A.md', name)] })))
+            )
+
+            for (const lists of [asState, asOutcome]) {
+                const result = await lists.refresh(['A.md'])
+                expect(result.refreshed.size).toBe(0)
+                expect(result.problems[0]?.message).toContain('answer')
+            }
+        }
+    )
+
+    test('an answer with a list of another length cannot be read', async () => {
+        const lists = serializerLists(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [note('A.md', 'updated'), note('A.md', 'updated')]
+                }))
+            )
+        )
+
+        expect((await lists.refresh(['A.md'])).problems[0]?.message).toContain('answer')
     })
 
     test('a refresh with no update wrote nothing', async () => {
@@ -137,7 +255,8 @@ describe('the Dataview Serializer in Obsidian', () => {
     test.each([
         ['disabled-on-device', 'turned off on this device'],
         ['dataview-not-loaded', 'Dataview is not loaded'],
-        ['dataview-index-not-ready', 'index of Dataview is not ready']
+        ['dataview-index-not-ready', 'index of Dataview is not ready'],
+        ['dataview-index-busy', 'still indexing recent edits']
     ])('the state %s refreshes no note', async (state, says) => {
         const lists = serializerLists(
             host(serializer(() => ({ state, notes: [note('A.md', 'not-run')] })))

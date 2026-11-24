@@ -13,7 +13,7 @@ import { SelectionError } from '../publishing/plan.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
 import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
-import type { Device } from '../publishing/ports.ts'
+import type { Device, RefreshResult } from '../publishing/ports.ts'
 import {
     outcomeOfEdit,
     outcomeOfGuards,
@@ -99,7 +99,8 @@ const ACTIVITY_NAMES: Record<Activity, string> = {
 /**
  * The activity of each tool of the MCP server. `status` and `plan` are
  * answering: they change nothing that the view shows (a plan can put back a
- * publication that stopped halfway, which `status` refuses to read).
+ * publication that stopped halfway, which `status` refuses to read; in
+ * Obsidian it also refreshes the frozen lists of its notes, R71).
  */
 const TOOL_ACTIVITIES: Record<ToolCall['tool'], Activity> = {
     status: 'answering',
@@ -220,7 +221,10 @@ export class PublicationCenter {
     /** The notes that changed after the last check began. */
     #changed = new Set<string>()
     /** The notes whose state property the last run wrote, and until when their events are no edits. */
-    #ownWrites: { paths: Set<string>; until: number } = { paths: new Set(), until: 0 }
+    /** The writes of the tool that are no edit: each slot holds paths until its time ends. */
+    #ownWrites: { paths: Set<string>; until: number }[] = []
+    /** The paths of the edits that Obsidian reports while a refresh of the lists runs (R71). */
+    #duringRefresh: string[] | undefined
     /** The activity that runs now, so that a takedown can wait for its end. */
     #current: Promise<void> = Promise.resolve()
     /** False after a run changed the copy, until the next check: the queue is old then. */
@@ -306,7 +310,15 @@ export class PublicationCenter {
      */
     noteChanged(path: string): void {
         // A monotonic clock of the face, not a time of the logic.
-        if (performance.now() < this.#ownWrites.until && this.#ownWrites.paths.delete(path)) {
+        // While the lists are refreshed, the events wait: after the refresh,
+        // only one event of each note that it wrote is its own write.
+        if (this.#duringRefresh !== undefined) {
+            this.#duringRefresh.push(path)
+            return
+        }
+        const now = performance.now()
+        this.#ownWrites = this.#ownWrites.filter((slot) => now < slot.until)
+        if (this.#ownWrites.some((slot) => slot.paths.delete(path))) {
             return
         }
         this.#changed.add(path)
@@ -319,7 +331,9 @@ export class PublicationCenter {
     }
 
     #wrote(paths: readonly string[]): void {
-        this.#ownWrites = { paths: new Set(paths), until: performance.now() + OWN_WRITES }
+        // A new slot does not drop the slot of an earlier run: the events of
+        // its writes can come later.
+        this.#ownWrites.push({ paths: new Set(paths), until: performance.now() + OWN_WRITES })
     }
 
     /**
@@ -338,13 +352,28 @@ export class PublicationCenter {
             ...device,
             lists: {
                 refresh: async (paths) => {
-                    const own = new Set(paths)
-                    this.#ownWrites = { paths: own, until: Number.POSITIVE_INFINITY }
+                    this.#duringRefresh = []
+                    let result: RefreshResult | undefined
                     try {
-                        return await lists.refresh(paths)
+                        result = await lists.refresh(paths)
+                        return result
                     } finally {
-                        if (this.#ownWrites.paths === own) {
-                            this.#ownWrites = { paths: own, until: performance.now() + OWN_WRITES }
+                        const events = this.#duringRefresh ?? []
+                        this.#duringRefresh = undefined
+                        const written = new Set(result?.written ?? [])
+                        for (const path of events) {
+                            // The first event of a note that the refresh wrote is
+                            // its write; any other event is an edit.
+                            if (!written.delete(path)) {
+                                this.#changed.add(path)
+                            }
+                        }
+                        // A write whose event has not come yet.
+                        this.#wrote([...written])
+                        if (result !== undefined && result.written.size > 0) {
+                            this.#log(
+                                `Lists refreshed by the Dataview Serializer: ${[...result.written].map((path) => `"${path}"`).join(', ')}`
+                            )
                         }
                     }
                 }
@@ -518,7 +547,11 @@ export class PublicationCenter {
         return this.#run('checking', 'Check', () => this.#check())
     }
 
-    /** A dry run: the plan of the choices, from the vault, with nothing written (PUB-33). */
+    /**
+     * A dry run: the plan of the choices, from the vault. It writes nothing
+     * but the frozen lists that the refresh before the plan updates (PUB-33,
+     * R71).
+     */
     dryRun(): Promise<void> {
         return this.#run('planning', 'Dry run', async () => {
             const { queue, choices } = this.#state

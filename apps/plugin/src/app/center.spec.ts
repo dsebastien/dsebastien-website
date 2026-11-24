@@ -714,7 +714,9 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
     /** A center whose stand-in serializer writes a row into the frozen list, and reports each write as Obsidian does. */
     async function setUpWithLists(
         stores: TestStores,
-        refreshes = true
+        refreshes = true,
+        /** A path that another program edits during the refresh. */
+        editedDuring?: string
     ): Promise<{ center: PublicationCenter; copy: string; asked: string[][] }> {
         const vault = await copyFixtureVault(stores)
         const copy = await makeContentStoreCopy(stores)
@@ -746,8 +748,13 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
                             center.noteChanged(FROZEN)
                             wrote = true
                         }
+                        if (editedDuring !== undefined) {
+                            await writeFile(join(vault, editedDuring), 'Another version\n')
+                            center.noteChanged(editedDuring)
+                        }
                         return {
                             refreshed: new Set(refreshes ? paths : []),
+                            written: new Set(wrote ? [FROZEN] : []),
                             wrote,
                             problems: refreshes
                                 ? []
@@ -792,5 +799,31 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
         expect(center.state.error).toBeUndefined()
         expect(center.state.report?.kind).toBe('publication')
         expect(await Bun.file(join(copy, 'notes', FROZEN)).text()).toContain(ROW)
+    }, 60_000)
+
+    test('an edit during the refresh of a note that the refresh did not write still stops the publication', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUpWithLists(stores, true, NOTE)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, toggleRow(queue, choices, FROZEN), NOTE))
+
+        await center.publish()
+
+        expect(center.state.error).toContain('A new note changed after the check')
+        expect(center.state.error).toContain(NOTE)
+        expect(center.state.error).not.toContain(FROZEN)
+    }, 60_000)
+
+    test('the log names the notes that the refresh wrote', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUpWithLists(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+
+        await center.dryRun()
+
+        expect(center.state.log.map((line) => line.text)).toContain(
+            `Lists refreshed by the Dataview Serializer: "${FROZEN}"`
+        )
     }, 60_000)
 })

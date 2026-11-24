@@ -291,8 +291,13 @@ describe('the MCP server of the plugin', () => {
             const planned = JSON.parse(first.texts[0] ?? '') as {
                 id: string
                 plan: { publish: string[] }
+                listsNotRefreshed: string[]
+                liveQueries: string[]
             }
             expect(planned.plan.publish).toEqual([SECOND, NOTE])
+            // The two lists of the frozen lists come with the plan (R71).
+            expect(planned.listsNotRefreshed).toEqual([])
+            expect(planned.liveQueries).toEqual([])
             const published = await call('publish', { plan: planned.id })
             expect(published.isError).toBe(false)
             expect(

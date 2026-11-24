@@ -21,8 +21,8 @@ const LIVE_WORDS: ReadonlySet<string> = new Set([
  * once and eject) are not here (K14 of the study).
  */
 const REFRESH_MARKERS: readonly string[] = [
-    '<!-- QueryToSerialize: ',
-    '<!-- dataview-serializer-query: ',
+    '<!-- QueryToSerialize:',
+    '<!-- dataview-serializer-query:',
     '<!-- IQ: ',
     '<!-- dataview-serializer-iq: ',
     '<!-- DataviewJSToSerialize:',

@@ -245,6 +245,9 @@ fn drives_a_whole_publication_through_the_tools() {
     // A selection with a path to include.
     let planned = server.data("plan", &json!({ "include": [NOTE, SECOND] }));
     assert_eq!(planned["plan"]["publish"], json!([SECOND, NOTE]));
+    // The two lists of the frozen lists come with the plan (R71).
+    assert_eq!(planned["listsNotRefreshed"], json!([]));
+    assert_eq!(planned["liveQueries"], json!([]));
     let report = server.data("publish", &json!({ "plan": planned["id"] }));
     assert_eq!(report["published"], json!([SECOND, NOTE]));
     let message = git(&["-C", text(&setup.copy), "log", "-1", "--format=%B"]);

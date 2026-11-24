@@ -48,6 +48,7 @@ async function setUp(
             const refreshed = new Set<string>()
             const problems: { path: string; message: string }[] = []
             let wrote = false
+            const written = new Set<string>()
             for (const path of paths) {
                 const result = outcome(path)
                 if (result === 'failed') {
@@ -65,10 +66,11 @@ async function setUp(
                         )
                     )
                     wrote = true
+                    written.add(path)
                 }
                 refreshed.add(path)
             }
-            return { refreshed, wrote, problems }
+            return { refreshed, written, wrote, problems }
         }
     }
     const device = {
@@ -149,6 +151,21 @@ describe('the refresh of the frozen lists before a plan', () => {
 
         await unpublish(device, [PLAIN], { ...RUN, time: '2031-04-02T08:00:00Z' })
 
+        expect(calls).toEqual([])
+    })
+
+    test('a published note that comes under a guard is never asked', async () => {
+        await using stores = await makeTestStores()
+        const { device, vault, calls } = await setUp(stores)
+        const first = await plan(device, { include: [FROZEN] })
+        await publish(device, first.id, RUN)
+        const file = join(vault, FROZEN)
+        await writeFile(file, `---\npublish_ignore: true\n---\n${await readFile(file, 'utf8')}`)
+        calls.length = 0
+
+        const planned = await plan(device, { include: [] })
+
+        expect(planned.plan.forcedRemove).toEqual([FROZEN])
         expect(calls).toEqual([])
     })
 

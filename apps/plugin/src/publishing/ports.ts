@@ -226,7 +226,13 @@ export interface ListRefresh {
 export interface RefreshResult {
     /** The paths whose lists are refreshed: updated, already up to date, or with no query to run. */
     readonly refreshed: ReadonlySet<string>
-    /** True when the refresh wrote a note: the plan is computed again. */
+    /** The paths of the notes that the refresh wrote. */
+    readonly written: ReadonlySet<string>
+    /**
+     * True when the refresh wrote a note, or may have written one (an error,
+     * a note that changed during the refresh, an answer that cannot be read):
+     * the plan is computed again.
+     */
     readonly wrote: boolean
     /** Why the other notes are not refreshed, for the author. Outside the parity rule. */
     readonly problems: readonly { readonly path: string; readonly message: string }[]
