@@ -1,19 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
-import {
-    FIXTURE_NOTE_TYPES,
-    copyFixtureVault,
-    makeContentStoreCopy,
-    makeTestStores,
-    type TestStores
-} from '@dsebastien-website/testing'
-import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
-import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
 import { createWorker, type StaticFiles } from '../worker/worker.ts'
+import { checkUrlCase, readUrlTable } from './url-table.ts'
+import { buildUrlTableSite, type BuiltUrlTableSite } from './url-table-site.ts'
 
 // The URL table of the site over HTTP (issue 43, SEAM-04 of the spec): the
 // publishing tool publishes the notes of the table from a copy of the fixture
@@ -23,40 +16,11 @@ import { createWorker, type StaticFiles } from '../worker/worker.ts'
 // the ones of the host (issue 21, HOST-02). The resolver alone runs the same
 // table (`packages/resolver/src/table.spec.ts`).
 const SITE = fileURLToPath(new URL('..', import.meta.url))
-const TABLE = fileURLToPath(new URL('../../../fixtures/urls.json', import.meta.url))
 const ORIGIN = 'https://notes.dsebastien.net'
 
-interface Case {
-    name: string
-    request: string
-    status: number
-    page?: string
-    canonical?: string
-    file?: string
-    location?: string
-    cacheControl?: string
-    suggestions?: string[]
-    accept?: string
-    format?: 'html' | 'markdown'
-}
+const table = await readUrlTable()
 
-// The file is test data of this repository. The cast is the boundary: a wrong
-// shape fails the tests that read it.
-const table = (await Bun.file(TABLE).json()) as {
-    notes: Note[]
-    removed: Note[]
-    cases: Case[]
-}
-
-/** A note of the table: a note with former paths was published at the first one. */
-interface Note {
-    path: string
-    aliases: string[]
-    formerPaths?: string[]
-}
-
-let stores: TestStores | undefined
-let contentStore: string | undefined
+let site: BuiltUrlTableSite | undefined
 let outDir: string | undefined
 let server: Server | undefined
 let exitCode = -1
@@ -68,11 +32,15 @@ function serverUrl(): string {
     return server.url
 }
 
-function store(): string {
-    if (contentStore === undefined) {
-        throw new Error('the content store does not exist')
+function built(): BuiltUrlTableSite {
+    if (site === undefined) {
+        throw new Error('the site of the table does not exist')
     }
-    return contentStore
+    return site
+}
+
+function store(): string {
+    return built().contentStore
 }
 
 /** The two hosts of the built site: both are adapters of one handler. */
@@ -122,78 +90,14 @@ async function get(
         : await fetch(`${serverUrl()}${path}`, { redirect: 'manual', headers })
 }
 
-/** The canonical link of a page: `<link rel="canonical" href="...">`. */
-function canonicalLinkOf(html: string): string | undefined {
-    return /<link rel="canonical" href="([^"]*)"/u.exec(html)?.[1]
-}
-
 beforeAll(async () => {
-    stores = await makeTestStores()
-    const vault = await copyFixtureVault(stores)
-    contentStore = await makeContentStoreCopy(stores)
-    const device = nodeDevice({
-        noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
-        vault,
-        contentStore,
-        attachmentStorage: stores.attachmentStorage
-    })
-    const removed = table.removed.map((note) => note.path)
-    // A note with former paths is published at its first one, then moved by
-    // a line of a rename journal, as the plugin writes it (R66).
-    const moved = [...table.notes, ...table.removed].flatMap((note) => {
-        const [former] = note.formerPaths ?? []
-        return former === undefined ? [] : [{ from: former, to: note.path }]
-    })
-    const move = async (from: string, to: string): Promise<void> => {
-        await mkdir(dirname(join(vault, to)), { recursive: true })
-        await rename(join(vault, from), join(vault, to))
-    }
-    for (const { from, to } of moved) {
-        await move(to, from)
-    }
-    const first = (note: Note): string => note.formerPaths?.[0] ?? note.path
-    const planned = await plan(device, {
-        include: [...table.notes.map(first), ...table.removed.map(first)]
-    })
-    await publish(device, planned.id, {
-        time: '2031-04-01T08:00:00Z',
-        device: 'garden-shed',
-        face: 'plugin'
-    })
-    const journals = join(vault, '.obsidian', 'plugins', 'dsebastien-vault-publish', 'renames')
-    await mkdir(journals, { recursive: true })
-    for (const { from, to } of moved) {
-        await move(from, to)
-    }
-    await writeFile(
-        join(journals, '00000000000000ab.jsonl'),
-        moved
-            .map(({ from, to }) =>
-                JSON.stringify({ from, kind: 'note', time: '2031-04-01T09:00:00Z', to })
-            )
-            .map((line) => `${line}\n`)
-            .join('')
-    )
-    // The notes of `removed` are unpublished by a second publication (URL-27),
-    // which also applies the moves.
-    const unpublish = await plan(device, { include: [], remove: removed })
-    await publish(device, unpublish.id, {
-        time: '2031-04-02T08:00:00Z',
-        device: 'garden-shed',
-        face: 'plugin'
-    })
     // The output folder is inside the site, in a folder that git ignores: Astro
     // moves files into it, and a move to another file system fails.
     const cache = join(SITE, '.cache')
     await mkdir(cache, { recursive: true })
     outDir = await mkdtemp(join(cache, 'urls-page-spec-'))
-    const child = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
-        cwd: SITE,
-        env: { ...process.env, CONTENT_STORE: contentStore },
-        stdout: 'ignore',
-        stderr: 'ignore'
-    })
-    exitCode = await child.exited
+    site = await buildUrlTableSite(table, outDir)
+    exitCode = site.exitCode
     if (exitCode === 0) {
         server = await startServer({ dist: outDir, port: 0 })
     }
@@ -205,7 +109,7 @@ afterAll(async () => {
     if (outDir !== undefined) {
         await rm(outDir, { recursive: true, force: true })
     }
-    await stores?.remove()
+    await site?.remove()
 })
 
 describe('site of the URL table', () => {
@@ -273,78 +177,12 @@ describe.each(HOSTS)('URL table over HTTP on %s', (host: Host) => {
     test.each(table.cases.map((entry) => [entry.name, entry] as const))(
         '%s',
         async (_name, entry) => {
-            const response = await get(
-                entry.request,
-                entry.accept === undefined ? {} : { accept: entry.accept },
-                host
+            const findings = await checkUrlCase(
+                entry,
+                (path, headers = {}) => get(path, headers, host),
+                { table, markdownOf: built().markdownOf }
             )
-            expect(response.status).toBe(entry.status)
-            if (entry.location !== undefined) {
-                expect(response.headers.get('location')).toBe(entry.location)
-                expect(response.headers.get('cache-control')).toBe(entry.cacheControl ?? '')
-                // URL-05: the target is a page, reached in one hop, with a
-                // clean canonical link.
-                const target = await get(entry.location, {}, host)
-                expect(target.status).toBe(200)
-                // The Markdown of a note has no canonical link.
-                if (!entry.location.startsWith('/-/md/')) {
-                    expect(canonicalLinkOf(await target.text())).toBe(
-                        `${ORIGIN}${entry.location.split('?')[0] ?? ''}`
-                    )
-                }
-                return
-            }
-            const body = await response.text()
-            if (entry.status === 404 || entry.status === 410) {
-                // An error answer is never kept, and its form follows the
-                // header or the path (NAV-21).
-                expect(response.headers.get('cache-control')).toBe('no-store')
-                expect(response.headers.get('vary')).toBe('Accept')
-                if (entry.format === 'markdown') {
-                    expect(response.headers.get('content-type')).toBe(
-                        'text/markdown; charset=utf-8'
-                    )
-                    expect(body).toStartWith(
-                        entry.status === 410 ? '# Removed\n\n' : '# Not found\n\n'
-                    )
-                    for (const path of entry.suggestions ?? []) {
-                        expect(body).toContain(`- ${path}\n`)
-                    }
-                    return
-                }
-                expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
-                expect(body).toContain(
-                    entry.status === 410 ? '>This note was removed</h1>' : '>Not found</h1>'
-                )
-                for (const path of entry.suggestions ?? []) {
-                    expect(body).toContain(`href="${path}"`)
-                }
-                // The gone page shows nothing of the removed note (NAV-19).
-                for (const note of table.removed) {
-                    for (const text of [note.path, ...note.aliases, ...(note.formerPaths ?? [])]) {
-                        const name = text.replace(/\.md$/u, '').split('/').at(-1) ?? ''
-                        expect(body).not.toContain(name)
-                        expect(body).not.toContain(canonicalPath(note.path))
-                    }
-                }
-                return
-            }
-            if (entry.file !== undefined) {
-                const [kind = '', path = ''] = entry.file.split(/:(.*)/su)
-                if (kind === 'markdown') {
-                    expect(response.headers.get('content-type')).toBe(
-                        'text/markdown; charset=utf-8'
-                    )
-                    expect(body).toBe(await readFile(join(store(), 'notes', path), 'utf8'))
-                } else {
-                    expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
-                    expect(body).toContain('User-agent: *')
-                }
-                return
-            }
-            expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
-            // A query gives the same page, with a clean canonical link (URL-12).
-            expect(canonicalLinkOf(body)).toBe(`${ORIGIN}${entry.canonical ?? ''}`)
+            expect(findings).toEqual([])
         }
     )
 })
@@ -398,6 +236,49 @@ describe.each(HOSTS)('a file that did not change on %s', (host: Host) => {
         expect(await second.text()).toBe('')
         const other = await get(path, { 'if-none-match': '"another"' }, host)
         expect(other.status).toBe(200)
+    })
+})
+
+// HOST-02: the command that checks a host by its address runs the same
+// table. Here the host is the plain local server.
+describe('the command that checks a host', () => {
+    test('finds nothing on the plain local server', async () => {
+        const child = Bun.spawn(
+            [
+                'bun',
+                'scripts/url-table.ts',
+                'check',
+                '--base',
+                `${serverUrl()}/`,
+                '--notes',
+                join(store(), 'notes')
+            ],
+            { cwd: join(SITE, '..', '..'), stdout: 'ignore', stderr: 'pipe' }
+        )
+        const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()])
+        expect(output).toEndWith(`${String(table.cases.length)} cases, 0 with a finding\n`)
+        expect(code).toBe(0)
+    })
+
+    test('ends with the code 1 and names the cases when the host answers nothing', async () => {
+        const child = Bun.spawn(
+            [
+                'bun',
+                'scripts/url-table.ts',
+                'check',
+                '--base',
+                'http://127.0.0.1:9',
+                '--notes',
+                join(store(), 'notes')
+            ],
+            { cwd: join(SITE, '..', '..'), stdout: 'ignore', stderr: 'pipe' }
+        )
+        const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()])
+        expect(output).toContain('    no answer: ')
+        expect(output).toEndWith(
+            `${String(table.cases.length)} cases, ${String(table.cases.length)} with a finding\n`
+        )
+        expect(code).toBe(1)
     })
 })
 

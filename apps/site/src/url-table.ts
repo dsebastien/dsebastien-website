@@ -1,0 +1,199 @@
+import { fileURLToPath } from 'node:url'
+import { canonicalPath } from '@dsebastien-website/resolver'
+
+// The check of one case of the URL table over HTTP (SEAM-04 of the spec,
+// issue 21): what a host must answer for a request of `fixtures/urls.json`.
+// It asks through a function, so the same check runs on the plain local
+// server, on the Worker in a test, and on a real host by its address
+// (`scripts/url-table.ts`, HOST-02). It gives its findings as texts and uses
+// no test runner.
+
+const TABLE = fileURLToPath(new URL('../../../fixtures/urls.json', import.meta.url))
+
+/** The origin of the canonical links of the built site. */
+const ORIGIN = 'https://notes.dsebastien.net'
+
+/** A case of the URL table. */
+export interface UrlCase {
+    name: string
+    request: string
+    status: number
+    page?: string
+    canonical?: string
+    file?: string
+    location?: string
+    cacheControl?: string
+    suggestions?: string[]
+    accept?: string
+    format?: 'html' | 'markdown'
+}
+
+/** A note of the table: a note with former paths was published at the first one. */
+export interface UrlTableNote {
+    path: string
+    aliases: string[]
+    formerPaths?: string[]
+}
+
+/** The URL table: its published notes, its unpublished notes and its cases. */
+export interface UrlTable {
+    notes: UrlTableNote[]
+    removed: UrlTableNote[]
+    cases: UrlCase[]
+}
+
+/** Reads the URL table of the repository. */
+export async function readUrlTable(): Promise<UrlTable> {
+    // The file is test data of this repository. The cast is the boundary: a
+    // wrong shape fails the tests that read it.
+    return (await Bun.file(TABLE).json()) as UrlTable
+}
+
+/** Asks a host for a path, and follows no redirect. */
+export type Ask = (path: string, headers?: Record<string, string>) => Promise<Response>
+
+/** What a check knows about the site that the host serves. */
+export interface UrlTableSite {
+    readonly table: UrlTable
+    /** The cleaned note of the content store, by its vault path: the Markdown that the site gives. */
+    readonly markdownOf: (path: string) => Promise<string>
+}
+
+/** The canonical link of a page: `<link rel="canonical" href="...">`. */
+function canonicalLinkOf(html: string): string | undefined {
+    return /<link rel="canonical" href="([^"]*)"/u.exec(html)?.[1]
+}
+
+/**
+ * Checks the answer of a host for one case of the table.
+ *
+ * @returns the findings: an empty list when the answer is the one of the table
+ */
+export async function checkUrlCase(
+    entry: UrlCase,
+    ask: Ask,
+    site: UrlTableSite
+): Promise<string[]> {
+    const findings: string[] = []
+    const same = (what: string, got: unknown, wanted: unknown): void => {
+        if (got !== wanted) {
+            findings.push(`${what}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(got)}`)
+        }
+    }
+    const holds = (what: string, text: string, part: string): void => {
+        if (!text.includes(part)) {
+            findings.push(`${what}: ${JSON.stringify(part)} is missing`)
+        }
+    }
+    const response = await ask(
+        entry.request,
+        entry.accept === undefined ? {} : { accept: entry.accept }
+    )
+    same('status', response.status, entry.status)
+    if (entry.location !== undefined) {
+        same('location', response.headers.get('location'), entry.location)
+        same('cache-control', response.headers.get('cache-control'), entry.cacheControl ?? '')
+        // URL-05: the target is a page, reached in one hop, with a clean
+        // canonical link.
+        const target = await ask(entry.location)
+        same('status of the target', target.status, 200)
+        // The Markdown of a note has no canonical link.
+        if (!entry.location.startsWith('/-/md/')) {
+            same(
+                'canonical link of the target',
+                canonicalLinkOf(await target.text()),
+                `${ORIGIN}${entry.location.split('?')[0] ?? ''}`
+            )
+        }
+        return findings
+    }
+    const body = await response.text()
+    if (entry.status === 404 || entry.status === 410) {
+        // An error answer is never kept, and its form follows the header or
+        // the path (NAV-21).
+        same('cache-control', response.headers.get('cache-control'), 'no-store')
+        same('vary', response.headers.get('vary'), 'Accept')
+        if (entry.format === 'markdown') {
+            same(
+                'content-type',
+                response.headers.get('content-type'),
+                'text/markdown; charset=utf-8'
+            )
+            const first = entry.status === 410 ? '# Removed\n\n' : '# Not found\n\n'
+            if (!body.startsWith(first)) {
+                findings.push(`body: it does not start with ${JSON.stringify(first)}`)
+            }
+            for (const path of entry.suggestions ?? []) {
+                holds('body', body, `- ${path}\n`)
+            }
+            return findings
+        }
+        same('content-type', response.headers.get('content-type'), 'text/html; charset=utf-8')
+        holds(
+            'body',
+            body,
+            entry.status === 410 ? '>This note was removed</h1>' : '>Not found</h1>'
+        )
+        for (const path of entry.suggestions ?? []) {
+            holds('body', body, `href="${path}"`)
+        }
+        // The gone page shows nothing of the removed note (NAV-19).
+        for (const note of site.table.removed) {
+            for (const text of [note.path, ...note.aliases, ...(note.formerPaths ?? [])]) {
+                const name = text.replace(/\.md$/u, '').split('/').at(-1) ?? ''
+                if (body.includes(name) || body.includes(canonicalPath(note.path))) {
+                    findings.push(`body: it names the removed note ${JSON.stringify(text)}`)
+                }
+            }
+        }
+        return findings
+    }
+    if (entry.file !== undefined) {
+        const [kind = '', path = ''] = entry.file.split(/:(.*)/su)
+        if (kind === 'markdown') {
+            same(
+                'content-type',
+                response.headers.get('content-type'),
+                'text/markdown; charset=utf-8'
+            )
+            same('body', body, await site.markdownOf(path))
+        } else {
+            same('content-type', response.headers.get('content-type'), 'text/plain; charset=utf-8')
+            holds('body', body, 'User-agent: *')
+        }
+        return findings
+    }
+    same('content-type', response.headers.get('content-type'), 'text/html; charset=utf-8')
+    // A query gives the same page, with a clean canonical link (URL-12).
+    same('canonical link', canonicalLinkOf(body), `${ORIGIN}${entry.canonical ?? ''}`)
+    return findings
+}
+
+/** The findings of one case of the table. */
+export interface UrlCaseFindings {
+    readonly name: string
+    readonly request: string
+    readonly findings: readonly string[]
+}
+
+/**
+ * Checks every case of the table on a host, one after the other.
+ *
+ * @returns the cases with a finding: an empty list when the host answers as the table says
+ */
+export async function checkUrlTable(ask: Ask, site: UrlTableSite): Promise<UrlCaseFindings[]> {
+    const wrong: UrlCaseFindings[] = []
+    for (const entry of site.table.cases) {
+        let findings: string[]
+        try {
+            findings = await checkUrlCase(entry, ask, site)
+        } catch (error) {
+            // A host that cannot be reached is a finding of the case, not the end of the run.
+            findings = [`no answer: ${error instanceof Error ? error.message : String(error)}`]
+        }
+        if (findings.length > 0) {
+            wrong.push({ name: entry.name, request: entry.request, findings })
+        }
+    }
+    return wrong
+}
