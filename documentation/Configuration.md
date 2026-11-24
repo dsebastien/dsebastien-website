@@ -136,6 +136,17 @@ The public CI never sees the content store (BUILD-11 of the spec). It builds the
 - The build stops when the content store cannot be trusted: `CONTENT_STORE` names no folder, a file of the manifest is not an entry, the id of an entry is not 16 hexadecimal digits, or two entries have the same path.
 - The markup of a note comes from the Markdown renderer of Astro for now. The slice of the rendering replaces it after the adopt check of issue 12.
 
+## Deployment
+
+A release goes to the host from the machine that publishes, never from the public CI (BUILD-02, BUILD-11, R76). The names of the host (the account, the Worker, the bucket, the host name, the zone) are in a private target file, never in this repository.
+
+- `bun run deploy --target <file> --content-store <folder>` builds the site from a copy of the content store (`CONTENT_STORE`) and deploys it. `--dist <folder>` deploys an output that is built already. `--dry-run` checks the bundle with wrangler and uploads nothing.
+- The target file is JSON: `accountId`, `worker`, `bucket`, `host`, `zone`, `noindex` (`targetFrom()` of `apps/site/worker/deployment.ts` refuses a wrong or unknown field). A host of another zone than `zone` gets a route of `zone` (a custom hostname of Cloudflare for SaaS); a host of `zone` itself is a custom domain of the Worker.
+- The command writes the wrangler configuration into `.cache/deploy/<worker>/wrangler.json` (`workerConfiguration()`: the static files give a file only by its exact name, the Worker runs first for every path but `/_astro/*` and `/-/search/*`, the binding `ASSETS`, the binding `ATTACHMENTS` to the bucket, no `workers.dev` address and no preview address), and the `_headers` file into the output (`headersFile()`). Then it runs `wrangler deploy` (the version in `apps/site/package.json`), which reads the token from `CLOUDFLARE_API_TOKEN`.
+- A preview host (`noindex: true`, IDX-26): the Worker sets `X-Robots-Tag: noindex` on every answer (its variable `NOINDEX`), errors and 304 included, and the `_headers` file sets it on the files that the host gives without the Worker.
+- A token of the deployment needs: edit the Workers and the object storage of the account, and edit the Worker routes of the zone. It lives in the secret storage of the machine.
+- The account of the host needs its paid plan: a release has more than 20,000 files (R75).
+
 ## The URL contract
 
 The resolver (`packages/resolver/src/resolver.ts`) turns a requested path into an answer. It is a pure function: the handler of the site calls it, and the plain server and the Worker of the host are the two adapters of that handler (HOST-02). The shared table `fixtures/urls.json` states the answer of each kind of request on a site of fixture notes. It runs on the resolver alone (`packages/resolver/src/table.spec.ts`) and over HTTP against the plain server and against the Worker, after a real publication and a real build (`apps/site/src/urls-page.spec.ts`). A host runs it by its address with `bun run urls check` (the preview host with issue 32).

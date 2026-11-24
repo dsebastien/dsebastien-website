@@ -53,6 +53,18 @@ export interface Environment {
     readonly ASSETS: StaticFiles
     /** The attachment storage. Without it, an attachment answers 404. */
     readonly ATTACHMENTS?: ObjectStorage
+    /**
+     * `true` on a preview host (IDX-26): every answer says `X-Robots-Tag:
+     * noindex`. The deployment sets it; any other value marks nothing.
+     */
+    readonly NOINDEX?: string
+}
+
+/** An answer with the header that keeps it out of the search engines. */
+function markedNoindex(response: Response): Response {
+    const marked = new Response(response.body, response)
+    marked.headers.set('x-robots-tag', 'noindex')
+    return marked
 }
 
 /** The address of a file of the static files. Only its path counts. */
@@ -201,46 +213,50 @@ export function createWorker(options: WorkerOptions = {}): {
     const now = options.now ?? ((): number => Date.now())
     let opened: Promise<OpenedRelease> | undefined
     let failedAt: number | undefined
+    async function answer(request: Request, env: Environment): Promise<Response> {
+        if (failedAt !== undefined && now() - failedAt < RETRY_AFTER) {
+            return failureResponse(request)
+        }
+        let release: OpenedRelease
+        try {
+            opened ??= openRelease(env.ASSETS)
+            release = await opened
+            failedAt = undefined
+        } catch (error) {
+            // Requests that waited for the same read report it one time.
+            if (opened !== undefined) {
+                opened = undefined
+                failedAt = now()
+                report(error)
+            }
+            return failureResponse(request)
+        }
+        const storage = env.ATTACHMENTS
+        // A request that does not need the whole file of an attachment.
+        const facts = request.headers.has('range') || request.method === 'HEAD'
+        const handle = siteHandler({
+            map: release.map,
+            // The name comes from the resolver map, never from the request.
+            file: async (name) => {
+                const file = await staticFile(env.ASSETS, pathOfFile(name))
+                return file === 'missing' ? undefined : file
+            },
+            asset: (path) =>
+                isAssetPath(path) ? staticFile(env.ASSETS, path) : Promise.resolve(undefined),
+            ...(storage === undefined
+                ? {}
+                : { attachment: (key: string) => storedObject(storage, key, facts) }),
+            ...(release.serverErrorPage === undefined
+                ? {}
+                : { serverErrorPage: release.serverErrorPage }),
+            report
+        })
+        return await handle(request)
+    }
     return {
         async fetch(request, env) {
-            if (failedAt !== undefined && now() - failedAt < RETRY_AFTER) {
-                return failureResponse(request)
-            }
-            let release: OpenedRelease
-            try {
-                opened ??= openRelease(env.ASSETS)
-                release = await opened
-                failedAt = undefined
-            } catch (error) {
-                // Requests that waited for the same read report it one time.
-                if (opened !== undefined) {
-                    opened = undefined
-                    failedAt = now()
-                    report(error)
-                }
-                return failureResponse(request)
-            }
-            const storage = env.ATTACHMENTS
-            // A request that does not need the whole file of an attachment.
-            const facts = request.headers.has('range') || request.method === 'HEAD'
-            const handle = siteHandler({
-                map: release.map,
-                // The name comes from the resolver map, never from the request.
-                file: async (name) => {
-                    const file = await staticFile(env.ASSETS, pathOfFile(name))
-                    return file === 'missing' ? undefined : file
-                },
-                asset: (path) =>
-                    isAssetPath(path) ? staticFile(env.ASSETS, path) : Promise.resolve(undefined),
-                ...(storage === undefined
-                    ? {}
-                    : { attachment: (key: string) => storedObject(storage, key, facts) }),
-                ...(release.serverErrorPage === undefined
-                    ? {}
-                    : { serverErrorPage: release.serverErrorPage }),
-                report
-            })
-            return await handle(request)
+            const response = await answer(request, env)
+            return env.NOINDEX === 'true' ? markedNoindex(response) : response
         }
     }
 }

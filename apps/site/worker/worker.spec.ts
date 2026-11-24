@@ -130,10 +130,18 @@ interface Host {
 }
 
 /** A Worker of its own (one isolate) with its static files and its object storage. */
-function host(files: Record<string, string> = SITE, withStorage = true): Host {
+function host(
+    files: Record<string, string> = SITE,
+    withStorage = true,
+    variables: Pick<Environment, 'NOINDEX'> = {}
+): Host {
     const assets = staticFiles(files)
     const storage = objectStorage({ [KEY]: '0123456789' })
-    const env: Environment = { ASSETS: assets, ...(withStorage ? { ATTACHMENTS: storage } : {}) }
+    const env: Environment = {
+        ASSETS: assets,
+        ...(withStorage ? { ATTACHMENTS: storage } : {}),
+        ...variables
+    }
     const reported: unknown[] = []
     let time = 1_000_000
     const worker = createWorker({ report: (error) => reported.push(error), now: () => time })
@@ -150,6 +158,36 @@ function host(files: Record<string, string> = SITE, withStorage = true): Host {
 }
 
 describe('the Worker', () => {
+    // IDX-26, issue 30: the preview host is never indexed.
+    test('marks every answer noindex on a preview host: pages, files, attachments and errors', async () => {
+        const site = host(SITE, true, { NOINDEX: 'true' })
+        const answers = [
+            await site.get('/Welcome'),
+            await site.get('/Welcome', { 'if-none-match': '"tag of /-/note/10.html"' }),
+            await site.get('/_astro/site.abc.css'),
+            await site.get(SONG, { range: 'bytes=2-5' }),
+            await site.get('/no-such-note'),
+            await site.get('/-/md/no-such-note.md', { accept: 'text/markdown' })
+        ]
+        expect(answers.map((answer) => answer.status)).toEqual([200, 304, 200, 206, 404, 404])
+        for (const answer of answers) {
+            expect(answer.headers.get('x-robots-tag')).toBe('noindex')
+        }
+    })
+
+    test('marks noindex the answer of a release that it cannot read', async () => {
+        const { '/-/resolver-map.json': _map, ...rest } = SITE
+        const response = await host(rest, true, { NOINDEX: 'true' }).get('/Welcome')
+        expect(response.status).toBe(500)
+        expect(response.headers.get('x-robots-tag')).toBe('noindex')
+    })
+
+    test('adds no robots header without the variable of a preview host', async () => {
+        const response = await host(SITE, true, { NOINDEX: '' }).get('/Welcome')
+        expect(response.status).toBe(200)
+        expect(response.headers.get('x-robots-tag')).toBeNull()
+    })
+
     test('gives a page from the static files, by the file that the resolver map names', async () => {
         const response = await host().get('/Welcome')
         expect(response.status).toBe(200)
