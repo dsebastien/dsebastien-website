@@ -187,7 +187,8 @@ describe('the built plugin', () => {
             PluginSettingTab,
             Setting,
             TFolder,
-            setIcon
+            setIcon,
+            normalizePath: (path: string) => path
         }))
         const loaded: unknown = createRequire(import.meta.url)(join(outputPath(), 'main.js'))
         const Loaded = isRecord(loaded) ? loaded['default'] : undefined

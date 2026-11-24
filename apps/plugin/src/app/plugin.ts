@@ -1,5 +1,14 @@
 import { hostname } from 'node:os'
-import { Modal, Notice, Plugin, PluginSettingTab, Setting, setIcon, TFolder } from 'obsidian'
+import {
+    Modal,
+    normalizePath,
+    Notice,
+    Plugin,
+    PluginSettingTab,
+    Setting,
+    setIcon,
+    TFolder
+} from 'obsidian'
 import type { App, TAbstractFile, WorkspaceLeaf } from 'obsidian'
 import { markUnpublish } from '../publishing/center.ts'
 import type { NoteStateKind } from '../publishing/center.ts'
@@ -106,7 +115,7 @@ export class VaultPublishPlugin extends Plugin {
                     // checks every step of it (starter-kit.ts).
                     starterKitNoteTypes(this.app as unknown as PluginHost),
                     // The refresh of the frozen lists before a plan (PUB-35, R71).
-                    serializerLists(this.app as unknown as PluginHost)
+                    serializerLists(this.app as unknown as PluginHost, normalizePath)
                 ),
             pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
             now: () => new Date(),

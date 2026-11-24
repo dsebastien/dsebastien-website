@@ -224,7 +224,7 @@ export interface ListRefresh {
 
 /** What a refresh of the frozen lists did (rule 7 of "The frozen lists of a note"). */
 export interface RefreshResult {
-    /** The paths whose lists are refreshed: updated, already up to date, or with no query to run. */
+    /** The paths whose lists are refreshed: updated or already up to date, with no error and no skipped query. */
     readonly refreshed: ReadonlySet<string>
     /** The paths of the notes that the refresh wrote. */
     readonly written: ReadonlySet<string>

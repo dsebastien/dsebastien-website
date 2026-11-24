@@ -220,7 +220,6 @@ export class PublicationCenter {
     readonly #listeners = new Set<() => void>()
     /** The notes that changed after the last check began. */
     #changed = new Set<string>()
-    /** The notes whose state property the last run wrote, and until when their events are no edits. */
     /** The writes of the tool that are no edit: each slot holds paths until its time ends. */
     #ownWrites: { paths: Set<string>; until: number }[] = []
     /** The paths of the edits that Obsidian reports while a refresh of the lists runs (R71). */
@@ -316,12 +315,16 @@ export class PublicationCenter {
             this.#duringRefresh.push(path)
             return
         }
+        if (!this.#isOwnWrite(path)) {
+            this.#changed.add(path)
+        }
+    }
+
+    /** True when an open slot holds the path: the event is the write of a run, and it takes the path out. */
+    #isOwnWrite(path: string): boolean {
         const now = performance.now()
         this.#ownWrites = this.#ownWrites.filter((slot) => now < slot.until)
-        if (this.#ownWrites.some((slot) => slot.paths.delete(path))) {
-            return
-        }
-        this.#changed.add(path)
+        return this.#ownWrites.some((slot) => slot.paths.delete(path))
     }
 
     /** The path of a note in the content store: a note that a move of the queue moved is there at its old path. */
@@ -333,14 +336,21 @@ export class PublicationCenter {
     #wrote(paths: readonly string[]): void {
         // A new slot does not drop the slot of an earlier run: the events of
         // its writes can come later.
-        this.#ownWrites.push({ paths: new Set(paths), until: performance.now() + OWN_WRITES })
+        const now = performance.now()
+        this.#ownWrites = this.#ownWrites.filter((slot) => now < slot.until)
+        if (paths.length > 0) {
+            this.#ownWrites.push({ paths: new Set(paths), until: now + OWN_WRITES })
+        }
     }
 
     /**
      * The device of the host, whose refresh of the frozen lists (PUB-35, R71)
      * counts its writes as writes of the tool, not as edits: else a new note
-     * with a list would be refused as "changed after the check". The writes
-     * count as long as the refresh runs, and for a short time after.
+     * with a list would be refused as "changed after the check". The events
+     * of a refresh wait for its end: then one event of each note that it
+     * wrote is its write, an event that an open slot of an earlier run holds
+     * is that write, and every other event is an edit. A write whose event
+     * comes later gets a slot.
      */
     #device(): Device {
         const device = this.host.device()
@@ -364,7 +374,7 @@ export class PublicationCenter {
                         for (const path of events) {
                             // The first event of a note that the refresh wrote is
                             // its write; any other event is an edit.
-                            if (!written.delete(path)) {
+                            if (!written.delete(path) && !this.#isOwnWrite(path)) {
                                 this.#changed.add(path)
                             }
                         }

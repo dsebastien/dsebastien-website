@@ -81,13 +81,13 @@ async function setUp(
 }
 
 describe('the refresh of the frozen lists before a plan', () => {
-    test('asks the serializer for the notes of the plan only, sorted by path', async () => {
+    test('asks the serializer for the notes of the plan with a list to refresh only', async () => {
         await using stores = await makeTestStores()
         const { device, calls } = await setUp(stores)
 
-        await plan(device, { include: [PLAIN, FROZEN] })
+        await plan(device, { include: [PLAIN, FROZEN, LIVE] })
 
-        expect(calls).toEqual([[PLAIN, FROZEN].sort()])
+        expect(calls).toEqual([[FROZEN]])
     })
 
     test('the plan holds the refreshed text, and the publication publishes it (TEST-22)', async () => {

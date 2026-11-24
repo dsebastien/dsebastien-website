@@ -59,13 +59,16 @@ function isListOf(value: unknown, keys: readonly string[]): value is Record<stri
 }
 
 /**
- * True when Obsidian gives this path another form (`normalizePath`: the
- * composed Unicode form, a space for U+00A0 and U+202F). The serializer
- * would then refresh another file, maybe a note that is not in the plan
- * (issue 110): such a path is not asked.
+ * True when Obsidian gives this path another form: its own `normalizePath`
+ * changes it, or the path is not in the composed Unicode form or holds
+ * U+00A0 or U+202F (what `normalizePath` changes, also when the face has no
+ * Obsidian). The serializer would then refresh another file, maybe a note
+ * that is not in the plan (issue 110): such a path is not asked.
  */
-function changedByObsidian(path: string): boolean {
-    return path.normalize('NFC') !== path || /[\u00a0\u202f]/u.test(path)
+function changedByObsidian(path: string, normalize: (path: string) => string): boolean {
+    return (
+        normalize(path) !== path || path.normalize('NFC') !== path || /[\u00a0\u202f]/u.test(path)
+    )
 }
 
 /** The same message for every path: no note is refreshed. */
@@ -153,14 +156,31 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
  * limit, or that gives an answer that cannot be read refreshes no note, and
  * says why.
  *
+ * A refresh that is still running after the limit is not asked again: the
+ * next refresh waits for it first, within the same limit.
+ *
+ * @param normalize `normalizePath` of Obsidian
  * @param limit the longest wait for the answer, in milliseconds
  */
-export function serializerLists(app: PluginHost, limit = REFRESH_LIMIT): ListRefresh {
+export function serializerLists(
+    app: PluginHost,
+    normalize: (path: string) => string,
+    limit = REFRESH_LIMIT
+): ListRefresh {
+    let running: Promise<unknown> = Promise.resolve()
     return {
         async refresh(given) {
-            const changed = given.filter(changedByObsidian)
-            const paths = given.filter((path) => !changedByObsidian(path))
-            const result = await refreshOf(app, paths, limit)
+            const changed = given.filter((path) => changedByObsidian(path, normalize))
+            const paths = given.filter((path) => !changedByObsidian(path, normalize))
+            if ((await settledWithin(running, limit)) === 'late') {
+                return noneRefreshed(
+                    given,
+                    'the Dataview Serializer still runs an earlier refresh: the lists are published as saved',
+                    true
+                )
+            }
+            const { result, call } = await refreshOf(app, paths, limit)
+            running = call
             return {
                 ...result,
                 problems: [
@@ -176,27 +196,58 @@ export function serializerLists(app: PluginHost, limit = REFRESH_LIMIT): ListRef
     }
 }
 
-/** Asks the serializer for these paths. */
+/** Waits for a promise, at most `limit` milliseconds. */
+async function settledWithin(promise: Promise<unknown>, limit: number): Promise<'done' | 'late'> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'late'>((resolve) => {
+        timer = setTimeout(() => {
+            resolve('late')
+        }, limit)
+    })
+    try {
+        return await Promise.race([
+            promise.then(
+                () => 'done' as const,
+                () => 'done' as const
+            ),
+            late
+        ])
+    } finally {
+        clearTimeout(timer)
+    }
+}
+
+/** Asks the serializer for these paths. `call` is the call itself, which can run after the limit. */
 async function refreshOf(
     app: PluginHost,
     paths: readonly string[],
     limit: number
-): Promise<RefreshResult> {
+): Promise<{ result: RefreshResult; call: Promise<unknown> }> {
+    const done = (result: RefreshResult): { result: RefreshResult; call: Promise<unknown> } => ({
+        result,
+        call: Promise.resolve()
+    })
     if (paths.length === 0) {
-        return noneRefreshed([], '', false)
+        return done(noneRefreshed([], '', false))
     }
     const plugin = app.plugins.plugins[SERIALIZER_ID]
     const api = isRecord(plugin) ? plugin['api'] : undefined
     const refreshNotes = isRecord(api) ? api['refreshNotes'] : undefined
     if (typeof refreshNotes !== 'function') {
-        return noneRefreshed(
-            paths,
-            plugin === undefined
-                ? 'the Dataview Serializer plugin is not enabled in this vault: the lists are published as saved'
-                : 'the Dataview Serializer plugin has no refreshNotes: it needs version 3.9.0 or later',
-            false
+        return done(
+            noneRefreshed(
+                paths,
+                plugin === undefined
+                    ? 'the Dataview Serializer plugin is not enabled in this vault: the lists are published as saved'
+                    : 'the Dataview Serializer plugin has no refreshNotes: it needs version 3.9.0 or later',
+                false
+            )
         )
     }
+    // A throw of the API becomes a rejection of the call.
+    const call: Promise<unknown> = Promise.resolve().then(() =>
+        (refreshNotes as (this: unknown, paths: string[]) => unknown).call(api, [...paths])
+    )
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<'late'>((resolve) => {
         timer = setTimeout(() => {
@@ -205,34 +256,39 @@ async function refreshOf(
     })
     let answer: unknown
     try {
-        answer = await Promise.race([
-            (refreshNotes as (this: unknown, paths: string[]) => unknown).call(api, [...paths]),
-            late
-        ])
+        answer = await Promise.race([call, late])
     } catch (error) {
         // A note can have been written before the error: the plan is
         // computed again.
-        return noneRefreshed(
-            paths,
-            `the refresh of the Dataview Serializer failed: ${error instanceof Error ? error.message : String(error)}`,
-            true
-        )
+        return {
+            result: noneRefreshed(
+                paths,
+                `the refresh of the Dataview Serializer failed: ${error instanceof Error ? error.message : String(error)}`,
+                true
+            ),
+            call
+        }
     } finally {
         clearTimeout(timer)
     }
     if (answer === 'late') {
-        return noneRefreshed(
-            paths,
-            `the Dataview Serializer did not answer within ${String(Math.round(limit / 1000))} s: the lists are published as saved`,
-            true
-        )
+        return {
+            result: noneRefreshed(
+                paths,
+                `the Dataview Serializer did not answer within ${String(Math.round(limit / 1000))} s: the lists are published as saved`,
+                true
+            ),
+            call
+        }
     }
-    return (
-        readAnswer(paths, answer) ??
-        noneRefreshed(
-            paths,
-            'the Dataview Serializer gave an answer that the tool cannot read: the lists are published as saved',
-            true
-        )
-    )
+    return {
+        result:
+            readAnswer(paths, answer) ??
+            noneRefreshed(
+                paths,
+                'the Dataview Serializer gave an answer that the tool cannot read: the lists are published as saved',
+                true
+            ),
+        call
+    }
 }

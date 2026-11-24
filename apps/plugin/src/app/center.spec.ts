@@ -714,10 +714,24 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
     /** A center whose stand-in serializer writes a row into the frozen list, and reports each write as Obsidian does. */
     async function setUpWithLists(
         stores: TestStores,
-        refreshes = true,
-        /** A path that another program edits during the refresh. */
-        editedDuring?: string
-    ): Promise<{ center: PublicationCenter; copy: string; asked: string[][] }> {
+        options: {
+            refreshes?: boolean
+            /** A path that another program edits during the refresh. */
+            editedDuring?: string
+            /** Obsidian reports the write of the serializer only after the refresh returned. */
+            lateEvent?: boolean
+            /** The refresh throws after its write. */
+            throws?: boolean
+        } = {}
+    ): Promise<{
+        center: PublicationCenter
+        copy: string
+        asked: string[][]
+        /** The events that Obsidian reports after the refresh returned. */
+        late: string[]
+    }> {
+        const { refreshes = true, editedDuring, lateEvent = false, throws = false } = options
+        const late: string[] = []
         const vault = await copyFixtureVault(stores)
         const copy = await makeContentStoreCopy(stores)
         const asked: string[][] = []
@@ -745,12 +759,19 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
                                 )
                             )
                             // Obsidian reports the write of the serializer as an edit.
-                            center.noteChanged(FROZEN)
+                            if (lateEvent) {
+                                late.push(FROZEN)
+                            } else {
+                                center.noteChanged(FROZEN)
+                            }
                             wrote = true
                         }
                         if (editedDuring !== undefined) {
                             await writeFile(join(vault, editedDuring), 'Another version\n')
                             center.noteChanged(editedDuring)
+                        }
+                        if (throws) {
+                            throw new Error('the serializer stopped')
                         }
                         return {
                             refreshed: new Set(refreshes ? paths : []),
@@ -767,18 +788,19 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
             now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
             deviceName: 'garden-shed'
         })
-        return { center, copy, asked }
+        return { center, copy, asked, late }
     }
 
     test('a dry run refreshes the lists and names the notes whose lists were not refreshed', async () => {
         await using stores = await makeTestStores()
-        const { center, asked } = await setUpWithLists(stores, false)
+        const { center, asked } = await setUpWithLists(stores, { refreshes: false })
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, toggleRow(queue, choices, FROZEN), LIVE))
 
         await center.dryRun()
 
-        expect(asked).toEqual([[FROZEN, LIVE]])
+        // Only the notes with a list to refresh are asked.
+        expect(asked).toEqual([[FROZEN]])
         expect(center.state.dryRun?.listsNotRefreshed).toEqual([FROZEN])
         expect(center.state.dryRun?.liveQueries).toEqual([LIVE])
         const log = center.state.log.map((line) => line.text)
@@ -803,7 +825,7 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
 
     test('an edit during the refresh of a note that the refresh did not write still stops the publication', async () => {
         await using stores = await makeTestStores()
-        const { center } = await setUpWithLists(stores, true, NOTE)
+        const { center } = await setUpWithLists(stores, { editedDuring: NOTE })
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, toggleRow(queue, choices, FROZEN), NOTE))
 
@@ -825,5 +847,45 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
         expect(center.state.log.map((line) => line.text)).toContain(
             `Lists refreshed by the Dataview Serializer: "${FROZEN}"`
         )
+    }, 60_000)
+
+    test('a write whose event comes after the refresh returned is no edit either', async () => {
+        await using stores = await makeTestStores()
+        const { center, copy, late } = await setUpWithLists(stores, { lateEvent: true })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+        await center.dryRun()
+        for (const path of late.splice(0)) {
+            center.noteChanged(path)
+        }
+
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
+        expect(await Bun.file(join(copy, 'notes', FROZEN)).text()).toContain(ROW)
+    }, 60_000)
+
+    test('a second edit of a note that the refresh wrote is an edit', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUpWithLists(stores, { editedDuring: FROZEN })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+
+        await center.publish()
+
+        expect(center.state.error).toContain('A new note changed after the check')
+        expect(center.state.error).toContain(FROZEN)
+    }, 60_000)
+
+    test('every event of a refresh that throws is an edit', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUpWithLists(stores, { throws: true })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+
+        await center.dryRun()
+
+        expect(center.state.error).toContain('the serializer stopped')
+        expect(center.stateOf(FROZEN).label).toContain('edited since the check')
     }, 60_000)
 })

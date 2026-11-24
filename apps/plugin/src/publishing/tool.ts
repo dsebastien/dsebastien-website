@@ -37,7 +37,7 @@ import { foldedForm } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
-import { listsNotRefreshed, liveQueries } from './frozen.ts'
+import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
 import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult } from './ports.ts'
 import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
 import type { Move, PublicationQueue, Scan } from './queue.ts'
@@ -542,7 +542,14 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     // The lists of the notes of the plan are refreshed before the plan is
     // final (PUB-35, R71): when the refresh wrote a note, the plan is
     // computed again, so the record holds the refreshed text (PUB-92).
-    const paths = sortByCodePoint([...computed.plan.publish, ...computed.plan.update])
+    // Only the notes with a list to refresh (rule 4) are asked: a first
+    // publication of every note asks far fewer.
+    const paths = sortByCodePoint(
+        [...computed.plan.publish, ...computed.plan.update].filter((path) => {
+            const source = computed.texts.get(path)?.source
+            return source !== undefined && hasListToRefresh(source)
+        })
+    )
     let refresh: RefreshResult = {
         refreshed: new Set(),
         written: new Set(),
