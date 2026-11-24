@@ -55,6 +55,16 @@ export default {
                 ? { ...env, ASSETS: withSearchInStorage(env.ASSETS, env.ATTACHMENTS) }
                 : env
         const url = new URL(request.url)
+        // What the static files of the host answer for a path, for the research file.
+        if (url.pathname === '/-/proto/static') {
+            const asked = await env.ASSETS.fetch(
+                new Request(`https://static.invalid${url.searchParams.get('path') ?? '/'}`, {
+                    headers: request.headers
+                })
+            )
+            await asked.body?.cancel()
+            return Response.json({ status: asked.status, headers: [...asked.headers] })
+        }
         let response: Response | undefined
         // Markdown on request: the Markdown path of a canonical path is `/-/md<path>.md`.
         if (
@@ -77,6 +87,15 @@ export default {
             answer.headers.set('vary', 'Accept')
         }
         isolate ??= crypto.randomUUID().slice(0, 8)
+        // With `?proto=no-transform`, the answer tells the edge to change nothing
+        // of it: does the tag of a page then reach the reader?
+        if (url.searchParams.get('proto') === 'no-transform') {
+            const kept = answer.headers.get('cache-control')
+            answer.headers.set(
+                'cache-control',
+                kept === null ? 'no-transform' : `${kept}, no-transform`
+            )
+        }
         answer.headers.set('x-proto-isolate', isolate)
         if (first === undefined) {
             first = Date.now() - started

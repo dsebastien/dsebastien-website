@@ -1,6 +1,6 @@
 # PROTOTYPE: hosting (issue 21, PROTO-01)
 
-Throwaway code. It answers one question: does one Worker with static files, plus object storage for the attachments, serve the site at full size (HOST-01)? It stays on the branch `prototype/hosting` and never goes into main. The answer is in the research file of main (`documentation/research/`), and the code that the answer keeps (the handler of the site, the Worker, the command `bun run urls`) is in main.
+Throwaway code. **Answer (2026-11-24): confirmed**, see `documentation/research/2026-11-24-hosting-prototype.md` on main (decision R75). It answered one question: does one Worker with static files, plus object storage for the attachments, serve the site at full size (HOST-01)? It stays on the branch `prototype/hosting` and never goes into main. The answer is in the research file of main (`documentation/research/`), and the code that the answer keeps (the handler of the site, the Worker, the command `bun run urls`) is in main.
 
 No name of the hosting account is in this folder: the names come from the command line.
 
@@ -12,6 +12,8 @@ No name of the hosting account is in this folder: the names come from the comman
 - `second-release.ts`: changes 5 notes and 300 files of a copy of a built site (check 5).
 - `load.ts`: asks a host for every address of a built site and for invented wrong addresses, and counts the answers (checks 2 and 6).
 - `probe.ts`: prints the answers of a host for HTML and Markdown on request and for the attachments with ranges (checks 3 and 4).
+- `watch.ts`: asks for a page and its Markdown in a loop during a deployment or a revert, and prints each change (check 5).
+- `usage.ts`: reads the usage of the test Worker and of the test bucket from the analytics of the host (check 6).
 
 ## One command per step
 
