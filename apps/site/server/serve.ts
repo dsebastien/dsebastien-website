@@ -4,10 +4,10 @@ import { join, relative, resolve as resolvePath, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
     errorText,
+    RESOLVER_MAP_FILE,
+    resolverMapFrom,
     SERVER_ERROR_FILE,
     siteHandler,
-    type ResolverMap,
-    type SiteFile,
     type StoredFile
 } from '@dsebastien-website/resolver'
 
@@ -22,62 +22,6 @@ import {
 //
 // With `--attachments`, it also gives the attachments that the pages use,
 // from that folder, which stands for the attachment storage (HOST-05).
-
-/** The place of the resolver map in the output of the build. */
-const RESOLVER_MAP = '-/resolver-map.json'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** The form of a key of the attachment storage. It names a file of the storage. */
-const ATTACHMENT_KEY = /^[0-9a-f]{64}$/
-
-/** True when every value of the record passes the check. */
-function everyValue(value: unknown, check: (item: unknown) => boolean): boolean {
-    return isRecord(value) && Object.values(value).every(check)
-}
-
-const isText = (value: unknown): value is string => typeof value === 'string'
-const isTextList = (value: unknown): boolean => Array.isArray(value) && value.every(isText)
-const isSet = (value: unknown): boolean => everyValue(value, (item) => item === true)
-const isGoneMap = (value: unknown): boolean =>
-    isRecord(value) &&
-    (value['file'] === undefined || isText(value['file'])) &&
-    typeof value['longest'] === 'number' &&
-    Number.isInteger(value['longest']) &&
-    value['longest'] >= 0 &&
-    isSet(value['paths']) &&
-    isSet(value['folded']) &&
-    isSet(value['names']) &&
-    isSet(value['aliases'])
-const isSiteFile = (value: unknown): value is SiteFile =>
-    isRecord(value) &&
-    isText(value['file']) &&
-    (value['type'] === 'markdown' || value['type'] === 'text')
-
-async function readResolverMap(dist: string): Promise<ResolverMap> {
-    const map: unknown = await Bun.file(join(dist, RESOLVER_MAP)).json()
-    if (
-        !isRecord(map) ||
-        !everyValue(map['pages'], isText) ||
-        !everyValue(map['files'] ?? {}, isSiteFile) ||
-        !everyValue(
-            map['attachments'] ?? {},
-            (key) => typeof key === 'string' && ATTACHMENT_KEY.test(key)
-        ) ||
-        !everyValue(map['folded'] ?? {}, isText) ||
-        !everyValue(map['names'] ?? {}, isTextList) ||
-        !everyValue(map['aliases'] ?? {}, isTextList) ||
-        !everyValue(map['choices'] ?? {}, isText) ||
-        !(map['notFound'] === undefined || isText(map['notFound'])) ||
-        !(map['gone'] === undefined || isGoneMap(map['gone']))
-    ) {
-        throw new Error(`${RESOLVER_MAP} is not a resolver map`)
-    }
-    // Checked above, member by member.
-    return map as unknown as ResolverMap
-}
 
 /**
  * The folders of the files that the pages load: the style sheets and the
@@ -149,7 +93,7 @@ export async function startServer(options: {
 }): Promise<Server> {
     const dist = resolvePath(options.dist)
     const storage = options.attachments === undefined ? undefined : resolvePath(options.attachments)
-    const map = await readResolverMap(dist)
+    const map = resolverMapFrom(await Bun.file(join(dist, RESOLVER_MAP_FILE)).json())
     const assets = await readAssets(dist)
     // Read one time at the start: a failure never depends on a file of the
     // release, which can be the missing file (NAV-20).

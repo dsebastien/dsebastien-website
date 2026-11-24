@@ -13,11 +13,14 @@ import {
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
+import { createWorker, type StaticFiles } from '../worker/worker.ts'
 
 // The URL table of the site over HTTP (issue 43, SEAM-04 of the spec): the
 // publishing tool publishes the notes of the table from a copy of the fixture
 // vault, the site is built from that content store, and the plain local
-// server answers each request of the table. The resolver alone runs the same
+// server answers each request of the table. The Worker of the host answers
+// the same requests from the same output, with static files that stand for
+// the ones of the host (issue 21, HOST-02). The resolver alone runs the same
 // table (`packages/resolver/src/table.spec.ts`).
 const SITE = fileURLToPath(new URL('..', import.meta.url))
 const TABLE = fileURLToPath(new URL('../../../fixtures/urls.json', import.meta.url))
@@ -72,8 +75,51 @@ function store(): string {
     return contentStore
 }
 
-async function get(path: string, headers: Record<string, string> = {}): Promise<Response> {
-    return await fetch(`${serverUrl()}${path}`, { redirect: 'manual', headers })
+/** The two hosts of the built site: both are adapters of one handler. */
+type Host = 'the plain local server' | 'the Worker'
+const HOSTS: [Host][] = [['the plain local server'], ['the Worker']]
+
+/**
+ * The static files of a Worker version, from the output of the build: a file
+ * by the exact path of its name, as the host gives it with no handling of
+ * HTML, and 404 for every other path.
+ */
+function staticFilesOf(folder: () => string): StaticFiles {
+    return {
+        async fetch(request) {
+            const name = new URL(request.url).pathname
+                .split('/')
+                .map((part) => decodeURIComponent(part))
+                .join('/')
+            const file = Bun.file(join(folder(), name))
+            return (await file.exists())
+                ? new Response(file, {
+                      headers: {
+                          etag: `"${file.size.toString(16)}-${file.lastModified.toString(16)}"`
+                      }
+                  })
+                : new Response(null, { status: 404 })
+        }
+    }
+}
+
+/** A Worker on the output of the build. A test that removes files makes its own. */
+function workerOf(): (request: Request) => Promise<Response> {
+    const worker = createWorker(() => undefined)
+    const files = staticFilesOf(() => outDir ?? '')
+    return (request) => worker.fetch(request, { ASSETS: files })
+}
+
+const worker = workerOf()
+
+async function get(
+    path: string,
+    headers: Record<string, string> = {},
+    host: Host = 'the plain local server'
+): Promise<Response> {
+    return host === 'the Worker'
+        ? await worker(new Request(`${ORIGIN}${path}`, { headers }))
+        : await fetch(`${serverUrl()}${path}`, { redirect: 'manual', headers })
 }
 
 /** The canonical link of a page: `<link rel="canonical" href="...">`. */
@@ -223,13 +269,14 @@ describe('site of the URL table', () => {
     })
 })
 
-describe('URL table over HTTP', () => {
+describe.each(HOSTS)('URL table over HTTP on %s', (host: Host) => {
     test.each(table.cases.map((entry) => [entry.name, entry] as const))(
         '%s',
         async (_name, entry) => {
             const response = await get(
                 entry.request,
-                entry.accept === undefined ? {} : { accept: entry.accept }
+                entry.accept === undefined ? {} : { accept: entry.accept },
+                host
             )
             expect(response.status).toBe(entry.status)
             if (entry.location !== undefined) {
@@ -237,7 +284,7 @@ describe('URL table over HTTP', () => {
                 expect(response.headers.get('cache-control')).toBe(entry.cacheControl ?? '')
                 // URL-05: the target is a page, reached in one hop, with a
                 // clean canonical link.
-                const target = await get(entry.location)
+                const target = await get(entry.location, {}, host)
                 expect(target.status).toBe(200)
                 // The Markdown of a note has no canonical link.
                 if (!entry.location.startsWith('/-/md/')) {
@@ -337,22 +384,24 @@ describe('output of the build after an unpublication', () => {
     })
 })
 
-describe('plain local server', () => {
-    // URL-18: an unchanged page or Markdown answers 304 to a conditional request.
+// URL-18: an unchanged page or Markdown answers 304 to a conditional request.
+describe.each(HOSTS)('a file that did not change on %s', (host: Host) => {
     test.each([
         ['a page', '/Welcome'],
         ['the Markdown of a note', '/-/md/Welcome.md']
-    ])('answers 304 for %s that did not change', async (_name, path) => {
-        const first = await get(path)
+    ])('answers 304 for %s', async (_name, path) => {
+        const first = await get(path, {}, host)
         const tag = first.headers.get('etag')
         expect(tag).not.toBeNull()
-        const second = await get(path, { 'if-none-match': tag ?? '' })
+        const second = await get(path, { 'if-none-match': tag ?? '' }, host)
         expect(second.status).toBe(304)
         expect(await second.text()).toBe('')
-        const other = await get(path, { 'if-none-match': '"another"' })
+        const other = await get(path, { 'if-none-match': '"another"' }, host)
         expect(other.status).toBe(200)
     })
+})
 
+describe('plain local server', () => {
     test('lists the notes and the folders of a folder without a folder note', async () => {
         const html = await (await get('/10+Garden')).text()
         expect(html).toContain(`href="${canonicalPath('10 Garden/Compost basics.md')}"`)

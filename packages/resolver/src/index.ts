@@ -1,5 +1,6 @@
 export { errorFormat, errorText, type ErrorStatus, SERVER_ERROR_FILE } from './errors.ts'
 export { siteHandler, type ByteRange, type Release, type StoredFile } from './handler.ts'
+export { RESOLVER_MAP_FILE, resolverMapFrom } from './map.ts'
 export {
     foldedForm,
     goneKey,
