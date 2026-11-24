@@ -33,7 +33,7 @@ use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, compute_plan, forced_removals};
-use crate::queue::{Move, Scan, compute_edit_queues, compute_queue, moved_entry};
+use crate::queue::{GuardChange, Move, Scan, compute_guard_queues, compute_queue, moved_entry};
 use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
 };
@@ -186,7 +186,7 @@ fn read_edits(device: &Device) -> Result<EditLog, String> {
 fn refuse_when_behind(behind: u64) -> Result<(), String> {
     if behind > 0 {
         return Err(format!(
-            "the copy of the content store is {behind} commit(s) behind the content store: another device published since the last pull. Nothing can be planned, published or taken down until the copy is up to date: pull first (git pull --ff-only origin main)"
+            "the copy of the content store is {behind} commit(s) behind the content store: another device changed the content store since the last pull. Nothing can be planned, published or taken down until the copy is up to date: pull first (git pull --ff-only origin main)"
         ));
     }
     Ok(())
@@ -1760,6 +1760,7 @@ fn apply_current(
     current: &Computed,
 ) -> Result<Outcome, String> {
     let (id, own_lock) = (commit.plan, commit.own_lock);
+    refuse_edits_that_take_away(device, current, run)?;
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
     let paths = store_paths_of(&current.plan, &current.scan, run.time);
@@ -2662,9 +2663,9 @@ fn taken_away(
     action: &str,
     path: &str,
 ) -> Result<TakenAway, String> {
-    let (folder, ignored) = match action {
-        "deny" => (Some(path), None),
-        "ignore" => (None, Some(path)),
+    let change = match action {
+        "deny" => GuardChange::Deny(path),
+        "ignore" => GuardChange::Ignore(path),
         _ => {
             return Ok(TakenAway {
                 removes: Vec::new(),
@@ -2672,8 +2673,7 @@ fn taken_away(
             });
         }
     };
-    let renames = device.store.read(RENAMES_FILE)?;
-    let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
+    // A deny list entry that names no folder lists no file.
     let deny_list = context
         .configuration
         .deny_list
@@ -2681,38 +2681,141 @@ fn taken_away(
         .filter(|folder| device.vault.has_folder(folder))
         .cloned()
         .collect();
-    let (now, after) = compute_edit_queues(
+    let (now, after) = guard_queues(device, &Configuration { deny_list }, change)?;
+    Ok(between(device, &after, &now, action == "deny"))
+}
+
+/// The two queues of a change of the guards, from one read of the vault, of
+/// the journals and of the manifest.
+fn guard_queues(
+    device: &Device,
+    configuration: &Configuration,
+    change: GuardChange,
+) -> Result<(Scan, Scan), String> {
+    let renames = device.store.read(RENAMES_FILE)?;
+    let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
+    compute_guard_queues(
         &device.vault,
         &read_manifest(&device.store)?,
         journals,
-        &Configuration { deny_list },
-        folder,
-        ignored,
-    )?;
-    let forced_now: BTreeSet<String> = forced_removals(&now).into_iter().collect();
-    let mut removes: Vec<String> = forced_removals(&after)
-        .into_iter()
-        .filter(|forced| !forced_now.contains(forced))
+        configuration,
+        change,
+    )
+}
+
+/// What the stricter guards take away that the looser ones do not (rule 2):
+/// `removes`, the forced removals (rule 3 of the plan) of the stricter queue
+/// that are not forced removals of the looser one, sorted by path; and, for
+/// a folder of the deny list, `affects`, the published entries that are a
+/// forced removal in neither queue and that use an attachment that the
+/// stricter guards put under the guard (rule 8 of "A publication").
+fn between(device: &Device, stricter: &Scan, looser: &Scan, with_affects: bool) -> TakenAway {
+    let forced_looser: BTreeSet<String> = forced_removals(looser).into_iter().collect();
+    let forced_stricter: BTreeSet<String> = forced_removals(stricter).into_iter().collect();
+    let mut removes: Vec<String> = forced_stricter
+        .iter()
+        .filter(|forced| !forced_looser.contains(*forced))
+        .cloned()
         .collect();
     sort_by_code_point(&mut removes);
     let mut affects = Vec::new();
-    if folder.is_some() {
+    if with_affects {
         let vault = &device.vault;
         // The map gives the paths in the order of the code points.
-        for (entry_path, entry) in &after.manifest {
+        for (path, entry) in &stricter.manifest {
             let newly_guarded = entry.attachments.iter().any(|attachment| {
-                after.is_guarded_file(vault, &attachment.path, &attachment.hash)
-                    && !now.is_guarded_file(vault, &attachment.path, &attachment.hash)
+                stricter.is_guarded_file(vault, &attachment.path, &attachment.hash)
+                    && !looser.is_guarded_file(vault, &attachment.path, &attachment.hash)
             });
             if entry.state == State::Published
                 && newly_guarded
-                && removes.binary_search(entry_path).is_err()
+                && !forced_stricter.contains(path)
+                && !forced_looser.contains(path)
             {
-                affects.push(entry_path.clone());
+                affects.push(path.clone());
             }
         }
     }
-    Ok(TakenAway { removes, affects })
+    TakenAway { removes, affects }
+}
+
+/// Rule 10 of "The edits of the guards": a publication from the faces
+/// `command-line` and `mcp-server` computes again what each `applied` event
+/// of its plan takes away now, with the guards of now and with the guards of
+/// now without that edit. An edit that applied alone took no entry away on
+/// the device that made it, but another device can see more (a line of a
+/// rename journal that moves a published note into the new folder). When one
+/// list is not empty, nothing is published: the author publishes the plan in
+/// the publication center, where the plan shows the forced removals.
+fn refuse_edits_that_take_away(
+    device: &Device,
+    current: &Computed,
+    run: &Run,
+) -> Result<(), String> {
+    if run.face == "plugin" {
+        return Ok(());
+    }
+    let now = &current.scan.configuration;
+    for event in current
+        .plan
+        .edits()
+        .iter()
+        .filter(|event| event.state == "applied")
+    {
+        let path = event.path.as_str();
+        let taken = match event.action.as_str() {
+            // The folder is still on the deny list: the queue without it is
+            // the looser one.
+            "deny" if now.deny_list.iter().any(|folder| folder == path) => {
+                let without = Configuration {
+                    deny_list: now
+                        .deny_list
+                        .iter()
+                        .filter(|folder| *folder != path)
+                        .cloned()
+                        .collect(),
+                };
+                let (looser, stricter) = guard_queues(device, &without, GuardChange::Deny(path))?;
+                between(device, &stricter, &looser, true)
+            }
+            // The note is still excluded by the ignore property.
+            "ignore" if current.scan.ignored.contains(path) => {
+                let (stricter, looser) = guard_queues(device, now, GuardChange::Unignore(path))?;
+                between(device, &stricter, &looser, false)
+            }
+            _ => continue,
+        };
+        if taken.removes.is_empty() && taken.affects.is_empty() {
+            continue;
+        }
+        let quoted = |paths: &[String]| {
+            paths
+                .iter()
+                .map(|path| format!("\"{path}\""))
+                .collect::<Vec<String>>()
+                .join(", ")
+        };
+        let mut what = Vec::new();
+        if !taken.removes.is_empty() {
+            what.push(format!(
+                "it takes these entries off the site: {}",
+                quoted(&taken.removes)
+            ));
+        }
+        if !taken.affects.is_empty() {
+            what.push(format!(
+                "these published notes would lose an attachment: {}",
+                quoted(&taken.affects)
+            ));
+        }
+        return Err(format!(
+            "the edit {} of \"{path}\" ({}) applied alone, but it takes more away now than on the device that made it: {}. Nothing is published: the author publishes this plan in the publication center of Obsidian, where the plan shows the forced removals",
+            event.action,
+            event.id,
+            what.join("; and ")
+        ));
+    }
+    Ok(())
 }
 
 /// True when the text of a JSON number is a whole number that both

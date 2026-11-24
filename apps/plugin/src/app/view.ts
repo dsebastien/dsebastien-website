@@ -1063,9 +1063,19 @@ export class ConfirmProposalModal extends Modal {
         const { contentEl } = this
         eventLine(contentEl.createEl('p'), proposal)
         if (proposal.action === 'allow') {
+            const { opens, candidates } = this.review
             contentEl.createEl('p', {
-                text: 'The notes of this folder become candidates: they show in the list New. Nothing is published until a plan includes a note.'
+                text: `${candidates === 1 ? '1 note of this folder becomes a candidate' : `${candidates.toLocaleString()} notes of this folder become candidates`}: ${candidates === 1 ? 'it shows' : 'they show'} in the list New, and a new note is published only when a plan includes it.`
             })
+            if (opens.length > 0) {
+                contentEl.createEl('p', {
+                    text: `${opens.length === 1 ? 'This published note links' : `These ${opens.length.toLocaleString()} published notes link`} to a file of the folder: the next update of ${opens.length === 1 ? 'it' : 'each'}, often a technical update that a plan without paths holds and an agent publishes alone, uploads that file and makes it public:`
+                })
+                this.#paths(opens)
+                contentEl.createEl('p', {
+                    text: 'When other published notes link to the folder when you confirm, nothing is applied: open this dialog again.'
+                })
+            }
         } else if (proposal.action === 'unignore') {
             contentEl.createEl('p', {
                 text: 'The note becomes a candidate: it shows in the list New. Nothing is published until a plan includes it.'

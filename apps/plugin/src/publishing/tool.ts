@@ -233,7 +233,7 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
 function refuseWhenBehind(behind: number): void {
     if (behind > 0) {
         throw new Error(
-            `the copy of the content store is ${String(behind)} commit(s) behind the content store: another device published since the last pull. Nothing can be planned, published or taken down until the copy is up to date: pull first (git pull --ff-only origin main)`
+            `the copy of the content store is ${String(behind)} commit(s) behind the content store: another device changed the content store since the last pull. Nothing can be planned, published or taken down until the copy is up to date: pull first (git pull --ff-only origin main)`
         )
     }
 }
@@ -1484,6 +1484,8 @@ export async function unpublish(
                 }),
             'must'
         )
+        // An edit that applied alone can take entries away on this device (rule 10).
+        await refuseEditsThatTakeAway(device, computed.plan, computed.scan, run.face)
         const id = await store(device, computed)
         return await applyCurrent(device, id, run, ownLock, owed, computed)
     })
@@ -1790,6 +1792,8 @@ async function apply(
             `the plan ${id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
     }
+    // An edit that applied alone can take entries away on this device (rule 10).
+    await refuseEditsThatTakeAway(device, current.plan, current.scan, run.face)
     return await applyCurrent(device, id, run, ownLock, owed, current)
 }
 
@@ -1952,6 +1956,8 @@ export interface Confirmation {
     readonly proposal: string
     readonly removes: readonly string[]
     readonly affects: readonly string[]
+    /** For an `allow`: the published notes that would link to a file of the folder, as the dialog showed them (rule 11). */
+    readonly opens: readonly string[]
 }
 
 /**
@@ -2063,37 +2069,29 @@ function forcedRemovals(scan: Scan): Set<string> {
     ])
 }
 
+/** A note read in another form for a scan: the note with or without the ignore property. */
+type NoteForm = { readonly path: string; readonly text: string }
+
 /**
- * What an edit takes away (rule 2): one read of the vault, of the journals
- * and of the manifest, and the queue of that read with the guards as they
- * are and with the edit applied (the new deny list, or the note read with
- * the ignore property). `removes` is the forced removals of the second that
- * are not forced removals of the first: the moves of the journals, the
- * names of the missing notes and the collisions count as the next
- * publication counts them. `affects`, for a `deny`, is the published
- * entries that stay and that use an attachment that is under a guard with
- * the new deny list and was not before (rule 8 of "A publication"). A deny
- * list entry that names no folder lists no file, so it does not stop the
- * scans.
+ * The scans of one read (rule 2): the vault, the journals and the manifest
+ * are read one time, and each call gives the queue of that read with a set
+ * of guards (a deny list, and a note read in another form). A deny list
+ * entry that names no folder lists no file, so it does not stop a scan.
  */
-async function editLists(
+async function scansOfOneRead(
     device: Device,
-    context: EditContext,
-    applied: {
-        readonly denyList: readonly string[]
-        readonly note?: { readonly path: string; readonly text: string }
-    }
-): Promise<{ removes: string[]; affects: string[] }> {
+    log: EditsLog
+): Promise<{
+    readonly vault: Device['vault']
+    readonly scan: (denyList: readonly string[], note?: NoteForm) => Promise<Scan>
+}> {
     const vault = oneRead(device.vault)
     const journals = await readJournals(
         device.renames,
         parseMarkers(await device.store.read(RENAMES_FILE))
     )
     const manifest = await readManifest(device.store)
-    const scan = async (
-        denyList: readonly string[],
-        note?: { readonly path: string; readonly text: string }
-    ): Promise<Scan> => {
+    const scan = async (denyList: readonly string[], note?: NoteForm): Promise<Scan> => {
         const present: string[] = []
         for (const folder of denyList) {
             if (await vault.hasFolder(folder)) {
@@ -2113,19 +2111,31 @@ async function editLists(
             journals,
             configuration: { denyList: present },
             noteTypes: NO_NOTE_TYPES,
-            edits: context.log
+            edits: log
         })
     }
-    const before = await scan(context.configuration.denyList)
-    const after = await scan(applied.denyList, applied.note)
+    return { vault, scan }
+}
+
+/**
+ * What a set of guards takes away against another one (rule 2): `removes`
+ * is the forced removals of `after` that are not forced removals of
+ * `before`. With `files` (a deny), `affects` is the published entries that
+ * are a forced removal in neither scan and that use an attachment under a
+ * guard in `after` and not in `before` (rule 8 of "A publication").
+ */
+async function takenAway(
+    before: Scan,
+    after: Scan,
+    files: boolean
+): Promise<{ removes: string[]; affects: string[] }> {
     const forcedBefore = forcedRemovals(before)
     const forcedAfter = forcedRemovals(after)
     const removes = sortByCodePoint([...forcedAfter].filter((path) => !forcedBefore.has(path)))
     const affects: string[] = []
-    // An ignore guards a note, not a file: it has no `affects`.
-    if (applied.note === undefined) {
+    if (files) {
         for (const [path, entry] of after.manifest) {
-            if (entry.state !== 'published' || forcedAfter.has(path)) {
+            if (entry.state !== 'published' || forcedAfter.has(path) || forcedBefore.has(path)) {
                 continue
             }
             for (const attachment of entry.attachments) {
@@ -2140,6 +2150,108 @@ async function editLists(
         }
     }
     return { removes, affects: sortByCodePoint(affects) }
+}
+
+/**
+ * What an edit takes away (rule 2): one read of the vault, of the journals
+ * and of the manifest, and the queue of that read with the guards as they
+ * are and with the edit applied (the new deny list, or the note read with
+ * the ignore property). An ignore guards a note, not a file: it has no
+ * `affects`.
+ */
+async function editLists(
+    device: Device,
+    context: EditContext,
+    applied: { readonly denyList: readonly string[]; readonly note?: NoteForm }
+): Promise<{ removes: string[]; affects: string[] }> {
+    const { scan } = await scansOfOneRead(device, context.log)
+    const before = await scan(context.configuration.denyList)
+    const after = await scan(applied.denyList, applied.note)
+    return await takenAway(before, after, applied.note === undefined)
+}
+
+/**
+ * What a confirmed `allow` opens (rule 11): the published notes that would
+ * link to a file of the folder, whose next update would upload it, and the
+ * count of the notes of the folder that become candidates.
+ */
+async function allowOpens(
+    device: Device,
+    context: EditContext,
+    folder: string
+): Promise<{ opens: string[]; candidates: number }> {
+    const { vault, scan } = await scansOfOneRead(device, context.log)
+    const before = await scan(context.configuration.denyList)
+    const after = await scan(context.configuration.denyList.filter((one) => one !== folder))
+    const forced = forcedRemovals(after)
+    const opens: string[] = []
+    for (const [path, entry] of after.manifest) {
+        if (entry.state !== 'published' || forced.has(path) || !after.notes.has(path)) {
+            continue
+        }
+        const text = await vault.read(path)
+        if (text === undefined) {
+            continue
+        }
+        const { files } = linksOf(sourceOf(text), path, after.index, after.guarded)
+        if (files.some((file) => file.path.startsWith(`${folder}/`))) {
+            opens.push(path)
+        }
+    }
+    const candidates = new Set(before.queue.new)
+    return {
+        opens: sortByCodePoint(opens),
+        candidates: after.queue.new.filter(
+            (path) => path.startsWith(`${folder}/`) && !candidates.has(path)
+        ).length
+    }
+}
+
+/**
+ * Rule 10: a publication of an agent face checks the edits that applied
+ * alone again. For each `applied` event of the plan, it computes what the
+ * edit takes away now, from one read: the guards of now against the guards
+ * of now without that edit. It throws when one list is not empty: the author
+ * publishes such a plan in the publication center, where the plan shows the
+ * forced removals. The face `plugin` never stops here.
+ */
+async function refuseEditsThatTakeAway(
+    device: Device,
+    plan: PublicationPlan,
+    scan: Scan,
+    face: Face
+): Promise<void> {
+    const applied = plan.edits.filter((event) => event.state === 'applied')
+    if (face === 'plugin' || applied.length === 0) {
+        return
+    }
+    const { vault, scan: scanWith } = await scansOfOneRead(device, scan.edits)
+    const denyList = scan.configuration.denyList
+    const now = await scanWith(denyList)
+    for (const event of applied) {
+        let without: Scan | undefined
+        if (event.action === 'deny') {
+            // A deny that the author took back since takes nothing away.
+            if (denyList.includes(event.path)) {
+                without = await scanWith(denyList.filter((folder) => folder !== event.path))
+            }
+        } else if (guardOfPath(event.path, scan.configuration) === undefined) {
+            const text = await vault.read(event.path)
+            const bare = text === undefined ? undefined : removeProperty(text, IGNORE_PROPERTY)
+            if (bare !== undefined && bare !== text) {
+                without = await scanWith(denyList, { path: event.path, text: bare })
+            }
+        }
+        if (without === undefined) {
+            continue
+        }
+        const { removes, affects } = await takenAway(without, now, event.action === 'deny')
+        if (removes.length > 0 || affects.length > 0) {
+            throw new Error(
+                `the edit ${event.action} "${event.path}" (${event.id}) applied alone, but it takes entries away now: ${listText(removes)} leave the content store, ${listText(affects)} lose an attachment. Nothing is published from the face ${face}: the author publishes this plan in the publication center of Obsidian, where the plan shows the forced removals`
+            )
+        }
+    }
 }
 
 /** The text of a confirmation of the lists: the paths, or `none`. */
@@ -2517,6 +2629,10 @@ export interface ProposalReview {
     readonly removes: readonly string[]
     /** The published notes that would lose an attachment, sorted. */
     readonly affects: readonly string[]
+    /** For an `allow`: the published notes that link to a file of the folder, whose next update would upload it, sorted (rule 11). */
+    readonly opens: readonly string[]
+    /** For an `allow`: how many notes of the folder become candidates (rule 11). */
+    readonly candidates: number
 }
 
 /**
@@ -2538,7 +2654,11 @@ export async function reviewProposal(given: Device, id: string): Promise<Proposa
     const context = await editContext(device)
     const proposal = openProposalOf(context, id)
     const checked = await checkEdit(device, context, proposal.action, proposal.path, false)
-    return { proposal, removes: checked.removes, affects: checked.affects }
+    const opened =
+        proposal.action === 'allow'
+            ? await allowOpens(device, context, proposal.path)
+            : { opens: [], candidates: 0 }
+    return { proposal, removes: checked.removes, affects: checked.affects, ...opened }
 }
 
 /**
@@ -2560,6 +2680,15 @@ export async function confirmProposal(
         const context = await editContext(device)
         const proposal = openProposalOf(context, confirmation.proposal)
         const checked = await checkEdit(device, context, proposal.action, proposal.path, false)
+        const { opens } =
+            proposal.action === 'allow'
+                ? await allowOpens(device, context, proposal.path)
+                : { opens: [] }
+        if (!sameList(confirmation.opens, opens)) {
+            throw new Error(
+                `the published notes that would link to a file of the folder changed since the dialog showed them (now: ${listText(opens)}), so nothing is applied: open the dialog of the proposal again`
+            )
+        }
         if (
             !sameList(confirmation.removes, checked.removes) ||
             !sameList(confirmation.affects, checked.affects)

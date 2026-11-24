@@ -73,12 +73,20 @@ type Step = { why: string } & (
           says?: string
           offline?: true
       }
-    | { do: 'publish'; selection: Selection; time: string; report: ReportLists; refused?: never }
+    | {
+          do: 'publish'
+          selection: Selection
+          time: string
+          face?: Face
+          report: ReportLists
+          refused?: never
+      }
     | {
           do: 'publish'
           selection?: Selection
           stored?: true
           time: string
+          face?: Face
           refused: true
           says?: string
       }
@@ -354,7 +362,12 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                             ? storedPlan
                             : (await plan(device, step.selection ?? { include: [] })).id
                     expect(
-                        await rejectionOf(publish(device, id, runAt(step.time))),
+                        await rejectionOf(
+                            publish(device, id, {
+                                ...runAt(step.time),
+                                face: step.face ?? 'plugin'
+                            })
+                        ),
                         label
                     ).toContain(step.says ?? '')
                 } else if (step.do === 'takedown' && step.refused === true) {
@@ -385,10 +398,11 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     expect(lists, label).toEqual(step.report)
                 } else if (step.do === 'publish') {
                     const planned = await plan(device, step.selection)
+                    // A publication from the face of the step: the plugin by default.
                     const report = await publish(device, planned.id, {
                         time: step.time,
                         device: 'garden-shed',
-                        face: 'plugin'
+                        face: step.face ?? 'plugin'
                     })
                     const lists: ReportLists = {
                         ...report,

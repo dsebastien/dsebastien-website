@@ -636,7 +636,7 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
 
         // The dialog opens with the entries that the edit takes away now.
         const review = await center.reviewProposal(proposal)
-        expect(review).toEqual({ proposal, removes: [NOTE], affects: [] })
+        expect(review).toEqual({ proposal, removes: [NOTE], affects: [], opens: [], candidates: 0 })
         if (review === undefined) return
 
         await center.confirmProposal(review)
@@ -689,7 +689,8 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
         if (proposal === undefined) throw new Error('no proposal')
 
         const review = await center.reviewProposal(proposal)
-        expect(review).toEqual({ proposal, removes: [], affects: [] })
+        expect(review).toMatchObject({ proposal, removes: [], affects: [], opens: [] })
+        expect(review?.candidates).toBeGreaterThan(0)
         if (review === undefined) return
         await center.confirmProposal(review)
 

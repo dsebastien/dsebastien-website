@@ -464,68 +464,83 @@ fn read_vault(
     })
 }
 
+/// One change of the guards, for the two queues of an edit (rule 2 of "The
+/// edits of the guards") and for the check of a publication (rule 10).
+#[derive(Clone, Copy)]
+pub enum GuardChange<'a> {
+    /// The folder goes on the deny list.
+    Deny(&'a str),
+    /// The note is read as excluded by the ignore property.
+    Ignore(&'a str),
+    /// The note is read as not excluded by the ignore property.
+    Unignore(&'a str),
+}
+
 impl VaultRead {
-    /// The same read with one more guard (rule 2 of "The edits of the
-    /// guards"): a folder on the deny list, whose notes and files leave the
-    /// scan and become files under the guard, or a note read as excluded by
-    /// the ignore property. No note is read again: the listings of the
-    /// vault are the ones of the run, and only the names below a hidden
-    /// folder of the new folder are listed for the first time.
-    fn with_guard(
-        &self,
-        vault: &Vault,
-        folder: Option<&str>,
-        ignored: Option<&str>,
-    ) -> Result<Self, String> {
+    /// The same read with the guards changed: a folder on the deny list,
+    /// whose notes and files leave the scan and become files under the guard,
+    /// or a note read as excluded, or as not excluded, by the ignore
+    /// property. No note is read again: the listings of the vault are the
+    /// ones of the run, and only the names below a hidden folder of the new
+    /// folder are listed for the first time.
+    fn changed(&self, vault: &Vault, change: GuardChange) -> Result<Self, String> {
         let mut read = self.clone();
-        if let Some(path) = ignored.filter(|path| read.notes.contains_key(*path)) {
-            read.ignored.insert(path.to_owned());
-        }
-        if let Some(folder) = folder {
-            let below = format!("{folder}/");
-            read.notes.retain(|path, _| !path.starts_with(&below));
-            read.ignored.retain(|path| !path.starts_with(&below));
-            read.link_paths.retain(|path, _| !path.starts_with(&below));
-            read.others.retain(|path| !path.starts_with(&below));
-            let (files, names) = scan_denied(
-                vault,
-                &Configuration {
-                    deny_list: vec![folder.to_owned()],
-                },
-            )?;
-            let mut denied: BTreeSet<String> = read.denied.into_iter().collect();
-            denied.extend(files);
-            read.denied = denied.into_iter().collect();
-            read.denied_file_names.extend(names);
+        match change {
+            GuardChange::Ignore(path) => {
+                if read.notes.contains_key(path) {
+                    read.ignored.insert(path.to_owned());
+                }
+            }
+            GuardChange::Unignore(path) => {
+                read.ignored.remove(path);
+            }
+            GuardChange::Deny(folder) => {
+                let below = format!("{folder}/");
+                read.notes.retain(|path, _| !path.starts_with(&below));
+                read.ignored.retain(|path| !path.starts_with(&below));
+                read.link_paths.retain(|path, _| !path.starts_with(&below));
+                read.others.retain(|path| !path.starts_with(&below));
+                let (files, names) = scan_denied(
+                    vault,
+                    &Configuration {
+                        deny_list: vec![folder.to_owned()],
+                    },
+                )?;
+                let mut denied: BTreeSet<String> = read.denied.into_iter().collect();
+                denied.extend(files);
+                read.denied = denied.into_iter().collect();
+                read.denied_file_names.extend(names);
+            }
         }
         Ok(read)
     }
 }
 
-/// The two queues of an edit of the guards (rule 2 of "The edits of the
-/// guards"), from one read of the vault, of the journals and of the
-/// manifest: as it is, and with the edit applied (the folder on the deny
-/// list, or the note read as excluded by the ignore property). A write
-/// during the edit cannot make the two see other states. The second one
-/// reads the facts of the attachments that the first one read.
+/// Two queues from one read of the vault, of the journals and of the
+/// manifest: with these guards, and with the guards changed (rule 2 of "The
+/// edits of the guards", rule 10). A write during the run cannot make the two
+/// see other states. The second one reads the facts of the attachments that
+/// the first one read. The Starter Kit is not asked: what a change of the
+/// guards takes away does not depend on the note types.
 ///
 /// # Errors
 ///
 /// As `compute_queue`.
-pub fn compute_edit_queues(
+pub fn compute_guard_queues(
     vault: &Vault,
     entries: &BTreeMap<String, ManifestEntry>,
     journals: JournalState,
     configuration: &Configuration,
-    folder: Option<&str>,
-    ignored: Option<&str>,
+    change: GuardChange,
 ) -> Result<(Scan, Scan), String> {
     let kit = StarterKit::none();
     let read = read_vault(vault, entries, &journals, configuration)?;
-    let edited = read.with_guard(vault, folder, ignored)?;
-    let mut more = configuration.clone();
-    more.deny_list.extend(folder.map(str::to_owned));
-    let now = queue_of(
+    let edited = read.changed(vault, change)?;
+    let mut changed = configuration.clone();
+    if let GuardChange::Deny(folder) = change {
+        changed.deny_list.push(folder.to_owned());
+    }
+    let base = queue_of(
         vault,
         entries,
         journals.clone(),
@@ -534,9 +549,9 @@ pub fn compute_edit_queues(
         read,
         FileReader::default(),
     )?;
-    let files = now.files.clone();
-    let after = queue_of(vault, entries, journals, more, &kit, edited, files)?;
-    Ok((now, after))
+    let files = base.files.clone();
+    let after = queue_of(vault, entries, journals, changed, &kit, edited, files)?;
+    Ok((base, after))
 }
 
 /// Computes the queue from one read of the vault.

@@ -473,7 +473,7 @@ describe('the removes of an edit: two scans, as is and with the edit applied (ru
         expect(sub.removes).toEqual(['Mixed/Sub/Deep.md'])
         await confirmProposal(
             device,
-            { proposal: sub.id, removes: ['Mixed/Sub/Deep.md'], affects: [] },
+            { proposal: sub.id, removes: ['Mixed/Sub/Deep.md'], affects: [], opens: [] },
             AUTHOR
         )
 
@@ -526,20 +526,164 @@ describe('a deny that takes an attachment away from a published note (R69, revie
         expect(proposal.affects).toEqual(['Notes/Plan.md'])
         expect(proposal.removes).toBeUndefined()
         const review = await reviewProposal(device, proposal.id)
-        expect(review).toEqual({ proposal, removes: [], affects: ['Notes/Plan.md'] })
+        expect(review).toEqual({
+            proposal,
+            removes: [],
+            affects: ['Notes/Plan.md'],
+            opens: [],
+            candidates: 0
+        })
         // A dialog that showed no note that loses an attachment is stale.
         expect(
             await rejectionOf(
-                confirmProposal(device, { proposal: proposal.id, removes: [], affects: [] }, AUTHOR)
+                confirmProposal(
+                    device,
+                    { proposal: proposal.id, removes: [], affects: [], opens: [] },
+                    AUTHOR
+                )
             )
         ).toContain('changed since the dialog showed them')
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: review.removes, affects: review.affects },
+            {
+                proposal: proposal.id,
+                removes: review.removes,
+                affects: review.affects,
+                opens: review.opens
+            },
             AUTHOR
         )
         expect(confirmed.affects).toEqual(['Notes/Plan.md'])
         expect((await guards(device)).denyList).toEqual(['Locked', 'Images'])
+    }, 120_000)
+})
+
+describe('an agent publication checks the edits that applied alone again (rule 10)', () => {
+    const MCP: Run = { ...AUTHOR, time: '2031-06-01T12:00:00Z', face: 'mcp-server' }
+    const CLI: Run = { ...MCP, face: 'command-line' }
+
+    test('a journal line of another device moves a published note into a folder that a deny took alone', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
+        const deny = await edit(device, { action: 'deny', path: 'Private' }, AGENT)
+        expect(deny.state).toBe('applied')
+        // The vault of another device arrives, with its journal.
+        const published = (await textOf(join(vault, 'Notes/Public.md'))) ?? ''
+        await rm(join(vault, 'Notes/Public.md'))
+        await writeFiles(vault, {
+            'Private/Public.md': published,
+            [JOURNAL]: journalLine('Notes/Public.md', 'Private/Public.md')
+        })
+
+        for (const run of [MCP, CLI]) {
+            const planned = await plan(device, { include: [] })
+            const message = await rejectionOf(publish(device, planned.id, run))
+            expect(message).toContain(`the edit deny "Private" (${deny.id})`)
+            expect(message).toContain('"Notes/Public.md" leave the content store')
+            expect(message).toContain('publication center')
+            expect(await rejectionOf(unpublish(device, ['Notes/Public.md'], run))).toContain(
+                'publication center'
+            )
+        }
+        expect(await inStore(stores, 'notes/Notes/Public.md')).not.toBeNull()
+
+        // The author publishes the same plan in the view.
+        const planned = await plan(device, { include: [] })
+        const report = await publish(device, planned.id, AUTHOR)
+        expect(report.forcedRemoved).toEqual(['Notes/Public.md'])
+    }, 120_000)
+
+    test('an ignore that applied alone, onto whose note a journal moves a published note', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
+        const ignore = await edit(device, { action: 'ignore', path: 'Notes/Draft.md' }, AGENT)
+        expect(ignore.state).toBe('applied')
+        await rm(join(vault, 'Notes/Public.md'))
+        await writeFiles(vault, { [JOURNAL]: journalLine('Notes/Public.md', 'Notes/Draft.md') })
+
+        const planned = await plan(device, { include: [] })
+        const message = await rejectionOf(publish(device, planned.id, MCP))
+
+        expect(message).toContain(`the edit ignore "Notes/Draft.md" (${ignore.id})`)
+        expect(message).toContain('"Notes/Public.md" leave the content store')
+    }, 120_000)
+
+    test('a deny that applied alone, into whose folder an attachment of a published note moves later', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, {
+            'Notes/Plan.md': '# Plan\n\n[[plan.txt]]\n',
+            'Assets/plan.txt': 'A plan\n',
+            'Images/other.txt': 'Other\n'
+        })
+        await publishNotes(device, ['Notes/Plan.md'], '2031-06-01T08:00:00Z')
+        const deny = await edit(device, { action: 'deny', path: 'Images' }, AGENT)
+        expect(deny.state).toBe('applied')
+        // The file moves into the folder of the deny list.
+        await rm(join(vault, 'Assets/plan.txt'))
+        await writeFiles(vault, { 'Images/plan.txt': 'A plan\n' })
+
+        const planned = await plan(device, { include: [] })
+        const message = await rejectionOf(publish(device, planned.id, CLI))
+
+        expect(message).toContain(`the edit deny "Images" (${deny.id})`)
+        expect(message).toContain('"Notes/Plan.md" lose an attachment')
+    }, 120_000)
+
+    test('an edit that applied alone and still takes nothing away does not stop an agent', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores)
+        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
+        await edit(device, { action: 'deny', path: 'Private' }, AGENT)
+
+        const planned = await plan(device, { include: [] })
+        const report = await publish(device, planned.id, MCP)
+
+        expect(report.forcedRemoved).toEqual([])
+        expect(await inStore(stores, 'edits.json')).toContain('"published": 1')
+    }, 120_000)
+})
+
+describe('what a confirmed allow opens (rule 11)', () => {
+    test('the review names the published notes that link to a file of the folder, and counts the candidates', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, {
+            'Notes/Plan.md': '# Plan\n\n[[secret.txt]]\n',
+            'Locked/secret.txt': 'A secret\n'
+        })
+        await publishNotes(device, ['Notes/Plan.md'], '2031-06-01T08:00:00Z')
+        const proposal = await edit(device, { action: 'allow', path: 'Locked' }, AGENT)
+
+        const review = await reviewProposal(device, proposal.id)
+
+        expect(review).toEqual({
+            proposal,
+            removes: [],
+            affects: [],
+            opens: ['Notes/Plan.md'],
+            candidates: 1
+        })
+        // A dialog that named no such note is stale.
+        expect(
+            await rejectionOf(
+                confirmProposal(
+                    device,
+                    { proposal: proposal.id, removes: [], affects: [], opens: [] },
+                    AUTHOR
+                )
+            )
+        ).toContain('would link to a file of the folder changed since the dialog showed them')
+        await confirmProposal(
+            device,
+            { proposal: proposal.id, removes: [], affects: [], opens: review.opens },
+            AUTHOR
+        )
+        expect((await guards(device)).denyList).toEqual([])
+        // The next plan without paths updates the note, which uploads the file.
+        expect((await status(device)).technicalUpdates).toEqual(['Notes/Plan.md'])
     }, 120_000)
 })
 
@@ -625,7 +769,7 @@ describe('the decisions of the author', () => {
                 await rejectionOf(
                     confirmProposal(
                         device,
-                        { proposal: proposal.id, removes: [], affects: [] },
+                        { proposal: proposal.id, removes: [], affects: [], opens: [] },
                         run
                     )
                 )
@@ -670,7 +814,7 @@ describe('the decisions of the author', () => {
 
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: [], affects: [] },
+            { proposal: proposal.id, removes: [], affects: [], opens: [] },
             AUTHOR
         )
 
@@ -693,7 +837,7 @@ describe('the decisions of the author', () => {
         const message = await rejectionOf(
             confirmProposal(
                 device,
-                { proposal: proposal.id, removes: ['Mixed/Shown.md'], affects: [] },
+                { proposal: proposal.id, removes: ['Mixed/Shown.md'], affects: [], opens: [] },
                 AUTHOR
             )
         )
@@ -706,11 +850,13 @@ describe('the decisions of the author', () => {
         expect(review).toEqual({
             proposal,
             removes: ['Mixed/Other.md', 'Mixed/Shown.md'],
-            affects: []
+            affects: [],
+            opens: [],
+            candidates: 0
         })
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: review.removes, affects: [] },
+            { proposal: proposal.id, removes: review.removes, affects: [], opens: [] },
             AUTHOR
         )
         expect(confirmed.removes).toEqual(['Mixed/Other.md', 'Mixed/Shown.md'])
@@ -726,7 +872,7 @@ describe('the decisions of the author', () => {
 
         await confirmProposal(
             device,
-            { proposal: proposal.id, removes: ['Notes/Public.md'], affects: [] },
+            { proposal: proposal.id, removes: ['Notes/Public.md'], affects: [], opens: [] },
             AUTHOR
         )
 
@@ -744,7 +890,7 @@ describe('the decisions of the author', () => {
 
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: [], affects: [] },
+            { proposal: proposal.id, removes: [], affects: [], opens: [] },
             AUTHOR
         )
 
@@ -763,7 +909,11 @@ describe('the decisions of the author', () => {
 
         expect(
             await rejectionOf(
-                confirmProposal(device, { proposal: proposal.id, removes: [], affects: [] }, AUTHOR)
+                confirmProposal(
+                    device,
+                    { proposal: proposal.id, removes: [], affects: [], opens: [] },
+                    AUTHOR
+                )
             )
         ).toContain('does not exclude')
         expect((await guards(device)).proposals).toEqual([proposal])

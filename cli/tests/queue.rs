@@ -536,6 +536,46 @@ fn run_edit_step(setup: &Setup, step: &Value, label: &str) {
     }
 }
 
+/// The step `publish`: the plan of the selection, or the stored one, applied
+/// from the face of the step (`command-line` by default, `mcp-server` through
+/// the `mcp` command), at its time. It gives its report, or is refused with
+/// the text of `says`.
+fn run_publish_step(setup: &Setup, step: &Value, label: &str, plans: &Plans) {
+    let time = step["time"].as_str().expect("a publication has a time");
+    let refused = step["refused"] == json!(true);
+    let id = if step["stored"] == json!(true) {
+        plans.stored.clone()
+    } else {
+        setup.plan_id(&step["selection"])
+    };
+    match step["face"].as_str().unwrap_or("command-line") {
+        "command-line" => {
+            let output = setup.publish_plan(&id, time);
+            if refused {
+                assert_refused_saying(&output, step, label);
+            } else {
+                assert!(output.status.success(), "{label}: {}", errors_of(&output));
+                assert_eq!(report_lists(&json_of(&output)), step["report"], "{label}");
+            }
+        }
+        "mcp-server" => {
+            let result = setup.call_tool("publish", &json!({ "plan": id }), time);
+            let first = result["content"][0]["text"]
+                .as_str()
+                .expect("the result has a text");
+            assert_eq!(result["isError"], json!(refused), "{label}: {first}");
+            if refused {
+                let says = step["says"].as_str().expect("a refusal says why");
+                assert!(first.contains(says), "{label}: {first}");
+            } else {
+                let report: Value = serde_json::from_str(first).expect("the report is JSON");
+                assert_eq!(report_lists(&report), step["report"], "{label}");
+            }
+        }
+        other => panic!("{label}: the face \"{other}\" is not known"),
+    }
+}
+
 /// The steps of issue 42: `edit`, and `guards`, which states the output of
 /// the command. False for every other step.
 fn run_guards_step(setup: &Setup, step: &Value, label: &str) -> bool {
@@ -655,20 +695,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
         }
         "noteTypes" => set_answers(setup, &step["noteTypes"]),
         "asked" => check_questions(setup, step, label),
-        "publish" if step["refused"] == json!(true) => {
-            let time = step["time"].as_str().expect("a publication has a time");
-            let id = if step["stored"] == json!(true) {
-                plans.stored.clone()
-            } else {
-                setup.plan_id(&step["selection"])
-            };
-            assert_refused_saying(&setup.publish_plan(&id, time), step, label);
-        }
-        "publish" => {
-            let time = step["time"].as_str().expect("a publication has a time");
-            let report = setup.publish(&step["selection"], time);
-            assert_eq!(report_lists(&report), step["report"], "{label}");
-        }
+        "publish" => run_publish_step(setup, step, label, plans),
         "expect" => check_files(setup, step, label),
         other => panic!("{label}: the step \"{other}\" is not known"),
     }

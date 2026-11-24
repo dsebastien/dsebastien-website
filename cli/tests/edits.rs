@@ -859,3 +859,125 @@ fn a_number_with_a_fraction_or_an_exponent_in_the_configuration_stops_a_deny() {
         )
     );
 }
+
+/// Writes a line of the rename journal of another device into the vault.
+fn write_journal(setup: &Setup, from: &str, to: &str) {
+    let journals = setup
+        .vault
+        .join(".obsidian/plugins/dsebastien-vault-publish/renames");
+    fs::create_dir_all(&journals).expect("the folder can be made");
+    fs::write(
+        journals.join("00000000000000bb.jsonl"),
+        format!(
+            "{{\"from\":\"{from}\",\"kind\":\"note\",\"time\":\"2031-04-01T09:00:00Z\",\"to\":\"{to}\"}}\n"
+        ),
+    )
+    .expect("the journal is written");
+}
+
+/// `affects` names only the published entries that are a forced removal in
+/// neither scan (review round 3): a note that the ignore property already
+/// takes away loses nothing more.
+#[test]
+fn a_deny_of_the_image_of_a_note_that_a_guard_takes_away_already_applies() {
+    let setup = set_up();
+    fs::create_dir_all(setup.vault.join("Pub")).expect("the folder can be made");
+    fs::create_dir_all(setup.vault.join("img")).expect("the folder can be made");
+    let note = setup.vault.join("Pub/p.md");
+    fs::write(&note, "# P\n\n![[pic.png]]\n").expect("the note is written");
+    fs::copy(
+        setup.vault.join("Attachments/garden-plan.png"),
+        setup.vault.join("img/pic.png"),
+    )
+    .expect("the image is copied");
+    setup.publish(&["Pub/p.md"]);
+    // The author adds the ignore property by hand.
+    fs::write(
+        &note,
+        "---\npublish_ignore: true\n---\n# P\n\n![[pic.png]]\n",
+    )
+    .expect("the note is written");
+
+    let output = setup.edit("deny", "img");
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(json_of(&output)["edit"]["state"], "applied");
+}
+
+/// Rule 10: a publication from the command line program or the MCP server
+/// stops when an edit that applied alone takes an entry away now.
+fn assert_publication_stops(setup: &Setup, says: &str) {
+    let before = setup.state();
+    let id = setup.plan_id(&[]);
+    let output = setup.publish_plan(&id);
+    assert_refused(&output, "publication center");
+    assert!(errors_of(&output).contains(says), "{}", errors_of(&output));
+    assert_eq!(setup.state(), before);
+}
+
+#[test]
+fn a_publication_stops_when_a_journal_line_of_another_device_moves_a_note_under_an_applied_deny() {
+    let setup = set_up();
+    setup.publish(&[NOTE]);
+    let output = setup.edit("deny", FOLDER);
+    assert_eq!(json_of(&output)["edit"]["state"], "applied");
+    let id = json_of(&output)["edit"]["id"]
+        .as_str()
+        .expect("an id")
+        .to_owned();
+    // The vault of another device arrives: its journal moved the note into
+    // the folder.
+    fs::rename(
+        setup.vault.join(NOTE),
+        setup.vault.join(FOLDER).join("Frost dates explained.md"),
+    )
+    .expect("the note is moved");
+    write_journal(&setup, NOTE, &format!("{FOLDER}/Frost dates explained.md"));
+
+    assert_publication_stops(&setup, &format!("deny of \"{FOLDER}\" ({id})"));
+    assert_publication_stops(&setup, NOTE);
+    // An unpublish is a publication: it stops too.
+    let output = setup.run(
+        "unpublish",
+        &[
+            &format!("--path={NOTE}"),
+            "--time",
+            LATER,
+            "--device",
+            "garden-shed",
+        ],
+    );
+    assert_refused(&output, "publication center");
+    assert!(setup.copy.join("notes").join(NOTE).exists());
+}
+
+#[test]
+fn a_publication_stops_when_a_journal_line_moves_a_note_onto_a_note_of_an_applied_ignore() {
+    let setup = set_up();
+    setup.publish(&[NOTE]);
+    let output = setup.edit("ignore", DRAFT);
+    assert_eq!(json_of(&output)["edit"]["state"], "applied");
+    // A journal line moves the published note onto the ignored note.
+    fs::remove_file(setup.vault.join(NOTE)).expect("the note is removed");
+    write_journal(&setup, NOTE, DRAFT);
+
+    assert_publication_stops(&setup, &format!("ignore of \"{DRAFT}\""));
+}
+
+#[test]
+fn a_publication_stops_when_the_image_of_a_published_note_moves_under_an_applied_deny() {
+    let setup = set_up();
+    let plan = "10 Garden/Garden plan.md";
+    setup.publish(&[plan]);
+    let output = setup.edit("deny", FOLDER);
+    assert_eq!(json_of(&output)["edit"]["state"], "applied");
+    // Later, the image moves into the folder.
+    fs::rename(
+        setup.vault.join("Attachments/garden-plan.png"),
+        setup.vault.join(FOLDER).join("garden-plan.png"),
+    )
+    .expect("the image is moved");
+
+    assert_publication_stops(&setup, "would lose an attachment");
+    assert_publication_stops(&setup, plan);
+}

@@ -259,4 +259,47 @@ describe('parity of the edits of the guards', () => {
             edit: { state: 'proposed', removes: [PUBLISHED] }
         })
     }, 300_000)
+
+    test('both apply a deny whose attachment only a note under a guard uses (review round 2, finding 1)', async () => {
+        const outcome = async (
+            toolOf: (vault: string, copy: string) => Tool
+        ): Promise<{ event: string; status: string; guards: string }> => {
+            await using stores = await makeTestStores()
+            const vault = await copyFixtureVault(stores)
+            const copy = await makeContentStoreCopy(stores)
+            const tool = toolOf(vault, copy)
+            await mkdir(join(vault, 'Pub'), { recursive: true })
+            await mkdir(join(vault, 'img'), { recursive: true })
+            await writeFile(join(vault, 'Pub', 'p.md'), '# P\n\n![[pic.png]]\n')
+            await writeFile(
+                join(vault, 'img', 'pic.png'),
+                Buffer.from(
+                    '89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000',
+                    'hex'
+                )
+            )
+            await tool.publish(['Pub/p.md'], '2031-04-01T08:00:00Z')
+            // The author adds the ignore property by hand: the entry is a
+            // forced removal with the guards of now and with the deny.
+            await writeFile(
+                join(vault, 'Pub', 'p.md'),
+                '---\npublish_ignore: true\n---\n# P\n\n![[pic.png]]\n'
+            )
+            return {
+                event: await tool.edit('deny', 'img', '2031-04-02T08:00:00Z'),
+                status: await tool.status(),
+                guards: await tool.guards()
+            }
+        }
+        const fromTypeScript = await outcome(typescriptTool)
+        const fromRust = await outcome(rustTool)
+
+        expect(fromRust).toEqual(fromTypeScript)
+        const { edit } = JSON.parse(fromTypeScript.event) as {
+            edit: { state: string; removes?: unknown; affects?: unknown }
+        }
+        expect(edit.state).toBe('applied')
+        expect(edit.removes).toBeUndefined()
+        expect(edit.affects).toBeUndefined()
+    }, 300_000)
 })

@@ -758,7 +758,12 @@ export class PublicationCenter {
         await this.#decide(review.proposal, 'Confirm', (device, run) =>
             confirmProposal(
                 device,
-                { proposal: review.proposal.id, removes: review.removes, affects: review.affects },
+                {
+                    proposal: review.proposal.id,
+                    removes: review.removes,
+                    affects: review.affects,
+                    opens: review.opens
+                },
                 run
             )
         )
