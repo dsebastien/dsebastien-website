@@ -44,8 +44,9 @@ export interface UrlTable {
 
 /** Reads the URL table of the repository. */
 export async function readUrlTable(): Promise<UrlTable> {
-    // The file is test data of this repository. The cast is the boundary: a
-    // wrong shape fails the tests that read it.
+    // The file is test data of this repository, and the tests read every
+    // case of it. The cast is the boundary: a wrong shape gives findings or
+    // an error, in a test and in the command that checks a host.
     return (await Bun.file(TABLE).json()) as UrlTable
 }
 
@@ -196,4 +197,36 @@ export async function checkUrlTable(ask: Ask, site: UrlTableSite): Promise<UrlCa
         }
     }
     return wrong
+}
+
+/**
+ * Checks that a file that did not change answers 304 to a request that names
+ * its tag, and 200 to a request that names another tag (URL-18). A host can
+ * give the tag in its weak form.
+ *
+ * @returns the findings: an empty list when the host answers so
+ */
+export async function checkNotModified(path: string, ask: Ask): Promise<string[]> {
+    const first = await ask(path)
+    await first.arrayBuffer()
+    const tag = first.headers.get('etag')
+    if (first.status !== 200 || tag === null) {
+        return [
+            `${path}: expected 200 with a tag, got ${String(first.status)} and the tag ${String(tag)}`
+        ]
+    }
+    const findings: string[] = []
+    const same = await ask(path, { 'if-none-match': tag })
+    const body = await same.text()
+    if (same.status !== 304 || body !== '') {
+        findings.push(
+            `${path} asked with its tag: expected 304 with no body, got ${String(same.status)} with ${String(body.length)} characters`
+        )
+    }
+    const other = await ask(path, { 'if-none-match': '"another"' })
+    await other.arrayBuffer()
+    if (other.status !== 200) {
+        findings.push(`${path} asked with another tag: expected 200, got ${String(other.status)}`)
+    }
+    return findings
 }

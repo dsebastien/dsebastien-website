@@ -19,10 +19,16 @@ export interface ByteRange {
 export interface StoredFile {
     /** The size of the whole file, in bytes. */
     readonly size: number
-    /** The entity tag of the file, with its quotes. It changes when the file changes. */
-    readonly tag: string
+    /**
+     * The entity tag of the file, with its quotes, in its strong or its weak
+     * form. It changes when the file changes. A file without a tag never
+     * answers 304.
+     */
+    readonly tag?: string
     /** The bytes of the file, or of a part of it. */
     readonly read: (range?: ByteRange) => BodyInit | Promise<BodyInit>
+    /** Lets go of the file. The handler calls it when an answer needs no byte of the file. */
+    readonly discard?: () => void | Promise<void>
 }
 
 /** The files of one release of the site, as a host gives them. */
@@ -55,6 +61,14 @@ export interface Release {
     /** Takes the detail of a failure, which never goes into an answer. */
     readonly report?: (error: unknown) => void
 }
+
+/**
+ * The folders of the files that the pages load, in the output of the build:
+ * the style sheets and the scripts, which Astro names with a hash, and the
+ * indexes of the search (decision R63). Each host gives a file of these
+ * folders by the path of its URL, and every other file by the resolver map.
+ */
+export const ASSET_FOLDERS: readonly string[] = ['_astro', '-/search']
 
 const HTML = 'text/html; charset=utf-8'
 const TEXT = 'text/plain; charset=utf-8'
@@ -105,9 +119,32 @@ const FILE_TYPES: Record<SiteFile['type'], string> = {
     text: TEXT
 }
 
-/** The end of a name after its last dot, in small letters. */
+/** The end of a name after its last dot, as written. */
 function extensionOf(name: string): string {
-    return name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+    return name.slice(name.lastIndexOf('.') + 1)
+}
+
+/**
+ * An answer with the bytes of a file, or of a part of it. A request of the
+ * headers only (`HEAD`) gets no byte: the file is let go, and the answer
+ * says the size that the bytes would have.
+ */
+async function fileResponse(
+    request: Request,
+    file: StoredFile,
+    init: { status?: number; headers: Record<string, string> },
+    range?: ByteRange
+): Promise<Response> {
+    if (request.method !== 'HEAD') {
+        return new Response(await file.read(range), init)
+    }
+    await file.discard?.()
+    const length = range === undefined ? file.size : range.end - range.start + 1
+    return new Response(null, {
+        ...init,
+        // A host that does not know the size of a file gives 0 for it.
+        headers: length > 0 ? { ...init.headers, 'content-length': String(length) } : init.headers
+    })
 }
 
 /**
@@ -148,7 +185,7 @@ async function attachmentResponse(
     file: StoredFile,
     name: string
 ): Promise<Response> {
-    const type = ATTACHMENT_TYPES.get(extensionOf(name)) ?? 'application/octet-stream'
+    const type = ATTACHMENT_TYPES.get(extensionOf(name).toLowerCase()) ?? 'application/octet-stream'
     const headers: Record<string, string> = {
         'accept-ranges': 'bytes',
         'cache-control': 'public, max-age=31536000, immutable',
@@ -163,21 +200,27 @@ async function attachmentResponse(
     }
     const range = rangeOf(request.headers.get('range'), file.size)
     if (range === null) {
+        await file.discard?.()
         return new Response(null, {
             status: 416,
             headers: { ...headers, 'content-range': `bytes */${String(file.size)}` }
         })
     }
     if (range === undefined) {
-        return new Response(await file.read(), { headers })
+        return await fileResponse(request, file, { headers })
     }
-    return new Response(await file.read(range), {
-        status: 206,
-        headers: {
-            ...headers,
-            'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(file.size)}`
-        }
-    })
+    return await fileResponse(
+        request,
+        file,
+        {
+            status: 206,
+            headers: {
+                ...headers,
+                'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(file.size)}`
+            }
+        },
+        range
+    )
 }
 
 /**
@@ -222,6 +265,34 @@ function serverError(
 }
 
 /**
+ * The answer of a failure for a request, with no detail of the failure: the
+ * server error page, its short text when the host has no such page, or the
+ * short Markdown text for an agent (NAV-20, NAV-21). The handler gives it
+ * itself for a failure inside it. A host gives it for a failure outside of
+ * the handler, such as a release that it cannot read.
+ *
+ * @param page the server error page, when the host has it
+ */
+export function failureResponse(request: Request, page?: string): Response {
+    const { pathname, origin } = new URL(request.url)
+    return serverError(errorFormat(pathname, request.headers.get('accept')), page, origin)
+}
+
+/** A tag without the mark of its weak form: a 304 compares two tags weakly (RFC 9110, section 13.1.2). */
+function strongForm(tag: string): string {
+    return tag.startsWith('W/') ? tag.slice(2) : tag
+}
+
+/** True when an `If-None-Match` header names the tag, or any version of the file. */
+function namesTag(wanted: string, tag: string): boolean {
+    const strong = strongForm(tag)
+    return wanted
+        .split(',')
+        .map((item) => item.trim())
+        .some((item) => item === '*' || strongForm(item) === strong)
+}
+
+/**
  * A file of the output of the build: a page or another file of the site. It
  * answers 304 when the request names its tag (URL-18). A client checks it
  * again at each use, so a new publication shows at once. With the status of
@@ -234,21 +305,24 @@ async function siteFileResponse(
     status: 200 | 404 | 410 = 200
 ): Promise<Response> {
     if (status !== 200) {
-        return new Response(await file.read(), {
+        return await fileResponse(request, file, {
             status,
             headers: { 'content-type': type, ...ERROR_HEADERS }
         })
     }
-    const headers = {
+    const headers: Record<string, string> = {
         'content-type': type,
-        'cache-control': 'public, max-age=0, must-revalidate',
-        'etag': file.tag
+        'cache-control': 'public, max-age=0, must-revalidate'
     }
-    const wanted = request.headers.get('if-none-match')
-    if (wanted !== null && wanted.split(',').some((item) => item.trim() === file.tag)) {
-        return new Response(null, { status: 304, headers })
+    if (file.tag !== undefined) {
+        headers['etag'] = file.tag
+        const wanted = request.headers.get('if-none-match')
+        if (wanted !== null && namesTag(wanted, file.tag)) {
+            await file.discard?.()
+            return new Response(null, { status: 304, headers })
+        }
     }
-    return new Response(await file.read(), { headers })
+    return await fileResponse(request, file, { headers })
 }
 
 /**
@@ -271,7 +345,7 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
             return undefined
         }
         if (asset !== undefined) {
-            return new Response(await asset.read(), {
+            return await fileResponse(request, asset, {
                 headers: {
                     'content-type':
                         ASSET_TYPES.get(extensionOf(pathname)) ?? 'application/octet-stream'

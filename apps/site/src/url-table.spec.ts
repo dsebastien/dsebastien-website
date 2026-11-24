@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    checkNotModified,
     checkUrlCase,
     checkUrlTable,
     type Ask,
@@ -194,6 +195,34 @@ describe('the check of the whole table', () => {
                 ]
             },
             { name: 'a third page', request: '/Sage', findings: ['no answer: connection refused'] }
+        ])
+    })
+})
+
+describe('the check of a file that did not change', () => {
+    /** A host that knows conditional requests, or not. */
+    const hostOf =
+        (conditional: boolean, tag: string | null = 'W/"v1"'): Ask =>
+        (_path, headers = {}) =>
+            Promise.resolve(
+                conditional && headers['if-none-match'] === tag
+                    ? new Response(null, { status: 304 })
+                    : new Response('page', tag === null ? {} : { headers: { etag: tag } })
+            )
+
+    test('has no finding for a host that answers 304 for the tag, also a weak one', async () => {
+        expect(await checkNotModified('/Welcome', hostOf(true))).toEqual([])
+    })
+
+    test('names a host that gives the whole file again', async () => {
+        expect(await checkNotModified('/Welcome', hostOf(false))).toEqual([
+            '/Welcome asked with its tag: expected 304 with no body, got 200 with 4 characters'
+        ])
+    })
+
+    test('names a file with no tag', async () => {
+        expect(await checkNotModified('/Welcome', hostOf(true, null))).toEqual([
+            '/Welcome: expected 200 with a tag, got 200 and the tag null'
         ])
     })
 })

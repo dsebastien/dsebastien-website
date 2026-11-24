@@ -37,6 +37,11 @@ const map = resolverMapOf(
 type AskedFiles = StaticFiles & { asked: string[] }
 type AskedStorage = ObjectStorage & { asked: string[] }
 
+/** The text of a static file for which the host fails. */
+const BROKEN = 'the host fails for this file'
+/** The text of a static file that the host gives with no tag. */
+const UNTAGGED = 'a file with no tag'
+
 /** Static files in memory, by the path of their URL as the Worker asks it. */
 function staticFiles(files: Record<string, string>): AskedFiles {
     const asked: string[] = []
@@ -46,15 +51,19 @@ function staticFiles(files: Record<string, string>): AskedFiles {
             const { pathname } = new URL(request.url)
             asked.push(pathname)
             const body = files[pathname]
+            if (body === undefined) {
+                return Promise.resolve(new Response('', { status: 404 }))
+            }
+            if (body === BROKEN) {
+                return Promise.resolve(new Response('upstream detail', { status: 500 }))
+            }
             return Promise.resolve(
-                body === undefined
-                    ? new Response('', { status: 404 })
-                    : new Response(body, {
-                          headers: {
-                              'etag': `"tag of ${pathname}"`,
-                              'content-type': 'application/x-host-guess'
-                          }
-                      })
+                new Response(body, {
+                    headers: {
+                        ...(body === UNTAGGED ? {} : { etag: `"tag of ${pathname}"` }),
+                        'content-type': 'application/x-host-guess'
+                    }
+                })
             )
         }
     }
@@ -65,6 +74,18 @@ function objectStorage(objects: Record<string, string>): AskedStorage {
     const asked: string[] = []
     return {
         asked,
+        head(key) {
+            asked.push(`head ${key}`)
+            const text = objects[key]
+            return Promise.resolve(
+                text === undefined
+                    ? null
+                    : {
+                          size: new TextEncoder().encode(text).length,
+                          httpEtag: `"etag of ${key}"`
+                      }
+            )
+        },
         get(key, options) {
             asked.push(
                 options === undefined
@@ -101,7 +122,11 @@ const SITE = {
 interface Host {
     files: AskedFiles
     storage: AskedStorage
-    get(path: string, headers?: Record<string, string>): Promise<Response>
+    /** The failures that the Worker reported. */
+    reported: unknown[]
+    /** Moves the clock of the Worker forward. */
+    wait(milliseconds: number): void
+    get(path: string, headers?: Record<string, string>, method?: string): Promise<Response>
 }
 
 /** A Worker of its own (one isolate) with its static files and its object storage. */
@@ -109,11 +134,18 @@ function host(files: Record<string, string> = SITE, withStorage = true): Host {
     const assets = staticFiles(files)
     const storage = objectStorage({ [KEY]: '0123456789' })
     const env: Environment = { ASSETS: assets, ...(withStorage ? { ATTACHMENTS: storage } : {}) }
-    const worker = createWorker(() => undefined)
+    const reported: unknown[] = []
+    let time = 1_000_000
+    const worker = createWorker({ report: (error) => reported.push(error), now: () => time })
     return {
         files: assets,
         storage,
-        get: (path, headers = {}) => worker.fetch(new Request(`${ORIGIN}${path}`, { headers }), env)
+        reported,
+        wait: (milliseconds) => {
+            time += milliseconds
+        },
+        get: (path, headers = {}, method = 'GET') =>
+            worker.fetch(new Request(`${ORIGIN}${path}`, { headers, method }), env)
     }
 }
 
@@ -183,7 +215,61 @@ describe('the Worker', () => {
         expect(response.status).toBe(206)
         expect(response.headers.get('content-range')).toBe('bytes 2-5/10')
         expect(await response.text()).toBe('2345')
-        expect(site.storage.asked).toEqual([KEY, `${KEY} 2+4`])
+        // The size first, then the part: the whole file is never opened.
+        expect(site.storage.asked).toEqual([`head ${KEY}`, `${KEY} 2+4`])
+    })
+
+    test('opens no file of the object storage for a range outside the file', async () => {
+        const site = host()
+        const response = await site.get(SONG, { range: 'bytes=10-' })
+        expect(response.status).toBe(416)
+        expect(site.storage.asked).toEqual([`head ${KEY}`])
+    })
+
+    test('opens no file of the object storage for a request of the headers only', async () => {
+        const site = host()
+        const response = await site.get(SONG, {}, 'HEAD')
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('audio/mpeg')
+        expect(site.storage.asked).toEqual([`head ${KEY}`])
+    })
+
+    // Only a file of the two folders of the pages is given by the path of the
+    // request, and only by a plain path: nothing that the host could read as
+    // a way out of the folder.
+    test.each([
+        '/_astro/..%2f-%2fresolver-map.json',
+        '/-/search/..%2f..%2f500.html',
+        '/_astro/%2e%2e%2f500.html',
+        '/_astro//site.abc.css',
+        '/_astro/..\\500.html',
+        '/_astro/site.abc.css%00'
+    ])('never asks the static files for the path %s', async (path) => {
+        const site = host()
+        const response = await site.get(path)
+        expect(response.status).toBe(404)
+        expect(await response.text()).toBe('<h1>Not found</h1>')
+        expect(
+            site.files.asked.filter(
+                (asked) => !['/-/resolver-map.json', '/500.html', '/404.html'].includes(asked)
+            )
+        ).toEqual([])
+    })
+
+    test('answers 500 when the host fails for a file that the pages load', async () => {
+        const response = await host({ ...SITE, '/_astro/site.abc.css': BROKEN }).get(
+            '/_astro/site.abc.css'
+        )
+        expect(response.status).toBe(500)
+        expect(await response.text()).toBe('<h1>Server error</h1>')
+    })
+
+    test('gives a page with no tag when the host gives none, and never 304 for it', async () => {
+        const response = await host({ ...SITE, '/-/note/10.html': UNTAGGED }).get('/Welcome', {
+            'if-none-match': '""'
+        })
+        expect(response.status).toBe(200)
+        expect(response.headers.get('etag')).toBeNull()
     })
 
     test('answers 404 for an attachment when it has no object storage', async () => {
@@ -216,18 +302,36 @@ describe('the Worker', () => {
         expect(response.status).toBe(500)
     })
 
-    test('reads the release again after a failed start, so one failure does not stay', async () => {
+    // NAV-21: also when the Worker cannot read its release.
+    test('answers a short Markdown text to an agent when the release has no resolver map', async () => {
+        const { '/-/resolver-map.json': _map, ...rest } = SITE
+        const response = await host(rest).get('/-/md/Welcome.md')
+        expect(response.status).toBe(500)
+        expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+    })
+
+    test('does not start when the host fails for the server error page', async () => {
+        const site = host({ ...SITE, '/500.html': BROKEN })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(500)
+        expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('reads a release that it could not read again after ten seconds, not at each request', async () => {
         const files: Record<string, string> = { ...SITE }
         const map = files['/-/resolver-map.json'] ?? ''
         files['/-/resolver-map.json'] = 'not JSON'
-        const assets = staticFiles(files)
-        const reported: unknown[] = []
-        const worker = createWorker((error) => reported.push(error))
-        const get = (): Promise<Response> =>
-            worker.fetch(new Request(`${ORIGIN}/Welcome`), { ASSETS: assets })
-        expect((await get()).status).toBe(500)
-        expect(reported).toHaveLength(1)
+        const site = host(files)
+        expect((await site.get('/Welcome')).status).toBe(500)
+        expect(site.reported).toHaveLength(1)
         files['/-/resolver-map.json'] = map
-        expect((await get()).status).toBe(200)
+        // The release is fine now, but the Worker waits before it reads again.
+        site.wait(9_000)
+        expect((await site.get('/Welcome')).status).toBe(500)
+        expect(site.files.asked.filter((path) => path === '/-/resolver-map.json')).toHaveLength(1)
+        site.wait(1_000)
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect(site.reported).toHaveLength(1)
     })
 })
