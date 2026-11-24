@@ -750,13 +750,17 @@ export class PublicationCenter {
 
     /**
      * The author confirms an open proposal of an edit of the guards (R69),
-     * then checks again. `removes` is the list of the entries that would
-     * leave the content store, as the dialog showed it: when the edit would
-     * take other entries away now, nothing is applied.
+     * then checks again, with the lists of the review that the dialog
+     * showed: when the edit would take other entries or attachments away
+     * now, nothing is applied.
      */
-    async confirmProposal(proposal: EditEvent, removes: readonly string[]): Promise<void> {
-        await this.#decide(proposal, 'Confirm', (device, run) =>
-            confirmProposal(device, { proposal: proposal.id, removes }, run)
+    async confirmProposal(review: ProposalReview): Promise<void> {
+        await this.#decide(review.proposal, 'Confirm', (device, run) =>
+            confirmProposal(
+                device,
+                { proposal: review.proposal.id, removes: review.removes, affects: review.affects },
+                run
+            )
         )
     }
 

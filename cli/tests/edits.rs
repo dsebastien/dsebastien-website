@@ -818,7 +818,15 @@ fn guards_stop_while_the_lock_of_the_device_is_taken() {
 #[test]
 fn a_number_with_a_fraction_or_an_exponent_in_the_configuration_stops_a_deny() {
     let setup = set_up();
-    for number in ["1e2", "1.0", "-2.5E-3"] {
+    for number in [
+        "1e2",
+        "1.0",
+        "-2.5E-3",
+        "-0",
+        "-0.0",
+        "9007199254740992",
+        "-9007199254740992",
+    ] {
         setup.commit_file(
             "configuration.json",
             &format!(
@@ -829,7 +837,7 @@ fn a_number_with_a_fraction_or_an_exponent_in_the_configuration_stops_a_deny() {
 
         let output = setup.edit("deny", FOLDER);
 
-        assert_refused(&output, "with a fraction or an exponent");
+        assert_refused(&output, "is not a whole number");
         assert!(
             errors_of(&output).contains(number),
             "{}",
@@ -840,14 +848,14 @@ fn a_number_with_a_fraction_or_an_exponent_in_the_configuration_stops_a_deny() {
     // A text that looks like such a number, and a whole number, are kept.
     setup.commit_file(
         "configuration.json",
-        "{\"denyList\": [\"80 Templates\", \"90 Locked Shed\"], \"note\": \"1.5e3\", \"version\": -3}\n",
+        "{\"denyList\": [\"80 Templates\", \"90 Locked Shed\"], \"most\": -9007199254740991, \"note\": \"1.5e3\", \"version\": -3, \"zero\": 0}\n",
     );
     let output = setup.edit("deny", FOLDER);
     assert!(output.status.success(), "{}", errors_of(&output));
     assert_eq!(
         read(&setup.copy.join("configuration.json")),
         format!(
-            "{{\n  \"denyList\": [\n    \"80 Templates\",\n    \"90 Locked Shed\",\n    \"{FOLDER}\"\n  ],\n  \"note\": \"1.5e3\",\n  \"version\": -3\n}}\n"
+            "{{\n  \"denyList\": [\n    \"80 Templates\",\n    \"90 Locked Shed\",\n    \"{FOLDER}\"\n  ],\n  \"most\": -9007199254740991,\n  \"note\": \"1.5e3\",\n  \"version\": -3,\n  \"zero\": 0\n}}\n"
         )
     );
 }

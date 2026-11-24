@@ -164,7 +164,7 @@
         {
             "name": "deny",
             "title": "Deny a folder",
-            "description": "Adds a folder to the deny list, as the deny command of the command line program does: no note of the folder can be published. It applies at once when no published or unpublished note of the site is in the folder. Else it is stored as a proposal, with the notes that would leave the site (removes), and only the author can confirm it, in Obsidian. The edit is logged in the content store and pushed. It gives the event (edit), whose state is applied or proposed.",
+            "description": "Adds a folder to the deny list, as the deny command of the command line program does: no note of the folder can be published. It applies at once only when the next publication would take no manifest entry away (a published or an unpublished note, also one that a rename journal moves into the folder) and would delete no attachment that a published note uses. Else it is stored as a proposal, with the notes that would leave the content store (removes) and the published notes that would lose an attachment (affects), and only the author can confirm it, in Obsidian. The edit is logged in the content store and pushed. It gives the event (edit), whose state is applied or proposed.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -208,7 +208,7 @@
         {
             "name": "ignore",
             "title": "Ignore a note",
-            "description": "Sets the publish_ignore property of a note, as the ignore command of the command line program does: the note can never be published. It applies at once when the note is not on the site (no manifest entry). Else it is stored as a proposal, with the note in removes, and only the author can confirm it, in Obsidian. The edit is logged in the content store and pushed. It gives the event (edit), whose state is applied or proposed.",
+            "description": "Sets the publish_ignore property of a note, as the ignore command of the command line program does: the note can never be published. It applies at once only when the next publication would take no manifest entry away (also the entry of a note that a rename journal moved to this path). Else it is stored as a proposal, with the entries in removes, and only the author can confirm it, in Obsidian. The edit is logged in the content store and pushed. It gives the event (edit), whose state is applied or proposed.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

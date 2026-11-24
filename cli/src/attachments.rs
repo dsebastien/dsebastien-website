@@ -73,7 +73,7 @@ pub fn facts_of(bytes: &[u8]) -> FileFacts {
 
 /// The files of the vault that the notes of one run link to. Each file is read
 /// one time per run: two notes that link to one image read it one time.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct FileReader {
     facts: RefCell<BTreeMap<String, FileFacts>>,
 }

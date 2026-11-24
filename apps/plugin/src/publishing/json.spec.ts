@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { hasNumberThatIsNotWhole, parseJson } from './json.ts'
+import { inexactNumberOf, parseJson } from './json.ts'
 import { parseManifestEntry } from './manifest.ts'
 
 // The JSON files of the content store are read in the same way by both
@@ -57,15 +57,20 @@ describe('the version of the cleaning step in a manifest entry', () => {
     )
 })
 
-describe('a number with a fraction or an exponent in a JSON text', () => {
+describe('a number that both implementations cannot write again with the same bytes', () => {
     test.each([
-        ['{"a": 1.0}', true],
-        ['{"a": 1e3}', true],
-        ['{"a": [2, -2.5E-1]}', true],
-        ['{"a": 10, "b": -3, "c": [0]}', false],
-        ['{"a": "1.0 and 1e3 in a text", "b\\"1.5": 2}', false],
-        ['{"denyList": ["Folder 1.5"]}', false]
+        ['{"a": 1.0}', '1.0'],
+        ['{"a": 1e3}', '1e3'],
+        ['{"a": [2, -2.5E-1]}', '-2.5E-1'],
+        ['{"a": -0}', '-0'],
+        ['{"a": -0.0}', '-0.0'],
+        ['{"a": 9007199254740992}', '9007199254740992'],
+        ['{"a": -9007199254740992}', '-9007199254740992'],
+        ['{"a": 9007199254740991, "b": -9007199254740991}', undefined],
+        ['{"a": 10, "b": -3, "c": [0]}', undefined],
+        ['{"a": "1.0 and 1e3 in a text", "b\\"1.5": 2}', undefined],
+        ['{"denyList": ["Folder 1.5"]}', undefined]
     ])('%s: %p', (text, expected) => {
-        expect(hasNumberThatIsNotWhole(text)).toBe(expected)
+        expect(inexactNumberOf(text)).toBe(expected)
     })
 })

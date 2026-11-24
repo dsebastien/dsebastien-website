@@ -636,10 +636,10 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
 
         // The dialog opens with the entries that the edit takes away now.
         const review = await center.reviewProposal(proposal)
-        expect(review).toEqual({ proposal, removes: [NOTE] })
+        expect(review).toEqual({ proposal, removes: [NOTE], affects: [] })
         if (review === undefined) return
 
-        await center.confirmProposal(review.proposal, review.removes)
+        await center.confirmProposal(review)
 
         expect(center.state.error).toBeUndefined()
         expect(center.state.queue?.proposals).toEqual([])
@@ -668,13 +668,15 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
         center.choose((queue, choices) => toggleRow(queue, choices, SECOND))
         await center.publish()
 
-        await center.confirmProposal(proposal, shown?.removes ?? [])
+        if (shown === undefined) throw new Error('no review')
+        await center.confirmProposal(shown)
 
         expect(center.state.error).toContain('changed since the dialog showed them')
         expect(center.state.queue?.proposals).toEqual([proposal])
         const again = await center.reviewProposal(proposal)
         expect(again?.removes).toEqual([SECOND, NOTE])
-        await center.confirmProposal(proposal, again?.removes ?? [])
+        if (again === undefined) throw new Error('no review')
+        await center.confirmProposal(again)
         expect(center.state.error).toBeUndefined()
         expect(center.state.queue?.toRemove).toEqual([SECOND, NOTE])
     }, 120_000)
@@ -687,8 +689,9 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
         if (proposal === undefined) throw new Error('no proposal')
 
         const review = await center.reviewProposal(proposal)
-        expect(review?.removes).toEqual([])
-        await center.confirmProposal(proposal, [])
+        expect(review).toEqual({ proposal, removes: [], affects: [] })
+        if (review === undefined) return
+        await center.confirmProposal(review)
 
         expect(center.state.error).toBeUndefined()
         expect(center.state.queue?.new.some((path) => path.startsWith(`${LOCKED}/`))).toBe(true)

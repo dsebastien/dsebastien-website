@@ -28,7 +28,7 @@ import {
 import type { Aliases } from './frontmatter.ts'
 import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
 import { bytesHash, contentHash, sha256Hex } from './hash.ts'
-import { hasNumberThatIsNotWhole, parseJson } from './json.ts'
+import { inexactNumberOf, parseJson } from './json.ts'
 import type { NoteLink } from './links.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
@@ -408,7 +408,7 @@ export async function statusWithEdits(
     await refuseWhenLocked(device)
     if ((await readJournal(device))?.step === 'write') {
         throw new Error(
-            'a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan, publish or takedown puts it back'
+            'a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan, publish, takedown or edit puts it back'
         )
     }
     const state = await readState(device, 'none')
@@ -1943,10 +1943,15 @@ export interface EditRequest {
     readonly path: string
 }
 
-/** What the author confirms: the id of the proposal, and the entries that would leave the content store as the dialog showed them. */
+/**
+ * What the author confirms: the id of the proposal, the entries that would
+ * leave the content store, and the published notes that would lose an
+ * attachment, as the dialog showed them.
+ */
 export interface Confirmation {
     readonly proposal: string
     readonly removes: readonly string[]
+    readonly affects: readonly string[]
 }
 
 /**
@@ -1970,6 +1975,8 @@ interface EditContext {
 interface CheckedEdit {
     /** The vault paths of the manifest entries that the edit takes away, sorted. */
     readonly removes: readonly string[]
+    /** The vault paths of the published entries, not in `removes`, that use an attachment that a `deny` puts under the guard, sorted. */
+    readonly affects: readonly string[]
     /** For an edit of a note: its text as the check read it, and its text after the write. */
     readonly note?: { readonly before: string; readonly after: string }
 }
@@ -2018,42 +2025,33 @@ async function editContext(device: Device): Promise<EditContext> {
 }
 
 /**
- * One scan of the vault for the entries that an edit takes away: the queue
- * after the moves of the journals, with this deny list, and with the text of
- * a note read in another form when `note` is given (the note with the ignore
- * property). A deny list entry that names no folder lists no file, so it
- * does not stop the scan.
+ * The vault of one read: each note, each file and each listing is read one
+ * time, so the scans of an edit with the two sets of guards see one state of
+ * the vault (rule 2). A write during the edit cannot make them differ.
  */
-async function editScan(
-    device: Device,
-    context: EditContext,
-    denyList: readonly string[],
-    note?: { readonly path: string; readonly text: string }
-): Promise<Scan> {
-    const renames = await device.store.read(RENAMES_FILE)
-    const journals = await readJournals(device.renames, parseMarkers(renames))
-    const present: string[] = []
-    for (const folder of denyList) {
-        if (await device.vault.hasFolder(folder)) {
-            present.push(folder)
+function oneRead(vault: Device['vault']): Device['vault'] {
+    const texts = new Map<string, Promise<string | undefined>>()
+    const bytes = new Map<string, Promise<Uint8Array | undefined>>()
+    const listings = new Map<string, Promise<Awaited<ReturnType<Device['vault']['list']>>>>()
+    const folders = new Map<string, Promise<boolean>>()
+    const once = <T>(cache: Map<string, Promise<T>>, path: string, read: () => Promise<T>) => {
+        const kept = cache.get(path)
+        if (kept !== undefined) {
+            return kept
         }
+        const reading = read()
+        cache.set(path, reading)
+        return reading
     }
-    const vault: Device['vault'] =
-        note === undefined
-            ? device.vault
-            : {
-                  ...device.vault,
-                  read: async (path) =>
-                      path === note.path ? note.text : await device.vault.read(path)
-              }
-    return await computeQueue({
-        vault,
-        manifest: await readManifest(device.store),
-        journals,
-        configuration: { denyList: present },
-        noteTypes: NO_NOTE_TYPES,
-        edits: context.log
-    })
+    const read: Device['vault'] = {
+        ...vault,
+        list: (folder) => once(listings, folder, () => vault.list(folder)),
+        read: (path) => once(texts, path, () => vault.read(path)),
+        readBytes: (path) => once(bytes, path, () => vault.readBytes(path)),
+        hasFolder: (path) => once(folders, path, () => vault.hasFolder(path)),
+        forRun: () => read
+    }
+    return read
 }
 
 /** The forced removals of the plan of a scan (rule 3 of the plan): published and unpublished entries. */
@@ -2066,23 +2064,103 @@ function forcedRemovals(scan: Scan): Set<string> {
 }
 
 /**
- * The entries that an edit takes away (rule 2): the vault is scanned two
- * times, as it is and with the edit applied, and the result is the forced
- * removals of the second scan that are not forced removals of the first.
- * Nothing is guessed: the moves of the journals, the names of the missing
- * notes and the collisions count as the next publication counts them.
+ * What an edit takes away (rule 2): one read of the vault, of the journals
+ * and of the manifest, and the queue of that read with the guards as they
+ * are and with the edit applied (the new deny list, or the note read with
+ * the ignore property). `removes` is the forced removals of the second that
+ * are not forced removals of the first: the moves of the journals, the
+ * names of the missing notes and the collisions count as the next
+ * publication counts them. `affects`, for a `deny`, is the published
+ * entries that stay and that use an attachment that is under a guard with
+ * the new deny list and was not before (rule 8 of "A publication"). A deny
+ * list entry that names no folder lists no file, so it does not stop the
+ * scans.
  */
-async function editRemoves(
+async function editLists(
     device: Device,
     context: EditContext,
     applied: {
         readonly denyList: readonly string[]
         readonly note?: { readonly path: string; readonly text: string }
     }
-): Promise<string[]> {
-    const before = forcedRemovals(await editScan(device, context, context.configuration.denyList))
-    const after = forcedRemovals(await editScan(device, context, applied.denyList, applied.note))
-    return sortByCodePoint([...after].filter((path) => !before.has(path)))
+): Promise<{ removes: string[]; affects: string[] }> {
+    const vault = oneRead(device.vault)
+    const journals = await readJournals(
+        device.renames,
+        parseMarkers(await device.store.read(RENAMES_FILE))
+    )
+    const manifest = await readManifest(device.store)
+    const scan = async (
+        denyList: readonly string[],
+        note?: { readonly path: string; readonly text: string }
+    ): Promise<Scan> => {
+        const present: string[] = []
+        for (const folder of denyList) {
+            if (await vault.hasFolder(folder)) {
+                present.push(folder)
+            }
+        }
+        return await computeQueue({
+            vault:
+                note === undefined
+                    ? vault
+                    : {
+                          ...vault,
+                          read: async (path) =>
+                              path === note.path ? note.text : await vault.read(path)
+                      },
+            manifest,
+            journals,
+            configuration: { denyList: present },
+            noteTypes: NO_NOTE_TYPES,
+            edits: context.log
+        })
+    }
+    const before = await scan(context.configuration.denyList)
+    const after = await scan(applied.denyList, applied.note)
+    const forcedBefore = forcedRemovals(before)
+    const forcedAfter = forcedRemovals(after)
+    const removes = sortByCodePoint([...forcedAfter].filter((path) => !forcedBefore.has(path)))
+    const affects: string[] = []
+    // An ignore guards a note, not a file: it has no `affects`.
+    if (applied.note === undefined) {
+        for (const [path, entry] of after.manifest) {
+            if (entry.state !== 'published' || forcedAfter.has(path)) {
+                continue
+            }
+            for (const attachment of entry.attachments) {
+                if (
+                    (await after.isGuardedFile(attachment.path, attachment.hash)) &&
+                    !(await before.isGuardedFile(attachment.path, attachment.hash))
+                ) {
+                    affects.push(path)
+                    break
+                }
+            }
+        }
+    }
+    return { removes, affects: sortByCodePoint(affects) }
+}
+
+/** The text of a confirmation of the lists: the paths, or `none`. */
+function listText(paths: readonly string[]): string {
+    return paths.length === 0 ? 'none' : paths.map((path) => `"${path}"`).join(', ')
+}
+
+/** True when the two lists hold the same paths, each list taken one time per path. */
+function sameList(seen: readonly string[], now: readonly string[]): boolean {
+    const sorted = sortByCodePoint([...new Set(seen)])
+    return sorted.length === now.length && sorted.every((path, index) => path === now[index])
+}
+
+/** Stops a `deny` when the configuration holds a number that the two implementations write in other forms (rule 8). */
+function refuseInexactNumbers(text: string): void {
+    const number = inexactNumberOf(text)
+    if (number !== undefined) {
+        throw new Error(
+            `${CONFIGURATION_FILE} has the number ${number}, which is not a whole number that both implementations write again with the same bytes (a fraction, an exponent, a negative zero, or a number outside ±9,007,199,254,740,991), so nothing is applied. Write it as a whole number with no exponent, commit ${CONFIGURATION_FILE} and push it`
+        )
+    }
 }
 
 /**
@@ -2103,7 +2181,7 @@ async function checkEdit(
         )
     }
     const { denyList } = context.configuration
-    let checked: CheckedEdit = { removes: [] }
+    let checked: CheckedEdit = { removes: [], affects: [] }
     if (action === 'deny') {
         if (denyList.includes(path)) {
             throw new Error(`"${path}" is already in the deny list`)
@@ -2113,12 +2191,19 @@ async function checkEdit(
                 `"${path}" is not a folder of the vault, with exactly that name (letter case and Unicode form)`
             )
         }
+        // Before the open proposals: the configuration must be written again
+        // with the same bytes in both implementations (rule 8).
+        refuseInexactNumbers(context.configurationText)
     } else if (action === 'allow') {
         if (!denyList.includes(path)) {
             throw new Error(`"${path}" is not an entry of the deny list`)
         }
     } else {
-        checked = { removes: [], note: await checkNoteEdit(device, context, action, path) }
+        checked = {
+            removes: [],
+            affects: [],
+            note: await checkNoteEdit(device, context, action, path)
+        }
     }
     if (
         open &&
@@ -2131,18 +2216,14 @@ async function checkEdit(
         )
     }
     if (action === 'deny') {
-        return {
-            removes: await editRemoves(device, context, { denyList: [...denyList, path] })
-        }
+        return await editLists(device, context, { denyList: [...denyList, path] })
     }
     if (action === 'ignore' && checked.note !== undefined) {
-        return {
-            ...checked,
-            removes: await editRemoves(device, context, {
-                denyList,
-                note: { path, text: checked.note.after }
-            })
-        }
+        const { removes } = await editLists(device, context, {
+            denyList,
+            note: { path, text: checked.note.after }
+        })
+        return { ...checked, removes }
     }
     return checked
 }
@@ -2199,13 +2280,8 @@ async function checkNoteEdit(
 
 /** The configuration with another deny list, in the canonical form, with every other key of the file kept. */
 function configurationWith(text: string, denyList: readonly string[]): string {
-    // TypeScript cannot tell 1.0 from 1, and Rust refuses 1.0: the two would
-    // write other bytes (rule 8).
-    if (hasNumberThatIsNotWhole(text)) {
-        throw new Error(
-            `${CONFIGURATION_FILE} holds a number with a fraction or an exponent, which the tool cannot write again as it is: correct the file by hand, commit it and push it`
-        )
-    }
+    // Also for an allow: TypeScript cannot tell 1.0 from 1 (rule 8).
+    refuseInexactNumbers(text)
     const value = parseJson(text)
     if (!isRecord(value)) {
         throw new Error(`${CONFIGURATION_FILE} is not an object`)
@@ -2395,9 +2471,13 @@ export async function edit(given: Device, request: EditRequest, run: Run): Promi
         const owed = await prepareEdit(device, ownLock)
         const context = await editContext(device)
         const checked = await checkEdit(device, context, request.action, request.path, true)
-        const proposed = isLooser(request.action) || checked.removes.length > 0
+        // A deny that takes an attachment away from a published note needs
+        // the author too (R69, review round 2).
+        const proposed =
+            isLooser(request.action) || checked.removes.length > 0 || checked.affects.length > 0
         const event = makeEvent({
             action: request.action,
+            affects: proposed ? checked.affects : [],
             device: run.device,
             face: run.face,
             path: request.path,
@@ -2433,7 +2513,10 @@ function openProposalOf(context: EditContext, id: string): EditEvent {
 /** What a proposal takes away now: the proposal, and its list `removes` computed again. */
 export interface ProposalReview {
     readonly proposal: EditEvent
+    /** The entries that would leave the content store, sorted. */
     readonly removes: readonly string[]
+    /** The published notes that would lose an attachment, sorted. */
+    readonly affects: readonly string[]
 }
 
 /**
@@ -2455,7 +2538,7 @@ export async function reviewProposal(given: Device, id: string): Promise<Proposa
     const context = await editContext(device)
     const proposal = openProposalOf(context, id)
     const checked = await checkEdit(device, context, proposal.action, proposal.path, false)
-    return { proposal, removes: checked.removes }
+    return { proposal, removes: checked.removes, affects: checked.affects }
 }
 
 /**
@@ -2477,17 +2560,12 @@ export async function confirmProposal(
         const context = await editContext(device)
         const proposal = openProposalOf(context, confirmation.proposal)
         const checked = await checkEdit(device, context, proposal.action, proposal.path, false)
-        const seen = sortByCodePoint([...new Set(confirmation.removes)])
         if (
-            seen.length !== checked.removes.length ||
-            seen.some((path, index) => path !== checked.removes[index])
+            !sameList(confirmation.removes, checked.removes) ||
+            !sameList(confirmation.affects, checked.affects)
         ) {
-            const now =
-                checked.removes.length === 0
-                    ? 'none'
-                    : checked.removes.map((path) => `"${path}"`).join(', ')
             throw new Error(
-                `the entries that the proposal takes away from the content store changed since the dialog showed them (now: ${now}), so nothing is applied: open the dialog of the proposal again`
+                `the entries that the proposal takes away from the content store, or the published notes that would lose an attachment, changed since the dialog showed them (now: ${listText(checked.removes)} leave; ${listText(checked.affects)} lose an attachment), so nothing is applied: open the dialog of the proposal again`
             )
         }
         const event = makeEvent({
@@ -2497,6 +2575,7 @@ export async function confirmProposal(
             path: proposal.path,
             proposal: proposal.id,
             removes: checked.removes,
+            affects: checked.affects,
             state: 'confirmed',
             time: run.time
         })
@@ -2523,7 +2602,7 @@ export async function rejectProposal(given: Device, id: string, run: Run): Promi
             state: 'rejected',
             time: run.time
         })
-        await applyEvent(device, context, event, { removes: [] }, run, owed, ownLock)
+        await applyEvent(device, context, event, { removes: [], affects: [] }, run, owed, ownLock)
         return event
     })
 }

@@ -162,6 +162,12 @@
     gap: var(--size-4-2);
 }
 
+/* The lists of the dialog of a proposal: in full, in a box that scrolls. */
+.vault-publish-dialog-list {
+    max-height: 16em;
+    overflow-y: auto;
+}
+
 .vault-publish-busy {
     color: var(--text-muted);
 }

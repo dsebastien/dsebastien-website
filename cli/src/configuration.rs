@@ -9,7 +9,7 @@ use crate::json::parse_json;
 /// The path of the configuration in the content store.
 pub const CONFIGURATION_FILE: &str = "configuration.json";
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Configuration {
     /// The vault folders whose notes can never be published.
     pub deny_list: Vec<String>,

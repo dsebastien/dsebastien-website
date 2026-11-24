@@ -91,13 +91,17 @@ export function parseJson(text: string): unknown {
     return value
 }
 
+/** The largest whole number that both implementations hold exactly (rule 6 of the data). */
+const LARGEST = 9_007_199_254_740_991n
+
 /**
- * True when a number of the JSON text has a fraction or an exponent (`1.0`,
- * `1e3`): the Rust reader refuses such a number where it wants a whole
- * number, and TypeScript reads `1.0` as `1`, so a text with one cannot be
- * written again in the same bytes by both. The text is valid JSON.
+ * The first number of the JSON text that both implementations cannot write
+ * again with the same bytes, or `undefined`: a fraction or an exponent
+ * (`1.0`, `1e3`), a negative zero (`-0`), or a whole number outside
+ * ±9,007,199,254,740,991. TypeScript reads `1.0` as `1` and `-0` as `0`, and
+ * the Rust reader keeps them apart. The text is valid JSON.
  */
-export function hasNumberThatIsNotWhole(text: string): boolean {
+export function inexactNumberOf(text: string): string | undefined {
     let at = 0
     while (at < text.length) {
         const character = text[at] ?? ''
@@ -114,13 +118,20 @@ export function hasNumberThatIsNotWhole(text: string): boolean {
             while (end < text.length && /[0-9.eE+-]/u.test(text[end] ?? '')) {
                 end += 1
             }
-            if (/[.eE]/u.test(text.slice(at, end))) {
-                return true
+            const number = text.slice(at, end)
+            const whole = /^-?[0-9]+$/u.test(number)
+            if (
+                !whole ||
+                /^-0+$/u.test(number) ||
+                BigInt(number) > LARGEST ||
+                BigInt(number) < -LARGEST
+            ) {
+                return number
             }
             at = end
             continue
         }
         at += 1
     }
-    return false
+    return undefined
 }

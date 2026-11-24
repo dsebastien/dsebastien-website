@@ -471,7 +471,11 @@ describe('the removes of an edit: two scans, as is and with the edit applied (ru
         await publishNotes(device, ['Mixed/Shown.md', 'Mixed/Sub/Deep.md'], '2031-06-01T08:00:00Z')
         const sub = await edit(device, { action: 'deny', path: 'Mixed/Sub' }, AGENT)
         expect(sub.removes).toEqual(['Mixed/Sub/Deep.md'])
-        await confirmProposal(device, { proposal: sub.id, removes: ['Mixed/Sub/Deep.md'] }, AUTHOR)
+        await confirmProposal(
+            device,
+            { proposal: sub.id, removes: ['Mixed/Sub/Deep.md'], affects: [] },
+            AUTHOR
+        )
 
         const above = await edit(
             device,
@@ -506,6 +510,39 @@ describe('the removes of an edit: two scans, as is and with the edit applied (ru
     }, 60_000)
 })
 
+describe('a deny that takes an attachment away from a published note (R69, review round 2)', () => {
+    test('is a proposal with affects, and its confirmation checks both lists again', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, {
+            'Notes/Plan.md': '# Plan\n\n[[Images/plan.txt]]\n',
+            'Images/plan.txt': 'A plan\n'
+        })
+        await publishNotes(device, ['Notes/Plan.md'], '2031-06-01T08:00:00Z')
+
+        const proposal = await edit(device, { action: 'deny', path: 'Images' }, AGENT)
+
+        expect(proposal.state).toBe('proposed')
+        expect(proposal.affects).toEqual(['Notes/Plan.md'])
+        expect(proposal.removes).toBeUndefined()
+        const review = await reviewProposal(device, proposal.id)
+        expect(review).toEqual({ proposal, removes: [], affects: ['Notes/Plan.md'] })
+        // A dialog that showed no note that loses an attachment is stale.
+        expect(
+            await rejectionOf(
+                confirmProposal(device, { proposal: proposal.id, removes: [], affects: [] }, AUTHOR)
+            )
+        ).toContain('changed since the dialog showed them')
+        const confirmed = await confirmProposal(
+            device,
+            { proposal: proposal.id, removes: review.removes, affects: review.affects },
+            AUTHOR
+        )
+        expect(confirmed.affects).toEqual(['Notes/Plan.md'])
+        expect((await guards(device)).denyList).toEqual(['Locked', 'Images'])
+    }, 120_000)
+})
+
 describe('the reads and the configuration of an edit', () => {
     test('guards stops while the lock of the device is taken, as status does', async () => {
         await using stores = await makeTestStores()
@@ -517,7 +554,7 @@ describe('the reads and the configuration of an edit', () => {
         expect((await guards(device)).denyList).toEqual(['Locked'])
     }, 60_000)
 
-    test.each([['1.0'], ['1e3'], ['-2.5E-1']])(
+    test.each([['1.0'], ['1e3'], ['-2.5E-1'], ['-0'], ['-0.0'], ['9007199254740992']])(
         'a configuration with the number %s stops a deny, and writes nothing',
         async (number) => {
             await using stores = await makeTestStores()
@@ -528,7 +565,7 @@ describe('the reads and the configuration of an edit', () => {
 
             expect(
                 await rejectionOf(edit(device, { action: 'deny', path: 'Private' }, AGENT))
-            ).toContain('a number with a fraction or an exponent')
+            ).toContain('is not a whole number')
             expect(await textOf(join(copy, 'edits.json'))).toBeNull()
         },
         60_000
@@ -586,7 +623,11 @@ describe('the decisions of the author', () => {
             )
             expect(
                 await rejectionOf(
-                    confirmProposal(device, { proposal: proposal.id, removes: [] }, run)
+                    confirmProposal(
+                        device,
+                        { proposal: proposal.id, removes: [], affects: [] },
+                        run
+                    )
                 )
             ).toContain('only the author')
         }
@@ -629,7 +670,7 @@ describe('the decisions of the author', () => {
 
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: [] },
+            { proposal: proposal.id, removes: [], affects: [] },
             AUTHOR
         )
 
@@ -650,7 +691,11 @@ describe('the decisions of the author', () => {
         await publishNotes(device, ['Mixed/Other.md'], '2031-06-01T09:30:00Z')
 
         const message = await rejectionOf(
-            confirmProposal(device, { proposal: proposal.id, removes: ['Mixed/Shown.md'] }, AUTHOR)
+            confirmProposal(
+                device,
+                { proposal: proposal.id, removes: ['Mixed/Shown.md'], affects: [] },
+                AUTHOR
+            )
         )
 
         expect(message).toContain('changed since the dialog showed them')
@@ -658,10 +703,14 @@ describe('the decisions of the author', () => {
         expect(await inStore(stores, 'configuration.json')).toBe(CONFIGURATION)
         // A new dialog shows the entries of now, and confirms with them.
         const review = await reviewProposal(device, proposal.id)
-        expect(review).toEqual({ proposal, removes: ['Mixed/Other.md', 'Mixed/Shown.md'] })
+        expect(review).toEqual({
+            proposal,
+            removes: ['Mixed/Other.md', 'Mixed/Shown.md'],
+            affects: []
+        })
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: review.removes },
+            { proposal: proposal.id, removes: review.removes, affects: [] },
             AUTHOR
         )
         expect(confirmed.removes).toEqual(['Mixed/Other.md', 'Mixed/Shown.md'])
@@ -677,7 +726,7 @@ describe('the decisions of the author', () => {
 
         await confirmProposal(
             device,
-            { proposal: proposal.id, removes: ['Notes/Public.md'] },
+            { proposal: proposal.id, removes: ['Notes/Public.md'], affects: [] },
             AUTHOR
         )
 
@@ -695,7 +744,7 @@ describe('the decisions of the author', () => {
 
         const confirmed = await confirmProposal(
             device,
-            { proposal: proposal.id, removes: [] },
+            { proposal: proposal.id, removes: [], affects: [] },
             AUTHOR
         )
 
@@ -714,7 +763,7 @@ describe('the decisions of the author', () => {
 
         expect(
             await rejectionOf(
-                confirmProposal(device, { proposal: proposal.id, removes: [] }, AUTHOR)
+                confirmProposal(device, { proposal: proposal.id, removes: [], affects: [] }, AUTHOR)
             )
         ).toContain('does not exclude')
         expect((await guards(device)).proposals).toEqual([proposal])

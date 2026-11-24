@@ -74,6 +74,7 @@ pub struct RenameWarning {
 
 /// What the journals of the vault hold, against the read marker of the content
 /// store.
+#[derive(Clone)]
 pub struct JournalState {
     /// The new valid lines of every journal, in the order of the moves.
     pub lines: Vec<JournalLine>,

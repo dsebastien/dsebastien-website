@@ -287,9 +287,13 @@ enum Command {
     },
 
     /// Adds a folder to the deny list: no note of the folder can be
-    /// published. It applies at once when it takes no manifest entry away;
-    /// else it is a proposal, with the notes that would leave the site
-    /// (`removes`), which only the author confirms, in the view of the
+    /// published. It applies at once when it takes no manifest entry away, as
+    /// the next publication counts it (with the moves of the rename journals
+    /// and the names of the notes that are missing from this vault), and puts
+    /// no attachment of a published note under the guard. Else it is a
+    /// proposal, with the entries that would leave the content store
+    /// (`removes`) and the published notes that would lose an attachment
+    /// (`affects`), which only the author confirms, in the view of the
     /// plugin. The edit is logged in `edits.json` of the content store, in
     /// one commit that is pushed. It writes the event (`edit`).
     Deny {
@@ -308,8 +312,11 @@ enum Command {
 
     /// Sets the `publish_ignore` property of a note: the note can never be
     /// published. It applies at once, with the property written into the
-    /// note, when the note has no manifest entry; else it is a proposal, which
-    /// only the author confirms, in the view of the plugin. The edit is
+    /// note, when it takes no manifest entry away, as the next publication
+    /// counts it (with the moves of the rename journals). Else it is a
+    /// proposal, with the entries that would leave the content store
+    /// (`removes`), which only the author confirms, in the view of the
+    /// plugin. The edit is
     /// logged in `edits.json` of the content store, in one commit that is
     /// pushed. It writes the event (`edit`).
     Ignore {

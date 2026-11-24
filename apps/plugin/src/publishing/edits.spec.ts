@@ -119,9 +119,17 @@ describe('the strict read of edits.json', () => {
 
     test.each([
         ['a text that is not JSON', '{', 'is not JSON'],
-        ['a list', '[]', 'is not an object'],
-        ['another key', textOf({ edits: [], published: 0, more: 1 }), 'key "more"'],
-        ['no list of events', textOf({ edits: {}, published: 0 }), '"edits" is not a list'],
+        ['a list', '[]', 'an object with exactly "edits" and "published"'],
+        [
+            'another key',
+            textOf({ edits: [], published: 0, more: 1 }),
+            'an object with exactly "edits" and "published"'
+        ],
+        [
+            'no list of events',
+            textOf({ edits: {}, published: 0 }),
+            '"edits" must be a list of events'
+        ],
         ['no published', textOf({ edits: [] }), '"published"'],
         ['a published that is negative', textOf({ edits: [], published: -1 }), '"published"'],
         ['a published with a fraction', textOf({ edits: [], published: 0.5 }), '"published"'],
@@ -133,17 +141,17 @@ describe('the strict read of edits.json', () => {
         [
             'an id that is not the hash of its event',
             textOf({ edits: [{ ...DENY, id: '0123456789abcdef' }], published: 0 }),
-            'the id of event 1 is not the hash'
+            'which is not the hash of the event'
         ],
         [
             'an event that was changed after its id',
             textOf({ edits: [{ ...DENY, path: 'Other' }], published: 0 }),
-            'the id of event 1 is not the hash'
+            'which is not the hash of the event'
         ],
         [
             'a decision of an unknown proposal',
             textOf({ edits: [DENY, REJECTED], published: 0 }),
-            'event 2 decides "979410bc2e7c049d", which is not an earlier proposal'
+            'the event 2 decides "979410bc2e7c049d", which is not an earlier proposal that no other event decided'
         ],
         [
             'a decision before its proposal',
@@ -182,32 +190,32 @@ describe('the strict read of edits.json', () => {
         [
             'an event with a key that it does not know',
             textOf({ edits: [{ ...DENY, note: 'x' }], published: 0 }),
-            'event 1 has the key "note"'
+            'the event 1 has the key "note", which no event has'
         ],
         [
             'an action that does not exist',
             textOf({ edits: [{ ...DENY, action: 'delete' }], published: 0 }),
-            'no action'
+            'which is not deny, allow, ignore or unignore'
         ],
         [
             'a face that does not exist',
             textOf({ edits: [{ ...DENY, face: 'web' }], published: 0 }),
-            'no face'
+            'which is not a face of the tool'
         ],
         [
             'a time that is not in the canonical form',
             textOf({ edits: [{ ...DENY, time: '2031-06-01 09:00' }], published: 0 }),
-            'no time'
+            'has a time that is not a real date and time'
         ],
         [
             'a path that is not a vault path',
             textOf({ edits: [{ ...DENY, path: '/Private' }], published: 0 }),
-            'no path'
+            'has a path that is not the vault path'
         ],
         [
             'an ignore of a path that is not a note',
             textOf({ edits: [{ ...DENY, action: 'ignore' }], published: 0 }),
-            'no path'
+            'has a path that is not the vault path'
         ],
         [
             'a list removes that is not sorted',
@@ -227,7 +235,7 @@ describe('the strict read of edits.json', () => {
         [
             'a proposal key on a proposal',
             textOf({ edits: [{ ...ALLOW, proposal: DENY.id }], published: 0 }),
-            'has a proposal'
+            'has a "proposal" that is not the id of a proposal it decides'
         ],
         [
             'a confirmation that the face plugin did not write',
@@ -235,7 +243,7 @@ describe('the strict read of edits.json', () => {
                 edits: [PROPOSAL, makeEvent({ ...CONFIRMED, face: 'mcp-server' })],
                 published: 0
             }),
-            'only the face plugin decides'
+            'only the author decides a proposal'
         ],
         [
             'a rejection of the command line program',
@@ -243,7 +251,32 @@ describe('the strict read of edits.json', () => {
                 edits: [ALLOW, makeEvent({ ...REJECTED, face: 'command-line' })],
                 published: 0
             }),
-            'only the face plugin decides'
+            'only the author decides a proposal'
+        ],
+        [
+            'a list affects on an ignore',
+            textOf({
+                edits: [
+                    makeEvent({
+                        ...PROPOSAL,
+                        action: 'ignore',
+                        path: 'Mixed/Shown.md',
+                        affects: ['a.md']
+                    })
+                ],
+                published: 0
+            }),
+            'has a list "affects", which only a proposal and a confirmation of a deny have'
+        ],
+        [
+            'a list affects on a deny that applied',
+            textOf({ edits: [{ ...DENY, affects: ['a.md'] }], published: 0 }),
+            'has a list "affects", which only a proposal and a confirmation of a deny have'
+        ],
+        [
+            'a list affects that is not sorted',
+            textOf({ edits: [{ ...PROPOSAL, affects: ['b.md', 'a.md'] }], published: 0 }),
+            'has a list "affects" that is not vault paths, each one time, sorted'
         ]
     ])('refuses %s', (_name, text, says) => {
         let message = ''

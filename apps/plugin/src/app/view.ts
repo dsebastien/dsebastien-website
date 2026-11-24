@@ -90,11 +90,16 @@ function eventLine(parent: HTMLElement, event: EditEvent): void {
     parent.appendText(`${ACTION_TEXT[event.action]} `)
     name(event.path)
     const removes = event.removes?.length ?? 0
+    const affects = event.affects?.length ?? 0
     const leave =
         removes === 0
             ? ''
             : ` · ${removes.toLocaleString()} ${removes === 1 ? 'entry leaves' : 'entries leave'} the content store`
-    parent.appendText(` · ${event.state}${leave} · `)
+    const lose =
+        affects === 0
+            ? ''
+            : ` · ${affects.toLocaleString()} published ${affects === 1 ? 'note loses' : 'notes lose'} an attachment`
+    parent.appendText(` · ${event.state}${leave}${lose} · `)
     // The names of the face and of the device are isolated too: a
     // right-to-left mark in the name of a device never reorders the line.
     name(event.face)
@@ -788,7 +793,7 @@ export class PublicationCenterView extends ItemView {
                         return
                     }
                     new ConfirmProposalModal(this.app, review, () => {
-                        void center.confirmProposal(review.proposal, review.removes)
+                        void center.confirmProposal(review)
                     }).open()
                 })
             })
@@ -1042,54 +1047,67 @@ export class ConfirmProposalModal extends Modal {
         super(app)
     }
 
+    /** A list of vault paths, in full, in a box that scrolls: each path isolated. */
+    #paths(paths: readonly string[]): void {
+        const list = this.contentEl.createDiv({
+            cls: 'vault-publish-moves vault-publish-dialog-list'
+        })
+        for (const path of paths) {
+            list.createDiv({ cls: 'vault-publish-name', text: path, attr: { dir: 'auto' } })
+        }
+    }
+
     override onOpen(): void {
-        const { proposal, removes } = this.review
+        const { proposal, removes, affects } = this.review
         this.setTitle('Confirm this edit of the guards?')
         const { contentEl } = this
         eventLine(contentEl.createEl('p'), proposal)
-        const one = removes.length === 1
         if (proposal.action === 'allow') {
             contentEl.createEl('p', {
-                text: 'The notes of this folder become candidates: they show in the list New. Nothing is published until you tick a note and publish it.'
+                text: 'The notes of this folder become candidates: they show in the list New. Nothing is published until a plan includes a note.'
             })
         } else if (proposal.action === 'unignore') {
             contentEl.createEl('p', {
-                text: 'The note becomes a candidate: it shows in the list New. Nothing is published until you tick it and publish it.'
+                text: 'The note becomes a candidate: it shows in the list New. Nothing is published until a plan includes it.'
             })
-        } else if (removes.length === 0) {
+        } else if (removes.length === 0 && affects.length === 0) {
             contentEl.createEl('p', {
-                text: 'No entry of the content store leaves with this edit now: the guard only keeps notes from the site from now on.'
-            })
-        } else {
-            contentEl.createEl('p', {
-                text: `${one ? 'This entry leaves' : `These ${removes.length.toLocaleString()} entries leave`} the content store at the next publication, as forced removals that no plan can hold. After the next build, the address of a published note answers 404, with no redirect, and the address of an unpublished note goes from 410 to 404:`
-            })
-            const list = contentEl.createDiv({ cls: 'vault-publish-moves' })
-            for (const path of removes.slice(0, SECTION_LINES)) {
-                list.createDiv({ cls: 'vault-publish-name', text: path, attr: { dir: 'auto' } })
-            }
-            if (removes.length > SECTION_LINES) {
-                list.createDiv({
-                    text: `and ${(removes.length - SECTION_LINES).toLocaleString()} more`
-                })
-            }
-            contentEl.createEl('p', {
-                text: 'When the edit would take other entries away when you confirm, nothing is applied: open this dialog again.'
+                text: 'No entry of the content store leaves with this edit now, and no published note loses an attachment.'
             })
         }
+        if (removes.length > 0) {
+            contentEl.createEl('p', {
+                text: `${removes.length === 1 ? 'This entry leaves' : `These ${removes.length.toLocaleString()} entries leave`} the content store at the next publication, as forced removals that no plan can hold. After the next build, the address of a published note answers 404, with no redirect, and the address of an unpublished note goes from 410 to 404:`
+            })
+            this.#paths(removes)
+        }
+        if (affects.length > 0) {
+            contentEl.createEl('p', {
+                text: `${affects.length === 1 ? 'This published note stays, but loses' : `These ${affects.length.toLocaleString()} published notes stay, but lose`} an attachment: the next publication deletes the file from the attachment storage, and the note shows it as missing:`
+            })
+            this.#paths(affects)
+        }
+        if (removes.length > 0 || affects.length > 0) {
+            contentEl.createEl('p', {
+                text: 'When the edit would take other entries or attachments away when you confirm, nothing is applied: open this dialog again.'
+            })
+        }
+        const taken = removes.length + affects.length
         new Setting(contentEl).addButton((button) => {
             button
                 .setButtonText(
-                    removes.length === 0
-                        ? 'Confirm'
-                        : `Confirm: ${removes.length.toLocaleString()} ${one ? 'entry leaves' : 'entries leave'}`
+                    removes.length > 0
+                        ? `Confirm: ${removes.length.toLocaleString()} ${removes.length === 1 ? 'entry leaves' : 'entries leave'}`
+                        : affects.length > 0
+                          ? `Confirm: ${affects.length.toLocaleString()} ${affects.length === 1 ? 'note loses' : 'notes lose'} an attachment`
+                          : 'Confirm'
                 )
                 .setCta()
                 .onClick(() => {
                     this.close()
                     this.confirm()
                 })
-            if (removes.length > 0) {
+            if (taken > 0) {
                 button.setDestructive()
             }
         })

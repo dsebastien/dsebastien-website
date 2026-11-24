@@ -27,8 +27,8 @@ pub const ACTIONS: [&str; 4] = ["deny", "allow", "ignore", "unignore"];
 const STATES: [&str; 4] = ["applied", "proposed", "confirmed", "rejected"];
 
 /// The keys that an event can have.
-const EVENT_KEYS: [&str; 9] = [
-    "action", "device", "face", "id", "path", "proposal", "removes", "state", "time",
+const EVENT_KEYS: [&str; 10] = [
+    "action", "affects", "device", "face", "id", "path", "proposal", "removes", "state", "time",
 ];
 
 /// True when the action makes the guards looser: it is always a proposal
@@ -46,6 +46,11 @@ pub fn names_a_note(action: &str) -> bool {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Event {
     pub action: String,
+    /// For `proposed` and `confirmed` of `deny`: the vault paths of the
+    /// published entries, not in `removes`, that use an attachment that the
+    /// edit puts under the guard, sorted by path. No key when it is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub affects: Vec<String>,
     pub device: String,
     pub face: String,
     pub id: String,
@@ -68,6 +73,7 @@ pub struct EventFacts<'a> {
     pub path: &'a str,
     pub state: &'a str,
     pub removes: Vec<String>,
+    pub affects: Vec<String>,
     pub time: &'a str,
     pub device: &'a str,
     pub face: &'a str,
@@ -83,6 +89,7 @@ impl Event {
     pub fn new(facts: EventFacts) -> Result<Self, String> {
         let mut event = Self {
             action: facts.action.to_owned(),
+            affects: facts.affects,
             device: facts.device.to_owned(),
             face: facts.face.to_owned(),
             id: String::new(),
@@ -197,15 +204,37 @@ fn text_of<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
 /// The list `removes` of an event: vault paths, sorted, each one time, of a
 /// proposed or a confirmed edit. No key is an empty list. `Err` with the
 /// reason.
-fn removes_of(value: Option<&Value>, state: &str) -> Result<Vec<String>, &'static str> {
+fn removes_of(value: Option<&Value>, state: &str) -> Result<Vec<String>, String> {
     let Some(list) = value else {
         return Ok(Vec::new());
     };
     if state != "proposed" && state != "confirmed" {
-        return Err("has a list \"removes\", which only a proposal and a confirmation have");
+        return Err(
+            "has a list \"removes\", which only a proposal and a confirmation have".to_owned(),
+        );
     }
-    let paths = list
-        .as_array()
+    paths_of(list, "removes")
+}
+
+/// The list `affects` of an event: vault paths, sorted, each one time, of a
+/// `deny` that is proposed or confirmed. No key is an empty list. `Err` with
+/// the reason.
+fn affects_of(value: Option<&Value>, action: &str, state: &str) -> Result<Vec<String>, String> {
+    let Some(list) = value else {
+        return Ok(Vec::new());
+    };
+    if action != "deny" || (state != "proposed" && state != "confirmed") {
+        return Err(
+            "has a list \"affects\", which only a deny that is a proposal or a confirmation has"
+                .to_owned(),
+        );
+    }
+    paths_of(list, "affects")
+}
+
+/// A list of vault paths, sorted, each one time, and not empty.
+fn paths_of(list: &Value, key: &str) -> Result<Vec<String>, String> {
+    list.as_array()
         .and_then(|items| {
             items
                 .iter()
@@ -217,8 +246,9 @@ fn removes_of(value: Option<&Value>, state: &str) -> Result<Vec<String>, &'stati
                 && paths.windows(2).all(|pair| pair[0] < pair[1])
                 && paths.iter().all(|path| is_vault_path(path))
         })
-        .ok_or("has a list \"removes\" that is not vault paths, each one time, sorted")?;
-    Ok(paths)
+        .ok_or_else(|| {
+            format!("has a list \"{key}\" that is not vault paths, each one time, sorted")
+        })
 }
 
 /// Reads one event strictly. `Err` with the reason.
@@ -299,12 +329,14 @@ fn read_event(value: &Value, place: usize) -> Result<Event, String> {
             ));
         }
     };
-    let removes = removes_of(object.get("removes"), state).map_err(&wrong)?;
+    let removes = removes_of(object.get("removes"), state).map_err(|why| wrong(&why))?;
+    let affects = affects_of(object.get("affects"), action, state).map_err(|why| wrong(&why))?;
     if !is_event_id(id) {
         return Err(wrong("has no id of 16 small hexadecimal digits"));
     }
     let event = Event {
         action: action.to_owned(),
+        affects,
         device: device.to_owned(),
         face: face.to_owned(),
         id: id.to_owned(),
@@ -415,6 +447,7 @@ mod tests {
             path,
             state,
             removes: Vec::new(),
+            affects: Vec::new(),
             time,
             device: "garden-shed",
             face: "mcp-server",
@@ -440,6 +473,11 @@ mod tests {
     fn decision(of: &Event, state: &str, time: &str) -> Event {
         let mut event = Event {
             action: of.action.clone(),
+            affects: if state == "confirmed" {
+                of.affects.clone()
+            } else {
+                Vec::new()
+            },
             device: "garden-shed".to_owned(),
             face: "plugin".to_owned(),
             id: String::new(),
@@ -476,6 +514,37 @@ mod tests {
             EditLog::default().text(),
             Ok("{\n  \"edits\": [],\n  \"published\": 0\n}\n".to_owned())
         );
+    }
+
+    /// The event of the shared scenario of an image under the new guard. The
+    /// id was computed with `sha256sum`, not with this code.
+    #[test]
+    fn a_deny_that_puts_an_attachment_under_the_guard_names_the_notes_that_use_it() {
+        let event = Event::new(EventFacts {
+            affects: vec!["Notes/Plan.md".to_owned()],
+            ..facts("deny", "Images", "proposed", "2031-08-01T09:00:00Z")
+        })
+        .expect("the event has an id");
+        assert_eq!(event.id, "c74c3c5596b3d560");
+        let log = log_of(vec![event.clone()], 0);
+        let text = log.text().expect("the log has a canonical form");
+        assert!(text.contains("\"affects\": [\n        \"Notes/Plan.md\"\n      ]"));
+        assert_eq!(parse_edits(Some(&text)), Ok(log));
+        // Only a deny that is a proposal or a confirmation has the list, and
+        // the list is sorted, each path one time.
+        let with = |action: &str, affects: Vec<&str>| {
+            let mut changed = event.clone();
+            action.clone_into(&mut changed.action);
+            if action == "ignore" {
+                "Notes/Plan.md".clone_into(&mut changed.path);
+            }
+            changed.affects = affects.into_iter().map(str::to_owned).collect();
+            changed.id = event_id(&changed).expect("the event has an id");
+            text_with(&[event_value(&changed).expect("data")], 0)
+        };
+        assert!(refusal(&with("ignore", vec!["Notes/Plan.md"])).contains("only a deny"));
+        assert!(refusal(&with("deny", vec!["b.md", "a.md"])).contains("\"affects\" that is not"));
+        assert!(refusal(&with("deny", vec!["a.md", "a.md"])).contains("\"affects\" that is not"));
     }
 
     #[test]
@@ -674,6 +743,7 @@ mod tests {
             with("proposal", json!("34f508006aa66095")),
             with("removes", json!([])),
             with("removes", json!(["b.md", "a.md"])),
+            with("affects", json!(["Notes/Plan.md"])),
             with("action", json!("allow")),
             with("action", json!("ignore")),
         ] {

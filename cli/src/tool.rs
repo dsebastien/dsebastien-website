@@ -33,7 +33,7 @@ use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, compute_plan, forced_removals};
-use crate::queue::{Move, Scan, compute_queue, compute_queue_with, moved_entry};
+use crate::queue::{Move, Scan, compute_edit_queues, compute_queue, moved_entry};
 use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
 };
@@ -398,7 +398,7 @@ fn recover(device: &Device, own_lock: &dyn Fn() -> Result<(), String>) -> Result
 pub fn status(device: &Device) -> Result<String, String> {
     refuse_when_locked(device)?;
     if matches!(read_journal(device)?, Some(RunJournal::Write { .. })) {
-        return Err("a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan, publish or takedown puts it back".to_owned());
+        return Err("a publication stopped halfway on this device. status writes nothing, so it does not put the copy back: the next plan, publish, takedown or edit puts it back".to_owned());
     }
     canonical(&to_value(&read_state(device, Fetch::None)?.scan.queue)?)
 }
@@ -2483,13 +2483,14 @@ fn edit_locked(
         text,
         log: read_edits(device)?,
     };
-    let (removes, note) = check_edit(device, &context, action, path)?;
-    let applies = !is_looser(action) && removes.is_empty();
+    let (TakenAway { removes, affects }, note) = check_edit(device, &context, action, path)?;
+    let applies = !is_looser(action) && removes.is_empty() && affects.is_empty();
     let event = Event::new(EventFacts {
         action,
         path,
         state: if applies { "applied" } else { "proposed" },
         removes,
+        affects,
         time: run.time,
         device: run.device,
         face: run.face,
@@ -2636,73 +2637,101 @@ fn write_ignore(device: &Device, path: &str, note: &NoteEdit) -> Result<(), Stri
     device.vault.write(path, &note.after)
 }
 
-/// A scan of the vault for the entries that an edit takes away: the queue
-/// after the moves of the journals, with this deny list, and with one more
-/// note read as excluded by the ignore property. A deny list entry that names
-/// no folder lists no file, so it does not stop the scan. The entries that an
-/// edit takes away do not depend on the note types: the Starter Kit is not
+/// What an edit takes away (rule 2), never guessed: from one read of the
+/// vault, of the journals and of the manifest, the queue as it is and with the
+/// edit applied (the new deny list, or the note read as excluded by the
+/// ignore property). `removes` is the forced removals (rule 3 of the plan) of
+/// the second that are not forced removals of the first, sorted by path: a
+/// note that a line of a rename journal moves under the new guard, an
+/// unpublished entry whose note has a new name there, and a missing note with
+/// a name in the new folder count, as the next publication counts them. For
+/// a `deny`, `affects` is the published entries, not in `removes`, that use
+/// an attachment that the edit puts under the guard (rule 8 of "A
+/// publication"): the next publication would delete that file. A deny list
+/// entry that names no folder lists no file, so it is left out of the read.
+/// The entries do not depend on the note types: the Starter Kit is not
 /// asked.
-fn edit_scan(
-    device: &Device,
-    deny_list: &[String],
-    also_ignored: Option<&str>,
-) -> Result<Scan, String> {
-    let renames = device.store.read(RENAMES_FILE)?;
-    let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
-    let deny_list = deny_list
-        .iter()
-        .filter(|folder| device.vault.has_folder(folder))
-        .cloned()
-        .collect();
-    compute_queue_with(
-        &device.vault,
-        &read_manifest(&device.store)?,
-        journals,
-        Configuration { deny_list },
-        &StarterKit::none(),
-        also_ignored,
-    )
+struct TakenAway {
+    removes: Vec<String>,
+    affects: Vec<String>,
 }
 
-/// The entries that an edit takes away (rule 2), never guessed: the vault is
-/// scanned two times, as it is and with the edit applied (the new deny list,
-/// or the note read as excluded by the ignore property), and the result is
-/// the forced removals (rule 3 of the plan) of the second scan that are not
-/// forced removals of the first one, sorted by path. So a note that a line of
-/// a rename journal moves under the new guard, an unpublished entry whose
-/// note has a new name there, and a missing note with a name in the new
-/// folder all count, as the next publication counts them.
-fn removes_of(
+fn taken_away(
     device: &Device,
     context: &EditContext,
     action: &str,
     path: &str,
-) -> Result<Vec<String>, String> {
-    let deny_list = &context.configuration.deny_list;
-    let after = match action {
-        "deny" => {
-            let mut more = deny_list.clone();
-            more.push(path.to_owned());
-            edit_scan(device, &more, None)?
+) -> Result<TakenAway, String> {
+    let (folder, ignored) = match action {
+        "deny" => (Some(path), None),
+        "ignore" => (None, Some(path)),
+        _ => {
+            return Ok(TakenAway {
+                removes: Vec::new(),
+                affects: Vec::new(),
+            });
         }
-        "ignore" => edit_scan(device, deny_list, Some(path))?,
-        _ => return Ok(Vec::new()),
     };
-    let now: BTreeSet<String> = forced_removals(&edit_scan(device, deny_list, None)?)
-        .into_iter()
+    let renames = device.store.read(RENAMES_FILE)?;
+    let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
+    let deny_list = context
+        .configuration
+        .deny_list
+        .iter()
+        .filter(|folder| device.vault.has_folder(folder))
+        .cloned()
         .collect();
+    let (now, after) = compute_edit_queues(
+        &device.vault,
+        &read_manifest(&device.store)?,
+        journals,
+        &Configuration { deny_list },
+        folder,
+        ignored,
+    )?;
+    let forced_now: BTreeSet<String> = forced_removals(&now).into_iter().collect();
     let mut removes: Vec<String> = forced_removals(&after)
         .into_iter()
-        .filter(|forced| !now.contains(forced))
+        .filter(|forced| !forced_now.contains(forced))
         .collect();
     sort_by_code_point(&mut removes);
-    Ok(removes)
+    let mut affects = Vec::new();
+    if folder.is_some() {
+        let vault = &device.vault;
+        // The map gives the paths in the order of the code points.
+        for (entry_path, entry) in &after.manifest {
+            let newly_guarded = entry.attachments.iter().any(|attachment| {
+                after.is_guarded_file(vault, &attachment.path, &attachment.hash)
+                    && !now.is_guarded_file(vault, &attachment.path, &attachment.hash)
+            });
+            if entry.state == State::Published
+                && newly_guarded
+                && removes.binary_search(entry_path).is_err()
+            {
+                affects.push(entry_path.clone());
+            }
+        }
+    }
+    Ok(TakenAway { removes, affects })
 }
 
-/// `Err` when `configuration.json` has a number with a fraction or an
-/// exponent (rule 8): TypeScript cannot tell `1.0` from `1`, so the two
-/// implementations would write other bytes. Only the numbers outside the
-/// texts of the file count.
+/// True when the text of a JSON number is a whole number that both
+/// implementations write with the same bytes: no fraction, no exponent, no
+/// negative zero, and inside the range of rule 6 of the data.
+fn is_exact_whole_number(number: &str) -> bool {
+    let digits = number.strip_prefix('-').unwrap_or(number);
+    !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && !(number.starts_with('-') && digits.bytes().all(|byte| byte == b'0'))
+        && digits
+            .parse::<u64>()
+            .is_ok_and(|value| value <= 9_007_199_254_740_991)
+}
+
+/// `Err` when `configuration.json` has a number that is not such a whole
+/// number (rule 8): TypeScript cannot tell `1.0` from `1` or `-0` from `0`,
+/// so the two implementations would write other bytes. Only the numbers
+/// outside the texts of the file count.
 fn refuse_inexact_numbers(text: &str) -> Result<(), String> {
     let mut characters = text.chars().peekable();
     let mut in_text = false;
@@ -2730,9 +2759,9 @@ fn refuse_inexact_numbers(text: &str) -> Result<(), String> {
                 number.push(*next);
                 characters.next();
             }
-            if number.contains(['.', 'e', 'E']) {
+            if !is_exact_whole_number(&number) {
                 return Err(format!(
-                    "{CONFIGURATION_FILE} has the number {number}, with a fraction or an exponent: the tool cannot write it again with the same bytes in both implementations, so nothing is applied. Write it as a whole number with no exponent, commit {CONFIGURATION_FILE} and push it"
+                    "{CONFIGURATION_FILE} has the number {number}, which is not a whole number that both implementations write with the same bytes (no fraction, no exponent, no -0, from -9,007,199,254,740,991 to 9,007,199,254,740,991), so nothing is applied. Write it as such a whole number, commit {CONFIGURATION_FILE} and push it"
                 ));
             }
         }
@@ -2749,7 +2778,7 @@ fn check_edit(
     context: &EditContext,
     action: &str,
     path: &str,
-) -> Result<(Vec<String>, Option<NoteEdit>), String> {
+) -> Result<(TakenAway, Option<NoteEdit>), String> {
     if !is_vault_path(path) {
         return Err(format!(
             "\"{path}\" is not a vault path: write it as \"Folder/Sub folder\" or \"Folder/Note.md\", relative to the root of the vault"
@@ -2786,7 +2815,7 @@ fn check_edit(
             "there is already an open proposal to {action} \"{path}\": the author confirms or rejects it in the publication center of Obsidian"
         ));
     }
-    Ok((removes_of(device, context, action, path)?, note))
+    Ok((taken_away(device, context, action, path)?, note))
 }
 
 /// Checks an edit of the ignore property of a note (rule 3), and gives its

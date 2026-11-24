@@ -10351,6 +10351,113 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "a deny that takes an image away from a published note is a proposal (issue 42, review round 2)",
+            "denyList": [],
+            "vault": {
+                "Notes/Plan.md": "# Plan\n\n![[plan.png]]\n",
+                "Images/plan.png": {
+                    "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                },
+                "Spare/notes.txt": "Spare\n",
+                "Other/x.txt": "Other\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "a note with an image goes live",
+                    "selection": {
+                        "include": ["Notes/Plan.md"]
+                    },
+                    "time": "2031-08-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Plan.md"],
+                        "published": ["Notes/Plan.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "edit",
+                    "why": "a deny of the folder of the image that a published note uses is a proposal that names the note: no entry leaves, but the image would",
+                    "action": "deny",
+                    "path": "Images",
+                    "time": "2031-08-01T09:00:00Z",
+                    "face": "mcp-server",
+                    "event": {
+                        "action": "deny",
+                        "path": "Images",
+                        "state": "proposed",
+                        "face": "mcp-server",
+                        "time": "2031-08-01T09:00:00Z",
+                        "affects": ["Notes/Plan.md"],
+                        "device": "garden-shed",
+                        "id": "c74c3c5596b3d560"
+                    }
+                },
+                {
+                    "do": "edit",
+                    "why": "a folder whose file no published note uses applies at once",
+                    "action": "deny",
+                    "path": "Spare",
+                    "time": "2031-08-01T10:00:00Z",
+                    "face": "mcp-server",
+                    "event": {
+                        "action": "deny",
+                        "path": "Spare",
+                        "state": "applied",
+                        "face": "mcp-server",
+                        "time": "2031-08-01T10:00:00Z",
+                        "device": "garden-shed",
+                        "id": "897bd8950d1a1632"
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "a number with a fraction in the configuration",
+                    "files": {
+                        "configuration.json": "{\"denyList\": [\"Spare\"], \"x\": 1.5}\n"
+                    }
+                },
+                {
+                    "do": "edit",
+                    "why": "a number that the two implementations would write in other forms stops every deny, also one that would be a proposal",
+                    "action": "deny",
+                    "path": "Images",
+                    "time": "2031-08-01T11:00:00Z",
+                    "face": "mcp-server",
+                    "refused": true,
+                    "says": "is not a whole number"
+                },
+                {
+                    "do": "store",
+                    "why": "a negative zero in the configuration",
+                    "files": {
+                        "configuration.json": "{\"denyList\": [\"Spare\"], \"x\": -0}\n"
+                    }
+                },
+                {
+                    "do": "edit",
+                    "why": "a negative zero stops a deny too",
+                    "action": "deny",
+                    "path": "Other",
+                    "time": "2031-08-01T12:00:00Z",
+                    "face": "mcp-server",
+                    "refused": true,
+                    "says": "is not a whole number"
+                }
+            ]
         }
     ]
 }

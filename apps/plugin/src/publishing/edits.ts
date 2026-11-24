@@ -35,6 +35,13 @@ export type EditEvent = {
     readonly path: string
     /** For `confirmed` and `rejected`: the id of the proposal. */
     readonly proposal?: string
+    /**
+     * For `proposed` and `confirmed` of `deny`: the vault paths of the
+     * published entries, not in `removes`, that use an attachment that the
+     * edit puts under the guard (R69, review round 2), sorted. No key when
+     * there is none.
+     */
+    readonly affects?: readonly string[]
     /** For `proposed` and `confirmed`: the vault paths of the manifest entries that the edit takes away, sorted. No key when there is none. */
     readonly removes?: readonly string[]
     readonly state: EditState
@@ -74,11 +81,12 @@ export function eventId(event: Omit<EditEvent, 'id'>): string {
 }
 
 /**
- * Makes an event with its id. `removes` is sorted by path, each path one
- * time, and an empty list has no key.
+ * Makes an event with its id. `removes` and `affects` are sorted by path,
+ * each path one time, and an empty list has no key.
  */
 export function makeEvent(fields: {
     readonly action: EditAction
+    readonly affects?: readonly string[]
     readonly device: string
     readonly face: Face
     readonly path: string
@@ -87,10 +95,12 @@ export function makeEvent(fields: {
     readonly state: EditState
     readonly time: string
 }): EditEvent {
-    const { removes, proposal, ...rest } = fields
+    const { affects, removes, proposal, ...rest } = fields
     const sorted = sortByCodePoint([...new Set(removes ?? [])])
+    const affected = sortByCodePoint([...new Set(affects ?? [])])
     const event = {
         ...rest,
+        ...(affected.length === 0 ? {} : { affects: affected }),
         ...(proposal === undefined ? {} : { proposal }),
         ...(sorted.length === 0 ? {} : { removes: sorted })
     }
@@ -100,6 +110,7 @@ export function makeEvent(fields: {
 /** The keys that an event can have. */
 const EVENT_KEYS = new Set([
     'action',
+    'affects',
     'device',
     'face',
     'id',
@@ -113,67 +124,58 @@ const EVENT_KEYS = new Set([
 /** The form of an id of an event. */
 const EVENT_ID = /^[0-9a-f]{16}$/u
 
+/** The message of a log that is not valid: it names the file. */
+function notValid(reason: string): Error {
+    return new Error(
+        `${EDITS_FILE} of the content store is not valid: ${reason}. No run is possible until it is corrected`
+    )
+}
+
 /**
- * Reads the log from the text of its file, strictly. A content store without
- * the file has no event. It throws, with a message that names the file, when
- * the text is not a valid log: `published` above the number of events, an
- * `id` that is not the hash of its event, or a decision of a proposal that is
- * not an earlier open proposal.
+ * Reads the log from the text of its file, strictly, in the order of checks
+ * of the Rust twin and with its texts. A content store without the file has
+ * no event. It throws, with a message that names the file, when the text is
+ * not a valid log: `published` above the number of events, an `id` that is
+ * not the hash of its event, or a decision of a proposal that is not an
+ * earlier proposal that no other event decided.
  */
 export function parseEdits(text: string | undefined): EditsLog {
     if (text === undefined) {
         return NO_EDITS
     }
-    const refuse = (why: string): never => {
-        throw new Error(
-            `${EDITS_FILE} of the content store is not valid: ${why}. No run is possible until it is corrected`
-        )
-    }
     let value: unknown
     try {
         value = parseJson(text)
     } catch {
-        return refuse('it is not JSON')
+        throw notValid('it is not JSON')
     }
-    if (!isRecord(value)) {
-        return refuse('it is not an object')
-    }
-    const other = sortByCodePoint(Object.keys(value)).find(
-        (key) => key !== 'edits' && key !== 'published'
-    )
-    if (other !== undefined) {
-        return refuse(`it has the key "${other}"`)
+    if (!isRecord(value) || Object.keys(value).length !== 2) {
+        throw notValid('it must be an object with exactly "edits" and "published"')
     }
     const { edits, published } = value
     if (!Array.isArray(edits)) {
-        return refuse('"edits" is not a list')
+        throw notValid('"edits" must be a list of events')
     }
     if (typeof published !== 'number' || !Number.isSafeInteger(published) || published < 0) {
-        return refuse('"published" is not a whole number of 0 or more')
-    }
-    if (published > edits.length) {
-        return refuse(
-            `"published" is ${String(published)}, above the number of events (${String(edits.length)})`
-        )
+        throw notValid('"published" must be a whole number from 0')
     }
     const events: EditEvent[] = []
     // The proposals that no event decided yet, by their ids.
     const open = new Map<string, EditEvent>()
     for (const [index, item] of (edits as unknown[]).entries()) {
-        const where = `event ${String(index + 1)}`
-        const event = readEvent(item, (why) => refuse(`${where} ${why}`))
-        if (event.id !== eventId(event)) {
-            return refuse(`the id of ${where} is not the hash of the event`)
-        }
+        const place = String(index + 1)
+        const event = readEvent(item, (why) => {
+            throw notValid(`the event ${place} ${why}`)
+        })
         if (event.proposal !== undefined) {
             const proposal = open.get(event.proposal)
             if (proposal === undefined) {
-                return refuse(
-                    `${where} decides "${event.proposal}", which is not an earlier proposal that no event decided`
+                throw notValid(
+                    `the event ${place} decides "${event.proposal}", which is not an earlier proposal that no other event decided`
                 )
             }
             if (proposal.action !== event.action || proposal.path !== event.path) {
-                return refuse(`${where} has another action or path than its proposal`)
+                throw notValid(`the event ${place} has another action or path than its proposal`)
             }
             open.delete(event.proposal)
         }
@@ -182,88 +184,144 @@ export function parseEdits(text: string | undefined): EditsLog {
         }
         events.push(event)
     }
+    if (published > events.length) {
+        throw notValid(
+            `"published" is ${String(published)}, above the number of events (${String(events.length)})`
+        )
+    }
     return { edits: events, published }
 }
 
-/** Reads one event. `refuse` throws with the reason. */
+/**
+ * A list `removes` or `affects` of an event: vault paths, sorted, each one
+ * time, not empty. `undefined` when the event has no such key. `refuse`
+ * throws with the reason.
+ */
+function pathListOf(
+    value: unknown,
+    key: 'removes' | 'affects',
+    allowed: boolean,
+    which: string,
+    refuse: (why: string) => never
+): string[] | undefined {
+    if (value === undefined) {
+        return undefined
+    }
+    if (!allowed) {
+        return refuse(`has a list "${key}", which only ${which} have`)
+    }
+    if (
+        !Array.isArray(value) ||
+        value.length === 0 ||
+        !value.every(
+            (one, at) =>
+                typeof one === 'string' &&
+                isVaultPath(one) &&
+                (at === 0 || compareCodePoints(String(value[at - 1]), one) < 0)
+        )
+    ) {
+        return refuse(`has a list "${key}" that is not vault paths, each one time, sorted`)
+    }
+    return value as string[]
+}
+
+/** Reads one event, in the order of checks of the Rust twin. `refuse` throws with the reason. */
 function readEvent(item: unknown, refuse: (why: string) => never): EditEvent {
     if (!isRecord(item)) {
         return refuse('is not an object')
     }
+    // The first key in the order of the code points, as the Rust twin finds it.
     const other = sortByCodePoint(Object.keys(item)).find((key) => !EVENT_KEYS.has(key))
     if (other !== undefined) {
-        return refuse(`has the key "${other}"`)
+        return refuse(`has the key "${other}", which no event has`)
     }
-    const { action, device, face, id, path, proposal, removes, state, time } = item
-    if (typeof action !== 'string' || !(EDIT_ACTIONS as readonly string[]).includes(action)) {
-        return refuse('has no action deny, allow, ignore or unignore')
+    const required = (key: string): string => {
+        const found = item[key]
+        return typeof found === 'string' ? found : refuse(`has no text "${key}"`)
     }
-    if (typeof state !== 'string' || !(EDIT_STATES as readonly string[]).includes(state)) {
-        return refuse('has no state applied, proposed, confirmed or rejected')
+    const action = required('action')
+    const state = required('state')
+    const path = required('path')
+    const face = required('face')
+    const device = required('device')
+    const time = required('time')
+    const id = required('id')
+    if (!(EDIT_ACTIONS as readonly string[]).includes(action)) {
+        return refuse(`has the action "${action}", which is not deny, allow, ignore or unignore`)
+    }
+    if (!(EDIT_STATES as readonly string[]).includes(state)) {
+        return refuse(
+            `has the state "${state}", which is not applied, proposed, confirmed or rejected`
+        )
     }
     const edit = action as EditAction
     const status = state as EditState
-    if (typeof device !== 'string' || !isOneLine(device)) {
-        return refuse('has no device of one line')
+    if (!isVaultPath(path) || (isNoteEdit(edit) && !path.endsWith('.md'))) {
+        return refuse('has a path that is not the vault path of a folder or of a note')
     }
-    if (typeof face !== 'string' || !isFace(face)) {
-        return refuse('has no face plugin, command-line or mcp-server')
+    if (!isFace(face)) {
+        return refuse(`has the face "${face}", which is not a face of the tool`)
     }
-    if (typeof id !== 'string' || !EVENT_ID.test(id)) {
-        return refuse('has no id of 16 small hexadecimal digits')
+    if (!isOneLine(device)) {
+        return refuse('has a name of the device that is not one line of text')
     }
-    if (
-        typeof path !== 'string' ||
-        !isVaultPath(path) ||
-        (isNoteEdit(edit) && !path.endsWith('.md'))
-    ) {
-        return refuse('has no path of a folder or of a note')
-    }
-    if (typeof time !== 'string' || !isCanonicalTime(time)) {
-        return refuse('has no time in the canonical form')
+    if (!isCanonicalTime(time)) {
+        return refuse('has a time that is not a real date and time in UTC, to the second')
     }
     if (status === 'applied' && isLooser(edit)) {
         return refuse(`is an ${edit} that applied, but such an edit is always a proposal`)
     }
     const decision = status === 'confirmed' || status === 'rejected'
-    if (decision !== (proposal !== undefined)) {
-        return refuse('has a proposal when it is no decision, or no proposal when it is one')
-    }
     // Only the author decides a proposal, in the view (rule 7).
     if (decision && face !== 'plugin') {
-        return refuse(`is a decision with the face ${face}, but only the face plugin decides`)
+        return refuse(
+            `is a decision of the face "${face}": only the author decides a proposal, in the view (the face plugin)`
+        )
     }
-    if (proposal !== undefined && (typeof proposal !== 'string' || !EVENT_ID.test(proposal))) {
-        return refuse('has no proposal of 16 small hexadecimal digits')
+    const proposal = item['proposal']
+    if (proposal === undefined && decision) {
+        return refuse('decides no proposal: it has no "proposal"')
     }
-    if (removes !== undefined) {
-        if (status !== 'proposed' && status !== 'confirmed') {
-            return refuse('has a list "removes", which only a proposal and a confirmation have')
-        }
-        if (
-            !Array.isArray(removes) ||
-            removes.length === 0 ||
-            !removes.every(
-                (one, at) =>
-                    typeof one === 'string' &&
-                    isVaultPath(one) &&
-                    (at === 0 || compareCodePoints(String(removes[at - 1]), one) < 0)
-            )
-        ) {
-            return refuse('has a list "removes" that is not vault paths, each one time, sorted')
-        }
+    if (
+        proposal !== undefined &&
+        (!decision || typeof proposal !== 'string' || !EVENT_ID.test(proposal))
+    ) {
+        return refuse('has a "proposal" that is not the id of a proposal it decides')
     }
-    return {
+    const listed = status === 'proposed' || status === 'confirmed'
+    const removes = pathListOf(
+        item['removes'],
+        'removes',
+        listed,
+        'a proposal and a confirmation',
+        refuse
+    )
+    const affects = pathListOf(
+        item['affects'],
+        'affects',
+        listed && edit === 'deny',
+        'a proposal and a confirmation of a deny',
+        refuse
+    )
+    if (!EVENT_ID.test(id)) {
+        return refuse('has no id of 16 small hexadecimal digits')
+    }
+    const event: EditEvent = {
         action: edit,
+        ...(affects === undefined ? {} : { affects }),
         device,
         face,
         id,
         path,
         ...(typeof proposal === 'string' ? { proposal } : {}),
-        ...(removes === undefined ? {} : { removes: removes as string[] }),
+        ...(removes === undefined ? {} : { removes }),
         state: status,
         time
     }
+    if (eventId(event) !== id) {
+        return refuse(`has the id "${id}", which is not the hash of the event`)
+    }
+    return event
 }
 
 /** The text of the log, in the canonical form. */

@@ -51,7 +51,7 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 ## Guards
 
 - `guards` reads the deny list (`denyList`), the open proposals (`proposals`) and the edits since the last publication (`edits`). It also works when a deny list entry names no folder.
-- `deny` (a folder) and `ignore` (a note) apply at once when the new guard takes away no manifest entry (a published or an unpublished note). Else the result has the state `proposed` and the list `removes`: the entries that would leave the content store. Tell the author that the proposal waits for a confirmation in the publication center.
+- `deny` (a folder) and `ignore` (a note) apply at once when the new guard takes away no manifest entry (a published or an unpublished note) and, for `deny`, no attachment that a published note uses. Else the result has the state `proposed`, with the list `removes` (the entries that would leave the content store) or `affects` (the published notes that would lose an attachment). Tell the author that the proposal waits for a confirmation in the publication center.
 - `allow` and `unignore` always give a proposal. Call them only when the author asked for that exact edit, and tell the author that it waits for a confirmation in the publication center. A confirmed `unignore` makes the note a candidate: it is published only when the author names it in `include`.
 - A private folder that the author renamed stops every publication. Propose the fix: `deny` with the new path, then `allow` with the old path, which the author confirms.
 

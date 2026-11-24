@@ -132,6 +132,7 @@ impl PublicationQueue {
 }
 
 /// What the scan knows of one note. The text itself is not kept.
+#[derive(Clone)]
 pub struct ScannedNote {
     /// The hash of the text as the scan read it. A later read with another
     /// hash says that the note changed.
@@ -409,44 +410,154 @@ pub fn compute_queue(
     configuration: Configuration,
     kit: &StarterKit,
 ) -> Result<Scan, String> {
-    compute_queue_with(vault, entries, journals, configuration, kit, None)
+    let read = read_vault(vault, entries, &journals, &configuration)?;
+    queue_of(
+        vault,
+        entries,
+        journals,
+        configuration,
+        kit,
+        read,
+        FileReader::default(),
+    )
 }
 
-/// The queue of `compute_queue`, with one more note read as excluded by the
-/// ignore property: the second scan of an `ignore` (rule 2 of "The edits of
-/// the guards"), which computes the forced removals with the edit applied.
+/// What one read of the vault gives for one set of guards: the notes of the
+/// scan, the other files, and the files of the folders of the deny list.
+#[derive(Clone)]
+pub struct VaultRead {
+    notes: BTreeMap<String, ScannedNote>,
+    ignored: BTreeSet<String>,
+    link_paths: BTreeMap<String, Vec<String>>,
+    others: Vec<String>,
+    denied: Vec<String>,
+    denied_file_names: BTreeSet<String>,
+}
+
+/// Reads the vault one time for these guards.
+fn read_vault(
+    vault: &Vault,
+    entries: &BTreeMap<String, ManifestEntry>,
+    journals: &JournalState,
+    configuration: &Configuration,
+) -> Result<VaultRead, String> {
+    let folded = fold_moves(entries.keys().cloned(), &journals.lines);
+    let published_paths = published_paths_of(entries, &folded.positions);
+    let (scanned, others) = scan_vault(vault, configuration)?;
+    let ScannedNotes {
+        notes,
+        ignored,
+        link_paths,
+    } = read_notes(vault, scanned, configuration, &published_paths)?;
+    // A link that Obsidian leads to a file under a guard must not lead to
+    // another file of the same name. So the files of the deny list folders
+    // are candidates too, by their paths alone, and such a target gives no
+    // item.
+    let (denied, denied_file_names) = scan_denied(vault, configuration)?;
+    Ok(VaultRead {
+        notes,
+        ignored,
+        link_paths,
+        others,
+        denied,
+        denied_file_names,
+    })
+}
+
+impl VaultRead {
+    /// The same read with one more guard (rule 2 of "The edits of the
+    /// guards"): a folder on the deny list, whose notes and files leave the
+    /// scan and become files under the guard, or a note read as excluded by
+    /// the ignore property. No note is read again: the listings of the
+    /// vault are the ones of the run, and only the names below a hidden
+    /// folder of the new folder are listed for the first time.
+    fn with_guard(
+        &self,
+        vault: &Vault,
+        folder: Option<&str>,
+        ignored: Option<&str>,
+    ) -> Result<Self, String> {
+        let mut read = self.clone();
+        if let Some(path) = ignored.filter(|path| read.notes.contains_key(*path)) {
+            read.ignored.insert(path.to_owned());
+        }
+        if let Some(folder) = folder {
+            let below = format!("{folder}/");
+            read.notes.retain(|path, _| !path.starts_with(&below));
+            read.ignored.retain(|path| !path.starts_with(&below));
+            read.link_paths.retain(|path, _| !path.starts_with(&below));
+            read.others.retain(|path| !path.starts_with(&below));
+            let (files, names) = scan_denied(
+                vault,
+                &Configuration {
+                    deny_list: vec![folder.to_owned()],
+                },
+            )?;
+            let mut denied: BTreeSet<String> = read.denied.into_iter().collect();
+            denied.extend(files);
+            read.denied = denied.into_iter().collect();
+            read.denied_file_names.extend(names);
+        }
+        Ok(read)
+    }
+}
+
+/// The two queues of an edit of the guards (rule 2 of "The edits of the
+/// guards"), from one read of the vault, of the journals and of the
+/// manifest: as it is, and with the edit applied (the folder on the deny
+/// list, or the note read as excluded by the ignore property). A write
+/// during the edit cannot make the two see other states. The second one
+/// reads the facts of the attachments that the first one read.
 ///
 /// # Errors
 ///
 /// As `compute_queue`.
-pub fn compute_queue_with(
+pub fn compute_edit_queues(
+    vault: &Vault,
+    entries: &BTreeMap<String, ManifestEntry>,
+    journals: JournalState,
+    configuration: &Configuration,
+    folder: Option<&str>,
+    ignored: Option<&str>,
+) -> Result<(Scan, Scan), String> {
+    let kit = StarterKit::none();
+    let read = read_vault(vault, entries, &journals, configuration)?;
+    let edited = read.with_guard(vault, folder, ignored)?;
+    let mut more = configuration.clone();
+    more.deny_list.extend(folder.map(str::to_owned));
+    let now = queue_of(
+        vault,
+        entries,
+        journals.clone(),
+        configuration.clone(),
+        &kit,
+        read,
+        FileReader::default(),
+    )?;
+    let files = now.files.clone();
+    let after = queue_of(vault, entries, journals, more, &kit, edited, files)?;
+    Ok((now, after))
+}
+
+/// Computes the queue from one read of the vault.
+fn queue_of(
     vault: &Vault,
     entries: &BTreeMap<String, ManifestEntry>,
     journals: JournalState,
     configuration: Configuration,
     kit: &StarterKit,
-    also_ignored: Option<&str>,
+    read: VaultRead,
+    files: FileReader,
 ) -> Result<Scan, String> {
-    let folded = fold_moves(entries.keys().cloned(), &journals.lines);
-    let published_paths = published_paths_of(entries, &folded.positions);
-    let (scanned, others) = scan_vault(vault, &configuration)?;
-    let ScannedNotes {
+    let VaultRead {
         notes,
         ignored,
         link_paths,
-    } = read_notes(
-        vault,
-        scanned,
-        &configuration,
-        &published_paths,
-        also_ignored,
-    )?;
-
-    // A link that Obsidian leads to a file under a guard must not lead to
-    // another file of the same name. So the files of the deny list folders
-    // are candidates too, by their paths alone, and such a target gives no
-    // item.
-    let (denied, denied_file_names) = scan_denied(vault, &configuration)?;
+        others,
+        denied,
+        denied_file_names,
+    } = read;
+    let folded = fold_moves(entries.keys().cloned(), &journals.lines);
     let moves = apply_moves(
         entries,
         folded,
@@ -457,7 +568,6 @@ pub fn compute_queue_with(
     let mut manifest = moves.manifest;
     let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
     let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
-    let files = FileReader::default();
     // The type that each published note has now, in one question.
     let note_types = note_types_of(kit, &published_question(&notes, &manifest, &ignored))?;
     // True when the cleaning step gives another result for a published note:
@@ -583,7 +693,6 @@ fn read_notes(
     scanned: Vec<String>,
     configuration: &Configuration,
     published_paths: &BTreeSet<String>,
-    also_ignored: Option<&str>,
 ) -> Result<ScannedNotes, String> {
     let mut notes = BTreeMap::new();
     let mut ignored = BTreeSet::new();
@@ -596,7 +705,7 @@ fn read_notes(
         let Some(text) = text else { continue };
         // The scan left the folders of the deny list out, so only the ignore
         // property is left.
-        if guard_of(&path, &text, configuration).is_some() || also_ignored == Some(path.as_str()) {
+        if guard_of(&path, &text, configuration).is_some() {
             ignored.insert(path.clone());
         }
         let source = source_of(&text);
