@@ -7,7 +7,7 @@ The main site and the store of the author are out of scope (ADR 0001).
 - Current plan: `documentation/plans/spec-v2.md` (approved by the author on 2026-11-17; it is adjusted as the build and the tests teach us), read together with `documentation/plans/decisions.md` (the answers of the author) and the decision records in `documentation/adr/`. `documentation/plans/spec-v1.md` is the older draft that it replaces.
 - Ideas that are not part of the plan: `documentation/plans/ideas-backlog.md`.
 - Measured facts about the existing sites: `documentation/research/`.
-- The spec is approved. The work is cut into tickets: GitHub issues with the labels `setup`, `prototype` and `slice`. The tooling exists (issue 16). A prototype lives on a `prototype/<name>` branch, every other ticket on a `ticket/<number>-<name>` branch.
+- The spec is approved. The work is cut into tickets: GitHub issues with the labels `setup`, `prototype` and `slice`. The tooling exists (issue 16). A prototype lives on a `prototype/<name>` branch, every other ticket on a `ticket/<number>-<name>` branch. Blocking edges between issues use the native issue links of GitHub.
 
 ## Privacy: this repository is public
 
@@ -44,32 +44,6 @@ Read these in order before any change:
 1. `documentation/Business Rules.md`: mandatory invariants.
 2. Active plans under `documentation/plans/`.
 3. `GLOSSARY.md` and `documentation/adr/`, when they exist. Use the glossary terms in code, tickets and documents.
-
-### Working method
-
-The project follows the skill flow of Matt Pocock (https://github.com/mattpocock/skills, enabled in `.claude/settings.json`):
-
-1. `/grill-with-docs`: interview in rounds. Terms go to `GLOSSARY.md`, hard-to-reverse decisions with real trade-offs go to `documentation/adr/`.
-2. `/prototype`: when a question needs running code. A prototype lives on a `prototype/<name>` branch.
-3. `/to-spec`: the settled decisions become a spec.
-4. `/to-tickets`: tracer-bullet tickets (vertical slices), each with its blocking edges.
-5. `/implement` per ticket, in a fresh context, with `/tdd` and `/code-review`.
-6. `/retro` after a build session: improve this file, the checks and the standards.
-
-Configuration for those skills:
-
-- Issue tracker: GitHub issues on this repository. Blocking edges use native issue links.
-- Documents: `documentation/` (ADRs in `documentation/adr/`, not `docs/adr/`).
-- Glossary: `GLOSSARY.md` at the repository root.
-
-### Review and speed (decision R73)
-
-1. Size the review by risk. A ticket gets the full review when it changes the guards, the forced removals, what leaves the vault, or the bytes that a publication writes: three rounds of two separate reviewers, then one look at the last corrections. Every other ticket, also one that only adds a refusal (it fails closed), gets the light review: one round of two reviewers, then one look at the corrections. After the last look, a finding becomes a GitHub issue, unless it opens a guard.
-2. A review brief gives a time limit (about 15 minutes, then report what you have) and the commit at which the implementer ran the full suites. The reviewer runs only the tests that its findings need, never the full suites again.
-3. Only one reviewer runs Rust code. When two must, each sets its own `CARGO_TARGET_DIR`, because two builds in one `target/` wait on the same lock.
-4. The reviewer of the documents and of the consistency runs on Sonnet. The reviewer that tries to break the change runs on the strongest model.
-5. While a review runs, the implementer starts the next ticket that an agent can do alone, in its own git worktree.
-6. The random parity cases live in the repository (issue 112), so that a reviewer does not write that harness again.
 
 ### Definition of done
 
@@ -110,6 +84,7 @@ The publishing logic exists in TypeScript (`apps/plugin/src/publishing/`) and in
 - The logic takes the time of the run as an input, reads no clock, uses no random value, and never depends on the system (path separator, locale, order of a folder listing).
 - The TypeScript logic never imports `obsidian`. The plugin gives it what it needs. A lint rule refuses the import.
 - A list that the parity rule compares is sorted with `compareCodePoints` (TypeScript) and as `String` (Rust), never with the default `sort()`, never with `<` on two texts, and never as `PathBuf`.
+- The random parity cases belong in the repository (issue 112), so that a change of the publishing logic runs them instead of writing a new harness.
 
 ### Business rules compliance
 
