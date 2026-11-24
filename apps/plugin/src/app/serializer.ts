@@ -204,7 +204,7 @@ export function serializerLists(
                     ...changed.map((path) => ({
                         path,
                         message:
-                            'Obsidian gives this file name another path (a no-break space, or another Unicode form): its lists are published as saved (issue 110)'
+                            'Obsidian gives this file name another path (a no-break space, a backslash, a slash too many or a name that is not in the composed Unicode form): its lists are published as saved (issue 110)'
                     }))
                 ]
             }

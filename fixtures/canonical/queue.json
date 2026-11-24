@@ -11159,6 +11159,220 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "two files with one Obsidian path: the plain one is not published either, and a published one is not asked about (issue 110)",
+            "denyList": [],
+            "vault": {
+                "P Q.md": "P\n",
+                "X Y.md": "Plain\n",
+                "X\u00a0Y.md": "Shadow\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "both files are candidates",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": ["P Q.md", "X Y.md", "X\u00a0Y.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "no published note: the status asks about none",
+                    "questions": [[]]
+                },
+                {
+                    "do": "plan",
+                    "why": "the plain file has the Obsidian path of another file: Obsidian can take one for the other",
+                    "selection": {
+                        "hold": [],
+                        "include": ["X Y.md"],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "has the same path in Obsidian"
+                },
+                {
+                    "do": "publish",
+                    "why": "a plain note with no twin is published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["P Q.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["P Q.md"],
+                        "published": ["P Q.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "the questions of the publication are not checked here"
+                },
+                {
+                    "do": "write",
+                    "why": "a program outside Obsidian makes a twin of the published note",
+                    "files": {
+                        "P\u00a0Q.md": "Twin\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the published note stays unchanged, and the twin is a candidate",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 3,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": ["P\u00a0Q.md", "X Y.md", "X\u00a0Y.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["P Q.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "the published note that has a twin is not asked about: Obsidian can answer for the twin",
+                    "questions": [[]]
+                }
+            ]
+        },
+        {
+            "name": "a folder line of a rename journal does not move a published note into a folder whose path Obsidian changes (issue 110)",
+            "denyList": [],
+            "vault": {
+                "P/One.md": "One\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "selection": {
+                        "hold": [],
+                        "include": ["P/One.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["P/One.md"],
+                        "published": ["P/One.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a line moves the folder P to a folder with a no-break space, and the vault shows that move",
+                    "files": {
+                        "D\u00a0E/One.md": "---\npublic_note: true\n---\nOne\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"P\",\"kind\":\"folder\",\"time\":\"2031-05-02T08:00:00Z\",\"to\":\"D\u00a0E\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["P/One.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the entry does not move: the note is missing, and the queue proposes the pairing",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "missing": ["P/One.md"],
+                        "new": ["D\u00a0E/One.md"],
+                        "technicalUpdates": [],
+                        "toRemove": ["P/One.md"],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "P/One.md",
+                                "to": "D\u00a0E/One.md"
+                            }
+                        ],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a plan without paths warns that the entry did not move, and the moved file loses the property",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-05-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["D\u00a0E/One.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["P/One.md"],
+                        "moved": []
+                    }
+                }
+            ]
         }
     ]
 }

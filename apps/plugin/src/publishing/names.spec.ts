@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { foldedForm, isChangedByObsidian, isReservedRootName, obsidianPath } from './names.ts'
+import {
+    foldedForm,
+    isChangedByObsidian,
+    isReservedRootName,
+    obsidianPath,
+    obsidianTwins
+} from './names.ts'
 
 // The root names of the site (documentation/Canonical Form.md). The Rust
 // implementation reads the same cases (`cli/src/names.rs`).
@@ -10,6 +16,7 @@ interface Cases {
     reserved: { name: string; text: string; reserved: boolean }[]
     folded: { name: string; one: string; two: string; equal: boolean }[]
     obsidian: { name: string; text: string; path: string }[]
+    twins: { name: string; paths: string[]; twins: Record<string, string> }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
@@ -38,5 +45,11 @@ describe('the path that Obsidian gives a vault path', () => {
     test.each(cases.obsidian.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
         expect(obsidianPath(entry.text)).toBe(entry.path)
         expect(isChangedByObsidian(entry.text)).toBe(entry.path !== entry.text)
+    })
+})
+
+describe('the paths with one Obsidian path', () => {
+    test.each(cases.twins.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
+        expect(Object.fromEntries(obsidianTwins(entry.paths))).toEqual(entry.twins)
     })
 })

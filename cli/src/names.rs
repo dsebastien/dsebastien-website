@@ -4,6 +4,8 @@
 //! spec). The TypeScript twin is `apps/plugin/src/publishing/names.ts`.
 //! Change both in the same commit.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::small_letters::small_letters;
 use unicode_normalization::UnicodeNormalization;
 
@@ -63,16 +65,39 @@ pub fn obsidian_path(path: &str) -> String {
         .collect()
 }
 
-/// True when Obsidian gives this vault path another path: a no-break space, a
-/// backslash or a name that is not in the composed Unicode form. Obsidian, its
-/// links and the APIs of its plugins then name another file than the disk.
+/// True when Obsidian gives this vault path another path: any change of the
+/// Obsidian path (a no-break space, a backslash, a slash too many, a name that is
+/// not in the composed Unicode form). Obsidian, its links and the APIs of its
+/// plugins then name another file than the disk.
 pub fn is_changed_by_obsidian(path: &str) -> bool {
     obsidian_path(path) != path
 }
 
+/// The twins among these paths: each path whose Obsidian path is the Obsidian
+/// path of another one, with the first such other path in the order of the
+/// code points. Obsidian lists one file for such an Obsidian path, so it can
+/// take one twin for the other (decision R72).
+pub fn obsidian_twins<'a>(paths: impl IntoIterator<Item = &'a String>) -> BTreeMap<String, String> {
+    let mut groups: BTreeMap<String, BTreeSet<&String>> = BTreeMap::new();
+    for path in paths {
+        groups.entry(obsidian_path(path)).or_default().insert(path);
+    }
+    let mut twins = BTreeMap::new();
+    for group in groups.values().filter(|group| group.len() > 1) {
+        for path in group {
+            if let Some(other) = group.iter().find(|one| *one != path) {
+                twins.insert((*path).clone(), (*other).clone());
+            }
+        }
+    }
+    twins
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path};
+    use super::{
+        folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path, obsidian_twins,
+    };
     use serde_json::Value;
 
     /// The cases that the TypeScript implementation reads too
@@ -137,6 +162,20 @@ mod tests {
                 "{}",
                 text(case, "name")
             );
+        }
+    }
+
+    #[test]
+    fn finds_the_paths_with_one_obsidian_path_as_the_file_states() {
+        for case in &cases("twins") {
+            let paths: Vec<String> = case["paths"]
+                .as_array()
+                .expect("a case has paths")
+                .iter()
+                .map(|path| path.as_str().expect("a path is a text").to_owned())
+                .collect();
+            let twins = serde_json::to_value(obsidian_twins(&paths)).expect("data");
+            assert_eq!(twins, case["twins"], "{}", text(case, "name"));
         }
     }
 }

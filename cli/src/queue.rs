@@ -19,6 +19,7 @@ use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
 use crate::names::{
     first_part, folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path,
+    obsidian_twins,
 };
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::renames::{Fold, JournalState, RenameWarning, fold_moves, former_paths_after};
@@ -312,6 +313,8 @@ fn published_question(
     manifest: &BTreeMap<String, ManifestEntry>,
     ignored: &BTreeSet<String>,
 ) -> Vec<String> {
+    // Never a note with a twin: Obsidian can answer for the twin (R72).
+    let twins = obsidian_twins(notes.keys());
     notes
         .keys()
         .filter(|path| {
@@ -319,6 +322,7 @@ fn published_question(
                 .get(*path)
                 .is_some_and(|entry| entry.state == State::Published)
                 && !ignored.contains(*path)
+                && !twins.contains_key(*path)
         })
         .cloned()
         .collect()

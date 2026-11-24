@@ -33,7 +33,7 @@ import type { NoteLink } from './links.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
 import type { NoteType } from './note-types.ts'
-import { foldedForm } from './names.ts'
+import { foldedForm, obsidianTwins } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
@@ -546,10 +546,12 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     // computed again, so the record holds the refreshed text (PUB-92).
     // Only the notes with a list to refresh (rule 4) are asked: a first
     // publication of every note asks far fewer.
+    // A note with a twin is not asked: Obsidian can refresh the twin (R72).
+    const twins = obsidianTwins(computed.scan.notes.keys())
     const paths = sortByCodePoint(
         [...computed.plan.publish, ...computed.plan.update].filter((path) => {
             const source = computed.texts.get(path)?.source
-            return source !== undefined && hasListToRefresh(source)
+            return source !== undefined && hasListToRefresh(source) && !twins.has(path)
         })
     )
     let refresh: RefreshResult = {

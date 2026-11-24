@@ -7,7 +7,8 @@ import {
     foldedForm,
     isChangedByObsidian,
     isReservedRootName,
-    obsidianPath
+    obsidianPath,
+    obsidianTwins
 } from './names.ts'
 import { sortByCodePoint } from './order.ts'
 import { compareCodePoints } from './order.ts'
@@ -270,7 +271,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     }
 
     const plan = planLists(queue, selection, eventsSince(scan.edits), scan.guardedEntries)
-    refuseObsidianPaths(plan, selection.pair)
+    refuseObsidianPaths(scan, plan, selection.pair)
     refuseRootNames(scan, plan, selection.pair)
     // accept only names what an agent face must see named (rule 8).
     const acceptable = new Set([...plan.forcedRemove, ...plan.guardedAttachments])
@@ -287,16 +288,29 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
 
 /**
  * Stops a plan that publishes a note, or pairs a note with a path, that
- * Obsidian reads as another path (section "Paths" of the canonical form,
- * decision R72): its links, the Starter Kit and the refresh of its lists
- * would not find it. The author gives the file another name. A plan without
- * a new note never stops here, so no forced removal waits for this rule.
+ * Obsidian reads as another path or as the path of another note of the scan
+ * (rule 4 of section "Paths" of the canonical form, decision R72): its
+ * links, the Starter Kit and the refresh of its lists would not find it, or
+ * would find the other file. The author gives the file another name. A plan
+ * without a new note and without a pairing never stops here, so no forced
+ * removal waits for this rule.
  */
-function refuseObsidianPaths(plan: PublicationPlan, pairs: readonly Move[]): void {
-    for (const path of [...plan.publish, ...pairs.map((pairing) => pairing.to)]) {
+function refuseObsidianPaths(scan: Scan, plan: PublicationPlan, pairs: readonly Move[]): void {
+    const paths = [...plan.publish, ...pairs.map((pairing) => pairing.to)]
+    if (paths.length === 0) {
+        return
+    }
+    const twins = obsidianTwins(scan.notes.keys())
+    for (const path of paths) {
         if (isChangedByObsidian(path)) {
             throw new SelectionError(
-                `"${path}" cannot be published: Obsidian reads its path as "${obsidianPath(path)}" (a no-break space, a backslash or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it`
+                `"${path}" cannot be published: Obsidian reads its path as "${obsidianPath(path)}" (a no-break space, a backslash, a slash too many or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it`
+            )
+        }
+        const twin = twins.get(path)
+        if (twin !== undefined) {
+            throw new SelectionError(
+                `"${path}" cannot be published: the file "${twin}" has the same path in Obsidian ("${obsidianPath(path)}"), so Obsidian can take one for the other. Give one of the two files another name`
             )
         }
     }

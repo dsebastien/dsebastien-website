@@ -166,7 +166,7 @@ A text in the composed Unicode form, then in small letters. Two texts with one f
 A name that the site answers at its root itself (`robots.txt`, a sitemap, `-`). No note may take one.
 
 **Obsidian path**:
-The path that Obsidian gives a file of the disk: a no-break space becomes a space, a backslash a slash, and the name takes the composed Unicode form. A note whose vault path is not its Obsidian path is never published.
+The path that Obsidian gives a file of the disk: a no-break space becomes a space, a run of slashes and backslashes one slash, the slashes at the ends go, and the name takes the composed Unicode form. A note whose vault path is not its Obsidian path is never published, and neither is a note whose Obsidian path is the Obsidian path of another note (its twin).
 
 **URL contract**:
 The rules that say which URL each note has and which other URLs lead to it.

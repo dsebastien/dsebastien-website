@@ -1,5 +1,5 @@
 {
-    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form, `obsidian` gives a vault path and the path that Obsidian gives it (its `normalizePath`, section \"Paths\").",
+    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form, `obsidian` gives a vault path and the path that Obsidian gives it (its `normalizePath`, section \"Paths\"), `twins` gives paths and, for each path whose Obsidian path is the Obsidian path of another one, the first such other path in the order of the code points.",
     "reserved": [
         {
             "name": "a plain name",
@@ -231,6 +231,38 @@
             "name": "an empty path is the root",
             "text": "",
             "path": "/"
+        }
+    ],
+    "twins": [
+        {
+            "name": "no two paths have one Obsidian path",
+            "paths": ["A.md", "B.md"],
+            "twins": {}
+        },
+        {
+            "name": "a no-break space and a space",
+            "paths": ["X Y.md", "X\u00a0Y.md"],
+            "twins": { "X Y.md": "X\u00a0Y.md", "X\u00a0Y.md": "X Y.md" }
+        },
+        {
+            "name": "three paths: each names the first other one in the order of the code points",
+            "paths": ["a b.md", "a\u00a0b.md", "a\u202fb.md"],
+            "twins": { "a b.md": "a\u00a0b.md", "a\u00a0b.md": "a b.md", "a\u202fb.md": "a b.md" }
+        },
+        {
+            "name": "a decomposed name and its composed form",
+            "paths": ["Caf\u00e9.md", "Cafe\u0301.md"],
+            "twins": { "Cafe\u0301.md": "Caf\u00e9.md", "Caf\u00e9.md": "Cafe\u0301.md" }
+        },
+        {
+            "name": "two folders with one Obsidian path",
+            "paths": ["A B/n.md", "A\u00a0B/n.md", "A B/m.md"],
+            "twins": { "A B/n.md": "A\u00a0B/n.md", "A\u00a0B/n.md": "A B/n.md" }
+        },
+        {
+            "name": "another letter case is not the same path for Obsidian",
+            "paths": ["a.md", "A.md"],
+            "twins": {}
         }
     ]
 }

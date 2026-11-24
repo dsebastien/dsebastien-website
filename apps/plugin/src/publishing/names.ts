@@ -1,4 +1,5 @@
 import { smallLetters } from '@dsebastien-website/resolver'
+import { sortByCodePoint } from './order.ts'
 
 // The root names of the site (documentation/Canonical Form.md, section "The
 // root names of the site"). The site answers some names at its root itself,
@@ -54,10 +55,40 @@ export function obsidianPath(path: string): string {
 }
 
 /**
- * True when Obsidian gives this vault path another path: a no-break space, a
- * backslash or a name that is not in the composed Unicode form. Obsidian, its
- * links and the APIs of its plugins then name another file than the disk.
+ * True when Obsidian gives this vault path another path: any change of the
+ * Obsidian path (a no-break space, a backslash, a slash too many, a name that is
+ * not in the composed Unicode form). Obsidian, its links and the APIs of its
+ * plugins then name another file than the disk.
  */
 export function isChangedByObsidian(path: string): boolean {
     return obsidianPath(path) !== path
+}
+
+/**
+ * The twins among these paths: each path whose Obsidian path is the Obsidian
+ * path of another one, with the first such other path in the order of the
+ * code points. Obsidian lists one file for such an Obsidian path, so it can
+ * take one twin for the other (decision R72).
+ */
+export function obsidianTwins(paths: Iterable<string>): Map<string, string> {
+    const groups = new Map<string, string[]>()
+    for (const path of sortByCodePoint([...paths])) {
+        const key = obsidianPath(path)
+        const group = groups.get(key)
+        if (group === undefined) {
+            groups.set(key, [path])
+        } else {
+            group.push(path)
+        }
+    }
+    const twins = new Map<string, string>()
+    for (const group of groups.values()) {
+        for (const path of group.length > 1 ? group : []) {
+            const other = group.find((one) => one !== path)
+            if (other !== undefined) {
+                twins.set(path, other)
+            }
+        }
+    }
+    return twins
 }

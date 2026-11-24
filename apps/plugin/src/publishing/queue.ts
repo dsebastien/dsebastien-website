@@ -13,7 +13,8 @@ import {
     foldedForm,
     isChangedByObsidian,
     isReservedRootName,
-    obsidianPath
+    obsidianPath,
+    obsidianTwins
 } from './names.ts'
 import { askable, readNoteTypes, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
@@ -322,11 +323,15 @@ export async function computeQueue(input: {
     const guarded = new Set([...ignored, ...denied])
     const files = new FileReader(input.vault)
     const others = new Set(scanned.others)
-    // The type that each published note has now, in one question: never for a note under a guard.
+    // The type that each published note has now, in one question: never for
+    // a note under a guard, and never for a note with a twin, because
+    // Obsidian can answer for the twin (R72).
+    const twins = obsidianTwins(notes.keys())
     const noteTypes = await noteTypesOf(
         input.noteTypes,
         [...notes.keys()].filter(
-            (path) => manifest.get(path)?.state === 'published' && !ignored.has(path)
+            (path) =>
+                manifest.get(path)?.state === 'published' && !ignored.has(path) && !twins.has(path)
         )
     )
     const lists = {

@@ -13,6 +13,7 @@ use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::manifest::State;
 use crate::names::{
     first_part, folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path,
+    obsidian_twins,
 };
 use crate::order::sort_by_code_point;
 use crate::queue::{Move, Scan};
@@ -316,7 +317,7 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
         remove,
         scan.edits.since().to_vec(),
     );
-    refuse_obsidian_paths(&plan, &selection.pair)?;
+    refuse_obsidian_paths(scan, &plan, &selection.pair)?;
     refuse_root_names(scan, &plan, &selection.pair)?;
     Ok(plan)
 }
@@ -409,19 +410,36 @@ fn refuse_pairings(scan: &Scan, selection: &Selection) -> Result<(), String> {
 }
 
 /// Stops a plan that publishes a note, or pairs a note with a path, that
-/// Obsidian reads as another path (section "Paths" of the canonical form,
-/// decision R72): its links, the Starter Kit and the refresh of its lists
-/// would not find it. The author gives the file another name. A plan without
-/// a new note never stops here, so no forced removal waits for this rule.
-fn refuse_obsidian_paths(plan: &PublicationPlan, pairs: &[Move]) -> Result<(), String> {
-    for path in plan
+/// Obsidian reads as another path or as the path of another note of the scan
+/// (rule 4 of section "Paths" of the canonical form, decision R72): its
+/// links, the Starter Kit and the refresh of its lists would not find it, or
+/// would find the other file. The author gives the file another name. A plan
+/// without a new note and without a pairing never stops here, so no forced
+/// removal waits for this rule.
+fn refuse_obsidian_paths(
+    scan: &Scan,
+    plan: &PublicationPlan,
+    pairs: &[Move],
+) -> Result<(), String> {
+    let paths: Vec<&String> = plan
         .publish
         .iter()
         .chain(pairs.iter().map(|pairing| &pairing.to))
-    {
+        .collect();
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let twins = obsidian_twins(scan.notes.keys());
+    for path in paths {
         if is_changed_by_obsidian(path) {
             return Err(format!(
-                "\"{path}\" cannot be published: Obsidian reads its path as \"{}\" (a no-break space, a backslash or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it",
+                "\"{path}\" cannot be published: Obsidian reads its path as \"{}\" (a no-break space, a backslash, a slash too many or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it",
+                obsidian_path(path)
+            ));
+        }
+        if let Some(twin) = twins.get(path) {
+            return Err(format!(
+                "\"{path}\" cannot be published: the file \"{twin}\" has the same path in Obsidian (\"{}\"), so Obsidian can take one for the other. Give one of the two files another name",
                 obsidian_path(path)
             ));
         }
