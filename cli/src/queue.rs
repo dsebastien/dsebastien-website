@@ -465,22 +465,19 @@ fn read_vault(
 }
 
 /// One change of the guards, for the two queues of an edit (rule 2 of "The
-/// edits of the guards") and for the check of a publication (rule 10).
+/// edits of the guards").
 #[derive(Clone, Copy)]
 pub enum GuardChange<'a> {
     /// The folder goes on the deny list.
     Deny(&'a str),
     /// The note is read as excluded by the ignore property.
     Ignore(&'a str),
-    /// The note is read as not excluded by the ignore property.
-    Unignore(&'a str),
 }
 
 impl VaultRead {
     /// The same read with the guards changed: a folder on the deny list,
     /// whose notes and files leave the scan and become files under the guard,
-    /// or a note read as excluded, or as not excluded, by the ignore
-    /// property. No note is read again: the listings of the vault are the
+    /// or a note read as excluded by the ignore property. No note is read again: the listings of the vault are the
     /// ones of the run, and only the names below a hidden folder of the new
     /// folder are listed for the first time.
     fn changed(&self, vault: &Vault, change: GuardChange) -> Result<Self, String> {
@@ -490,9 +487,6 @@ impl VaultRead {
                 if read.notes.contains_key(path) {
                     read.ignored.insert(path.to_owned());
                 }
-            }
-            GuardChange::Unignore(path) => {
-                read.ignored.remove(path);
             }
             GuardChange::Deny(folder) => {
                 let below = format!("{folder}/");
@@ -518,7 +512,7 @@ impl VaultRead {
 
 /// Two queues from one read of the vault, of the journals and of the
 /// manifest: with these guards, and with the guards changed (rule 2 of "The
-/// edits of the guards", rule 10). A write during the run cannot make the two
+/// edits of the guards"). A write during the run cannot make the two
 /// see other states. The second one reads the facts of the attachments that
 /// the first one read. The Starter Kit is not asked: what a change of the
 /// guards takes away does not depend on the note types.

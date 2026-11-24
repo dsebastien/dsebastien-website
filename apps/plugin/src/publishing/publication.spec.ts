@@ -71,6 +71,7 @@ const PLAN_RECORD = `{
   "plan": {
     "edits": [],
     "forcedRemove": [],
+    "guardedAttachments": [],
     "move": [],
     "publish": [
       "${NOTE}"
@@ -79,6 +80,7 @@ const PLAN_RECORD = `{
     "update": []
   },
   "selection": {
+    "accept": [],
     "hold": [],
     "include": [
       "${NOTE}"
@@ -177,6 +179,7 @@ describe('plan of a first publication', () => {
         expect(planned.plan).toEqual({
             edits: [],
             forcedRemove: [],
+            guardedAttachments: [],
             move: [],
             publish: [NOTE],
             update: [],
@@ -217,6 +220,7 @@ describe('plan of a first publication', () => {
         expect((await plan(device, { include: [] })).plan).toEqual({
             edits: [],
             forcedRemove: [],
+            guardedAttachments: [],
             move: [],
             publish: [],
             update: [],
@@ -361,6 +365,7 @@ describe('first publication of a note', () => {
         expect(planned.plan).toEqual({
             edits: [],
             forcedRemove: [],
+            guardedAttachments: [],
             move: [],
             publish: [],
             update: [],

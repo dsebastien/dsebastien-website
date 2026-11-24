@@ -120,6 +120,12 @@ export interface Scan {
      * plan holds.
      */
     readonly isGuardedFile: (path: string, hash: string) => Promise<boolean>
+    /**
+     * The published entries, after the moves, whose `attachments` list a
+     * file that is under a guard now (`isGuardedFile`), sorted: the plan
+     * names the ones that stay published (`guardedAttachments`).
+     */
+    readonly guardedEntries: readonly string[]
     /** Every entry of the manifest after the moves of the rename journals, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
     /** The unpublished entries that leave the manifest because another entry moved into their paths (rule 6 of the moves). */
@@ -401,6 +407,38 @@ export async function computeQueue(input: {
             manifest.set(to, { ...entry, updateHeld: true })
         }
     }
+    const isGuardedFile = async (path: string, hash: string): Promise<boolean> => {
+        if (input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
+            return true
+        }
+        if (!deniedFileNames.has(guardName(path.slice(path.lastIndexOf('/') + 1)))) {
+            return false
+        }
+        if (!others.has(path)) {
+            return true
+        }
+        // A file that cannot be read now is taken for a moved one.
+        try {
+            return (await files.facts(path)).hash !== hash
+        } catch {
+            return true
+        }
+    }
+    // The published entries whose attachments list a file that is under a
+    // guard now: a publication would delete that file (rule 8 of "A
+    // publication"), and the note would show it as missing.
+    const guardedEntries: string[] = []
+    for (const [path, entry] of manifest) {
+        if (entry.state !== 'published') {
+            continue
+        }
+        for (const attachment of entry.attachments) {
+            if (await isGuardedFile(attachment.path, attachment.hash)) {
+                guardedEntries.push(path)
+                break
+            }
+        }
+    }
     const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
         counts: {
@@ -435,23 +473,8 @@ export async function computeQueue(input: {
         index,
         guarded,
         files,
-        isGuardedFile: async (path, hash) => {
-            if (input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
-                return true
-            }
-            if (!deniedFileNames.has(guardName(path.slice(path.lastIndexOf('/') + 1)))) {
-                return false
-            }
-            if (!others.has(path)) {
-                return true
-            }
-            // A file that cannot be read now is taken for a moved one.
-            try {
-                return (await files.facts(path)).hash !== hash
-            } catch {
-                return true
-            }
-        },
+        isGuardedFile,
+        guardedEntries: sortByCodePoint(guardedEntries),
         manifest,
         displaced: moves.displaced,
         journals: input.journals,

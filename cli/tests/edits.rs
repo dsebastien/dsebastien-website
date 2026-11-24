@@ -904,8 +904,11 @@ fn a_deny_of_the_image_of_a_note_that_a_guard_takes_away_already_applies() {
     assert_eq!(json_of(&output)["edit"]["state"], "applied");
 }
 
-/// Rule 10: a publication from the command line program or the MCP server
-/// stops when an edit that applied alone takes an entry away now.
+/// Rule 10 (R69, point 5): a publication from the command line program or
+/// the MCP server stops when its plan has a path of `forcedRemove` or of
+/// `guardedAttachments` that `accept` does not name, whatever made the guard:
+/// an edit that applied alone, a line of a rename journal of another device,
+/// a hand edit. With the paths in `accept`, the same plan applies.
 fn assert_publication_stops(setup: &Setup, says: &str) {
     let before = setup.state();
     let id = setup.plan_id(&[]);
@@ -915,16 +918,30 @@ fn assert_publication_stops(setup: &Setup, says: &str) {
     assert_eq!(setup.state(), before);
 }
 
+/// The plan of no path, with these paths in `accept`, published.
+fn publish_accepting(setup: &Setup, accept: &[&str]) -> Value {
+    let arguments: Vec<String> = accept
+        .iter()
+        .map(|path| format!("--accept={path}"))
+        .collect();
+    let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
+    let planned = setup.run("plan", &arguments);
+    assert!(planned.status.success(), "{}", errors_of(&planned));
+    let id = json_of(&planned)["id"]
+        .as_str()
+        .expect("the plan has an id")
+        .to_owned();
+    let output = setup.publish_plan(&id);
+    assert!(output.status.success(), "{}", errors_of(&output));
+    json_of(&output)
+}
+
 #[test]
 fn a_publication_stops_when_a_journal_line_of_another_device_moves_a_note_under_an_applied_deny() {
     let setup = set_up();
     setup.publish(&[NOTE]);
     let output = setup.edit("deny", FOLDER);
     assert_eq!(json_of(&output)["edit"]["state"], "applied");
-    let id = json_of(&output)["edit"]["id"]
-        .as_str()
-        .expect("an id")
-        .to_owned();
     // The vault of another device arrives: its journal moved the note into
     // the folder.
     fs::rename(
@@ -934,8 +951,7 @@ fn a_publication_stops_when_a_journal_line_of_another_device_moves_a_note_under_
     .expect("the note is moved");
     write_journal(&setup, NOTE, &format!("{FOLDER}/Frost dates explained.md"));
 
-    assert_publication_stops(&setup, &format!("deny of \"{FOLDER}\" ({id})"));
-    assert_publication_stops(&setup, NOTE);
+    assert_publication_stops(&setup, &format!("(forcedRemove): \"{NOTE}\""));
     // An unpublish is a publication: it stops too.
     let output = setup.run(
         "unpublish",
@@ -949,6 +965,21 @@ fn a_publication_stops_when_a_journal_line_of_another_device_moves_a_note_under_
     );
     assert_refused(&output, "publication center");
     assert!(setup.copy.join("notes").join(NOTE).exists());
+    // With the note in accept, the unpublish applies its forced removal.
+    let output = setup.run(
+        "unpublish",
+        &[
+            &format!("--path={NOTE}"),
+            &format!("--accept={NOTE}"),
+            "--time",
+            LATER,
+            "--device",
+            "garden-shed",
+        ],
+    );
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(json_of(&output)["forcedRemoved"], json!([NOTE]));
+    assert!(!setup.copy.join("notes").join(NOTE).exists());
 }
 
 #[test]
@@ -961,7 +992,9 @@ fn a_publication_stops_when_a_journal_line_moves_a_note_onto_a_note_of_an_applie
     fs::remove_file(setup.vault.join(NOTE)).expect("the note is removed");
     write_journal(&setup, NOTE, DRAFT);
 
-    assert_publication_stops(&setup, &format!("ignore of \"{DRAFT}\""));
+    assert_publication_stops(&setup, &format!("(forcedRemove): \"{NOTE}\""));
+    let report = publish_accepting(&setup, &[NOTE]);
+    assert_eq!(report["forcedRemoved"], json!([NOTE]));
 }
 
 #[test]
@@ -978,6 +1011,51 @@ fn a_publication_stops_when_the_image_of_a_published_note_moves_under_an_applied
     )
     .expect("the image is moved");
 
-    assert_publication_stops(&setup, "would lose an attachment");
-    assert_publication_stops(&setup, plan);
+    assert_publication_stops(&setup, &format!("(guardedAttachments): \"{plan}\""));
+    let planned = setup.run("plan", &[]);
+    assert_eq!(
+        json_of(&planned)["plan"]["guardedAttachments"],
+        json!([plan])
+    );
+    let report = publish_accepting(&setup, &[plan]);
+    assert_eq!(report["forcedRemoved"], json!([]));
+}
+
+/// Rule 8 of the selection: a path of `accept` that the plan neither takes
+/// away nor makes lose a file stops the plan.
+#[test]
+fn a_path_of_accept_that_the_plan_does_not_take_away_stops_the_plan() {
+    let setup = set_up();
+    setup.publish(&[NOTE]);
+
+    let output = setup.run("plan", &[&format!("--accept={NOTE}")]);
+
+    assert_refused(&output, "accept");
+    assert!(errors_of(&output).contains(NOTE), "{}", errors_of(&output));
+}
+
+/// Two edits that applied alone and mask each other, as the review found:
+/// whatever made the guard, the publication of an agent names every entry
+/// that it takes away.
+#[test]
+fn two_applied_edits_cannot_take_an_entry_away_without_accept() {
+    let setup = set_up();
+    setup.publish(&[NOTE]);
+    // A deny of an empty folder, and an ignore of a note that is not on the
+    // site: both apply alone.
+    for (action, path) in [("deny", FOLDER), ("ignore", DRAFT)] {
+        let output = setup.edit(action, path);
+        assert_eq!(json_of(&output)["edit"]["state"], "applied", "{action}");
+    }
+    // Later the published note moves into the folder, with a journal line.
+    fs::rename(
+        setup.vault.join(NOTE),
+        setup.vault.join(FOLDER).join("Frost dates explained.md"),
+    )
+    .expect("the note is moved");
+    write_journal(&setup, NOTE, &format!("{FOLDER}/Frost dates explained.md"));
+
+    assert_publication_stops(&setup, NOTE);
+    let report = publish_accepting(&setup, &[NOTE]);
+    assert_eq!(report["forcedRemoved"], json!([NOTE]));
 }

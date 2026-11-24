@@ -148,12 +148,21 @@ enum Command {
         #[arg(long, num_args = 2, value_names = ["FROM", "TO"], allow_hyphen_values = true)]
         pair: Vec<String>,
 
+        /// The vault path of a forced removal, or of a published note that
+        /// would lose a file under a guard (guardedAttachments), that the
+        /// author named: a publication of the command line program or of the
+        /// MCP server applies a plan only when accept names every such path
+        /// of the plan. It changes nothing in the plan. Give the option one
+        /// time per note.
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        accept: Vec<String>,
+
         /// A JSON file with the selection, in the place of the four options
         /// above: an object with the lists `include`, `hold` and `remove` of
         /// paths and `pair` of objects with `from` and `to`, each one
         /// optional. A large publication holds more paths than the system
         /// takes as arguments of one command.
-        #[arg(long, value_name = "FILE", conflicts_with_all = ["include", "hold", "remove", "pair"])]
+        #[arg(long, value_name = "FILE", conflicts_with_all = ["include", "hold", "remove", "pair", "accept"])]
         selection: Option<PathBuf>,
     },
 
@@ -212,6 +221,13 @@ enum Command {
         /// one time per note.
         #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
         path: Vec<String>,
+
+        /// The vault path of a forced removal, or of a published note that
+        /// would lose a file under a guard, that the author named: the
+        /// unpublish applies its plan only when accept names every such path.
+        /// Give the option one time per note.
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        accept: Vec<String>,
 
         /// The time of the run, in UTC and to the second, for example
         /// 2031-04-01T08:00:00Z. The default is the time of the clock.
@@ -469,7 +485,7 @@ fn host_name() -> String {
 fn selection_from_file(file: &Path) -> Result<Selection, String> {
     let wrong = || {
         format!(
-            "the selection file {} must be an object with the lists \"include\", \"hold\" and \"remove\" of vault paths, and \"pair\" of objects with \"from\" and \"to\"",
+            "the selection file {} must be an object with the lists \"include\", \"hold\", \"remove\" and \"accept\" of vault paths, and \"pair\" of objects with \"from\" and \"to\"",
             file.display()
         )
     };
@@ -483,7 +499,7 @@ fn selection_from_file(file: &Path) -> Result<Selection, String> {
     let object = value.as_object().ok_or_else(wrong)?;
     if object
         .keys()
-        .any(|key| !["include", "hold", "pair", "remove"].contains(&key.as_str()))
+        .any(|key| !["accept", "include", "hold", "pair", "remove"].contains(&key.as_str()))
     {
         return Err(wrong());
     }
@@ -512,6 +528,7 @@ fn selection_from_file(file: &Path) -> Result<Selection, String> {
         &list("hold")?,
         &list("remove")?,
         &pair,
+        &list("accept")?,
     ))
 }
 
@@ -581,9 +598,12 @@ fn operate(
             hold,
             remove,
             pair,
-        } => tool::plan(device, &Selection::new(include, hold, remove, pair)).map(done),
+            accept,
+        } => tool::plan(device, &Selection::new(include, hold, remove, pair, accept)).map(done),
         mcp::Call::Publish { plan } => tool::publish(device, attachment_storage, plan, &run),
-        mcp::Call::Unpublish { paths } => tool::unpublish(device, attachment_storage, paths, &run),
+        mcp::Call::Unpublish { paths, accept } => {
+            tool::unpublish(device, attachment_storage, paths, accept, &run)
+        }
         mcp::Call::Takedown { paths } => tool::takedown(device, attachment_storage, paths, &run),
         mcp::Call::Guards => tool::guards(device).map(done),
         mcp::Call::Edit { action, path } => tool::edit(device, action, path, &run).map(done),
@@ -632,6 +652,17 @@ fn run_edit(action: &str, edit: EditArguments) -> Result<Outcome, String> {
     })
 }
 
+/// Removes the lock of the device (`unlock`).
+fn unlock(content_store: &Path) -> Result<String, String> {
+    if !content_store.is_dir() {
+        return Err(format!(
+            "the content store is not a folder: {}",
+            content_store.display()
+        ));
+    }
+    tool::unlock(&ContentStore::new(content_store))
+}
+
 fn run(command: Command) -> Result<Outcome, String> {
     let done = |output: String| Outcome {
         output,
@@ -649,11 +680,12 @@ fn run(command: Command) -> Result<Outcome, String> {
             hold,
             remove,
             pair,
+            accept,
             selection,
         } => {
             let selection = match selection {
                 Some(file) => selection_from_file(&file)?,
-                None => Selection::new(&include, &hold, &remove, &pairings_of(&pair)),
+                None => Selection::new(&include, &hold, &remove, &pairings_of(&pair), &accept),
             };
             let output = tool::plan(&device(&places)?, &selection)?;
             warn_when_offline(&output);
@@ -663,12 +695,14 @@ fn run(command: Command) -> Result<Outcome, String> {
             places,
             attachment_storage,
             path,
+            accept,
             time,
             device: name,
         } => tool::unpublish(
             &device(&places)?,
             &storage(&attachment_storage),
             &path,
+            &accept,
             &Run {
                 time: &time.unwrap_or_else(now),
                 device: &name.unwrap_or_else(host_name),
@@ -705,15 +739,7 @@ fn run(command: Command) -> Result<Outcome, String> {
             attachment_storage,
             device: name,
         } => serve(&places, &attachment_storage, name).map(|()| done(String::new())),
-        Command::Unlock { content_store } => {
-            if !content_store.is_dir() {
-                return Err(format!(
-                    "the content store is not a folder: {}",
-                    content_store.display()
-                ));
-            }
-            tool::unlock(&ContentStore::new(&content_store)).map(done)
-        }
+        Command::Unlock { content_store } => unlock(&content_store).map(done),
         Command::Publish {
             places,
             attachment_storage,

@@ -27,6 +27,12 @@ export type PublicationPlan = {
     readonly edits: readonly EditEvent[]
     /** The forced removals: the notes with a manifest entry that a guard excludes, also unpublished ones (R64). No selection changes this list (PUB-21). */
     readonly forcedRemove: readonly string[]
+    /**
+     * The published entries, after the plan, whose `attachments` list a file
+     * that is under a guard now (rule 8 of "A publication"): the publication
+     * would delete the file, and the note would show it as missing. Sorted.
+     */
+    readonly guardedAttachments: readonly string[]
     /** The moves: of the new lines of the rename journals, and of the pairings of the selection (R66). Sorted by `from`. */
     readonly move: readonly Move[]
     readonly publish: readonly string[]
@@ -44,10 +50,17 @@ export interface Selection {
     readonly remove?: readonly string[]
     /** The pairings that the author confirms: a published note that is missing, and the candidate that is that note now (PUB-62, PUB-96). */
     readonly pair?: readonly Move[]
+    /**
+     * The forced removals and the notes of `guardedAttachments` that the
+     * author named: an agent face applies a plan only when it names each of
+     * them (rule 10 of "The edits of the guards"). It changes nothing in the plan.
+     */
+    readonly accept?: readonly string[]
 }
 
 /** A selection with its three lists, each path one time, sorted. It is a part of the record of a plan. */
 export type NormalSelection = {
+    readonly accept: readonly string[]
     readonly hold: readonly string[]
     readonly include: readonly string[]
     /** Each pairing one time, sorted by `from`. */
@@ -67,6 +80,7 @@ export class SelectionError extends Error {
 export function makePlan(lists: {
     edits?: readonly EditEvent[]
     forcedRemove: readonly string[]
+    guardedAttachments?: readonly string[]
     move?: readonly Move[]
     publish: readonly string[]
     update: readonly string[]
@@ -76,6 +90,7 @@ export function makePlan(lists: {
         // The events keep the order of the log.
         edits: [...(lists.edits ?? [])],
         forcedRemove: sortByCodePoint(lists.forcedRemove),
+        guardedAttachments: sortByCodePoint(lists.guardedAttachments ?? []),
         move: sortMoves(lists.move ?? []),
         publish: sortByCodePoint(lists.publish),
         update: sortByCodePoint(lists.update),
@@ -128,6 +143,7 @@ export function normalSelection(selection: Selection): NormalSelection {
         }
     }
     return {
+        accept: unique(selection.accept),
         hold: unique(selection.hold),
         include: unique(selection.include),
         pair: sortMoves(selection.pair ?? []),
@@ -172,7 +188,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
         ...pairFrom,
         ...pairTo.filter((path) => !heldTo.has(path))
     ]
-    for (const path of all) {
+    for (const path of [...all, ...selection.accept]) {
         if (!isVaultPath(path)) {
             refuse(path, 'is not a vault path')
         }
@@ -247,8 +263,18 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
         }
     }
 
-    const plan = planLists(queue, selection, eventsSince(scan.edits))
+    const plan = planLists(queue, selection, eventsSince(scan.edits), scan.guardedEntries)
     refuseRootNames(scan, plan, selection.pair)
+    // accept only names what an agent face must see named (rule 8).
+    const acceptable = new Set([...plan.forcedRemove, ...plan.guardedAttachments])
+    for (const path of selection.accept) {
+        if (!acceptable.has(path)) {
+            refuse(
+                path,
+                'is in accept, but it is neither a forced removal nor a note of guardedAttachments of the plan: accept names only those'
+            )
+        }
+    }
     return plan
 }
 
@@ -326,7 +352,8 @@ function refuseRootNames(scan: Scan, plan: PublicationPlan, pairs: readonly Move
 export function planLists(
     queue: QueueLists,
     selection: NormalSelection,
-    edits: readonly EditEvent[]
+    edits: readonly EditEvent[],
+    guardedEntries: readonly string[]
 ): PublicationPlan {
     const onlyMissing = new Set(queue.missing)
     const forced = queue.toRemove.filter((path) => !onlyMissing.has(path))
@@ -338,10 +365,20 @@ export function planLists(
     // The update of a moved note whose text changed waits for a tick (R67).
     const included = new Set(selection.include)
     const waiting = new Set(queue.movedEdited.filter((path) => !included.has(path)))
+    const forcedRemove = [...forced, ...queue.unpublishedUnderGuard]
+    const remove = selection.remove.filter((path) => !underGuard.has(path))
+    // The published entries that stay, at their paths after the plan, and
+    // whose attachments list a file under a guard now.
+    const leaving = new Set([...forcedRemove, ...remove])
+    const pairedTo = new Map(selection.pair.map((pairing) => [pairing.from, pairing.to]))
+    const guardedAttachments = guardedEntries
+        .filter((path) => !leaving.has(path))
+        .map((path) => pairedTo.get(path) ?? path)
     return makePlan({
         edits,
         // An unpublished note under a guard leaves the manifest too (decision R64).
-        forcedRemove: [...forced, ...queue.unpublishedUnderGuard],
+        forcedRemove,
+        guardedAttachments,
         // Every move of the journals, which no selection holds, and the pairings (R66).
         move: [...queue.renamed, ...selection.pair],
         publish: selection.include.filter((path) => candidates.has(path)),
@@ -352,6 +389,6 @@ export function planLists(
             ...pairTo.filter((path) => !held.has(path))
         ],
         // A guard wins over an unpublish: the note leaves the manifest.
-        remove: selection.remove.filter((path) => !underGuard.has(path))
+        remove
     })
 }

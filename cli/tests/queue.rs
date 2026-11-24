@@ -239,7 +239,7 @@ impl Setup {
     /// Runs the `plan` command for a selection: three lists of paths.
     fn plan(&self, selection: &Value) -> Output {
         let mut arguments = Vec::new();
-        for key in ["include", "hold", "remove"] {
+        for key in ["include", "hold", "remove", "accept"] {
             if let Some(list) = selection[key].as_array() {
                 for path in list {
                     // With `=`: a path can start with a hyphen.
@@ -311,6 +311,15 @@ impl Setup {
                 .iter()
                 .map(|path| format!("--path={path}")),
         );
+        // The forced removals that the author named (rule 10 of "The edits
+        // of the guards").
+        if step["accept"].is_array() {
+            arguments.extend(
+                paths(&step["accept"])
+                    .iter()
+                    .map(|path| format!("--accept={path}")),
+            );
+        }
         let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
         self.run_with(command, &arguments, crash)
     }
@@ -2663,7 +2672,10 @@ fn a_forced_removal_goes_with_a_publication_of_another_note_and_the_commit_count
     setup.publish(&json!({ "include": [NOTE, SECOND] }), TIME);
     fs::write(setup.vault.join(SECOND), IGNORED).expect("the file is written");
 
-    let report = setup.publish(&json!({ "include": ["Welcome.md"] }), LATER);
+    let report = setup.publish(
+        &json!({ "include": ["Welcome.md"], "accept": [SECOND] }),
+        LATER,
+    );
 
     assert_eq!(paths(&report["forcedRemoved"]), [SECOND]);
     assert_eq!(paths(&report["removed"]), Vec::<String>::new());
@@ -2705,11 +2717,11 @@ fn a_forced_removal_takes_a_published_note_that_was_moved_into_a_folder_of_the_d
     let planned = setup.plan(&json!({ "include": [] }));
     assert!(planned.status.success(), "{}", errors_of(&planned));
     let planned = json_of(&planned);
-    let report = setup.publish(&json!({ "include": [] }), LATER);
+    let report = setup.publish(&json!({ "include": [], "accept": [SECOND] }), LATER);
 
     assert_eq!(
         planned["plan"],
-        json!({ "edits": [], "forcedRemove": [SECOND], "move": [], "publish": [], "remove": [], "update": [] })
+        json!({ "edits": [], "forcedRemove": [SECOND], "guardedAttachments": [], "move": [], "publish": [], "remove": [], "update": [] })
     );
     assert_eq!(paths(&report["forcedRemoved"]), [SECOND]);
     assert!(!setup.copy.join("notes").join(SECOND).exists());
@@ -2735,7 +2747,7 @@ fn a_forced_removal_does_not_take_a_published_note_whose_file_is_only_missing() 
 
     assert_eq!(
         json_of(&planned)["plan"],
-        json!({ "edits": [], "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
+        json!({ "edits": [], "forcedRemove": [], "guardedAttachments": [], "move": [], "publish": [], "remove": [], "update": [] })
     );
     assert_eq!(
         paths(&json_of(&held)["plan"]["forcedRemove"]),
@@ -2756,7 +2768,7 @@ fn a_forced_removal_removes_a_cleaned_note_that_is_not_valid_utf_8() {
     setup.git(&["commit", "--quiet", "--all", "--message", "Another device"]);
     setup.git(&["push", "--quiet", "origin", "HEAD:main"]);
 
-    let report = setup.publish(&json!({ "include": [] }), LATER);
+    let report = setup.publish(&json!({ "include": [], "accept": [NOTE] }), LATER);
 
     assert_eq!(paths(&report["forcedRemoved"]), [NOTE]);
     let files = git(&[
@@ -2781,7 +2793,7 @@ fn a_forced_removal_that_fails_stops_the_whole_publication_and_every_file_is_put
     setup.publish(&json!({ "include": [SECOND, "Welcome.md"] }), TIME);
     fs::write(setup.vault.join(SECOND), IGNORED).expect("the file is written");
     fs::write(setup.vault.join("Welcome.md"), IGNORED).expect("the file is written");
-    let planned = setup.plan(&json!({ "include": [NOTE] }));
+    let planned = setup.plan(&json!({ "include": [NOTE], "accept": [SECOND, "Welcome.md"] }));
     assert!(planned.status.success(), "{}", errors_of(&planned));
     let planned = json_of(&planned);
     assert_eq!(

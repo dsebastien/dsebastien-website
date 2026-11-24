@@ -62,12 +62,14 @@ pub enum Call {
         hold: Vec<String>,
         remove: Vec<String>,
         pair: Vec<Move>,
+        accept: Vec<String>,
     },
     Publish {
         plan: String,
     },
     Unpublish {
         paths: Vec<String>,
+        accept: Vec<String>,
     },
     Takedown {
         paths: Vec<String>,
@@ -108,14 +110,29 @@ impl Call {
                 hold,
                 remove,
                 pair,
-            } => json!({
-                "include": include,
-                "hold": hold,
-                "remove": remove,
-                "pair": pair,
-            }),
+                accept,
+            } => {
+                let mut value = json!({
+                    "include": include,
+                    "hold": hold,
+                    "remove": remove,
+                    "pair": pair,
+                });
+                // The shared cases name `accept` only when a call has it.
+                if !accept.is_empty() {
+                    value["accept"] = json!(accept);
+                }
+                value
+            }
             Self::Publish { plan } => json!({ "plan": plan }),
-            Self::Unpublish { paths } | Self::Takedown { paths } => json!({ "paths": paths }),
+            Self::Unpublish { paths, accept } => {
+                let mut value = json!({ "paths": paths });
+                if !accept.is_empty() {
+                    value["accept"] = json!(accept);
+                }
+                value
+            }
+            Self::Takedown { paths } => json!({ "paths": paths }),
         };
         value["tool"] = json!(self.tool());
         value
@@ -139,9 +156,10 @@ enum Refusal {
 /// The keys that each tool takes.
 fn arguments_of(tool: &str) -> &'static [&'static str] {
     match tool {
-        "plan" => &["include", "hold", "remove", "pair"],
+        "plan" => &["include", "hold", "remove", "pair", "accept"],
         "publish" => &["plan"],
-        "unpublish" | "takedown" => &["paths"],
+        "unpublish" => &["paths", "accept"],
+        "takedown" => &["paths"],
         "deny" | "allow" | "ignore" | "unignore" => &["path"],
         _ => &[],
     }
@@ -155,12 +173,12 @@ fn texts(value: &Value) -> Option<Vec<String>> {
         .collect()
 }
 
-fn list_of(arguments: &Map<String, Value>, key: &str) -> Result<Vec<String>, Refusal> {
+fn list_of(arguments: &Map<String, Value>, key: &str, tool: &str) -> Result<Vec<String>, Refusal> {
     match arguments.get(key) {
         None => Ok(Vec::new()),
         Some(value) => texts(value).ok_or_else(|| {
             Refusal::Arguments(format!(
-                "the argument \"{key}\" of plan must be a list of vault paths"
+                "the argument \"{key}\" of {tool} must be a list of vault paths"
             ))
         }),
     }
@@ -237,10 +255,11 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
         "guards" => Call::Guards,
         "unlock" => Call::Unlock,
         "plan" => Call::Plan {
-            include: list_of(arguments, "include")?,
-            hold: list_of(arguments, "hold")?,
-            remove: list_of(arguments, "remove")?,
+            include: list_of(arguments, "include", name)?,
+            hold: list_of(arguments, "hold", name)?,
+            remove: list_of(arguments, "remove", name)?,
             pair: pairs_of(arguments)?,
+            accept: list_of(arguments, "accept", name)?,
         },
         "publish" => Call::Publish {
             plan: arguments
@@ -256,6 +275,7 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
         },
         "unpublish" => Call::Unpublish {
             paths: paths_of(name, arguments)?,
+            accept: list_of(arguments, "accept", name)?,
         },
 
         _ => Call::Takedown {
@@ -592,6 +612,34 @@ mod tests {
             .map(|tool| tool["name"].as_str().expect("a tool has a name"))
             .collect();
         assert_eq!(names, TOOL_NAMES);
+    }
+
+    #[test]
+    fn plan_and_unpublish_take_the_paths_that_the_author_accepts() {
+        let plan = call_of("plan", Some(&json!({ "accept": ["b.md", "a.md"] })));
+        let unpublish = call_of(
+            "unpublish",
+            Some(&json!({ "paths": ["a.md"], "accept": ["b.md"] })),
+        );
+        let wrong = call_of(
+            "unpublish",
+            Some(&json!({ "paths": ["a.md"], "accept": "b.md" })),
+        );
+        let takedown = call_of(
+            "takedown",
+            Some(&json!({ "paths": ["a.md"], "accept": [] })),
+        );
+
+        assert!(matches!(&plan, Ok(call) if call.to_value()["accept"] == json!(["b.md", "a.md"])));
+        assert!(matches!(&unpublish, Ok(call) if call.to_value()["accept"] == json!(["b.md"])));
+        assert!(matches!(
+            &wrong,
+            Err(Refusal::Arguments(message)) if message == "the argument \"accept\" of unpublish must be a list of vault paths"
+        ));
+        assert!(matches!(
+            &takedown,
+            Err(Refusal::Arguments(message)) if message == "takedown takes no argument \"accept\""
+        ));
     }
 
     #[test]

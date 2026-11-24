@@ -119,9 +119,10 @@ describe('the tools of the MCP server', () => {
     })
 
     test('the selection of a plan holds every list of the selection file', () => {
-        // The four lists of `plan --selection` (cli/src/main.rs).
+        // The lists of `plan --selection` (cli/src/main.rs).
         const plan = definitions.tools.find((tool) => tool.name === 'plan')
         expect(Object.keys(plan?.inputSchema.properties ?? {}).sort()).toEqual([
+            'accept',
             'hold',
             'include',
             'pair',

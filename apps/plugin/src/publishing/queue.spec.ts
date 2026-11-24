@@ -92,8 +92,22 @@ type Step = { why: string } & (
       }
     | { do: 'takedown'; paths: string[]; time: string; report: TakedownLists; refused?: never }
     | { do: 'takedown'; paths: string[]; time: string; refused: true; says?: string }
-    | { do: 'unpublish'; paths: string[]; time: string; report: ReportLists; refused?: never }
-    | { do: 'unpublish'; paths: string[]; time: string; refused: true; says?: string }
+    | {
+          do: 'unpublish'
+          paths: string[]
+          time: string
+          accept?: string[]
+          report: ReportLists
+          refused?: never
+      }
+    | {
+          do: 'unpublish'
+          paths: string[]
+          time: string
+          accept?: string[]
+          refused: true
+          says?: string
+      }
     | { do: 'crash'; selection: Selection; time: string; at: CrashPoint; takedown?: never }
     | { do: 'crash'; takedown: string[]; time: string; at: CrashPoint }
     | {
@@ -288,6 +302,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                             step.plan ?? {
                                 edits: [],
                                 forcedRemove: [],
+                                guardedAttachments: [],
                                 move: [],
                                 publish: [],
                                 update: [],
@@ -385,11 +400,18 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     expect(lists, label).toEqual(step.report)
                 } else if (step.do === 'unpublish' && step.refused === true) {
                     expect(
-                        await rejectionOf(unpublish(device, step.paths, runAt(step.time))),
+                        await rejectionOf(
+                            unpublish(device, step.paths, runAt(step.time), step.accept ?? [])
+                        ),
                         label
                     ).toContain(step.says ?? '')
                 } else if (step.do === 'unpublish') {
-                    const report = await unpublish(device, step.paths, runAt(step.time))
+                    const report = await unpublish(
+                        device,
+                        step.paths,
+                        runAt(step.time),
+                        step.accept ?? []
+                    )
                     const lists: ReportLists = {
                         ...report,
                         failed: report.failed.map((entry) => entry.path),
@@ -2027,6 +2049,7 @@ describe('forced removal', () => {
         expect(planned.plan).toEqual({
             edits: [],
             forcedRemove: [SECOND],
+            guardedAttachments: [],
             move: [],
             publish: [],
             remove: [],
@@ -2053,6 +2076,7 @@ describe('forced removal', () => {
         expect(planned.plan).toEqual({
             edits: [],
             forcedRemove: [],
+            guardedAttachments: [],
             move: [],
             publish: [],
             remove: [],

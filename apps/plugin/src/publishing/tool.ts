@@ -401,9 +401,12 @@ export async function status(given: Device): Promise<PublicationQueue> {
  * next plan shows (R69), from one read of the copy: the publication center
  * states the plan of the choices with both.
  */
-export async function statusWithEdits(
-    given: Device
-): Promise<{ readonly queue: PublicationQueue; readonly edits: readonly EditEvent[] }> {
+export async function statusWithEdits(given: Device): Promise<{
+    readonly queue: PublicationQueue
+    readonly edits: readonly EditEvent[]
+    /** The published entries whose attachments list a file under a guard now (`guardedAttachments` of a plan). */
+    readonly guardedEntries: readonly string[]
+}> {
     const device = forRun(given)
     await refuseWhenLocked(device)
     if ((await readJournal(device))?.step === 'write') {
@@ -414,7 +417,8 @@ export async function statusWithEdits(
     const state = await readState(device, 'none')
     return {
         queue: { ...state.scan.queue, behind: state.behind },
-        edits: eventsSince(state.scan.edits)
+        edits: eventsSince(state.scan.edits),
+        guardedEntries: state.scan.guardedEntries
     }
 }
 
@@ -431,6 +435,8 @@ interface NoteTexts {
 /** A plan with everything that its publication needs. */
 interface Computed {
     readonly plan: PublicationPlan
+    /** The selection that gave the plan, as the record holds it. */
+    readonly selection: NormalSelection
     /** False when the content store could not be reached and the plan uses the last fetch. */
     readonly reached: boolean
     /** The record of the plan, in the canonical form. */
@@ -507,7 +513,7 @@ async function recordFor(
             renames: renamesHash
         }
     })
-    return { plan, reached, record, scan, texts }
+    return { plan, reached, record, scan, selection, texts }
 }
 
 /**
@@ -544,8 +550,9 @@ function selectionOf(record: string, id: string): NormalSelection {
     }
     const selection = isRecord(value) ? value['selection'] : undefined
     if (isRecord(selection)) {
-        const { hold, include, pair, remove } = selection
+        const { accept, hold, include, pair, remove } = selection
         if (
+            isTextList(accept) &&
             isTextList(hold) &&
             isTextList(include) &&
             isTextList(remove) &&
@@ -562,7 +569,7 @@ function selectionOf(record: string, id: string): NormalSelection {
                 from: item['from'] ?? '',
                 to: item['to'] ?? ''
             }))
-            return normalSelection({ hold, include, pair: pairs, remove })
+            return normalSelection({ accept, hold, include, pair: pairs, remove })
         }
     }
     throw new Error(`the stored plan ${id} cannot be read`)
@@ -1454,7 +1461,9 @@ function checkRun(run: Run): void {
 export async function unpublish(
     given: Device,
     paths: readonly string[],
-    run: Run
+    run: Run,
+    /** The forced removals and the notes of `guardedAttachments` that the author named (rule 10). */
+    accept: readonly string[] = []
 ): Promise<PublicationReport> {
     const device = forRun(given)
     checkRun(run)
@@ -1478,14 +1487,15 @@ export async function unpublish(
             device,
             (scan) =>
                 normalSelection({
+                    accept,
                     include: [],
                     hold: scan.queue.changed.filter((path) => !remove.has(path)),
                     remove: [...remove]
                 }),
             'must'
         )
-        // An edit that applied alone can take entries away on this device (rule 10).
-        await refuseEditsThatTakeAway(device, computed.plan, computed.scan, run.face)
+        // Only the author lets an agent take an entry away (rule 10).
+        refuseUnaccepted(computed.plan, computed.selection, run.face)
         const id = await store(device, computed)
         return await applyCurrent(device, id, run, ownLock, owed, computed)
     })
@@ -1792,8 +1802,8 @@ async function apply(
             `the plan ${id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
     }
-    // An edit that applied alone can take entries away on this device (rule 10).
-    await refuseEditsThatTakeAway(device, current.plan, current.scan, run.face)
+    // Only the author lets an agent take an entry away (rule 10).
+    refuseUnaccepted(current.plan, selection, run.face)
     return await applyCurrent(device, id, run, ownLock, owed, current)
 }
 
@@ -2179,7 +2189,7 @@ async function allowOpens(
     device: Device,
     context: EditContext,
     folder: string
-): Promise<{ opens: string[]; candidates: number }> {
+): Promise<{ opens: string[]; candidates: number; inside: string[] }> {
     const { vault, scan } = await scansOfOneRead(device, context.log)
     const before = await scan(context.configuration.denyList)
     const after = await scan(context.configuration.denyList.filter((one) => one !== folder))
@@ -2199,8 +2209,14 @@ async function allowOpens(
         }
     }
     const candidates = new Set(before.queue.new)
+    // The published entries inside the folder (a deny that the author
+    // confirmed and that no publication applied yet): they stay published.
+    const inside = [...before.manifest]
+        .filter(([path, entry]) => entry.state === 'published' && path.startsWith(`${folder}/`))
+        .map(([path]) => path)
     return {
         opens: sortByCodePoint(opens),
+        inside: sortByCodePoint(inside),
         candidates: after.queue.new.filter(
             (path) => path.startsWith(`${folder}/`) && !candidates.has(path)
         ).length
@@ -2208,50 +2224,29 @@ async function allowOpens(
 }
 
 /**
- * Rule 10: a publication of an agent face checks the edits that applied
- * alone again. For each `applied` event of the plan, it computes what the
- * edit takes away now, from one read: the guards of now against the guards
- * of now without that edit. It throws when one list is not empty: the author
- * publishes such a plan in the publication center, where the plan shows the
- * forced removals. The face `plugin` never stops here.
+ * Rule 10 of "The edits of the guards": a publication of an agent face stops
+ * when its plan takes an entry away (`forcedRemove`) or makes a published
+ * note lose a file (`guardedAttachments`) that `accept` of its selection
+ * does not name: whatever made the guard, only the author lets a note leave.
+ * The face `plugin` never stops here: the author sees the plan in the view.
  */
-async function refuseEditsThatTakeAway(
-    device: Device,
-    plan: PublicationPlan,
-    scan: Scan,
-    face: Face
-): Promise<void> {
-    const applied = plan.edits.filter((event) => event.state === 'applied')
-    if (face === 'plugin' || applied.length === 0) {
+function refuseUnaccepted(plan: PublicationPlan, selection: NormalSelection, face: Face): void {
+    if (face === 'plugin') {
         return
     }
-    const { vault, scan: scanWith } = await scansOfOneRead(device, scan.edits)
-    const denyList = scan.configuration.denyList
-    const now = await scanWith(denyList)
-    for (const event of applied) {
-        let without: Scan | undefined
-        if (event.action === 'deny') {
-            // A deny that the author took back since takes nothing away.
-            if (denyList.includes(event.path)) {
-                without = await scanWith(denyList.filter((folder) => folder !== event.path))
-            }
-        } else if (guardOfPath(event.path, scan.configuration) === undefined) {
-            const text = await vault.read(event.path)
-            const bare = text === undefined ? undefined : removeProperty(text, IGNORE_PROPERTY)
-            if (bare !== undefined && bare !== text) {
-                without = await scanWith(denyList, { path: event.path, text: bare })
-            }
-        }
-        if (without === undefined) {
-            continue
-        }
-        const { removes, affects } = await takenAway(without, now, event.action === 'deny')
-        if (removes.length > 0 || affects.length > 0) {
-            throw new Error(
-                `the edit ${event.action} "${event.path}" (${event.id}) applied alone, but it takes entries away now: ${listText(removes)} leave the content store, ${listText(affects)} lose an attachment. Nothing is published from the face ${face}: the author publishes this plan in the publication center of Obsidian, where the plan shows the forced removals`
-            )
-        }
+    const accepted = new Set(selection.accept)
+    const forced = plan.forcedRemove.filter((path) => !accepted.has(path))
+    const guarded = plan.guardedAttachments.filter((path) => !accepted.has(path))
+    if (forced.length === 0 && guarded.length === 0) {
+        return
     }
+    const parts = [
+        ...(forced.length === 0 ? [] : [`it takes away ${listText(forced)}`]),
+        ...(guarded.length === 0 ? [] : [`${listText(guarded)} would lose a file under a guard`])
+    ]
+    throw new Error(
+        `the plan names paths that accept does not name: ${parts.join(', and ')}. Nothing is published from the face ${face}: name these paths in accept only when the author named them in the request, or let the author publish the plan in the publication center of Obsidian`
+    )
 }
 
 /** The text of a confirmation of the lists: the paths, or `none`. */
@@ -2633,6 +2628,12 @@ export interface ProposalReview {
     readonly opens: readonly string[]
     /** For an `allow`: how many notes of the folder become candidates (rule 11). */
     readonly candidates: number
+    /**
+     * For an `allow`: the published entries inside the folder (a deny that
+     * no publication applied yet), sorted: they stay published, and their
+     * changes publish as for every published note.
+     */
+    readonly inside: readonly string[]
 }
 
 /**
@@ -2657,7 +2658,7 @@ export async function reviewProposal(given: Device, id: string): Promise<Proposa
     const opened =
         proposal.action === 'allow'
             ? await allowOpens(device, context, proposal.path)
-            : { opens: [], candidates: 0 }
+            : { opens: [], candidates: 0, inside: [] }
     return { proposal, removes: checked.removes, affects: checked.affects, ...opened }
 }
 

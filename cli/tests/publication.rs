@@ -54,6 +54,7 @@ const PLAN_RECORD: &str = r#"{
   "plan": {
     "edits": [],
     "forcedRemove": [],
+    "guardedAttachments": [],
     "move": [],
     "publish": [
       "10 Garden/Frost dates explained.md"
@@ -62,6 +63,7 @@ const PLAN_RECORD: &str = r#"{
     "update": []
   },
   "selection": {
+    "accept": [],
     "hold": [],
     "include": [
       "10 Garden/Frost dates explained.md"
@@ -205,7 +207,7 @@ fn the_plan_names_the_included_note_and_has_an_id() {
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "edits": [], "forcedRemove": [], "move": [], "publish": [NOTE], "remove": [], "update": [] })
+        serde_json::json!({ "edits": [], "forcedRemove": [], "guardedAttachments": [], "move": [], "publish": [NOTE], "remove": [], "update": [] })
     );
     let id = plan["id"].as_str().expect("the plan has an id");
     assert_eq!(id.len(), 16);
@@ -388,7 +390,7 @@ fn a_published_note_that_did_not_change_adds_nothing_to_a_later_plan() {
     let plan: serde_json::Value = serde_json::from_slice(&again.stdout).expect("the plan is JSON");
     assert_eq!(
         plan["plan"],
-        serde_json::json!({ "edits": [], "forcedRemove": [], "move": [], "publish": [], "remove": [], "update": [] })
+        serde_json::json!({ "edits": [], "forcedRemove": [], "guardedAttachments": [], "move": [], "publish": [], "remove": [], "update": [] })
     );
 }
 
@@ -1135,7 +1137,9 @@ fn a_commit_that_does_not_hold_exactly_the_files_of_the_run_is_never_pushed() {
     let setup = set_up();
     setup.publish(NOTE);
     fs::write(setup.vault.join(NOTE), IGNORED_NOTE).expect("the note can be written");
-    let output = setup.run("plan", &[]);
+    // The author names the forced removal (rule 10 of "The edits of the
+    // guards").
+    let output = setup.run("plan", &[&format!("--accept={NOTE}")]);
     assert!(output.status.success(), "{}", errors_of(&output));
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
     assert_eq!(plan["plan"]["forcedRemove"], serde_json::json!([NOTE]));

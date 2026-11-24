@@ -35,6 +35,10 @@ pub struct PublicationPlan {
     /// showed yet, in the order of the log (GATE-07, GATE-40, R69). A new
     /// event makes a stored plan stale.
     edits: Vec<Event>,
+    /// The published entries after the plan whose attachments list a file
+    /// under a guard now (rule 8 of "A publication"): the publication would
+    /// delete the file. Sorted by path. Set with the texts of the plan.
+    guarded_attachments: Vec<String>,
 }
 
 /// Moves sorted by `from`, then by `to`, each one time.
@@ -66,7 +70,22 @@ impl PublicationPlan {
             update,
             remove,
             edits,
+            guarded_attachments: Vec::new(),
         }
+    }
+
+    /// Sets the published entries after the plan whose attachments list a
+    /// file under a guard now, in the order of the canonical form.
+    pub fn set_guarded_attachments(&mut self, mut paths: Vec<String>) {
+        sort_by_code_point(&mut paths);
+        paths.dedup();
+        self.guarded_attachments = paths;
+    }
+
+    /// The published entries after the plan whose attachments list a file
+    /// under a guard now, sorted by path.
+    pub fn guarded_attachments(&self) -> &[String] {
+        &self.guarded_attachments
     }
 
     /// The events of the edits of the guards that the plan shows, in the
@@ -107,6 +126,10 @@ impl PublicationPlan {
 /// record of a plan.
 #[derive(Clone, Debug, Serialize)]
 pub struct Selection {
+    /// The forced removals and the notes of `guardedAttachments` that the
+    /// author named: only they let an agent face apply the plan (rule 10 of
+    /// "The edits of the guards"). They change nothing in the plan.
+    accept: Vec<String>,
     /// The notes to leave out: their live version stays.
     hold: Vec<String>,
     /// The notes to publish. A new candidate enters a plan only through this
@@ -131,10 +154,17 @@ fn unique(paths: &[String]) -> Vec<String> {
 }
 
 impl Selection {
-    pub fn new(include: &[String], hold: &[String], remove: &[String], pair: &[Move]) -> Self {
+    pub fn new(
+        include: &[String],
+        hold: &[String],
+        remove: &[String],
+        pair: &[Move],
+        accept: &[String],
+    ) -> Self {
         let mut pair = pair.to_vec();
         sort_moves(&mut pair);
         Self {
+            accept: unique(accept),
             hold: unique(hold),
             include: unique(include),
             pair,
@@ -145,6 +175,11 @@ impl Selection {
     /// The pairings of the selection, sorted by `from`.
     pub fn pair(&self) -> &[Move] {
         &self.pair
+    }
+
+    /// The vault paths that the selection accepts, sorted.
+    pub fn accept(&self) -> &[String] {
+        &self.accept
     }
 }
 

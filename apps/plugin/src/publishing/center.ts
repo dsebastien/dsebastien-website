@@ -94,6 +94,8 @@ export function selectionOf(queue: QueueLists, choices: Choices): NormalSelectio
         ...(choices.holdTechnical ? queue.technicalUpdates.filter((path) => !ticked.has(path)) : [])
     ].filter((path) => !remove.has(path))
     return {
+        // The view never needs accept: the face plugin applies every plan (rule 10).
+        accept: [],
         include: sortByCodePoint([
             ...new Set(
                 // A mark for the unpublish wins over a tick of the same note.
@@ -109,17 +111,19 @@ export function selectionOf(queue: QueueLists, choices: Choices): NormalSelectio
 }
 
 /**
- * The plan of the choices, from the queue and the events of the edits of the
- * guards since the last publication (R69), with the function that makes every
+ * The plan of the choices, from the queue, the events of the edits of the
+ * guards since the last publication (R69) and the published entries that
+ * list a file under a guard (`guardedEntries` of the scan), with the function that makes every
  * plan (`planLists`): the publish button states it (TOOL-21). A publication
  * makes the plan again from the vault, and stops when it differs.
  */
 export function planOfChoices(
     queue: QueueLists,
     choices: Choices,
-    edits: readonly EditEvent[]
+    edits: readonly EditEvent[],
+    guardedEntries: readonly string[]
 ): PublicationPlan {
-    return planLists(queue, selectionOf(queue, choices), edits)
+    return planLists(queue, selectionOf(queue, choices), edits, guardedEntries)
 }
 
 function counted(count: number, one: string, many: string): string {
@@ -134,6 +138,7 @@ export function isEmptyPlan(plan: PublicationPlan): boolean {
             plan.remove.length +
             plan.forcedRemove.length +
             plan.move.length +
+            plan.guardedAttachments.length +
             plan.edits.length ===
         0
     )
@@ -153,6 +158,11 @@ export function describePlan(plan: PublicationPlan): string {
             counted(plan.forcedRemove.length, 'forced removal', 'forced removals')
         ],
         [plan.move.length, counted(plan.move.length, 'move', 'moves')],
+        // The publication deletes a file under a guard that these notes use.
+        [
+            plan.guardedAttachments.length,
+            counted(plan.guardedAttachments.length, 'note loses a file', 'notes lose a file')
+        ],
         // The publication marks them as shown (R69).
         [plan.edits.length, counted(plan.edits.length, 'edit of the guards', 'edits of the guards')]
     ] as const

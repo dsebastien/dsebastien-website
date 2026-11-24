@@ -152,6 +152,8 @@ export interface CenterState {
      * them as shown.
      */
     readonly edits?: readonly EditEvent[]
+    /** The published entries whose attachments list a file under a guard, at the last check: the plan names the ones that stay (`guardedAttachments`). */
+    readonly guardedEntries?: readonly string[]
     /** When the last check ended. */
     readonly checkedAt?: Date
     readonly activity: Activity
@@ -270,10 +272,11 @@ export class PublicationCenter {
 
     /** The plan of the choices, from the last queue: what the publish button states. */
     plan(): PublicationPlan | undefined {
-        const { queue, choices, edits } = this.#state
+        const { queue, choices, edits, guardedEntries } = this.#state
         if (queue === undefined) {
             return undefined
         }
+        // The edits and the guarded entries come with the queue, from one check.
         if (
             this.#counted?.queue !== queue ||
             this.#counted.choices !== choices ||
@@ -283,7 +286,7 @@ export class PublicationCenter {
                 queue,
                 choices,
                 edits,
-                plan: planOfChoices(queue, choices, edits ?? [])
+                plan: planOfChoices(queue, choices, edits ?? [], guardedEntries ?? [])
             }
         }
         return this.#counted.plan
@@ -450,11 +453,12 @@ export class PublicationCenter {
                 await device.local.release(lock.text)
             }
         }
-        const { queue, edits } = await statusWithEdits(device)
+        const { queue, edits, guardedEntries } = await statusWithEdits(device)
         this.#fresh = true
         this.#set({
             queue,
             edits,
+            guardedEntries,
             checkedAt: this.host.now(),
             choices: reconcile(queue, this.#state.choices)
         })
@@ -495,11 +499,11 @@ export class PublicationCenter {
             'publishing',
             'Publication',
             async () => {
-                const { queue, choices, edits } = this.#state
+                const { queue, choices, edits, guardedEntries } = this.#state
                 if (queue === undefined) {
                     throw new Error('check the vault first')
                 }
-                const expected = planOfChoices(queue, choices, edits ?? [])
+                const expected = planOfChoices(queue, choices, edits ?? [], guardedEntries ?? [])
                 // A new note that changed after the check can be another note at
                 // the same path: the author never saw it in the lists.
                 const selection = selectionOf(queue, choices)
@@ -666,7 +670,8 @@ export class PublicationCenter {
                     include: call.include,
                     hold: call.hold,
                     remove: call.remove,
-                    pair: call.pair
+                    pair: call.pair,
+                    accept: call.accept ?? []
                 })
                 this.#log(`Agent plan ${stored.id}: ${describePlan(stored.plan)}`)
                 return outcomeOfPlan(stored)
@@ -682,7 +687,7 @@ export class PublicationCenter {
                 const report =
                     call.tool === 'publish'
                         ? await publish(device, call.plan, run)
-                        : await unpublish(device, call.paths, run)
+                        : await unpublish(device, call.paths, run, call.accept ?? [])
                 this.#wrote([...report.propertySet, ...report.propertyRemoved])
                 this.#set({
                     report: {

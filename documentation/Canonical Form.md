@@ -209,14 +209,15 @@ The empty queue. A test compares this block with the output of the code:
 
 ## The selection
 
-The selection is the intent of the author for one plan. It has three lists of vault paths, and a list of pairings:
+The selection is the intent of the author for one plan. It has three lists of vault paths, a list of pairings, and the list `accept`:
 
-| Key       | Value                                                                              |
-| --------- | ---------------------------------------------------------------------------------- |
-| `hold`    | The notes to leave out of this plan: their live version stays                      |
-| `pair`    | The pairings that the author confirms: each with `from` and `to`, sorted by `from` |
-| `include` | The notes to publish                                                               |
-| `remove`  | The published notes to unpublish                                                   |
+| Key       | Value                                                                                                                                         |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hold`    | The notes to leave out of this plan: their live version stays                                                                                 |
+| `pair`    | The pairings that the author confirms: each with `from` and `to`, sorted by `from`                                                            |
+| `include` | The notes to publish                                                                                                                          |
+| `remove`  | The published notes to unpublish                                                                                                              |
+| `accept`  | The forced removals and the notes of `guardedAttachments` that the author named (rule 10 of "The edits of the guards"), each one time, sorted |
 
 A selection stops the plan in each of these cases:
 
@@ -227,17 +228,19 @@ A selection stops the plan in each of these cases:
 5. A path of `remove` is not the path of a published note.
 6. A path of `hold` is the path of a forced removal (see the plan), of a published or an unpublished note. A guard cannot be held (PUB-21 of the spec).
 7. An item of `pair` is not an object with exactly `from` and `to`, two vault paths that end in `.md`; its `from` is not in the list `missing` of the queue; its `to` is not in the list `new`, or it is the path of a manifest entry; or a path of a pairing is in another item or in another list of the selection, but for a `to` in `hold`; or two pairings have one `to`; or the `from` of a pairing is the `to` of a move of the list `renamed` of the queue (the move is published first, then the pairing).
+8. A path of `accept` is in neither `forcedRemove` nor `guardedAttachments` of the plan. `accept` changes nothing in the plan: it only lets an agent face apply it (rule 10 of "The edits of the guards"). A missing `accept` is an empty list.
 
 ## The publication plan
 
-| Key            | Value                                                                                                                                                          | Order                   |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `forcedRemove` | The vault paths of the notes with a manifest entry that a guard excludes: the forced removals                                                                  | Sorted by path          |
-| `move`         | The moves: each with `from`, the path of its manifest entry, and `to`, its new path                                                                            | Sorted by `from`        |
-| `publish`      | The vault paths of the notes to publish                                                                                                                        | Sorted by path          |
-| `remove`       | The vault paths of the published notes to unpublish                                                                                                            | Sorted by path          |
-| `update`       | The vault paths of the published notes to update                                                                                                               | Sorted by path          |
-| `edits`        | The events of `edits.json` that no publication showed yet: the events after the first `published` ones, as the file holds them (see "The edits of the guards") | In the order of the log |
+| Key                  | Value                                                                                                                                                                                                                         | Order                   |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `forcedRemove`       | The vault paths of the notes with a manifest entry that a guard excludes: the forced removals                                                                                                                                 | Sorted by path          |
+| `guardedAttachments` | The vault paths of the published entries, after the plan, whose `attachments` list a file that is under a guard now (rule 8 of "A publication"): the publication would delete the file, and the note would show it as missing | Sorted by path          |
+| `move`               | The moves: each with `from`, the path of its manifest entry, and `to`, its new path                                                                                                                                           | Sorted by `from`        |
+| `publish`            | The vault paths of the notes to publish                                                                                                                                                                                       | Sorted by path          |
+| `remove`             | The vault paths of the published notes to unpublish                                                                                                                                                                           | Sorted by path          |
+| `update`             | The vault paths of the published notes to update                                                                                                                                                                              | Sorted by path          |
+| `edits`              | The events of `edits.json` that no publication showed yet: the events after the first `published` ones, as the file holds them (see "The edits of the guards")                                                                | In the order of the log |
 
 So the plan shows the edits of the guards since the last publication (GATE-07, GATE-40), and a new event makes a stored plan stale.
 
@@ -258,6 +261,7 @@ The empty plan. A test compares this block with the output of the code:
 {
   "edits": [],
   "forcedRemove": [],
+  "guardedAttachments": [],
   "move": [],
   "publish": [],
   "remove": [],
@@ -274,6 +278,7 @@ A plan is stored on the device as a record: the plan, the selection that gave it
 | `selection.include`   | The vault paths of the selection to publish, each one time, sorted                                                                                                                                                             |
 | `selection.pair`      | The pairings of the selection, each one time, sorted by `from`                                                                                                                                                                 |
 | `selection.remove`    | The vault paths of the selection to unpublish, each one time, sorted                                                                                                                                                           |
+| `selection.accept`    | The vault paths that the selection accepts, each one time, sorted                                                                                                                                                              |
 | `state.journals`      | `sha256:` and the SHA-256 of the journals: for each journal, in the order of the names, its name, a line feed, the SHA-256 of the bytes of its lines (`sha256:` and small hexadecimal digits), a line feed                     |
 | `state.renames`       | `sha256:` and the SHA-256 of the text of `renames.json`, or `none` when the store has no such file                                                                                                                             |
 | `state.configuration` | `sha256:` and the SHA-256 of the text of `configuration.json`, or `none` when the store has no such file                                                                                                                       |
@@ -424,7 +429,7 @@ Issue 42, decisions of the author R69. An agent reads and edits the guards throu
 8. The deny list keeps its order: `deny` adds the folder at its end, and `allow` removes the entry. The tool writes `configuration.json` in the canonical form, with every other key of the file kept. A number with a fraction or an exponent, a negative zero (`-0`), or a whole number outside the range of rule 6 of the data, anywhere in the file, stops every `deny` in both implementations, also one that becomes a proposal, before the check of the open proposals: TypeScript cannot tell `1.0` from `1` or `-0` from `0`, so the two would write other bytes.
 9. A write of the ignore property follows rules 3, 4, 5 and 6 of "The state property after a publication": the note is read again first, and it is not written when its text is not the text that the edit checked. When the guard would not exclude the note after the write (`ignore`), or would still exclude it (`unignore`), the note is not written and the edit stops. A write of the tool never leaves a guard in a state that the edit did not state.
 
-10. A publication from the faces `command-line` and `mcp-server` (`publish`, and `unpublish`, which is a publication) checks the edits again (review round 3). An edit that applied alone took no entry away on the device that made it, but another device can see more: a line of a rename journal that the first device did not have yet can move a published note into the new folder. So for each `applied` event of the plan (`edits`), the publication computes again what the edit takes away now: `removes` and `affects`, as rule 2 says, with the guards of now and with the guards of now without that edit. When one list is not empty, nothing is published, and the message names the event and the notes: the author publishes that plan in the publication center (the face `plugin`), where the plan shows the forced removals. The view never refuses: the author sees the plan.
+10. A publication from the faces `command-line` and `mcp-server` (`publish`, and `unpublish`, which is a publication) stops, and publishes nothing, when its plan has a path in `forcedRemove` or in `guardedAttachments` that `accept` of its selection does not name (decision of the author R69, after the last look of the review). The message names those paths and says that the author names them in the request or publishes the plan in the publication center. So an agent never takes an entry away, and never makes a published note lose a file, unless the author named that note: whatever made the guard (an edit that applied alone, a line of a rename journal of another device, a hand edit of the author), and however the edits mask each other. The face `plugin` never stops for this: the author sees the plan in the view. An earlier reading (a check of each edit that applied alone) was beaten by two edits that mask each other, by a publication between the edit and the move, and by a rename of the note, and was dropped.
 11. The dialog of a confirmed `allow` names what the folder opens (review round 3): the published notes that link to a file of the folder, whose next update would upload that file (often a technical update, which an agent publishes alone), and the count of the notes of the folder that become candidates. The review computes this list again, as it computes `removes`, and a confirmation whose list is not the one that the dialog showed applies nothing. The list is not part of the event.
 
 `edits.json`, as data in the canonical form:

@@ -426,6 +426,8 @@ struct Computed {
     /// The texts of the notes to publish and to update, as the record names
     /// them by their hashes.
     texts: BTreeMap<String, NoteTexts>,
+    /// The selection that gave the plan.
+    selection: Selection,
 }
 
 /// Computes the plan of a selection and its record: the plan, the selection,
@@ -444,7 +446,7 @@ fn record_for(
     // An unpublish holds every changed note that it does not name: its
     // selection comes from the queue of the same scan.
     let selection = &selection_of(&scan);
-    let plan = compute_plan(&scan, selection)?;
+    let mut plan = compute_plan(&scan, selection)?;
     // The published notes got their type in the scan. The new ones of the
     // plan get theirs in one more question.
     // The candidates of the pairings get theirs in the same question (R66).
@@ -482,6 +484,8 @@ fn record_for(
             },
         );
     }
+    plan.set_guarded_attachments(guarded_attachments(device, &scan, &plan, selection));
+    refuse_accept(&plan, selection)?;
     // The map gives the notes in the order of their paths.
     let notes = texts
         .iter()
@@ -516,8 +520,108 @@ fn record_for(
         reached,
         record,
         scan,
+        selection: selection.clone(),
         texts,
     })
+}
+
+/// The published entries after the plan whose attachments list a file that
+/// is under a guard now (rule 8 of "A publication"): the publication would
+/// delete the file, and the note would show it as missing, also after its
+/// update. They are the published entries after the moves whose attachments
+/// list such a file, without the forced removals and the notes to unpublish,
+/// at the new path of a pairing. Sorted by path.
+fn guarded_attachments(
+    device: &Device,
+    scan: &Scan,
+    plan: &PublicationPlan,
+    selection: &Selection,
+) -> Vec<String> {
+    let leaving: BTreeSet<&String> = plan.forced_remove().iter().chain(plan.remove()).collect();
+    scan.manifest
+        .iter()
+        .filter(|(path, entry)| {
+            entry.state == State::Published
+                && !leaving.contains(path)
+                && entry.attachments.iter().any(|attachment| {
+                    scan.is_guarded_file(&device.vault, &attachment.path, &attachment.hash)
+                })
+        })
+        .map(|(path, _)| {
+            selection
+                .pair()
+                .iter()
+                .find(|pairing| &pairing.from == path)
+                .map_or_else(|| path.clone(), |pairing| pairing.to.clone())
+        })
+        .collect()
+}
+
+/// Rule 8 of the selection: a path of `accept` is a forced removal or a note
+/// of `guardedAttachments` of the plan.
+fn refuse_accept(plan: &PublicationPlan, selection: &Selection) -> Result<(), String> {
+    for path in selection.accept() {
+        let named = |list: &[String]| list.binary_search(path).is_ok();
+        if !named(plan.forced_remove()) && !named(plan.guarded_attachments()) {
+            return Err(format!(
+                "\"{path}\" is in accept, but it is neither a forced removal nor a note of guardedAttachments of the plan: accept names only those"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Rule 10 of "The edits of the guards": a publication from the faces
+/// `command-line` and `mcp-server` stops, and publishes nothing, when its
+/// plan has a path of `forcedRemove` or of `guardedAttachments` that `accept`
+/// of its selection does not name. So an agent never takes an entry away,
+/// and never makes a published note lose a file, unless the author named
+/// that note. The face `plugin` never stops for this: the author sees the
+/// plan in the view.
+fn refuse_unaccepted(current: &Computed, run: &Run) -> Result<(), String> {
+    if run.face == "plugin" {
+        return Ok(());
+    }
+    let accepted = |path: &&String| current.selection.accept().binary_search(path).is_ok();
+    let quoted = |paths: Vec<&String>| {
+        paths
+            .iter()
+            .map(|path| format!("\"{path}\""))
+            .collect::<Vec<String>>()
+            .join(", ")
+    };
+    let removed: Vec<&String> = current
+        .plan
+        .forced_remove()
+        .iter()
+        .filter(|path| !accepted(path))
+        .collect();
+    let losing: Vec<&String> = current
+        .plan
+        .guarded_attachments()
+        .iter()
+        .filter(|path| !accepted(path))
+        .collect();
+    if removed.is_empty() && losing.is_empty() {
+        return Ok(());
+    }
+    let mut what = Vec::new();
+    if !removed.is_empty() {
+        what.push(format!(
+            "takes these entries off the site (forcedRemove): {}",
+            quoted(removed)
+        ));
+    }
+    if !losing.is_empty() {
+        what.push(format!(
+            "makes these published notes lose a file under a guard (guardedAttachments): {}",
+            quoted(losing)
+        ));
+    }
+    Err(format!(
+        "the plan {}, and accept does not name them. Nothing is published: ask the author, who names them in the request (accept), or publishes the plan in the publication center of Obsidian",
+        what.join("; and ")
+    ))
 }
 
 /// Computes a publication plan and stores it on the device. It writes nothing
@@ -586,6 +690,7 @@ fn selection_of(record: &str, id: &str) -> Result<Selection, String> {
         &list("hold")?,
         &list("remove")?,
         &pair,
+        &list("accept")?,
     ))
 }
 
@@ -1760,7 +1865,7 @@ fn apply_current(
     current: &Computed,
 ) -> Result<Outcome, String> {
     let (id, own_lock) = (commit.plan, commit.own_lock);
-    refuse_edits_that_take_away(device, current, run)?;
+    refuse_unaccepted(current, run)?;
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
     let paths = store_paths_of(&current.plan, &current.scan, run.time);
@@ -1979,6 +2084,7 @@ pub fn unpublish(
     device: &Device,
     storage: &AttachmentStorage,
     paths: &[String],
+    accept: &[String],
     run: &Run,
 ) -> Result<Outcome, String> {
     check_run(run)?;
@@ -2004,7 +2110,7 @@ pub fn unpublish(
                 .filter(|path| !remove.contains(path))
                 .cloned()
                 .collect();
-            Selection::new(&[], &hold, paths, &[])
+            Selection::new(&[], &hold, paths, &[], accept)
         };
         // One fetch and one scan: the plan is applied as it was computed, so
         // it cannot be stale.
@@ -2737,85 +2843,6 @@ fn between(device: &Device, stricter: &Scan, looser: &Scan, with_affects: bool) 
         }
     }
     TakenAway { removes, affects }
-}
-
-/// Rule 10 of "The edits of the guards": a publication from the faces
-/// `command-line` and `mcp-server` computes again what each `applied` event
-/// of its plan takes away now, with the guards of now and with the guards of
-/// now without that edit. An edit that applied alone took no entry away on
-/// the device that made it, but another device can see more (a line of a
-/// rename journal that moves a published note into the new folder). When one
-/// list is not empty, nothing is published: the author publishes the plan in
-/// the publication center, where the plan shows the forced removals.
-fn refuse_edits_that_take_away(
-    device: &Device,
-    current: &Computed,
-    run: &Run,
-) -> Result<(), String> {
-    if run.face == "plugin" {
-        return Ok(());
-    }
-    let now = &current.scan.configuration;
-    for event in current
-        .plan
-        .edits()
-        .iter()
-        .filter(|event| event.state == "applied")
-    {
-        let path = event.path.as_str();
-        let taken = match event.action.as_str() {
-            // The folder is still on the deny list: the queue without it is
-            // the looser one.
-            "deny" if now.deny_list.iter().any(|folder| folder == path) => {
-                let without = Configuration {
-                    deny_list: now
-                        .deny_list
-                        .iter()
-                        .filter(|folder| *folder != path)
-                        .cloned()
-                        .collect(),
-                };
-                let (looser, stricter) = guard_queues(device, &without, GuardChange::Deny(path))?;
-                between(device, &stricter, &looser, true)
-            }
-            // The note is still excluded by the ignore property.
-            "ignore" if current.scan.ignored.contains(path) => {
-                let (stricter, looser) = guard_queues(device, now, GuardChange::Unignore(path))?;
-                between(device, &stricter, &looser, false)
-            }
-            _ => continue,
-        };
-        if taken.removes.is_empty() && taken.affects.is_empty() {
-            continue;
-        }
-        let quoted = |paths: &[String]| {
-            paths
-                .iter()
-                .map(|path| format!("\"{path}\""))
-                .collect::<Vec<String>>()
-                .join(", ")
-        };
-        let mut what = Vec::new();
-        if !taken.removes.is_empty() {
-            what.push(format!(
-                "it takes these entries off the site: {}",
-                quoted(&taken.removes)
-            ));
-        }
-        if !taken.affects.is_empty() {
-            what.push(format!(
-                "these published notes would lose an attachment: {}",
-                quoted(&taken.affects)
-            ));
-        }
-        return Err(format!(
-            "the edit {} of \"{path}\" ({}) applied alone, but it takes more away now than on the device that made it: {}. Nothing is published: the author publishes this plan in the publication center of Obsidian, where the plan shows the forced removals",
-            event.action,
-            event.id,
-            what.join("; and ")
-        ));
-    }
-    Ok(())
 }
 
 /// True when the text of a JSON number is a whole number that both

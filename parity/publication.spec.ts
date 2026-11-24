@@ -450,7 +450,8 @@ function rustTool(vault: string, copy: string): Tool {
                         '--pair',
                         pairing.from,
                         pairing.to
-                    ])
+                    ]),
+                    ...(selection.accept ?? []).map((path) => `--accept=${path}`)
                 ])
             ) as { id: string; plan: Record<string, CanonicalValue> }
             const report = JSON.parse(
@@ -603,7 +604,9 @@ async function story(toolOf: (vault: string, copy: string) => Tool): Promise<Sto
     await change(vault, copy)
     const queueBefore = await tool.status()
     const publication = await tool.publish(
-        { include: [NEW], hold: [HELD], remove: [UNPUBLISHED] },
+        // A publication of the command line program applies forced removals
+        // only when accept names them (rule 10 of the edits of the guards).
+        { include: [NEW], hold: [HELD], remove: [UNPUBLISHED], accept: [MOVED, GUARDED, DENIED] },
         LATER
     )
     return {
@@ -680,6 +683,7 @@ describe('parity of the publication queue', () => {
             // The note that moved into a folder of the deny list, the note with
             // the ignore property, and the note in the new folder of the deny list.
             forcedRemove: [MOVED, GUARDED, DENIED],
+            guardedAttachments: [],
             move: [],
             publish: [NEW],
             remove: [UNPUBLISHED],
@@ -907,7 +911,7 @@ async function renames(toolOf: (vault: string, copy: string) => Tool): Promise<R
     )
     const queue = await tool.status()
     const publication = await tool.publish(
-        { include: [], pair: [{ from: WELCOME, to: 'Home/Welcome.md' }] },
+        { include: [], pair: [{ from: WELCOME, to: 'Home/Welcome.md' }], accept: [TRELLIS] },
         LATEST
     )
     return { queue, publication, after: await tool.status(), left: await resultOf(vault, copy) }
@@ -1029,7 +1033,7 @@ describe('parity of an empty plan', () => {
 
         expect(fromRust).toEqual(fromTypeScript)
         expect(fromRust.plans).toEqual([
-            '{\n  "plan": {\n    "edits": [],\n    "forcedRemove": [],\n    "move": [],\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "hold": [],\n    "include": [],\n    "pair": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "journals": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": [],\n    "renames": "none"\n  }\n}\n'
+            '{\n  "plan": {\n    "edits": [],\n    "forcedRemove": [],\n    "guardedAttachments": [],\n    "move": [],\n    "publish": [],\n    "remove": [],\n    "update": []\n  },\n  "selection": {\n    "accept": [],\n    "hold": [],\n    "include": [],\n    "pair": [],\n    "remove": []\n  },\n  "state": {\n    "configuration": "sha256:e06bbfc5161c72405ce2776eab77bc0001e63cdfc935e664fe5e8be0d98b9a12",\n    "journals": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "manifest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",\n    "notes": [],\n    "renames": "none"\n  }\n}\n'
         ])
     }, 120_000)
 })

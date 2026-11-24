@@ -733,6 +733,24 @@ export class PublicationCenterView extends ItemView {
             }
         }
         this.#renderProposals(queue.proposals)
+        const guarded = center.plan()?.guardedAttachments ?? []
+        if (guarded.length > 0) {
+            const box = this.#section(
+                this.#sections,
+                'guarded',
+                `Notes that lose a file under a guard: ${guarded.length.toLocaleString()} (the next publication deletes the file, and the note shows it as missing)`,
+                'vault-publish-moves',
+                true
+            )
+            for (const path of guarded.slice(0, SECTION_LINES)) {
+                box.createDiv({ cls: 'vault-publish-name', text: path, attr: { dir: 'auto' } })
+            }
+            if (guarded.length > SECTION_LINES) {
+                box.createDiv({
+                    text: `and ${(guarded.length - SECTION_LINES).toLocaleString()} more`
+                })
+            }
+        }
         const edits = center.plan()?.edits ?? []
         if (edits.length > 0) {
             const box = this.#section(
@@ -860,6 +878,18 @@ export class PublicationCenterView extends ItemView {
             ['Forced removals', plan.forcedRemove],
             ['Moves', plan.move.map((move) => `${move.from} → ${move.to}`)]
         ]
+        if (plan.guardedAttachments.length > 0) {
+            const part = parent.createEl('details', { attr: { open: '' } })
+            part.createEl('summary', {
+                text: `Notes that lose a file under a guard: ${plan.guardedAttachments.length.toLocaleString()} (the publication deletes the file, and the note shows it as missing)`
+            })
+            for (const path of plan.guardedAttachments.slice(0, 500)) {
+                part.createDiv({ cls: 'vault-publish-name', text: path, attr: { dir: 'auto' } })
+            }
+            if (plan.guardedAttachments.length > 500) {
+                part.createDiv({ text: `and ${String(plan.guardedAttachments.length - 500)} more` })
+            }
+        }
         if (plan.edits.length > 0) {
             const part = parent.createEl('details')
             part.createEl('summary', {
@@ -1075,6 +1105,13 @@ export class ConfirmProposalModal extends Modal {
                 contentEl.createEl('p', {
                     text: 'When other published notes link to the folder when you confirm, nothing is applied: open this dialog again.'
                 })
+            }
+            const { inside } = this.review
+            if (inside.length > 0) {
+                contentEl.createEl('p', {
+                    text: `${inside.length === 1 ? 'This note of the folder is' : `These ${inside.length.toLocaleString()} notes of the folder are`} still published (a deny that no publication applied yet): after the allow, ${inside.length === 1 ? 'it stays' : 'they stay'} published, and ${inside.length === 1 ? 'its changes publish' : 'their changes publish'} as for every published note:`
+                })
+                this.#paths(inside)
             }
         } else if (proposal.action === 'unignore') {
             contentEl.createEl('p', {

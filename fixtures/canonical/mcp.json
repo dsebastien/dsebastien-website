@@ -1066,6 +1066,84 @@
             }
         },
         {
+            "name": "plan with the paths that the author accepts",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 51,
+                "method": "tools/call",
+                "params": { "name": "plan", "arguments": { "accept": ["10 Garden/Wormery.md"] } }
+            },
+            "call": {
+                "tool": "plan",
+                "include": [],
+                "hold": [],
+                "remove": [],
+                "pair": [],
+                "accept": ["10 Garden/Wormery.md"]
+            },
+            "operation": { "output": "plan" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 51,
+                "result": { "content": [{ "type": "text", "text": "plan" }], "isError": false }
+            }
+        },
+        {
+            "name": "unpublish with the paths that the author accepts",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 52,
+                "method": "tools/call",
+                "params": {
+                    "name": "unpublish",
+                    "arguments": {
+                        "paths": ["10 Garden/Bean trellis.md"],
+                        "accept": ["10 Garden/Wormery.md"]
+                    }
+                }
+            },
+            "call": {
+                "tool": "unpublish",
+                "paths": ["10 Garden/Bean trellis.md"],
+                "accept": ["10 Garden/Wormery.md"]
+            },
+            "operation": { "output": "report" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 52,
+                "result": { "content": [{ "type": "text", "text": "report" }], "isError": false }
+            }
+        },
+        {
+            "name": "unpublish refuses an accept that is not a list of texts",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 53,
+                "method": "tools/call",
+                "params": {
+                    "name": "unpublish",
+                    "arguments": {
+                        "paths": ["10 Garden/Bean trellis.md"],
+                        "accept": "10 Garden/Wormery.md"
+                    }
+                }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 53,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "the argument \"accept\" of unpublish must be a list of vault paths"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
             "name": "unlock",
             "request": {
                 "jsonrpc": "2.0",

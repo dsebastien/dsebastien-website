@@ -18,7 +18,7 @@
         {
             "name": "plan",
             "title": "Publication plan",
-            "description": "Computes a publication plan, stores it on this device and gives it with its id, as the plan command of the command line program does. It changes nothing in the vault and in the content store. Without a path, the plan holds the changed notes only, but not the moved notes whose text changed: include names them. Every plan holds the moves of the rename journals, which cannot be held, and the forced removals: the published and the unpublished notes that a guard excludes. Name a new note in include, a note in remove or a pairing in pair only when the author named it.",
+            "description": "Computes a publication plan, stores it on this device and gives it with its id, as the plan command of the command line program does. It changes nothing in the vault and in the content store. Without a path, the plan holds the changed notes only, but not the moved notes whose text changed: include names them. Every plan holds the moves of the rename journals, which cannot be held, and the forced removals: the published and the unpublished notes that a guard excludes. Name a new note in include, a note in remove or a pairing in pair only when the author named it. A plan of an agent can be published only when accept names every path of its forcedRemove and of its guardedAttachments (the published notes that would lose a file under a guard).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -61,6 +61,13 @@
                             "additionalProperties": false
                         },
                         "description": "The pairings to confirm: a rename that the plugin did not see. The entry moves, its old path becomes a former path that redirects, and the new note is published as its update unless hold names it."
+                    },
+                    "accept": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The vault paths of the forced removals and of the notes of guardedAttachments that the author named in this conversation. A publication from an agent stops when its plan takes an entry away, or makes a published note lose a file, that accept does not name."
                     }
                 },
                 "additionalProperties": false
@@ -75,7 +82,7 @@
         {
             "name": "publish",
             "title": "Publish a plan",
-            "description": "Applies exactly one plan, by its id, as the publish command of the command line program does: the moves come first, then the notes that a guard excludes leave the content store, the cleaned notes and the manifest go to the content store in one commit after the upload of their attachments, the commit is pushed, the public_note property of the notes of the vault is corrected, and the files of the attachment storage that no published note uses are deleted. It gives the publication report. It is an error when a note of the plan was left out, and it publishes nothing when the plan is stale or a forced removal fails.",
+            "description": "Applies exactly one plan, by its id, as the publish command of the command line program does: the moves come first, then the notes that a guard excludes leave the content store, the cleaned notes and the manifest go to the content store in one commit after the upload of their attachments, the commit is pushed, the public_note property of the notes of the vault is corrected, and the files of the attachment storage that no published note uses are deleted. It gives the publication report. It is an error when a note of the plan was left out, and it publishes nothing when the plan is stale or a forced removal fails. It publishes nothing when the plan has a path of forcedRemove or guardedAttachments that the accept of its selection does not name: ask the author, or let the author publish in the publication center.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -98,7 +105,7 @@
         {
             "name": "unpublish",
             "title": "Unpublish notes",
-            "description": "Unpublishes the named published notes in one step, as the unpublish command of the command line program does: it makes the plan that removes them and holds every other changed note, and applies it. Only the named notes leave, with the forced removals that every plan holds. Their addresses then answer 410. It gives the publication report. Name only the notes that the author asked to unpublish.",
+            "description": "Unpublishes the named published notes in one step, as the unpublish command of the command line program does: it makes the plan that removes them and holds every other changed note, and applies it. Only the named notes leave, with the forced removals that every plan holds. Their addresses then answer 410. It gives the publication report. Name only the notes that the author asked to unpublish. It stops when the plan has a forced removal, or a note that would lose a file under a guard, that accept does not name.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -109,6 +116,13 @@
                         },
                         "minItems": 1,
                         "description": "The vault paths of the published notes to unpublish."
+                    },
+                    "accept": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The vault paths of the forced removals and of the notes of guardedAttachments that the author named in this conversation. A publication from an agent stops when its plan takes an entry away, or makes a published note lose a file, that accept does not name."
                     }
                 },
                 "required": ["paths"],

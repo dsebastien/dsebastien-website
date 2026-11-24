@@ -46,9 +46,15 @@ export type ToolCall =
           readonly hold: readonly string[]
           readonly remove: readonly string[]
           readonly pair: readonly Move[]
+          /** The paths that the author named for rule 10; no key when the call has none. */
+          readonly accept?: readonly string[]
       }
     | { readonly tool: 'publish'; readonly plan: string }
-    | { readonly tool: 'unpublish'; readonly paths: readonly string[] }
+    | {
+          readonly tool: 'unpublish'
+          readonly paths: readonly string[]
+          readonly accept?: readonly string[]
+      }
     | { readonly tool: 'takedown'; readonly paths: readonly string[] }
     | { readonly tool: 'guards' }
     | { readonly tool: EditAction; readonly path: string }
@@ -110,9 +116,9 @@ function isToolName(name: string): name is ToolName {
 /** The keys that each tool takes. */
 const ARGUMENTS: Record<ToolName, readonly string[]> = {
     status: [],
-    plan: ['include', 'hold', 'remove', 'pair'],
+    plan: ['include', 'hold', 'remove', 'pair', 'accept'],
     publish: ['plan'],
-    unpublish: ['paths'],
+    unpublish: ['paths', 'accept'],
     takedown: ['paths'],
     guards: [],
     deny: ['path'],
@@ -122,15 +128,24 @@ const ARGUMENTS: Record<ToolName, readonly string[]> = {
     unlock: []
 }
 
-function listOf(args: Record<string, unknown>, key: string): readonly string[] {
+function listOf(args: Record<string, unknown>, key: string, tool = 'plan'): readonly string[] {
     const value = args[key]
     if (value === undefined) {
         return []
     }
     if (!isTextList(value)) {
-        throw new ArgumentError(`the argument "${key}" of plan must be a list of vault paths`)
+        throw new ArgumentError(`the argument "${key}" of ${tool} must be a list of vault paths`)
     }
     return value
+}
+
+/** The list `accept` of a call, as a key only when it is not empty, as the Rust face writes the call. */
+function acceptOf(
+    args: Record<string, unknown>,
+    tool: 'plan' | 'unpublish'
+): { readonly accept?: readonly string[] } {
+    const accept = listOf(args, 'accept', tool)
+    return accept.length === 0 ? {} : { accept }
 }
 
 function pairsOf(args: Record<string, unknown>): readonly Move[] {
@@ -206,7 +221,8 @@ export function toolCallOf(name: string, args: unknown): ToolCall {
                 include: listOf(given, 'include'),
                 hold: listOf(given, 'hold'),
                 remove: listOf(given, 'remove'),
-                pair: pairsOf(given)
+                pair: pairsOf(given),
+                ...acceptOf(given, 'plan')
             }
         case 'publish': {
             const id = given['plan']
@@ -218,6 +234,7 @@ export function toolCallOf(name: string, args: unknown): ToolCall {
             return { tool: 'publish', plan: id }
         }
         case 'unpublish':
+            return { tool: name, paths: pathsOf(name, given), ...acceptOf(given, name) }
         case 'takedown':
             return { tool: name, paths: pathsOf(name, given) }
     }

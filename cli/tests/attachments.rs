@@ -61,15 +61,29 @@ impl Setup {
             .expect("the program starts")
     }
 
-    /// Plans a selection and gives the id of the plan.
+    /// Plans a selection and gives the id of the plan. The selection accepts
+    /// every forced removal and every note of `guardedAttachments` of the
+    /// plan, as the author who saw the plan names them (rule 10 of "The edits
+    /// of the guards"): the command line program applies it then.
     fn plan(&self, include: &[&str], remove: &[&str]) -> String {
         let mut arguments = vec!["plan".to_owned()];
         arguments.extend(include.iter().map(|path| format!("--include={path}")));
         arguments.extend(remove.iter().map(|path| format!("--remove={path}")));
-        let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
-        let output = self.run(&arguments);
-        assert!(output.status.success(), "{}", errors_of(&output));
-        let plan: Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
+        let planned = |arguments: &[String]| -> Value {
+            let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
+            let output = self.run(&arguments);
+            assert!(output.status.success(), "{}", errors_of(&output));
+            serde_json::from_slice(&output.stdout).expect("the plan is JSON")
+        };
+        let mut plan = planned(&arguments);
+        let named: Vec<String> = paths(&plan["plan"]["forcedRemove"])
+            .into_iter()
+            .chain(paths(&plan["plan"]["guardedAttachments"]))
+            .collect();
+        if !named.is_empty() {
+            arguments.extend(named.iter().map(|path| format!("--accept={path}")));
+            plan = planned(&arguments);
+        }
         plan["id"].as_str().expect("the plan has an id").to_owned()
     }
 

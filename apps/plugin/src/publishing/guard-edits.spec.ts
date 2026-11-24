@@ -531,7 +531,8 @@ describe('a deny that takes an attachment away from a published note (R69, revie
             removes: [],
             affects: ['Notes/Plan.md'],
             opens: [],
-            candidates: 0
+            candidates: 0,
+            inside: []
         })
         // A dialog that showed no note that loses an attachment is stale.
         expect(
@@ -558,16 +559,17 @@ describe('a deny that takes an attachment away from a published note (R69, revie
     }, 120_000)
 })
 
-describe('an agent publication checks the edits that applied alone again (rule 10)', () => {
+describe('an agent publication applies a plan only when accept names what it takes away (rule 10)', () => {
     const MCP: Run = { ...AUTHOR, time: '2031-06-01T12:00:00Z', face: 'mcp-server' }
     const CLI: Run = { ...MCP, face: 'command-line' }
 
     test('a journal line of another device moves a published note into a folder that a deny took alone', async () => {
         await using stores = await makeTestStores()
         const { vault, device } = await setUp(stores)
-        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
-        const deny = await edit(device, { action: 'deny', path: 'Private' }, AGENT)
-        expect(deny.state).toBe('applied')
+        await publishNotes(device, ['Notes/Public.md', 'Notes/Draft.md'], '2031-06-01T08:00:00Z')
+        expect((await edit(device, { action: 'deny', path: 'Private' }, AGENT)).state).toBe(
+            'applied'
+        )
         // The vault of another device arrives, with its journal.
         const published = (await textOf(join(vault, 'Notes/Public.md'))) ?? ''
         await rm(join(vault, 'Notes/Public.md'))
@@ -578,72 +580,84 @@ describe('an agent publication checks the edits that applied alone again (rule 1
 
         for (const run of [MCP, CLI]) {
             const planned = await plan(device, { include: [] })
+            expect(planned.plan.forcedRemove).toEqual(['Notes/Public.md'])
             const message = await rejectionOf(publish(device, planned.id, run))
-            expect(message).toContain(`the edit deny "Private" (${deny.id})`)
-            expect(message).toContain('"Notes/Public.md" leave the content store')
+            expect(message).toContain('it takes away "Notes/Public.md"')
+            expect(message).toContain('accept')
             expect(message).toContain('publication center')
-            expect(await rejectionOf(unpublish(device, ['Notes/Public.md'], run))).toContain(
+            expect(await rejectionOf(unpublish(device, ['Notes/Draft.md'], run))).toContain(
                 'publication center'
             )
         }
         expect(await inStore(stores, 'notes/Notes/Public.md')).not.toBeNull()
 
-        // The author publishes the same plan in the view.
-        const planned = await plan(device, { include: [] })
-        const report = await publish(device, planned.id, AUTHOR)
+        // When the request names the forced removal, the agent applies it.
+        const accepted = await plan(device, { include: [], accept: ['Notes/Public.md'] })
+        const report = await publish(device, accepted.id, MCP)
         expect(report.forcedRemoved).toEqual(['Notes/Public.md'])
     }, 120_000)
 
-    test('an ignore that applied alone, onto whose note a journal moves a published note', async () => {
+    test('an unpublish of an agent applies its forced removals when accept names them', async () => {
         await using stores = await makeTestStores()
         const { vault, device } = await setUp(stores)
-        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
-        const ignore = await edit(device, { action: 'ignore', path: 'Notes/Draft.md' }, AGENT)
-        expect(ignore.state).toBe('applied')
-        await rm(join(vault, 'Notes/Public.md'))
-        await writeFiles(vault, { [JOURNAL]: journalLine('Notes/Public.md', 'Notes/Draft.md') })
+        await publishNotes(device, ['Notes/Public.md', 'Notes/Draft.md'], '2031-06-01T08:00:00Z')
+        await writeFile(join(vault, 'Notes/Public.md'), '---\npublish_ignore: true\n---\nPublic\n')
 
-        const planned = await plan(device, { include: [] })
-        const message = await rejectionOf(publish(device, planned.id, MCP))
+        const report = await unpublish(device, ['Notes/Draft.md'], MCP, ['Notes/Public.md'])
 
-        expect(message).toContain(`the edit ignore "Notes/Draft.md" (${ignore.id})`)
-        expect(message).toContain('"Notes/Public.md" leave the content store')
+        expect(report.removed).toEqual(['Notes/Draft.md'])
+        expect(report.forcedRemoved).toEqual(['Notes/Public.md'])
     }, 120_000)
 
-    test('a deny that applied alone, into whose folder an attachment of a published note moves later', async () => {
+    test('a published note that would lose a file under a guard is in guardedAttachments, also when its update is held', async () => {
         await using stores = await makeTestStores()
         const { vault, device } = await setUp(stores)
         await writeFiles(vault, {
             'Notes/Plan.md': '# Plan\n\n[[plan.txt]]\n',
-            'Assets/plan.txt': 'A plan\n',
-            'Images/other.txt': 'Other\n'
+            'Assets/plan.txt': 'A plan\n'
         })
         await publishNotes(device, ['Notes/Plan.md'], '2031-06-01T08:00:00Z')
-        const deny = await edit(device, { action: 'deny', path: 'Images' }, AGENT)
-        expect(deny.state).toBe('applied')
-        // The file moves into the folder of the deny list.
+        // The file moves into a folder of the deny list.
         await rm(join(vault, 'Assets/plan.txt'))
-        await writeFiles(vault, { 'Images/plan.txt': 'A plan\n' })
+        await writeFiles(vault, { 'Locked/plan.txt': 'A plan\n' })
 
+        const held = await plan(device, { include: [], hold: ['Notes/Plan.md'] })
+        expect(held.plan.guardedAttachments).toEqual(['Notes/Plan.md'])
         const planned = await plan(device, { include: [] })
+        expect(planned.plan.guardedAttachments).toEqual(['Notes/Plan.md'])
         const message = await rejectionOf(publish(device, planned.id, CLI))
+        expect(message).toContain('"Notes/Plan.md" would lose a file under a guard')
+        expect(message).toContain('publication center')
 
-        expect(message).toContain(`the edit deny "Images" (${deny.id})`)
-        expect(message).toContain('"Notes/Plan.md" lose an attachment')
+        const accepted = await plan(device, { include: [], accept: ['Notes/Plan.md'] })
+        const report = await publish(device, accepted.id, CLI)
+        expect(report.updated).toEqual(['Notes/Plan.md'])
     }, 120_000)
 
-    test('an edit that applied alone and still takes nothing away does not stop an agent', async () => {
+    test('a path of accept that the plan does not take away stops the plan', async () => {
         await using stores = await makeTestStores()
         const { device } = await setUp(stores)
         await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
-        await edit(device, { action: 'deny', path: 'Private' }, AGENT)
+
+        expect(
+            await rejectionOf(plan(device, { include: [], accept: ['Notes/Public.md'] }))
+        ).toContain('accept names only those')
+        expect(await rejectionOf(plan(device, { include: [], accept: ['Notes'] }))).toContain(
+            'does not end in .md'
+        )
+    }, 60_000)
+
+    test('the face plugin applies a plan with forced removals and no accept', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await publishNotes(device, ['Notes/Public.md'], '2031-06-01T08:00:00Z')
+        await writeFile(join(vault, 'Notes/Public.md'), '---\npublish_ignore: true\n---\nPublic\n')
 
         const planned = await plan(device, { include: [] })
-        const report = await publish(device, planned.id, MCP)
+        const report = await publish(device, planned.id, AUTHOR)
 
-        expect(report.forcedRemoved).toEqual([])
-        expect(await inStore(stores, 'edits.json')).toContain('"published": 1')
-    }, 120_000)
+        expect(report.forcedRemoved).toEqual(['Notes/Public.md'])
+    }, 60_000)
 })
 
 describe('what a confirmed allow opens (rule 11)', () => {
@@ -664,7 +678,8 @@ describe('what a confirmed allow opens (rule 11)', () => {
             removes: [],
             affects: [],
             opens: ['Notes/Plan.md'],
-            candidates: 1
+            candidates: 1,
+            inside: []
         })
         // A dialog that named no such note is stale.
         expect(
@@ -684,6 +699,33 @@ describe('what a confirmed allow opens (rule 11)', () => {
         expect((await guards(device)).denyList).toEqual([])
         // The next plan without paths updates the note, which uploads the file.
         expect((await status(device)).technicalUpdates).toEqual(['Notes/Plan.md'])
+    }, 120_000)
+})
+
+describe('what a confirmed allow keeps published', () => {
+    test('the review names the published entries inside the folder of a deny that no publication applied yet', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores)
+        await publishNotes(device, ['Mixed/Shown.md'], '2031-06-01T08:00:00Z')
+        const deny = await edit(device, { action: 'deny', path: 'Mixed' }, AGENT)
+        await confirmProposal(
+            device,
+            { proposal: deny.id, removes: ['Mixed/Shown.md'], affects: [], opens: [] },
+            AUTHOR
+        )
+        const allow = await edit(
+            device,
+            { action: 'allow', path: 'Mixed' },
+            {
+                ...AGENT,
+                time: '2031-06-01T11:00:00Z'
+            }
+        )
+
+        const review = await reviewProposal(device, allow.id)
+
+        expect(review.inside).toEqual(['Mixed/Shown.md'])
+        expect(review.candidates).toBe(0)
     }, 120_000)
 })
 
@@ -852,7 +894,8 @@ describe('the decisions of the author', () => {
             removes: ['Mixed/Other.md', 'Mixed/Shown.md'],
             affects: [],
             opens: [],
-            candidates: 0
+            candidates: 0,
+            inside: []
         })
         const confirmed = await confirmProposal(
             device,
