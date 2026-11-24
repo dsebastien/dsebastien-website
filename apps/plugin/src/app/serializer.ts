@@ -1,5 +1,6 @@
 import type { ListRefresh, RefreshResult } from '../publishing/ports.ts'
 import type { PluginHost } from './starter-kit.ts'
+import { isChangedByObsidian } from '../publishing/names.ts'
 
 // The Dataview Serializer inside Obsidian, as the publishing logic needs it:
 // the refresh of the frozen lists of the notes of a plan (PUB-35, decision
@@ -60,15 +61,13 @@ function isListOf(value: unknown, keys: readonly string[]): value is Record<stri
 
 /**
  * True when Obsidian gives this path another form: its own `normalizePath`
- * changes it, or the path is not in the composed Unicode form or holds
- * U+00A0 or U+202F (what `normalizePath` changes, also when the face has no
- * Obsidian). The serializer would then refresh another file, maybe a note
- * that is not in the plan (issue 110): such a path is not asked.
+ * changes it, or the rule of the tool says so (`isChangedByObsidian`, also
+ * when the face has no Obsidian). The serializer would then refresh another
+ * file, maybe a note that is not in the plan (issue 110): such a path is not
+ * asked. A plan never publishes such a note (decision R72).
  */
 function changedByObsidian(path: string, normalize: (path: string) => string): boolean {
-    return (
-        normalize(path) !== path || path.normalize('NFC') !== path || /[\u00a0\u202f]/u.test(path)
-    )
+    return normalize(path) !== path || isChangedByObsidian(path)
 }
 
 /** The same message for every path: no note is refreshed. */

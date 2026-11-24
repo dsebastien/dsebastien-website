@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { foldedForm, isReservedRootName } from './names.ts'
+import { foldedForm, isChangedByObsidian, isReservedRootName, obsidianPath } from './names.ts'
 
 // The root names of the site (documentation/Canonical Form.md). The Rust
 // implementation reads the same cases (`cli/src/names.rs`).
@@ -9,6 +9,7 @@ const CASES = fileURLToPath(new URL('../../../../fixtures/canonical/names.json',
 interface Cases {
     reserved: { name: string; text: string; reserved: boolean }[]
     folded: { name: string; one: string; two: string; equal: boolean }[]
+    obsidian: { name: string; text: string; path: string }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
@@ -29,5 +30,13 @@ describe('folded form', () => {
     test('the shared file has cases of each kind', () => {
         expect(cases.reserved.length).toBeGreaterThan(10)
         expect(cases.folded.length).toBeGreaterThan(5)
+        expect(cases.obsidian.length).toBeGreaterThan(10)
+    })
+})
+
+describe('the path that Obsidian gives a vault path', () => {
+    test.each(cases.obsidian.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
+        expect(obsidianPath(entry.text)).toBe(entry.path)
+        expect(isChangedByObsidian(entry.text)).toBe(entry.path !== entry.text)
     })
 })

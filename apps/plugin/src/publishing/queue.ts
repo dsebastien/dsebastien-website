@@ -8,7 +8,13 @@ import { guardOf, guardOfPath } from './guards.ts'
 import { contentHash } from './hash.ts'
 import { LinkIndex, linkPathsOf, linksOfPaths, sameLinks } from './links.ts'
 import type { ManifestEntry } from './manifest.ts'
-import { firstPart, foldedForm, isReservedRootName } from './names.ts'
+import {
+    firstPart,
+    foldedForm,
+    isChangedByObsidian,
+    isReservedRootName,
+    obsidianPath
+} from './names.ts'
 import { askable, readNoteTypes, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
@@ -636,6 +642,13 @@ export function applyMoves(
             warnings.push({
                 path: from,
                 message: `the rename journal moves the note to "${to}", whose name is a reserved root name of the site: it does not move`
+            })
+            continue
+        }
+        if (isChangedByObsidian(to)) {
+            warnings.push({
+                path: from,
+                message: `the rename journal moves the note to "${to}", whose path Obsidian reads as "${obsidianPath(to)}": it does not move, and it can show as a pairing`
             })
             continue
         }

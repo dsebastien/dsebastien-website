@@ -4219,7 +4219,7 @@
                 "Élan.md": "Elan\n",
                 "Café.md": "Cafe\n",
                 "Locked/Old.md": "Old\n",
-                "ǰ.md": "Jump\n"
+                "ǰ.md": "Jump\n"
             },
             "steps": [
                 {
@@ -4227,7 +4227,7 @@
                     "why": "the first publication of four notes whose names have letters outside ASCII",
                     "selection": {
                         "hold": [],
-                        "include": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
+                        "include": ["Café.md", "Élan.md", "ǰ.md", "ɷ.md"],
                         "remove": []
                     },
                     "time": "2031-07-01T08:00:00Z",
@@ -4237,8 +4237,8 @@
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
-                        "propertySet": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
-                        "published": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
+                        "propertySet": ["Café.md", "Élan.md", "ǰ.md", "ɷ.md"],
+                        "published": ["Café.md", "Élan.md", "ǰ.md", "ɷ.md"],
                         "removed": [],
                         "skipped": [],
                         "updated": [],
@@ -4259,7 +4259,7 @@
                 {
                     "do": "delete",
                     "why": "the four published notes are missing from this vault",
-                    "paths": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"]
+                    "paths": ["Café.md", "Élan.md", "ǰ.md", "ɷ.md"]
                 },
                 {
                     "do": "plan",
@@ -4270,7 +4270,7 @@
                         "remove": []
                     },
                     "plan": {
-                        "forcedRemove": ["Café.md", "ǰ.md", "Élan.md", "ɷ.md"],
+                        "forcedRemove": ["Café.md", "Élan.md", "ǰ.md", "ɷ.md"],
                         "publish": [],
                         "remove": [],
                         "update": [],
@@ -10938,6 +10938,225 @@
                         "notes/Lists/Auto.md": "<!-- QueryToSerialize: LIST FROM \"Lists\" -->\n<!-- SerializedQuery: LIST FROM \"Lists\" -->\n- [[Plain]]\n- [[Secret]]\n- [[New]]\n<!-- SerializedQuery END -->\n"
                     },
                     "vault": {}
+                }
+            ]
+        },
+        {
+            "name": "a note whose path Obsidian changes is never published, and a move to such a path does not move (issue 110)",
+            "denyList": [],
+            "vault": {
+                "A.md": "A\n",
+                "B\u00a0C.md": "B\n",
+                "Cafe\u0301.md": "C\n",
+                "D\u00a0E/F.md": "F\n",
+                "G\u202fH.md": "G\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "a note whose path Obsidian changes is still a candidate: the queue shows it",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 5,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": [
+                            "A.md",
+                            "B\u00a0C.md",
+                            "Cafe\u0301.md",
+                            "D\u00a0E/F.md",
+                            "G\u202fH.md"
+                        ],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "the status asks about the published notes only: there are none",
+                    "questions": [[]]
+                },
+                {
+                    "do": "plan",
+                    "why": "a no-break space in the file name",
+                    "selection": {
+                        "hold": [],
+                        "include": ["B\u00a0C.md"],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "Obsidian reads its path as"
+                },
+                {
+                    "do": "plan",
+                    "why": "a file name in the decomposed Unicode form",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Cafe\u0301.md"],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "Obsidian reads its path as"
+                },
+                {
+                    "do": "plan",
+                    "why": "a no-break space in a folder",
+                    "selection": {
+                        "hold": [],
+                        "include": ["D\u00a0E/F.md"],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "Obsidian reads its path as"
+                },
+                {
+                    "do": "plan",
+                    "why": "a narrow no-break space in the file name",
+                    "selection": {
+                        "hold": [],
+                        "include": ["G\u202fH.md"],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "Obsidian reads its path as"
+                },
+                {
+                    "do": "plan",
+                    "why": "one such note stops the whole plan",
+                    "selection": {
+                        "hold": [],
+                        "include": ["A.md", "B\u00a0C.md"],
+                        "remove": []
+                    },
+                    "refused": true,
+                    "says": "Obsidian reads its path as"
+                },
+                {
+                    "do": "asked",
+                    "why": "each refused plan asked about the published notes only, never about a note that Obsidian changes",
+                    "questions": [[], [], [], [], []]
+                },
+                {
+                    "do": "publish",
+                    "why": "a plain note is published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["A.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md"],
+                        "published": ["A.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a line of a rename journal moves A.md to a path that Obsidian changes, and the vault shows that move",
+                    "files": {
+                        "X\u00a0Y.md": "---\npublic_note: true\n---\nA\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-05-02T08:00:00Z\",\"to\":\"X\u00a0Y.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["A.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the entry does not move: the note is missing, and the new file is a candidate that the queue proposes as a pairing",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 5,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "missing": ["A.md"],
+                        "new": [
+                            "B\u00a0C.md",
+                            "Cafe\u0301.md",
+                            "D\u00a0E/F.md",
+                            "G\u202fH.md",
+                            "X\u00a0Y.md"
+                        ],
+                        "technicalUpdates": [],
+                        "toRemove": ["A.md"],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [
+                            {
+                                "from": "A.md",
+                                "to": "X\u00a0Y.md"
+                            }
+                        ],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a pairing with such a path stops the plan, as a new note does",
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "A.md",
+                                "to": "X\u00a0Y.md"
+                            }
+                        ]
+                    },
+                    "refused": true,
+                    "says": "Obsidian reads its path as"
+                },
+                {
+                    "do": "publish",
+                    "why": "a plan without paths does not stop, the report warns that the entry did not move, and the copied file loses the property that only a published note carries",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-05-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["X\u00a0Y.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["A.md"],
+                        "moved": []
+                    }
                 }
             ]
         }

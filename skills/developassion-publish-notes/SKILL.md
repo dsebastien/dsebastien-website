@@ -62,12 +62,13 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 
 ## Messages
 
-| The message says                                 | Do this                                                                                                  |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| The plan is stale                                | Plan again, show the new plan, wait for a yes (rule 4)                                                   |
-| A guard excludes a note, or a path is in no list | Report it and stop. Never move the guard (rule 3)                                                        |
-| The copy is locked                               | A run still goes: wait and run `status` again (rule 5). `unlock` only as rule 6 says                     |
-| A publication stopped halfway                    | Run `plan`: it puts the copy back. Then show the new plan (rule 2)                                       |
-| A deny list entry names no folder of the vault   | Report it: the author renamed a private folder, and every run stops. Offer the fix of the section Guards |
-| An edit has the state `proposed`                 | Tell the author that it waits for a confirmation in the publication center                               |
-| The settings miss a folder                       | Ask the author to set it in the settings of Vault Publish on this device                                 |
+| The message says                                  | Do this                                                                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| The plan is stale                                 | Plan again, show the new plan, wait for a yes (rule 4)                                                   |
+| A guard excludes a note, or a path is in no list  | Report it and stop. Never move the guard (rule 3)                                                        |
+| The copy is locked                                | A run still goes: wait and run `status` again (rule 5). `unlock` only as rule 6 says                     |
+| A publication stopped halfway                     | Run `plan`: it puts the copy back. Then show the new plan (rule 2)                                       |
+| A deny list entry names no folder of the vault    | Report it: the author renamed a private folder, and every run stops. Offer the fix of the section Guards |
+| Obsidian reads the path of a note as another path | Report it and stop. The author gives the file another name; never rename a note yourself                 |
+| An edit has the state `proposed`                  | Tell the author that it waits for a confirmation in the publication center                               |
+| The settings miss a folder                        | Ask the author to set it in the settings of Vault Publish on this device                                 |

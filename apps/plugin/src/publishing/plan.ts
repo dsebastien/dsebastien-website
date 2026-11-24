@@ -2,7 +2,13 @@ import { isVaultPath } from './configuration.ts'
 import { eventsSince } from './edits.ts'
 import type { EditEvent } from './edits.ts'
 import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
-import { firstPart, foldedForm, isReservedRootName } from './names.ts'
+import {
+    firstPart,
+    foldedForm,
+    isChangedByObsidian,
+    isReservedRootName,
+    obsidianPath
+} from './names.ts'
 import { sortByCodePoint } from './order.ts'
 import { compareCodePoints } from './order.ts'
 import type { Move, QueueLists, Scan } from './queue.ts'
@@ -264,6 +270,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
     }
 
     const plan = planLists(queue, selection, eventsSince(scan.edits), scan.guardedEntries)
+    refuseObsidianPaths(plan, selection.pair)
     refuseRootNames(scan, plan, selection.pair)
     // accept only names what an agent face must see named (rule 8).
     const acceptable = new Set([...plan.forcedRemove, ...plan.guardedAttachments])
@@ -276,6 +283,23 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
         }
     }
     return plan
+}
+
+/**
+ * Stops a plan that publishes a note, or pairs a note with a path, that
+ * Obsidian reads as another path (section "Paths" of the canonical form,
+ * decision R72): its links, the Starter Kit and the refresh of its lists
+ * would not find it. The author gives the file another name. A plan without
+ * a new note never stops here, so no forced removal waits for this rule.
+ */
+function refuseObsidianPaths(plan: PublicationPlan, pairs: readonly Move[]): void {
+    for (const path of [...plan.publish, ...pairs.map((pairing) => pairing.to)]) {
+        if (isChangedByObsidian(path)) {
+            throw new SelectionError(
+                `"${path}" cannot be published: Obsidian reads its path as "${obsidianPath(path)}" (a no-break space, a backslash or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it`
+            )
+        }
+    }
 }
 
 /** The vault path of a note without `.md`: the text of its URL. */

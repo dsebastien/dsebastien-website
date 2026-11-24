@@ -564,6 +564,19 @@
             "asked": ["A.md", "E.md"]
         },
         {
+            "name": "a path that Obsidian changes is not asked (issue 110)",
+            "paths": [
+                "A.md",
+                "a\u00a0b.md",
+                "c\u202fd.md",
+                "Cafe\u0301.md",
+                "x\\y.md",
+                "F\u00a0G/H.md",
+                "E.md"
+            ],
+            "asked": ["A.md", "E.md"]
+        },
+        {
             "name": "no path",
             "paths": [],
             "asked": []

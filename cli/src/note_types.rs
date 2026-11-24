@@ -16,6 +16,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::json::parse_json;
+use crate::names::is_changed_by_obsidian;
 
 /// The note type of a note, as the manifest entry and the record of a plan
 /// hold it.
@@ -246,11 +247,13 @@ pub fn default_program(vault: &Path) -> PathBuf {
 
 /// The paths of a question that the Starter Kit can be asked about: a path
 /// with a line feed or a carriage return is left out, because its program
-/// reads one path per line. Such a note has no type.
+/// reads one path per line, and a path that Obsidian changes is left out,
+/// because its plugin knows the note only by the path of Obsidian (issue
+/// 110). Such a note has no type.
 pub fn askable(paths: &[String]) -> Vec<String> {
     paths
         .iter()
-        .filter(|path| !path.contains(['\n', '\r']))
+        .filter(|path| !path.contains(['\n', '\r']) && !is_changed_by_obsidian(path))
         .cloned()
         .collect()
 }

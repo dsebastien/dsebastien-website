@@ -1,3 +1,5 @@
+import { isChangedByObsidian } from './names.ts'
+
 // The note type of a note (decision R61, issue 49): the type that the
 // Obsidian Starter Kit plugin of the vault gives it. The rules are in
 // `documentation/Canonical Form.md`, section "The note type of a note". The
@@ -19,10 +21,14 @@ export type NoteType = {
 /**
  * The paths of a question that the Starter Kit can be asked about: a path
  * with a line feed or a carriage return is left out, because its program
- * reads one path per line. Such a note has no type.
+ * reads one path per line, and a path that Obsidian changes is left out,
+ * because its plugin knows the note only by the path of Obsidian (issue 110).
+ * Such a note has no type.
  */
 export function askable(paths: readonly string[]): string[] {
-    return paths.filter((path) => !path.includes('\n') && !path.includes('\r'))
+    return paths.filter(
+        (path) => !path.includes('\n') && !path.includes('\r') && !isChangedByObsidian(path)
+    )
 }
 
 /** The message of every answer that the tool refuses. */

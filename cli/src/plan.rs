@@ -11,7 +11,9 @@ use crate::configuration::is_vault_path;
 use crate::edits::Event;
 use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::manifest::State;
-use crate::names::{first_part, folded_form, is_reserved_root_name};
+use crate::names::{
+    first_part, folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path,
+};
 use crate::order::sort_by_code_point;
 use crate::queue::{Move, Scan};
 
@@ -314,6 +316,7 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
         remove,
         scan.edits.since().to_vec(),
     );
+    refuse_obsidian_paths(&plan, &selection.pair)?;
     refuse_root_names(scan, &plan, &selection.pair)?;
     Ok(plan)
 }
@@ -399,6 +402,27 @@ fn refuse_pairings(scan: &Scan, selection: &Selection) -> Result<(), String> {
         if !within(&queue.new, to) || scan.manifest.contains_key(to) {
             return Err(format!(
                 "\"{to}\" is not a candidate with no manifest entry: it cannot be paired"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Stops a plan that publishes a note, or pairs a note with a path, that
+/// Obsidian reads as another path (section "Paths" of the canonical form,
+/// decision R72): its links, the Starter Kit and the refresh of its lists
+/// would not find it. The author gives the file another name. A plan without
+/// a new note never stops here, so no forced removal waits for this rule.
+fn refuse_obsidian_paths(plan: &PublicationPlan, pairs: &[Move]) -> Result<(), String> {
+    for path in plan
+        .publish
+        .iter()
+        .chain(pairs.iter().map(|pairing| &pairing.to))
+    {
+        if is_changed_by_obsidian(path) {
+            return Err(format!(
+                "\"{path}\" cannot be published: Obsidian reads its path as \"{}\" (a no-break space, a backslash or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it",
+                obsidian_path(path)
             ));
         }
     }

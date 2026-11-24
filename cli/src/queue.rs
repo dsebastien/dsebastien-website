@@ -17,7 +17,9 @@ use crate::guards::{guard_of, in_deny_list};
 use crate::hash::content_hash;
 use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
-use crate::names::{first_part, folded_form, is_reserved_root_name};
+use crate::names::{
+    first_part, folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path,
+};
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::renames::{Fold, JournalState, RenameWarning, fold_moves, former_paths_after};
 use crate::small_letters::guard_name;
@@ -902,6 +904,22 @@ struct Moves {
     warnings: Vec<RenameWarning>,
 }
 
+/// Why a move of the rename journal cannot take a note to `to`, when it
+/// cannot: the file or the first folder of `to` is a reserved root name, or
+/// Obsidian changes the path (rule 3 of the moves, R72).
+fn refused_target(to: &str) -> Option<String> {
+    let name = without_suffix(to.rsplit('/').next().unwrap_or(to));
+    if is_reserved_root_name(name) || (to.contains('/') && is_reserved_root_name(first_part(to))) {
+        return Some("whose name is a reserved root name of the site: it does not move".to_owned());
+    }
+    is_changed_by_obsidian(to).then(|| {
+        format!(
+            "whose path Obsidian reads as \"{}\": it does not move, and it can show as a pairing",
+            obsidian_path(to)
+        )
+    })
+}
+
 /// The moves of the rename journals (`documentation/Canonical Form.md`, "The
 /// rename journal"): the entries at their last paths, the moves, the entries
 /// that moved under a guard, and the warnings of the moves that do not happen.
@@ -974,16 +992,10 @@ fn apply_moves(
             });
             continue;
         }
-        let name = without_suffix(to.rsplit('/').next().unwrap_or(&to));
-        if is_reserved_root_name(name)
-            || (to.contains('/') && is_reserved_root_name(first_part(&to)))
-        {
+        if let Some(why) = refused_target(&to) {
             warnings.push(RenameWarning {
                 path: from.clone(),
-                message: not_moved(
-                    &to,
-                    "whose name is a reserved root name of the site: it does not move",
-                ),
+                message: not_moved(&to, &why),
             });
             continue;
         }

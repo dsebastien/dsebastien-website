@@ -1,5 +1,5 @@
 {
-    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form.",
+    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form, `obsidian` gives a vault path and the path that Obsidian gives it (its `normalizePath`, section \"Paths\").",
     "reserved": [
         {
             "name": "a plain name",
@@ -164,6 +164,73 @@
             "one": "\ud835\udc00\u03a3\u0345",
             "two": "\ud835\udc00\u03c2\u0345",
             "equal": true
+        }
+    ],
+    "obsidian": [
+        {
+            "name": "a plain path",
+            "text": "Folder/Note.md",
+            "path": "Folder/Note.md"
+        },
+        {
+            "name": "a no-break space becomes a space",
+            "text": "Explore and\u00a0Master.md",
+            "path": "Explore and Master.md"
+        },
+        {
+            "name": "a narrow no-break space becomes a space",
+            "text": "a\u202fb.md",
+            "path": "a b.md"
+        },
+        {
+            "name": "a figure space stays",
+            "text": "a\u2007b.md",
+            "path": "a\u2007b.md"
+        },
+        {
+            "name": "a folder with a no-break space",
+            "text": "My\u00a0Folder/Note.md",
+            "path": "My Folder/Note.md"
+        },
+        {
+            "name": "a decomposed name is composed",
+            "text": "Cafe\u0301.md",
+            "path": "Caf\u00e9.md"
+        },
+        {
+            "name": "a composed name stays",
+            "text": "Caf\u00e9.md",
+            "path": "Caf\u00e9.md"
+        },
+        {
+            "name": "decomposed Hangul is composed",
+            "text": "\u1100\u1161.md",
+            "path": "\uac00.md"
+        },
+        {
+            "name": "a no-break space before a combining mark becomes a space, and the mark stays",
+            "text": "a\u00a0\u0301.md",
+            "path": "a \u0301.md"
+        },
+        {
+            "name": "a backslash is a slash",
+            "text": "a\\b.md",
+            "path": "a/b.md"
+        },
+        {
+            "name": "slashes and backslashes in a row are one slash",
+            "text": "a\\/\\b.md",
+            "path": "a/b.md"
+        },
+        {
+            "name": "the slashes at the two ends go",
+            "text": "/a/b.md/",
+            "path": "a/b.md"
+        },
+        {
+            "name": "an empty path is the root",
+            "text": "",
+            "path": "/"
         }
     ]
 }

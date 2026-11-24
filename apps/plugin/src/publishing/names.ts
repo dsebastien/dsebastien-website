@@ -39,3 +39,25 @@ export function foldedForm(text: string): string {
     // NFC again: a small letter can make a pair that NFC composes (J and U+030C).
     return smallLetters(text.normalize('NFC')).normalize('NFC')
 }
+
+/**
+ * The path that Obsidian gives a vault path: what its `normalizePath` does
+ * (Obsidian 1.15.1). Each run of slashes and backslashes becomes one slash,
+ * the slashes at the two ends go (an empty path is `/`), each no-break space
+ * (U+00A0, U+202F) becomes a space, then the composed Unicode form (NFC).
+ * Obsidian lists the files of the disk with this path (section "Paths" of
+ * the canonical form, issue 110).
+ */
+export function obsidianPath(path: string): string {
+    const plain = path.replace(/[\\/]+/gu, '/').replace(/^\/+|\/+$/gu, '')
+    return (plain === '' ? '/' : plain).replace(/[\u00a0\u202f]/gu, ' ').normalize('NFC')
+}
+
+/**
+ * True when Obsidian gives this vault path another path: a no-break space, a
+ * backslash or a name that is not in the composed Unicode form. Obsidian, its
+ * links and the APIs of its plugins then name another file than the disk.
+ */
+export function isChangedByObsidian(path: string): boolean {
+    return obsidianPath(path) !== path
+}

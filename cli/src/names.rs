@@ -34,9 +34,45 @@ pub fn folded_form(text: &str) -> String {
         .collect()
 }
 
+/// The path that Obsidian gives a vault path: what its `normalizePath` does
+/// (Obsidian 1.15.1). Each run of slashes and backslashes becomes one slash,
+/// the slashes at the two ends go (an empty path is `/`), each no-break space
+/// (U+00A0, U+202F) becomes a space, then the composed Unicode form (NFC).
+/// Obsidian lists the files of the disk with this path (section "Paths" of
+/// the canonical form, issue 110).
+pub fn obsidian_path(path: &str) -> String {
+    let mut plain = String::with_capacity(path.len());
+    for character in path.chars() {
+        if character == '/' || character == '\\' {
+            if !plain.ends_with('/') {
+                plain.push('/');
+            }
+        } else {
+            plain.push(character);
+        }
+    }
+    let trimmed = plain.trim_matches('/');
+    let rooted = if trimmed.is_empty() { "/" } else { trimmed };
+    rooted
+        .chars()
+        .map(|character| match character {
+            '\u{a0}' | '\u{202f}' => ' ',
+            other => other,
+        })
+        .nfc()
+        .collect()
+}
+
+/// True when Obsidian gives this vault path another path: a no-break space, a
+/// backslash or a name that is not in the composed Unicode form. Obsidian, its
+/// links and the APIs of its plugins then name another file than the disk.
+pub fn is_changed_by_obsidian(path: &str) -> bool {
+    obsidian_path(path) != path
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{folded_form, is_reserved_root_name};
+    use super::{folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path};
     use serde_json::Value;
 
     /// The cases that the TypeScript implementation reads too
@@ -77,6 +113,27 @@ mod tests {
             assert_eq!(
                 Some(folded_form(text(case, "one")) == folded_form(text(case, "two"))),
                 case["equal"].as_bool(),
+                "{}",
+                text(case, "name")
+            );
+        }
+    }
+
+    #[test]
+    fn gives_the_paths_of_obsidian_as_the_file_states() {
+        let cases = cases("obsidian");
+        assert!(cases.len() > 10);
+        for case in &cases {
+            let path = text(case, "path");
+            assert_eq!(
+                obsidian_path(text(case, "text")),
+                path,
+                "{}",
+                text(case, "name")
+            );
+            assert_eq!(
+                is_changed_by_obsidian(text(case, "text")),
+                path != text(case, "text"),
                 "{}",
                 text(case, "name")
             );
