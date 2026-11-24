@@ -64,6 +64,16 @@ Configuration for those skills:
 - Documents: `documentation/` (ADRs in `documentation/adr/`, not `docs/adr/`).
 - Glossary: `GLOSSARY.md` at the repository root.
 
+### Review and speed (decision R73)
+
+1. Size the review by risk. A ticket gets the full review when it changes the guards, the forced removals, what leaves the vault, or the bytes that a publication writes: three rounds of two separate reviewers, then one look at the last corrections. Every other ticket, also one that only adds a refusal (it fails closed), gets the light review: one round of two reviewers, then one look at the corrections. After the last look, a finding becomes a GitHub issue, unless it opens a guard.
+2. A review brief gives a time limit (about 15 minutes, then report what you have) and the commit at which the implementer ran the full suites. The reviewer runs only the tests that its findings need, never the full suites again.
+3. Only one reviewer runs Rust code. When two must, each sets its own `CARGO_TARGET_DIR`, because two builds in one `target/` wait on the same lock.
+4. The reviewer of the documents and of the consistency runs on Sonnet. The reviewer that tries to break the change runs on the strongest model.
+5. While a review runs, the implementer starts the next ticket that an agent can do alone, in its own git worktree.
+6. The random parity cases live in the repository (issue 112), so that a reviewer does not write that harness again.
+7. The facts of the history file (commits, counts of tests, closed issues) come from a script (issue 113).
+
 ### Definition of done
 
 A change is done only when all of these hold:
