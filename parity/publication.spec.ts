@@ -377,7 +377,10 @@ const LATER = '2031-04-02T09:00:00Z'
 interface Tool {
     status(): Promise<string>
     /** Makes the plan of a selection, applies it, and gives the plan and the lists of paths of the report. */
-    publish(selection: Selection, time: string): Promise<{ plan: string; report: string }>
+    publish(
+        selection: Selection,
+        time: string
+    ): Promise<{ plan: string; lists: string; report: string }>
     /** Unpublishes the notes in one step, and gives the lists of paths of the report. */
     unpublish(paths: readonly string[], time: string): Promise<string>
     /** Takes the notes down, and gives the lists of paths of the report. */
@@ -419,10 +422,11 @@ function typescriptTool(vault: string, copy: string): Tool {
                 face: 'command-line'
             })
             return {
-                plan: toCanonicalJson({
+                plan: toCanonicalJson(planned.plan),
+                // The frozen lists of the plan (R71), compared too.
+                lists: toCanonicalJson({
                     listsNotRefreshed: planned.listsNotRefreshed,
-                    liveQueries: planned.liveQueries,
-                    plan: planned.plan
+                    liveQueries: planned.liveQueries
                 }),
                 report: reportLists(report)
             }
@@ -496,10 +500,11 @@ function rustTool(vault: string, copy: string): Tool {
                 ])
             ) as Record<string, unknown>
             return {
-                plan: toCanonicalJson({
+                plan: toCanonicalJson(planned.plan),
+                // The frozen lists of the plan (R71), compared too.
+                lists: toCanonicalJson({
                     listsNotRefreshed: planned.listsNotRefreshed,
-                    liveQueries: planned.liveQueries,
-                    plan: planned.plan
+                    liveQueries: planned.liveQueries
                 }),
                 report: reportLists(report)
             }
