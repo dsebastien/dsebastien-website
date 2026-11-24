@@ -836,13 +836,14 @@ async function writeState(
  */
 async function usedKeys(
     manifest: ReadonlyMap<string, ManifestEntry>,
-    isGuarded: Scan['isGuardedFile']
+    isGuarded: Scan['isGuardedFile'],
+    keepsGuarded: KeepsGuarded = NEVER_KEEPS
 ): Promise<Set<string>> {
     const keys = new Set<string>()
-    for (const entry of manifest.values()) {
+    for (const [path, entry] of manifest) {
         if (entry.state === 'published') {
             for (const attachment of entry.attachments) {
-                if (!(await isGuarded(attachment.path, attachment.hash))) {
+                if (keepsGuarded(path) || !(await isGuarded(attachment.path, attachment.hash))) {
                     keys.add(keyOf(attachment.hash))
                 }
             }
@@ -943,6 +944,26 @@ class Uploads {
 }
 
 /**
+ * True when a cleanup counts as used the files under a guard that the
+ * published entry at this path lists (rule 10 of "The edits of the
+ * guards"): a run of an agent face never deletes such a file unless its
+ * `accept` names the entry.
+ */
+type KeepsGuarded = (path: string) => boolean
+
+/** The cleanup of a run of the face plugin: a file under a guard counts for no note. */
+const NEVER_KEEPS: KeepsGuarded = () => false
+
+/** What the cleanups of a run keep (rule 10): for an agent face, the guarded files of every entry that `accept` does not name. */
+function keepsGuardedFor(face: Face, selection: NormalSelection): KeepsGuarded {
+    if (face === 'plugin') {
+        return NEVER_KEEPS
+    }
+    const accepted = new Set(selection.accept)
+    return (path) => !accepted.has(path)
+}
+
+/**
  * Cleans the attachment storage: every file whose name is not the key of an
  * attachment of a published entry goes (PUB-82, PUB-84, PUB-93). It reads no
  * file of the storage. A name that is not in the form of a key is not a file
@@ -953,13 +974,14 @@ class Uploads {
 async function cleanStorage(
     device: Device,
     manifest: ReadonlyMap<string, ManifestEntry>,
-    isGuarded: Scan['isGuardedFile']
+    isGuarded: Scan['isGuardedFile'],
+    keepsGuarded: KeepsGuarded = NEVER_KEEPS
 ): Promise<{
     readonly deleted: string[]
     readonly uploaded: string[]
     readonly warnings: { path: string; message: string }[]
 }> {
-    const unused = await deleteUnused(device, await usedKeys(manifest, isGuarded))
+    const unused = await deleteUnused(device, await usedKeys(manifest, isGuarded, keepsGuarded))
     if (unused.names === undefined) {
         return { deleted: unused.deleted, uploaded: [], warnings: unused.warnings }
     }
@@ -1797,7 +1819,14 @@ async function apply(
         // The run fetched and the copy follows the content store: the
         // storage can be cleaned, so a file that came under a guard leaves it
         // also when the plan is stale.
-        const cleanup = await cleanStorage(device, scan.manifest, scan.isGuardedFile)
+        // A run of an agent face keeps the guarded files of the entries
+        // that its accept does not name (rule 10).
+        const cleanup = await cleanStorage(
+            device,
+            scan.manifest,
+            scan.isGuardedFile,
+            keepsGuardedFor(run.face, selection)
+        )
         throw new Error(
             `the plan ${id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
@@ -1901,7 +1930,14 @@ async function applyCurrent(
     }
     // The copy follows the content store: the run fetched it and was not
     // behind, and a push, when there was one, succeeded.
-    const cleanup = await cleanStorage(device, manifest, scan.isGuardedFile)
+    // A run of an agent face keeps the guarded files of the entries that
+    // its accept does not name (rule 10), also with nothing to commit.
+    const cleanup = await cleanStorage(
+        device,
+        manifest,
+        scan.isGuardedFile,
+        keepsGuardedFor(run.face, current.selection)
+    )
     if (correct) {
         await device.local.removeJournal()
     }

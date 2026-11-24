@@ -10741,6 +10741,47 @@
                             "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
                         }
                     }
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan updates the note, whose image is under the guard now: the note is in guardedAttachments",
+                    "selection": {},
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": ["Notes/Plan.md"],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Notes/Plan.md"]
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits the note of the plan: the stored plan is stale",
+                    "files": {
+                        "Notes/Plan.md": "---\npublic_note: true\n---\n# Plan\n\n![[plan.png]]\n\nA second line.\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "an agent publication of the stale plan stops, and its cleanup keeps the image that the note still uses",
+                    "stored": true,
+                    "time": "2031-10-01T10:00:00Z",
+                    "face": "mcp-server",
+                    "refused": true,
+                    "says": "stale"
+                },
+                {
+                    "do": "expect",
+                    "why": "the cleanup before the refusal of a stale plan of an agent deleted no file under a guard that a published note uses",
+                    "vault": {},
+                    "store": {},
+                    "attachmentStorage": {
+                        "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e": {
+                            "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                        }
+                    }
                 }
             ]
         }

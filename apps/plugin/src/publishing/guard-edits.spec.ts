@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
     crashingStore,
@@ -658,6 +658,60 @@ describe('an agent publication applies a plan only when accept names what it tak
 
         expect(report.forcedRemoved).toEqual(['Notes/Public.md'])
     }, 60_000)
+})
+
+describe('the cleanups of a run of an agent face keep the guarded files of the entries that accept does not name (rule 10)', () => {
+    const MCP: Run = { ...AUTHOR, time: '2031-06-01T12:00:00Z', face: 'mcp-server' }
+
+    /** A published note whose file is under a guard now, and a stored plan that the author made stale. */
+    async function staleWithGuardedFile(
+        stores: TestStores
+    ): Promise<{ device: Device; vault: string; id: string }> {
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, {
+            'Notes/Plan.md': '# Plan\n\n[[plan.txt]]\n',
+            'Assets/plan.txt': 'A plan\n'
+        })
+        await publishNotes(device, ['Notes/Plan.md'], '2031-06-01T08:00:00Z')
+        await rm(join(vault, 'Assets/plan.txt'))
+        await writeFiles(vault, { 'Locked/plan.txt': 'A plan\n' })
+        const planned = await plan(device, { include: [] })
+        expect(planned.plan.guardedAttachments).toEqual(['Notes/Plan.md'])
+        const text = (await textOf(join(vault, 'Notes/Plan.md'))) ?? ''
+        await writeFile(join(vault, 'Notes/Plan.md'), `${text}A second line.\n`)
+        return { device, vault, id: planned.id }
+    }
+
+    test('a stale plan of an agent deletes no file under a guard that a published note uses', async () => {
+        await using stores = await makeTestStores()
+        const { device, id } = await staleWithGuardedFile(stores)
+        const before = await readdir(stores.attachmentStorage)
+        expect(before).toHaveLength(1)
+
+        expect(await rejectionOf(publish(device, id, MCP))).toContain('is stale')
+
+        expect(await readdir(stores.attachmentStorage)).toEqual(before)
+    }, 120_000)
+
+    test('a stale plan of the face plugin deletes it, as rule 8 of a publication says', async () => {
+        await using stores = await makeTestStores()
+        const { device, id } = await staleWithGuardedFile(stores)
+
+        expect(await rejectionOf(publish(device, id, AUTHOR))).toContain('is stale')
+
+        expect(await readdir(stores.attachmentStorage)).toEqual([])
+    }, 120_000)
+
+    test('an agent publication whose accept names the entry deletes it', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await staleWithGuardedFile(stores)
+
+        const planned = await plan(device, { include: [], accept: ['Notes/Plan.md'] })
+        const report = await publish(device, planned.id, MCP)
+
+        expect(report.attachmentsDeleted).toHaveLength(1)
+        expect(await readdir(stores.attachmentStorage)).toEqual([])
+    }, 120_000)
 })
 
 describe('what a confirmed allow opens (rule 11)', () => {

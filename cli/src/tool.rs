@@ -447,6 +447,10 @@ fn record_for(
     // selection comes from the queue of the same scan.
     let selection = &selection_of(&scan);
     let mut plan = compute_plan(&scan, selection)?;
+    // Before the question to the Starter Kit: a path of accept that the plan
+    // does not name stops the plan (rule 8 of the selection).
+    plan.set_guarded_attachments(guarded_attachments(device, &scan, &plan, selection));
+    refuse_accept(&plan, selection)?;
     // The published notes got their type in the scan. The new ones of the
     // plan get theirs in one more question.
     // The candidates of the pairings get theirs in the same question (R66).
@@ -484,8 +488,6 @@ fn record_for(
             },
         );
     }
-    plan.set_guarded_attachments(guarded_attachments(device, &scan, &plan, selection));
-    refuse_accept(&plan, selection)?;
     // The map gives the notes in the order of their paths.
     let notes = texts
         .iter()
@@ -979,19 +981,61 @@ fn removal_unit(path: &str, before: Option<&ManifestEntry>) -> Result<Unit, Stri
     })
 }
 
+/// Which files under a guard a cleanup of the attachment storage keeps (rule
+/// 10 of "The edits of the guards"). A run of the face `plugin` keeps none:
+/// the author saw the plan. A run of an agent face (`command-line`,
+/// `mcp-server`) keeps every file that a published entry lists and that a
+/// guard covers, unless `accept` of the selection of the run names the
+/// entry: a run that publishes nothing never deletes such a file.
+#[derive(Clone, Copy)]
+enum Guarded<'a> {
+    /// Every file under a guard is used by no note.
+    Deleted,
+    /// The files under a guard of the entries that `accept` does not name
+    /// stay used.
+    KeptUnless(&'a [String]),
+}
+
+impl<'a> Guarded<'a> {
+    /// What a cleanup of a run from this face, with this selection, keeps.
+    fn of(run: &Run, selection: &'a Selection) -> Self {
+        if run.face == "plugin" {
+            Self::Deleted
+        } else {
+            Self::KeptUnless(selection.accept())
+        }
+    }
+
+    /// True when the files under a guard of the entry at this path still
+    /// count as used.
+    fn keeps(self, path: &str) -> bool {
+        match self {
+            Self::Deleted => false,
+            Self::KeptUnless(accept) => !accept.iter().any(|named| named == path),
+        }
+    }
+}
+
 /// The keys of the files of the attachment storage that the published notes
 /// of a manifest use. An attachment whose file is under a guard now is used
-/// by no note, also when an entry that the plan held still lists it.
+/// by no note, also when an entry that the plan held still lists it, but for
+/// the entries that a run of an agent face keeps (rule 10 of "The edits of
+/// the guards").
 fn used_keys(
     manifest: &BTreeMap<String, ManifestEntry>,
     scan: &Scan,
     vault: &Vault,
+    guarded: Guarded,
 ) -> BTreeSet<String> {
     manifest
-        .values()
-        .filter(|entry| entry.state == State::Published)
-        .flat_map(|entry| &entry.attachments)
-        .filter(|attachment| !scan.is_guarded_file(vault, &attachment.path, &attachment.hash))
+        .iter()
+        .filter(|(_, entry)| entry.state == State::Published)
+        .flat_map(|(path, entry)| {
+            let kept = guarded.keeps(path);
+            entry.attachments.iter().filter(move |attachment| {
+                kept || !scan.is_guarded_file(vault, &attachment.path, &attachment.hash)
+            })
+        })
         .map(|attachment| key_of(&attachment.hash).to_owned())
         .collect()
 }
@@ -1067,8 +1111,13 @@ impl<'a> Uploads<'a> {
     /// Deletes the uploads of this run that no published entry of the
     /// manifest lists (PUB-93). Every upload is tried. The result is the keys
     /// that could not be deleted.
-    fn take_back(&self, manifest: &BTreeMap<String, ManifestEntry>, scan: &Scan) -> Vec<String> {
-        let used = used_keys(manifest, scan, self.vault);
+    fn take_back(
+        &self,
+        manifest: &BTreeMap<String, ManifestEntry>,
+        scan: &Scan,
+        guarded: Guarded,
+    ) -> Vec<String> {
+        let used = used_keys(manifest, scan, self.vault, guarded);
         self.uploaded
             .iter()
             .filter(|key| !used.contains(*key) && self.storage.remove(key).is_err())
@@ -1096,8 +1145,9 @@ fn clean_storage(
     manifest: &BTreeMap<String, ManifestEntry>,
     scan: &Scan,
     vault: &Vault,
+    guarded: Guarded,
 ) -> Cleanup {
-    let (mut cleanup, present) = delete_unused(storage, &used_keys(manifest, scan, vault));
+    let (mut cleanup, present) = delete_unused(storage, &used_keys(manifest, scan, vault, guarded));
     if let Some(present) = present {
         repair_storage(storage, manifest, scan, vault, &present, &mut cleanup);
     }
@@ -1808,15 +1858,19 @@ fn refuse_stale(
     current: &Computed,
     record: &str,
     id: &str,
+    run: &Run,
 ) -> Result<(), String> {
     if current.record == record {
         return Ok(());
     }
+    // A run of an agent face keeps the files under a guard of the entries
+    // that its accept does not name (rule 10 of "The edits of the guards").
     let cleanup = clean_storage(
         storage,
         &current.scan.manifest,
         &current.scan,
         &device.vault,
+        Guarded::of(run, &current.selection),
     );
     Err(format!(
         "the plan {id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan{}",
@@ -1841,7 +1895,7 @@ fn apply(
         .ok_or_else(|| format!("there is no plan with the id {id} on this device"))?;
     let selection = selection_of(&record, id)?;
     let current = record_for(device, &|_| selection.clone(), Fetch::Must)?;
-    refuse_stale(device, storage, &current, &record, id)?;
+    refuse_stale(device, storage, &current, &record, id, run)?;
     apply_current(
         device,
         storage,
@@ -1907,7 +1961,11 @@ fn apply_current(
             // next run, and an upload that stays would be public with no
             // entry.
             let stayed = journal.put_all_back();
-            let kept = uploads.take_back(&current.scan.manifest, &current.scan);
+            let kept = uploads.take_back(
+                &current.scan.manifest,
+                &current.scan,
+                Guarded::of(run, &current.selection),
+            );
             // A file that could not be put back, or a commit that git could
             // not take back, stays in the journal, so the next run puts it
             // back.
@@ -1956,7 +2014,13 @@ fn apply_current(
     }
     // The copy follows the content store: the run fetched it and was not
     // behind, and a push, when there was one, succeeded.
-    let cleanup = clean_storage(storage, &written.manifest, &current.scan, &device.vault);
+    let cleanup = clean_storage(
+        storage,
+        &written.manifest,
+        &current.scan,
+        &device.vault,
+        Guarded::of(run, &current.selection),
+    );
     if correct {
         device.store.remove_journal()?;
     }

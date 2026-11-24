@@ -354,7 +354,9 @@ fn refuse_paths(selection: &Selection) -> Result<(), String> {
                 .filter(|path| !held_to(path)),
         )
         .collect();
-    for path in &all {
+    // A path of accept has the form of a note too. It can be in another
+    // list: a forced removal can also be named in remove.
+    for path in all.iter().copied().chain(&selection.accept) {
         if !is_vault_path(path) {
             return refuse(path, "is not a vault path");
         }

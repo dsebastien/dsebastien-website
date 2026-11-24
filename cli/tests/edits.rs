@@ -1059,3 +1059,86 @@ fn two_applied_edits_cannot_take_an_entry_away_without_accept() {
     let report = publish_accepting(&setup, &[NOTE]);
     assert_eq!(report["forcedRemoved"], json!([NOTE]));
 }
+
+/// The names of the files of the attachment storage, sorted.
+fn storage_names(setup: &Setup) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(setup.stores.attachment_storage())
+        .expect("the storage can be listed")
+        .map(|entry| {
+            entry
+                .expect("the entry can be read")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// A published note with an image, a folder of the deny list over the image
+/// by hand, a plan, and an edit of another published note that makes the
+/// plan stale. The result is the id of the stale plan.
+fn stale_plan_with_a_guarded_image(setup: &Setup, accept: &[&str]) -> String {
+    let plan = "10 Garden/Garden plan.md";
+    setup.publish(&[NOTE, plan]);
+    assert_eq!(storage_names(setup).len(), 1);
+    setup.commit_file(
+        "configuration.json",
+        "{\"denyList\": [\"80 Templates\", \"90 Locked Shed\", \"Attachments\"]}\n",
+    );
+    let arguments: Vec<String> = accept
+        .iter()
+        .map(|path| format!("--accept={path}"))
+        .collect();
+    let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
+    let planned = setup.run("plan", &arguments);
+    assert!(planned.status.success(), "{}", errors_of(&planned));
+    assert_eq!(
+        json_of(&planned)["plan"]["guardedAttachments"],
+        json!([plan])
+    );
+    let note = setup.vault.join(NOTE);
+    fs::write(&note, read(&note) + "\nOne more line.\n").expect("the note is edited");
+    json_of(&planned)["id"]
+        .as_str()
+        .expect("the plan has an id")
+        .to_owned()
+}
+
+/// Rule 10: the cleanup before the refusal of a stale plan keeps the files
+/// under a guard that a published entry lists, unless accept names it.
+#[test]
+fn a_stale_plan_of_an_agent_face_deletes_no_file_that_a_published_note_uses() {
+    let setup = set_up();
+    let id = stale_plan_with_a_guarded_image(&setup, &[]);
+    let before = storage_names(&setup);
+
+    let output = setup.publish_plan(&id);
+
+    assert_refused(&output, "stale");
+    assert_eq!(storage_names(&setup), before);
+}
+
+#[test]
+fn a_stale_plan_whose_accept_names_the_note_deletes_its_file_under_a_guard() {
+    let setup = set_up();
+    let id = stale_plan_with_a_guarded_image(&setup, &["10 Garden/Garden plan.md"]);
+
+    let output = setup.publish_plan(&id);
+
+    assert_refused(&output, "stale");
+    assert_eq!(storage_names(&setup), Vec::<String>::new());
+}
+
+/// Rule 1 of the selection for accept, as for the other lists.
+#[test]
+fn a_path_of_accept_in_another_form_stops_the_plan() {
+    let setup = set_up();
+    for (path, says) in [
+        ("../Outside.md", "is not a vault path"),
+        ("10 Garden", "is not a note"),
+    ] {
+        assert_refused(&setup.run("plan", &[&format!("--accept={path}")]), says);
+    }
+}
