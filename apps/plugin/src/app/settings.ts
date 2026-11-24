@@ -1,6 +1,6 @@
 import { isAbsolute, join } from 'node:path'
 import { nodeDevice } from '../publishing/node/device.ts'
-import type { Device, NoteTypes } from '../publishing/ports.ts'
+import type { Device, ListRefresh, NoteTypes } from '../publishing/ports.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import type { DeviceStorage } from './rename-journal.ts'
 
@@ -71,11 +71,12 @@ export function deviceOf(
     settings: DeviceSettings,
     vault: string,
     configDir: string,
-    noteTypes: NoteTypes
+    noteTypes: NoteTypes,
+    lists?: ListRefresh
 ): Device {
     const { contentStore, git } = pullOptionsOf(settings)
     const attachmentStorage = folderOf(settings.attachmentStorage, 'the attachment storage')
-    return nodeDevice({
+    const device = nodeDevice({
         vault,
         contentStore,
         attachmentStorage,
@@ -83,6 +84,7 @@ export function deviceOf(
         renames: join(vault, configDir, JOURNAL_FOLDER),
         ...(git === undefined ? {} : { git })
     })
+    return lists === undefined ? device : { ...device, lists }
 }
 
 /**

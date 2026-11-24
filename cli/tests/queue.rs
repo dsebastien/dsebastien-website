@@ -665,6 +665,10 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
                 assert_eq!(json_of(&output)["plan"], step["plan"], "{label}");
                 let offline = step.get("offline").cloned().unwrap_or(json!(false));
                 assert_eq!(json_of(&output)["offline"], offline, "{label}");
+                for key in ["listsNotRefreshed", "liveQueries"] {
+                    let expected = step.get(key).cloned().unwrap_or(json!([]));
+                    assert_eq!(json_of(&output)[key], expected, "{label}: {key}");
+                }
             }
         }
         "crash" => {

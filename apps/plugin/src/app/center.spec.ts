@@ -705,3 +705,92 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
         expect(center.state.queue?.new.some((path) => path.startsWith(`${LOCKED}/`))).toBe(true)
     }, 120_000)
 })
+
+describe('the refresh of the frozen lists in the publication center (PUB-35, R71)', () => {
+    const FROZEN = '50 Field guide/Queries/Frozen table.md'
+    const LIVE = '50 Field guide/Queries/Live Dataview.md'
+    const ROW = '| [[Water butt]] | 2031-03-04T07:00 |\n'
+
+    /** A center whose stand-in serializer writes a row into the frozen list, and reports each write as Obsidian does. */
+    async function setUpWithLists(
+        stores: TestStores,
+        refreshes = true
+    ): Promise<{ center: PublicationCenter; copy: string; asked: string[][] }> {
+        const vault = await copyFixtureVault(stores)
+        const copy = await makeContentStoreCopy(stores)
+        const asked: string[][] = []
+        let minute = 0
+        const center: PublicationCenter = new PublicationCenter({
+            device: () => ({
+                ...nodeDevice({
+                    vault,
+                    contentStore: copy,
+                    attachmentStorage: stores.attachmentStorage,
+                    noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES)
+                }),
+                lists: {
+                    async refresh(paths) {
+                        asked.push([...paths])
+                        let wrote = false
+                        if (refreshes && paths.includes(FROZEN)) {
+                            const file = join(vault, FROZEN)
+                            const text = await Bun.file(file).text()
+                            await writeFile(
+                                file,
+                                text.replace(
+                                    '\n\n<!-- SerializedQuery END',
+                                    `${ROW}\n<!-- SerializedQuery END`
+                                )
+                            )
+                            // Obsidian reports the write of the serializer as an edit.
+                            center.noteChanged(FROZEN)
+                            wrote = true
+                        }
+                        return {
+                            refreshed: new Set(refreshes ? paths : []),
+                            wrote,
+                            problems: refreshes
+                                ? []
+                                : paths.map((path) => ({ path, message: 'not refreshed here' }))
+                        }
+                    }
+                }
+            }),
+            pull: () => pullContentStore({ contentStore: copy }),
+            now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
+            deviceName: 'garden-shed'
+        })
+        return { center, copy, asked }
+    }
+
+    test('a dry run refreshes the lists and names the notes whose lists were not refreshed', async () => {
+        await using stores = await makeTestStores()
+        const { center, asked } = await setUpWithLists(stores, false)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, toggleRow(queue, choices, FROZEN), LIVE))
+
+        await center.dryRun()
+
+        expect(asked).toEqual([[FROZEN, LIVE]])
+        expect(center.state.dryRun?.listsNotRefreshed).toEqual([FROZEN])
+        expect(center.state.dryRun?.liveQueries).toEqual([LIVE])
+        const log = center.state.log.map((line) => line.text)
+        expect(log).toContain(
+            `Lists not refreshed, published as saved: "${FROZEN}": not refreshed here`
+        )
+        expect(log).toContain(`Live query blocks, not on the page: "${LIVE}"`)
+    }, 60_000)
+
+    test('the write of the refresh is no edit: a new note with a list is published, with the refreshed text', async () => {
+        await using stores = await makeTestStores()
+        const { center, copy } = await setUpWithLists(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.report?.kind).toBe('publication')
+        expect(await Bun.file(join(copy, 'notes', FROZEN)).text()).toContain(ROW)
+    }, 60_000)
+})

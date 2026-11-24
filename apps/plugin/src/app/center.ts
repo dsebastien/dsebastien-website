@@ -322,6 +322,51 @@ export class PublicationCenter {
         this.#ownWrites = { paths: new Set(paths), until: performance.now() + OWN_WRITES }
     }
 
+    /**
+     * The device of the host, whose refresh of the frozen lists (PUB-35, R71)
+     * counts its writes as writes of the tool, not as edits: else a new note
+     * with a list would be refused as "changed after the check". The writes
+     * count as long as the refresh runs, and for a short time after.
+     */
+    #device(): Device {
+        const device = this.host.device()
+        const { lists } = device
+        if (lists === undefined) {
+            return device
+        }
+        return {
+            ...device,
+            lists: {
+                refresh: async (paths) => {
+                    const own = new Set(paths)
+                    this.#ownWrites = { paths: own, until: Number.POSITIVE_INFINITY }
+                    try {
+                        return await lists.refresh(paths)
+                    } finally {
+                        if (this.#ownWrites.paths === own) {
+                            this.#ownWrites = { paths: own, until: performance.now() + OWN_WRITES }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Logs the notes of a plan whose lists were not refreshed, and the notes with a live query (R71, REN-14). */
+    #logLists(stored: StoredPlan): void {
+        if (stored.listsNotRefreshed.length > 0) {
+            const reasons = new Map(stored.refreshProblems.map((one) => [one.path, one.message]))
+            this.#log(
+                `Lists not refreshed, published as saved: ${stored.listsNotRefreshed.map((path) => `"${path}": ${reasons.get(path) ?? 'the Dataview Serializer did not refresh it'}`).join('; ')}`
+            )
+        }
+        if (stored.liveQueries.length > 0) {
+            this.#log(
+                `Live query blocks, not on the page: ${stored.liveQueries.map((path) => `"${path}"`).join(', ')}`
+            )
+        }
+    }
+
     /** The state of a note at the last check (TOOL-23). */
     stateOf(path: string): NoteState {
         return stateOfNote(this.#state.queue, this.#state.choices, path, this.#changed.has(path))
@@ -411,7 +456,7 @@ export class PublicationCenter {
      */
     async #check(keepTicked = false): Promise<void> {
         this.#log('Check started')
-        const device = this.host.device()
+        const device = this.#device()
         // The edits before this check: they are marks again when it fails.
         const before = this.#changed
         this.#changed = new Set()
@@ -480,12 +525,13 @@ export class PublicationCenter {
             if (queue === undefined) {
                 throw new Error('check the vault first')
             }
-            const device = this.host.device()
+            const device = this.#device()
             const stored = await plan(device, selectionOf(queue, choices))
             this.#set({ dryRun: stored })
             this.#log(
                 `Dry run: ${describePlan(stored.plan)}${stored.offline ? ' (no network: the last fetch)' : ''}`
             )
+            this.#logLists(stored)
         })
     }
 
@@ -508,7 +554,7 @@ export class PublicationCenter {
                 // the same path: the author never saw it in the lists.
                 const selection = selectionOf(queue, choices)
                 this.#refuseChangedNewNotes(queue, expected, selection.pair)
-                const device = this.host.device()
+                const device = this.#device()
                 let stored: StoredPlan
                 try {
                     stored = await plan(device, selectionOf(queue, choices))
@@ -529,6 +575,7 @@ export class PublicationCenter {
                         `The plan changed since the check, so nothing was published. The plan is now: ${describePlan(stored.plan)} (${pathsOfPlan(stored.plan)}). Check the lists and publish again.`
                     )
                 }
+                this.#logLists(stored)
                 this.#log(`Publication started: ${describePlan(expected)}`)
                 this.host.started?.(describePlan(expected), clickedAt)
                 this.#fresh = false
@@ -562,7 +609,7 @@ export class PublicationCenter {
             'taking down',
             'Takedown',
             async () => {
-                const device = this.host.device()
+                const device = this.#device()
                 // The queue tells where a note is in the content store: after a
                 // run that changed the copy, it is checked again first.
                 if (!this.#fresh || this.#changed.size > 0) {
@@ -650,7 +697,7 @@ export class PublicationCenter {
     }
 
     async #serve(call: ToolCall): Promise<ToolOutcome> {
-        const device = this.host.device()
+        const device = this.#device()
         const run: Run = {
             time: canonicalTime(this.host.now()),
             device: this.host.deviceName,
@@ -674,6 +721,7 @@ export class PublicationCenter {
                     accept: call.accept ?? []
                 })
                 this.#log(`Agent plan ${stored.id}: ${describePlan(stored.plan)}`)
+                this.#logLists(stored)
                 return outcomeOfPlan(stored)
             }
             case 'publish':
@@ -748,7 +796,7 @@ export class PublicationCenter {
     async reviewProposal(proposal: EditEvent): Promise<ProposalReview | undefined> {
         let review: ProposalReview | undefined
         await this.#run('reviewing', 'Review', async () => {
-            review = await reviewProposal(this.host.device(), proposal.id)
+            review = await reviewProposal(this.#device(), proposal.id)
         })
         return review
     }
@@ -790,7 +838,7 @@ export class PublicationCenter {
             'editing',
             name,
             async () => {
-                const device = this.host.device()
+                const device = this.#device()
                 this.#log(`${name} started: ${proposal.action} "${proposal.path}"`)
                 this.#fresh = false
                 const event = await work(device, {
@@ -869,7 +917,7 @@ export class PublicationCenter {
             'Unlock',
             async () => {
                 this.#fresh = false
-                const removed = await unlock(this.host.device())
+                const removed = await unlock(this.#device())
                 this.#log(
                     removed ? 'Unlock done: the lock was removed' : 'Unlock done: there was no lock'
                 )

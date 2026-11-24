@@ -22,6 +22,7 @@ use crate::edits::{
 use crate::frontmatter::{
     Aliases, aliases_of, has_flow_properties, names_in_properties, remove_property, set_property,
 };
+use crate::frozen::{has_list_to_refresh, has_live_query};
 use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::hash::{bytes_hash, content_hash, sha256_hex};
 use crate::json::parse_json;
@@ -635,8 +636,11 @@ fn refuse_unaccepted(current: &Computed, run: &Run) -> Result<(), String> {
 /// The selection cannot become a plan, or the plan cannot be stored.
 pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
     let (id, computed) = store_plan(device, &|_| selection.clone())?;
+    let paths = || computed.plan.publish().iter().chain(computed.plan.update());
     canonical(&json!({
         "id": id,
+        "listsNotRefreshed": lists_not_refreshed(&computed.texts, paths()),
+        "liveQueries": live_queries(&computed.texts, paths()),
         "offline": !computed.reached,
         "plan": to_value(&computed.plan)?,
     }))
@@ -2024,10 +2028,9 @@ fn apply_current(
     if correct {
         device.store.remove_journal()?;
     }
-    let reserved = reserved_alias_warnings(
-        &current.texts,
-        written.published.iter().chain(&written.updated),
-    );
+    let notes = || written.published.iter().chain(&written.updated);
+    let mut reserved = reserved_alias_warnings(&current.texts, notes());
+    reserved.extend(live_query_warnings(&current.texts, notes()));
     report_of(
         &written,
         &current.plan,
@@ -2037,6 +2040,61 @@ fn apply_current(
         correction,
         cleanup,
     )
+}
+
+/// One warning for each published or updated note with a live query (rule 8
+/// of "The frozen lists of a note"), sorted by path.
+fn live_query_warnings<'a>(
+    texts: &BTreeMap<String, NoteTexts>,
+    paths: impl Iterator<Item = &'a String>,
+) -> Vec<Value> {
+    live_queries(texts, paths)
+        .into_iter()
+        .map(|path| {
+            json!({
+                "path": path,
+                "message": "the note has a live Dataview or Bases block with no frozen form: the page does not show it (REN-14)",
+            })
+        })
+        .collect()
+}
+
+/// `liveQueries` (rule 5 of "The frozen lists of a note"): the paths of the
+/// notes with a live query, sorted by path.
+fn live_queries<'a>(
+    texts: &BTreeMap<String, NoteTexts>,
+    paths: impl Iterator<Item = &'a String>,
+) -> Vec<String> {
+    let mut found: Vec<String> = paths
+        .filter(|path| {
+            texts
+                .get(*path)
+                .is_some_and(|note| has_live_query(&note.source))
+        })
+        .cloned()
+        .collect();
+    sort_by_code_point(&mut found);
+    found
+}
+
+/// `listsNotRefreshed` (rule 6 of "The frozen lists of a note"): the paths of
+/// the notes with a list to refresh, sorted by path. The Rust program
+/// refreshes nothing: with Obsidian closed, each list is published as saved
+/// (PUB-101).
+fn lists_not_refreshed<'a>(
+    texts: &BTreeMap<String, NoteTexts>,
+    paths: impl Iterator<Item = &'a String>,
+) -> Vec<String> {
+    let mut found: Vec<String> = paths
+        .filter(|path| {
+            texts
+                .get(*path)
+                .is_some_and(|note| has_list_to_refresh(&note.source))
+        })
+        .cloned()
+        .collect();
+    sort_by_code_point(&mut found);
+    found
 }
 
 /// A warning for each reserved alias of each note that the publication

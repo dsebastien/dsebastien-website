@@ -12,6 +12,7 @@ mod configuration;
 mod device;
 mod edits;
 mod frontmatter;
+mod frozen;
 mod guards;
 mod hash;
 mod images;
@@ -573,6 +574,32 @@ fn warn_when_offline(plan: &str) {
     }
 }
 
+/// A plan of the command line program refreshes no frozen list (PUB-101,
+/// R71), and the page drops a live query block (REN-14): it says so on the
+/// error output too.
+fn warn_about_lists(plan: &str) {
+    let Ok(plan) = json::parse_json(plan) else {
+        return;
+    };
+    let count = |key: &str| {
+        plan.get(key)
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len)
+    };
+    let not_refreshed = count("listsNotRefreshed");
+    if not_refreshed > 0 {
+        eprintln!(
+            "warning: {not_refreshed} notes of the plan have Dataview lists that the command line program does not refresh: they are published as saved (listsNotRefreshed). Make the plan in Obsidian to refresh them"
+        );
+    }
+    let live = count("liveQueries");
+    if live > 0 {
+        eprintln!(
+            "warning: {live} notes of the plan have a live Dataview or Bases block, which the page does not show (liveQueries)"
+        );
+    }
+}
+
 /// Runs the call of a tool of the MCP server, as the command of the same name
 /// does.
 fn operate(
@@ -689,6 +716,7 @@ fn run(command: Command) -> Result<Outcome, String> {
             };
             let output = tool::plan(&device(&places)?, &selection)?;
             warn_when_offline(&output);
+            warn_about_lists(&output);
             Ok(done(output))
         }
         Command::Unpublish {

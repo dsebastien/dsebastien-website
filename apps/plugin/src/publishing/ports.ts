@@ -208,6 +208,30 @@ export interface RenameJournals {
     read(name: string): Promise<Uint8Array | undefined>
 }
 
+/**
+ * The refresh of the frozen lists of notes before a plan (PUB-35, decision
+ * R71): the Dataview Serializer, in Obsidian only. The Rust program has none
+ * (PUB-101).
+ */
+export interface ListRefresh {
+    /**
+     * Refreshes the lists of the notes at these vault paths, sorted by path.
+     * It writes only the output of the serializer. It never throws: a note
+     * that it cannot refresh is in `problems`.
+     */
+    refresh(paths: readonly string[]): Promise<RefreshResult>
+}
+
+/** What a refresh of the frozen lists did (rule 7 of "The frozen lists of a note"). */
+export interface RefreshResult {
+    /** The paths whose lists are refreshed: updated, already up to date, or with no query to run. */
+    readonly refreshed: ReadonlySet<string>
+    /** True when the refresh wrote a note: the plan is computed again. */
+    readonly wrote: boolean
+    /** Why the other notes are not refreshed, for the author. Outside the parity rule. */
+    readonly problems: readonly { readonly path: string; readonly message: string }[]
+}
+
 /** Everything that a publication needs on one device. */
 export interface Device {
     readonly vault: Vault
@@ -216,4 +240,6 @@ export interface Device {
     readonly attachments: AttachmentStorage
     readonly local: LocalStore
     readonly noteTypes: NoteTypes
+    /** The refresh of the frozen lists, in Obsidian only. Without it, every list is published as saved. */
+    readonly lists?: ListRefresh
 }

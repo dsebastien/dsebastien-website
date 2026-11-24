@@ -929,6 +929,28 @@ export class PublicationCenterView extends ItemView {
                 text: `${stopped ? 'The plan of the vault now' : 'Dry run'}: ${describePlan(dryRun.plan)}. Nothing was published.${dryRun.offline ? ' No network: the plan uses the last fetch.' : ''}`
             })
             this.#renderPlan(panel, dryRun.plan)
+            // The frozen lists of the plan (R71, REN-14).
+            const reasons = new Map(dryRun.refreshProblems.map((one) => [one.path, one.message]))
+            const lists: [string, readonly string[]][] = [
+                [
+                    'Lists not refreshed (published as saved)',
+                    dryRun.listsNotRefreshed.map(
+                        (path) =>
+                            `${path}: ${reasons.get(path) ?? 'the Dataview Serializer did not refresh it'}`
+                    )
+                ],
+                ['Live query blocks (not on the page)', dryRun.liveQueries]
+            ]
+            for (const [title, items] of lists) {
+                if (items.length === 0) {
+                    continue
+                }
+                const part = panel.createEl('details', { attr: { open: '' } })
+                part.createEl('summary', { text: `${title}: ${items.length.toLocaleString()}` })
+                for (const item of items.slice(0, 500)) {
+                    part.createDiv({ text: item })
+                }
+            }
         }
         if (report === undefined) {
             return

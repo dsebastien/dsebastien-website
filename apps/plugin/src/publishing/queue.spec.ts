@@ -72,6 +72,8 @@ type Step = { why: string } & (
           refused?: true
           says?: string
           offline?: true
+          listsNotRefreshed?: string[]
+          liveQueries?: string[]
       }
     | {
           do: 'publish'
@@ -310,6 +312,10 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                             }
                         )
                         expect(planned.offline, label).toBe(step.offline ?? false)
+                        expect(planned.listsNotRefreshed, label).toEqual(
+                            step.listsNotRefreshed ?? []
+                        )
+                        expect(planned.liveQueries, label).toEqual(step.liveQueries ?? [])
                     }
                 } else if (step.do === 'crash' && step.takedown !== undefined) {
                     const stopped = crashingStore(device.store, copy, step.at)

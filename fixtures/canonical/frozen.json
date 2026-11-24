@@ -1,0 +1,245 @@
+{
+    "about": "The frozen lists of a note (documentation/Canonical Form.md, section \"The frozen lists of a note\"). Both implementations read every case: `source` is the source of a note, `liveQuery` says whether it has a live query, and `listToRefresh` whether it has a list to refresh.",
+    "cases": [
+        {
+            "name": "a note with no query",
+            "source": "Plain text\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "an automatic block query",
+            "source": "<!-- QueryToSerialize: LIST FROM \"Lists\" -->\n<!-- SerializedQuery: LIST FROM \"Lists\" -->\n- [[Auto]]\n<!-- SerializedQuery END -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "the other syntax of a block query",
+            "source": "<!-- dataview-serializer-query: LIST -->\n<!-- dataview-serializer-result: LIST -->\n- [[A]]\n<!-- dataview-serializer-result-end -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "an inline query in a sentence",
+            "source": "Count: <!-- IQ: =length(this.file.inlinks) -->3<!-- /IQ --> notes\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "the other syntax of an inline query",
+            "source": "Count: <!-- dataview-serializer-iq: =1 -->1<!-- /dataview-serializer-iq -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "a DataviewJS query",
+            "source": "<!-- DataviewJSToSerialize: dv.list([1]) -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "the other syntax of a DataviewJS query",
+            "source": "<!-- dataview-serializer-js: dv.list([1]) -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "a manual query is frozen on purpose",
+            "source": "<!-- QueryToSerializeManual: LIST -->\n<!-- SerializedQuery: LIST -->\n- [[A]]\n<!-- SerializedQuery END -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a write-once query is frozen on purpose",
+            "source": "<!-- QueryToSerializeOnce: LIST -->\n<!-- IQOnce: =1 -->1<!-- /IQ -->\n<!-- DataviewJSToSerializeOnceAndEject: dv.list([1]) -->\n<!-- dataview-serializer-query-manual: LIST -->\n<!-- dataview-serializer-iq-once: =1 -->\n<!-- dataview-serializer-js-once-and-eject: dv.list([1]) -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "the letter case of a marker counts",
+            "source": "<!-- querytoserialize: LIST -->\n<!-- iq: =1 -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a marker without the space after its colon is no marker",
+            "source": "<!-- QueryToSerialize:LIST -->\n<!-- IQ:=1 -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a marker without the space after the comment opening is no marker",
+            "source": "<!--QueryToSerialize: LIST -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a DataviewJS marker needs no space after its colon",
+            "source": "<!-- DataviewJSToSerialize:dv.list([1]) -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "a marker inside a quote counts",
+            "source": "> [!note]\n> <!-- QueryToSerialize: LIST -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "a marker in a fence is an example",
+            "source": "```markdown\n<!-- QueryToSerialize: LIST -->\n```\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a marker after a closed fence counts",
+            "source": "```\ncode\n```\n<!-- QueryToSerialize: LIST -->\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        },
+        {
+            "name": "a marker on the line that opens a fence is in no list",
+            "source": "```text <!-- QueryToSerialize: LIST -->\n```\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a marker after an unclosed fence is inside it",
+            "source": "```\ncode\n<!-- QueryToSerialize: LIST -->\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a Dataview block",
+            "source": "```dataview\nLIST FROM \"Lists\"\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "a DataviewJS block",
+            "source": "```dataviewjs\ndv.list([1])\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "a Bases block",
+            "source": "```base\nviews: []\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "the other name of a Bases block",
+            "source": "```bases\nviews: []\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "an embedded search",
+            "source": "```query\ntag:#a\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "the info word in capital letters",
+            "source": "```DataView\nLIST\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "a tilde fence",
+            "source": "~~~ dataview\nLIST\n~~~\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "an info word with more text after a space",
+            "source": "```dataview  extra words\nLIST\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "an info word that only starts with dataview",
+            "source": "```dataview-serializer\nLIST\n```\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a fence of another language",
+            "source": "```js\nconst a = 1\n```\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a block in a callout",
+            "source": "> [!info]\n> ```dataview\n> LIST\n> ```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "a block in a list item, indented",
+            "source": "- item\n    ```dataview\n    LIST\n    ```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "a block with a tab before it",
+            "source": "\t```dataview\nLIST\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "a Dataview block inside a longer fence is an example",
+            "source": "````markdown\n```dataview\nLIST\n```\n````\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a shorter run does not close a fence",
+            "source": "````\ncode\n```\n```dataview\n````\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a run of the other character does not close a fence",
+            "source": "```\n~~~\n```dataview\n```\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a run with text after it does not close a fence",
+            "source": "```\n``` not a close\n```dataview\n```\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "a closing run with spaces and tabs after it closes the fence",
+            "source": "```\ncode\n``` \t\n```dataview\nLIST\n```\n",
+            "liveQuery": true,
+            "listToRefresh": false
+        },
+        {
+            "name": "two backticks open no fence",
+            "source": "``dataview\nLIST\n``\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "inline code is not a fence",
+            "source": "Use `dataview` blocks\n",
+            "liveQuery": false,
+            "listToRefresh": false
+        },
+        {
+            "name": "both kinds in one note",
+            "source": "```dataview\nLIST\n```\n<!-- QueryToSerialize: LIST -->\n",
+            "liveQuery": true,
+            "listToRefresh": true
+        },
+        {
+            "name": "the lines of the properties are read too",
+            "source": "---\nnote: \"<!-- QueryToSerialize: LIST -->\"\n---\nText\n",
+            "liveQuery": false,
+            "listToRefresh": true
+        }
+    ]
+}

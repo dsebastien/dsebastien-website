@@ -240,7 +240,7 @@ const rust: Implementation = async (vault, copy, include, time = TIME) => {
         ...places,
         ...include.flatMap((path) => ['--include', path])
     ])
-    expect(planned.stderr).toBe('')
+    expect(withoutListWarnings(planned.stderr)).toBe('')
     const output: unknown = JSON.parse(new TextDecoder().decode(planned.stdout))
     const id = typeof output === 'object' && output !== null && 'id' in output ? output.id : ''
     const published = await runRustProgram(program, [
@@ -418,7 +418,14 @@ function typescriptTool(vault: string, copy: string): Tool {
                 device: DEVICE,
                 face: 'command-line'
             })
-            return { plan: toCanonicalJson(planned.plan), report: reportLists(report) }
+            return {
+                plan: toCanonicalJson({
+                    listsNotRefreshed: planned.listsNotRefreshed,
+                    liveQueries: planned.liveQueries,
+                    plan: planned.plan
+                }),
+                report: reportLists(report)
+            }
         },
         async unpublish(paths, time) {
             const run = { time, device: DEVICE, face: 'command-line' } as const
@@ -431,11 +438,28 @@ function typescriptTool(vault: string, copy: string): Tool {
     }
 }
 
+/**
+ * The error output of the Rust program without the warnings of a plan about
+ * its frozen lists (R71): the TypeScript face has no such output, and the
+ * lists themselves are compared.
+ */
+function withoutListWarnings(stderr: string): string {
+    return stderr
+        .split('\n')
+        .filter(
+            (line) =>
+                !/^warning: \d+ notes of the plan have (Dataview lists|a live Dataview or Bases block)/u.test(
+                    line
+                )
+        )
+        .join('\n')
+}
+
 function rustTool(vault: string, copy: string): Tool {
     const places = ['--vault', vault, '--content-store', copy]
     const run = async (command: string, args: readonly string[]): Promise<string> => {
         const result = await runRustProgram(program, [command, ...places, ...args])
-        expect(result.stderr, command).toBe('')
+        expect(withoutListWarnings(result.stderr), command).toBe('')
         return new TextDecoder().decode(result.stdout)
     }
     return {
@@ -453,7 +477,12 @@ function rustTool(vault: string, copy: string): Tool {
                     ]),
                     ...(selection.accept ?? []).map((path) => `--accept=${path}`)
                 ])
-            ) as { id: string; plan: Record<string, CanonicalValue> }
+            ) as {
+                id: string
+                plan: Record<string, CanonicalValue>
+                listsNotRefreshed: string[]
+                liveQueries: string[]
+            }
             const report = JSON.parse(
                 await run('publish', [
                     '--attachment-storage',
@@ -466,7 +495,14 @@ function rustTool(vault: string, copy: string): Tool {
                     DEVICE
                 ])
             ) as Record<string, unknown>
-            return { plan: toCanonicalJson(planned.plan), report: reportLists(report) }
+            return {
+                plan: toCanonicalJson({
+                    listsNotRefreshed: planned.listsNotRefreshed,
+                    liveQueries: planned.liveQueries,
+                    plan: planned.plan
+                }),
+                report: reportLists(report)
+            }
         },
         async unpublish(paths, time) {
             const output = await run('unpublish', [

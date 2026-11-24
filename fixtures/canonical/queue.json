@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\", a \"publish\", a \"takedown\" or an \"unpublish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum. Steps of issue 38: \"takedown\" takes down the notes of its paths at the time, and states the lists of its report; it must succeed, so its \"storageWarnings\" is empty. \"unpublish\" unpublishes the notes of its paths in one step, and states the lists of the publication report. A \"crash\" with \"takedown\" stops a takedown of those paths in the place of a publication. A \"publish\" with \"stored\" applies the plan of the last \"plan\" step that gave one, not a new plan. Steps of issue 42: \"edit\" runs an edit of the guards (its action, its path, at the time, from the face, on the device garden-shed) and states its event, or with \"refused\" that it stops; \"says\" states a part of its message, which both implementations write. \"guards\" states the output of the guards command. The author confirms and rejects a proposal in the view only, so a scenario writes those events with a \"store\" step. A \"publish\" step with \"face\" runs the publication from that face (by default the plugin in TypeScript and the command line program in Rust). A \"plan\" or \"publish\" selection, and an \"unpublish\" step, can have \"accept\": the forced removals and the notes of guardedAttachments that the request names (rule 10 of the edits of the guards).",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\", a \"publish\", a \"takedown\" or an \"unpublish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum. Steps of issue 38: \"takedown\" takes down the notes of its paths at the time, and states the lists of its report; it must succeed, so its \"storageWarnings\" is empty. \"unpublish\" unpublishes the notes of its paths in one step, and states the lists of the publication report. A \"crash\" with \"takedown\" stops a takedown of those paths in the place of a publication. A \"publish\" with \"stored\" applies the plan of the last \"plan\" step that gave one, not a new plan. Steps of issue 42: \"edit\" runs an edit of the guards (its action, its path, at the time, from the face, on the device garden-shed) and states its event, or with \"refused\" that it stops; \"says\" states a part of its message, which both implementations write. \"guards\" states the output of the guards command. The author confirms and rejects a proposal in the view only, so a scenario writes those events with a \"store\" step. A \"publish\" step with \"face\" runs the publication from that face (by default the plugin in TypeScript and the command line program in Rust). A \"plan\" or \"publish\" selection, and an \"unpublish\" step, can have \"accept\": the forced removals and the notes of guardedAttachments that the request names (rule 10 of the edits of the guards). Steps of issue 40: a \"plan\" states \"listsNotRefreshed\" and \"liveQueries\" (see \"The frozen lists of a note\"); a missing list is empty. No step refreshes a list: the Rust program has no refresh, and the TypeScript tests of the refresh use a stand-in serializer.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -10782,6 +10782,162 @@
                             "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
                         }
                     }
+                }
+            ]
+        },
+        {
+            "name": "frozen lists with Obsidian closed (issue 40)",
+            "denyList": ["Private"],
+            "vault": {
+                "Lists/Auto.md": "<!-- QueryToSerialize: LIST FROM \"Lists\" -->\n<!-- SerializedQuery: LIST FROM \"Lists\" -->\n- [[Plain]]\n- [[Secret]]\n<!-- SerializedQuery END -->\n",
+                "Lists/Live.md": "Before\n\n> [!note]\n> ```dataview\n> LIST FROM \"Lists\"\n> ```\n\nAfter\n",
+                "Lists/Manual.md": "<!-- QueryToSerializeManual: LIST -->\n<!-- SerializedQuery: LIST -->\n- [[Plain]]\n<!-- SerializedQuery END -->\n",
+                "Lists/Example.md": "```markdown\n<!-- QueryToSerialize: LIST -->\n```dataview\n```\n",
+                "Lists/Plain.md": "Plain\n",
+                "Private/Secret.md": "Secret\n"
+            },
+            "steps": [
+                {
+                    "do": "plan",
+                    "why": "the program refreshes nothing: it marks the note with an automatic query, not the manual one and not the example in a fence; the live block is named apart (PUB-101, REN-14)",
+                    "selection": {
+                        "hold": [],
+                        "include": [
+                            "Lists/Plain.md",
+                            "Lists/Manual.md",
+                            "Lists/Live.md",
+                            "Lists/Example.md",
+                            "Lists/Auto.md"
+                        ],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [
+                            "Lists/Auto.md",
+                            "Lists/Example.md",
+                            "Lists/Live.md",
+                            "Lists/Manual.md",
+                            "Lists/Plain.md"
+                        ],
+                        "remove": [],
+                        "update": [],
+                        "move": [],
+                        "edits": [],
+                        "guardedAttachments": []
+                    },
+                    "listsNotRefreshed": ["Lists/Auto.md"],
+                    "liveQueries": ["Lists/Live.md"]
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication warns for the live block, and publishes every note as saved",
+                    "selection": {
+                        "hold": [],
+                        "include": [
+                            "Lists/Auto.md",
+                            "Lists/Example.md",
+                            "Lists/Live.md",
+                            "Lists/Manual.md",
+                            "Lists/Plain.md"
+                        ],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [
+                            "Lists/Auto.md",
+                            "Lists/Example.md",
+                            "Lists/Live.md",
+                            "Lists/Manual.md",
+                            "Lists/Plain.md"
+                        ],
+                        "published": [
+                            "Lists/Auto.md",
+                            "Lists/Example.md",
+                            "Lists/Live.md",
+                            "Lists/Manual.md",
+                            "Lists/Plain.md"
+                        ],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["Lists/Live.md"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "a frozen list is published as it is saved, with all its rows, also the row of a note under a guard (ADR 0011, TEST-24)",
+                    "store": {
+                        "notes/Lists/Auto.md": "<!-- QueryToSerialize: LIST FROM \"Lists\" -->\n<!-- SerializedQuery: LIST FROM \"Lists\" -->\n- [[Plain]]\n- [[Secret]]\n<!-- SerializedQuery END -->\n",
+                        "notes/Lists/Live.md": "Before\n\n> [!note]\n> ```dataview\n> LIST FROM \"Lists\"\n> ```\n\nAfter\n",
+                        "notes/Lists/Manual.md": "<!-- QueryToSerializeManual: LIST -->\n<!-- SerializedQuery: LIST -->\n- [[Plain]]\n<!-- SerializedQuery END -->\n"
+                    },
+                    "vault": {}
+                },
+                {
+                    "do": "write",
+                    "why": "the author adds a row by hand",
+                    "files": {
+                        "Lists/Auto.md": "<!-- QueryToSerialize: LIST FROM \"Lists\" -->\n<!-- SerializedQuery: LIST FROM \"Lists\" -->\n- [[Plain]]\n- [[Secret]]\n- [[New]]\n<!-- SerializedQuery END -->\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the updated note is marked again; the live block is in no note of the plan",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Lists/Auto.md"],
+                        "move": [],
+                        "edits": [],
+                        "guardedAttachments": []
+                    },
+                    "listsNotRefreshed": ["Lists/Auto.md"]
+                },
+                {
+                    "do": "publish",
+                    "why": "an update of a note with no live block gives no warning; the write by hand dropped the state property, so it is set again",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-05-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Lists/Auto.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Lists/Auto.md"],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the update is published as saved",
+                    "store": {
+                        "notes/Lists/Auto.md": "<!-- QueryToSerialize: LIST FROM \"Lists\" -->\n<!-- SerializedQuery: LIST FROM \"Lists\" -->\n- [[Plain]]\n- [[Secret]]\n- [[New]]\n<!-- SerializedQuery END -->\n"
+                    },
+                    "vault": {}
                 }
             ]
         }

@@ -13,7 +13,7 @@ metadata:
     effects: external
     tier: primitive
     created: 2026-11-23T14:00
-    updated: 2026-11-23T20:00
+    updated: 2026-11-24T16:00
 ---
 
 # Publish Notes
@@ -45,7 +45,7 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 1. Run `status`. Read `counts`, `changed`, `new`, `movedEdited`, `pairings`, `toRemove`, `missing` and `behind`. A large result can come as a file: read `counts` first, then only the lists that you need.
 2. When `behind` is above 0, stop and ask the author to pull the copy first (the Pull button of the publication center, or `git pull --ff-only origin main` in the copy).
 3. Build the selection. By default a plan holds the `changed` notes only. Add to `include` the new notes that the author named, and the notes of `movedEdited` that the author confirmed (a moved note whose text changed can be another note at that path). Add to `hold` the changed notes that must wait.
-4. Run `plan`. When `offline` is true, say that the plan uses the last fetch. Show the plan as rule 2 says.
+4. Run `plan`. When `offline` is true, say that the plan uses the last fetch. When `listsNotRefreshed` is not empty, name those notes: their Dataview lists are published as saved (the face of Obsidian refreshes them first; the command line program never does, and the log of the publication center gives the reason). When `liveQueries` is not empty, name those notes: their live Dataview or Bases blocks are not on the page. Show the plan as rule 2 says.
 5. Run `publish` with the id. Report `published`, `updated`, `removed`, `forcedRemoved`, `moved`, `failed` and `warnings`. A result with `isError` and a report means that a note was left out: its last text names each such note with its reason. Give them to the author.
 
 ## Guards

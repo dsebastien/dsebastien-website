@@ -23,6 +23,7 @@ import {
     saveSettings
 } from './settings.ts'
 import type { DeviceSettings } from './settings.ts'
+import { serializerLists } from './serializer.ts'
 import { starterKitNoteTypes } from './starter-kit.ts'
 import type { PluginHost } from './starter-kit.ts'
 import { PublicationCenterView, TakedownModal, VIEW_TYPE } from './view.ts'
@@ -103,7 +104,9 @@ export class VaultPublishPlugin extends Plugin {
                     this.app.vault.configDir,
                     // `app.plugins` is not in the API of Obsidian: the face
                     // checks every step of it (starter-kit.ts).
-                    starterKitNoteTypes(this.app as unknown as PluginHost)
+                    starterKitNoteTypes(this.app as unknown as PluginHost),
+                    // The refresh of the frozen lists before a plan (PUB-35, R71).
+                    serializerLists(this.app as unknown as PluginHost)
                 ),
             pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
             now: () => new Date(),

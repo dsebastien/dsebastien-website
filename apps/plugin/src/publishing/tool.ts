@@ -37,7 +37,8 @@ import { foldedForm } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { computePlan, normalSelection } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
-import type { Device, Fetch, LockHolder, NoteTypes } from './ports.ts'
+import { listsNotRefreshed, liveQueries } from './frozen.ts'
+import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult } from './ports.ts'
 import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
 import type { Move, PublicationQueue, Scan } from './queue.ts'
 import { movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
@@ -55,6 +56,12 @@ export interface StoredPlan {
     readonly plan: PublicationPlan
     /** True when the content store could not be reached and the plan uses the last fetch (PERF-16). */
     readonly offline: boolean
+    /** The notes of the plan with a list to refresh that this run did not refresh (PUB-101, R71). */
+    readonly listsNotRefreshed: readonly string[]
+    /** The notes of the plan with a live query block, which the page drops (REN-14). */
+    readonly liveQueries: readonly string[]
+    /** Why the refresh did not refresh a note, for the author. Outside the parity rule. */
+    readonly refreshProblems: readonly { readonly path: string; readonly message: string }[]
 }
 
 export { FACES } from './run.ts'
@@ -529,8 +536,40 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
         await withLock(device, { command: 'plan' }, (ownLock) => recover(device, ownLock))
     }
     const normal = normalSelection(selection)
-    const computed = await recordFor(device, () => normal, 'try')
-    return { id: await store(device, computed), plan: computed.plan, offline: !computed.reached }
+    let computed = await recordFor(device, () => normal, 'try')
+    const { reached } = computed
+    // The lists of the notes of the plan are refreshed before the plan is
+    // final (PUB-35, R71): when the refresh wrote a note, the plan is
+    // computed again, so the record holds the refreshed text (PUB-92).
+    const paths = sortByCodePoint([...computed.plan.publish, ...computed.plan.update])
+    let refresh: RefreshResult = { refreshed: new Set(), wrote: false, problems: [] }
+    if (device.lists !== undefined && paths.length > 0) {
+        refresh = await device.lists.refresh(paths)
+        if (refresh.wrote) {
+            // The copy was just fetched: the second scan reads it as it is.
+            computed = await recordFor(device, () => normal, 'none')
+        }
+    }
+    return {
+        id: await store(device, computed),
+        plan: computed.plan,
+        offline: !reached,
+        ...listsOfPlan(computed, refresh.refreshed),
+        refreshProblems: refresh.problems
+    }
+}
+
+/** The two lists of the frozen lists of a plan (rules 5 and 6 of "The frozen lists of a note"). */
+function listsOfPlan(
+    computed: Computed,
+    refreshed: ReadonlySet<string>
+): Pick<StoredPlan, 'listsNotRefreshed' | 'liveQueries'> {
+    const paths = [...computed.plan.publish, ...computed.plan.update]
+    const sources = new Map([...computed.texts].map(([path, texts]) => [path, texts.source]))
+    return {
+        listsNotRefreshed: listsNotRefreshed(paths, sources, refreshed),
+        liveQueries: liveQueries(paths, sources)
+    }
 }
 
 /** Stores the record of a plan on the device. The result is its id, which names the record (outside the parity rule, TOOL-30). */
@@ -752,6 +791,20 @@ function reservedAliasWarnings(
             path,
             message: `the alias "${alias}" is a reserved root name of the site: it gets no URL`
         }))
+    )
+}
+
+/** One warning for each published or updated note with a live query (rule 8 of "The frozen lists of a note"). */
+function liveQueryWarnings(
+    texts: ReadonlyMap<string, NoteTexts>,
+    paths: readonly string[]
+): { path: string; message: string }[] {
+    return liveQueries(paths, new Map([...texts].map(([path, note]) => [path, note.source]))).map(
+        (path) => ({
+            path,
+            message:
+                'the note has a live Dataview or Bases block with no frozen form: the page does not show it (REN-14)'
+        })
     )
 }
 
@@ -1949,6 +2002,7 @@ async function applyCurrent(
         warnings: [
             ...scan.renameWarnings,
             ...reservedAliasWarnings(current.texts, [...report.published, ...report.updated]),
+            ...liveQueryWarnings(current.texts, [...report.published, ...report.updated]),
             ...correction.warnings,
             ...cleanup.warnings
         ].sort((one, two) => compareCodePoints(one.path, two.path))

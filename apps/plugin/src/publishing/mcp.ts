@@ -378,7 +378,13 @@ export async function answer(
 /** The output of the `plan` tool, as the `plan` command writes it. */
 export function outcomeOfPlan(stored: StoredPlan): ToolOutcome {
     return {
-        output: toCanonicalJson({ id: stored.id, offline: stored.offline, plan: stored.plan })
+        output: toCanonicalJson({
+            id: stored.id,
+            listsNotRefreshed: stored.listsNotRefreshed,
+            liveQueries: stored.liveQueries,
+            offline: stored.offline,
+            plan: stored.plan
+        })
     }
 }
 
