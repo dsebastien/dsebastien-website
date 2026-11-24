@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { siteHandler, type Release, type StoredFile } from './handler.ts'
+import { failureResponse, siteHandler, type Release, type StoredFile } from './handler.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
 
 // The answer of a request (HOST-02 of the spec, issue 21): one handler that
@@ -82,6 +82,79 @@ describe('a page', () => {
         expect(response.headers.get('etag')).toBe('"19"')
         expect(await response.text()).toBe('')
         expect((await get('/Welcome', { 'if-none-match': '"another"' })).status).toBe(200)
+    })
+
+    // A host or a proxy that compresses a page makes its tag weak, and a
+    // client can ask for any version (RFC 9110, section 13.1.2).
+    test.each(['W/"19"', '*', '"a", W/"19"'])(
+        'answers 304 for the weak form of its tag: %s',
+        async (wanted) => {
+            expect((await get('/Welcome', { 'if-none-match': wanted })).status).toBe(304)
+        }
+    )
+
+    test('answers 304 when the host gives a weak tag and the request names its strong form', async () => {
+        const weak = { file: () => Promise.resolve(stored('page', 'W/"abc"')) }
+        expect((await get('/Welcome', { 'if-none-match': '"abc"' }, weak)).status).toBe(304)
+        expect((await get('/Welcome', { 'if-none-match': '"abcd"' }, weak)).status).toBe(200)
+    })
+
+    test('has no tag and never answers 304 when the host gives none', async () => {
+        const untagged = {
+            file: () => {
+                const { tag: _tag, ...rest } = stored('page')
+                return Promise.resolve(rest)
+            }
+        }
+        const response = await get('/Welcome', { 'if-none-match': '""' }, untagged)
+        expect(response.status).toBe(200)
+        expect(response.headers.get('etag')).toBeNull()
+        expect((await get('/Welcome', { 'if-none-match': '*' }, untagged)).status).toBe(200)
+    })
+
+    test('lets go of a file that it does not read', async () => {
+        let discarded = 0
+        const counted = {
+            file: () =>
+                Promise.resolve({
+                    ...stored('page', '"p"'),
+                    discard: () => {
+                        discarded += 1
+                    }
+                })
+        }
+        await get('/Welcome', { 'if-none-match': '"p"' }, counted)
+        expect(discarded).toBe(1)
+        await (await get('/Welcome', {}, counted)).text()
+        expect(discarded).toBe(1)
+    })
+
+    test('reads no byte of a file for a request of the headers only', async () => {
+        let read = 0
+        let discarded = 0
+        const counted: Partial<Release> = {
+            file: () =>
+                Promise.resolve({
+                    size: 4,
+                    tag: '"p"',
+                    read: () => {
+                        read += 1
+                        return 'page'
+                    },
+                    discard: () => {
+                        discarded += 1
+                    }
+                })
+        }
+        const response = await siteHandler(release(counted))(
+            new Request(`${ORIGIN}/Welcome`, { method: 'HEAD' })
+        )
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+        expect(response.headers.get('etag')).toBe('"p"')
+        expect(response.headers.get('content-length')).toBe('4')
+        expect(await response.text()).toBe('')
+        expect([read, discarded]).toEqual([0, 1])
     })
 
     test('is the same page with a query', async () => {
@@ -218,6 +291,40 @@ describe('an attachment', () => {
         }
     )
 
+    test('lets go of a file when the range is outside of it', async () => {
+        let discarded = 0
+        const response = await get(
+            PHOTO,
+            { range: 'bytes=10-' },
+            {
+                attachment: () =>
+                    Promise.resolve({
+                        ...stored('0123456789'),
+                        discard: () => {
+                            discarded += 1
+                        }
+                    })
+            }
+        )
+        expect(response.status).toBe(416)
+        expect(discarded).toBe(1)
+    })
+
+    test.each([
+        [{}, 200, '10'],
+        [{ range: 'bytes=2-5' }, 206, '4']
+    ])(
+        'says the size of what a request of the headers only asks for: %j',
+        async (headers, status, length) => {
+            const response = await siteHandler(release())(
+                new Request(`${ORIGIN}${PHOTO}`, { method: 'HEAD', headers })
+            )
+            expect(response.status).toBe(status)
+            expect(response.headers.get('content-length')).toBe(length)
+            expect(await response.text()).toBe('')
+        }
+    )
+
     test('is the whole file for several ranges', async () => {
         const response = await get(PHOTO, { range: 'bytes=0-1, 4-5' })
         expect(response.status).toBe(200)
@@ -239,6 +346,37 @@ describe('a file that the pages load', () => {
         expect(response.status).toBe(200)
         expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8')
         expect(await response.text()).toBe('body{}')
+    })
+})
+
+describe('a file that the pages load, by the end of its name', () => {
+    // The names of the build are in small letters: another letter case is no known kind.
+    test('is plain bytes when the end of its name is in capital letters', async () => {
+        const response = await get(
+            '/_astro/ODD.CSS',
+            {},
+            {
+                asset: () => Promise.resolve(stored('body{}'))
+            }
+        )
+        expect(response.headers.get('content-type')).toBe('application/octet-stream')
+    })
+})
+
+describe('the answer of a failure outside of the handler', () => {
+    test('is the server error page, or a short Markdown text for an agent', async () => {
+        const page = failureResponse(new Request(`${ORIGIN}/Welcome`), '<h1>Server error</h1>')
+        expect(page.status).toBe(500)
+        expect(page.headers.get('content-type')).toBe('text/html; charset=utf-8')
+        expect(page.headers.get('cache-control')).toBe('no-store')
+        expect(page.headers.get('vary')).toBe('Accept')
+        expect(await page.text()).toBe('<h1>Server error</h1>')
+        const agent = failureResponse(new Request(`${ORIGIN}/-/md/Welcome.md`), '<h1>x</h1>')
+        expect(agent.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+        expect(await agent.text()).toStartWith('# Server error\n')
+        const plain = failureResponse(new Request(`${ORIGIN}/Welcome`))
+        expect(plain.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+        expect(await plain.text()).toStartWith('# Server error\n')
     })
 })
 

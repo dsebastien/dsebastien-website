@@ -3,7 +3,8 @@ import { readdir } from 'node:fs/promises'
 import { join, relative, resolve as resolvePath, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
-    errorText,
+    ASSET_FOLDERS,
+    failureResponse,
     RESOLVER_MAP_FILE,
     resolverMapFrom,
     SERVER_ERROR_FILE,
@@ -22,13 +23,6 @@ import {
 //
 // With `--attachments`, it also gives the attachments that the pages use,
 // from that folder, which stands for the attachment storage (HOST-05).
-
-/**
- * The folders of the files that the pages load: the style sheets and the
- * scripts, which Astro names with a hash, and the indexes of the search
- * (decision R63).
- */
-const ASSET_FOLDERS = ['_astro', '-/search']
 
 /**
  * A file of a folder of this machine. Its tag is its size and its time.
@@ -128,17 +122,7 @@ export async function startServer(options: {
         // (NAV-20).
         error(error) {
             console.error(error)
-            return new Response(serverErrorPage ?? errorText(500, this.url.origin), {
-                status: 500,
-                headers: {
-                    'content-type':
-                        serverErrorPage === undefined
-                            ? 'text/plain; charset=utf-8'
-                            : 'text/html; charset=utf-8',
-                    'cache-control': 'no-store',
-                    'vary': 'Accept'
-                }
-            })
+            return failureResponse(new Request(this.url), serverErrorPage)
         },
         fetch: handle
     })

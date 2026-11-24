@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
 import { startServer, type Server } from '../server/serve.ts'
 import { createWorker, type StaticFiles } from '../worker/worker.ts'
-import { checkUrlCase, readUrlTable } from './url-table.ts'
+import { checkNotModified, checkUrlCase, readUrlTable } from './url-table.ts'
 import { buildUrlTableSite, type BuiltUrlTableSite } from './url-table-site.ts'
 
 // The URL table of the site over HTTP (issue 43, SEAM-04 of the spec): the
@@ -73,7 +73,7 @@ function staticFilesOf(folder: () => string): StaticFiles {
 
 /** A Worker on the output of the build. A test that removes files makes its own. */
 function workerOf(): (request: Request) => Promise<Response> {
-    const worker = createWorker(() => undefined)
+    const worker = createWorker({ report: () => undefined })
     const files = staticFilesOf(() => outDir ?? '')
     return (request) => worker.fetch(request, { ASSETS: files })
 }
@@ -228,14 +228,9 @@ describe.each(HOSTS)('a file that did not change on %s', (host: Host) => {
         ['a page', '/Welcome'],
         ['the Markdown of a note', '/-/md/Welcome.md']
     ])('answers 304 for %s', async (_name, path) => {
-        const first = await get(path, {}, host)
-        const tag = first.headers.get('etag')
-        expect(tag).not.toBeNull()
-        const second = await get(path, { 'if-none-match': tag ?? '' }, host)
-        expect(second.status).toBe(304)
-        expect(await second.text()).toBe('')
-        const other = await get(path, { 'if-none-match': '"another"' }, host)
-        expect(other.status).toBe(200)
+        expect(
+            await checkNotModified(path, (asked, headers = {}) => get(asked, headers, host))
+        ).toEqual([])
     })
 })
 
@@ -256,7 +251,9 @@ describe('the command that checks a host', () => {
             { cwd: join(SITE, '..', '..'), stdout: 'ignore', stderr: 'pipe' }
         )
         const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()])
-        expect(output).toEndWith(`${String(table.cases.length)} cases, 0 with a finding\n`)
+        expect(output).toEndWith(
+            `${String(table.cases.length)} cases and 2 files that did not change, 0 with a finding\n`
+        )
         expect(code).toBe(0)
     })
 
@@ -276,9 +273,39 @@ describe('the command that checks a host', () => {
         const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()])
         expect(output).toContain('    no answer: ')
         expect(output).toEndWith(
-            `${String(table.cases.length)} cases, ${String(table.cases.length)} with a finding\n`
+            `${String(table.cases.length)} cases and 2 files that did not change, ${String(table.cases.length + 2)} with a finding\n`
         )
         expect(code).toBe(1)
+    })
+})
+
+// The command removes only a folder that it made (a finding of the first
+// review: a folder with files of another origin was written over).
+describe('the command that builds the site of the table', () => {
+    test('refuses a folder with files of another origin, and removes nothing', async () => {
+        const root = join(SITE, '..', '..')
+        await mkdir(join(root, '.cache'), { recursive: true })
+        const folder = await mkdtemp(join(root, '.cache', 'urls-out-spec-'))
+        try {
+            await Bun.write(join(folder, 'keep.txt'), 'a file of another origin\n')
+            const child = Bun.spawn(['bun', 'scripts/url-table.ts', 'build', '--out', folder], {
+                cwd: root,
+                stdout: 'ignore',
+                stderr: 'pipe'
+            })
+            const [code, output] = await Promise.all([
+                child.exited,
+                new Response(child.stderr).text()
+            ])
+            expect(code).not.toBe(0)
+            expect(output).toContain('is not the output of an earlier run of this command')
+            expect(await readdir(folder)).toEqual(['keep.txt'])
+            expect(await Bun.file(join(folder, 'keep.txt')).text()).toBe(
+                'a file of another origin\n'
+            )
+        } finally {
+            await rm(folder, { recursive: true, force: true })
+        }
     })
 })
 
