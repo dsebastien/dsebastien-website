@@ -34,7 +34,6 @@ Do not mix them:
     - `adr/`: architecture decision records, `0001-slug.md`, one short paragraph each
     - `plans/`: specs and plans
     - `research/`: dated, cited fact files
-    - `history/`: the day files up to 2026-11-24. No new file: the history of the work is kept outside this repository.
 
 ## Agent workflow
 
