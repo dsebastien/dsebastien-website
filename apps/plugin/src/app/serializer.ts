@@ -87,7 +87,7 @@ function staleOf(answer: Record<string, unknown>): string {
     return Array.isArray(stale) &&
         stale.length > 0 &&
         stale.every((path) => typeof path === 'string')
-        ? ` (not indexed yet: ${stale.map((path) => `"${String(path)}"`).join(', ')})`
+        ? ` (not indexed yet: ${stale.map((path: string) => `"${path}"`).join(', ')})`
         : ''
 }
 
