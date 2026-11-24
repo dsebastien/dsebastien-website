@@ -81,6 +81,16 @@ function noneRefreshed(paths: readonly string[], message: string, wrote: boolean
     }
 }
 
+/** The notes that Dataview has not indexed yet, when the answer names them (`stalePaths`). */
+function staleOf(answer: Record<string, unknown>): string {
+    const stale = answer['stalePaths']
+    return Array.isArray(stale) &&
+        stale.length > 0 &&
+        stale.every((path) => typeof path === 'string')
+        ? ` (not indexed yet: ${stale.map((path) => `"${String(path)}"`).join(', ')})`
+        : ''
+}
+
 /** Reads the answer of `refreshNotes` for these paths, or gives `undefined` when it cannot. */
 function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | undefined {
     if (!isRecord(answer) || !Array.isArray(answer['notes'])) {
@@ -122,7 +132,7 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
             written.add(entry['resolvedPath'])
         }
         if (state !== 'ready') {
-            problems.push({ path, message: STATES.get(state) ?? state })
+            problems.push({ path, message: `${STATES.get(state) ?? state}${staleOf(answer)}` })
         } else if (REFRESHED.has(outcome) && entry['resolvedPath'] !== path) {
             // The serializer processed another file than the one of this path.
             problems.push({

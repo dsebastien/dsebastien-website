@@ -315,6 +315,22 @@ describe('the Dataview Serializer in Obsidian', () => {
         ])
     })
 
+    test('a busy index names the notes that Dataview has not indexed yet', async () => {
+        const lists = listsOf(
+            host(
+                serializer(() => ({
+                    state: 'dataview-index-busy',
+                    stalePaths: ['B.md'],
+                    notes: [note('A.md', 'not-run')]
+                }))
+            )
+        )
+
+        expect((await lists.refresh(['A.md'])).problems[0]?.message).toContain(
+            'not indexed yet: "B.md"'
+        )
+    })
+
     test('a plugin that is not enabled refreshes no note', async () => {
         const result = await listsOf(host(undefined)).refresh(['A.md', 'B.md'])
 
