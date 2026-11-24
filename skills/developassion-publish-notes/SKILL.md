@@ -1,6 +1,6 @@
 ---
 name: developassion-publish-notes
-description: 'Drives a publication of vault notes to the notes website through the publishing tool: queue, plan, publish, unpublish, takedown, and the edits of the guards.'
+description: 'Drives a publication of vault notes to the notes website: queue, plan, publish, unpublish, takedown, and the edits of the guards.'
 when_to_use: 'Use when the user says "publish my notes", "publish this note to my website", "publish the changed notes", "what would a publication change", "unpublish this note", "take this note down", "remove this note from my site now", "what is in the publication queue", "keep this folder private", "never publish this note", or "the publication is stuck" for the notes website (notes.dsebastien.net). Not for Ghost, social posts or other platforms: those go through developassion-publish.'
 model: sonnet
 effort: medium
