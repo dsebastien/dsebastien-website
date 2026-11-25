@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rejectionOf } from '@dsebastien-website/testing'
-import { lockHeldBy, takeDeployLock } from './deploy-lock.ts'
+import { lockHeldBy, STALE_AFTER_MS, takeDeployLock } from './deploy-lock.ts'
 
 // One deployment at a time per target on a machine (issue 32): the plugin
 // and the command line program can both start one in the clone of the
@@ -87,5 +87,62 @@ describe('the lock of the deployments of a target', () => {
         await takeDeployLock(file, { pid: 41, now: () => NOW, isAlive: () => true })
         expect(await lockHeldBy(file, 41)).toBe(true)
         expect(await lockHeldBy(file, 42)).toBe(false)
+    })
+
+    // A process number is used again after a reboot: a lock older than the
+    // most time limit of a deployment, with a margin, is the lock of a run
+    // that stopped.
+    test('takes over a lock older than the most time limit of a deployment, also when its process runs', async () => {
+        const file = await lockFile()
+        await takeDeployLock(file, { pid: 41, now: () => NOW, isAlive: () => true })
+        const later = new Date(NOW.getTime() + STALE_AFTER_MS + 1000)
+
+        const lock = await takeDeployLock(file, { pid: 42, now: () => later, isAlive: () => true })
+
+        expect(lock.warning).toContain('41')
+        expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ pid: 42 })
+    })
+
+    test('keeps a lock younger than that while its process runs', async () => {
+        const file = await lockFile()
+        await takeDeployLock(file, { pid: 41, now: () => NOW, isAlive: () => true })
+        const later = new Date(NOW.getTime() + STALE_AFTER_MS - 1000)
+
+        const message = await rejectionOf(
+            takeDeployLock(file, { pid: 42, now: () => later, isAlive: () => true })
+        )
+
+        expect(message).toContain('another deployment')
+    })
+
+    test('lets one run only take over a stale lock when two try at once', async () => {
+        const file = await lockFile()
+        await takeDeployLock(file, { pid: 41, now: () => NOW, isAlive: () => true })
+        const alive = (pid: number): boolean => pid !== 41
+
+        const results = await Promise.allSettled(
+            [42, 43, 44, 45].map((pid) =>
+                takeDeployLock(file, { pid, now: () => NOW, isAlive: alive })
+            )
+        )
+
+        const won = results.filter((one) => one.status === 'fulfilled')
+        expect(won).toHaveLength(1)
+        const holder = JSON.parse(await readFile(file, 'utf8')) as { pid: number }
+        expect([42, 43, 44, 45]).toContain(holder.pid)
+        // No temporary file and no stale lock stay beside the lock.
+        expect(await readdir(dirname(file))).toEqual(['lock'])
+    })
+
+    test('never leaves a lock that is half written: the file is complete when it exists', async () => {
+        const file = await lockFile()
+
+        await takeDeployLock(file, { pid: 41, now: () => NOW, isAlive: () => true })
+
+        expect(await readdir(dirname(file))).toEqual(['lock'])
+        expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+            pid: 41,
+            startedAt: '2031-04-01T08:00:00Z'
+        })
     })
 })

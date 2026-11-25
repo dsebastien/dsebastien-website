@@ -1,12 +1,21 @@
-import { mkdir, open, readFile, rm } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { MAX_TIMEOUT_MINUTES } from '../../plugin/src/publishing/deploy.ts'
 
 // One deployment at a time per target on a machine (issue 32). The plugin
 // and the command line program can both start a deployment in the clone of
 // the deploys, and two runs would upload, build and clean at the same time.
-// The lock is a file of that clone, `.cache/deploy/<worker>/lock`, made with
-// an exclusive create. It holds the process and the start of the run; a
-// lock whose process is dead is taken over with a warning.
+// The lock is a file of that clone, `.cache/deploy/<worker>/lock`: both faces
+// of a machine must use the same clone of the site code. It holds the
+// process and the start of the run. It is written whole into a temporary
+// file first, then linked to its name, which fails when the lock exists, so
+// a lock is never half written. A lock whose process is dead, or that is
+// older than the most time limit of a deployment with a margin (a process
+// number used again after a reboot), is taken over with a warning: the stale
+// lock is renamed away first, so only one run wins.
+
+/** The age after which a lock is the lock of a run that stopped: the most time limit of the tools, and one hour. */
+export const STALE_AFTER_MS = (MAX_TIMEOUT_MINUTES + 60) * 60_000
 
 /** What the lock file holds. */
 interface LockHolder {
@@ -64,22 +73,42 @@ async function holderOf(file: string): Promise<LockHolder | 'unreadable' | undef
     return holderFrom(text) ?? 'unreadable'
 }
 
-/** Makes the lock file, or `false` when it exists. */
+function codeOf(error: unknown): unknown {
+    return error instanceof Error && 'code' in error ? error.code : undefined
+}
+
+/** The number of temporary files of this process: each one has a name of its own. */
+let temporaries = 0
+
+function temporaryOf(file: string, pid: number, kind: string): string {
+    temporaries += 1
+    return join(dirname(file), `.${kind}-${String(pid)}-${String(temporaries)}`)
+}
+
+/** Makes the lock file whole, or gives `false` when it exists. */
 async function create(file: string, holder: LockHolder): Promise<boolean> {
+    const temporary = temporaryOf(file, holder.pid, 'lock')
+    await writeFile(temporary, `${JSON.stringify(holder)}\n`)
     try {
-        const handle = await open(file, 'wx')
-        try {
-            await handle.writeFile(`${JSON.stringify(holder)}\n`)
-        } finally {
-            await handle.close()
-        }
+        await link(temporary, file)
         return true
     } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+        if (codeOf(error) === 'EEXIST') {
             return false
         }
         throw error
+    } finally {
+        await rm(temporary, { force: true })
     }
+}
+
+/** True when the lock is the lock of a run that stopped: its process is dead, or it is too old. */
+function isStale(holder: LockHolder, options: LockOptions): boolean {
+    const started = Date.parse(holder.startedAt)
+    return (
+        !options.isAlive(holder.pid) ||
+        (Number.isFinite(started) && options.now().getTime() - started > STALE_AFTER_MS)
+    )
 }
 
 /**
@@ -104,8 +133,9 @@ export async function takeDeployLock(file: string, options: LockOptions): Promis
     if (await create(file, holder)) {
         return lock()
     }
-    const other = await holderOf(file)
-    if (other !== undefined && other !== 'unreadable' && options.isAlive(other.pid)) {
+    const text = await readFile(file, 'utf8').catch(() => undefined)
+    const other = text === undefined ? undefined : (holderFrom(text) ?? 'unreadable')
+    if (other !== undefined && other !== 'unreadable' && !isStale(other, options)) {
         throw new Error(
             `another deployment of this target runs on this machine (process ${String(other.pid)}, since ${other.startedAt}): wait for it to end`
         )
@@ -116,7 +146,25 @@ export async function takeDeployLock(file: string, options: LockOptions): Promis
             : other === undefined
               ? undefined
               : `took over the lock of a deployment that stopped (process ${String(other.pid)}, since ${other.startedAt})`
-    await rm(file, { force: true })
+    if (text !== undefined) {
+        // Only one run renames the stale lock away. A lock that is not the
+        // one that this run read goes back, and this run gives way.
+        const away = temporaryOf(file, holder.pid, 'stale')
+        try {
+            await rename(file, away)
+        } catch (error) {
+            if (codeOf(error) !== 'ENOENT') {
+                throw error
+            }
+        }
+        const moved = await readFile(away, 'utf8').catch(() => undefined)
+        if (moved !== undefined && moved !== text) {
+            await link(away, file).catch(() => undefined)
+            await rm(away, { force: true })
+            throw new Error('another deployment of this target took the lock at the same time')
+        }
+        await rm(away, { force: true })
+    }
     if (!(await create(file, holder))) {
         throw new Error('another deployment of this target took the lock at the same time')
     }
