@@ -470,7 +470,8 @@ enum Command {
         /// Runs the deploy with `--takedown`: it deletes the files of the
         /// notes taken down from the object storage. A deploy runs with
         /// `--takedown` anyway while a takedown of this device waits for a
-        /// deploy that succeeds (`.git/vault-publish/takedown-pending`).
+        /// deploy that succeeds (an entry in `.git/vault-publish/takedowns/`
+        /// of the copy).
         #[arg(long, conflicts_with = "last")]
         takedown: bool,
 

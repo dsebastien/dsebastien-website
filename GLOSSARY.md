@@ -75,7 +75,7 @@ The view of the plugin where the author reviews the publication queue, ticks wha
 To remove a published note from the site through a normal publication.
 
 **Takedown**:
-The immediate and complete removal of a published or unpublished note and of everything derived from it, with no plan. Its addresses answer 404.
+The immediate and complete removal of a published or unpublished note and of everything derived from it, with no plan. Its addresses answer 404. Its push removes the note from the content store; the deploy with `--takedown` that follows completes it on the site and in the object storage. Until a release that holds it is live, a marker keeps the takedown waiting, and every deploy runs with `--takedown`.
 _Avoid_: unpublish (which waits for a publication)
 
 **Forced removal**:
