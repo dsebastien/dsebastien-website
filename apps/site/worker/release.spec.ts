@@ -325,7 +325,8 @@ describe('a deployment', () => {
         expect(site.storage.names.has(OLD.key)).toBe(true)
     })
 
-    // Decision of the author 3: the files of a takedown leave the storage also when the release fails.
+    // Decision 4 of the comment of 2026-11-25 on issue 32: the files of a takedown
+    // leave the storage also when the release fails.
     test.each([
         ['build', { build: () => Promise.reject(new Error('the build failed')) }],
         ['deployment', { deploy: () => Promise.reject(new Error('wrangler failed')) }]

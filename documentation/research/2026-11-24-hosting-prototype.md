@@ -98,7 +98,7 @@ Decided by the author on 2026-11-24 (R75):
 
 1. The hosting choice of HOST-01 is confirmed (OPEN-18 is closed). The self-managed server stays the exit path (HOST-02): check 8 shows that the same handler serves the same output there.
 2. A reader gets an attachment through the Worker, at its hashed path on the host of the notes. No media host is created.
-3. The deployment cleans the attachment storage, not the tool after a publication: after a deployment that succeeded, the deploy job deletes the files that neither the new release nor the release before it uses. A takedown still deletes its files at once (business rule 16). Issue 120.
+3. The deployment cleans the attachment storage, not the tool after a publication: after a deployment that succeeded, the deploy job deletes the files that neither the new release nor the release before it uses. A takedown still deletes its files at once (business rule 16). Issue 120. Note: issue 32 cleans the object storage after each deployment, but keeps only the files of the new release; keeping the files of the release before waits for issue 120.
 
 Conditions, with their tickets:
 

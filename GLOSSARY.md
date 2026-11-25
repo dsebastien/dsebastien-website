@@ -80,7 +80,7 @@ The private snapshot of everything that is published: cleaned notes, attachments
 _Avoid_: export, public repository
 
 **Attachment storage**:
-The storage that holds the attachments of the published notes, addressed by content hash. It is not part of the content store.
+The storage that holds the attachments of the published notes, addressed by content hash. It is not part of the content store. On a host it is an object storage (a store of files by name, with no folder); on a device and in the tests, a folder.
 _Avoid_: bucket, media store
 
 **Manifest**:
@@ -157,7 +157,7 @@ The page of the answer 500. One file with no script, which shows also when anoth
 The output of one build as the host serves it: the pages, the Markdown forms, the resolver map and the code, which go live together in one switch.
 
 **Deployment**:
-The act that puts a release on the host, after a publication, on the machine that publishes. It also brings the attachments of the release to the attachment storage and removes the ones that no published note uses.
+The act that puts a release on the host, after a publication, on the machine that publishes. It also brings the attachments of the release to the attachment storage and removes the ones that no published note uses, which covers the files of a takedown.
 _Avoid_: publication (that is the act of the author, which a deployment follows)
 
 **Deployment record**:
