@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { DEPLOYMENT_RECORD_FILE } from '@dsebastien-website/resolver'
 import { checkContentCopy, takedownsBetween } from '../apps/site/worker/content-copy.ts'
-import { deployToken, targetFrom } from '../apps/site/worker/deployment.ts'
+import { processIsAlive, takeDeployLock } from '../apps/site/worker/deploy-lock.ts'
+import { deployToken, targetFrom, type DeployTarget } from '../apps/site/worker/deployment.ts'
 import { LIVE_CHECKS, readHostRecord, revertRelease } from '../apps/site/worker/release.ts'
 
 // The revert of a release (issue 32, BUILD-07): the host goes back to the
@@ -45,6 +46,23 @@ async function main(): Promise<void> {
     }
     const store = resolve(values['content-store'])
     const target = targetFrom(JSON.parse(await readFile(resolve(values.target), 'utf8')))
+    // One deployment or revert at a time per target on this machine.
+    const lock = await takeDeployLock(join(ROOT, '.cache', 'deploy', target.worker, 'lock'), {
+        pid: process.pid,
+        now: () => new Date(),
+        isAlive: processIsAlive
+    })
+    if (lock.warning !== undefined) {
+        console.warn(lock.warning)
+    }
+    try {
+        await revert(target, store)
+    } finally {
+        await lock.release()
+    }
+}
+
+async function revert(target: DeployTarget, store: string): Promise<void> {
     // The copy knows the live revision when it is at the last main.
     await checkContentCopy(store)
     const token = deployToken(process.env)

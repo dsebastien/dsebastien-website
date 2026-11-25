@@ -12,6 +12,7 @@ import {
     type DeployTarget
 } from '../apps/site/worker/deployment.ts'
 import { checkContentCopy, descendsFrom } from '../apps/site/worker/content-copy.ts'
+import { lockHeldBy, processIsAlive, takeDeployLock } from '../apps/site/worker/deploy-lock.ts'
 import { r2Storage } from '../apps/site/worker/r2.ts'
 import {
     deployRelease,
@@ -101,6 +102,36 @@ function stopped(error: unknown, target?: DeployTarget): DeployResult {
         deleted: 0,
         warnings: [],
         error: error instanceof Error ? error.message : String(error)
+    }
+}
+
+/** The lock of the deployments of a target in this clone. */
+function lockFileOf(target: DeployTarget): string {
+    return join(ROOT, '.cache', 'deploy', target.worker, 'lock')
+}
+
+/**
+ * Runs the task under the lock of the deployments of the target: one at a
+ * time per target on this machine. The restart of `--from-main` runs under
+ * the lock of its parent. It gives the warning of a lock that it took over.
+ */
+async function underLock<T>(
+    target: DeployTarget,
+    task: (warning: string | undefined) => Promise<T>
+): Promise<T> {
+    const file = lockFileOf(target)
+    if (await lockHeldBy(file, process.ppid)) {
+        return await task(undefined)
+    }
+    const lock = await takeDeployLock(file, {
+        pid: process.pid,
+        now: () => new Date(),
+        isAlive: processIsAlive
+    })
+    try {
+        return await task(lock.warning)
+    } finally {
+        await lock.release()
     }
 }
 
@@ -316,14 +347,29 @@ async function main(): Promise<number> {
     } catch (error) {
         return finish(stopped(error))
     }
-    if (values['from-main']) {
-        try {
-            return await fromMain(args, target)
-        } catch (error) {
-            return finish(stopped(error, target))
-        }
+    try {
+        return await underLock(target, async (warning) => {
+            if (warning !== undefined) {
+                console.warn(warning)
+            }
+            if (values['from-main']) {
+                try {
+                    return await fromMain(args, target)
+                } catch (error) {
+                    return finish(stopped(error, target))
+                }
+            }
+            const result = await deploy(target, values)
+            return finish(
+                warning === undefined
+                    ? result
+                    : { ...result, warnings: [warning, ...result.warnings] }
+            )
+        })
+    } catch (error) {
+        // The lock is held by another run.
+        return finish(stopped(error, target))
     }
-    return finish(await deploy(target, values))
 }
 
 process.exitCode = await main()
