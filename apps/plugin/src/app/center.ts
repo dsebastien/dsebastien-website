@@ -14,7 +14,7 @@ import type { PublicationPlan } from '../publishing/plan.ts'
 import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
 import type { Device, RefreshResult } from '../publishing/ports.ts'
-import { lastText, reportOfStartError, startedText } from '../publishing/deploy.ts'
+import { lastText, reportOfStartError, startedText, succeeded } from '../publishing/deploy.ts'
 import type { DeployKind, Deployment, DeployRecord, DeployReport } from '../publishing/deploy.ts'
 import {
     outcomeOfEdit,
@@ -225,7 +225,7 @@ function addressesOf(report: PublicationReport): Address[] {
 
 /** The line of the run log at the end of a deploy. */
 function deployLine(report: DeployReport): string {
-    if (report.deploy === 'ok') {
+    if (succeeded(report)) {
         return report.live
             ? `Deploy done: live at ${report.url ?? 'the host'}`
             : `Deploy done, not live yet: ${report.warnings.join('; ') || 'the deployment record does not name the new revision'}`

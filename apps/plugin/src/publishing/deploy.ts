@@ -35,6 +35,9 @@ export interface DeploySettings {
 /** The time limit of a deploy when the settings name none, in minutes. */
 export const DEFAULT_TIMEOUT_MINUTES = 30
 
+/** The most for the time limit of a deploy, in minutes: 24 hours. A timer of the plugin holds it. */
+export const MAX_TIMEOUT_MINUTES = 1440
+
 /**
  * What the tool runs: a program with a list of arguments, no shell, in a
  * folder, stopped with the programs that it started after its time limit.
@@ -209,9 +212,13 @@ export function deployCommandOf(
         }
     }
     const timeoutMinutes = settings.timeoutMinutes ?? DEFAULT_TIMEOUT_MINUTES
-    if (!Number.isSafeInteger(timeoutMinutes) || timeoutMinutes < 1) {
+    if (
+        !Number.isSafeInteger(timeoutMinutes) ||
+        timeoutMinutes < 1 ||
+        timeoutMinutes > MAX_TIMEOUT_MINUTES
+    ) {
         return {
-            error: 'nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1'
+            error: `nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1 to ${String(MAX_TIMEOUT_MINUTES)}`
         }
     }
     return {
@@ -236,6 +243,11 @@ export function deployCommandOf(
     }
 }
 
+/** True when the deploy succeeded: `deploy` is `ok` and no error came. */
+export function succeeded(report: DeployReport): boolean {
+    return report.deploy === 'ok' && report.error === undefined
+}
+
 /** A report with no step done, before the warning of a takedown. */
 function bare(error: string, kind: DeployKind): DeployReport {
     return {
@@ -257,7 +269,7 @@ export const TAKEDOWN_WAITS =
 
 /** A report of a deploy with `--takedown` that did not succeed warns that the takedown waits. */
 function withTakedown(report: DeployReport): DeployReport {
-    return report.takedown && report.deploy !== 'ok'
+    return report.takedown && !succeeded(report)
         ? { ...report, warnings: [...report.warnings, TAKEDOWN_WAITS] }
         : report
 }
@@ -401,8 +413,13 @@ export function reportOfRun(code: number | null, stdout: string, kind: DeployKin
     if (result === undefined) {
         return failed(`the result line of the deploy has the wrong shape: ${READ_OUTPUT}`, kind)
     }
-    if (result.deploy === 'ok' && code === 0) {
+    if (result.deploy === 'ok' && code === 0 && result.error === undefined) {
         return result
+    }
+    // A step after the switch failed (a cleanup of a takedown): the error
+    // of the deploy and "live" stay, and the deploy is no success.
+    if (result.deploy === 'ok' && result.error !== undefined) {
+        return withTakedown(result)
     }
     if (result.deploy === 'ok') {
         return withTakedown({
@@ -472,7 +489,7 @@ async function deployWith(
         run.stopped === undefined
             ? reportOfRun(run.code, run.stdout, kind)
             : reportOfStop(run.stopped, made.command.timeoutMinutes, kind)
-    if (report.takedown && report.deploy === 'ok') {
+    if (report.takedown && succeeded(report)) {
         try {
             await marker.remove()
         } catch (error) {

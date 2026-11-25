@@ -41,6 +41,10 @@ pub struct DeploySettings {
 /// The time limit of a deploy when the settings name none, in minutes.
 pub const DEFAULT_TIMEOUT_MINUTES: u64 = 30;
 
+/// The most for the time limit of a deploy, in minutes: 24 hours, as in the
+/// TypeScript face, whose timer holds it.
+pub const MAX_TIMEOUT_MINUTES: u64 = 1440;
+
 /// What the tool runs: a program with a list of arguments, no shell, in a
 /// folder, stopped with the programs that it started after its time limit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,9 +169,9 @@ pub struct DeployReport {
 }
 
 impl DeployReport {
-    /// True when the deploy succeeded.
+    /// True when the deploy succeeded: `deploy` is `ok` and no error came.
     pub fn succeeded(&self) -> bool {
-        self.deploy == "ok"
+        self.deploy == "ok" && self.error.is_none()
     }
 }
 
@@ -296,11 +300,10 @@ pub fn deploy_command(
         args.push("--takedown".into());
     }
     let timeout_minutes = settings.timeout_minutes.unwrap_or(DEFAULT_TIMEOUT_MINUTES);
-    if timeout_minutes == 0 {
-        return Err(
-            "nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1"
-                .to_owned(),
-        );
+    if !(1..=MAX_TIMEOUT_MINUTES).contains(&timeout_minutes) {
+        return Err(format!(
+            "nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1 to {MAX_TIMEOUT_MINUTES}"
+        ));
     }
     Ok(DeployCommand {
         timeout_minutes,
@@ -488,7 +491,12 @@ fn read_run(code: Option<i32>, stdout: &str, kind: DeployKind) -> DeployReport {
             kind,
         );
     };
-    if result.deploy == "ok" && code == Some(0) {
+    if result.deploy == "ok" && code == Some(0) && result.error.is_none() {
+        return result;
+    }
+    // A step after the switch failed (a cleanup of a takedown): the error of
+    // the deploy and "live" stay, and the deploy is no success.
+    if result.deploy == "ok" && result.error.is_some() {
         return result;
     }
     if result.deploy == "ok" {

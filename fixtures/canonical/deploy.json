@@ -1,5 +1,5 @@
 {
-    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system; \"takedown\": true for a deploy with --takedown; \"stopped\": the tool stopped the deploy after its time limit of \"timeoutMinutes\", or for the author). A time limit that the settings do not name is 30 minutes. A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank. Every finished report has \"state\": \"done\". \"started\": the report of a deploy that starts in the background (the MCP server never waits for a build). \"last\": what the deploy tool and command give with last, from the text of the last report that the record of the device keeps (\"stored\", null for none) and whether a deploy runs.",
+    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system; \"takedown\": true for a deploy with --takedown; \"stopped\": the tool stopped the deploy after its time limit of \"timeoutMinutes\", or for the author). A time limit that the settings do not name is 30 minutes, and the most is 1440 (24 hours). A deploy succeeded only when its result says \"deploy\": \"ok\" with no error and the exit code is 0; a result with \"deploy\": \"ok\" and an error keeps that error and \"live\". A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank. Every finished report has \"state\": \"done\". \"started\": the report of a deploy that starts in the background (the MCP server never waits for a build). \"last\": what the deploy tool and command give with last, from the text of the last report that the record of the device keeps (\"stored\", null for none) and whether a deploy runs.",
     "commands": [
         {
             "name": "a publication with every setting",
@@ -333,7 +333,51 @@
                 "timeoutMinutes": 0
             },
             "takedown": false,
-            "error": "nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1"
+            "error": "nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1 to 1440"
+        },
+        {
+            "name": "a time limit of 24 hours is the most",
+            "settings": {
+                "siteCode": "/work/site-code",
+                "target": "/private/deploy-target.json",
+                "envFile": "/private/deploy.env",
+                "bun": "/opt/bun/bin/bun",
+                "contentStore": "/data/content-store-copy",
+                "attachments": "/data/attachments",
+                "timeoutMinutes": 1440
+            },
+            "takedown": false,
+            "command": {
+                "program": "/opt/bun/bin/bun",
+                "folder": "/work/site-code",
+                "args": [
+                    "--env-file=/private/deploy.env",
+                    "run",
+                    "deploy",
+                    "--from-main",
+                    "--target",
+                    "/private/deploy-target.json",
+                    "--content-store",
+                    "/data/content-store-copy",
+                    "--attachments",
+                    "/data/attachments"
+                ],
+                "timeoutMinutes": 1440
+            }
+        },
+        {
+            "name": "a time limit above 24 hours deploys nothing",
+            "settings": {
+                "siteCode": "/work/site-code",
+                "target": "/private/deploy-target.json",
+                "envFile": "/private/deploy.env",
+                "bun": "/opt/bun/bin/bun",
+                "contentStore": "/data/content-store-copy",
+                "attachments": "/data/attachments",
+                "timeoutMinutes": 1441
+            },
+            "takedown": false,
+            "error": "nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1 to 1440"
         }
     ],
     "results": [
@@ -1014,6 +1058,30 @@
                 "takedown": true,
                 "uploaded": 0,
                 "warnings": [
+                    "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown"
+                ]
+            }
+        },
+        {
+            "name": "a takedown deploy that went live but whose cleanup failed keeps its error and live, and is no success",
+            "code": 1,
+            "push": "ok",
+            "takedown": true,
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":0,\"deleted\":2,\"warnings\":[\"a file can still be public: the attachment storage has files that are not keys\"],\"error\":\"after a takedown, the attachment storage has files that are not keys\"}\n",
+            "report": {
+                "build": "ok",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 2,
+                "deploy": "ok",
+                "error": "after a takedown, the attachment storage has files that are not keys",
+                "live": true,
+                "push": "ok",
+                "state": "done",
+                "takedown": true,
+                "uploaded": 0,
+                "url": "https://preview.example.org/",
+                "warnings": [
+                    "a file can still be public: the attachment storage has files that are not keys",
                     "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown"
                 ]
             }

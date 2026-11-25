@@ -12,7 +12,7 @@ import {
 import type { App, TAbstractFile, WorkspaceLeaf } from 'obsidian'
 import { markUnpublish } from '../publishing/center.ts'
 import type { NoteStateKind } from '../publishing/center.ts'
-import { runDeploy } from '../publishing/deploy.ts'
+import { runDeploy, succeeded } from '../publishing/deploy.ts'
 import type { DeployReport } from '../publishing/deploy.ts'
 import { pullContentStore } from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
@@ -503,7 +503,7 @@ export class VaultPublishPlugin extends Plugin {
 
 /** The text of the notice at the end of a deploy (PUB-42): live, not live yet, failed, or nothing deployed. */
 function deployNotice(report: DeployReport): string {
-    if (report.deploy === 'ok') {
+    if (succeeded(report)) {
         return report.live
             ? `the site is live at ${report.url ?? 'its host'}`
             : 'the site is deployed, but the host does not show the new revision yet'
@@ -630,7 +630,7 @@ function deployRows(
         ],
         [
             'Time limit of a deploy',
-            'In minutes. After it, the deploy stops with the programs that it started, and fails. Empty for 30.',
+            'In minutes, from 1 to 1440 (24 hours). After it, the deploy stops with the programs that it started, and fails. Empty for 30.',
             '30',
             'deployTimeout'
         ]

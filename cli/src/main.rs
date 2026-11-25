@@ -106,7 +106,8 @@ struct DeployPlaces {
     bun: Option<PathBuf>,
 
     /// The time limit of the deploy, in minutes: after it, the deploy stops
-    /// with the programs that it started, and fails. The default is 30.
+    /// with the programs that it started, and fails. From 1 to 1440 (24
+    /// hours); the default is 30.
     #[arg(long, value_name = "MINUTES")]
     deploy_timeout: Option<u64>,
 }
