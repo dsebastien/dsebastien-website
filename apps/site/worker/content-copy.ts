@@ -107,7 +107,7 @@ export async function descendsFrom(store: string, revision: string): Promise<boo
 }
 
 /** What git says when the content store does not have a commit that a fetch asks for. */
-const NOT_IN_CONTENT_STORE = /not our ref|couldn't find remote ref|no such remote ref/iu
+const NOT_IN_CONTENT_STORE = /not our ref/u
 
 /**
  * True when the content store (the remote `origin` of the copy) has the
@@ -121,9 +121,15 @@ export async function contentStoreHas(store: string, revision: string): Promise<
     if ((await gitText(store, 'rev-parse', '--is-shallow-repository')) !== 'false') {
         throw new Error(`the copy of the content store is shallow, so it cannot say: ${store}`)
     }
+    // Protocol 2: an older server answers "not our ref" also for a commit
+    // that it has but that is not the tip of a branch. No automatic
+    // maintenance: the tool can use the copy at the same time.
     const result = await git(
         store,
+        '-c',
+        'protocol.version=2',
         'fetch',
+        '--no-auto-maintenance',
         '--quiet',
         '--no-write-fetch-head',
         '--refmap=',
