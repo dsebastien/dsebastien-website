@@ -40,6 +40,7 @@
         "site:fixture": "bun scripts/site-fixture.ts",
         "urls": "bun scripts/url-table.ts",
         "deploy": "bun scripts/deploy.ts",
+        "deploy:revert": "bun scripts/deploy-revert.ts",
         "plugin:vault": "bun scripts/plugin-vault.ts",
         "budgets": "bun scripts/page-budgets.ts",
         "budgets:search": "bun scripts/search-budget.ts",

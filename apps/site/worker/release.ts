@@ -44,7 +44,7 @@ export interface LiveRecord {
     readonly pause: number
 }
 
-/** The checks of the host after a deployment: 10 reads, 3 seconds apart. */
+/** The checks of the host after a deployment or a revert: 10 reads, 3 seconds apart. */
 export const LIVE_CHECKS = { checks: 10, pause: 3000 } as const
 
 /** What a run of a deployment takes. */
@@ -331,6 +331,45 @@ async function waitUntilLive(
         }
     }
     return false
+}
+
+/** What a revert takes (BUILD-07). */
+export interface RevertRun {
+    /** Makes the release before the live one live again. It throws when it fails. */
+    readonly rollback: () => Promise<void>
+    readonly live: LiveRecord
+    readonly wait: (milliseconds: number) => Promise<void>
+}
+
+/** What a revert did: the records that the host gave before and after it. */
+export interface RevertResult {
+    readonly before: DeploymentRecord | undefined
+    readonly after: DeploymentRecord | undefined
+    /** True when the host gave another record after the rollback. */
+    readonly changed: boolean
+}
+
+/**
+ * Goes back to the release before (BUILD-07): it reads the record that the
+ * host gives, rolls back, and reads the host until it gives another record,
+ * a bounded number of times. The switch of the host takes a few seconds.
+ */
+export async function revertRelease(run: RevertRun): Promise<RevertResult> {
+    const read = async (): Promise<DeploymentRecord | undefined> =>
+        deploymentRecordFrom(await run.live.read().catch(() => undefined))
+    const before = await read()
+    await run.rollback()
+    let after: DeploymentRecord | undefined
+    for (let check = 1; check <= run.live.checks; check += 1) {
+        after = await read()
+        if (after !== undefined && !sameRecord(after, before)) {
+            return { before, after, changed: true }
+        }
+        if (check < run.live.checks) {
+            await run.wait(run.live.pause)
+        }
+    }
+    return { before, after, changed: false }
 }
 
 /** True when two records name the same build. */

@@ -163,6 +163,10 @@ _Avoid_: publication (that is the act of the author, which a deployment follows)
 **Deployment record**:
 The small public file of a release that says which revision of the content store and of the code is live, and when it was built.
 
+**Revert**:
+The act that makes the release before the live one live again.
+_Avoid_: unpublish, takedown (those remove notes)
+
 **Resolver map**:
 What the build writes for the resolver: which canonical path leads to which page, and which addresses are gone.
 

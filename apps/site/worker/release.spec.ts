@@ -4,7 +4,13 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
-import { deployRelease, resultLine, type DeployResult, type DeployRun } from './release.ts'
+import {
+    deployRelease,
+    resultLine,
+    revertRelease,
+    type DeployResult,
+    type DeployRun
+} from './release.ts'
 
 // The run of a deployment (issue 32, BUILD-07, BUILD-08, STORE-08, PUB-42):
 // the attachments go to the object storage before the build, the build
@@ -371,6 +377,65 @@ describe('a deployment', () => {
         const result = await deployRelease(run)
         expect(result).toMatchObject({ build: 'ok', deploy: 'ok', live: false, error: null })
         expect(site.events).toEqual(['build', 'deploy'])
+    })
+})
+
+// BUILD-07: one command goes back to the release before.
+describe('a revert', () => {
+    const BEFORE = {
+        contentRevision: 'a'.repeat(40),
+        siteRevision: SITE,
+        builtAt: '2031-04-02T08:00:00Z'
+    }
+    const AFTER = {
+        contentRevision: 'b'.repeat(40),
+        siteRevision: SITE,
+        builtAt: '2031-04-01T08:00:00Z'
+    }
+
+    function host(answers: unknown[]): { events: string[]; read: () => Promise<unknown> } {
+        const events: string[] = []
+        let rolledBack = false
+        return {
+            events,
+            read: () => {
+                events.push('live?')
+                if (!rolledBack) {
+                    rolledBack = events.includes('rollback')
+                }
+                return Promise.resolve(rolledBack ? (answers.shift() ?? AFTER) : BEFORE)
+            }
+        }
+    }
+
+    test('rolls back, then gives the record that the host gives once it changed', async () => {
+        const live = host([BEFORE])
+        const result = await revertRelease({
+            rollback: () => {
+                live.events.push('rollback')
+                return Promise.resolve()
+            },
+            live: { read: live.read, checks: 5, pause: 1000 },
+            wait: (milliseconds) => {
+                live.events.push(`wait ${String(milliseconds)}`)
+                return Promise.resolve()
+            }
+        })
+        expect(result).toEqual({ before: BEFORE, after: AFTER, changed: true })
+        expect(live.events).toEqual(['live?', 'rollback', 'live?', 'wait 1000', 'live?'])
+    })
+
+    test('says that the host still gives the record before after a bounded wait', async () => {
+        const live = host([BEFORE, BEFORE, BEFORE])
+        const result = await revertRelease({
+            rollback: () => {
+                live.events.push('rollback')
+                return Promise.resolve()
+            },
+            live: { read: live.read, checks: 3, pause: 1000 },
+            wait: () => Promise.resolve()
+        })
+        expect(result).toEqual({ before: BEFORE, after: BEFORE, changed: false })
     })
 })
 
