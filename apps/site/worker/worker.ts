@@ -184,7 +184,24 @@ async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
     return { map: resolverMapFrom(await map.json()), serverErrorPage }
 }
 
-/** How long the Worker waits before it reads again a release that it could not read. */
+/**
+ * Reads the release, and reads it again at once when that read fails (issue
+ * 128): a short failure of the host at the start of an isolate must not
+ * reach a reader. It reports the first failure and throws the second one.
+ */
+async function openReleaseWithRetry(
+    files: StaticFiles,
+    report: (error: unknown) => void
+): Promise<OpenedRelease> {
+    try {
+        return await openRelease(files)
+    } catch (error) {
+        report(error)
+        return await openRelease(files)
+    }
+}
+
+/** How long the Worker waits before it reads again a release that it could not read two times in a row. */
 const RETRY_AFTER = 10_000
 
 /** What a Worker takes from its host. */
@@ -199,8 +216,9 @@ export interface WorkerOptions {
  * A Worker: one per isolate of the host. It reads the resolver map and the
  * server error page of its release at its first request, and keeps them. A
  * new release is a new Worker version, so a new isolate. A release that it
- * cannot read answers 500, and it reads it again after ten seconds, not at
- * each request: the resolver map is large.
+ * cannot read is read again at once, one time. A release that it cannot read
+ * two times in a row answers 500, and it reads it again after ten seconds, not
+ * at each request: the resolver map is large.
  */
 export function createWorker(options: WorkerOptions = {}): {
     fetch(request: Request, env: Environment): Promise<Response>
@@ -219,7 +237,7 @@ export function createWorker(options: WorkerOptions = {}): {
         }
         let release: OpenedRelease
         try {
-            opened ??= openRelease(env.ASSETS)
+            opened ??= openReleaseWithRetry(env.ASSETS, report)
             release = await opened
             failedAt = undefined
         } catch (error) {
