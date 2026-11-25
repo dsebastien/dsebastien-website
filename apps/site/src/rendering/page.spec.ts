@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
-import { headingFor, headingIds, oldAnchorScript, slugOf } from './anchors.ts'
+import { MAIN_ID, headingFor, headingIds, oldAnchorScript, slugOf } from './anchors.ts'
 import { EMBED_DEPTH, SitePages, type FileLink, type SiteNote } from './page.ts'
 
 // The page step of a note (issue 45): the markup that Astro keeps, with each
@@ -125,6 +125,19 @@ describe('anchors of a page (URL-14)', () => {
         )
     })
 
+    test('a link to a heading "Content" leads to its id, never to the main element of the page (issue 88)', () => {
+        const [id] = headingIds([{ depth: 2, text: 'Content' }])
+        expect(id).toBe('content-2')
+        const guide = note('Guide.md', `<h2 id="${String(id)}">Content</h2>`)
+        expect(
+            page(
+                '<p><note-link data-link="Guide" data-fragment="Content">Content</note-link></p>',
+                { Guide: 'Guide.md' },
+                guide
+            )
+        ).toBe('<p><a href="/Guide#content-2">Content</a></p>')
+    })
+
     test('a link into the note itself leads to its heading, or is plain text when the heading is missing', () => {
         const markup =
             '<h2 id="harvest">Harvest</h2><p><note-link data-link="" data-fragment="Harvest">Harvest</note-link> <note-link data-link="" data-fragment="Gone">Gone</note-link></p>'
@@ -197,7 +210,8 @@ describe('script of a note page for an old hash (URL-14)', () => {
             ['H2', 'Spring', 'spring'],
             ['H3', 'Tasks', 'tasks'],
             ['H2', 'Autumn', 'autumn'],
-            ['H3', 'Tasks', 'autumn-tasks']
+            ['H3', 'Tasks', 'autumn-tasks'],
+            ['H2', 'Content', 'content-2']
         ].map(([tagName, textContent, id]) => ({
             tagName,
             textContent,
@@ -206,11 +220,13 @@ describe('script of a note page for an old hash (URL-14)', () => {
                 scrolled = id
             }
         }))
+        // The main element of the frame of the page, which is no heading.
+        const main = { id: MAIN_ID }
         runInNewContext(oldAnchorScript, {
             location: { hash },
             document: {
                 getElementById: (id: string) =>
-                    [title, ...headings].find((heading) => heading.id === id) ?? null,
+                    [main, title, ...headings].find((element) => element.id === id) ?? null,
                 querySelectorAll: (selector: string) =>
                     selector.includes('[data-note-title]') ? [title, ...headings] : headings,
                 getElementsByName: (name: string) =>
@@ -251,6 +267,8 @@ describe('script of a note page for an old hash (URL-14)', () => {
             scrolled: 'garden-journal',
             replaced: '#garden-journal'
         })
+        // A heading "Content" has no id of the frame of the page (issue 88).
+        expect(run('#Content')).toEqual({ scrolled: 'content-2', replaced: '#content-2' })
         // An anchor of raw HTML (`<a name="top">`) has the prefix of the allow list.
         expect(run('#top')).toEqual({ scrolled: 'user-content-top', replaced: undefined })
     })

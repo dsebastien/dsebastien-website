@@ -112,6 +112,13 @@ describe('cards, names and diagrams', () => {
         expect(out).toContain('aria-labelledby="diagram-1-title"')
         expect(out).toContain('aria-labelledby="diagram-2-title"')
     })
+
+    test('a heading "Content" never takes the id of the main element of the page (issue 88)', async () => {
+        expect(await html('# Content')).toBe('<h1 id="content-2">Content</h1>')
+        expect(await html('# Guide\n\n## Content')).toBe(
+            '<h1 id="guide">Guide</h1>\n<h2 id="guide-content">Content</h2>'
+        )
+    })
 })
 
 describe('cache of the markup (BUILD-04)', () => {

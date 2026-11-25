@@ -35,7 +35,7 @@ import { encode, MARK } from './mark.ts'
  * (`wikilinksOf`, `linkPathOfDestination`) and of the reader of the tags
  * (`tagOfText` in `tags.ts`).
  */
-export const MARKUP_VERSION = 8
+export const MARKUP_VERSION = 9
 
 /**
  * The packages that write the markup, with their versions from the site

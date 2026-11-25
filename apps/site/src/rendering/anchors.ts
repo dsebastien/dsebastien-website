@@ -12,6 +12,16 @@
 // `#Parent#Child` for a heading under a parent. A link of a note names its
 // heading in that form too (`[[Note#Autumn#Tasks]]`). `headingFor` reads it,
 // in the build for the links and in the page for an old hash.
+//
+// The frame of every page (`layouts/Page.astro`) has ids of its own: a heading
+// never takes one of them (issue 88). A heading "Content" takes `content-2`,
+// as a repeated slug does.
+
+/** The id of the main element of every page: the target of the skip link. */
+export const MAIN_ID = 'content'
+
+/** The ids of the frame of a page, which no heading of a note takes. */
+export const FRAME_IDS: ReadonlySet<string> = new Set([MAIN_ID])
 
 /** A heading of a note: its level, its text and its id. */
 export interface Heading {
@@ -32,7 +42,8 @@ export function slugOf(text: string): string {
 }
 
 /**
- * The ids of the headings of a note, in their order.
+ * The ids of the headings of a note, in their order. No id is one of the
+ * frame of the page (`FRAME_IDS`).
  *
  * @param headings the level and the text of each heading
  * @param taken ids that the note already uses for something else
@@ -41,7 +52,7 @@ export function headingIds(
     headings: readonly { depth: number; text: string }[],
     taken: ReadonlySet<string> = new Set()
 ): string[] {
-    const used = new Set(taken)
+    const used = new Set([...FRAME_IDS, ...taken])
     const ids: string[] = []
     const parents: { depth: number; slug: string }[] = []
     for (const heading of headings) {

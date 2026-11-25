@@ -3,6 +3,7 @@ import '../styles/global.css'
 import Footer from '../components/Footer.astro'
 import Header from '../components/Header.astro'
 import { modeScript, modeSwitchScript } from '../mode.ts'
+import { MAIN_ID } from '../rendering/anchors.ts'
 
 // The frame of every page of the site, from variant B of the mockups (R49).
 // The canonical link names the canonical URL of the page, so a URL with a
@@ -52,12 +53,12 @@ const canonical = path === undefined ? undefined : new URL(path, Astro.site).hre
         <slot name='head' />
     </head>
     <body class='flex min-h-screen flex-col'>
-        <a class='skip-link' href='#content'>
+        <a class='skip-link' href={`#${MAIN_ID}`}>
             Skip to the content
         </a>
         <Header modeSwitch={!scriptless} />
         <main
-            id='content'
+            id={MAIN_ID}
             class:list={['flex-1', !bare && 'mx-auto w-full max-w-7xl px-4 py-10 sm:px-6']}
         >
             <slot />
