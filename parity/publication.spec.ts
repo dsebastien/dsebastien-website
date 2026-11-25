@@ -455,7 +455,10 @@ function withoutListWarnings(stderr: string): string {
             (line) =>
                 !/^warning: \d+ notes of the plan have (Dataview lists|a live Dataview or Bases block)/u.test(
                     line
-                )
+                ) &&
+                // A takedown with --no-deploy waits for its deploy (issue 32):
+                // status says so, outside its report.
+                !line.startsWith('warning: a takedown waits for a deploy that succeeds')
         )
         .join('\n')
 }
