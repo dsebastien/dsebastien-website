@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url'
 import { defineCollection } from 'astro:content'
 import { glob } from 'astro/loaders'
 import { contentStoreFolder, notesFolder } from './content-store.ts'
@@ -10,7 +11,9 @@ const loader =
         ? { name: 'no-content-store', load: () => Promise.resolve() }
         : glob({
               pattern: '**/*.md',
-              base: notesFolder(),
+              // A URL, not a path: Astro reads a Windows path (`C:\...`) as a
+              // URL with the scheme `c:`, and the build stops.
+              base: pathToFileURL(notesFolder()),
               // The id of an entry is its vault path, as it is. The default id is
               // a slug, and two vault paths can give the same slug.
               generateId: ({ entry }) => entry
