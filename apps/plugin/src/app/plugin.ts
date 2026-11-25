@@ -623,7 +623,7 @@ function deployRows(
     const rows: [string, string, string, keyof DeviceSettings][] = [
         [
             'Folder of the site code',
-            'The absolute path of a clean clone of the repository of the site, on its branch main, used only for deploys. The deploy pulls it first.',
+            'The absolute path of a clean clone of the repository of the site, on its branch main, used only for deploys. The deploy pulls it first. Use the same clone as the command line program of this machine: the lock of the deploys is in it.',
             '/home/me/deploy/dsebastien-website',
             'siteCode'
         ],
@@ -672,7 +672,7 @@ function mcpRows(plugin: VaultPublishPlugin, containerEl: HTMLElement): void {
     const settings = loadMcpSettings(plugin.app)
     new Setting(containerEl).setName('MCP server').setHeading()
     containerEl.createEl('p', {
-        text: 'An AI assistant on this computer can drive the publishing tool through this server: the same operations as the command line program (status, plan, publish, unpublish, takedown, unlock). It listens on 127.0.0.1 only and refuses a request without the key of this device.'
+        text: 'An AI assistant on this computer can drive the publishing tool through this server: the same operations as the command line program (status, plan, publish, unpublish, takedown, unlock, guards, deny, allow, ignore, unignore, deploy). It listens on 127.0.0.1 only and refuses a request without the key of this device.'
     })
     const running = new Setting(containerEl).setName('Run the MCP server')
     const restart = (): void => {

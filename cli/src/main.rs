@@ -87,7 +87,8 @@ struct Places {
 struct DeployPlaces {
     /// The folder of a clean clone of the repository of the site, on its
     /// branch main, used only for deploys. The deploy runs
-    /// `bun run deploy --from-main` there, which pulls it first.
+    /// `bun run deploy --from-main` there, which pulls it first. Use the same
+    /// clone as the plugin of this machine: the lock of the deploys is in it.
     #[arg(long, value_name = "FOLDER")]
     site_code: Option<PathBuf>,
 

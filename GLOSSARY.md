@@ -43,14 +43,14 @@ _Avoid_: public note as a wish of the author (the property is the state, not an 
 A note that is not published and that no guard excludes. The author can select it for a publication.
 
 **Publication**:
-The act, started by the author in Obsidian, that makes selected changes live.
+The act, started by the author in Obsidian, that brings selected changes to the content store. It is done at its push; the deploy that follows it makes the changes live.
 _Avoid_: deploy, sync, upload. A publication is not a deploy: it is done at its push to the content store, and the deploy follows it.
 
 **Deploy**:
 One run of the deploy command of the site: the build of a release from the copy of the content store, then its deployment. The publishing tool starts it on the machine that publishes after each push of a publication, an unpublish or a takedown, and the author can start it again. A failed deploy never undoes a publication.
 
 **Deploy report**:
-What the tool says about the deploy of the site that follows the push of a publication, an unpublish or a takedown: the push, the build and the deploy apart, whether the new release is live and its URL, the warnings and the error. It is apart from the publication report: the publication is done at the push, and a failed deploy never undoes it.
+What the tool says about the deploy of the site that follows the push of a publication, an unpublish or a takedown: the push, the build and the deploy apart, whether the new release is live and its URL, the warnings and the error. It is apart from the publication report: the publication is done at the push, and a failed deploy never undoes it. In the code, in the output of the command line program and in the MCP server, it is the object `deployment`.
 
 **Publication queue**:
 The list of new, changed and removed notes that wait for a publication.
