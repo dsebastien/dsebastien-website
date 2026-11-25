@@ -8,6 +8,7 @@ import {
     headersFile,
     targetFrom,
     usedAttachmentKeys,
+    withoutTokens,
     workerConfiguration,
     type DeployTarget
 } from '../apps/site/worker/deployment.ts'
@@ -69,7 +70,8 @@ async function run(
 ): Promise<void> {
     const child = Bun.spawn(command, {
         cwd: options.cwd ?? ROOT,
-        env: { ...process.env, ...options.environment },
+        // A step gets the token only when it names it: never the install or the build.
+        env: { ...withoutTokens(process.env), ...options.environment },
         stdio: ['inherit', 'inherit', 'inherit']
     })
     const code = await child.exited

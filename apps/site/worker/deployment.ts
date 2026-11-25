@@ -296,13 +296,30 @@ export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefin
     return previous === undefined ? undefined : { ...build, previous }
 }
 
+/** The variables that can hold the token of a deployment. */
+const TOKEN_VARIABLES = ['NOTES_DEPLOY_CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_TOKEN'] as const
+
+/**
+ * The environment without the variables of the token: the steps that run
+ * code of packages (the install, the build) never get it.
+ */
+export function withoutTokens(
+    environment: Record<string, string | undefined>
+): Record<string, string | undefined> {
+    return Object.fromEntries(
+        Object.entries(environment).filter(
+            ([name]) => !(TOKEN_VARIABLES as readonly string[]).includes(name)
+        )
+    )
+}
+
 /**
  * The API token of a deployment: `NOTES_DEPLOY_CLOUDFLARE_API_TOKEN`, else
  * `CLOUDFLARE_API_TOKEN`. The deployment gives it to wrangler as
  * `CLOUDFLARE_API_TOKEN`. `undefined` when neither is set.
  */
 export function deployToken(environment: Record<string, string | undefined>): string | undefined {
-    for (const name of ['NOTES_DEPLOY_CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_TOKEN']) {
+    for (const name of TOKEN_VARIABLES) {
         const value = environment[name]
         if (value !== undefined && value !== '') {
             return value

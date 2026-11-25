@@ -10,6 +10,7 @@ import {
     headersFile,
     targetFrom,
     usedAttachmentKeys,
+    withoutTokens,
     workerConfiguration
 } from './deployment.ts'
 
@@ -266,6 +267,17 @@ describe('the token of a deployment', () => {
 
     test('is missing when neither is set', () => {
         expect(deployToken({})).toBeUndefined()
+    })
+
+    // The install and the build run code of packages: they get no token.
+    test('leaves an environment for the steps that need no token', () => {
+        expect(
+            withoutTokens({
+                NOTES_DEPLOY_CLOUDFLARE_API_TOKEN: 'notes',
+                CLOUDFLARE_API_TOKEN: 'any',
+                HOME: '/home/test'
+            })
+        ).toEqual({ HOME: '/home/test' })
     })
 })
 
