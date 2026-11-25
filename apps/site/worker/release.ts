@@ -85,6 +85,11 @@ export interface DeployRun {
      * one that the copy does not know. The tools never set it.
      */
     readonly newContentStore?: boolean
+    /**
+     * True when the content store of the copy has the revision (issue 127).
+     * It throws when it cannot say. Without it, a move is refused.
+     */
+    readonly contentStoreHas?: (revision: string) => Promise<boolean>
     /** Checks right before the deployment that the copy is still what the build read. It throws when not. */
     readonly beforeDeploy?: () => Promise<void>
     /** The whole `_headers` file of the output. */
@@ -235,7 +240,8 @@ async function liveRecordOf(live: LiveRecord): Promise<DeploymentRecord | null> 
  * content must descend from the live content, so a takedown never comes
  * back with older content. A host with no record (a first deployment) takes
  * any release; an output built elsewhere (`--dist`) never replaces a release
- * of the content store.
+ * of the content store. With `run.newContentStore`, `checkMove()` decides
+ * instead.
  */
 async function checkOver(run: DeployRun, live: DeploymentRecord | null): Promise<void> {
     if (run.newContentStore === true) {
@@ -266,7 +272,8 @@ async function checkOver(run: DeployRun, live: DeploymentRecord | null): Promise
 /**
  * Refuses a move to another content store (issue 127) that is no move: the
  * host has no release of a content store, the copy knows the live content
- * revision (the same store), or the run is `--dist` or a takedown.
+ * revision or its content store has it (the same store), the command
+ * cannot ask the content store, or the run is `--dist` or a takedown.
  */
 async function checkMove(run: DeployRun, live: DeploymentRecord | null): Promise<void> {
     if (run.contentRevision === null) {
@@ -282,9 +289,32 @@ async function checkMove(run: DeployRun, live: DeploymentRecord | null): Promise
             'the host has no release of a content store, so there is nothing to move: deploy without --new-content-store'
         )
     }
-    if ((await run.descendsFrom?.(live.contentRevision)) !== undefined) {
+    const descends = await run.descendsFrom?.(live.contentRevision)
+    if (descends === true) {
         throw new Refusal(
             `the copy knows the live content revision ${live.contentRevision}, so it is the same content store: deploy without --new-content-store`
+        )
+    }
+    if (descends === false) {
+        throw new Refusal(
+            `the live content revision ${live.contentRevision} is not in the history of this copy (${run.contentRevision}), but the copy knows it: older or other content of the same content store would go live`
+        )
+    }
+    // A copy that is only behind does not know the live revision either.
+    let has: boolean
+    try {
+        if (run.contentStoreHas === undefined) {
+            throw new Error('nothing can ask the content store of the copy')
+        }
+        has = await run.contentStoreHas(live.contentRevision)
+    } catch (error) {
+        throw new Refusal(
+            `the command cannot know that the live content revision ${live.contentRevision} is in another content store: ${messageOf(error)}`
+        )
+    }
+    if (has) {
+        throw new Refusal(
+            `the content store of the copy has the live content revision ${live.contentRevision}, so it is the same content store: fetch the copy and deploy without --new-content-store`
         )
     }
     run.log(
@@ -609,7 +639,8 @@ export interface RevertResult {
  * Goes back to the release before (BUILD-07). The live record names the
  * release that it replaced; a revert that would bring back a note that a
  * takedown removed in between is refused (a commit whose subject starts with
- * `Takedown:`), and so is a live release that names no release before it.
+ * `Takedown:`), and so is a live release that names no release before it,
+ * and a live release that moved the host to another content store.
  * Then it rolls back and reads the host until it gives the record of the
  * release before on reads in a row, a bounded number of times. It throws
  * when it refuses.

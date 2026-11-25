@@ -12,7 +12,11 @@ import {
     workerConfiguration,
     type DeployTarget
 } from '../apps/site/worker/deployment.ts'
-import { checkContentCopy, descendsFrom } from '../apps/site/worker/content-copy.ts'
+import {
+    checkContentCopy,
+    contentStoreHas,
+    descendsFrom
+} from '../apps/site/worker/content-copy.ts'
 import {
     inheritedLockWarning,
     lockHeldBy,
@@ -53,9 +57,9 @@ import {
 // `NOTES_DEPLOY_CLOUDFLARE_API_TOKEN`, else `CLOUDFLARE_API_TOKEN`; `--dry-run`
 // checks the bundle with wrangler, reaches no host and needs no token. The
 // last line of the standard output is the result (`resultLine()`).
-// `--new-content-store` moves the host to a content store that does not know
-// the live content revision (issue 127): the author gives the host name of
-// the target again, and the tools never pass it.
+// `--new-content-store` moves the host to another content store, whose copy
+// does not know the live content revision (issue 127): the author gives the
+// host name of the target again, and the tools never pass it.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'apps', 'site')
@@ -223,15 +227,25 @@ async function deploy(
         'takedown': boolean
         'dry-run': boolean
         'new-content-store'?: string | undefined
+        'target': string
     }
 ): Promise<DeployResult> {
     try {
         const dryRun = values['dry-run']
         const move = values['new-content-store']
-        if (move !== undefined && move !== target.host) {
-            throw new Error(
-                `--new-content-store must repeat the host name of the target (${target.host}), not "${move}"`
-            )
+        if (move !== undefined) {
+            // The host stays out of the message: the author types it, and never copies it.
+            if (move !== target.host) {
+                throw new Error(
+                    `--new-content-store does not match the host of the target file ${values.target}`
+                )
+            }
+            if (values.dist !== undefined) {
+                throw new Error('--dist cannot move the host to another content store')
+            }
+            if (values.takedown) {
+                throw new Error('a takedown cannot move the host to another content store')
+            }
         }
         if ((values['content-store'] === undefined) === (values.dist === undefined)) {
             throw new Error('give one of --content-store <folder> and --dist <folder>')
@@ -298,6 +312,7 @@ async function deploy(
                 ? {}
                 : {
                       descendsFrom: (revision: string) => descendsFrom(store, revision),
+                      contentStoreHas: (revision: string) => contentStoreHas(store, revision),
                       beforeDeploy: async () => {
                           // No fetch: the copy must still be what the build read.
                           if ((await checkContentCopy(store, false)) !== contentRevision) {
@@ -391,7 +406,7 @@ async function main(): Promise<number> {
                     return finish(stopped(error, target))
                 }
             }
-            const result = await deploy(target, values)
+            const result = await deploy(target, { ...values, target: values.target ?? '' })
             return finish(
                 warning === undefined
                     ? result

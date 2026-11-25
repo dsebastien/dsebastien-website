@@ -1,8 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { makeContentStoreCopy, makeTestStores, rejectionOf } from '@dsebastien-website/testing'
-import { checkContentCopy, descendsFrom, takedownsBetween } from './content-copy.ts'
+import {
+    checkContentCopy,
+    contentStoreHas,
+    descendsFrom,
+    takedownsBetween
+} from './content-copy.ts'
 
 // The copy of the content store that a deployment builds (issue 32): the
 // release must be the commit that the record names, and never older content
@@ -123,5 +129,54 @@ describe('the history of the copy', () => {
         ])
         expect(await takedownsBetween(copy, to, to)).toEqual([])
         expect(await takedownsBetween(copy, from, 'f'.repeat(40))).toBeUndefined()
+    })
+})
+
+// Issue 127: a move to another content store needs proof that the live
+// revision is not in the content store of the copy. A copy that is only
+// behind does not know it either.
+describe('the content store of the copy', () => {
+    test('has a commit that another device pushed after the last fetch of the copy', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await checkContentCopy(copy)
+        const other = join(stores.root, 'other')
+        await git(stores.root, 'clone', '--quiet', stores.contentStore, other)
+        await git(other, 'config', 'user.name', 'Test')
+        await git(other, 'config', 'user.email', 'test@example.invalid')
+        await git(other, 'config', 'commit.gpgsign', 'false')
+        const pushed = await commit(other, 'Takedown: 1 note')
+        expect(await descendsFrom(copy, pushed)).toBeUndefined()
+        expect(await contentStoreHas(copy, pushed)).toBe(true)
+    })
+
+    test('has no commit of another content store', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        expect(await contentStoreHas(copy, 'f'.repeat(40))).toBe(false)
+    })
+
+    test('cannot say when the content store cannot be reached', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await git(copy, 'remote', 'set-url', 'origin', join(stores.root, 'missing'))
+        expect(await rejectionOf(contentStoreHas(copy, 'f'.repeat(40)))).toContain('cannot say')
+    })
+
+    test('cannot say for a shallow copy', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await commit(copy, 'Publish: 1 note')
+        await commit(copy, 'Publish: 2 notes')
+        const shallow = join(stores.root, 'shallow')
+        await git(
+            stores.root,
+            'clone',
+            '--quiet',
+            '--depth=1',
+            pathToFileURL(stores.contentStore).href,
+            shallow
+        )
+        expect(await rejectionOf(contentStoreHas(shallow, 'f'.repeat(40)))).toContain('shallow')
     })
 })

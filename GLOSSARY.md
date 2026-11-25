@@ -167,7 +167,7 @@ The act that puts a release on the host, after a publication, on the machine tha
 _Avoid_: publication (that is the act of the author, which a deployment follows)
 
 **Deployment record**:
-The small public file of a release that says which revision of the content store and of the code is live, and when it was built.
+The small public file of a release that says which revision of the content store and of the code is live, and when it was built. It also names the release that it replaced, and says when the release moved the host to another content store.
 
 **Revert**:
 The act that makes the release before the live one live again.

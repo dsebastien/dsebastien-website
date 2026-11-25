@@ -18,7 +18,9 @@ import { LIVE_CHECKS, readHostRecord, revertRelease } from '../apps/site/worker/
 // The live record names the release that it replaced. The command refuses a
 // live release that names none, and a revert across a takedown: a commit of
 // the copy of the content store whose subject starts with `Takedown:`, between
-// the release before and the live one, would bring a removed note back.
+// the release before and the live one, would bring a removed note back. It
+// also refuses a live release that moved the host to another content store
+// (`newContentStore`): the release before has other content.
 // Then a new release is the way (`bun run deploy`).
 //
 // The token comes from `NOTES_DEPLOY_CLOUDFLARE_API_TOKEN`, else

@@ -892,6 +892,7 @@ describe('the release that is live', () => {
         const site = liveAnswers([LIVE, LIVE], {
             newContentStore: true,
             descendsFrom: () => Promise.resolve(undefined),
+            contentStoreHas: () => Promise.resolve(false),
             log: (line) => lines.push(line)
         })
         const result = await deployRelease(site.run)
@@ -915,15 +916,66 @@ describe('the release that is live', () => {
     })
 
     test('refuses a move when the copy knows the live content revision', async () => {
-        for (const known of [true, false]) {
+        const same = liveAnswers([LIVE], {
+            newContentStore: true,
+            descendsFrom: () => Promise.resolve(true)
+        })
+        const result = await deployRelease(same.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+        expect(result.error).toContain('same content store')
+
+        const diverged = liveAnswers([LIVE], {
+            newContentStore: true,
+            descendsFrom: () => Promise.resolve(false)
+        })
+        const refused = await deployRelease(diverged.run)
+        expect(refused).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+        expect(refused.error).toContain('not in the history')
+    })
+
+    // A copy that is only behind does not know the live revision either.
+    test('refuses a move when the content store of the copy has the live revision', async () => {
+        const asked: string[] = []
+        const site = liveAnswers([LIVE], {
+            newContentStore: true,
+            descendsFrom: () => Promise.resolve(undefined),
+            contentStoreHas: (revision) => {
+                asked.push(revision)
+                return Promise.resolve(true)
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+        expect(result.error).toContain('fetch the copy')
+        expect(asked).toEqual([LIVE.contentRevision])
+    })
+
+    test('refuses a move when nothing can say that the content store lacks the live revision', async () => {
+        for (const contentStoreHas of [
+            undefined,
+            () => Promise.reject(new Error('the content store cannot be reached'))
+        ]) {
             const site = liveAnswers([LIVE], {
                 newContentStore: true,
-                descendsFrom: () => Promise.resolve(known)
+                descendsFrom: () => Promise.resolve(undefined),
+                ...(contentStoreHas === undefined ? {} : { contentStoreHas })
             })
             const result = await deployRelease(site.run)
             expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
-            expect(result.error).toContain('knows the live content revision')
+            expect(result.error).toContain('cannot')
         }
+    })
+
+    test('refuses a move when another release went live during the build', async () => {
+        const NEWER = { ...LIVE, contentRevision: 'b'.repeat(40) }
+        const site = liveAnswers([LIVE, NEWER], {
+            newContentStore: true,
+            descendsFrom: () => Promise.resolve(undefined),
+            contentStoreHas: () => Promise.resolve(false)
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'ok', deploy: 'skipped' })
+        expect(result.error).toContain('during the build')
     })
 
     test('refuses a move when the host has no release of a content store', async () => {

@@ -106,6 +106,41 @@ export async function descendsFrom(store: string, revision: string): Promise<boo
     throw new Error(`git merge-base failed in the copy of the content store: ${result.errors}`)
 }
 
+/** What git says when the content store does not have a commit that a fetch asks for. */
+const NOT_IN_CONTENT_STORE = /not our ref|couldn't find remote ref|no such remote ref/iu
+
+/**
+ * True when the content store (the remote `origin` of the copy) has the
+ * revision, false when it answers that it has not (issue 127). A copy that
+ * is only behind does not know a revision that another device pushed and
+ * deployed, so a move to another content store needs this answer too. It
+ * throws when it cannot say: a shallow copy, or a content store that cannot
+ * be reached. The fetch writes no ref and no `FETCH_HEAD`.
+ */
+export async function contentStoreHas(store: string, revision: string): Promise<boolean> {
+    if ((await gitText(store, 'rev-parse', '--is-shallow-repository')) !== 'false') {
+        throw new Error(`the copy of the content store is shallow, so it cannot say: ${store}`)
+    }
+    const result = await git(
+        store,
+        'fetch',
+        '--quiet',
+        '--no-write-fetch-head',
+        '--refmap=',
+        'origin',
+        revision
+    )
+    if (result.code === 0) {
+        return true
+    }
+    if (NOT_IN_CONTENT_STORE.test(result.errors)) {
+        return false
+    }
+    throw new Error(
+        `the content store of the copy cannot say whether it has ${revision}: ${result.errors}`
+    )
+}
+
 /**
  * The subjects of the takedown commits (a subject that starts with
  * `Takedown:`) after `from` up to `to`, the newest first. `undefined` when
