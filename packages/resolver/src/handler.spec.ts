@@ -180,6 +180,51 @@ describe('a file of the site that is not a page', () => {
     })
 })
 
+// STORE-08: the record of the deployment says what is live. The deployment
+// writes it after the build, so the resolver map never names it.
+describe('the deployment record', () => {
+    test('is the JSON file of the release, never kept', async () => {
+        const response = await get('/-/deployment.json')
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8')
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        expect(response.headers.get('etag')).toBeNull()
+        expect(await response.text()).toBe('file -/deployment.json')
+    })
+
+    test('is never 304, also when the request names its tag', async () => {
+        const response = await get('/-/deployment.json', { 'if-none-match': '*' })
+        expect(response.status).toBe(200)
+    })
+
+    test('has its size and no byte for a request of the headers only', async () => {
+        const response = await siteHandler(release())(
+            new Request(`${ORIGIN}/-/deployment.json`, { method: 'HEAD' })
+        )
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-length')).toBe('22')
+        expect(await response.text()).toBe('')
+    })
+
+    test('answers "not found" when the release has none', async () => {
+        const response = await get(
+            '/-/deployment.json',
+            {},
+            {
+                file: (name) =>
+                    Promise.resolve(name === '-/deployment.json' ? undefined : stored(name))
+            }
+        )
+        expect(response.status).toBe(404)
+        expect(response.headers.get('cache-control')).toBe('no-store')
+    })
+
+    test('has no variant', async () => {
+        expect((await get('/-/Deployment.json')).status).toBe(404)
+        expect((await get('/-/deployment.json/')).status).toBe(404)
+    })
+})
+
 describe('a variant of a path', () => {
     test('answers one redirect to the canonical path, with the cache time of the resolver', async () => {
         const response = await get('/welcome')

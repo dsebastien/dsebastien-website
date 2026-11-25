@@ -188,6 +188,18 @@ describe('the Worker', () => {
         expect(response.headers.get('x-robots-tag')).toBeNull()
     })
 
+    // STORE-08, issue 32: the deployment reads it until it names its own build.
+    test('gives the deployment record from the static files, never kept, also on a preview host', async () => {
+        const record = '{"contentRevision":"c"}'
+        const site = host({ ...SITE, '/-/deployment.json': record }, true, { NOINDEX: 'true' })
+        const response = await site.get('/-/deployment.json')
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8')
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        expect(response.headers.get('x-robots-tag')).toBe('noindex')
+        expect(await response.text()).toBe(record)
+    })
+
     test('gives a page from the static files, by the file that the resolver map names', async () => {
         const response = await host().get('/Welcome')
         expect(response.status).toBe(200)

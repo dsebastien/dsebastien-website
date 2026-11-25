@@ -70,6 +70,14 @@ export interface Release {
  */
 export const ASSET_FOLDERS: readonly string[] = ['_astro', '-/search']
 
+/**
+ * The deployment record of a release (STORE-08), in the output of the build:
+ * which revisions of the content store and of the code are live, and the
+ * time of the build. The deployment writes it after the build, so the
+ * resolver map never names it. Every host gives it at its path, never kept.
+ */
+export const DEPLOYMENT_RECORD_FILE = '-/deployment.json'
+
 const HTML = 'text/html; charset=utf-8'
 const TEXT = 'text/plain; charset=utf-8'
 
@@ -351,6 +359,17 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                         ASSET_TYPES.get(extensionOf(pathname)) ?? 'application/octet-stream'
                 }
             })
+        }
+        if (pathname === `/${DEPLOYMENT_RECORD_FILE}`) {
+            const record = await release.file(DEPLOYMENT_RECORD_FILE)
+            if (record !== undefined) {
+                return await fileResponse(request, record, {
+                    headers: {
+                        'content-type': 'application/json; charset=utf-8',
+                        'cache-control': 'no-store'
+                    }
+                })
+            }
         }
         const resolution = resolve(pathname, release.map, search)
         /** A file of the release as an answer. `undefined` when the release lacks it. */
