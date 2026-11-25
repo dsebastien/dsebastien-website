@@ -167,41 +167,89 @@ interface OpenedRelease {
     readonly serverErrorPage: string | undefined
 }
 
+/**
+ * A failure of a read of the release that can be short: a fetch that fails,
+ * or a status 5xx of the host. A missing file or a file that is not right
+ * stays so for the life of the release.
+ */
+class ShortFailure extends Error {}
+
+/** The status of the host for a file of the release, as a failure. */
+function statusFailure(status: number, file: string): Error {
+    const message = `the host answers ${String(status)} for ${file}`
+    return status >= 500 ? new ShortFailure(message) : new Error(message)
+}
+
+/** Lets the host free a body that the Worker does not read. */
+async function discard(response: Response): Promise<void> {
+    await response.body?.cancel()
+}
+
 async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
-    const [map, page] = await Promise.all([
+    const [mapRead, pageRead] = await Promise.allSettled([
         files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(RESOLVER_MAP_FILE)}`)),
         files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(SERVER_ERROR_FILE)}`))
     ])
+    if (mapRead.status === 'rejected' || pageRead.status === 'rejected') {
+        for (const read of [mapRead, pageRead]) {
+            if (read.status === 'fulfilled') {
+                await discard(read.value)
+            }
+        }
+        const reason: unknown = mapRead.status === 'rejected' ? mapRead.reason : pageRead.reason
+        throw new ShortFailure('the host fails to give a file of the release', { cause: reason })
+    }
+    const map = mapRead.value
+    const page = pageRead.value
     // A release can have no server error page. A page that the host fails to
     // give is another case: the Worker must not keep "no page" for its life.
     if (page.status !== 200 && page.status !== 404) {
-        throw new Error(`the host answers ${String(page.status)} for ${SERVER_ERROR_FILE}`)
+        await discard(map)
+        await discard(page)
+        throw statusFailure(page.status, SERVER_ERROR_FILE)
     }
     const serverErrorPage = page.status === 200 ? await page.text() : undefined
     if (map.status !== 200) {
-        throw new Error(`the release has no ${RESOLVER_MAP_FILE}`)
+        await discard(map)
+        if (map.status === 404) {
+            throw new Error(`the release has no ${RESOLVER_MAP_FILE}`)
+        }
+        throw statusFailure(map.status, RESOLVER_MAP_FILE)
     }
     return { map: resolverMapFrom(await map.json()), serverErrorPage }
 }
 
+/** How long the Worker waits before its second read of the release, in milliseconds. */
+const PAUSE_BEFORE_SECOND_READ = 50
+
 /**
- * Reads the release, and reads it again at once when that read fails (issue
- * 128): a short failure of the host at the start of an isolate must not
- * reach a reader. It reports the first failure and throws the second one.
+ * Reads the release, and reads it again one time, after a short pause, when
+ * that read fails for a reason that can be short (issue 128): a short failure
+ * of the host at the start of an isolate must not reach a reader. It reports
+ * the first failure, wrapped so that the log tells it apart, and throws the
+ * second one. Any other failure it throws at once.
  */
 async function openReleaseWithRetry(
     files: StaticFiles,
-    report: (error: unknown) => void
+    report: (error: unknown) => void,
+    pause: (milliseconds: number) => Promise<void>
 ): Promise<OpenedRelease> {
     try {
         return await openRelease(files)
     } catch (error) {
-        report(error)
-        return await openRelease(files)
+        if (!(error instanceof ShortFailure)) {
+            throw error
+        }
+        report(new Error('first read of the release failed, reading it again', { cause: error }))
     }
+    await pause(PAUSE_BEFORE_SECOND_READ)
+    return await openRelease(files)
 }
 
-/** How long the Worker waits before it reads again a release that it could not read two times in a row. */
+/**
+ * How long the Worker waits before it reads again a release that it could not
+ * read, in milliseconds.
+ */
 const RETRY_AFTER = 10_000
 
 /** What a Worker takes from its host. */
@@ -210,15 +258,18 @@ export interface WorkerOptions {
     readonly report?: (error: unknown) => void
     /** The time in milliseconds. By default the clock of the host. */
     readonly now?: () => number
+    /** Waits for a time in milliseconds. By default a timer of the host. */
+    readonly pause?: (milliseconds: number) => Promise<void>
 }
 
 /**
  * A Worker: one per isolate of the host. It reads the resolver map and the
  * server error page of its release at its first request, and keeps them. A
- * new release is a new Worker version, so a new isolate. A release that it
- * cannot read is read again at once, one time. A release that it cannot read
- * two times in a row answers 500, and it reads it again after ten seconds, not
- * at each request: the resolver map is large.
+ * new release is a new Worker version, so a new isolate. A read of the release
+ * that fails for a reason that can be short (a failed fetch, a status 5xx) is
+ * done again once, after a short pause. A release that it cannot read answers
+ * 500, and it reads it again after ten seconds, not at each request: the
+ * resolver map is large.
  */
 export function createWorker(options: WorkerOptions = {}): {
     fetch(request: Request, env: Environment): Promise<Response>
@@ -229,6 +280,10 @@ export function createWorker(options: WorkerOptions = {}): {
             console.error(error)
         })
     const now = options.now ?? ((): number => Date.now())
+    const pause =
+        options.pause ??
+        ((milliseconds: number): Promise<void> =>
+            new Promise((resolve) => setTimeout(resolve, milliseconds)))
     let opened: Promise<OpenedRelease> | undefined
     let failedAt: number | undefined
     async function answer(request: Request, env: Environment): Promise<Response> {
@@ -237,7 +292,7 @@ export function createWorker(options: WorkerOptions = {}): {
         }
         let release: OpenedRelease
         try {
-            opened ??= openReleaseWithRetry(env.ASSETS, report)
+            opened ??= openReleaseWithRetry(env.ASSETS, report, pause)
             release = await opened
             failedAt = undefined
         } catch (error) {

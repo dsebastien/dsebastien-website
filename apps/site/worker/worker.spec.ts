@@ -34,7 +34,7 @@ const map = resolverMapOf(
     { [SONG]: KEY }
 )
 
-type AskedFiles = StaticFiles & { asked: string[] }
+type AskedFiles = StaticFiles & { asked: string[]; cancelled: string[] }
 type AskedStorage = ObjectStorage & { asked: string[] }
 
 /** The text of a static file for which the host fails. */
@@ -42,22 +42,33 @@ const BROKEN = 'the host fails for this file'
 /** The text of a static file that the host gives with no tag. */
 const UNTAGGED = 'a file with no tag'
 
+/** A failure of the host for one read of a file: a fetch that rejects, or a status. */
+type Failure = 'reject' | number
+
 /**
  * Static files in memory, by the path of their URL as the Worker asks it. The
- * first `mapFailures` reads of the resolver map fail, as a host that fails for
- * a short time.
+ * first reads of a path of `failures` fail, one failure per read, as a host
+ * that fails for a short time. A body that the Worker cancels is noted.
  */
-function staticFiles(files: Record<string, string>, mapFailures = 0): AskedFiles {
+function staticFiles(
+    files: Record<string, string>,
+    failures: Record<string, Failure[]> = {}
+): AskedFiles {
     const asked: string[] = []
-    let failures = mapFailures
+    const cancelled: string[] = []
+    const left = new Map(Object.entries(failures).map(([path, list]) => [path, [...list]]))
     return {
         asked,
+        cancelled,
         fetch(request) {
             const { pathname } = new URL(request.url)
             asked.push(pathname)
-            if (pathname === '/-/resolver-map.json' && failures > 0) {
-                failures -= 1
+            const failure = left.get(pathname)?.shift()
+            if (failure === 'reject') {
                 return Promise.reject(new Error('the host fails for a short time'))
+            }
+            if (failure !== undefined) {
+                return Promise.resolve(new Response('upstream detail', { status: failure }))
             }
             const body = files[pathname]
             if (body === undefined) {
@@ -66,8 +77,18 @@ function staticFiles(files: Record<string, string>, mapFailures = 0): AskedFiles
             if (body === BROKEN) {
                 return Promise.resolve(new Response('upstream detail', { status: 500 }))
             }
+            const bytes = new TextEncoder().encode(body)
+            const stream = new ReadableStream<Uint8Array>({
+                start(controller) {
+                    controller.enqueue(bytes)
+                    controller.close()
+                },
+                cancel() {
+                    cancelled.push(pathname)
+                }
+            })
             return Promise.resolve(
-                new Response(body, {
+                new Response(stream, {
                     headers: {
                         ...(body === UNTAGGED ? {} : { etag: `"tag of ${pathname}"` }),
                         'content-type': 'application/x-host-guess'
@@ -128,14 +149,23 @@ const SITE = {
     '/_astro/site.abc.css': 'body{}'
 }
 
+const MAP = '/-/resolver-map.json'
+
 interface Host {
     files: AskedFiles
     storage: AskedStorage
     /** The failures that the Worker reported. */
     reported: unknown[]
+    /** The pauses that the Worker asked for, in milliseconds. */
+    paused: number[]
     /** Moves the clock of the Worker forward. */
     wait(milliseconds: number): void
     get(path: string, headers?: Record<string, string>, method?: string): Promise<Response>
+}
+
+/** How many times the Worker read the resolver map. */
+function mapReads(site: Host): number {
+    return site.files.asked.filter((path) => path === MAP).length
 }
 
 /** A Worker of its own (one isolate) with its static files and its object storage. */
@@ -143,9 +173,9 @@ function host(
     files: Record<string, string> = SITE,
     withStorage = true,
     variables: Pick<Environment, 'NOINDEX'> = {},
-    mapFailures = 0
+    failures: Record<string, Failure[]> = {}
 ): Host {
-    const assets = staticFiles(files, mapFailures)
+    const assets = staticFiles(files, failures)
     const storage = objectStorage({ [KEY]: '0123456789' })
     const env: Environment = {
         ASSETS: assets,
@@ -154,11 +184,20 @@ function host(
     }
     const reported: unknown[] = []
     let time = 1_000_000
-    const worker = createWorker({ report: (error) => reported.push(error), now: () => time })
+    const paused: number[] = []
+    const worker = createWorker({
+        report: (error) => reported.push(error),
+        now: () => time,
+        pause: (milliseconds) => {
+            paused.push(milliseconds)
+            return Promise.resolve()
+        }
+    })
     return {
         files: assets,
         storage,
         reported,
+        paused,
         wait: (milliseconds) => {
             time += milliseconds
         },
@@ -379,60 +418,118 @@ describe('the Worker', () => {
         expect(site.reported).toHaveLength(2)
     })
 
-    test('reads a release that it could not read again after ten seconds, not at each request', async () => {
-        const files: Record<string, string> = { ...SITE }
-        const map = files['/-/resolver-map.json'] ?? ''
-        files['/-/resolver-map.json'] = 'not JSON'
-        const site = host(files)
+    test('reads a release that failed two reads in a row again after ten seconds, not at each request', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['reject', 'reject'] })
         expect((await site.get('/Welcome')).status).toBe(500)
-        // The first read and the read again at once.
         expect(site.reported).toHaveLength(2)
-        files['/-/resolver-map.json'] = map
         // The release is fine now, but the Worker waits before it reads again.
         site.wait(9_000)
         expect((await site.get('/Welcome')).status).toBe(500)
-        expect(site.files.asked.filter((path) => path === '/-/resolver-map.json')).toHaveLength(2)
+        expect(mapReads(site)).toBe(2)
         site.wait(1_000)
         expect((await site.get('/Welcome')).status).toBe(200)
         expect(site.reported).toHaveLength(2)
     })
 
+    test('does not read again at once a resolver map that is not JSON', async () => {
+        const site = host({ ...SITE, [MAP]: 'not JSON' })
+        expect((await site.get('/Welcome')).status).toBe(500)
+        expect(mapReads(site)).toBe(1)
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('does not read again at once a release with no resolver map', async () => {
+        const { [MAP]: _map, ...rest } = SITE
+        const site = host(rest)
+        expect((await site.get('/Welcome')).status).toBe(500)
+        expect(mapReads(site)).toBe(1)
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('does not read again at once a resolver map that is not a resolver map', async () => {
+        const site = host({ ...SITE, [MAP]: '{"pages":[1]}' })
+        expect((await site.get('/Welcome')).status).toBe(500)
+        expect(mapReads(site)).toBe(1)
+        expect(site.reported).toHaveLength(1)
+    })
+
     // Issue 128: a short failure of the host at the start of an isolate.
     test('reads the release again at once when its first read fails, and gives the page', async () => {
-        const site = host(SITE, true, {}, 1)
+        const site = host(SITE, true, {}, { [MAP]: ['reject'] })
         const response = await site.get('/Welcome')
         expect(response.status).toBe(200)
         expect(await response.text()).toBe('<h1>Welcome</h1>')
         expect(site.reported).toHaveLength(1)
-        expect(site.files.asked.filter((path) => path === '/-/resolver-map.json')).toHaveLength(2)
+        expect(mapReads(site)).toBe(2)
+        expect(site.paused).toEqual([50])
     })
 
-    test('answers 500 after two failed reads in a row, and does not read again within ten seconds', async () => {
-        const site = host(SITE, true, {}, 2)
+    test('reads the release again at once when the host answers 500 for the resolver map', async () => {
+        const site = host(SITE, true, {}, { [MAP]: [500] })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('<h1>Welcome</h1>')
+        expect(mapReads(site)).toBe(2)
+    })
+
+    test('reads the release again at once when the host answers 503 for the server error page', async () => {
+        const site = host(SITE, true, {}, { '/500.html': [503] })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('<h1>Welcome</h1>')
+        expect(site.files.asked.filter((path) => path === '/500.html')).toHaveLength(2)
+        // The resolver map of the failed read is not read: its body is cancelled.
+        expect(site.files.cancelled).toEqual([MAP])
+    })
+
+    test('tells the first failure apart and puts no detail into the answer', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['reject', 'reject'] })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(500)
+        expect(await response.text()).not.toContain('short time')
+        const [first, second] = site.reported
+        expect(first).toBeInstanceOf(Error)
+        expect((first as Error).message).toBe('first read of the release failed, reading it again')
+        const cause = (first as Error).cause as Error
+        expect(cause.message).toBe('the host fails to give a file of the release')
+        expect((cause.cause as Error).message).toBe('the host fails for a short time')
+        expect(second).not.toBe(first)
+    })
+
+    test('answers 500 after two failed reads, and does not read again within ten seconds', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['reject', 'reject'] })
         const response = await site.get('/Welcome')
         expect(response.status).toBe(500)
         expect(await response.text()).toStartWith('# Server error\n')
         expect(site.reported).toHaveLength(2)
         site.wait(9_999)
         expect((await site.get('/Welcome')).status).toBe(500)
-        expect(site.files.asked.filter((path) => path === '/-/resolver-map.json')).toHaveLength(2)
+        expect(mapReads(site)).toBe(2)
         expect(site.reported).toHaveLength(2)
     })
 
-    test('reads the release again after ten seconds when two reads in a row failed', async () => {
-        const site = host(SITE, true, {}, 2)
+    test('gives the read after ten seconds its read again at once too', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['reject', 'reject', 'reject'] })
         expect((await site.get('/Welcome')).status).toBe(500)
         site.wait(10_000)
         expect((await site.get('/Welcome')).status).toBe(200)
-        expect(site.files.asked.filter((path) => path === '/-/resolver-map.json')).toHaveLength(3)
-        expect(site.reported).toHaveLength(2)
+        expect(mapReads(site)).toBe(4)
+        expect(site.reported).toHaveLength(3)
     })
 
     test('reads the release one time for requests that wait for the same read', async () => {
-        const site = host(SITE, true, {}, 1)
+        const site = host(SITE, true, {}, { [MAP]: ['reject'] })
         const answers = await Promise.all([site.get('/Welcome'), site.get('/Welcome')])
         expect(answers.map((answer) => answer.status)).toEqual([200, 200])
-        expect(site.files.asked.filter((path) => path === '/-/resolver-map.json')).toHaveLength(2)
+        expect(mapReads(site)).toBe(2)
         expect(site.reported).toHaveLength(1)
+    })
+
+    test('reports two failed reads one time each for requests that wait for them', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['reject', 'reject'] })
+        const answers = await Promise.all([site.get('/Welcome'), site.get('/Welcome')])
+        expect(answers.map((answer) => answer.status)).toEqual([500, 500])
+        expect(mapReads(site)).toBe(2)
+        expect(site.reported).toHaveLength(2)
     })
 })
