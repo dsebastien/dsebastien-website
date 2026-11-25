@@ -115,7 +115,7 @@ function finish(result: DeployResult): number {
  * runs the deployment again without the flag, so that the new code runs. A
  * clone with changes or on another branch stops it.
  */
-async function fromMain(args: readonly string[]): Promise<number> {
+async function fromMain(args: readonly string[], target: DeployTarget): Promise<number> {
     const changes = await git(ROOT, 'status', '--porcelain')
     if (changes !== '') {
         throw new Error(
@@ -150,29 +150,25 @@ async function fromMain(args: readonly string[]): Promise<number> {
     const code = await child.exited
     if (!last.startsWith(`${RESULT_MARK} `)) {
         return finish(
-            stopped(new Error(`the deployment ended with the code ${String(code)} and no result`))
+            stopped(
+                new Error(`the deployment ended with the code ${String(code)} and no result`),
+                target
+            )
         )
     }
     return code
 }
 
-async function deploy(values: {
-    'target'?: string | undefined
-    'content-store'?: string | undefined
-    'attachments'?: string | undefined
-    'dist'?: string | undefined
-    'takedown': boolean
-    'dry-run': boolean
-}): Promise<DeployResult> {
-    if (values.target === undefined) {
-        return stopped(new Error('--target <file> is required'))
+async function deploy(
+    target: DeployTarget,
+    values: {
+        'content-store'?: string | undefined
+        'attachments'?: string | undefined
+        'dist'?: string | undefined
+        'takedown': boolean
+        'dry-run': boolean
     }
-    let target: DeployTarget
-    try {
-        target = targetFrom(JSON.parse(await readFile(resolve(values.target), 'utf8')))
-    } catch (error) {
-        return stopped(error)
-    }
+): Promise<DeployResult> {
     try {
         const dryRun = values['dry-run']
         if ((values['content-store'] === undefined) === (values.dist === undefined)) {
@@ -310,14 +306,24 @@ async function main(): Promise<number> {
     } catch (error) {
         return finish(stopped(error))
     }
+    // The host is known as soon as the target file can be read.
+    let target: DeployTarget
+    try {
+        if (values.target === undefined) {
+            throw new Error('--target <file> is required')
+        }
+        target = targetFrom(JSON.parse(await readFile(resolve(values.target), 'utf8')))
+    } catch (error) {
+        return finish(stopped(error))
+    }
     if (values['from-main']) {
         try {
-            return await fromMain(args)
+            return await fromMain(args, target)
         } catch (error) {
-            return finish(stopped(error))
+            return finish(stopped(error, target))
         }
     }
-    return finish(await deploy(values))
+    return finish(await deploy(target, values))
 }
 
 process.exitCode = await main()
