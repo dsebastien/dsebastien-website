@@ -111,7 +111,13 @@ export function r2Storage(access: R2Access): AttachmentStorage {
                 }
                 names.push(...result.map((item) => item.key))
                 const next = isRecord(info) ? info['cursor'] : undefined
-                if (!isRecord(info) || info['is_truncated'] !== true) {
+                const truncated = isRecord(info) ? info['is_truncated'] : undefined
+                if (typeof truncated !== 'boolean' && result.length >= PAGE_SIZE) {
+                    throw new Error(
+                        'the object storage gave a full page and did not say whether the list ends'
+                    )
+                }
+                if (truncated !== true) {
                     return names
                 }
                 if (typeof next !== 'string' || next === '' || next === cursor) {

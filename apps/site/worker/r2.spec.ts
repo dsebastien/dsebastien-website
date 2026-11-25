@@ -87,6 +87,22 @@ describe('the object storage through the API', () => {
         expect(await rejectionOf(storage(fake.fetch).list())).toContain('cursor')
     })
 
+    // A full page that does not say whether the list ends could hide names.
+    test('fails on a full page that does not say whether the list ends', async () => {
+        const full = Array.from({ length: 1000 }, (_, index) => `name-${String(index)}`)
+        const fake = api([
+            json({ success: true, errors: [], messages: [], result: full.map((key) => ({ key })) })
+        ])
+        expect(await rejectionOf(storage(fake.fetch).list())).toContain('whether the list ends')
+    })
+
+    test('takes a short page with no paging as the whole list', async () => {
+        const fake = api([
+            json({ success: true, errors: [], messages: [], result: [{ key: 'a' }] })
+        ])
+        expect(await storage(fake.fetch).list()).toEqual(['a'])
+    })
+
     test('uploads the bytes of a key as the body of one request', async () => {
         const fake = api([json({ success: true, errors: [], messages: [], result: {} })])
         await storage(fake.fetch).put(KEY, new Uint8Array([1, 2, 3]))
