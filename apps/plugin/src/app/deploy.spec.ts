@@ -325,6 +325,9 @@ describe('the files of the deploy (issue 32)', () => {
         }
         await mkdir(copy)
         await git('init', '--quiet')
+        // CI has no identity of its own: without one, git refuses the commits.
+        await git('config', 'user.name', 'Test')
+        await git('config', 'user.email', 'test@example.invalid')
         await git('commit', '--allow-empty', '--quiet', '-m', 'one')
         const one = await git('rev-parse', 'HEAD')
         await git('commit', '--allow-empty', '--quiet', '-m', 'two')
