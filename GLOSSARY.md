@@ -153,6 +153,16 @@ _Avoid_: 404 for an unpublished note (a takedown gives a 404)
 **Server error page**:
 The page of the answer 500. One file with no script, which shows also when another file of the release is missing.
 
+**Release**:
+The output of one build as the host serves it: the pages, the Markdown forms, the resolver map and the code, which go live together in one switch.
+
+**Deployment**:
+The act that puts a release on the host, after a publication, on the machine that publishes. It also brings the attachments of the release to the attachment storage and removes the ones that no published note uses.
+_Avoid_: publication (that is the act of the author, which a deployment follows)
+
+**Deployment record**:
+The small public file of a release that says which revision of the content store and of the code is live, and when it was built.
+
 **Resolver map**:
 What the build writes for the resolver: which canonical path leads to which page, and which addresses are gone.
 
