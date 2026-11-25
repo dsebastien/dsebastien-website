@@ -106,6 +106,19 @@ const PATHS: readonly SettingName[] = [
     'attachments'
 ]
 
+/**
+ * True for an absolute path, by one rule in both faces: on Unix a path that
+ * starts with `/`; on Windows a drive with its separator (`C:\`, `C:/`) or a
+ * network path (`\\server\share`). On Windows, `\foo` and `/foo` are not
+ * absolute: they depend on the drive of the moment.
+ */
+export function isAbsolutePath(path: string, windows: boolean): boolean {
+    if (!windows) {
+        return path.startsWith('/')
+    }
+    return /^[A-Za-z]:[\\/]/u.test(path) || /^[\\/]{2}[^\\/]/u.test(path)
+}
+
 /** "a", "a and b", "a, b and c". */
 function listed(items: readonly string[]): string {
     const last = items.at(-1) ?? ''
@@ -115,14 +128,15 @@ function listed(items: readonly string[]): string {
 /**
  * The command of the deploy (the interface of `scripts/deploy.ts`), or the
  * error of a deploy report that deploys nothing: a setting that is not set,
- * or a path that is not absolute.
+ * or a path that is not absolute (`isAbsolutePath`). Every path is absolute,
+ * so no argument starts with `-`.
  *
- * @param isAbsolute the rule of the system for an absolute path
+ * @param windows true on Windows, for the rule of an absolute path
  */
 export function deployCommandOf(
     settings: DeploySettings,
     takedown: boolean,
-    isAbsolute: (path: string) => boolean
+    windows: boolean
 ): { readonly command: DeployCommand } | { readonly error: string } {
     const missing = REQUIRED.filter((key) => settings[key] === '')
     if (missing.length > 0) {
@@ -132,7 +146,9 @@ export function deployCommandOf(
             error: `nothing was deployed: ${names} ${missing.length === 1 ? 'is' : 'are'} not set (in the settings of Vault Publish, or ${options} of the command line program)`
         }
     }
-    const relative = PATHS.find((key) => settings[key] !== '' && !isAbsolute(settings[key]))
+    const relative = PATHS.find(
+        (key) => settings[key] !== '' && !isAbsolutePath(settings[key], windows)
+    )
     if (relative !== undefined) {
         return {
             error: `nothing was deployed: ${SETTINGS[relative].name} must be an absolute path: "${settings[relative]}"`
@@ -191,8 +207,30 @@ function isStep(value: unknown): value is StepResult {
     return value === 'ok' || value === 'failed' || value === 'skipped'
 }
 
+/** A count: a whole number from 0 that a double holds exactly, in any form of JSON (`1.0`, `1e2`, `-0`). */
 function isCount(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+/** True when a number of the value is not finite: `JSON.parse` reads 1e400 as Infinity, which is no JSON for the Rust face. */
+function holdsInfinity(value: unknown): boolean {
+    if (typeof value === 'number') {
+        return !Number.isFinite(value)
+    }
+    if (typeof value === 'object' && value !== null) {
+        return Object.values(value).some(holdsInfinity)
+    }
+    return false
+}
+
+/** A line of the output with its end and a byte order mark at its start taken away. */
+function lineOf(line: string): string {
+    return line.replace(/\r$/u, '').replace(/^\uFEFF/u, '')
+}
+
+/** A line with spaces and tabs only, which the result never is. */
+function isBlank(line: string): boolean {
+    return /^[ \t]*$/u.test(line)
 }
 
 function isOptionalText(value: unknown): value is string | null | undefined {
@@ -231,8 +269,9 @@ function resultOf(value: unknown, push: DeployReport['push']): DeployReport | un
         ...(typeof contentRevision === 'string' && contentRevision !== ''
             ? { contentRevision }
             : {}),
-        uploaded,
-        deleted,
+        // `-0` is 0.
+        uploaded: uploaded + 0,
+        deleted: deleted + 0,
         warnings,
         ...(typeof error === 'string' && error !== '' ? { error } : {})
     }
@@ -250,8 +289,11 @@ export function reportOfRun(
     push: DeployReport['push']
 ): DeployReport {
     const ended = code === null ? 'stopped by a signal' : `exit code ${String(code)}`
-    const lines = stdout.split('\n').map((line) => line.replace(/\r$/u, ''))
-    const last = lines.findLast((line) => line.trim() !== '') ?? ''
+    const last =
+        stdout
+            .split('\n')
+            .map(lineOf)
+            .findLast((line) => !isBlank(line)) ?? ''
     if (!last.startsWith(RESULT_PREFIX)) {
         return failed(`the deploy gave no result line (${ended}): ${READ_OUTPUT}`, push)
     }
@@ -259,6 +301,9 @@ export function reportOfRun(
     try {
         value = JSON.parse(last.slice(RESULT_PREFIX.length))
     } catch {
+        value = Infinity
+    }
+    if (holdsInfinity(value)) {
         return failed(`the result line of the deploy is not JSON: ${READ_OUTPUT}`, push)
     }
     const result = resultOf(value, push)
@@ -292,9 +337,9 @@ export async function runDeploy(
     settings: DeploySettings,
     takedown: boolean,
     push: DeployReport['push'],
-    isAbsolute: (path: string) => boolean
+    windows: boolean
 ): Promise<Deployment> {
-    const made = deployCommandOf(settings, takedown, isAbsolute)
+    const made = deployCommandOf(settings, takedown, windows)
     if ('error' in made) {
         return { report: reportOfNothing(made.error, push), output: '' }
     }

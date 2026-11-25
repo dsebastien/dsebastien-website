@@ -1,5 +1,5 @@
 {
-    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. A path is absolute when it starts with \"/\" in these cases; a face uses the rule of its system. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system).",
+    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system). A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank.",
     "commands": [
         {
             "name": "a publication with every setting",
@@ -216,6 +216,75 @@
             },
             "takedown": false,
             "error": "nothing was deployed: the target file of the deployment must be an absolute path: \"target.json\""
+        },
+        {
+            "name": "Windows paths with the rule of Windows",
+            "settings": {
+                "siteCode": "C:\\deploy\\site-code",
+                "target": "D:\\private\\target.json",
+                "envFile": "",
+                "bun": "C:\\Program Files\\bun\\bun.exe",
+                "contentStore": "\\\\nas\\notes\\copy",
+                "attachments": "C:\\data\\attachments"
+            },
+            "takedown": false,
+            "windows": true,
+            "command": {
+                "program": "C:\\Program Files\\bun\\bun.exe",
+                "folder": "C:\\deploy\\site-code",
+                "args": [
+                    "run",
+                    "deploy",
+                    "--from-main",
+                    "--target",
+                    "D:\\private\\target.json",
+                    "--content-store",
+                    "\\\\nas\\notes\\copy",
+                    "--attachments",
+                    "C:\\data\\attachments"
+                ]
+            }
+        },
+        {
+            "name": "a path of the root of the drive is not absolute on Windows",
+            "settings": {
+                "siteCode": "C:\\deploy\\site-code",
+                "target": "\\private\\target.json",
+                "envFile": "",
+                "bun": "C:\\Program Files\\bun\\bun.exe",
+                "contentStore": "\\\\nas\\notes\\copy",
+                "attachments": "C:\\data\\attachments"
+            },
+            "takedown": false,
+            "windows": true,
+            "error": "nothing was deployed: the target file of the deployment must be an absolute path: \"\\private\\target.json\""
+        },
+        {
+            "name": "a Unix path is not absolute on Windows",
+            "settings": {
+                "siteCode": "/work/site-code",
+                "target": "D:\\private\\target.json",
+                "envFile": "",
+                "bun": "C:\\Program Files\\bun\\bun.exe",
+                "contentStore": "\\\\nas\\notes\\copy",
+                "attachments": "C:\\data\\attachments"
+            },
+            "takedown": false,
+            "windows": true,
+            "error": "nothing was deployed: the folder of the site code must be an absolute path: \"/work/site-code\""
+        },
+        {
+            "name": "a value that starts with a dash is no option: it is not absolute",
+            "settings": {
+                "siteCode": "/work/site-code",
+                "target": "--takedown",
+                "envFile": "/private/deploy.env",
+                "bun": "/opt/bun/bin/bun",
+                "contentStore": "/data/content-store-copy",
+                "attachments": "/data/attachments"
+            },
+            "takedown": false,
+            "error": "nothing was deployed: the target file of the deployment must be an absolute path: \"--takedown\""
         }
     ],
     "results": [
@@ -550,6 +619,229 @@
                 "uploaded": 0,
                 "warnings": []
             }
+        },
+        {
+            "name": "whole numbers in every form of JSON are counts",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":2.0,\"deleted\":1e0,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "ok",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 1,
+                "deploy": "ok",
+                "live": true,
+                "push": "ok",
+                "uploaded": 2,
+                "url": "https://preview.example.org/",
+                "warnings": []
+            }
+        },
+        {
+            "name": "minus zero is the count 0",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":-0,\"deleted\":-0.0,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "ok",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 0,
+                "deploy": "ok",
+                "live": true,
+                "push": "ok",
+                "uploaded": 0,
+                "url": "https://preview.example.org/",
+                "warnings": []
+            }
+        },
+        {
+            "name": "a count with a fraction is the wrong shape",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":2.5,\"deleted\":1,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "failed",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
+                "live": false,
+                "push": "ok",
+                "uploaded": 0,
+                "warnings": []
+            }
+        },
+        {
+            "name": "a negative count is the wrong shape",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":-1,\"deleted\":1,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "failed",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
+                "live": false,
+                "push": "ok",
+                "uploaded": 0,
+                "warnings": []
+            }
+        },
+        {
+            "name": "a count that a double does not hold exactly is the wrong shape",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":9007199254740993,\"deleted\":1,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "failed",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
+                "live": false,
+                "push": "ok",
+                "uploaded": 0,
+                "warnings": []
+            }
+        },
+        {
+            "name": "a number that a double cannot hold is no JSON",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":1e400,\"deleted\":1,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "failed",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the result line of the deploy is not JSON: read the output of the deploy",
+                "live": false,
+                "push": "ok",
+                "uploaded": 0,
+                "warnings": []
+            }
+        },
+        {
+            "name": "a byte order mark before the result line is taken away",
+            "code": 0,
+            "push": "ok",
+            "stdout": "Building\n\ufeffDEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":2,\"deleted\":1,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "ok",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 1,
+                "deploy": "ok",
+                "live": true,
+                "push": "ok",
+                "uploaded": 2,
+                "url": "https://preview.example.org/",
+                "warnings": []
+            }
+        },
+        {
+            "name": "a line of spaces and tabs after the result is blank",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":2,\"deleted\":1,\"warnings\":[],\"error\":null}\n \t\n",
+            "report": {
+                "build": "ok",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 1,
+                "deploy": "ok",
+                "live": true,
+                "push": "ok",
+                "uploaded": 2,
+                "url": "https://preview.example.org/",
+                "warnings": []
+            }
+        },
+        {
+            "name": "a line with a byte order mark only after the result is blank",
+            "code": 0,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":2,\"deleted\":1,\"warnings\":[],\"error\":null}\n\ufeff\n",
+            "report": {
+                "build": "ok",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 1,
+                "deploy": "ok",
+                "live": true,
+                "push": "ok",
+                "uploaded": 2,
+                "url": "https://preview.example.org/",
+                "warnings": []
+            }
+        },
+        {
+            "name": "the lock of the deploy of another process is a failed deploy with its message",
+            "code": 1,
+            "push": "ok",
+            "stdout": "DEPLOY-RESULT {\"build\":\"skipped\",\"deploy\":\"skipped\",\"live\":false,\"url\":\"https://preview.example.org/\",\"contentRevision\":null,\"uploaded\":0,\"deleted\":0,\"warnings\":[],\"error\":\"another deploy of this target runs (process 4242): try again when it ends\"}\n",
+            "report": {
+                "build": "skipped",
+                "deleted": 0,
+                "deploy": "skipped",
+                "error": "another deploy of this target runs (process 4242): try again when it ends",
+                "live": false,
+                "push": "ok",
+                "uploaded": 0,
+                "url": "https://preview.example.org/",
+                "warnings": []
+            }
+        }
+    ],
+    "paths": [
+        {
+            "path": "/data/copy",
+            "windows": false,
+            "absolute": true
+        },
+        {
+            "path": "data/copy",
+            "windows": false,
+            "absolute": false
+        },
+        {
+            "path": "C:\\data\\copy",
+            "windows": false,
+            "absolute": false
+        },
+        {
+            "path": "C:\\data\\copy",
+            "windows": true,
+            "absolute": true
+        },
+        {
+            "path": "c:/data/copy",
+            "windows": true,
+            "absolute": true
+        },
+        {
+            "path": "\\\\server\\share\\copy",
+            "windows": true,
+            "absolute": true
+        },
+        {
+            "path": "\\data\\copy",
+            "windows": true,
+            "absolute": false
+        },
+        {
+            "path": "/data/copy",
+            "windows": true,
+            "absolute": false
+        },
+        {
+            "path": "C:data",
+            "windows": true,
+            "absolute": false
+        },
+        {
+            "path": "\\\\\\server",
+            "windows": true,
+            "absolute": false
+        },
+        {
+            "path": "-C",
+            "windows": false,
+            "absolute": false
         }
     ]
 }

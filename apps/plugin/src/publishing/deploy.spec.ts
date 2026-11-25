@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import {
     deployCommandOf,
+    isAbsolutePath,
     deploymentText,
     reportOfRun,
     reportOfStartError,
@@ -17,6 +18,7 @@ interface CommandCase {
     readonly name: string
     readonly settings: DeploySettings
     readonly takedown: boolean
+    readonly windows?: boolean
     readonly command?: DeployCommand
     readonly error?: string
 }
@@ -34,15 +36,24 @@ const FILE = fileURLToPath(new URL('../../../../fixtures/canonical/deploy.json',
 
 // The file is test data of this repository. The cast is the boundary: a wrong
 // shape fails the tests that read it.
-const CASES = (await Bun.file(FILE).json()) as { commands: CommandCase[]; results: ResultCase[] }
+const CASES = (await Bun.file(FILE).json()) as {
+    paths: { path: string; windows: boolean; absolute: boolean }[]
+    commands: CommandCase[]
+    results: ResultCase[]
+}
 
-/** The rule of the shared cases: a path is absolute when it starts with a slash. */
-const posixAbsolute = (path: string): boolean => path.startsWith('/')
+describe('an absolute path', () => {
+    for (const one of CASES.paths) {
+        test(`${one.path} on ${one.windows ? 'Windows' : 'Unix'}`, () => {
+            expect(isAbsolutePath(one.path, one.windows)).toBe(one.absolute)
+        })
+    }
+})
 
 describe('the command of the deploy', () => {
     for (const one of CASES.commands) {
         test(one.name, () => {
-            const result = deployCommandOf(one.settings, one.takedown, posixAbsolute)
+            const result = deployCommandOf(one.settings, one.takedown, one.windows === true)
 
             expect(result).toEqual(
                 one.command === undefined ? { error: one.error ?? '' } : { command: one.command }
@@ -98,7 +109,7 @@ describe('a deploy', () => {
             }
         }
 
-        const deployment = await runDeploy(child, SETTINGS, true, 'ok', posixAbsolute)
+        const deployment = await runDeploy(child, SETTINGS, true, 'ok', false)
 
         expect(runs).toEqual([
             {
@@ -132,13 +143,7 @@ describe('a deploy', () => {
             }
         }
 
-        const deployment = await runDeploy(
-            child,
-            { ...SETTINGS, target: '' },
-            false,
-            'ok',
-            posixAbsolute
-        )
+        const deployment = await runDeploy(child, { ...SETTINGS, target: '' }, false, 'ok', false)
 
         expect(started).toBe(false)
         expect(deployment.report).toMatchObject({ build: 'skipped', deploy: 'skipped' })
@@ -151,7 +156,7 @@ describe('a deploy', () => {
             run: () => Promise.reject(new Error('spawn bun ENOENT'))
         }
 
-        const deployment = await runDeploy(child, SETTINGS, false, 'ok', posixAbsolute)
+        const deployment = await runDeploy(child, SETTINGS, false, 'ok', false)
 
         expect(deployment.report).toMatchObject({
             build: 'skipped',

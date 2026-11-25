@@ -1,5 +1,4 @@
 import { hostname } from 'node:os'
-import { isAbsolute } from 'node:path'
 import {
     Modal,
     normalizePath,
@@ -130,7 +129,7 @@ export class VaultPublishPlugin extends Plugin {
                     deploySettingsOf(loadSettings(this.app)),
                     takedown,
                     push,
-                    isAbsolute
+                    process.platform === 'win32'
                 ),
             now: () => new Date(),
             deviceName: hostname().replace(/\s+/gu, ' ').trim() || 'unnamed device',

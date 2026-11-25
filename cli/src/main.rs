@@ -731,7 +731,7 @@ fn run_deploy(deploy: &Deploy) -> DeployReport {
         &deploy.settings,
         deploy.takedown,
         deploy.push,
-        Path::is_absolute,
+        cfg!(windows),
     );
     if let (false, Some(copy)) = (
         deployment.output.is_empty(),

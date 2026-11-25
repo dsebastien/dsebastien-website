@@ -102,6 +102,26 @@ pub const RESULT_PREFIX: &str = "DEPLOY-RESULT ";
 
 const READ_OUTPUT: &str = "read the output of the deploy";
 
+/// True for an absolute path, by one rule in both faces: on Unix a path that
+/// starts with `/`; on Windows a drive with its separator (`C:\`, `C:/`) or
+/// a network path (`\\server\share`). On Windows, `\foo` and `/foo` are
+/// not absolute: they depend on the drive of the moment. A path that is not
+/// text is not absolute.
+pub fn is_absolute_path(path: &Path, windows: bool) -> bool {
+    let Some(path) = path.to_str() else {
+        return false;
+    };
+    if !windows {
+        return path.starts_with('/');
+    }
+    let separator = |byte: u8| byte == b'\\' || byte == b'/';
+    match path.as_bytes() {
+        [drive, b':', next, ..] => drive.is_ascii_alphabetic() && separator(*next),
+        [one, two, three, ..] => separator(*one) && separator(*two) && !separator(*three),
+        _ => false,
+    }
+}
+
 /// "a", "a and b", "a, b and c".
 fn listed(items: &[&str]) -> String {
     match items {
@@ -119,7 +139,8 @@ fn set(path: Option<&PathBuf>) -> Option<&Path> {
 
 /// The command of the deploy (the interface of `scripts/deploy.ts`), or the
 /// error of a deploy report that deploys nothing: a setting that is not set,
-/// or a path that is not absolute.
+/// or a path that is not absolute (`is_absolute_path`). Every path is
+/// absolute, so no argument starts with `-`.
 ///
 /// # Errors
 ///
@@ -127,7 +148,7 @@ fn set(path: Option<&PathBuf>) -> Option<&Path> {
 pub fn deploy_command(
     settings: &DeploySettings,
     takedown: bool,
-    is_absolute: fn(&Path) -> bool,
+    windows: bool,
 ) -> Result<DeployCommand, String> {
     // The name of each setting in a message, and its option.
     let site_code = ("the folder of the site code", "--site-code");
@@ -167,7 +188,7 @@ pub fn deploy_command(
     ];
     if let Some(((name, _), Some(path))) = paths
         .iter()
-        .find(|(_, path)| path.is_some_and(|path| !is_absolute(path)))
+        .find(|(_, path)| path.is_some_and(|path| !is_absolute_path(path, windows)))
     {
         return Err(format!(
             "nothing was deployed: {name} must be an absolute path: \"{}\"",
@@ -241,12 +262,37 @@ fn step(value: Option<&Value>) -> Option<&'static str> {
     }
 }
 
-/// A count: a whole number from 0 that a double holds exactly, as in the
-/// TypeScript face.
+/// The largest whole number that a double holds exactly.
+const LARGEST_COUNT: u64 = 9_007_199_254_740_991;
+
+/// A count: a whole number from 0 that a double holds exactly, in any form
+/// of JSON (`1.0`, `1e2`, `-0`), as in the TypeScript face.
 fn count(value: Option<&Value>) -> Option<u64> {
-    value
-        .and_then(Value::as_u64)
-        .filter(|count| *count <= 9_007_199_254_740_991)
+    let number = value?.as_number()?;
+    if let Some(count) = number.as_u64() {
+        return (count <= LARGEST_COUNT).then_some(count);
+    }
+    let float = number.as_f64()?;
+    // The bound is an exact double: the casts below are exact too.
+    #[allow(clippy::cast_precision_loss)]
+    let largest = LARGEST_COUNT as f64;
+    if float.fract() != 0.0 || !(0.0..=largest).contains(&float) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some(float as u64)
+}
+
+/// A line of the output with its end and a byte order mark at its start
+/// taken away.
+fn line_of(line: &str) -> &str {
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    line.strip_prefix('\u{feff}').unwrap_or(line)
+}
+
+/// A line with spaces and tabs only, which the result never is.
+fn is_blank(line: &str) -> bool {
+    line.bytes().all(|byte| byte == b' ' || byte == b'\t')
 }
 
 /// An optional text: absent, `null` or a text. An empty text is a field that
@@ -296,8 +342,8 @@ pub fn report_of_run(code: Option<i32>, stdout: &str, push: &'static str) -> Dep
     );
     let last = stdout
         .split('\n')
-        .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .rfind(|line| !line.trim().is_empty())
+        .map(line_of)
+        .rfind(|line| !is_blank(line))
         .unwrap_or("");
     let Some(text) = last.strip_prefix(RESULT_PREFIX) else {
         return failed(
@@ -352,9 +398,9 @@ pub fn run_deploy(
     settings: &DeploySettings,
     takedown: bool,
     push: &'static str,
-    is_absolute: fn(&Path) -> bool,
+    windows: bool,
 ) -> Deployment {
-    let command = match deploy_command(settings, takedown, is_absolute) {
+    let command = match deploy_command(settings, takedown, windows) {
         Ok(command) => command,
         Err(error) => {
             return Deployment {
@@ -412,10 +458,17 @@ mod tests {
         serde_json::from_str(CASES).expect("the cases file is JSON")
     }
 
-    /// The rule of the shared cases: a path is absolute when it starts with a
-    /// slash, on every system.
-    fn posix_absolute(path: &Path) -> bool {
-        path.to_string_lossy().starts_with('/')
+    #[test]
+    fn has_the_one_rule_of_an_absolute_path_of_the_shared_cases() {
+        for case in cases()["paths"].as_array().expect("the paths") {
+            let path = case["path"].as_str().expect("a path");
+            let windows = case["windows"].as_bool().expect("windows");
+            assert_eq!(
+                is_absolute_path(Path::new(path), windows),
+                case["absolute"].as_bool().expect("absolute"),
+                "{path} (windows: {windows})"
+            );
+        }
     }
 
     fn setting(settings: &Value, key: &str) -> Option<PathBuf> {
@@ -448,7 +501,7 @@ mod tests {
             let made = deploy_command(
                 &settings_of(&case["settings"]),
                 case["takedown"].as_bool().expect("takedown"),
-                posix_absolute,
+                case["windows"].as_bool().unwrap_or(false),
             );
             if let Some(error) = case["error"].as_str() {
                 assert_eq!(made, Err(error.to_owned()), "{name}");
@@ -542,7 +595,7 @@ mod tests {
             answer: Ok((Some(0), LINE)),
         };
 
-        let deployment = run_deploy(&child, &settings(), true, "ok", posix_absolute);
+        let deployment = run_deploy(&child, &settings(), true, "ok", false);
 
         let runs = child.runs.borrow();
         assert_eq!(runs.len(), 1);
@@ -568,7 +621,7 @@ mod tests {
             ..settings()
         };
 
-        let deployment = run_deploy(&child, &missing, false, "ok", posix_absolute);
+        let deployment = run_deploy(&child, &missing, false, "ok", false);
 
         assert!(child.runs.borrow().is_empty());
         assert_eq!(
@@ -590,7 +643,7 @@ mod tests {
             answer: Err("No such file or directory"),
         };
 
-        let deployment = run_deploy(&child, &settings(), false, "ok", posix_absolute);
+        let deployment = run_deploy(&child, &settings(), false, "ok", false);
 
         assert_eq!(
             deployment.report.error.as_deref(),
