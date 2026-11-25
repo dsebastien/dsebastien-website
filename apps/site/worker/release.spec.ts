@@ -11,7 +11,8 @@ import {
     resultLine,
     revertRelease,
     type DeployResult,
-    type DeployRun
+    type DeployRun,
+    type RevertRun
 } from './release.ts'
 
 // The run of a deployment (issue 32, BUILD-07, BUILD-08, STORE-08, PUB-42):
@@ -193,7 +194,12 @@ describe('a deployment', () => {
         await deployRelease(site.run)
         expect(
             JSON.parse(await readFile(join(site.dist(), '-', 'deployment.json'), 'utf8'))
-        ).toEqual({ contentRevision: CONTENT, siteRevision: SITE, builtAt: '2031-04-01T08:00:00Z' })
+        ).toEqual({
+            contentRevision: CONTENT,
+            siteRevision: SITE,
+            builtAt: '2031-04-01T08:00:00Z',
+            previous: null
+        })
         expect(await readFile(join(site.dist(), '_headers'), 'utf8')).toBe(
             '/*\n  X-Robots-Tag: noindex\n'
         )
@@ -529,59 +535,115 @@ describe('a deployment', () => {
 // BUILD-07: one command goes back to the release before.
 describe('a revert', () => {
     const BEFORE = {
-        contentRevision: 'a'.repeat(40),
-        siteRevision: SITE,
-        builtAt: '2031-04-02T08:00:00Z'
-    }
-    const AFTER = {
         contentRevision: 'b'.repeat(40),
         siteRevision: SITE,
         builtAt: '2031-04-01T08:00:00Z'
     }
+    const LIVE = {
+        contentRevision: 'a'.repeat(40),
+        siteRevision: SITE,
+        builtAt: '2031-04-02T08:00:00Z',
+        previous: BEFORE
+    }
 
-    function host(answers: unknown[]): { events: string[]; read: () => Promise<unknown> } {
+    /** A host that gives the live record, then these records once rolled back. */
+    function host(
+        live: unknown,
+        after: unknown[]
+    ): { events: string[]; run: Omit<RevertRun, 'takedownsBetween'> } {
         const events: string[] = []
-        let rolledBack = false
         return {
             events,
-            read: () => {
-                events.push('live?')
-                if (!rolledBack) {
-                    rolledBack = events.includes('rollback')
+            run: {
+                rollback: () => {
+                    events.push('rollback')
+                    return Promise.resolve()
+                },
+                live: {
+                    checks: 5,
+                    pause: 1000,
+                    inARow: 2,
+                    read: () => {
+                        events.push('live?')
+                        return Promise.resolve(
+                            events.includes('rollback') ? (after.shift() ?? BEFORE) : live
+                        )
+                    }
+                },
+                wait: (milliseconds) => {
+                    events.push(`wait ${String(milliseconds)}`)
+                    return Promise.resolve()
                 }
-                return Promise.resolve(rolledBack ? (answers.shift() ?? AFTER) : BEFORE)
             }
         }
     }
 
-    test('rolls back, then gives the record that the host gives once it changed', async () => {
-        const live = host([BEFORE])
+    test('rolls back, then gives the record of the release before once the host gives it in a row', async () => {
+        const site = host(LIVE, [LIVE, BEFORE, BEFORE])
+        const asked: string[] = []
         const result = await revertRelease({
-            rollback: () => {
-                live.events.push('rollback')
-                return Promise.resolve()
-            },
-            live: { read: live.read, checks: 5, pause: 1000, inARow: 1 },
-            wait: (milliseconds) => {
-                live.events.push(`wait ${String(milliseconds)}`)
-                return Promise.resolve()
+            ...site.run,
+            takedownsBetween: (from, to) => {
+                asked.push(`${from}..${to}`)
+                return Promise.resolve([])
             }
         })
-        expect(result).toEqual({ before: BEFORE, after: AFTER, changed: true })
-        expect(live.events).toEqual(['live?', 'rollback', 'live?', 'wait 1000', 'live?'])
+        expect(result).toEqual({ before: LIVE, after: BEFORE, changed: true })
+        expect(asked).toEqual([`${BEFORE.contentRevision}..${LIVE.contentRevision}`])
+        expect(site.events).toEqual([
+            'live?',
+            'rollback',
+            'live?',
+            'wait 1000',
+            'live?',
+            'wait 1000',
+            'live?'
+        ])
     })
 
-    test('says that the host still gives the record before after a bounded wait', async () => {
-        const live = host([BEFORE, BEFORE, BEFORE])
+    // The takedown would come back.
+    test('refuses when a takedown lies between the release before and the live one', async () => {
+        const site = host(LIVE, [])
+        const message = await rejectionOf(
+            revertRelease({
+                ...site.run,
+                takedownsBetween: () => Promise.resolve(['Takedown: 1 note'])
+            })
+        )
+        expect(message).toContain('Takedown: 1 note')
+        expect(message).toContain('deploy a new release instead')
+        expect(site.events).not.toContain('rollback')
+    })
+
+    test('refuses when the copy does not know the two revisions', async () => {
+        const site = host(LIVE, [])
+        const message = await rejectionOf(
+            revertRelease({ ...site.run, takedownsBetween: () => Promise.resolve(undefined) })
+        )
+        expect(message).toContain('does not know')
+        expect(site.events).not.toContain('rollback')
+    })
+
+    test.each([
+        ['no record', undefined],
+        ['no release before it', { ...LIVE, previous: null }],
+        ['a record from before the release before was named', { ...BEFORE }]
+    ])('refuses when the host gives %s', async (_case, live) => {
+        const site = host(live, [])
+        const message = await rejectionOf(
+            revertRelease({ ...site.run, takedownsBetween: () => Promise.resolve([]) })
+        )
+        expect(message).toContain('deploy a new release instead')
+        expect(site.events).not.toContain('rollback')
+    })
+
+    test('says that the host does not give the release before after a bounded wait', async () => {
+        const site = host(LIVE, [LIVE, LIVE, LIVE, LIVE, LIVE])
         const result = await revertRelease({
-            rollback: () => {
-                live.events.push('rollback')
-                return Promise.resolve()
-            },
-            live: { read: live.read, checks: 3, pause: 1000, inARow: 1 },
-            wait: () => Promise.resolve()
+            ...site.run,
+            takedownsBetween: () => Promise.resolve([])
         })
-        expect(result).toEqual({ before: BEFORE, after: BEFORE, changed: false })
+        expect(result).toEqual({ before: LIVE, after: LIVE, changed: false })
     })
 })
 
@@ -634,7 +696,24 @@ describe('the release that is live', () => {
         })
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ deploy: 'ok', live: true, error: null })
-        expect(asked).toEqual([LIVE.contentRevision, LIVE.contentRevision])
+        expect(asked).toEqual([LIVE.contentRevision])
+    })
+
+    // A revert goes back to it.
+    test('is named in the record of the release that replaces it', async () => {
+        const site = liveAnswers([{ ...LIVE, previous: null }, LIVE])
+        await deployRelease(site.run)
+        const record: unknown = JSON.parse(
+            await readFile(join(site.dist(), '-', 'deployment.json'), 'utf8')
+        )
+        expect(record).toMatchObject({ previous: LIVE })
+    })
+
+    test('refuses right before the deployment when another release went live during the build', async () => {
+        const site = liveAnswers([undefined, LIVE])
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'ok', deploy: 'skipped' })
+        expect(result.error).toContain('during the build')
     })
 
     test('is never replaced by older content, and nothing is touched, also after a takedown', async () => {

@@ -229,13 +229,8 @@ export async function checkOutputLimits(
     return undefined
 }
 
-/**
- * The deployment record of a release (STORE-08): the file
- * `/-/deployment.json` of the output. The deployment writes it after the
- * build; it reads it on the host to know that its release is live, and the
- * tool reads it to show what is live.
- */
-export interface DeploymentRecord {
+/** The build that a deployment record names: its revisions and its time. */
+export interface ReleaseBuild {
     /**
      * The commit of the copy of the content store that the build read.
      * `null` for an output that was built elsewhere (`--dist`).
@@ -247,11 +242,26 @@ export interface DeploymentRecord {
     readonly builtAt: string
 }
 
+/**
+ * The deployment record of a release (STORE-08): the file
+ * `/-/deployment.json` of the output. The deployment writes it after the
+ * build; it reads it on the host to know that its release is live, and the
+ * tool reads it to show what is live.
+ */
+export interface DeploymentRecord extends ReleaseBuild {
+    /**
+     * The build of the release that was live when this one was deployed, so
+     * that a revert knows where it goes. `null` when the host had no record.
+     * Missing in a record of a release deployed before it existed.
+     */
+    readonly previous?: ReleaseBuild | null
+}
+
 const REVISION = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u
 
-/** Reads a deployment record, as the host gives it. `undefined` when it is not one. */
-export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefined {
+/** Reads the three fields of a build. `undefined` when they are not one. */
+function releaseBuildFrom(value: unknown): ReleaseBuild | undefined {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return undefined
     }
@@ -268,6 +278,22 @@ export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefin
         return undefined
     }
     return { contentRevision, siteRevision, builtAt }
+}
+
+/** Reads a deployment record, as the host gives it. `undefined` when it is not one. */
+export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefined {
+    const build = releaseBuildFrom(value)
+    if (build === undefined || typeof value !== 'object' || value === null) {
+        return undefined
+    }
+    if (!('previous' in value) || value.previous === undefined) {
+        return build
+    }
+    if (value.previous === null) {
+        return { ...build, previous: null }
+    }
+    const previous = releaseBuildFrom(value.previous)
+    return previous === undefined ? undefined : { ...build, previous }
 }
 
 /**

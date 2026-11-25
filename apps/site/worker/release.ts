@@ -10,7 +10,8 @@ import {
     deploymentRecordFrom,
     HOST_LIMITS,
     type DeploymentRecord,
-    type HostLimits
+    type HostLimits,
+    type ReleaseBuild
 } from './deployment.ts'
 
 // The run of a deployment (issue 32, BUILD-07, BUILD-08, STORE-08, PUB-42):
@@ -174,44 +175,64 @@ function messageOf(error: unknown): string {
 class Refusal extends Error {}
 
 /**
- * Why the release of the run must not replace the live release, or
- * `undefined` when it can: its content
- * must descend from the live content, so a takedown never comes back with
- * older content. A host with no record (a first deployment) takes any
- * release; an output built elsewhere (`--dist`) never replaces a release of
- * the content store.
+ * The record of the live release: `null` when the host has none (404, a
+ * first deployment). It throws a refusal when the record cannot be read.
  */
-async function refusalOver(run: DeployRun): Promise<string | undefined> {
-    if (run.live === undefined) {
-        return undefined
-    }
+async function liveRecordOf(live: LiveRecord): Promise<DeploymentRecord | null> {
     let value: unknown
     try {
-        value = await run.live.read()
+        value = await live.read()
     } catch (error) {
-        return `the record of the live release cannot be read, so the command cannot know that this release is not older: ${messageOf(error)}`
+        throw new Refusal(
+            `the record of the live release cannot be read, so the command cannot know that this release is not older: ${messageOf(error)}`
+        )
     }
     if (value === undefined) {
-        return undefined
+        return null
     }
-    const live = deploymentRecordFrom(value)
-    if (live === undefined) {
-        return 'the host gives a deployment record that cannot be read'
+    const record = deploymentRecordFrom(value)
+    if (record === undefined) {
+        throw new Refusal('the host gives a deployment record that cannot be read')
     }
-    if (live.contentRevision === null) {
-        return undefined
+    return record
+}
+
+/**
+ * Refuses a release that must not replace the live release (issue 32): its
+ * content must descend from the live content, so a takedown never comes
+ * back with older content. A host with no record (a first deployment) takes
+ * any release; an output built elsewhere (`--dist`) never replaces a release
+ * of the content store.
+ */
+async function checkOver(run: DeployRun, live: DeploymentRecord | null): Promise<void> {
+    if (live === null || live.contentRevision === null) {
+        return
     }
     if (run.contentRevision === null) {
-        return `--dist would replace the live release of the content store ${live.contentRevision}`
+        throw new Refusal(
+            `--dist would replace the live release of the content store ${live.contentRevision}`
+        )
     }
     const descends = await run.descendsFrom?.(live.contentRevision)
     if (descends === undefined) {
-        return `the copy of the content store does not know the live content revision ${live.contentRevision}: fetch the copy, or check the target`
+        throw new Refusal(
+            `the copy of the content store does not know the live content revision ${live.contentRevision}: fetch the copy, or check the target`
+        )
     }
     if (!descends) {
-        return `the live content revision ${live.contentRevision} is not in the history of this copy (${run.contentRevision}): older or other content would go live`
+        throw new Refusal(
+            `the live content revision ${live.contentRevision} is not in the history of this copy (${run.contentRevision}): older or other content would go live`
+        )
     }
-    return undefined
+}
+
+/** The three fields of the build of a record. */
+function buildOf(record: DeploymentRecord): ReleaseBuild {
+    return {
+        contentRevision: record.contentRevision,
+        siteRevision: record.siteRevision,
+        builtAt: record.builtAt
+    }
 }
 
 /** The time of a build, in UTC, to the second. */
@@ -275,9 +296,10 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
 
     let error: string | null = null
     try {
-        const refusal = await refusalOver(run)
-        if (refusal !== undefined) {
-            throw new Refusal(refusal)
+        // The release that this one replaces: `undefined` in a dry run.
+        const replaced = run.live === undefined ? undefined : await liveRecordOf(run.live)
+        if (replaced !== undefined) {
+            await checkOver(run, replaced)
         }
         if (run.storage !== undefined) {
             stored = await run.storage.list()
@@ -298,7 +320,10 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             record = {
                 contentRevision: run.contentRevision,
                 siteRevision: run.siteRevision,
-                builtAt: timeOf(run.now())
+                builtAt: timeOf(run.now()),
+                ...(replaced === undefined
+                    ? {}
+                    : { previous: replaced === null ? null : buildOf(replaced) })
             }
             await writeFile(join(dist, '_headers'), run.headers)
             await writeFile(
@@ -321,9 +346,17 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         } catch (failure) {
             throw new Refusal(messageOf(failure))
         }
-        const late = await refusalOver(run)
-        if (late !== undefined) {
-            throw new Refusal(late)
+        if (run.live !== undefined && replaced !== undefined) {
+            const now = await liveRecordOf(run.live)
+            const same =
+                now === null || replaced === null
+                    ? now === replaced
+                    : sameRecord(buildOf(now), replaced)
+            if (!same) {
+                throw new Refusal(
+                    `another release went live during the build (content ${now?.contentRevision ?? 'none'}): deploy again`
+                )
+            }
         }
         try {
             await run.deploy(dist)
@@ -465,36 +498,63 @@ async function waitForRecord(
 export interface RevertRun {
     /** Makes the release before the live one live again. It throws when it fails. */
     readonly rollback: () => Promise<void>
+    /**
+     * The subjects of the takedown commits after `from` up to `to` in the copy
+     * of the content store, or `undefined` when the copy does not know them.
+     */
+    readonly takedownsBetween: (from: string, to: string) => Promise<string[] | undefined>
     readonly live: LiveRecord
     readonly wait: (milliseconds: number) => Promise<void>
 }
 
 /** What a revert did: the records that the host gave before and after it. */
 export interface RevertResult {
-    readonly before: DeploymentRecord | undefined
+    readonly before: DeploymentRecord
     readonly after: DeploymentRecord | undefined
-    /** True when the host gave another record after the rollback. */
+    /** True when the host gave the record of the release before on reads in a row. */
     readonly changed: boolean
 }
 
 /**
- * Goes back to the release before (BUILD-07): it reads the record that the
- * host gives, rolls back, and reads the host until it gives another record,
- * a bounded number of times. The switch of the host takes a few seconds.
+ * Goes back to the release before (BUILD-07). The live record names the
+ * release that it replaced; a revert that would bring back a note that a
+ * takedown removed in between is refused (a commit whose subject starts with
+ * `Takedown:`), and so is a live release that names no release before it.
+ * Then it rolls back and reads the host until it gives the record of the
+ * release before on reads in a row, a bounded number of times. It throws
+ * when it refuses.
  */
 export async function revertRelease(run: RevertRun): Promise<RevertResult> {
-    const before = deploymentRecordFrom(await run.live.read().catch(() => undefined))
+    const value = await run.live.read()
+    const before = value === undefined ? undefined : deploymentRecordFrom(value)
+    const target = before?.previous
+    if (before === undefined || target === undefined || target === null) {
+        throw new Error(
+            'the live release names no release before it with a record: deploy a new release instead'
+        )
+    }
+    if (before.contentRevision !== null && target.contentRevision !== null) {
+        const takedowns = await run.takedownsBetween(target.contentRevision, before.contentRevision)
+        if (takedowns === undefined) {
+            throw new Error(
+                `the copy of the content store does not know ${target.contentRevision} and ${before.contentRevision}: fetch the copy`
+            )
+        }
+        if (takedowns.length > 0) {
+            throw new Error(
+                `a takedown lies between the release before and the live one (${takedowns.join('; ')}): deploy a new release instead`
+            )
+        }
+    }
     await run.rollback()
-    const { accepted, last } = await waitForRecord(
-        run.live,
-        run.wait,
-        (seen) => seen !== undefined && !sameRecord(seen, before)
+    const { accepted, last } = await waitForRecord(run.live, run.wait, (seen) =>
+        sameRecord(target, seen)
     )
     return { before, after: last, changed: accepted }
 }
 
 /** True when two records name the same build. */
-function sameRecord(one: DeploymentRecord, two: DeploymentRecord | undefined): boolean {
+function sameRecord(one: ReleaseBuild, two: ReleaseBuild | undefined): boolean {
     return (
         two !== undefined &&
         one.contentRevision === two.contentRevision &&

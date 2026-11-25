@@ -227,6 +227,28 @@ describe('the deployment record', () => {
     test('is no record when the answer is not an object', () => {
         expect(deploymentRecordFrom('live')).toBeUndefined()
     })
+
+    // A revert goes back to the release before: the record names it.
+    test('reads the record of the release that it replaced, or none', () => {
+        const previous = { ...RECORD, contentRevision: 'c'.repeat(40) }
+        expect(deploymentRecordFrom({ ...RECORD, previous })).toEqual({ ...RECORD, previous })
+        expect(deploymentRecordFrom({ ...RECORD, previous: null })).toEqual({
+            ...RECORD,
+            previous: null
+        })
+    })
+
+    test('keeps only the three fields of the record that it replaced', () => {
+        const previous = { ...RECORD, previous: { ...RECORD } }
+        expect(deploymentRecordFrom({ ...RECORD, previous })).toEqual({
+            ...RECORD,
+            previous: RECORD
+        })
+    })
+
+    test('is no record when the record that it replaced is not one', () => {
+        expect(deploymentRecordFrom({ ...RECORD, previous: { builtAt: 'x' } })).toBeUndefined()
+    })
 })
 
 describe('the token of a deployment', () => {
