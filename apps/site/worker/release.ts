@@ -25,9 +25,10 @@ import {
 // 5. the object storage loses each key that no published note uses.
 //
 // With a takedown, step 5 runs also when a step before it fails, and the
-// run fails after it (decision of the author 3). Without one, a failure
-// deletes nothing. The steps that reach a host are ports: the command line
-// (`scripts/deploy.ts`) gives the real ones, the tests give fakes.
+// run fails after it (decision 4 of the comment of 2026-11-25 on issue 32).
+// Without one, a failure deletes nothing. The steps that reach a host are
+// ports: the command line (`scripts/deploy.ts`) gives the real ones, the
+// tests give fakes.
 
 /** The files of the attachment folder of the machine, by their keys. */
 export interface AttachmentFolder {
@@ -177,6 +178,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     /** Deletes each key of the storage that no published note uses. */
     async function cleanUp(storage: AttachmentStorage, names: readonly string[]): Promise<void> {
         const unused: string[] = []
+        const others: string[] = []
         for (const name of [...names].sort()) {
             if (used.has(name)) {
                 continue
@@ -184,8 +186,11 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             if (ATTACHMENT_KEY.test(name)) {
                 unused.push(name)
             } else {
+                others.push(name)
                 warnings.push(
-                    `the attachment storage has a file that is not a key, left as it is: ${name}`
+                    run.takedown
+                        ? `a file can still be public: the attachment storage has a file that is not a key, left as it is: ${name}`
+                        : `the attachment storage has a file that is not a key, left as it is: ${name}`
                 )
             }
         }
@@ -205,6 +210,12 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             )
         }
         run.log(`deleted ${String(deleted)} files that no note uses from the attachment storage`)
+        // As the takedown of the tool: such a name can be a file of the takedown.
+        if (run.takedown && others.length > 0) {
+            throw new Error(
+                `after a takedown, the attachment storage has files that are not keys: ${others.join(', ')}`
+            )
+        }
     }
 
     let error: string | null = null
@@ -284,6 +295,11 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
     } catch (failure) {
         error = messageOf(failure)
+        if (run.takedown && run.storage !== undefined && stored === undefined) {
+            warnings.push(
+                'a file can still be public: the attachment storage could not be listed, so no file of the takedown was deleted'
+            )
+        }
         if (run.takedown && deploy !== 'ok' && run.storage !== undefined && stored !== undefined) {
             try {
                 await cleanUp(run.storage, stored)

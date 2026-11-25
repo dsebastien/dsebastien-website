@@ -464,6 +464,30 @@ describe('a deployment', () => {
         expect(site.storage.names.has('notes/readme.txt')).toBe(true)
     })
 
+    // As the takedown of the tool: a name that is not a key can be a file of the takedown.
+    test('after a takedown, fails on a name of the storage that is not a key, after the cleanup', async () => {
+        const site = fixture({
+            stored: [PHOTO.key, PLAN.key, OLD.key, 'notes/readme.txt'],
+            overrides: { takedown: true }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ deploy: 'ok', live: true, deleted: 1 })
+        expect(result.error).toContain('notes/readme.txt')
+        expect(result.warnings.join('\n')).toContain('can still be public')
+        expect(site.storage.names.has('notes/readme.txt')).toBe(true)
+    })
+
+    test('after a takedown, fails with a warning when the storage cannot be listed', async () => {
+        const site = fixture({ stored: [PHOTO.key, PLAN.key], overrides: { takedown: true } })
+        const result = await deployRelease({
+            ...site.run,
+            storage: { ...site.storage, list: () => Promise.reject(new Error('offline')) }
+        })
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted: 0 })
+        expect(result.error).toContain('offline')
+        expect(result.warnings.join('\n')).toContain('can still be public')
+    })
+
     test('warns when the cleanup fails after a deployment that succeeded', async () => {
         const site = fixture({ stored: [PHOTO.key, PLAN.key, OLD.key] })
         const result = await deployRelease({
