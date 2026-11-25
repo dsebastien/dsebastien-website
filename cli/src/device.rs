@@ -10,14 +10,15 @@ use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Mutex, mpsc};
 use std::thread;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
 use crate::canonical::to_canonical_json;
-use crate::deploy::{ChildRun, DeployCommand, DeployProcess, TakedownMarker};
+use crate::deploy::{ChildRun, DeployCommand, DeployProcess, Stop, TakedownMarker};
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -1654,8 +1655,106 @@ fn write_text(path: &Path, text: &str) -> Result<(), String> {
 /// The child process of the deploy (issue 32, BUILD-02, R76): the port
 /// `DeployProcess` of `deploy.rs` on this device. It runs the program with a
 /// list of arguments, with no shell, in the folder of the site code, and keeps
-/// the whole output for the author.
-pub struct ChildProcess;
+/// the whole output for the author. After the time limit of the command, it
+/// stops the program with the programs that it started.
+pub struct ChildProcess {
+    /// The length of a minute: a test makes it short.
+    minute: Duration,
+    /// The time between the soft and the hard stop.
+    grace: Duration,
+}
+
+impl ChildProcess {
+    /// The child process of a run of the program.
+    ///
+    /// A switch of the debug build for the tests of the time limit:
+    /// `DSEBASTIEN_VAULT_PUBLISH_TEST_MINUTE_MS` gives the length of a minute
+    /// in milliseconds. The release build has no switch.
+    pub fn new() -> Self {
+        #[cfg(debug_assertions)]
+        if let Some(milliseconds) = env::var("DSEBASTIEN_VAULT_PUBLISH_TEST_MINUTE_MS")
+            .ok()
+            .and_then(|text| text.parse::<u64>().ok())
+        {
+            return Self {
+                minute: Duration::from_millis(milliseconds),
+                grace: Duration::from_millis(200),
+            };
+        }
+        Self {
+            minute: Duration::from_secs(60),
+            grace: Duration::from_secs(5),
+        }
+    }
+}
+
+/// The program and every program that it started, from the table of the
+/// processes of the system (`ps`), on Unix.
+#[cfg(unix)]
+fn tree_of(pid: u32) -> Vec<u32> {
+    let table = Command::new("ps")
+        .args(["-A", "-o", "pid=", "-o", "ppid="])
+        .stderr(Stdio::null())
+        .output()
+        .map_or_else(
+            |_| String::new(),
+            |output| String::from_utf8_lossy(&output.stdout).into_owned(),
+        );
+    let pairs: Vec<(u32, u32)> = table
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace().map(str::parse::<u32>);
+            Some((parts.next()?.ok()?, parts.next()?.ok()?))
+        })
+        .collect();
+    let mut tree = vec![pid];
+    let mut index = 0;
+    while let Some(&parent) = tree.get(index) {
+        for (child, _) in pairs.iter().filter(|(_, of)| *of == parent) {
+            if !tree.contains(child) {
+                tree.push(*child);
+            }
+        }
+        index += 1;
+    }
+    tree
+}
+
+/// Stops a deploy with the programs that it started: on Unix every process
+/// of its tree, first with TERM, then with KILL after the grace, unless it
+/// ended; on Windows its tree, with `taskkill`. The child stays in the
+/// process group of the program, so that a stop of the program (Ctrl-C in a
+/// terminal) stops the deploy too.
+fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>) {
+    #[cfg(unix)]
+    {
+        let tree = tree_of(pid);
+        let signal = |name: &str, pids: &[u32]| {
+            let _ = Command::new("kill")
+                .arg(name)
+                .args(pids.iter().map(u32::to_string))
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        };
+        signal("-TERM", &tree);
+        if ended.recv_timeout(grace).is_err() {
+            // The programs that the tree started meanwhile go too.
+            let mut all = tree_of(pid);
+            all.extend(tree);
+            signal("-KILL", &all);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = (grace, ended);
+        let _ = Command::new("taskkill")
+            .args(["/pid", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
 
 impl DeployProcess for ChildProcess {
     fn run(&self, command: &DeployCommand) -> Result<ChildRun, String> {
@@ -1682,9 +1781,23 @@ impl DeployProcess for ChildProcess {
         let mut child = child
             .spawn()
             .map_err(|error| format!("{} cannot start: {error}", command.program.display()))?;
+        let limit = self
+            .minute
+            .saturating_mul(u32::try_from(command.timeout_minutes).unwrap_or(u32::MAX));
+        let stopped = AtomicBool::new(false);
+        let (end, ended) = mpsc::channel::<()>();
+        let pid = child.id();
+        let grace = self.grace;
         // The standard output and the errors, in the order they came.
         let output = Mutex::new(Vec::new());
         let stdout = thread::scope(|scope| {
+            let stopped = &stopped;
+            scope.spawn(move || {
+                if ended.recv_timeout(limit).is_err() {
+                    stopped.store(true, Ordering::Relaxed);
+                    stop_tree(pid, grace, &ended);
+                }
+            });
             let errors = child.stderr.take().map(|mut pipe| {
                 let output = &output;
                 scope.spawn(move || {
@@ -1709,16 +1822,19 @@ impl DeployProcess for ChildProcess {
             if let Some(errors) = errors {
                 let _ = errors.join();
             }
-            stdout
+            let status = child.wait();
+            // The watch of the time limit ends with the program.
+            let _ = end.send(());
+            (stdout, status)
         });
-        let status = child
-            .wait()
-            .map_err(|error| format!("the deploy could not run: {error}"))?;
+        let (stdout, status) = stdout;
+        let status = status.map_err(|error| format!("the deploy could not run: {error}"))?;
         let output = output.into_inner().unwrap_or_default();
         Ok(ChildRun {
             code: status.code(),
             stdout: String::from_utf8_lossy(&stdout).into_owned(),
             output: String::from_utf8_lossy(&output).into_owned(),
+            stopped: stopped.load(Ordering::Relaxed).then_some(Stop::Time),
         })
     }
 }

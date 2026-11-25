@@ -23,7 +23,8 @@ describe('the child process of the deploy', () => {
         const run = await childProcess().run({
             program: process.execPath,
             args: [file, 'one argument', "it's"],
-            folder: stores.root
+            folder: stores.root,
+            timeoutMinutes: 1
         })
 
         expect(run.code).toBe(3)
@@ -42,7 +43,12 @@ describe('the child process of the deploy', () => {
         const folder = join(stores.root, 'missing')
 
         const message = await rejectionOf(
-            childProcess().run({ program: process.execPath, args: ['--version'], folder })
+            childProcess().run({
+                program: process.execPath,
+                args: ['--version'],
+                folder,
+                timeoutMinutes: 1
+            })
         )
 
         expect(message).toBe(`the folder of the site code is not a folder: ${folder}`)
@@ -55,12 +61,95 @@ describe('the child process of the deploy', () => {
             childProcess().run({
                 program: join(stores.root, 'no-bun'),
                 args: [],
-                folder: stores.root
+                folder: stores.root,
+                timeoutMinutes: 1
             })
         )
 
         expect(message).toContain('no-bun')
     })
+})
+
+/** True while the process runs. */
+function alive(pid: number): boolean {
+    try {
+        process.kill(pid, 0)
+        return true
+    } catch {
+        return false
+    }
+}
+
+/** A child that starts a grandchild, writes its process id, and waits for it. */
+async function waitingChild(folder: string): Promise<{ file: string; pids: string }> {
+    const file = join(folder, 'waiting.ts')
+    const pids = join(folder, 'pids')
+    await writeFile(
+        file,
+        [
+            "import { spawn } from 'node:child_process'",
+            "import { writeFileSync } from 'node:fs'",
+            "const grandchild = spawn('sleep', ['30'], { stdio: 'ignore' })",
+            "writeFileSync(process.argv[2] ?? '', String(grandchild.pid))",
+            "console.log('started')",
+            'setInterval(() => undefined, 1000)'
+        ].join('\n')
+    )
+    return { file, pids }
+}
+
+async function grandchildOf(pids: string): Promise<number> {
+    for (;;) {
+        const text = await readFile(pids, 'utf8').catch(() => '')
+        if (text !== '') {
+            return Number(text)
+        }
+        await Bun.sleep(10)
+    }
+}
+
+describe.skipIf(process.platform === 'win32')('the stop of the deploy (issue 32)', () => {
+    test('stops the deploy and the programs that it started after its time limit', async () => {
+        await using stores = await makeTestStores()
+        const { file, pids } = await waitingChild(stores.root)
+
+        const running = childProcess({ minuteMs: 300, graceMs: 200 }).run({
+            program: process.execPath,
+            args: [file, pids],
+            folder: stores.root,
+            timeoutMinutes: 1
+        })
+        const grandchild = await grandchildOf(pids)
+        const run = await running
+        await Bun.sleep(100)
+
+        expect(run.stopped).toBe('time')
+        expect(run.output).toContain('started')
+        expect(alive(grandchild)).toBe(false)
+    }, 20_000)
+
+    test('stops the deploy when the author stops it', async () => {
+        await using stores = await makeTestStores()
+        const { file, pids } = await waitingChild(stores.root)
+        const stop = new AbortController()
+
+        const running = childProcess({ graceMs: 200 }).run(
+            {
+                program: process.execPath,
+                args: [file, pids],
+                folder: stores.root,
+                timeoutMinutes: 30
+            },
+            stop.signal
+        )
+        const grandchild = await grandchildOf(pids)
+        stop.abort()
+        const run = await running
+        await Bun.sleep(100)
+
+        expect(run.stopped).toBe('author')
+        expect(alive(grandchild)).toBe(false)
+    }, 20_000)
 })
 
 describe('the deploy settings of a device', () => {
@@ -73,7 +162,8 @@ describe('the deploy settings of a device', () => {
                 siteCode: ' /work/site ',
                 deployTarget: '/private/target.json',
                 deployEnvFile: '',
-                bun: ' /opt/bun '
+                bun: ' /opt/bun ',
+                deployTimeout: ''
             })
         ).toEqual({
             siteCode: '/work/site',
@@ -83,6 +173,22 @@ describe('the deploy settings of a device', () => {
             contentStore: '/data/copy',
             attachments: '/data/files'
         })
+    })
+
+    test('read the time limit in whole minutes, and give a wrong one to the deploy, which refuses it', () => {
+        const settings = {
+            contentStore: '/data/copy',
+            attachmentStorage: '/data/files',
+            git: '',
+            siteCode: '/work/site',
+            deployTarget: '/private/target.json',
+            deployEnvFile: '',
+            bun: ''
+        }
+
+        expect(deploySettingsOf({ ...settings, deployTimeout: ' 45 ' }).timeoutMinutes).toBe(45)
+        expect(deploySettingsOf({ ...settings, deployTimeout: 'soon' }).timeoutMinutes).toBeNaN()
+        expect('timeoutMinutes' in deploySettingsOf({ ...settings, deployTimeout: '' })).toBe(false)
     })
 })
 

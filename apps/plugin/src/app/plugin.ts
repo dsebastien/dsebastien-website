@@ -123,14 +123,15 @@ export class VaultPublishPlugin extends Plugin {
             pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
             // The deploy of the site after a push (issue 32), as a child
             // process in the clean clone of the site code of this device.
-            deploy: (kind) => {
+            deploy: (kind, signal) => {
                 const settings = loadSettings(this.app)
                 return runDeploy(
                     childProcess(),
                     fileMarker(settings.contentStore),
                     deploySettingsOf(settings),
                     kind,
-                    process.platform === 'win32'
+                    process.platform === 'win32',
+                    signal
                 )
             },
             markTakedown: () => fileMarker(loadSettings(this.app).contentStore).set(),
@@ -625,6 +626,12 @@ function deployRows(
             'The absolute path of bun, when Obsidian does not find it. Empty for bun of the path of the system.',
             '/home/me/.bun/bin/bun',
             'bun'
+        ],
+        [
+            'Time limit of a deploy',
+            'In minutes. After it, the deploy stops with the programs that it started, and fails. Empty for 30.',
+            '30',
+            'deployTimeout'
         ]
     ]
     for (const [name, description, placeholder, key] of rows) {

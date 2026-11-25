@@ -28,6 +28,8 @@ export interface DeviceSettings {
     readonly deployEnvFile: string
     /** The bun program. Empty for `bun` of the path of the system. */
     readonly bun: string
+    /** The time limit of a deploy, in minutes. Empty for 30. */
+    readonly deployTimeout: string
 }
 
 /** The key of the settings of this device in the local storage of Obsidian. */
@@ -51,7 +53,8 @@ export function loadSettings(storage: DeviceStorage): DeviceSettings {
         siteCode: textOf(kept, 'siteCode'),
         deployTarget: textOf(kept, 'deployTarget'),
         deployEnvFile: textOf(kept, 'deployEnvFile'),
-        bun: textOf(kept, 'bun')
+        bun: textOf(kept, 'bun'),
+        deployTimeout: textOf(kept, 'deployTimeout')
     }
 }
 
@@ -63,7 +66,8 @@ export function saveSettings(storage: DeviceStorage, settings: DeviceSettings): 
         siteCode: settings.siteCode,
         deployTarget: settings.deployTarget,
         deployEnvFile: settings.deployEnvFile,
-        bun: settings.bun
+        bun: settings.bun,
+        deployTimeout: settings.deployTimeout
     })
 }
 

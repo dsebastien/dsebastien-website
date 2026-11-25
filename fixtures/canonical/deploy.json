@@ -1,5 +1,5 @@
 {
-    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system; \"takedown\": true for a deploy with --takedown). A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank.",
+    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system; \"takedown\": true for a deploy with --takedown; \"stopped\": the tool stopped the deploy after its time limit of \"timeoutMinutes\", or for the author). A time limit that the settings do not name is 30 minutes. A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank.",
     "commands": [
         {
             "name": "a publication with every setting",
@@ -26,7 +26,8 @@
                     "/data/content-store-copy",
                     "--attachments",
                     "/data/attachments"
-                ]
+                ],
+                "timeoutMinutes": 30
             }
         },
         {
@@ -55,7 +56,8 @@
                     "--attachments",
                     "/data/attachments",
                     "--takedown"
-                ]
+                ],
+                "timeoutMinutes": 30
             }
         },
         {
@@ -82,7 +84,8 @@
                     "/data/content-store-copy",
                     "--attachments",
                     "/data/attachments"
-                ]
+                ],
+                "timeoutMinutes": 30
             }
         },
         {
@@ -110,7 +113,8 @@
                     "/data/content-store-copy",
                     "--attachments",
                     "/data/attachments"
-                ]
+                ],
+                "timeoutMinutes": 30
             }
         },
         {
@@ -242,7 +246,8 @@
                     "\\\\nas\\notes\\copy",
                     "--attachments",
                     "C:\\data\\attachments"
-                ]
+                ],
+                "timeoutMinutes": 30
             }
         },
         {
@@ -285,6 +290,50 @@
             },
             "takedown": false,
             "error": "nothing was deployed: the target file of the deployment must be an absolute path: \"--takedown\""
+        },
+        {
+            "name": "a time limit of the settings goes with the command",
+            "settings": {
+                "siteCode": "/work/site-code",
+                "target": "/private/deploy-target.json",
+                "envFile": "/private/deploy.env",
+                "bun": "/opt/bun/bin/bun",
+                "contentStore": "/data/content-store-copy",
+                "attachments": "/data/attachments",
+                "timeoutMinutes": 5
+            },
+            "takedown": false,
+            "command": {
+                "program": "/opt/bun/bin/bun",
+                "folder": "/work/site-code",
+                "args": [
+                    "--env-file=/private/deploy.env",
+                    "run",
+                    "deploy",
+                    "--from-main",
+                    "--target",
+                    "/private/deploy-target.json",
+                    "--content-store",
+                    "/data/content-store-copy",
+                    "--attachments",
+                    "/data/attachments"
+                ],
+                "timeoutMinutes": 5
+            }
+        },
+        {
+            "name": "a time limit of 0 deploys nothing",
+            "settings": {
+                "siteCode": "/work/site-code",
+                "target": "/private/deploy-target.json",
+                "envFile": "/private/deploy.env",
+                "bun": "/opt/bun/bin/bun",
+                "contentStore": "/data/content-store-copy",
+                "attachments": "/data/attachments",
+                "timeoutMinutes": 0
+            },
+            "takedown": false,
+            "error": "nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1"
         }
     ],
     "results": [
@@ -889,6 +938,43 @@
                 "error": "the deploy could not start: no such file or directory",
                 "live": false,
                 "push": "ok",
+                "takedown": true,
+                "uploaded": 0,
+                "warnings": [
+                    "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown"
+                ]
+            }
+        },
+        {
+            "name": "a deploy stopped after its time limit is a failed deploy",
+            "stopped": "time",
+            "timeoutMinutes": 30,
+            "push": "ok",
+            "report": {
+                "build": "failed",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the deploy was stopped after its time limit of 30 minutes, with the programs that it started: read the output of the deploy",
+                "live": false,
+                "push": "ok",
+                "takedown": false,
+                "uploaded": 0,
+                "warnings": []
+            }
+        },
+        {
+            "name": "a takedown deploy that the author stopped keeps the takedown",
+            "stopped": "author",
+            "timeoutMinutes": 30,
+            "push": "skipped",
+            "takedown": true,
+            "report": {
+                "build": "failed",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the deploy was stopped by the author, with the programs that it started: read the output of the deploy",
+                "live": false,
+                "push": "skipped",
                 "takedown": true,
                 "uploaded": 0,
                 "warnings": [

@@ -16,10 +16,44 @@ import type { DeviceSettings } from './settings.ts'
 // and keeps the whole output for the author. The output can name the address
 // of a removed note: it stays in the view, and goes nowhere else.
 
+/** The length of a minute and the grace before a hard stop, in milliseconds; a test makes them short. */
+export interface ChildTimes {
+    readonly minuteMs?: number
+    readonly graceMs?: number
+}
+
+/**
+ * Stops the deploy with the programs that it started: on Unix its process
+ * group (the child leads a group of its own), first with SIGTERM, then with
+ * SIGKILL after the grace; on Windows its tree, with `taskkill`.
+ */
+function stopTree(pid: number, graceMs: number): void {
+    if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+            stdio: 'ignore',
+            windowsHide: true
+        })
+        return
+    }
+    const signal = (name: NodeJS.Signals): void => {
+        try {
+            process.kill(-pid, name)
+        } catch {
+            // The group ended already.
+        }
+    }
+    signal('SIGTERM')
+    setTimeout(() => {
+        signal('SIGKILL')
+    }, graceMs).unref()
+}
+
 /** The port that starts the deploy as a child process of Obsidian. */
-export function childProcess(): DeployProcess {
+export function childProcess(times: ChildTimes = {}): DeployProcess {
+    const minuteMs = times.minuteMs ?? 60_000
+    const graceMs = times.graceMs ?? 5_000
     return {
-        run: async (command: DeployCommand): Promise<ChildRun> => {
+        run: async (command: DeployCommand, signal?: AbortSignal): Promise<ChildRun> => {
             const folder = await stat(command.folder).catch(() => undefined)
             if (folder?.isDirectory() !== true) {
                 throw new Error(`the folder of the site code is not a folder: ${command.folder}`)
@@ -28,11 +62,31 @@ export function childProcess(): DeployProcess {
                 const child = spawn(command.program, command.args, {
                     cwd: command.folder,
                     stdio: ['ignore', 'pipe', 'pipe'],
-                    windowsHide: true
+                    windowsHide: true,
+                    // A group of its own on Unix, so that a stop reaches
+                    // the programs that the deploy started.
+                    detached: process.platform !== 'win32'
                 })
                 const stdout: Buffer[] = []
                 // The standard output and the errors in the order they came.
                 const output: Buffer[] = []
+                let stopped: ChildRun['stopped']
+                const stop = (why: 'time' | 'author'): void => {
+                    if (stopped === undefined && child.pid !== undefined) {
+                        stopped = why
+                        stopTree(child.pid, graceMs)
+                    }
+                }
+                const timer = setTimeout(() => {
+                    stop('time')
+                }, command.timeoutMinutes * minuteMs)
+                const onAbort = (): void => {
+                    stop('author')
+                }
+                signal?.addEventListener('abort', onAbort, { once: true })
+                if (signal?.aborted === true) {
+                    onAbort()
+                }
                 child.stdout.on('data', (chunk: Buffer) => {
                     stdout.push(chunk)
                     output.push(chunk)
@@ -40,17 +94,33 @@ export function childProcess(): DeployProcess {
                 child.stderr.on('data', (chunk: Buffer) => {
                     output.push(chunk)
                 })
-                child.on('error', reject)
+                child.on('error', (error) => {
+                    clearTimeout(timer)
+                    signal?.removeEventListener('abort', onAbort)
+                    reject(error)
+                })
                 child.on('close', (code) => {
+                    clearTimeout(timer)
+                    signal?.removeEventListener('abort', onAbort)
                     resolve({
                         code,
                         stdout: Buffer.concat(stdout).toString('utf8'),
-                        output: Buffer.concat(output).toString('utf8')
+                        output: Buffer.concat(output).toString('utf8'),
+                        ...(stopped === undefined ? {} : { stopped })
                     })
                 })
             })
         }
     }
+}
+
+/** The time limit of the setting: none when it is empty, `NaN` when it is no whole number, which the deploy refuses. */
+function timeoutOf(text: string): { readonly timeoutMinutes?: number } {
+    const minutes = text.trim()
+    if (minutes === '') {
+        return {}
+    }
+    return { timeoutMinutes: /^[0-9]+$/u.test(minutes) ? Number(minutes) : Number.NaN }
 }
 
 /** The deploy settings of this device, with the folders of its publication. */
@@ -61,7 +131,8 @@ export function deploySettingsOf(settings: DeviceSettings): DeploySettings {
         envFile: settings.deployEnvFile.trim(),
         bun: settings.bun.trim(),
         contentStore: settings.contentStore.trim(),
-        attachments: settings.attachmentStorage.trim()
+        attachments: settings.attachmentStorage.trim(),
+        ...timeoutOf(settings.deployTimeout)
     }
 }
 

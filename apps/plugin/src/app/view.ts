@@ -1042,6 +1042,10 @@ export class PublicationCenterView extends ItemView {
         const head = panel.createDiv({ cls: 'vault-publish-section-title' })
         if (deployment.running) {
             head.createSpan({ text: 'Deploy: it runs. You can go on working.' })
+            const stop = head.createEl('button', { text: 'Stop the deploy' })
+            stop.addEventListener('click', () => {
+                center.stopDeploy()
+            })
             return
         }
         const { report, output } = deployment

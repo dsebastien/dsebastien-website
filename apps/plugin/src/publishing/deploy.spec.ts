@@ -6,6 +6,7 @@ import {
     deploymentText,
     reportOfRun,
     reportOfStartError,
+    reportOfStop,
     runDeploy
 } from './deploy.ts'
 import type { DeployCommand, DeployProcess, DeploySettings, TakedownMarker } from './deploy.ts'
@@ -28,6 +29,8 @@ interface ResultCase {
     readonly code?: number | null
     readonly stdout?: string
     readonly startError?: string
+    readonly stopped?: 'time' | 'author'
+    readonly timeoutMinutes?: number
     readonly push: 'ok' | 'skipped'
     readonly takedown?: boolean
     readonly report: unknown
@@ -68,9 +71,11 @@ describe('the report of a deploy', () => {
         test(one.name, () => {
             const kind = { push: one.push, takedown: one.takedown === true }
             const report =
-                one.startError === undefined
-                    ? reportOfRun(one.code ?? null, one.stdout ?? '', kind)
-                    : reportOfStartError(one.startError, kind)
+                one.stopped !== undefined
+                    ? reportOfStop(one.stopped, one.timeoutMinutes ?? 30, kind)
+                    : one.startError === undefined
+                      ? reportOfRun(one.code ?? null, one.stdout ?? '', kind)
+                      : reportOfStartError(one.startError, kind)
 
             expect(JSON.parse(deploymentText(report))).toEqual({ deployment: one.report })
         })
@@ -140,6 +145,7 @@ describe('a deploy', () => {
             {
                 program: 'bun',
                 folder: '/work/site-code',
+                timeoutMinutes: 30,
                 args: [
                     'run',
                     'deploy',

@@ -11,7 +11,7 @@ import {
 import type { TestStores } from '@dsebastien-website/testing'
 import { NO_CHOICES, toggleRow, markUnpublish } from '../publishing/center.ts'
 import { fileNoteTypes, nodeDevice, pullContentStore } from '../publishing/node/device.ts'
-import { deploymentText, reportOfNothing, reportOfRun } from '../publishing/deploy.ts'
+import { deploymentText, reportOfNothing, reportOfRun, reportOfStop } from '../publishing/deploy.ts'
 import type { DeployKind, Deployment, DeployReport } from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
 import type { CenterHost } from './center.ts'
@@ -1094,6 +1094,44 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         fake.release()
         await deployEnd(center)
         expect(fake.runs.at(-1)).toEqual({ push: 'ok', takedown: true })
+    }, 60_000)
+
+    test('the author stops a deploy, and the deploy that waits runs after it', async () => {
+        await using stores = await makeTestStores()
+        const runs: DeployKind[] = []
+        // A deploy that runs until it is stopped, then one that ends at once.
+        const deploy = (kind: DeployKind, signal: AbortSignal): Promise<Deployment> => {
+            runs.push(kind)
+            if (runs.length > 1) {
+                return Promise.resolve({ report: live(kind), output: '' })
+            }
+            return new Promise((resolve) => {
+                signal.addEventListener('abort', () => {
+                    resolve({ report: reportOfStop('author', 30, kind), output: '' })
+                })
+            })
+        }
+        const { center } = await setUp(stores, true, deploy)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        await center.takedown([NOTE])
+
+        const stopped = center.stopDeploy()
+        await deployEnd(center)
+
+        expect(stopped).toBe(true)
+        expect(center.state.log.map((line) => line.text)).toContain(
+            'Deploy failed (build failed, deploy failed): the deploy was stopped by the author, with the programs that it started: read the output of the deploy'
+        )
+        while (runs.length < 2 || center.state.deployment?.running !== false) {
+            await Bun.sleep(5)
+        }
+        expect(runs).toEqual([
+            { push: 'ok', takedown: false },
+            { push: 'ok', takedown: true }
+        ])
+        expect(center.stopDeploy()).toBe(false)
     }, 60_000)
 
     test('the deploy tool asks for --takedown when the agent does', async () => {

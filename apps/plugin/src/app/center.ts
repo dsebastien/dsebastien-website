@@ -76,7 +76,7 @@ export interface CenterHost {
      * the report. It runs with `--takedown` also while the marker of a
      * takedown is set. Without it, nothing is deployed (the tests of the logic).
      */
-    deploy?(kind: DeployKind): Promise<Deployment>
+    deploy?(kind: DeployKind, signal: AbortSignal): Promise<Deployment>
     /** Sets the marker of a takedown, right after the push of a takedown (`TakedownMarker`). */
     markTakedown?(): Promise<void>
 }
@@ -273,6 +273,8 @@ export class PublicationCenter {
     #fresh = false
     /** The deploy that runs now. */
     #deploying: Promise<Deployment> | undefined
+    /** The stop of the deploy that runs now. */
+    #stopDeploy: AbortController | undefined
     /** The deploy that waits for the end of the current one: one for every push that came meanwhile. */
     #pendingDeploy: PendingDeploy | undefined
     /** The plan of the last queue and choices: a render asks for it more than one time. */
@@ -491,6 +493,21 @@ export class PublicationCenter {
     }
 
     /**
+     * Stops the deploy that runs, with the programs that it started: it
+     * fails with a message, and a deploy that waits runs after it. The
+     * marker of a takedown stays. False when no deploy runs.
+     */
+    stopDeploy(): boolean {
+        const stop = this.#stopDeploy
+        if (stop === undefined || stop.signal.aborted) {
+            return false
+        }
+        this.#log('Deploy stopped by the author')
+        stop.abort()
+        return true
+    }
+
+    /**
      * Sets the marker of a takedown right after its push, so that a deploy
      * that fails, waits or is skipped never loses it. A marker that cannot be
      * written is logged: the deploy after it still runs with `--takedown`.
@@ -546,10 +563,12 @@ export class PublicationCenter {
     #startDeploy(run: NonNullable<CenterHost['deploy']>, kind: DeployKind): Promise<Deployment> {
         this.#log(kind.takedown ? 'Deploy started, after a takedown' : 'Deploy started')
         this.#set({ deployment: { running: true } })
+        const stop = new AbortController()
+        this.#stopDeploy = stop
         const running = (async (): Promise<Deployment> => {
             let deployment: Deployment
             try {
-                deployment = await run(kind)
+                deployment = await run(kind, stop.signal)
             } catch (error) {
                 deployment = { report: reportOfStartError(messageOf(error), kind), output: '' }
             }
@@ -562,6 +581,7 @@ export class PublicationCenter {
         void running.finally(() => {
             if (this.#deploying === running) {
                 this.#deploying = undefined
+                this.#stopDeploy = undefined
             }
         })
         return running

@@ -27,13 +27,22 @@ export interface DeploySettings {
     readonly contentStore: string
     /** The folder of the attachment storage. */
     readonly attachments: string
+    /** The time limit of the deploy, in minutes. Absent for 30. */
+    readonly timeoutMinutes?: number
 }
 
-/** What the tool runs: a program with a list of arguments, no shell, in a folder. */
+/** The time limit of a deploy when the settings name none, in minutes. */
+export const DEFAULT_TIMEOUT_MINUTES = 30
+
+/**
+ * What the tool runs: a program with a list of arguments, no shell, in a
+ * folder, stopped with the programs that it started after its time limit.
+ */
 export interface DeployCommand {
     readonly program: string
     readonly args: readonly string[]
     readonly folder: string
+    readonly timeoutMinutes: number
 }
 
 /** What a run of the deploy gave. */
@@ -44,6 +53,8 @@ export interface ChildRun {
     readonly stdout: string
     /** The whole output (standard output and errors), for the author only. */
     readonly output: string
+    /** Why the tool stopped the deploy: its time limit, or the author. Absent when it ended by itself. */
+    readonly stopped?: 'time' | 'author'
 }
 
 /**
@@ -66,9 +77,13 @@ export interface DeployKind {
     readonly takedown: boolean
 }
 
-/** The port that starts the deploy as a child process. It throws when the program cannot start. */
+/**
+ * The port that starts the deploy as a child process. It throws when the
+ * program cannot start. After the time limit of the command, or when the
+ * signal aborts, it stops the program with the programs that it started.
+ */
 export interface DeployProcess {
-    run(command: DeployCommand): Promise<ChildRun>
+    run(command: DeployCommand, signal?: AbortSignal): Promise<ChildRun>
 }
 
 export type StepResult = 'ok' | 'failed' | 'skipped'
@@ -103,7 +118,7 @@ export interface Deployment {
 /** The start of the last line of the standard output of the deploy. */
 export const RESULT_PREFIX = 'DEPLOY-RESULT '
 
-type SettingName = keyof DeploySettings
+type SettingName = Exclude<keyof DeploySettings, 'timeoutMinutes'>
 
 /** The name of each setting in a message, and its option in the command line program. */
 const SETTINGS: Record<SettingName, { readonly name: string; readonly option: string }> = {
@@ -176,10 +191,17 @@ export function deployCommandOf(
             error: `nothing was deployed: ${SETTINGS[relative].name} must be an absolute path: "${settings[relative]}"`
         }
     }
+    const timeoutMinutes = settings.timeoutMinutes ?? DEFAULT_TIMEOUT_MINUTES
+    if (!Number.isSafeInteger(timeoutMinutes) || timeoutMinutes < 1) {
+        return {
+            error: 'nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1'
+        }
+    }
     return {
         command: {
             program: settings.bun === '' ? 'bun' : settings.bun,
             folder: settings.siteCode,
+            timeoutMinutes,
             args: [
                 ...(settings.envFile === '' ? [] : [`--env-file=${settings.envFile}`]),
                 'run',
@@ -234,6 +256,22 @@ export function reportOfStartError(message: string, kind: DeployKind): DeployRep
         ...bare(`the deploy could not start: ${message}`, kind),
         deploy: 'failed'
     })
+}
+
+/** The deploy report of a deploy that the tool stopped: after its time limit, or for the author. */
+export function reportOfStop(
+    stopped: 'time' | 'author',
+    timeoutMinutes: number,
+    kind: DeployKind
+): DeployReport {
+    const why =
+        stopped === 'time'
+            ? `after its time limit of ${String(timeoutMinutes)} minutes`
+            : 'by the author'
+    return failed(
+        `the deploy was stopped ${why}, with the programs that it started: ${READ_OUTPUT}`,
+        kind
+    )
 }
 
 function failed(error: string, kind: DeployKind): DeployReport {
@@ -375,7 +413,8 @@ export async function runDeploy(
     marker: TakedownMarker,
     settings: DeploySettings,
     asked: DeployKind,
-    windows: boolean
+    windows: boolean,
+    signal?: AbortSignal
 ): Promise<Deployment> {
     // A marker that cannot be read counts as set.
     const pending = await marker.pending().catch(() => true)
@@ -386,12 +425,15 @@ export async function runDeploy(
     }
     let run: ChildRun
     try {
-        run = await child.run(made.command)
+        run = await child.run(made.command, signal)
     } catch (error) {
         const message = error instanceof Error ? error.message : 'it failed'
         return { report: reportOfStartError(message, kind), output: '' }
     }
-    const report = reportOfRun(run.code, run.stdout, kind)
+    const report =
+        run.stopped === undefined
+            ? reportOfRun(run.code, run.stdout, kind)
+            : reportOfStop(run.stopped, made.command.timeoutMinutes, kind)
     if (report.takedown && report.deploy === 'ok') {
         try {
             await marker.remove()

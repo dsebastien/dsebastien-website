@@ -34,15 +34,38 @@ pub struct DeploySettings {
     pub content_store: Option<PathBuf>,
     /// The folder of the attachment storage.
     pub attachments: Option<PathBuf>,
+    /// The time limit of the deploy, in minutes. `None` for 30.
+    pub timeout_minutes: Option<u64>,
 }
 
+/// The time limit of a deploy when the settings name none, in minutes.
+pub const DEFAULT_TIMEOUT_MINUTES: u64 = 30;
+
 /// What the tool runs: a program with a list of arguments, no shell, in a
-/// folder.
+/// folder, stopped with the programs that it started after its time limit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeployCommand {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub folder: PathBuf,
+    pub timeout_minutes: u64,
+}
+
+/// Why the tool stopped a deploy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stop {
+    /// Its time limit.
+    Time,
+    /// The author: the publication center of the plugin. In the command
+    /// line program, a stop of the program (Ctrl-C) stops the deploy too.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the shared cases read it; only the plugin stops for the author"
+        )
+    )]
+    Author,
 }
 
 /// What a run of the deploy gave.
@@ -53,6 +76,8 @@ pub struct ChildRun {
     pub stdout: String,
     /// The whole output (standard output and errors), for the author only.
     pub output: String,
+    /// Why the tool stopped the deploy, or `None` when it ended by itself.
+    pub stopped: Option<Stop>,
 }
 
 /// The marker of a takedown on this device, in the git folder of the copy
@@ -243,7 +268,15 @@ pub fn deploy_command(
     if takedown {
         args.push("--takedown".into());
     }
+    let timeout_minutes = settings.timeout_minutes.unwrap_or(DEFAULT_TIMEOUT_MINUTES);
+    if timeout_minutes == 0 {
+        return Err(
+            "nothing was deployed: the time limit of the deploy must be a whole number of minutes from 1"
+                .to_owned(),
+        );
+    }
     Ok(DeployCommand {
+        timeout_minutes,
         program: set(settings.bun.as_ref()).map_or_else(|| PathBuf::from("bun"), Path::to_path_buf),
         args,
         folder: path(settings.site_code.as_ref()),
@@ -290,6 +323,19 @@ pub fn report_of_start_error(message: &str, kind: DeployKind) -> DeployReport {
         deploy: "failed",
         ..bare(format!("the deploy could not start: {message}"), kind)
     })
+}
+
+/// The deploy report of a deploy that the tool stopped: after its time
+/// limit, or for the author.
+pub fn report_of_stop(stop: Stop, timeout_minutes: u64, kind: DeployKind) -> DeployReport {
+    let why = match stop {
+        Stop::Time => format!("after its time limit of {timeout_minutes} minutes"),
+        Stop::Author => "by the author".to_owned(),
+    };
+    with_takedown(failed(
+        format!("the deploy was stopped {why}, with the programs that it started: {READ_OUTPUT}"),
+        kind,
+    ))
 }
 
 fn failed(error: String, kind: DeployKind) -> DeployReport {
@@ -470,7 +516,10 @@ pub fn run_deploy(
     };
     match child.run(&command) {
         Ok(run) => {
-            let mut report = report_of_run(run.code, &run.stdout, kind);
+            let mut report = match run.stopped {
+                Some(stop) => report_of_stop(stop, command.timeout_minutes, kind),
+                None => report_of_run(run.code, &run.stdout, kind),
+            };
             if report.takedown
                 && report.succeeded()
                 && let Err(error) = marker.remove()
@@ -554,6 +603,7 @@ mod tests {
             bun: setting(settings, "bun"),
             content_store: setting(settings, "contentStore"),
             attachments: setting(settings, "attachments"),
+            timeout_minutes: settings["timeoutMinutes"].as_u64(),
         }
     }
 
@@ -591,6 +641,7 @@ mod tests {
                             .map(|arg| OsString::from(arg.as_str().expect("an argument")))
                             .collect(),
                         folder: PathBuf::from(command["folder"].as_str().expect("folder")),
+                        timeout_minutes: command["timeoutMinutes"].as_u64().expect("a limit"),
                     };
                     assert_eq!(made, Ok(expected), "{name}");
                 }
@@ -603,9 +654,16 @@ mod tests {
         for case in cases()["results"].as_array().expect("the results") {
             let name = case["name"].as_str().expect("a case has a name");
             let kind = kind_of(case);
-            let report = match case["startError"].as_str() {
-                Some(message) => report_of_start_error(message, kind),
-                None => report_of_run(
+            let stop = match case["stopped"].as_str() {
+                Some("time") => Some(Stop::Time),
+                Some("author") => Some(Stop::Author),
+                _ => None,
+            };
+            let limit = case["timeoutMinutes"].as_u64().unwrap_or(30);
+            let report = match (stop, case["startError"].as_str()) {
+                (Some(stop), _) => report_of_stop(stop, limit, kind),
+                (None, Some(message)) => report_of_start_error(message, kind),
+                (None, None) => report_of_run(
                     case["code"]
                         .as_i64()
                         .map(|code| i32::try_from(code).expect("a small code")),
@@ -669,6 +727,7 @@ mod tests {
                     code,
                     stdout: stdout.to_owned(),
                     output: format!("{stdout}a warning of the build\n"),
+                    stopped: None,
                 }),
                 Err(message) => Err(message.to_owned()),
             }
@@ -685,6 +744,7 @@ mod tests {
             bun: None,
             content_store: Some("/data/copy".into()),
             attachments: Some("/data/files".into()),
+            timeout_minutes: None,
         }
     }
 

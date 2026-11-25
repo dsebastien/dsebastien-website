@@ -489,3 +489,58 @@ fn deploy_takedown_asks_for_takedown() {
     assert_eq!(setup.arguments(), Some(setup.expected_arguments(true)));
     assert_eq!(objects_of(&output)[0]["deployment"]["takedown"], true);
 }
+
+#[test]
+fn a_deploy_stops_with_the_programs_that_it_started_after_its_time_limit() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let setup = Setup::new();
+    let pid_file = setup.stores.root().join("grandchild.pid");
+    fs::write(
+        &setup.bun,
+        format!(
+            "#!/bin/sh\necho 'Building the site'\nsleep 30 &\necho $! > '{}'\nwait\n",
+            pid_file.display()
+        ),
+    )
+    .expect("the script can be written");
+    fs::set_permissions(&setup.bun, fs::Permissions::from_mode(0o755))
+        .expect("the script can be made a program");
+
+    let mut command = support::program();
+    command
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_MINUTE_MS", "300")
+        .arg("deploy")
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .args(["--deploy-timeout", "1"]);
+    setup.deploy_options(&mut command);
+    let output = command.output().expect("the program starts");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        objects_of(&output)[0]["deployment"]["error"],
+        "the deploy was stopped after its time limit of 1 minutes, with the programs that it started: read the output of the deploy"
+    );
+    let grandchild = fs::read_to_string(&pid_file).expect("the grandchild started");
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let alive = Command::new("kill")
+        .args(["-0", grandchild.trim()])
+        .stderr(Stdio::null())
+        .status()
+        .expect("kill runs");
+    assert!(!alive.success(), "the grandchild still runs");
+    assert!(setup.deploy_log().contains("Building the site"));
+}
+
+#[test]
+fn a_time_limit_of_0_deploys_nothing() {
+    let setup = Setup::new();
+
+    let output = setup.deploy_with(&["--deploy-timeout", "0"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(setup.arguments(), None);
+}

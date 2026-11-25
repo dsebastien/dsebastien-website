@@ -102,6 +102,11 @@ struct DeployPlaces {
     /// The bun program. The default is `bun` of the path of the system.
     #[arg(long, value_name = "PROGRAM")]
     bun: Option<PathBuf>,
+
+    /// The time limit of the deploy, in minutes: after it, the deploy stops
+    /// with the programs that it started, and fails. The default is 30.
+    #[arg(long, value_name = "MINUTES")]
+    deploy_timeout: Option<u64>,
 }
 
 /// The deploy after the push of a publication, an unpublish or a takedown.
@@ -710,6 +715,7 @@ fn deploy_settings(
         bun: places.bun.clone(),
         content_store: Some(content_store.to_path_buf()),
         attachments: Some(attachment_storage.to_path_buf()),
+        timeout_minutes: places.deploy_timeout,
     }
 }
 
@@ -769,7 +775,7 @@ fn run_deploy(deploy: &Deploy) -> DeployReport {
         None => &NoMarker,
     };
     let deployment = deploy::run_deploy(
-        &ChildProcess,
+        &ChildProcess::new(),
         marker,
         &deploy.settings,
         deploy.kind,

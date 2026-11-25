@@ -36,7 +36,13 @@ function storage(values: Record<string, unknown> = {}): DeviceStorage & {
 }
 
 /** The settings of the deploy of a device where none is set (issue 32). */
-const NO_DEPLOY = { siteCode: '', deployTarget: '', deployEnvFile: '', bun: '' }
+const NO_DEPLOY = {
+    siteCode: '',
+    deployTarget: '',
+    deployEnvFile: '',
+    bun: '',
+    deployTimeout: ''
+}
 
 const NO_TYPES = { recognize: () => Promise.resolve({ success: true, data: [] }) }
 
@@ -82,7 +88,8 @@ describe('the settings of a device', () => {
             siteCode: '/work/site-code',
             deployTarget: '/private/target.json',
             deployEnvFile: '/private/deploy.env',
-            bun: '/opt/bun/bin/bun'
+            bun: '/opt/bun/bin/bun',
+            deployTimeout: '45'
         }
         saveSettings(kept, settings)
 
