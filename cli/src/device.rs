@@ -1791,7 +1791,7 @@ fn read_pipe(
 }
 
 impl DeployProcess for ChildProcess {
-    fn run(&self, command: &DeployCommand) -> Result<ChildRun, String> {
+    fn run(&self, command: &DeployCommand, on_start: &dyn Fn(u32)) -> Result<ChildRun, String> {
         if !command.folder.is_dir() {
             return Err(format!(
                 "the folder of the site code is not a folder: {}",
@@ -1840,6 +1840,7 @@ impl DeployProcess for ChildProcess {
             .minute
             .saturating_mul(u32::try_from(command.timeout_minutes).unwrap_or(u32::MAX));
         let pid = child.id();
+        on_start(pid);
         let grace = self.grace;
         // The standard output, and both outputs in the order they came.
         let stdout = Arc::new(Mutex::new(Vec::new()));
@@ -2007,16 +2008,19 @@ impl TakedownMarker for ContentStore {
 }
 
 /// The record of the deploys of this device: `.git/vault-publish/deploy-running/`
-/// holds one file per process whose deploy runs, and `deploy-report.json` the
-/// last deploy report. `running` is true while a process of one of them runs.
+/// holds one file per child process of a deploy that runs, named by its
+/// number, and `deploy-report.json` the last deploy report. `running` is
+/// true while one of those processes runs.
 impl DeployRecord for ContentStore {
-    fn set_running(&self, running: bool) -> Result<(), String> {
-        let file = self
-            .local_file("deploy-running")
-            .join(std::process::id().to_string());
-        if running {
-            return write_whole(&file, "A deploy of the command line program runs.\n");
-        }
+    fn started(&self, pid: u32) -> Result<(), String> {
+        write_whole(
+            &self.local_file("deploy-running").join(pid.to_string()),
+            "A deploy of the command line program runs.\n",
+        )
+    }
+
+    fn ended(&self, pid: u32) -> Result<(), String> {
+        let file = self.local_file("deploy-running").join(pid.to_string());
         match fs::remove_file(&file) {
             Err(error) if error.kind() != ErrorKind::NotFound => {
                 Err(format!("{} cannot be removed: {error}", file.display()))

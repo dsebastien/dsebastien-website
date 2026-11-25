@@ -1287,7 +1287,8 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         fake.held = true
         const saved: string[] = []
         const record = {
-            setRunning: () => Promise.resolve(),
+            started: () => Promise.resolve(),
+            ended: () => Promise.resolve(),
             running: () => Promise.resolve(false),
             saveLast: (text: string) => {
                 saved.push(text)

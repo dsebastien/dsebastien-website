@@ -161,13 +161,18 @@ export async function holdsTakedown(
 
 /**
  * The record of the deploys of this device, in the git folder of the copy:
- * whether a deploy runs (`.git/vault-publish/deploy-running`) and the report
- * of the last one (`deploy-report.json`), so that an agent reads them later
- * and every face of this device sees them. A deploy that stopped with its
- * program (a crash) shows as running until the next deploy ends.
+ * the deploys that run (`.git/vault-publish/deploy-running/`, one file per
+ * child process of a deploy, named by its number) and the report of the
+ * last one (`deploy-report.json`), so that an agent reads them later and
+ * every face of this device sees them. A deploy runs while its child runs,
+ * also when the face that started it ended (a reload of Obsidian).
  */
 export interface DeployRecord {
-    setRunning(running: boolean): Promise<void>
+    /** The child process of a deploy started. */
+    started(pid: number): Promise<void>
+    /** The child process of a deploy ended. */
+    ended(pid: number): Promise<void>
+    /** True while the child process of one of the records runs. */
     running(): Promise<boolean>
     /** Keeps the text of the last deploy report (`deploymentText`). */
     saveLast(text: string): Promise<void>
@@ -187,7 +192,12 @@ export interface DeployKind {
  * signal aborts, it stops the program with the programs that it started.
  */
 export interface DeployProcess {
-    run(command: DeployCommand, signal?: AbortSignal): Promise<ChildRun>
+    /** Runs the command; `onStart` gets the number of the child process when it started. */
+    run(
+        command: DeployCommand,
+        signal?: AbortSignal,
+        onStart?: (pid: number) => void
+    ): Promise<ChildRun>
 }
 
 export type StepResult = 'ok' | 'failed' | 'skipped'
@@ -546,12 +556,19 @@ export async function runDeploy(
     windows: boolean,
     signal?: AbortSignal
 ): Promise<Deployment> {
-    await files.setRunning(true).catch(() => undefined)
+    const pids: number[] = []
+    const recorded: Promise<void>[] = []
     let deployment: Deployment
     try {
-        deployment = await deployWith(child, files, settings, asked, windows, signal)
+        deployment = await deployWith(child, files, settings, asked, windows, signal, (pid) => {
+            pids.push(pid)
+            recorded.push(files.started(pid).catch(() => undefined))
+        })
     } finally {
-        await files.setRunning(false).catch(() => undefined)
+        await Promise.all(recorded)
+        for (const pid of pids) {
+            await files.ended(pid).catch(() => undefined)
+        }
     }
     await files.saveLast(deploymentText(deployment.report)).catch(() => undefined)
     return deployment
@@ -617,7 +634,8 @@ async function deployWith(
     settings: DeploySettings,
     asked: DeployKind,
     windows: boolean,
-    signal?: AbortSignal
+    signal: AbortSignal | undefined,
+    onStart: (pid: number) => void
 ): Promise<Deployment> {
     const pending = await takedownWaits(marker)
     const kind: DeployKind = { push: asked.push, takedown: asked.takedown || pending }
@@ -627,7 +645,7 @@ async function deployWith(
     }
     let run: ChildRun
     try {
-        run = await child.run(made.command, signal)
+        run = await child.run(made.command, signal, onStart)
     } catch (error) {
         const message = error instanceof Error ? error.message : 'it failed'
         return { report: reportOfStartError(message, kind), output: '' }

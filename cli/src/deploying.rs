@@ -122,7 +122,10 @@ impl TakedownMarker for NoFiles {
 }
 
 impl DeployRecord for NoFiles {
-    fn set_running(&self, _: bool) -> Result<(), String> {
+    fn started(&self, _: u32) -> Result<(), String> {
+        Ok(())
+    }
+    fn ended(&self, _: u32) -> Result<(), String> {
         Ok(())
     }
     fn running(&self) -> bool {

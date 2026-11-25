@@ -38,6 +38,26 @@ describe('the child process of the deploy', () => {
         expect(run.output).toContain('to the errors')
     })
 
+    test('gives the number of the child when it started', async () => {
+        await using stores = await makeTestStores()
+        const pids: number[] = []
+
+        const run = await childProcess().run(
+            {
+                program: process.execPath,
+                args: ['--version'],
+                folder: stores.root,
+                timeoutMinutes: 1
+            },
+            undefined,
+            (pid) => pids.push(pid)
+        )
+
+        expect(run.code).toBe(0)
+        expect(pids).toHaveLength(1)
+        expect(pids[0]).not.toBe(process.pid)
+    })
+
     test('refuses a folder that does not exist, and names it', async () => {
         await using stores = await makeTestStores()
         const folder = join(stores.root, 'missing')
@@ -238,10 +258,11 @@ describe('the files of the deploy (issue 32)', () => {
         const files = deployFiles(stores.root)
 
         const before = [await files.running(), await files.last()]
-        await files.setRunning(true)
+        // The record names the child of the deploy: here, this process.
+        await files.started(process.pid)
         const during = await files.running()
         await files.saveLast('{"deployment": {}}')
-        await files.setRunning(false)
+        await files.ended(process.pid)
 
         expect(before).toEqual([false, undefined])
         expect(during).toBe(true)
@@ -249,17 +270,18 @@ describe('the files of the deploy (issue 32)', () => {
         expect(await files.last()).toBe('{"deployment": {}}')
     })
 
-    test('keep one record of a running deploy per process: a record of a process that ended counts for nothing', async () => {
+    test('keep one record of a running deploy per child: a record of a child that ended counts for nothing', async () => {
         await using stores = await makeTestStores()
         const files = deployFiles(stores.root)
         const runs = join(stores.root, '.git', 'vault-publish', 'deploy-running')
         await mkdir(runs, { recursive: true })
-        // A process that ended long ago, and the other face of this machine.
+        // A child that ended (Obsidian reloaded during its deploy), and the
+        // child of a deploy of the other face of this machine.
         await writeFile(join(runs, '999999999'), 'ended\n')
 
         const before = await files.running()
-        await files.setRunning(true)
-        await files.setRunning(false)
+        await files.started(process.pid)
+        await files.ended(process.pid)
         await writeFile(join(runs, String(process.ppid)), 'the other face\n')
 
         expect(before).toBe(false)

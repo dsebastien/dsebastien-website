@@ -183,8 +183,12 @@ function marker(
         runs,
         saved,
         held,
-        setRunning: (running) => {
-            runs.push(running)
+        started: () => {
+            runs.push(true)
+            return Promise.resolve()
+        },
+        ended: () => {
+            runs.push(false)
             return Promise.resolve()
         },
         running: () => Promise.resolve(runs.at(-1) === true),
@@ -352,7 +356,10 @@ describe('a deploy', () => {
 
     test('says in the record that it runs, then keeps its report', async () => {
         const child: DeployProcess = {
-            run: () => Promise.resolve({ code: 0, stdout: `${LINE}\n`, output: '' })
+            run: (_command, _signal, onStart) => {
+                onStart?.(4242)
+                return Promise.resolve({ code: 0, stdout: `${LINE}\n`, output: '' })
+            }
         }
         const files = marker()
 

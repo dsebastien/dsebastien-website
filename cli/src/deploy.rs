@@ -222,15 +222,25 @@ fn settle_takedowns(marker: &dyn TakedownMarker, revision: Option<&str>) -> Vec<
 }
 
 /// The record of the deploys of this device, in the git folder of the copy:
-/// whether a deploy runs (`.git/vault-publish/deploy-running`) and the report
-/// of the last one (`deploy-report.json`), so that an agent reads them later
-/// and every face of this device sees them. A deploy that stopped with its
-/// program (a crash) shows as running until the next deploy ends.
+/// the deploys that run (`.git/vault-publish/deploy-running/`, one file per
+/// child process of a deploy, named by its number) and the report of the
+/// last one (`deploy-report.json`), so that an agent reads them later and
+/// every face of this device sees them. A deploy runs while its child runs,
+/// also when the face that started it ended.
 pub trait DeployRecord {
+    /// The child process of a deploy started.
+    ///
     /// # Errors
     ///
     /// The record cannot be written.
-    fn set_running(&self, running: bool) -> Result<(), String>;
+    fn started(&self, pid: u32) -> Result<(), String>;
+    /// The child process of a deploy ended.
+    ///
+    /// # Errors
+    ///
+    /// The record cannot be removed.
+    fn ended(&self, pid: u32) -> Result<(), String>;
+    /// True while the child process of one of the records runs.
     fn running(&self) -> bool;
     /// Keeps the text of the last deploy report (`deployment_text`).
     ///
@@ -258,12 +268,13 @@ pub struct DeployKind {
 
 /// The port that starts the deploy as a child process.
 pub trait DeployProcess {
-    /// Runs the command to its end.
+    /// Runs the command to its end; `on_start` gets the number of the child
+    /// process when it started.
     ///
     /// # Errors
     ///
     /// The program cannot start: the message of the system.
-    fn run(&self, command: &DeployCommand) -> Result<ChildRun, String>;
+    fn run(&self, command: &DeployCommand, on_start: &dyn Fn(u32)) -> Result<ChildRun, String>;
 }
 
 /// The deploy report: the push, the build and the deploy apart (PUB-42), and
@@ -668,9 +679,14 @@ pub fn run_deploy(
     asked: DeployKind,
     windows: bool,
 ) -> Deployment {
-    let _ = files.set_running(true);
-    let deployment = deploy_with(child, files, settings, asked, windows);
-    let _ = files.set_running(false);
+    let started = std::cell::Cell::new(None);
+    let deployment = deploy_with(child, files, settings, asked, windows, &|pid| {
+        started.set(Some(pid));
+        let _ = files.started(pid);
+    });
+    if let Some(pid) = started.get() {
+        let _ = files.ended(pid);
+    }
     let _ = files.save_last(&deployment_text(&deployment.report));
     deployment
 }
@@ -681,6 +697,7 @@ fn deploy_with(
     settings: &DeploySettings,
     asked: DeployKind,
     windows: bool,
+    on_start: &dyn Fn(u32),
 ) -> Deployment {
     let kind = DeployKind {
         push: asked.push,
@@ -695,7 +712,7 @@ fn deploy_with(
             };
         }
     };
-    match child.run(&command) {
+    match child.run(&command, on_start) {
         Ok(run) => {
             let mut report = match run.stopped {
                 Some(stop) => report_of_stop(stop, command.timeout_minutes, kind),
@@ -926,8 +943,12 @@ mod tests {
     }
 
     impl DeployRecord for Marker {
-        fn set_running(&self, running: bool) -> Result<(), String> {
-            self.1.borrow_mut().push(running);
+        fn started(&self, _: u32) -> Result<(), String> {
+            self.1.borrow_mut().push(true);
+            Ok(())
+        }
+        fn ended(&self, _: u32) -> Result<(), String> {
+            self.1.borrow_mut().push(false);
             Ok(())
         }
         fn running(&self) -> bool {
@@ -1110,7 +1131,10 @@ mod tests {
     }
 
     impl DeployProcess for Fake {
-        fn run(&self, command: &DeployCommand) -> Result<ChildRun, String> {
+        fn run(&self, command: &DeployCommand, on_start: &dyn Fn(u32)) -> Result<ChildRun, String> {
+            if self.answer.is_ok() {
+                on_start(4242);
+            }
             self.runs.borrow_mut().push(command.clone());
             match self.answer {
                 Ok((code, stdout)) => Ok(ChildRun {

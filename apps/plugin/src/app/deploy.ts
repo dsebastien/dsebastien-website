@@ -91,7 +91,11 @@ export function childProcess(times: ChildTimes = {}): DeployProcess {
     const minuteMs = times.minuteMs ?? 60_000
     const graceMs = times.graceMs ?? 5_000
     return {
-        run: async (command: DeployCommand, signal?: AbortSignal): Promise<ChildRun> => {
+        run: async (
+            command: DeployCommand,
+            signal?: AbortSignal,
+            onStart?: (pid: number) => void
+        ): Promise<ChildRun> => {
             const folder = await stat(command.folder).catch(() => undefined)
             if (folder?.isDirectory() !== true) {
                 throw new Error(`the folder of the site code is not a folder: ${command.folder}`)
@@ -106,6 +110,9 @@ export function childProcess(times: ChildTimes = {}): DeployProcess {
                     // the programs that the deploy started.
                     detached: process.platform !== 'win32'
                 })
+                if (child.pid !== undefined) {
+                    onStart?.(child.pid)
+                }
                 const stdout: Buffer[] = []
                 // The standard output and the errors in the order they came.
                 const output: Buffer[] = []
@@ -212,7 +219,8 @@ export function deployFiles(contentStore: string, git = 'git'): TakedownMarker &
             replace: () => Promise.resolve(),
             remove: () => Promise.resolve(),
             isAncestor: () => Promise.resolve(undefined),
-            setRunning: () => Promise.resolve(),
+            started: () => Promise.resolve(),
+            ended: () => Promise.resolve(),
             running: () => Promise.resolve(false),
             saveLast: () => Promise.resolve(),
             last: () => Promise.resolve(undefined)
@@ -276,13 +284,12 @@ export function deployFiles(contentStore: string, git = 'git'): TakedownMarker &
                     }
                 )
             }),
-        setRunning: (running) =>
-            running
-                ? write(
-                      join(runs, String(process.pid)),
-                      `A deploy of the plugin runs since ${new Date().toISOString()}.\n`
-                  )
-                : rm(join(runs, String(process.pid)), { force: true }),
+        started: (pid) =>
+            write(
+                join(runs, String(pid)),
+                `A deploy of the plugin runs since ${new Date().toISOString()}.\n`
+            ),
+        ended: (pid) => rm(join(runs, String(pid)), { force: true }),
         running: async () => {
             const names = await readdir(runs).catch(() => [])
             return names.some((name) => /^[0-9]+$/u.test(name) && isAlive(Number(name)))
