@@ -147,9 +147,14 @@ const NOTE_ID = /^[0-9a-f]{16}$/
  * It throws, and so stops the build, when the content store cannot be
  * trusted: the folder that the variable names does not exist, a file of the
  * manifest is not an entry, or two entries have the same path.
+ *
+ * @param store the folder of the copy of the content store: by default the
+ * one that the variable names. The deployment gives its own.
  */
-export async function readPublishedNotes(): Promise<PublishedNote[]> {
-    return (await readManifest()).notes
+export async function readPublishedNotes(
+    store: string | undefined = contentStoreFolder()
+): Promise<PublishedNote[]> {
+    return (await readManifest(store)).notes
 }
 
 /** A note that the author unpublished: its entry stays, and its addresses answer 410 (URL-27, decision R64). */
@@ -190,12 +195,11 @@ export async function readPublication(): Promise<{
 }
 
 /** The published notes, the unpublished notes and the first publication of every entry of the manifest. */
-async function readManifest(): Promise<{
+async function readManifest(store: string | undefined = contentStoreFolder()): Promise<{
     notes: PublishedNote[]
     removed: RemovedNote[]
     firstRuns: Set<string>
 }> {
-    const store = contentStoreFolder()
     const firstRuns = new Set<string>()
     if (store === undefined) {
         return { notes: [], removed: [], firstRuns }
@@ -205,7 +209,7 @@ async function readManifest(): Promise<{
             throw new Error('not a folder')
         }
     } catch {
-        throw new Error(`CONTENT_STORE is not a folder: "${store}"`)
+        throw new Error(`the content store is not a folder: "${store}"`)
     }
     let files: string[]
     try {

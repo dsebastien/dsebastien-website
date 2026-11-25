@@ -4,9 +4,10 @@
 // kept in a private place: no name of an account or of a host is in this
 // repository. `scripts/deploy.ts` writes both files and runs wrangler.
 
-import { stat } from 'node:fs/promises'
+import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { RESOLVER_MAP_FILE } from '@dsebastien-website/resolver'
+import { readPublishedNotes } from '../src/content-store.ts'
 
 /** Where a release goes. */
 export interface DeployTarget {
@@ -158,4 +159,137 @@ export async function checkOutput(folder: string): Promise<string | undefined> {
         return `${folder} is not the output of a build: it has no resolver map (${RESOLVER_MAP_FILE})`
     }
     return undefined
+}
+
+/** The limits of the host for one release: a Worker version and its static files (BUILD-08). */
+export interface HostLimits {
+    /** The most files of the static files of one Worker version. */
+    readonly files: number
+    /** The largest size of one static file, in bytes. */
+    readonly fileSize: number
+}
+
+/** The limits of the host on its paid plan (R75): 100,000 files, 25 MiB per file. */
+export const HOST_LIMITS: HostLimits = { files: 100_000, fileSize: 25 * 1024 * 1024 }
+
+/** The class of a file of the output, for the counts: its first folder, two levels under `-/`. */
+function classOf(name: string): string {
+    const parts = name.split('/')
+    if (parts.length === 1) {
+        return '/'
+    }
+    return parts[0] === '-' && parts.length > 2 ? `-/${parts[1] ?? ''}` : (parts[0] ?? '/')
+}
+
+/**
+ * Why the output of a build breaks a limit of the host, or `undefined` when
+ * it does not (BUILD-08). It counts every file of the output, the files that
+ * the deployment writes into it too, and names the counts of each class of
+ * files, so the message says what grew. A file above the size limit is named
+ * by its name in the output: a name of the build, never a vault path.
+ */
+export async function checkOutputLimits(
+    folder: string,
+    limits: HostLimits = HOST_LIMITS
+): Promise<string | undefined> {
+    const entries = await readdir(folder, { recursive: true, withFileTypes: true })
+    const counts = new Map<string, number>()
+    const large: string[] = []
+    let files = 0
+    for (const entry of entries) {
+        if (!entry.isFile()) {
+            continue
+        }
+        const name = join(entry.parentPath, entry.name)
+            .slice(folder.length + 1)
+            .replaceAll('\\', '/')
+        files += 1
+        counts.set(classOf(name), (counts.get(classOf(name)) ?? 0) + 1)
+        if ((await stat(join(folder, name))).size > limits.fileSize) {
+            large.push(name)
+        }
+    }
+    if (files > limits.files) {
+        const classes = [...counts.entries()]
+            .sort(([one], [two]) => (one < two ? -1 : one > two ? 1 : 0))
+            .map(([name, count]) => `${name}: ${String(count)}`)
+            .join(', ')
+        return `the release has ${String(files)} files, and the host takes ${String(limits.files)} at most (${classes})`
+    }
+    if (large.length > 0) {
+        return `the host takes files of ${String(limits.fileSize)} bytes at most, and these are larger: ${large.sort().join(', ')}`
+    }
+    return undefined
+}
+
+/**
+ * The deployment record of a release (STORE-08): the file
+ * `/-/deployment.json` of the output. The deployment writes it after the
+ * build; it reads it on the host to know that its release is live, and the
+ * tool reads it to show what is live.
+ */
+export interface DeploymentRecord {
+    /**
+     * The commit of the copy of the content store that the build read.
+     * `null` for an output that was built elsewhere (`--dist`).
+     */
+    readonly contentRevision: string | null
+    /** The commit of the code of the site. */
+    readonly siteRevision: string
+    /** The time of the build, in UTC, to the second. */
+    readonly builtAt: string
+}
+
+const REVISION = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u
+const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u
+
+/** Reads a deployment record, as the host gives it. `undefined` when it is not one. */
+export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefined {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined
+    }
+    const fields: Record<string, unknown> = { ...value }
+    const { contentRevision, siteRevision, builtAt } = fields
+    if (
+        (contentRevision !== null &&
+            (typeof contentRevision !== 'string' || !REVISION.test(contentRevision))) ||
+        typeof siteRevision !== 'string' ||
+        !REVISION.test(siteRevision) ||
+        typeof builtAt !== 'string' ||
+        !TIME.test(builtAt)
+    ) {
+        return undefined
+    }
+    return { contentRevision, siteRevision, builtAt }
+}
+
+/**
+ * The API token of a deployment: `NOTES_DEPLOY_CLOUDFLARE_API_TOKEN`, else
+ * `CLOUDFLARE_API_TOKEN`. The deployment gives it to wrangler as
+ * `CLOUDFLARE_API_TOKEN`. `undefined` when neither is set.
+ */
+export function deployToken(environment: Record<string, string | undefined>): string | undefined {
+    for (const name of ['NOTES_DEPLOY_CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_TOKEN']) {
+        const value = environment[name]
+        if (value !== undefined && value !== '') {
+            return value
+        }
+    }
+    return undefined
+}
+
+/**
+ * The keys of the attachments that a release uses: the keys of the
+ * attachments of the published entries of the manifest of the copy of the
+ * content store, each one time, in their order. The build reads the same
+ * manifest with the same reader.
+ */
+export async function usedAttachmentKeys(store: string): Promise<string[]> {
+    const keys = new Set<string>()
+    for (const note of await readPublishedNotes(store)) {
+        for (const attachment of note.attachments) {
+            keys.add(attachment.key)
+        }
+    }
+    return [...keys].sort()
 }

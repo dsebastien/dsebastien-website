@@ -2,7 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkOutput, headersFile, targetFrom, workerConfiguration } from './deployment.ts'
+import {
+    checkOutput,
+    checkOutputLimits,
+    deploymentRecordFrom,
+    deployToken,
+    headersFile,
+    targetFrom,
+    usedAttachmentKeys,
+    workerConfiguration
+} from './deployment.ts'
 
 // The deployment of a release to a host (issue 30): the configuration of the
 // Worker that wrangler deploys, and the `_headers` file of the static files.
@@ -107,19 +116,20 @@ describe('the headers file of the static files', () => {
     })
 })
 
-describe('the output that a deployment puts on the host', () => {
-    const CACHE = fileURLToPath(new URL('../../../.cache', import.meta.url))
+const CACHE = fileURLToPath(new URL('../../../.cache', import.meta.url))
 
-    async function withFolder(run: (folder: string) => Promise<void>): Promise<void> {
-        await mkdir(CACHE, { recursive: true })
-        const folder = await mkdtemp(join(CACHE, 'deployment-spec-'))
-        try {
-            await run(folder)
-        } finally {
-            await rm(folder, { recursive: true, force: true })
-        }
+/** Runs with a folder of its own in `.cache/`, and removes it after. */
+async function withFolder(run: (folder: string) => Promise<void>): Promise<void> {
+    await mkdir(CACHE, { recursive: true })
+    const folder = await mkdtemp(join(CACHE, 'deployment-spec-'))
+    try {
+        await run(folder)
+    } finally {
+        await rm(folder, { recursive: true, force: true })
     }
+}
 
+describe('the output that a deployment puts on the host', () => {
     test('accepts the output of a build: a folder with a resolver map', async () => {
         await withFolder(async (folder) => {
             await mkdir(join(folder, '-'))
@@ -138,5 +148,156 @@ describe('the output that a deployment puts on the host', () => {
 
     test('refuses a path that is not a folder', async () => {
         expect(await checkOutput(join(CACHE, 'no-such-folder'))).toContain('not a folder')
+    })
+})
+
+// BUILD-08: the host takes a number of files per Worker version and a size
+// per file. The tests give small limits.
+describe('the limits of the host', () => {
+    async function output(folder: string): Promise<void> {
+        await mkdir(join(folder, '-', 'note'), { recursive: true })
+        await mkdir(join(folder, '-', 'search', 'pagefind'), { recursive: true })
+        await mkdir(join(folder, '_astro'))
+        await writeFile(join(folder, 'index.html'), 'home')
+        await writeFile(join(folder, '-', 'note', 'a.html'), 'a')
+        await writeFile(join(folder, '-', 'note', 'b.html'), 'b')
+        await writeFile(join(folder, '-', 'search', 'pagefind', 'p.json'), 'p')
+        await writeFile(join(folder, '_astro', 'site.css'), '0123456789')
+    }
+
+    test('pass when the output is under both', async () => {
+        await withFolder(async (folder) => {
+            await output(folder)
+            expect(await checkOutputLimits(folder, { files: 5, fileSize: 10 })).toBeUndefined()
+        })
+    })
+
+    test('stop a release with more files than the host takes, with the count of each class', async () => {
+        await withFolder(async (folder) => {
+            await output(folder)
+            const problem = await checkOutputLimits(folder, { files: 4, fileSize: 10 })
+            expect(problem).toContain('5 files')
+            expect(problem).toContain('4')
+            expect(problem).toContain('-/note: 2')
+            expect(problem).toContain('-/search: 1')
+            expect(problem).toContain('_astro: 1')
+        })
+    })
+
+    test('stop a release with a file larger than the host takes, by its name', async () => {
+        await withFolder(async (folder) => {
+            await output(folder)
+            const problem = await checkOutputLimits(folder, { files: 5, fileSize: 9 })
+            expect(problem).toContain('_astro/site.css')
+            expect(problem).toContain('9 bytes')
+        })
+    })
+})
+
+describe('the deployment record', () => {
+    const RECORD = {
+        contentRevision: 'a'.repeat(40),
+        siteRevision: 'b'.repeat(40),
+        builtAt: '2031-04-01T08:00:00Z'
+    }
+
+    test('reads a record', () => {
+        expect(deploymentRecordFrom(RECORD)).toEqual(RECORD)
+    })
+
+    test.each([
+        ['contentRevision', 'main'],
+        ['siteRevision', 7],
+        ['builtAt', 'yesterday']
+    ])('is no record when its %s is %p', (key, value) => {
+        expect(deploymentRecordFrom({ ...RECORD, [key]: value })).toBeUndefined()
+    })
+
+    test('reads the record of an output that was built elsewhere: no content revision', () => {
+        expect(deploymentRecordFrom({ ...RECORD, contentRevision: null })).toEqual({
+            ...RECORD,
+            contentRevision: null
+        })
+    })
+
+    test('is no record when the answer is not an object', () => {
+        expect(deploymentRecordFrom('live')).toBeUndefined()
+    })
+})
+
+describe('the token of a deployment', () => {
+    test('is the token of the notes first', () => {
+        expect(
+            deployToken({ NOTES_DEPLOY_CLOUDFLARE_API_TOKEN: 'notes', CLOUDFLARE_API_TOKEN: 'any' })
+        ).toBe('notes')
+    })
+
+    test('is the token of wrangler when the notes have none', () => {
+        expect(
+            deployToken({ NOTES_DEPLOY_CLOUDFLARE_API_TOKEN: '', CLOUDFLARE_API_TOKEN: 'any' })
+        ).toBe('any')
+    })
+
+    test('is missing when neither is set', () => {
+        expect(deployToken({})).toBeUndefined()
+    })
+})
+
+describe('the attachments that a release uses', () => {
+    const ENTRY = {
+        aliases: [],
+        cleanedHash: 'sha256:0',
+        cleaningVersion: 2,
+        firstPublished: '2031-04-01T08:00:00Z',
+        formerPaths: [],
+        lastPublished: '2031-04-01T08:00:00Z',
+        links: [],
+        sourceHash: 'sha256:0'
+    }
+    const ONE = 'a1'.repeat(32)
+    const TWO = 'b2'.repeat(32)
+    const THREE = 'c3'.repeat(32)
+
+    function attachment(key: string, path: string): Record<string, unknown> {
+        return { hash: `sha256:${key}`, link: path, path, size: 1 }
+    }
+
+    test('are the keys of the attachments of the published entries, each one time', async () => {
+        await withFolder(async (store) => {
+            await mkdir(join(store, 'manifest'))
+            const entries = {
+                'a.json': {
+                    ...ENTRY,
+                    id: 'aaaaaaaaaaaaaaaa',
+                    path: 'A.md',
+                    state: 'published',
+                    attachments: [attachment(TWO, 'x.png'), attachment(ONE, 'y.png')]
+                },
+                'b.json': {
+                    ...ENTRY,
+                    id: 'bbbbbbbbbbbbbbbb',
+                    path: 'B.md',
+                    state: 'published',
+                    attachments: [attachment(TWO, 'z.png')]
+                },
+                'c.json': {
+                    ...ENTRY,
+                    id: 'cccccccccccccccc',
+                    path: 'C.md',
+                    state: 'unpublished',
+                    attachments: [attachment(THREE, 'w.png')]
+                }
+            }
+            for (const [name, entry] of Object.entries(entries)) {
+                await writeFile(join(store, 'manifest', name), JSON.stringify(entry))
+            }
+            expect(await usedAttachmentKeys(store)).toEqual([ONE, TWO])
+        })
+    })
+
+    test('are none for a content store with no publication', async () => {
+        await withFolder(async (store) => {
+            expect(await usedAttachmentKeys(store)).toEqual([])
+        })
     })
 })
