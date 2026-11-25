@@ -161,6 +161,9 @@ export async function checkOutput(folder: string): Promise<string | undefined> {
     return undefined
 }
 
+/** The form of a key of the attachment storage: the SHA-256 of the bytes of a file. */
+export const ATTACHMENT_KEY = /^[0-9a-f]{64}$/u
+
 /** The limits of the host for one release: a Worker version and its static files (BUILD-08). */
 export interface HostLimits {
     /** The most files of the static files of one Worker version. */

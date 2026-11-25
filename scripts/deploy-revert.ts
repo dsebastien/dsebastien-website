@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { DEPLOYMENT_RECORD_FILE } from '@dsebastien-website/resolver'
 import { deployToken, targetFrom } from '../apps/site/worker/deployment.ts'
-import { LIVE_CHECKS, revertRelease } from '../apps/site/worker/release.ts'
+import { LIVE_CHECKS, readHostRecord, revertRelease } from '../apps/site/worker/release.ts'
 
 // The revert of a release (issue 32, BUILD-07): the host goes back to the
 // Worker version before the live one, with `wrangler rollback`, and the
@@ -36,7 +36,8 @@ async function main(): Promise<void> {
     if (token === undefined) {
         throw new Error('NOTES_DEPLOY_CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN are not set')
     }
-    const record = new URL(DEPLOYMENT_RECORD_FILE, `https://${target.host}/`)
+    const site = `https://${target.host}/`
+    const record = new URL(DEPLOYMENT_RECORD_FILE, site)
     const result = await revertRelease({
         rollback: async () => {
             // With no version, wrangler goes back to the version before the live one.
@@ -65,13 +66,7 @@ async function main(): Promise<void> {
                 throw new Error(`wrangler rollback ended with the code ${String(code)}`)
             }
         },
-        live: {
-            ...LIVE_CHECKS,
-            read: async () => {
-                const response = await fetch(record, { cache: 'no-store' })
-                return response.ok ? ((await response.json()) as unknown) : undefined
-            }
-        },
+        live: { ...LIVE_CHECKS, read: () => readHostRecord(site) },
         wait: (milliseconds) => Bun.sleep(milliseconds)
     })
     const name = (revision: string | null | undefined): string =>

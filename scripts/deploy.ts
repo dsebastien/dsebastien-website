@@ -2,8 +2,8 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { DEPLOYMENT_RECORD_FILE } from '@dsebastien-website/resolver'
 import {
+    ATTACHMENT_KEY,
     deployToken,
     headersFile,
     targetFrom,
@@ -15,6 +15,7 @@ import { r2Storage } from '../apps/site/worker/r2.ts'
 import {
     deployRelease,
     LIVE_CHECKS,
+    readHostRecord,
     RESULT_MARK,
     resultLine,
     type DeployResult
@@ -45,8 +46,6 @@ import {
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'apps', 'site')
 const WRANGLER = join(SITE, 'node_modules', '.bin', 'wrangler')
-
-const ATTACHMENT_KEY = /^[0-9a-f]{64}$/u
 
 const OPTIONS = {
     'target': { type: 'string' },
@@ -261,15 +260,7 @@ async function deploy(values: {
             ...(dryRun
                 ? {}
                 : {
-                      live: {
-                          ...LIVE_CHECKS,
-                          read: async () => {
-                              const response = await fetch(new URL(DEPLOYMENT_RECORD_FILE, url), {
-                                  cache: 'no-store'
-                              })
-                              return response.ok ? ((await response.json()) as unknown) : undefined
-                          }
-                      }
+                      live: { ...LIVE_CHECKS, read: () => readHostRecord(url) }
                   }),
             wait: (milliseconds) => Bun.sleep(milliseconds),
             log: (line) => {

@@ -5,6 +5,7 @@ import { DEPLOYMENT_RECORD_FILE } from '@dsebastien-website/resolver'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     checkOutput,
+    ATTACHMENT_KEY,
     checkOutputLimits,
     deploymentRecordFrom,
     HOST_LIMITS,
@@ -116,22 +117,31 @@ export function resultLine(result: DeployResult): string {
 /** How many uploads or deletions run at the same time. */
 const PARALLEL = 8
 
-/** The form of a key of the attachment storage. */
-const ATTACHMENT_KEY = /^[0-9a-f]{64}$/u
-
-/** Runs the task on each item, a few at a time. */
+/**
+ * Runs the task on each item, a few at a time. After the first failure it
+ * starts no new task, waits for the ones that run, then throws that failure.
+ */
 async function eachItem<T>(items: readonly T[], task: (item: T) => Promise<void>): Promise<void> {
     let next = 0
+    let failure: { error: unknown } | undefined
     const worker = async (): Promise<void> => {
-        while (next < items.length) {
+        while (failure === undefined && next < items.length) {
             const item = items[next]
             next += 1
-            if (item !== undefined) {
+            if (item === undefined) {
+                continue
+            }
+            try {
                 await task(item)
+            } catch (error) {
+                failure ??= { error }
             }
         }
     }
     await Promise.all(Array.from({ length: Math.min(PARALLEL, items.length) }, worker))
+    if (failure !== undefined) {
+        throw failure.error
+    }
 }
 
 function messageOf(error: unknown): string {
@@ -141,11 +151,6 @@ function messageOf(error: unknown): string {
 /** The time of a build, in UTC, to the second. */
 function timeOf(date: Date): string {
     return `${date.toISOString().slice(0, 19)}Z`
-}
-
-/** True when the record that the host gives is the record of this build. */
-function isRecordOf(value: unknown, record: DeploymentRecord): boolean {
-    return sameRecord(record, deploymentRecordFrom(value))
 }
 
 /** Runs a deployment. It never throws: a failure is in the result. */
@@ -177,8 +182,9 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         const failures: string[] = []
         await eachItem(unused, async (key) => {
             try {
-                await storage.remove(key)
-                deleted += 1
+                if (await storage.remove(key)) {
+                    deleted += 1
+                }
             } catch (error) {
                 failures.push(`${key}: ${messageOf(error)}`)
             }
@@ -200,7 +206,9 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     try {
         if (run.storage !== undefined) {
             stored = await run.storage.list()
-            uploaded = await upload(run, run.storage, new Set(stored))
+            await upload(run, run.storage, new Set(stored), () => {
+                uploaded += 1
+            })
         }
 
         let dist: string
@@ -244,7 +252,12 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             }
         }
 
-        if (run.storage !== undefined && stored !== undefined) {
+        if (run.storage !== undefined && stored !== undefined && !live && !run.takedown) {
+            // The release before can still be live, with files that the new one does not use.
+            warnings.push(
+                'the release was not seen live, so no file was deleted from the attachment storage'
+            )
+        } else if (run.storage !== undefined && stored !== undefined) {
             try {
                 await cleanUp(run.storage, stored)
             } catch (failure) {
@@ -280,15 +293,17 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
 
 /**
  * Uploads each used key that the storage lacks, from the attachment folder.
- * It first checks every key: a key in neither place, or a file of the folder
- * that is not the file of its key, stops it before any upload. It gives the
- * number of uploads.
+ * It first checks every key: a key in neither place stops it before any
+ * upload. A file of the folder that is not the file of its key stops it
+ * before it is uploaded, after the uploads that run end. It calls `uploaded`
+ * after each upload.
  */
 async function upload(
     run: DeployRun,
     storage: AttachmentStorage,
-    stored: ReadonlySet<string>
-): Promise<number> {
+    stored: ReadonlySet<string>,
+    uploaded: () => void
+): Promise<void> {
     const wanted = [...new Set(run.usedKeys)].filter((key) => !stored.has(key)).sort()
     const missing: string[] = []
     for (const key of wanted) {
@@ -301,17 +316,15 @@ async function upload(
             `the attachments of these keys are neither in the attachment folder nor in the attachment storage: ${missing.join(', ')}`
         )
     }
-    let count = 0
     await eachItem(wanted, async (key) => {
         const bytes = await run.attachments.read(key)
         if (createHash('sha256').update(bytes).digest('hex') !== key) {
             throw new Error(`the file ${key} of the attachment folder is not the file of its key`)
         }
         await storage.put(key, bytes)
-        count += 1
+        uploaded()
     })
-    run.log(`uploaded ${String(count)} attachments to the attachment storage`)
-    return count
+    run.log(`uploaded ${String(wanted.length)} attachments to the attachment storage`)
 }
 
 /** Reads the record that the host gives until it is the record of this build. */
@@ -322,7 +335,7 @@ async function waitUntilLive(
 ): Promise<boolean> {
     for (let check = 1; check <= live.checks; check += 1) {
         const value = await live.read().catch(() => undefined)
-        if (isRecordOf(value, record)) {
+        if (sameRecord(record, deploymentRecordFrom(value))) {
             run.log(`live: ${run.url}`)
             return true
         }
@@ -380,4 +393,22 @@ function sameRecord(one: DeploymentRecord, two: DeploymentRecord | undefined): b
         one.siteRevision === two.siteRevision &&
         one.builtAt === two.builtAt
     )
+}
+
+/**
+ * The deployment record that a host gives (STORE-08), as JSON, or
+ * `undefined` when it answers no record. The record is never kept, so each
+ * read asks the host.
+ */
+export async function readHostRecord(
+    url: string,
+    fetch: (url: URL, init: RequestInit) => Promise<Response> = (address, init) =>
+        globalThis.fetch(address, init)
+): Promise<unknown> {
+    const response = await fetch(new URL(DEPLOYMENT_RECORD_FILE, url), { cache: 'no-store' })
+    if (!response.ok) {
+        await response.body?.cancel()
+        return undefined
+    }
+    return (await response.json()) as unknown
 }

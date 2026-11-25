@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     deployRelease,
+    readHostRecord,
     resultLine,
     revertRelease,
     type DeployResult,
@@ -211,6 +212,31 @@ describe('a deployment', () => {
         expect(site.events).not.toContain('build')
     })
 
+    test('stops before the build when an upload fails, after the uploads that run end, and counts them', async () => {
+        const site = fixture({ folder: [PHOTO, PLAN] })
+        let running = 0
+        const result = await deployRelease({
+            ...site.run,
+            storage: {
+                ...site.storage,
+                put: async (key, bytes) => {
+                    running += 1
+                    if (key === PHOTO.key) {
+                        running -= 1
+                        throw new Error('the object storage refused to store it')
+                    }
+                    await Bun.sleep(5)
+                    await site.storage.put(key, bytes)
+                    running -= 1
+                }
+            }
+        })
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', uploaded: 1 })
+        expect(result.error).toContain('refused')
+        expect(running).toBe(0)
+        expect(site.events).not.toContain('build')
+    })
+
     // A wrong folder (an empty `--dist` is the working folder) gets no file of the deployment.
     test('writes nothing into a folder that is not the output of a build', async () => {
         await mkdir(CACHE, { recursive: true })
@@ -312,6 +338,40 @@ describe('a deployment', () => {
             'wait 1000',
             'wait 1000'
         ])
+    })
+
+    // The release before can still be live: it may use the files that the new one does not.
+    test('deletes nothing when the host does not give the record of this build, but after a takedown', async () => {
+        const notLive = {
+            read: () => Promise.resolve(undefined),
+            checks: 2,
+            pause: 1000
+        }
+        const site = fixture({
+            stored: [PHOTO.key, PLAN.key, OLD.key],
+            overrides: { live: notLive }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ deploy: 'ok', live: false, deleted: 0, error: null })
+        expect(result.warnings.join('\n')).toContain('no file was deleted')
+        expect(site.storage.names.has(OLD.key)).toBe(true)
+
+        const takedown = fixture({
+            stored: [PHOTO.key, PLAN.key, OLD.key],
+            overrides: { live: notLive, takedown: true }
+        })
+        const removed = await deployRelease(takedown.run)
+        expect(removed).toMatchObject({ deploy: 'ok', live: false, deleted: 1, error: null })
+        expect(takedown.storage.names.has(OLD.key)).toBe(false)
+    })
+
+    test('counts only the files that the storage still had', async () => {
+        const site = fixture({ stored: [PHOTO.key, PLAN.key, OLD.key] })
+        const result = await deployRelease({
+            ...site.run,
+            storage: { ...site.storage, remove: () => Promise.resolve(false) }
+        })
+        expect(result.deleted).toBe(0)
     })
 
     test('is live at the check where the host gives its record, after an old record and a failure', async () => {
@@ -436,6 +496,26 @@ describe('a revert', () => {
             wait: () => Promise.resolve()
         })
         expect(result).toEqual({ before: BEFORE, after: BEFORE, changed: false })
+    })
+})
+
+describe('the record that a host gives', () => {
+    test('is read at its path, never from a cache', async () => {
+        const asked: string[] = []
+        const record = await readHostRecord('https://preview.notes.example/', (url, init) => {
+            asked.push(`${url.href} ${String(init.cache)}`)
+            return Promise.resolve(Response.json({ contentRevision: CONTENT }))
+        })
+        expect(record).toEqual({ contentRevision: CONTENT })
+        expect(asked).toEqual(['https://preview.notes.example/-/deployment.json no-store'])
+    })
+
+    test('is none when the host answers no record', async () => {
+        expect(
+            await readHostRecord('https://preview.notes.example/', () =>
+                Promise.resolve(new Response('Not found', { status: 404 }))
+            )
+        ).toBeUndefined()
     })
 })
 

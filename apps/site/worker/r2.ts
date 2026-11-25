@@ -1,4 +1,5 @@
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
+import { ATTACHMENT_KEY } from './deployment.ts'
 
 // The object storage of the host as the deployment reaches it (issue 32):
 // the REST API of Cloudflare for the objects of a bucket of an account, with
@@ -28,9 +29,6 @@ export interface R2Access {
     /** By default the `fetch` of the platform. */
     readonly fetch?: Fetch
 }
-
-/** The form of a key of the attachment storage: the SHA-256 of the bytes of a file. */
-const ATTACHMENT_KEY = /^[0-9a-f]{64}$/u
 
 const API = 'https://api.cloudflare.com/client/v4'
 
