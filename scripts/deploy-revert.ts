@@ -29,13 +29,12 @@ import { LIVE_CHECKS, readHostRecord, revertRelease } from '../apps/site/worker/
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const WRANGLER = join(ROOT, 'apps', 'site', 'node_modules', '.bin', 'wrangler')
 
-const { values } = parseArgs({
-    args: Bun.argv.slice(2),
-    options: { 'target': { type: 'string' }, 'content-store': { type: 'string' } },
-    strict: true
-})
-
 async function main(): Promise<void> {
+    const { values } = parseArgs({
+        args: Bun.argv.slice(2),
+        options: { 'target': { type: 'string' }, 'content-store': { type: 'string' } },
+        strict: true
+    })
     if (values.target === undefined) {
         throw new Error('--target <file> is required')
     }
@@ -118,4 +117,10 @@ async function revert(target: DeployTarget, store: string): Promise<void> {
     }
 }
 
-await main()
+// A refusal or a failure prints its message only, with the exit code 1.
+try {
+    await main()
+} catch (error) {
+    console.error(`error: ${error instanceof Error ? error.message : String(error)}`)
+    process.exitCode = 1
+}
