@@ -157,7 +157,15 @@ async function fromMain(args: readonly string[], target: DeployTarget): Promise<
     if (branch !== 'main') {
         throw new Error(`the clone of the deploys is on the branch ${branch}, not on main`)
     }
+    await run(['git', 'fetch', '--quiet', 'origin'])
     await run(['git', 'pull', '--ff-only'])
+    const head = await git(ROOT, 'rev-parse', 'HEAD')
+    const main = await git(ROOT, 'rev-parse', 'refs/remotes/origin/main')
+    if (head !== main) {
+        throw new Error(
+            `the clone of the deploys is at ${head} after the pull, not at origin/main (${main})`
+        )
+    }
     await run(['bun', 'install', '--frozen-lockfile'])
     const child = Bun.spawn(
         ['bun', join(ROOT, 'scripts', 'deploy.ts'), ...args.filter((arg) => arg !== '--from-main')],
