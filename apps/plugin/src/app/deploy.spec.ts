@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { makeTestStores, rejectionOf } from '@dsebastien-website/testing'
-import { childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
+import { childEnvironment, childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
 
 // The port that starts the deploy as a child process (issue 32): a real
 // program here, the bun of the tests, never the deploy of the site.
@@ -150,6 +150,46 @@ describe.skipIf(process.platform === 'win32')('the stop of the deploy (issue 32)
         expect(run.stopped).toBe('author')
         expect(alive(grandchild)).toBe(false)
     }, 20_000)
+})
+
+describe('the environment of the deploy', () => {
+    test('has no GIT_ variable, and the folders of the programs of the settings first in its PATH', () => {
+        expect(
+            childEnvironment({ PATH: '/usr/bin', GIT_DIR: '/elsewhere/.git', HOME: '/home/me' }, [
+                '/opt/git/bin/git',
+                '/opt/bun/bin/bun',
+                ''
+            ])
+        ).toEqual({
+            PATH: `/opt/git/bin${delimiter}/opt/bun/bin${delimiter}/usr/bin`,
+            HOME: '/home/me'
+        })
+        expect(childEnvironment({ Path: 'C:\\Windows' }, [])).toEqual({ Path: 'C:\\Windows' })
+    })
+
+    test('reaches the child', async () => {
+        await using stores = await makeTestStores()
+        const file = join(stores.root, 'environment.ts')
+        await writeFile(
+            file,
+            "console.log('DEPLOY-RESULT ' + JSON.stringify([process.env['GIT_DIR'] ?? null, (process.env['PATH'] ?? '').split(require('node:path').delimiter)[0]]))"
+        )
+        process.env['GIT_DIR'] = join(stores.root, 'other.git')
+        try {
+            const run = await childProcess({ programs: [join(stores.root, 'tools', 'git')] }).run({
+                program: process.execPath,
+                args: [file],
+                folder: stores.root,
+                timeoutMinutes: 1
+            })
+
+            expect(run.stdout.trim()).toBe(
+                `DEPLOY-RESULT ${JSON.stringify([null, join(stores.root, 'tools')])}`
+            )
+        } finally {
+            delete process.env['GIT_DIR']
+        }
+    })
 })
 
 describe('the deploy settings of a device', () => {

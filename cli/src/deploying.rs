@@ -12,6 +12,7 @@ use crate::deploy::{
     self, DeployFiles, DeployKind, DeployRecord, DeployReport, DeploySettings, TakedownMarker,
 };
 use crate::device::{ChildProcess, ContentStore};
+use crate::tool::Outcome;
 
 /// A deploy of the site to run: its settings, and what it follows.
 #[derive(Clone)]
@@ -28,6 +29,46 @@ pub fn mark_takedown(content_store: &Path) {
     if let Err(error) = ContentStore::new(content_store).set() {
         eprintln!("warning: the marker of the takedown could not be written: {error}");
     }
+}
+
+/// Runs a publication, an unpublish or a takedown. When it fails after its
+/// push (the run journal says that the correction is owed, and the commit of
+/// the copy moved), the push happened: the result is an outcome with no
+/// output and the failure, so that the deploy still starts, and the message
+/// says so. After a takedown, the marker of the takedown is set.
+pub fn pushing(
+    content_store: &Path,
+    takedown: bool,
+    work: impl FnOnce() -> Result<Outcome, String>,
+) -> Result<Outcome, String> {
+    let store = ContentStore::new(content_store);
+    let before = store.head();
+    let error = match work() {
+        Ok(outcome) => return Ok(outcome),
+        Err(error) => error,
+    };
+    let step = store
+        .load_journal()
+        .ok()
+        .flatten()
+        .and_then(|journal| serde_json::from_str::<serde_json::Value>(&journal).ok())
+        .and_then(|journal| {
+            journal
+                .get("step")
+                .and_then(|step| step.as_str().map(str::to_owned))
+        });
+    if step.as_deref() != Some("correct") || store.head() == before {
+        return Err(error);
+    }
+    if takedown {
+        mark_takedown(content_store);
+    }
+    Ok(Outcome {
+        output: String::new(),
+        failure: Some(format!(
+            "the push happened, so the deploy starts, but a later step of the run failed: {error}"
+        )),
+    })
 }
 
 /// No files: a deploy with no copy of the content store deploys nothing.

@@ -22,6 +22,7 @@ import {
 import type { DeployKind, Deployment, DeployReport } from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
 import type { CenterHost } from './center.ts'
+import type { Device } from '../publishing/ports.ts'
 
 // The controller of the publication center (issue 39, R67): what the view
 // starts, one activity at a time, with the run log and the report. It runs
@@ -1149,6 +1150,47 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         await center.serve({ tool: 'deploy', takedown: true })
 
         expect(fake.runs).toEqual([{ push: 'skipped', takedown: true }])
+    }, 60_000)
+
+    test('a run that fails after its push still deploys, and says that the push happened', async () => {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const copy = await makeContentStoreCopy(stores)
+        const fake = fakeDeploy(live)
+        // The end of the run fails: the journal of a run that pushed stays.
+        const broken = (): Device => {
+            const device = nodeDevice({
+                vault,
+                contentStore: copy,
+                attachmentStorage: stores.attachmentStorage,
+                noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES)
+            })
+            return {
+                ...device,
+                local: {
+                    ...device.local,
+                    removeJournal: () => Promise.reject(new Error('the disk is full'))
+                }
+            }
+        }
+        let minute = 0
+        const center = new PublicationCenter({
+            device: broken,
+            pull: () => Promise.resolve(),
+            now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
+            deviceName: 'garden-shed',
+            deploy: fake.deploy
+        })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+        await deployEnd(center)
+
+        expect(center.state.error).toBe(
+            'The push happened, so the deploy starts, but a later step of the run failed: the disk is full'
+        )
+        expect(fake.runs).toEqual([{ push: 'ok', takedown: false }])
     }, 60_000)
 
     test('a publication that stops before its push deploys nothing', async () => {

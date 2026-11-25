@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import type {
     ChildRun,
     DeployCommand,
@@ -17,10 +17,45 @@ import type { DeviceSettings } from './settings.ts'
 // and keeps the whole output for the author. The output can name the address
 // of a removed note: it stays in the view, and goes nowhere else.
 
-/** The length of a minute and the grace before a hard stop, in milliseconds; a test makes them short. */
+/** The options of the child: the length of a minute and the grace before a hard stop (a test makes them short), and the programs of the settings. */
 export interface ChildTimes {
     readonly minuteMs?: number
     readonly graceMs?: number
+    /**
+     * The programs of the settings (git, bun), absolute: their folders come
+     * first in the `PATH` of the child, so that the deploy finds the git of
+     * the settings.
+     */
+    readonly programs?: readonly string[]
+}
+
+/**
+ * The environment of the child: the one of Obsidian, with no `GIT_*`
+ * variable (inside a git hook they point git to another repository) and the
+ * folders of the programs first in its `PATH`.
+ */
+export function childEnvironment(
+    environment: NodeJS.ProcessEnv,
+    programs: readonly string[]
+): NodeJS.ProcessEnv {
+    const kept = Object.fromEntries(
+        Object.entries(environment).filter(([name]) => !name.startsWith('GIT_'))
+    )
+    const folders = [
+        ...new Set(programs.filter((one) => isAbsolute(one)).map((one) => dirname(one)))
+    ]
+    if (folders.length === 0) {
+        return kept
+    }
+    // On Windows the name of the variable can be Path.
+    const name = Object.keys(kept).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
+    const before = kept[name]
+    return {
+        ...kept,
+        [name]: [...folders, ...(before === undefined || before === '' ? [] : [before])].join(
+            delimiter
+        )
+    }
 }
 
 /**
@@ -62,6 +97,7 @@ export function childProcess(times: ChildTimes = {}): DeployProcess {
             return await new Promise<ChildRun>((resolve, reject) => {
                 const child = spawn(command.program, command.args, {
                     cwd: command.folder,
+                    env: childEnvironment(process.env, times.programs ?? []),
                     stdio: ['ignore', 'pipe', 'pipe'],
                     windowsHide: true,
                     // A group of its own on Unix, so that a stop reaches

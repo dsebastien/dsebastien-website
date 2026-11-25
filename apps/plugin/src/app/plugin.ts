@@ -126,7 +126,7 @@ export class VaultPublishPlugin extends Plugin {
             deploy: (kind, signal) => {
                 const settings = loadSettings(this.app)
                 return runDeploy(
-                    childProcess(),
+                    childProcess({ programs: [settings.git.trim(), settings.bun.trim()] }),
                     deployFiles(settings.contentStore),
                     deploySettingsOf(settings),
                     kind,

@@ -39,7 +39,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Args, Parser, Subcommand};
 
 use deploy::{DeployKind, DeploySettings, deployment_text, started_text};
-use deploying::{Background, Deploy, last_of, mark_takedown, run_deploy};
+use deploying::{Background, Deploy, last_of, mark_takedown, pushing, run_deploy};
 use device::{AttachmentStorage, ContentStore, Vault};
 use plan::Selection;
 use queue::Move;
@@ -705,6 +705,15 @@ fn warn_about_lists(plan: &str) {
     }
 }
 
+/// The absolute form of a folder of the options, or the folder as it is
+/// when the system cannot give one.
+fn absolute(folder: &Path) -> PathBuf {
+    if folder.as_os_str().is_empty() {
+        return PathBuf::new();
+    }
+    std::path::absolute(folder).unwrap_or_else(|_| folder.to_path_buf())
+}
+
 /// The deploy settings of the options, with the folders of the publication.
 fn deploy_settings(
     places: &DeployPlaces,
@@ -716,8 +725,10 @@ fn deploy_settings(
         target: places.deploy_target.clone(),
         env_file: places.deploy_env_file.clone(),
         bun: places.bun.clone(),
-        content_store: Some(content_store.to_path_buf()),
-        attachments: Some(attachment_storage.to_path_buf()),
+        // As the publication accepts them: a relative folder is a folder of
+        // the working folder of the program.
+        content_store: Some(absolute(content_store)),
+        attachments: Some(absolute(attachment_storage)),
         timeout_minutes: places.deploy_timeout,
     }
 }
@@ -819,7 +830,13 @@ fn operate(
         call,
         mcp::Call::Publish { .. } | mcp::Call::Unpublish { .. } | mcp::Call::Takedown { .. }
     );
-    let outcome = run_tool(device, attachment_storage, name, call)?;
+    let outcome = if pushed {
+        pushing(deploy.content_store, takedown, || {
+            run_tool(device, attachment_storage, name, call)
+        })?
+    } else {
+        run_tool(device, attachment_storage, name, call)?
+    };
     if takedown {
         mark_takedown(deploy.content_store);
     }
@@ -962,6 +979,41 @@ fn command_line_run<'a>(time: &'a str, device: &'a str) -> Run<'a> {
     }
 }
 
+/// A publication of the command line, then the deploy.
+fn run_publish(
+    places: &Places,
+    attachment_storage: &Path,
+    plan: &str,
+    run: &Run,
+    deploy: &DeployAfterPush,
+) -> Result<Ran, String> {
+    let device = device(places)?;
+    Ok(Ran {
+        outcome: pushing(&places.content_store, false, || {
+            tool::publish(&device, &storage(attachment_storage), plan, run)
+        })?,
+        deploy: deploy_after(deploy, &places.content_store, attachment_storage, false),
+    })
+}
+
+/// An unpublish of the command line (the paths, and the paths that the
+/// author accepts), then the deploy.
+fn run_unpublish(
+    places: &Places,
+    attachment_storage: &Path,
+    (paths, accept): (&[String], &[String]),
+    run: &Run,
+    deploy: &DeployAfterPush,
+) -> Result<Ran, String> {
+    let device = device(places)?;
+    Ok(Ran {
+        outcome: pushing(&places.content_store, false, || {
+            tool::unpublish(&device, &storage(attachment_storage), paths, accept, run)
+        })?,
+        deploy: deploy_after(deploy, &places.content_store, attachment_storage, false),
+    })
+}
+
 /// A takedown of the command line: the marker of the takedown right after
 /// its push, then the deploy with `--takedown`.
 fn run_takedown(
@@ -972,7 +1024,9 @@ fn run_takedown(
     run: &Run,
     deploy: &DeployAfterPush,
 ) -> Result<Ran, String> {
-    let outcome = tool::takedown(device, &storage(attachment_storage), paths, run)?;
+    let outcome = pushing(content_store, true, || {
+        tool::takedown(device, &storage(attachment_storage), paths, run)
+    })?;
     mark_takedown(content_store);
     Ok(Ran {
         outcome,
@@ -1028,16 +1082,13 @@ fn run(command: Command) -> Result<Ran, String> {
             deploy,
             time,
             device: name,
-        } => Ok(Ran {
-            outcome: tool::unpublish(
-                &device(&places)?,
-                &storage(&attachment_storage),
-                &path,
-                &accept,
-                &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
-            )?,
-            deploy: deploy_after(&deploy, &places.content_store, &attachment_storage, false),
-        }),
+        } => run_unpublish(
+            &places,
+            &attachment_storage,
+            (&path, &accept),
+            &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
+            &deploy,
+        ),
         Command::Takedown {
             vault,
             content_store,
@@ -1085,15 +1136,13 @@ fn run(command: Command) -> Result<Ran, String> {
             deploy,
             time,
             device: name,
-        } => Ok(Ran {
-            outcome: tool::publish(
-                &device(&places)?,
-                &storage(&attachment_storage),
-                &plan,
-                &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
-            )?,
-            deploy: deploy_after(&deploy, &places.content_store, &attachment_storage, false),
-        }),
+        } => run_publish(
+            &places,
+            &attachment_storage,
+            &plan,
+            &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
+            &deploy,
+        ),
     }
 }
 

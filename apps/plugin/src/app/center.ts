@@ -277,6 +277,8 @@ export class PublicationCenter {
     #deploying: Promise<Deployment> | undefined
     /** The stop of the deploy that runs now. */
     #stopDeploy: AbortController | undefined
+    /** True when the call of an agent that runs failed after its push. */
+    readonly #served = { pushed: false }
     /** The deploy that waits for the end of the current one: one for every push that came meanwhile. */
     #pendingDeploy: PendingDeploy | undefined
     /** The plan of the last queue and choices: a render asks for it more than one time. */
@@ -507,6 +509,60 @@ export class PublicationCenter {
         this.#log('Deploy stopped by the author')
         stop.abort()
         return true
+    }
+
+    /** True when the call of an agent failed after its push; it clears the mark. */
+    #takeServedPush(): boolean {
+        const pushed = this.#served.pushed
+        this.#served.pushed = false
+        return pushed
+    }
+
+    /**
+     * Runs a publication, an unpublish or a takedown. When it fails after
+     * its push (the run journal says that the correction is owed, and the
+     * commit of the copy moved), the push happened: `pushed` is called, so
+     * that the deploy still starts, and the message says so.
+     */
+    async #pushing<T>(
+        device: Device,
+        work: () => Promise<T>,
+        pushed: () => void,
+        isTakedown = false
+    ): Promise<T> {
+        const before = await device.store.head().catch(() => undefined)
+        try {
+            return await work()
+        } catch (error) {
+            if (!(await this.#pushedAnyway(device, before))) {
+                throw error
+            }
+            pushed()
+            if (isTakedown) {
+                await this.#markTakedown()
+            }
+            throw new Error(
+                `The push happened, so the deploy starts, but a later step of the run failed: ${messageOf(error)}`,
+                { cause: error }
+            )
+        }
+    }
+
+    /** True when the run journal says that a push happened and the commit of the copy is not the one before the run. */
+    async #pushedAnyway(device: Device, before: string | undefined): Promise<boolean> {
+        const journal = await device.local.loadJournal().catch(() => undefined)
+        let step: unknown
+        try {
+            step =
+                journal === undefined ? undefined : (JSON.parse(journal) as { step?: unknown }).step
+        } catch {
+            step = undefined
+        }
+        if (step !== 'correct') {
+            return false
+        }
+        const after = await device.store.head().catch(() => before)
+        return after !== before
     }
 
     /**
@@ -795,11 +851,18 @@ export class PublicationCenter {
                 this.#log(`Publication started: ${describePlan(expected)}`)
                 this.host.started?.(describePlan(expected), clickedAt)
                 this.#fresh = false
-                const report = await publish(device, stored.id, {
-                    time: canonicalTime(this.host.now()),
-                    device: this.host.deviceName,
-                    face: 'plugin'
-                })
+                const report = await this.#pushing(
+                    device,
+                    () =>
+                        publish(device, stored.id, {
+                            time: canonicalTime(this.host.now()),
+                            device: this.host.deviceName,
+                            face: 'plugin'
+                        }),
+                    () => {
+                        done.pushed = true
+                    }
+                )
                 done.pushed = true
                 this.#wrote([...report.propertySet, ...report.propertyRemoved])
                 this.#set({
@@ -856,11 +919,19 @@ export class PublicationCenter {
                 }
                 this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
                 this.#fresh = false
-                const report = await takedown(device, stored, {
-                    time: canonicalTime(this.host.now()),
-                    device: this.host.deviceName,
-                    face: 'plugin'
-                })
+                const report = await this.#pushing(
+                    device,
+                    () =>
+                        takedown(device, stored, {
+                            time: canonicalTime(this.host.now()),
+                            device: this.host.deviceName,
+                            face: 'plugin'
+                        }),
+                    () => {
+                        done.pushed = true
+                    },
+                    true
+                )
                 done.pushed = true
                 await this.#markTakedown()
                 this.#wrote(report.propertyRemoved)
@@ -895,6 +966,7 @@ export class PublicationCenter {
         let outcome: ToolOutcome | undefined
         let failure: unknown
         const activity = TOOL_ACTIVITIES[call.tool]
+        this.#served.pushed = false
         // The loop and the start of the run are one step: no other activity
         // starts between them.
         while (this.#state.activity !== 'idle') {
@@ -918,6 +990,10 @@ export class PublicationCenter {
             // A call that changed the copy checks again, in its own activity.
             activity === 'answering' ? 'none' : 'agent'
         )
+        const pushedThenFailed = this.#takeServedPush()
+        if (outcome === undefined && pushedThenFailed) {
+            void this.#deploy({ push: 'ok', takedown: call.tool === 'takedown' })
+        }
         if (outcome !== undefined) {
             // A push that succeeded starts the deploy, after the check of the
             // run. The agent never waits for a build: it gets the report of
@@ -992,10 +1068,16 @@ export class PublicationCenter {
                         : `Agent unpublish started: ${call.paths.map((path) => `"${path}"`).join(', ')}`
                 )
                 this.#fresh = false
-                const report =
-                    call.tool === 'publish'
-                        ? await publish(device, call.plan, run)
-                        : await unpublish(device, call.paths, run, call.accept ?? [])
+                const report = await this.#pushing(
+                    device,
+                    () =>
+                        call.tool === 'publish'
+                            ? publish(device, call.plan, run)
+                            : unpublish(device, call.paths, run, call.accept ?? []),
+                    () => {
+                        this.#served.pushed = true
+                    }
+                )
                 this.#wrote([...report.propertySet, ...report.propertyRemoved])
                 this.#set({
                     report: {
@@ -1012,7 +1094,14 @@ export class PublicationCenter {
                     `Agent takedown started: ${call.paths.map((path) => `"${path}"`).join(', ')}`
                 )
                 this.#fresh = false
-                const report = await takedown(device, call.paths, run)
+                const report = await this.#pushing(
+                    device,
+                    () => takedown(device, call.paths, run),
+                    () => {
+                        this.#served.pushed = true
+                    },
+                    true
+                )
                 await this.#markTakedown()
                 this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })

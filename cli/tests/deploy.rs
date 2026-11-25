@@ -85,7 +85,7 @@ impl Setup {
         fs::write(
             &self.bun,
             format!(
-                "#!/bin/sh\npwd > '{kept}.folder'\nprintf '%s\\n' \"$@\" > '{kept}.arguments'\nsleep {seconds}\necho 'Building the site'\necho 'a warning of the build' >&2\nprintf '%s\\n' '{line}'\nexit {status}\n",
+                "#!/bin/sh\npwd > '{kept}.folder'\nprintf '%s\\n' \"$PATH\" > '{kept}.path'\nprintf '%s\\n' \"$@\" > '{kept}.arguments'\nsleep {seconds}\necho 'Building the site'\necho 'a warning of the build' >&2\nprintf '%s\\n' '{line}'\nexit {status}\n",
                 kept = kept.display()
             ),
         )
@@ -572,4 +572,51 @@ fn a_time_limit_of_0_deploys_nothing() {
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(setup.arguments(), None);
+}
+
+#[test]
+fn the_folders_of_the_deploy_are_absolute_and_bun_comes_first_in_the_path() {
+    let setup = Setup::new();
+    let root = setup.stores.root();
+    let copy = setup
+        .copy
+        .strip_prefix(root)
+        .expect("the copy is in the folder of the test");
+    let storage = setup
+        .stores
+        .attachment_storage()
+        .strip_prefix(root)
+        .expect("the storage is in the folder of the test");
+
+    let mut command = support::program();
+    command
+        .current_dir(root)
+        .arg("deploy")
+        .arg("--content-store")
+        .arg(copy)
+        .arg("--attachment-storage")
+        .arg(storage);
+    setup.deploy_options(&mut command);
+    let output = command.output().expect("the program starts");
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    let arguments = setup.arguments().expect("the fake bun ran");
+    let given = |option: &str| {
+        let at = arguments
+            .iter()
+            .position(|one| one == option)
+            .expect("the option");
+        PathBuf::from(&arguments[at + 1])
+    };
+    assert!(given("--content-store").is_absolute());
+    assert!(given("--attachments").is_absolute());
+    assert!(same_folder(text(&given("--content-store")), &setup.copy));
+    let path = fs::read_to_string(root.join("kept.path")).expect("the fake bun kept its PATH");
+    let first = path
+        .trim_end()
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(same_folder(&first, root), "{path}");
 }

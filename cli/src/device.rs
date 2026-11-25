@@ -1778,6 +1778,19 @@ impl DeployProcess for ChildProcess {
                 child.env_remove(name);
             }
         }
+        // The folder of the bun of the settings comes first in the `PATH`.
+        if let Some(folder) = command
+            .program
+            .parent()
+            .filter(|_| command.program.is_absolute())
+        {
+            let rest = env::var_os("PATH").unwrap_or_default();
+            if let Ok(path) = env::join_paths(
+                std::iter::once(folder.to_path_buf()).chain(env::split_paths(&rest)),
+            ) {
+                child.env("PATH", path);
+            }
+        }
         let mut child = child
             .spawn()
             .map_err(|error| format!("{} cannot start: {error}", command.program.display()))?;
