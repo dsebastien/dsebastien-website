@@ -345,12 +345,47 @@ describe('a deployment', () => {
         }
     )
 
+    // Two machines that deploy one target: a newer release can go live during
+    // a takedown deploy that fails (issue 125 holds the lock on the host).
+    test('after a takedown whose deployment failed, deletes nothing when another release went live meanwhile', async () => {
+        const newer = {
+            contentRevision: 'e'.repeat(40),
+            siteRevision: SITE,
+            builtAt: '2031-04-01T09:00:00Z'
+        }
+        let reads = 0
+        const site = fixture({
+            stored: [PHOTO.key, PLAN.key, OLD.key],
+            overrides: {
+                takedown: true,
+                deploy: () => Promise.reject(new Error('wrangler failed')),
+                live: {
+                    read: () => {
+                        reads += 1
+                        // No release at the start and before the switch; then a newer one.
+                        return Promise.resolve(reads <= 2 ? undefined : newer)
+                    },
+                    checks: 5,
+                    pause: 1000,
+                    inARow: 3
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ deploy: 'failed', deleted: 0 })
+        expect(site.storage.names.has(OLD.key)).toBe(true)
+        expect(result.warnings).toContain(
+            'a file can still be public: another release went live during this deployment, from another machine, so no file of the takedown was deleted: deploy again'
+        )
+    })
+
     test('after a takedown, deletes the files that no note uses also when a used file is missing', async () => {
         const site = fixture({ stored: [PHOTO.key, OLD.key], overrides: { takedown: true } })
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ build: 'skipped', deleted: 1 })
         expect(result.error).toContain(PLAN.key)
-        expect(site.events).toEqual(['live?', 'list', `remove ${OLD.key}`])
+        // The live record is read again before the cleanup of the failure.
+        expect(site.events).toEqual(['live?', 'list', 'live?', `remove ${OLD.key}`])
     })
 
     test('waits a bounded time for the host to give its record, then warns and still succeeds', async () => {
@@ -472,8 +507,9 @@ describe('a deployment', () => {
         const site = fixture({ stored: [PHOTO.key, PLAN.key, 'notes/readme.txt'] })
         const result = await deployRelease(site.run)
         expect(result.deleted).toBe(0)
+        // The name can be a path of the vault: only the count goes into the result.
         expect(result.warnings).toEqual([
-            'the attachment storage has a file that is not a key, left as it is: notes/readme.txt'
+            'the attachment storage has 1 file(s) that are not keys, left as they are'
         ])
         expect(site.storage.names.has('notes/readme.txt')).toBe(true)
     })
@@ -486,7 +522,10 @@ describe('a deployment', () => {
         })
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ deploy: 'ok', live: true, deleted: 1 })
-        expect(result.error).toContain('notes/readme.txt')
+        expect(result.error).toBe(
+            'after a takedown, the attachment storage has 1 file(s) that are not keys'
+        )
+        expect(JSON.stringify(result)).not.toContain('notes/readme.txt')
         expect(result.warnings.join('\n')).toContain('can still be public')
         expect(site.storage.names.has('notes/readme.txt')).toBe(true)
     })

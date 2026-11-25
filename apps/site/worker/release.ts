@@ -254,7 +254,9 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     /** Deletes each key of the storage that no published note uses. */
     async function cleanUp(storage: AttachmentStorage, names: readonly string[]): Promise<void> {
         const unused: string[] = []
-        const others: string[] = []
+        // A name that is not a key can be a path of the vault: only their
+        // count goes into the result, which the tools show and an agent reads.
+        let others = 0
         for (const name of [...names].sort()) {
             if (used.has(name)) {
                 continue
@@ -262,13 +264,15 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             if (ATTACHMENT_KEY.test(name)) {
                 unused.push(name)
             } else {
-                others.push(name)
-                warnings.push(
-                    run.takedown
-                        ? `a file can still be public: the attachment storage has a file that is not a key, left as it is: ${name}`
-                        : `the attachment storage has a file that is not a key, left as it is: ${name}`
-                )
+                others += 1
             }
+        }
+        if (others > 0) {
+            warnings.push(
+                run.takedown
+                    ? `a file can still be public: the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
+                    : `the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
+            )
         }
         const failures: string[] = []
         await eachItem(unused, async (key) => {
@@ -287,17 +291,19 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
         run.log(`deleted ${String(deleted)} files that no note uses from the attachment storage`)
         // As the takedown of the tool: such a name can be a file of the takedown.
-        if (run.takedown && others.length > 0) {
+        if (run.takedown && others > 0) {
             throw new Error(
-                `after a takedown, the attachment storage has files that are not keys: ${others.join(', ')}`
+                `after a takedown, the attachment storage has ${String(others)} file(s) that are not keys`
             )
         }
     }
 
     let error: string | null = null
+    // The release that this one replaces: `undefined` in a dry run, or
+    // before it was read.
+    let replaced: DeploymentRecord | null | undefined
     try {
-        // The release that this one replaces: `undefined` in a dry run.
-        const replaced = run.live === undefined ? undefined : await liveRecordOf(run.live)
+        replaced = run.live === undefined ? undefined : await liveRecordOf(run.live)
         if (replaced !== undefined) {
             await checkOver(run, replaced)
         }
@@ -413,10 +419,18 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             run.storage !== undefined &&
             stored !== undefined
         ) {
-            try {
-                await cleanUp(run.storage, stored)
-            } catch (cleanup) {
-                error = `${error}; ${messageOf(cleanup)}`
+            // A newer release of another machine can have gone live since the
+            // start: its files must stay (issue 125 holds the lock on the host).
+            if (await liveMoved(run.live, replaced)) {
+                warnings.push(
+                    'a file can still be public: another release went live during this deployment, from another machine, so no file of the takedown was deleted: deploy again'
+                )
+            } else {
+                try {
+                    await cleanUp(run.storage, stored)
+                } catch (cleanup) {
+                    error = `${error}; ${messageOf(cleanup)}`
+                }
             }
         }
     }
@@ -551,6 +565,28 @@ export async function revertRelease(run: RevertRun): Promise<RevertResult> {
         sameRecord(target, seen)
     )
     return { before, after: last, changed: accepted }
+}
+
+/**
+ * True when the live release is not the one that the run read at its start,
+ * or when the host cannot say: then no file may be deleted.
+ */
+async function liveMoved(
+    live: LiveRecord | undefined,
+    replaced: DeploymentRecord | null | undefined
+): Promise<boolean> {
+    if (live === undefined || replaced === undefined) {
+        return false
+    }
+    let now: DeploymentRecord | null
+    try {
+        now = await liveRecordOf(live)
+    } catch {
+        return true
+    }
+    return now === null || replaced === null
+        ? now !== replaced
+        : !sameRecord(buildOf(now), replaced)
 }
 
 /** True when two records name the same build. */
