@@ -202,11 +202,6 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         run.log(`deleted ${String(deleted)} files that no note uses from the attachment storage`)
     }
 
-    const record: DeploymentRecord = {
-        contentRevision: run.contentRevision,
-        siteRevision: run.siteRevision,
-        builtAt: timeOf(run.now())
-    }
     let error: string | null = null
     try {
         if (run.storage !== undefined) {
@@ -217,12 +212,18 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
 
         let dist: string
+        let record: DeploymentRecord
         try {
             dist = await run.build()
             // A wrong folder gets no file: the check comes before the writes.
             const output = await checkOutput(dist)
             if (output !== undefined) {
                 throw new Error(output)
+            }
+            record = {
+                contentRevision: run.contentRevision,
+                siteRevision: run.siteRevision,
+                builtAt: timeOf(run.now())
             }
             await writeFile(join(dist, '_headers'), run.headers)
             await writeFile(

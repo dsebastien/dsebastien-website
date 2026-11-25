@@ -195,6 +195,25 @@ describe('a deployment', () => {
         )
     })
 
+    test('records the time when the build ended', async () => {
+        let time = new Date('2031-04-01T08:00:00Z')
+        const site = fixture({ stored: [PHOTO.key, PLAN.key] })
+        const build = site.run.build
+        await deployRelease({
+            ...site.run,
+            now: () => time,
+            build: async () => {
+                const dist = await build()
+                time = new Date('2031-04-01T08:04:30Z')
+                return dist
+            }
+        })
+        const record: unknown = JSON.parse(
+            await readFile(join(site.dist(), '-', 'deployment.json'), 'utf8')
+        )
+        expect(record).toMatchObject({ builtAt: '2031-04-01T08:04:30Z' })
+    })
+
     test('stops before the build when a used file is in neither place, and names its key', async () => {
         const site = fixture({ stored: [OLD.key], folder: [PHOTO] })
         const result = await deployRelease(site.run)

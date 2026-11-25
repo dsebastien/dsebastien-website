@@ -243,7 +243,7 @@ export interface DeploymentRecord {
     readonly contentRevision: string | null
     /** The commit of the code of the site. */
     readonly siteRevision: string
-    /** The time of the build, in UTC, to the second. */
+    /** The time when the build ended, in UTC, to the second. */
     readonly builtAt: string
 }
 
