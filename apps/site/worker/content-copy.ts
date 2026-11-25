@@ -1,9 +1,12 @@
+import { publishedNotesOf } from '../src/content-store.ts'
+
 // The copy of the content store on the machine that deploys (issue 32), as
 // git sees it. A release is built from a copy that is clean and at the last
 // `main` of the content store, so the deployment record names what the
 // build read. The history of the copy says whether a release would put older
-// content live than the live release, and which takedowns a revert would
-// undo.
+// content live than the live release, which takedowns and forced removals
+// a revert would undo, and which files must leave the object storage at
+// once (issue 120).
 
 /** The output of git in a folder, with its exit code and what it wrote on its error output. */
 async function git(
@@ -147,12 +150,25 @@ export async function contentStoreHas(store: string, revision: string): Promise<
     )
 }
 
+/** The start of the subject of the commit of a takedown. */
+const TAKEDOWN_SUBJECT = 'Takedown:'
+
+/** The subject of the commit of a publication with at least one forced removal (PUB-84). */
+const FORCED_SUBJECT = /^Publish: .*, [1-9]\d* forced,/u
+
+/** True when the subject is the one of a takedown or of a publication with a forced removal. */
+function removes(subject: string): boolean {
+    return subject.startsWith(TAKEDOWN_SUBJECT) || FORCED_SUBJECT.test(subject)
+}
+
 /**
- * The subjects of the takedown commits (a subject that starts with
- * `Takedown:`) after `from` up to `to`, the newest first. `undefined` when
- * the copy does not know one of the revisions.
+ * The subjects of the commits after `from` up to `to` that take notes away
+ * at once: a takedown (a subject that starts with `Takedown:`) or a
+ * publication with a forced removal (`, <n> forced,` with n above 0, issue
+ * 120), the newest first. `undefined` when the copy does not know one of
+ * the revisions.
  */
-export async function takedownsBetween(
+export async function removalsBetween(
     store: string,
     from: string,
     to: string
@@ -163,5 +179,220 @@ export async function takedownsBetween(
         }
     }
     const subjects = await gitText(store, 'log', '--format=%s', `${from}..${to}`)
-    return subjects.split('\n').filter((subject) => subject.startsWith('Takedown:'))
+    return subjects.split('\n').filter(removes)
+}
+
+/** The form of the path of a manifest entry in the content store. */
+const MANIFEST_PATH = /^manifest\/[^/]+\.json$/u
+
+/**
+ * The texts of these objects of the copy (`<revision>:<path>`), with one
+ * call of git. A missing object stops it.
+ */
+async function objectTexts(store: string, names: readonly string[]): Promise<string[]> {
+    if (names.length === 0) {
+        return []
+    }
+    const env = {
+        ...Object.fromEntries(
+            Object.entries(process.env).filter(
+                (entry): entry is [string, string] =>
+                    entry[1] !== undefined && !entry[0].startsWith('GIT_')
+            )
+        ),
+        GIT_OPTIONAL_LOCKS: '0'
+    }
+    const child = Bun.spawn(['git', '-C', store, 'cat-file', '--batch'], {
+        env,
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+    void child.stdin.write(`${names.join('\n')}\n`)
+    void child.stdin.end()
+    const [bytes, errors, code] = await Promise.all([
+        new Response(child.stdout).bytes(),
+        new Response(child.stderr).text(),
+        child.exited
+    ])
+    if (code !== 0) {
+        throw new Error(`git cat-file failed in the copy of the content store: ${errors.trim()}`)
+    }
+    const texts: string[] = []
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    let at = 0
+    for (const name of names) {
+        const end = bytes.indexOf(0x0a, at)
+        const header = decoder.decode(bytes.subarray(at, end))
+        const size = /^[0-9a-f]+ blob (\d+)$/u.exec(header)?.[1]
+        if (size === undefined) {
+            throw new Error(`the copy of the content store has no file ${name}`)
+        }
+        const start = end + 1
+        texts.push(decoder.decode(bytes.subarray(start, start + Number(size))))
+        at = start + Number(size) + 1
+    }
+    return texts
+}
+
+/** The keys of the attachments that a manifest entry lists, from its text. */
+function keysOfEntry(name: string, text: string): string[] {
+    let entry: unknown
+    try {
+        entry = JSON.parse(text)
+    } catch {
+        throw new Error(`${name} of the copy of the content store is not a manifest entry`)
+    }
+    const attachments =
+        typeof entry === 'object' && entry !== null && 'attachments' in entry
+            ? entry.attachments
+            : undefined
+    if (!Array.isArray(attachments)) {
+        throw new Error(`${name} of the copy of the content store is not a manifest entry`)
+    }
+    return attachments.map((attachment: unknown) => {
+        const hash =
+            typeof attachment === 'object' && attachment !== null && 'hash' in attachment
+                ? attachment.hash
+                : undefined
+        if (typeof hash !== 'string' || !/^sha256:[0-9a-f]{64}$/u.test(hash)) {
+            throw new Error(`${name} of the copy of the content store is not a manifest entry`)
+        }
+        return hash.slice('sha256:'.length)
+    })
+}
+
+/** The path of the note of a manifest entry, from its text, or `undefined`. */
+function pathOfEntry(text: string): string | undefined {
+    return fieldOfEntry(text, 'path')
+}
+
+/** A text field of a manifest entry, from its text, or `undefined`. */
+function fieldOfEntry(text: string, field: 'path' | 'state'): string | undefined {
+    try {
+        const entry: unknown = JSON.parse(text)
+        if (typeof entry !== 'object' || entry === null || !(field in entry)) {
+            return undefined
+        }
+        const value: unknown = (entry as Record<string, unknown>)[field]
+        return typeof value === 'string' ? value : undefined
+    } catch {
+        return undefined
+    }
+}
+
+/**
+ * The keys of the attachments of the notes that a takedown or a forced
+ * removal took away, in the whole history of the copy up to `HEAD`, each one
+ * time, sorted (issue 120): the manifest entries that such a commit deleted,
+ * read at its parent. In a publication, an unpublished entry whose path a
+ * move of the same commit took is no forced removal (rule 6 of the moves),
+ * so it is left out. Business rule 16: these files leave the object storage
+ * at once, unless the new release uses them. A copy with no commit gives
+ * none.
+ */
+export async function removedAttachmentKeys(store: string): Promise<string[]> {
+    if ((await git(store, 'rev-parse', '--verify', '--quiet', 'HEAD')).code !== 0) {
+        return []
+    }
+    const log = await gitText(store, 'log', '--format=%H %s', 'HEAD')
+    const keys = new Set<string>()
+    for (const line of log.split('\n')) {
+        const space = line.indexOf(' ')
+        const commit = line.slice(0, space)
+        const subject = line.slice(space + 1)
+        if (space < 0 || !removes(subject)) {
+            continue
+        }
+        const changes = (
+            await gitText(
+                store,
+                'diff-tree',
+                '-r',
+                '-z',
+                '--no-commit-id',
+                '--no-renames',
+                '--name-status',
+                commit,
+                '--',
+                'manifest'
+            )
+        )
+            .split('\0')
+            .filter((part) => part !== '')
+        const deleted: string[] = []
+        const written: string[] = []
+        for (let index = 0; index + 1 < changes.length; index += 2) {
+            const status = changes[index] ?? ''
+            const path = changes[index + 1] ?? ''
+            if (!MANIFEST_PATH.test(path)) {
+                continue
+            }
+            if (status === 'D') {
+                deleted.push(path)
+            } else {
+                written.push(path)
+            }
+        }
+        const before = await objectTexts(
+            store,
+            deleted.map((path) => `${commit}^:${path}`)
+        )
+        // The paths that the entries of the commit hold now: a move took them.
+        const taken = subject.startsWith(TAKEDOWN_SUBJECT)
+            ? new Set<string>()
+            : new Set(
+                  (
+                      await objectTexts(
+                          store,
+                          written.map((path) => `${commit}:${path}`)
+                      )
+                  )
+                      .map(pathOfEntry)
+                      .filter((path) => path !== undefined)
+              )
+        deleted.forEach((path, index) => {
+            const text = before[index] ?? ''
+            const notePath = pathOfEntry(text)
+            const unpublished = fieldOfEntry(text, 'state') === 'unpublished'
+            if (unpublished && notePath !== undefined && taken.has(notePath)) {
+                return
+            }
+            for (const key of keysOfEntry(path, text)) {
+                keys.add(key)
+            }
+        })
+    }
+    return [...keys].sort()
+}
+
+/**
+ * The keys of the attachments that the published notes of a revision of the
+ * copy use, each one time, sorted, read with the reader of the build (issue
+ * 120): the files of the release before. `undefined` when the copy does not
+ * know the revision. It throws when the build would refuse that manifest.
+ */
+export async function releaseAttachmentKeys(
+    store: string,
+    revision: string
+): Promise<string[] | undefined> {
+    if ((await git(store, 'cat-file', '-e', `${revision}^{commit}`)).code !== 0) {
+        return undefined
+    }
+    const paths = (
+        await gitText(store, 'ls-tree', '-r', '-z', '--name-only', revision, '--', 'manifest')
+    )
+        .split('\0')
+        .filter((path) => MANIFEST_PATH.test(path))
+    const texts = await objectTexts(
+        store,
+        paths.map((path) => `${revision}:${path}`)
+    )
+    const notes = publishedNotesOf(
+        paths.map((path, index) => ({
+            file: path.slice('manifest/'.length),
+            text: texts[index] ?? ''
+        }))
+    )
+    return [...new Set(notes.flatMap((note) => note.attachments.map((item) => item.key)))].sort()
 }

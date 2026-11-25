@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { makeContentStoreCopy, makeTestStores, rejectionOf } from '@dsebastien-website/testing'
@@ -7,7 +7,9 @@ import {
     checkContentCopy,
     contentStoreHas,
     descendsFrom,
-    takedownsBetween
+    releaseAttachmentKeys,
+    removalsBetween,
+    removedAttachmentKeys
 } from './content-copy.ts'
 
 // The copy of the content store that a deployment builds (issue 32): the
@@ -123,12 +125,12 @@ describe('the history of the copy', () => {
         await commit(copy, 'Takedown: 1 note')
         await commit(copy, 'Publish: a takedown is in the text')
         const to = await commit(copy, 'Takedown: 2 notes')
-        expect(await takedownsBetween(copy, from, to)).toEqual([
+        expect(await removalsBetween(copy, from, to)).toEqual([
             'Takedown: 2 notes',
             'Takedown: 1 note'
         ])
-        expect(await takedownsBetween(copy, to, to)).toEqual([])
-        expect(await takedownsBetween(copy, from, 'f'.repeat(40))).toBeUndefined()
+        expect(await removalsBetween(copy, to, to)).toEqual([])
+        expect(await removalsBetween(copy, from, 'f'.repeat(40))).toBeUndefined()
     })
 })
 
@@ -178,5 +180,153 @@ describe('the content store of the copy', () => {
             shallow
         )
         expect(await rejectionOf(contentStoreHas(shallow, 'f'.repeat(40)))).toContain('shallow')
+    })
+})
+
+// Issue 120: the files of the notes that a takedown or a forced removal took
+// away, and the files of the release before, come from the history of the
+// copy.
+describe('the attachments in the history of the copy', () => {
+    const key = (digit: string): string => digit.repeat(64)
+
+    /** A manifest entry of a note with these keys. */
+    function entry(id: string, path: string, keys: string[], state = 'published'): string {
+        return `${JSON.stringify({
+            aliases: [],
+            attachments: keys.map((item, index) => ({
+                hash: `sha256:${item}`,
+                link: `image ${String(index)}.png`,
+                path: `Assets/image ${String(index)}.png`,
+                size: 1
+            })),
+            firstPublished: '2031-01-01T08:00:00Z',
+            formerPaths: [],
+            id,
+            lastPublished: '2031-01-01T08:00:00Z',
+            links: [],
+            path,
+            state
+        })}\n`
+    }
+
+    /** Writes these files of the copy (a text) or removes them (`undefined`), and commits. */
+    async function change(
+        copy: string,
+        message: string,
+        files: Record<string, string | undefined>
+    ): Promise<string> {
+        await mkdir(join(copy, 'manifest'), { recursive: true })
+        for (const [path, text] of Object.entries(files)) {
+            if (text === undefined) {
+                await git(copy, 'rm', '--quiet', '--', path)
+            } else {
+                await writeFile(join(copy, path), text)
+                await git(copy, 'add', '--', path)
+            }
+        }
+        await git(copy, 'commit', '--quiet', '--message', message)
+        return await git(copy, 'rev-parse', 'HEAD')
+    }
+
+    const A = 'a1a1a1a1a1a1a1a1'
+    const B = 'b2b2b2b2b2b2b2b2'
+    const C = 'c3c3c3c3c3c3c3c3'
+    const D = 'd4d4d4d4d4d4d4d4'
+
+    test('gives the keys of the entries that a takedown or a forced removal deleted, in the whole history', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 4 new, 0 updated, 0 removed, 0 forced, 0 skipped, 0 moved', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')]),
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2'), key('3')]),
+            [`manifest/${C}.json`]: entry(C, 'C.md', [key('4')]),
+            [`manifest/${D}.json`]: entry(D, 'D.md', [key('5')], 'unpublished')
+        })
+        await change(copy, 'Takedown: 1 note', { [`manifest/${B}.json`]: undefined })
+        // A forced removal of a published note, and of an unpublished one.
+        await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 2 forced, 0 skipped, 0 moved', {
+            [`manifest/${C}.json`]: undefined,
+            [`manifest/${D}.json`]: undefined
+        })
+        expect(await removedAttachmentKeys(copy)).toEqual([key('2'), key('3'), key('4'), key('5')])
+    })
+
+    // An unpublished entry whose path a move took leaves the manifest with the
+    // move (rule 6 of the moves): that is no forced removal.
+    test('leaves out an entry that a move displaced, and an entry that a publication with no forced removal deleted', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 2 new, 0 updated, 0 removed, 0 forced, 0 skipped, 0 moved', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')]),
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')], 'unpublished'),
+            [`manifest/${C}.json`]: entry(C, 'C.md', [key('3')], 'unpublished'),
+            [`manifest/${D}.json`]: entry(D, 'D.md', [key('4')])
+        })
+        // A moves to the path of the unpublished B, and D is a forced removal.
+        await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 1 forced, 0 skipped, 1 moved', {
+            [`manifest/${A}.json`]: entry(A, 'B.md', [key('1')]),
+            [`manifest/${B}.json`]: undefined,
+            [`manifest/${D}.json`]: undefined
+        })
+        await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 0 forced, 0 skipped, 1 moved', {
+            [`manifest/${C}.json`]: undefined
+        })
+        expect(await removedAttachmentKeys(copy)).toEqual([key('4')])
+    })
+
+    test('gives no key for a copy with no history', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        expect(await removedAttachmentKeys(copy)).toEqual([])
+    })
+
+    test('gives the keys that the published notes of a revision use, and nothing for a revision that the copy does not know', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const first = await change(
+            copy,
+            'Publish: 2 new, 0 updated, 0 removed, 0 forced, 0 skipped, 0 moved',
+            {
+                [`manifest/${A}.json`]: entry(A, 'A.md', [key('2'), key('1')]),
+                [`manifest/${B}.json`]: entry(B, 'B.md', [key('3')], 'unpublished')
+            }
+        )
+        await change(copy, 'Publish: 0 new, 1 updated, 0 removed, 0 forced, 0 skipped, 0 moved', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('6')])
+        })
+        expect(await releaseAttachmentKeys(copy, first)).toEqual([key('1'), key('2')])
+        expect(await releaseAttachmentKeys(copy, 'f'.repeat(40))).toBeUndefined()
+    })
+
+    test('stops on a revision whose manifest the build would refuse', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const revision = await change(copy, 'Publish: 1 new', {
+            [`manifest/${A}.json`]: '{"id": "not an entry"}\n'
+        })
+        expect(await rejectionOf(releaseAttachmentKeys(copy, revision))).toContain(
+            'is not a manifest entry'
+        )
+    })
+})
+
+describe('the removals between two revisions', () => {
+    test('give the takedowns and the publications with a forced removal', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const from = await commit(
+            copy,
+            'Publish: 1 new, 0 updated, 0 removed, 0 forced, 0 skipped, 0 moved'
+        )
+        await commit(copy, 'Publish: 0 new, 0 updated, 0 removed, 2 forced, 0 skipped, 0 moved')
+        await commit(copy, 'Publish: 0 new, 0 updated, 0 removed, 10 forced, 0 skipped, 0 moved')
+        const to = await commit(
+            copy,
+            'Publish: 1 new, 0 updated, 0 removed, 0 forced, 0 skipped, 0 moved'
+        )
+        expect(await removalsBetween(copy, from, to)).toEqual([
+            'Publish: 0 new, 0 updated, 0 removed, 10 forced, 0 skipped, 0 moved',
+            'Publish: 0 new, 0 updated, 0 removed, 2 forced, 0 skipped, 0 moved'
+        ])
     })
 })

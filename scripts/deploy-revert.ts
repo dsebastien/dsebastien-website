@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { DEPLOYMENT_RECORD_FILE } from '@dsebastien-website/resolver'
-import { checkContentCopy, takedownsBetween } from '../apps/site/worker/content-copy.ts'
+import { checkContentCopy, removalsBetween } from '../apps/site/worker/content-copy.ts'
 import { processIsAlive, takeDeployLock } from '../apps/site/worker/deploy-lock.ts'
 import { deployToken, targetFrom, type DeployTarget } from '../apps/site/worker/deployment.ts'
 import { LIVE_CHECKS, readHostRecord, revertRelease } from '../apps/site/worker/release.ts'
@@ -73,7 +73,7 @@ async function revert(target: DeployTarget, store: string): Promise<void> {
     const site = `https://${target.host}/`
     const record = new URL(DEPLOYMENT_RECORD_FILE, site)
     const result = await revertRelease({
-        takedownsBetween: (from, to) => takedownsBetween(store, from, to),
+        removalsBetween: (from, to) => removalsBetween(store, from, to),
         rollback: async () => {
             // With no version, wrangler goes back to the version before the live one.
             const child = Bun.spawn(

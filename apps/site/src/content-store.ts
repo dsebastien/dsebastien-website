@@ -218,10 +218,38 @@ async function readManifest(store: string | undefined = contentStoreFolder()): P
         // A content store with no publication yet has no manifest.
         return { notes: [], removed: [], firstRuns }
     }
+    const texts: { file: string; text: string }[] = []
+    for (const file of files.filter((name) => name.endsWith('.json')).sort()) {
+        texts.push({ file, text: await readFile(join(store, 'manifest', file), 'utf8') })
+    }
+    return manifestOf(texts)
+}
+
+/**
+ * The published notes of a manifest whose files have these names and texts:
+ * the reader of the build. A deployment reads the manifest of an older
+ * revision with it too (issue 120). It throws as `readPublishedNotes()`.
+ */
+export function publishedNotesOf(
+    files: readonly { readonly file: string; readonly text: string }[]
+): PublishedNote[] {
+    return manifestOf(files).notes
+}
+
+/** The entries of the manifest files with these names (`<id>.json`) and texts. */
+function manifestOf(files: readonly { readonly file: string; readonly text: string }[]): {
+    notes: PublishedNote[]
+    removed: RemovedNote[]
+    firstRuns: Set<string>
+} {
+    const firstRuns = new Set<string>()
     const notes = new Map<string, PublishedNote>()
     const removed = new Map<string, RemovedNote>()
-    for (const file of files.filter((name) => name.endsWith('.json')).sort()) {
-        const entry: unknown = JSON.parse(await readFile(join(store, 'manifest', file), 'utf8'))
+    const ordered = files
+        .filter(({ file }) => file.endsWith('.json'))
+        .sort((one, two) => (one.file < two.file ? -1 : one.file > two.file ? 1 : 0))
+    for (const { file, text } of ordered) {
+        const entry: unknown = JSON.parse(text)
         if (
             !isRecord(entry) ||
             typeof entry['id'] !== 'string' ||

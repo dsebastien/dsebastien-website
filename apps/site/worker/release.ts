@@ -16,20 +16,23 @@ import {
 
 // The run of a deployment (issue 32, BUILD-07, BUILD-08, STORE-08, PUB-42):
 //
-// 1. the attachments: each key that the release uses and that the object
+// 1. the forced files leave the object storage at once (issue 120): the
+//    files that the guards withdrew, and the files of the notes of a
+//    takedown or of a forced removal that the new release does not use;
+// 2. the attachments: each key that the release uses and that the object
 //    storage lacks goes up from the attachment folder of the machine; a key
 //    in neither place stops the run before the build;
-// 2. the build, then its deployment record and its headers file, then the
+// 3. the build, then its deployment record and its headers file, then the
 //    limits of the host;
-// 3. the deployment (one new Worker version, one switch);
-// 4. the host is read until it gives the record of this build: live;
-// 5. the object storage loses each key that no published note uses.
+// 4. the deployment (one new Worker version, one switch);
+// 5. the host is read until it gives the record of this build: live;
+// 6. the object storage loses each key that neither the new release nor
+//    the release before it uses, so one revert keeps its files.
 //
-// With a takedown, step 5 runs also when a step before it fails, and the
-// run fails after it (decision 4 of the comment of 2026-11-25 on issue 32).
-// Without one, a failure deletes nothing. The steps that reach a host are
-// ports: the command line (`scripts/deploy.ts`) gives the real ones, the
-// tests give fakes.
+// A failure deletes no other file than the ones of step 1 (decision F4 of
+// the author on issue 120). The steps that reach a host are ports: the
+// command line (`scripts/deploy.ts`) gives the real ones, the tests give
+// fakes.
 
 /** The files of the attachment folder of the machine, by their keys. */
 export interface AttachmentFolder {
@@ -67,6 +70,25 @@ export interface DeployRun {
     readonly now: () => Date
     /** The keys of the attachments that the release uses. */
     readonly usedKeys: readonly string[]
+    /**
+     * The keys of the attachments of the notes that a takedown or a forced
+     * removal took away, in the whole history of the copy (issue 120). Each
+     * one that the release does not use leaves the object storage at once.
+     */
+    readonly removedKeys?: readonly string[]
+    /**
+     * The keys that the guards withdrew (`withdrawn.json` of the copy, R45,
+     * issue 120): they leave the object storage at once, also when the
+     * release uses them, and are never uploaded.
+     */
+    readonly withdrawnKeys?: readonly string[]
+    /**
+     * The keys that a release of this content revision uses, from the copy,
+     * or `undefined` when the copy cannot read that revision. The cleanup
+     * keeps them for the release before (issue 120). Without it, no
+     * revision can be read.
+     */
+    readonly releaseKeys?: (revision: string) => Promise<readonly string[] | undefined>
     /** The object storage of the host. Without it (a dry run), no attachment moves. */
     readonly storage?: AttachmentStorage
     /** The attachment folder of the machine. */
@@ -338,8 +360,20 @@ function timeOf(date: Date): string {
 
 /** Runs a deployment. It never throws: a failure is in the result. */
 export async function deployRelease(run: DeployRun): Promise<DeployResult> {
-    const used = new Set(run.usedKeys)
+    const withdrawn = new Set(run.withdrawnKeys ?? [])
+    // A withdrawn file counts for no note: the page shows it as missing (R45).
+    const used = new Set(run.usedKeys.filter((key) => !withdrawn.has(key)))
+    // The files that leave at once (issue 120): the files that the guards
+    // withdrew, and the files of the notes of a takedown or of a forced
+    // removal that the new release does not use. Business rule 16 wins over
+    // a release that still uses such a file for another note.
+    const forced = new Set([
+        ...withdrawn,
+        ...(run.removedKeys ?? []).filter((key) => !used.has(key))
+    ])
     const warnings: string[] = []
+    /** The failures that come after the error of the run, when there is one. */
+    const failures: string[] = []
     let build: StepResult = 'skipped'
     let deploy: StepResult = 'skipped'
     let live = false
@@ -347,51 +381,115 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     let deleted = 0
     let stored: string[] | undefined
 
-    /** Deletes each key of the storage that no published note uses. */
-    async function cleanUp(storage: AttachmentStorage, names: readonly string[]): Promise<void> {
-        const unused: string[] = []
-        // A name that is not a key can be a path of the vault: only their
-        // count goes into the result, which the tools show and an agent reads.
-        let others = 0
-        for (const name of [...names].sort()) {
-            if (used.has(name)) {
-                continue
-            }
-            if (ATTACHMENT_KEY.test(name)) {
-                unused.push(name)
-            } else {
-                others += 1
-            }
-        }
-        if (others > 0) {
-            warnings.push(
-                run.takedown
-                    ? `a file can still be public: the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
-                    : `the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
-            )
-        }
-        const failures: string[] = []
-        await eachItem(unused, async (key) => {
+    /** Deletes these keys. It gives the failures, one text per key. */
+    async function remove(storage: AttachmentStorage, keys: readonly string[]): Promise<string[]> {
+        const failed: string[] = []
+        await eachItem(keys, async (key) => {
             try {
                 if (await storage.remove(key)) {
                     deleted += 1
                 }
             } catch (error) {
-                failures.push(`${key}: ${messageOf(error)}`)
+                failed.push(`${key}: ${messageOf(error)}`)
             }
         })
-        if (failures.length > 0) {
-            throw new Error(
-                `the attachment storage kept files that no note uses: ${failures.sort().join('; ')}`
+        return failed.sort()
+    }
+
+    /** How many names of the storage are not keys. Such a name can be a path of the vault. */
+    function othersOf(names: readonly string[]): number {
+        return names.filter((name) => !ATTACHMENT_KEY.test(name)).length
+    }
+
+    /**
+     * Deletes the forced files that the storage has, right after its list:
+     * they leave at once, also when a later step fails. A failure goes on
+     * with the release and fails the run at its end: the file can still be
+     * public. It gives the names that stay.
+     */
+    async function removeForced(
+        storage: AttachmentStorage,
+        names: readonly string[]
+    ): Promise<string[]> {
+        const keys = names.filter((name) => forced.has(name)).sort()
+        const failed = await remove(storage, keys)
+        if (failed.length > 0) {
+            warnings.push(
+                'a file can still be public: the attachment storage kept files of a takedown, of a forced removal or under a guard'
+            )
+            failures.push(
+                `the attachment storage kept files that must leave it: ${failed.join('; ')}`
             )
         }
-        run.log(`deleted ${String(deleted)} files that no note uses from the attachment storage`)
         // As the takedown of the tool: such a name can be a file of the takedown.
+        const others = othersOf(names)
         if (run.takedown && others > 0) {
-            throw new Error(
+            warnings.push(
+                `a file can still be public: the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
+            )
+            failures.push(
                 `after a takedown, the attachment storage has ${String(others)} file(s) that are not keys`
             )
         }
+        const gone = new Set(keys)
+        return names.filter((name) => !gone.has(name))
+    }
+
+    /**
+     * The keys that the cleanup after a release that is live keeps: the
+     * keys of the new release and of the release before it, without the
+     * forced keys. `undefined` when the files of the release before cannot
+     * be known: then only the forced files leave.
+     */
+    async function keptKeys(): Promise<Set<string> | undefined> {
+        // A first deployment has no release before, and a revert across a
+        // move to another content store is refused.
+        if (replaced === null || replaced === undefined || run.newContentStore === true) {
+            return new Set(used)
+        }
+        const revision = replaced.contentRevision
+        let keys: readonly string[] | undefined
+        if (revision !== null) {
+            try {
+                keys = await run.releaseKeys?.(revision)
+            } catch (error) {
+                run.log(`the keys of ${revision} cannot be read: ${messageOf(error)}`)
+                keys = undefined
+            }
+        }
+        if (keys === undefined) {
+            warnings.push(
+                revision === null
+                    ? 'the release before was built from an output (--dist), so its files are not known: only the files of takedowns, of forced removals and under a guard were deleted from the attachment storage'
+                    : `the copy cannot read the files of the release before (${revision}): only the files of takedowns, of forced removals and under a guard were deleted from the attachment storage`
+            )
+            return undefined
+        }
+        return new Set([...used, ...keys.filter((key) => !forced.has(key))])
+    }
+
+    /** Deletes each key of the storage that neither the new release nor the release before uses. */
+    async function cleanUp(storage: AttachmentStorage, names: readonly string[]): Promise<void> {
+        const kept = await keptKeys()
+        if (kept === undefined) {
+            return
+        }
+        const others = othersOf(names)
+        // Only their count goes into the result, which the tools show and an
+        // agent reads. After a takedown, the forced step warned already.
+        if (others > 0 && !run.takedown) {
+            warnings.push(
+                `the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
+            )
+        }
+        const unused = names.filter((name) => ATTACHMENT_KEY.test(name) && !kept.has(name)).sort()
+        const failed = await remove(storage, unused)
+        if (failed.length > 0) {
+            throw new Error(
+                `the attachment storage kept files that no release uses: ${failed.join('; ')}`
+            )
+        }
+        run.log(`deleted ${String(deleted)} files that no release uses from the attachment storage`)
     }
 
     let error: string | null = null
@@ -404,8 +502,8 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             await checkOver(run, replaced)
         }
         if (run.storage !== undefined) {
-            stored = await run.storage.list()
-            await upload(run, run.storage, new Set(stored), () => {
+            stored = await removeForced(run.storage, await run.storage.list())
+            await upload(run, [...used], run.storage, new Set(stored), () => {
                 uploaded += 1
             })
         }
@@ -483,10 +581,11 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             }
         }
 
-        if (run.storage !== undefined && stored !== undefined && !live && !run.takedown) {
-            // The release before can still be live, with files that the new one does not use.
+        if (run.storage !== undefined && stored !== undefined && !live) {
+            // The release before can still be live, with files that the new
+            // one does not use: only the forced files left (F4).
             warnings.push(
-                'the release was not seen live, so no file was deleted from the attachment storage'
+                'the release was not seen live, so no file that a release uses was deleted from the attachment storage'
             )
         } else if (run.storage !== undefined && stored !== undefined) {
             try {
@@ -508,37 +607,20 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
     } catch (failure) {
         error = messageOf(failure)
-        const refused = failure instanceof Refusal
-        if (run.takedown && refused) {
+        // A failure deletes no other file than the forced ones (F4), which
+        // left right after the list of the storage.
+        if (run.takedown && stored === undefined && failure instanceof Refusal) {
             warnings.push(
                 'a file can still be public: the deployment was refused, so no file of the takedown was deleted'
             )
-        } else if (run.takedown && run.storage !== undefined && stored === undefined) {
+        } else if (run.takedown && stored === undefined && run.storage !== undefined) {
             warnings.push(
                 'a file can still be public: the attachment storage could not be listed, so no file of the takedown was deleted'
             )
         }
-        if (
-            run.takedown &&
-            !refused &&
-            deploy !== 'ok' &&
-            run.storage !== undefined &&
-            stored !== undefined
-        ) {
-            // A newer release of another machine can have gone live since the
-            // start: its files must stay (issue 125 holds the lock on the host).
-            if (await liveMoved(run.live, replaced)) {
-                warnings.push(
-                    'a file can still be public: another release went live during this deployment, from another machine, so no file of the takedown was deleted: deploy again'
-                )
-            } else {
-                try {
-                    await cleanUp(run.storage, stored)
-                } catch (cleanup) {
-                    error = `${error}; ${messageOf(cleanup)}`
-                }
-            }
-        }
+    }
+    if (failures.length > 0) {
+        error = [...(error === null ? [] : [error]), ...failures].join('; ')
     }
     return {
         build,
@@ -562,11 +644,12 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
  */
 async function upload(
     run: DeployRun,
+    usedKeys: readonly string[],
     storage: AttachmentStorage,
     stored: ReadonlySet<string>,
     uploaded: () => void
 ): Promise<void> {
-    const wanted = [...new Set(run.usedKeys)].filter((key) => !stored.has(key)).sort()
+    const wanted = [...new Set(usedKeys)].filter((key) => !stored.has(key)).sort()
     const missing: string[] = []
     for (const key of wanted) {
         if (!(await run.attachments.exists(key))) {
@@ -622,7 +705,7 @@ export interface RevertRun {
      * The subjects of the takedown commits after `from` up to `to` in the copy
      * of the content store, or `undefined` when the copy does not know them.
      */
-    readonly takedownsBetween: (from: string, to: string) => Promise<string[] | undefined>
+    readonly removalsBetween: (from: string, to: string) => Promise<string[] | undefined>
     readonly live: LiveRecord
     readonly wait: (milliseconds: number) => Promise<void>
 }
@@ -638,8 +721,9 @@ export interface RevertResult {
 /**
  * Goes back to the release before (BUILD-07). The live record names the
  * release that it replaced; a revert that would bring back a note that a
- * takedown removed in between is refused (a commit whose subject starts with
- * `Takedown:`), and so is a live release that names no release before it,
+ * takedown or a forced removal took away in between is refused (a commit
+ * whose subject starts with `Takedown:`, or a publication with a forced
+ * removal, issue 120), and so is a live release that names no release before it,
  * and a live release that moved the host to another content store.
  * Then it rolls back and reads the host until it gives the record of the
  * release before on reads in a row, a bounded number of times. It throws
@@ -660,15 +744,15 @@ export async function revertRelease(run: RevertRun): Promise<RevertResult> {
         )
     }
     if (before.contentRevision !== null && target.contentRevision !== null) {
-        const takedowns = await run.takedownsBetween(target.contentRevision, before.contentRevision)
-        if (takedowns === undefined) {
+        const removals = await run.removalsBetween(target.contentRevision, before.contentRevision)
+        if (removals === undefined) {
             throw new Error(
                 `the copy of the content store does not know ${target.contentRevision} and ${before.contentRevision}: fetch the copy`
             )
         }
-        if (takedowns.length > 0) {
+        if (removals.length > 0) {
             throw new Error(
-                `a takedown lies between the release before and the live one (${takedowns.join('; ')}): deploy a new release instead`
+                `a takedown or a forced removal lies between the release before and the live one (${removals.join('; ')}): deploy a new release instead`
             )
         }
     }
@@ -677,28 +761,6 @@ export async function revertRelease(run: RevertRun): Promise<RevertResult> {
         sameRecord(target, seen)
     )
     return { before, after: last, changed: accepted }
-}
-
-/**
- * True when the live release is not the one that the run read at its start,
- * or when the host cannot say: then no file may be deleted.
- */
-async function liveMoved(
-    live: LiveRecord | undefined,
-    replaced: DeploymentRecord | null | undefined
-): Promise<boolean> {
-    if (live === undefined || replaced === undefined) {
-        return false
-    }
-    let now: DeploymentRecord | null
-    try {
-        now = await liveRecordOf(live)
-    } catch {
-        return true
-    }
-    return now === null || replaced === null
-        ? now !== replaced
-        : !sameRecord(buildOf(now), replaced)
 }
 
 /** True when two records name the same build. */

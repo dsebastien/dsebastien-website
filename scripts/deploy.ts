@@ -15,7 +15,9 @@ import {
 import {
     checkContentCopy,
     contentStoreHas,
-    descendsFrom
+    descendsFrom,
+    releaseAttachmentKeys,
+    removedAttachmentKeys
 } from '../apps/site/worker/content-copy.ts'
 import {
     inheritedLockWarning,
@@ -283,12 +285,15 @@ async function deploy(
         // The record names this commit, so the keys and the build come from it.
         const contentRevision = store === undefined ? null : await checkContentCopy(store)
         const usedKeys = store === undefined ? [] : await usedAttachmentKeys(store)
+        // The files of the takedowns and of the forced removals leave at once (issue 120).
+        const removedKeys = store === undefined ? [] : await removedAttachmentKeys(store)
         const result = await deployRelease({
             url,
             contentRevision,
             siteRevision: await git(ROOT, 'rev-parse', 'HEAD'),
             now: () => new Date(),
             usedKeys,
+            removedKeys,
             // A dry run reaches no host. `--dist` has no manifest: the
             // storage must not be cleaned by it.
             ...(dryRun || token === undefined || store === undefined
@@ -312,6 +317,7 @@ async function deploy(
                 ? {}
                 : {
                       descendsFrom: (revision: string) => descendsFrom(store, revision),
+                      releaseKeys: (revision: string) => releaseAttachmentKeys(store, revision),
                       contentStoreHas: (revision: string) => contentStoreHas(store, revision),
                       beforeDeploy: async () => {
                           // No fetch: the copy must still be what the build read.
