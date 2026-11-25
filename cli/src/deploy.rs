@@ -99,6 +99,33 @@ pub trait TakedownMarker {
     fn remove(&self) -> Result<(), String>;
 }
 
+/// The record of the deploys of this device, in the git folder of the copy:
+/// whether a deploy runs (`.git/vault-publish/deploy-running`) and the report
+/// of the last one (`deploy-report.json`), so that an agent reads them later
+/// and every face of this device sees them. A deploy that stopped with its
+/// program (a crash) shows as running until the next deploy ends.
+pub trait DeployRecord {
+    /// # Errors
+    ///
+    /// The record cannot be written.
+    fn set_running(&self, running: bool) -> Result<(), String>;
+    fn running(&self) -> bool;
+    /// Keeps the text of the last deploy report (`deployment_text`).
+    ///
+    /// # Errors
+    ///
+    /// The record cannot be written.
+    fn save_last(&self, text: &str) -> Result<(), String>;
+    /// The text of the last deploy report, or `None` when there is none.
+    fn last(&self) -> Option<String>;
+}
+
+/// The files of the deploy of a device: the marker of a takedown and the
+/// record.
+pub trait DeployFiles: TakedownMarker + DeployRecord {}
+
+impl<T: TakedownMarker + DeployRecord> DeployFiles for T {}
+
 /// What a deploy follows: a push (`ok`), or nothing (`skipped`, a deploy
 /// again), and whether it runs with `--takedown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -493,10 +520,26 @@ fn read_run(code: Option<i32>, stdout: &str, kind: DeployKind) -> DeployReport {
 /// missing setting. The deploy never fails: its failures are in the report.
 /// It runs with `--takedown` when the run asks for it or when the marker of a
 /// takedown is set, and removes the marker only when such a deploy
-/// succeeded. A marker that cannot be removed is a warning.
+/// succeeded. A marker that cannot be removed is a warning. The record says
+/// that it runs, then keeps its report; a record that cannot be written stops
+/// nothing.
 pub fn run_deploy(
     child: &dyn DeployProcess,
-    marker: &dyn TakedownMarker,
+    files: &dyn DeployFiles,
+    settings: &DeploySettings,
+    asked: DeployKind,
+    windows: bool,
+) -> Deployment {
+    let _ = files.set_running(true);
+    let deployment = deploy_with(child, files, settings, asked, windows);
+    let _ = files.set_running(false);
+    let _ = files.save_last(&deployment_text(&deployment.report));
+    deployment
+}
+
+fn deploy_with(
+    child: &dyn DeployProcess,
+    marker: &dyn DeployFiles,
     settings: &DeploySettings,
     asked: DeployKind,
     windows: bool,
@@ -545,6 +588,7 @@ pub fn run_deploy(
 pub fn deployment_text(report: &DeployReport) -> String {
     let mut object = Map::new();
     object.insert("push".into(), json!(report.push));
+    object.insert("state".into(), json!("done"));
     object.insert("takedown".into(), json!(report.takedown));
     object.insert("build".into(), json!(report.build));
     object.insert("deploy".into(), json!(report.deploy));
@@ -563,6 +607,38 @@ pub fn deployment_text(report: &DeployReport) -> String {
     }
     // Texts, booleans and counts below the limit always have a canonical form.
     to_canonical_json(&json!({ "deployment": Value::Object(object) })).unwrap_or_default()
+}
+
+/// The deploy report of a deploy that starts in the background (the MCP
+/// server never waits for a build): `state` `started`, with its push and
+/// whether it was asked with `--takedown`. The `deploy` tool with `last`
+/// reads its result later.
+pub fn started_text(kind: DeployKind) -> String {
+    to_canonical_json(&json!({ "deployment": {
+        "push": kind.push,
+        "state": "started",
+        "takedown": kind.takedown,
+    }}))
+    .unwrap_or_default()
+}
+
+/// What the `deploy` tool and command give with `last`: the last deploy
+/// report of the record (absent when there is none, or when its text is
+/// broken), and whether a deploy runs. It starts no deploy.
+pub fn last_text(stored: Option<&str>, running: bool) -> String {
+    let mut object = Map::new();
+    if let Some(deployment) = stored
+        .and_then(|text| serde_json::from_str::<Value>(text).ok())
+        .and_then(|value| value.get("deployment").cloned())
+        .filter(|deployment| {
+            deployment.is_object()
+                && to_canonical_json(&json!({ "deployment": deployment })).is_ok()
+        })
+    {
+        object.insert("deployment".into(), deployment);
+    }
+    object.insert("running".into(), json!(running));
+    to_canonical_json(&Value::Object(object)).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -683,7 +759,7 @@ mod tests {
 
         assert_eq!(
             deployment_text(&report),
-            "{\n  \"deployment\": {\n    \"build\": \"skipped\",\n    \"deleted\": 0,\n    \"deploy\": \"failed\",\n    \"error\": \"the deploy could not start: no program\",\n    \"live\": false,\n    \"push\": \"ok\",\n    \"takedown\": false,\n    \"uploaded\": 0,\n    \"warnings\": []\n  }\n}\n"
+            "{\n  \"deployment\": {\n    \"build\": \"skipped\",\n    \"deleted\": 0,\n    \"deploy\": \"failed\",\n    \"error\": \"the deploy could not start: no program\",\n    \"live\": false,\n    \"push\": \"ok\",\n    \"state\": \"done\",\n    \"takedown\": false,\n    \"uploaded\": 0,\n    \"warnings\": []\n  }\n}\n"
         );
     }
 
@@ -692,8 +768,29 @@ mod tests {
         takedown: false,
     };
 
-    /// A marker of a takedown in memory.
-    struct Marker(std::cell::Cell<bool>);
+    /// A marker of a takedown and a record in memory.
+    struct Marker(
+        std::cell::Cell<bool>,
+        RefCell<Vec<bool>>,
+        RefCell<Vec<String>>,
+    );
+
+    impl DeployRecord for Marker {
+        fn set_running(&self, running: bool) -> Result<(), String> {
+            self.1.borrow_mut().push(running);
+            Ok(())
+        }
+        fn running(&self) -> bool {
+            self.1.borrow().last() == Some(&true)
+        }
+        fn save_last(&self, text: &str) -> Result<(), String> {
+            self.2.borrow_mut().push(text.to_owned());
+            Ok(())
+        }
+        fn last(&self) -> Option<String> {
+            self.2.borrow().last().cloned()
+        }
+    }
 
     impl TakedownMarker for Marker {
         fn pending(&self) -> bool {
@@ -710,7 +807,11 @@ mod tests {
     }
 
     fn marker(pending: bool) -> Marker {
-        Marker(std::cell::Cell::new(pending))
+        Marker(
+            std::cell::Cell::new(pending),
+            RefCell::new(Vec::new()),
+            RefCell::new(Vec::new()),
+        )
     }
 
     /// A child that records the commands and gives one answer.
@@ -856,5 +957,43 @@ mod tests {
         assert!(first.report.warnings.contains(&TAKEDOWN_WAITS.to_owned()));
         assert!(second.report.takedown && !pending.pending());
         assert!(!third.report.takedown);
+    }
+
+    #[test]
+    fn writes_the_report_of_a_start_and_the_last_report_of_the_shared_cases() {
+        let all = cases();
+        for case in all["started"].as_array().expect("the starts") {
+            assert_eq!(
+                started_text(kind_of(&case["kind"])),
+                case["text"].as_str().expect("a text"),
+                "{}",
+                case["name"]
+            );
+        }
+        for case in all["last"].as_array().expect("the last reports") {
+            assert_eq!(
+                last_text(
+                    case["stored"].as_str(),
+                    case["running"].as_bool().expect("running")
+                ),
+                case["text"].as_str().expect("a text"),
+                "{}",
+                case["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn says_in_the_record_that_it_runs_then_keeps_its_report() {
+        let child = Fake {
+            runs: RefCell::new(Vec::new()),
+            answer: Ok((Some(0), LINE)),
+        };
+        let files = marker(false);
+
+        let deployment = run_deploy(&child, &files, &settings(), PUSHED, false);
+
+        assert_eq!(*files.1.borrow(), vec![true, false]);
+        assert_eq!(*files.2.borrow(), vec![deployment_text(&deployment.report)]);
     }
 }

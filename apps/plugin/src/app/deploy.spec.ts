@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { makeTestStores, rejectionOf } from '@dsebastien-website/testing'
-import { childProcess, deploySettingsOf, fileMarker } from './deploy.ts'
+import { childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
 
 // The port that starts the deploy as a child process (issue 32): a real
 // program here, the bun of the tests, never the deploy of the site.
@@ -192,10 +192,26 @@ describe('the deploy settings of a device', () => {
     })
 })
 
-describe('the marker of a takedown (issue 32)', () => {
+describe('the files of the deploy (issue 32)', () => {
+    test('say whether a deploy runs, and keep the last report', async () => {
+        await using stores = await makeTestStores()
+        const files = deployFiles(stores.root)
+
+        const before = [await files.running(), await files.last()]
+        await files.setRunning(true)
+        const during = await files.running()
+        await files.saveLast('{"deployment": {}}')
+        await files.setRunning(false)
+
+        expect(before).toEqual([false, undefined])
+        expect(during).toBe(true)
+        expect(await files.running()).toBe(false)
+        expect(await files.last()).toBe('{"deployment": {}}')
+    })
+
     test('is a file of the git folder of the copy, until it is removed', async () => {
         await using stores = await makeTestStores()
-        const marker = fileMarker(stores.root)
+        const marker = deployFiles(stores.root)
 
         const before = await marker.pending()
         await marker.set()
@@ -211,7 +227,7 @@ describe('the marker of a takedown (issue 32)', () => {
     })
 
     test('is never set for a copy that is not set', async () => {
-        const marker = fileMarker('')
+        const marker = deployFiles('')
         await marker.set()
 
         expect(await marker.pending()).toBe(false)

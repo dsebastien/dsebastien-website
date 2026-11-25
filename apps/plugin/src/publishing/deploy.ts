@@ -1,4 +1,5 @@
 import { toCanonicalJson } from './canonical.ts'
+import type { CanonicalValue } from './canonical.ts'
 
 // The deploy that the tool starts after a push (issue 32, BUILD-02, PUB-42,
 // decision R76): the deploy command of the site runs on this machine, in a
@@ -69,6 +70,22 @@ export interface TakedownMarker {
     pending(): Promise<boolean>
     set(): Promise<void>
     remove(): Promise<void>
+}
+
+/**
+ * The record of the deploys of this device, in the git folder of the copy:
+ * whether a deploy runs (`.git/vault-publish/deploy-running`) and the report
+ * of the last one (`deploy-report.json`), so that an agent reads them later
+ * and every face of this device sees them. A deploy that stopped with its
+ * program (a crash) shows as running until the next deploy ends.
+ */
+export interface DeployRecord {
+    setRunning(running: boolean): Promise<void>
+    running(): Promise<boolean>
+    /** Keeps the text of the last deploy report (`deploymentText`). */
+    saveLast(text: string): Promise<void>
+    /** The text of the last deploy report, or `undefined` when there is none. */
+    last(): Promise<string | undefined>
 }
 
 /** What a deploy follows: a push, or nothing (a deploy again), and whether it runs with `--takedown`. */
@@ -407,8 +424,29 @@ export function reportOfRun(code: number | null, stdout: string, kind: DeployKin
  * missing setting. The deploy never throws: its failures are in the report.
  * It runs with `--takedown` when the run asks for it or when the marker of a
  * takedown is set, and removes the marker only when such a deploy succeeded.
+ * The record says that it runs, then keeps its report; a record that cannot
+ * be written stops nothing.
  */
 export async function runDeploy(
+    child: DeployProcess,
+    files: TakedownMarker & DeployRecord,
+    settings: DeploySettings,
+    asked: DeployKind,
+    windows: boolean,
+    signal?: AbortSignal
+): Promise<Deployment> {
+    await files.setRunning(true).catch(() => undefined)
+    let deployment: Deployment
+    try {
+        deployment = await deployWith(child, files, settings, asked, windows, signal)
+    } finally {
+        await files.setRunning(false).catch(() => undefined)
+    }
+    await files.saveLast(deploymentText(deployment.report)).catch(() => undefined)
+    return deployment
+}
+
+async function deployWith(
     child: DeployProcess,
     marker: TakedownMarker,
     settings: DeploySettings,
@@ -454,7 +492,64 @@ export async function runDeploy(
     return { report, output: run.output }
 }
 
-/** The deploy report as the tool writes it: its own object `deployment`, in the canonical form. */
+/**
+ * The deploy report as the tool writes it: its own object `deployment`, in
+ * the canonical form, with `state` `done`.
+ */
 export function deploymentText(report: DeployReport): string {
-    return toCanonicalJson({ deployment: { ...report } })
+    return toCanonicalJson({ deployment: { ...report, state: 'done' } })
+}
+
+/**
+ * The deploy report of a deploy that starts in the background (the MCP
+ * server never waits for a build): `state` `started`, with its push and
+ * whether it was asked with `--takedown`. The `deploy` tool with `last`
+ * reads its result later.
+ */
+export function startedText(kind: DeployKind): string {
+    return toCanonicalJson({
+        deployment: { push: kind.push, state: 'started', takedown: kind.takedown }
+    })
+}
+
+/**
+ * What the `deploy` tool and command give with `last`: the last deploy
+ * report of the record (absent when there is none, or when its text is
+ * broken), and whether a deploy runs. It starts no deploy.
+ */
+export function lastText(stored: string | undefined, running: boolean): string {
+    let deployment: unknown
+    try {
+        deployment =
+            stored === undefined
+                ? undefined
+                : (JSON.parse(stored) as { deployment?: unknown }).deployment
+    } catch {
+        deployment = undefined
+    }
+    const kept = isCanonicalObject(deployment) ? { deployment } : {}
+    return toCanonicalJson({ ...kept, running })
+}
+
+/** A JSON object whose values have a canonical form: texts, booleans, whole numbers, lists and objects of them. */
+function isCanonicalObject(value: unknown): value is { readonly [key: string]: CanonicalValue } {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        Object.values(value).every(isCanonical)
+    )
+}
+
+function isCanonical(value: unknown): value is CanonicalValue {
+    if (typeof value === 'string' || typeof value === 'boolean') {
+        return true
+    }
+    if (typeof value === 'number') {
+        return Number.isSafeInteger(value)
+    }
+    if (Array.isArray(value)) {
+        return value.every(isCanonical)
+    }
+    return isCanonicalObject(value)
 }

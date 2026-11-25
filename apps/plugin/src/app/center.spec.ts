@@ -11,7 +11,14 @@ import {
 import type { TestStores } from '@dsebastien-website/testing'
 import { NO_CHOICES, toggleRow, markUnpublish } from '../publishing/center.ts'
 import { fileNoteTypes, nodeDevice, pullContentStore } from '../publishing/node/device.ts'
-import { deploymentText, reportOfNothing, reportOfRun, reportOfStop } from '../publishing/deploy.ts'
+import {
+    deploymentText,
+    lastText,
+    reportOfNothing,
+    reportOfRun,
+    reportOfStop,
+    startedText
+} from '../publishing/deploy.ts'
 import type { DeployKind, Deployment, DeployReport } from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
 import type { CenterHost } from './center.ts'
@@ -1156,9 +1163,10 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         expect(fake.runs).toEqual([])
     }, 60_000)
 
-    test('an agent gets the deploy report with the result of its publication', async () => {
+    test('an agent gets the report of a deploy that started with its publication, and never waits for the build', async () => {
         await using stores = await makeTestStores()
         const fake = fakeDeploy(live)
+        fake.held = true
         const { center } = await setUp(stores, true, fake.deploy)
         const planned = await center.serve({
             tool: 'plan',
@@ -1172,28 +1180,53 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         const outcome = await center.serve({ tool: 'publish', plan: id })
 
         expect(outcome.failure).toBeUndefined()
-        expect(outcome.deploy).toBe(deploymentText(live({ push: 'ok', takedown: false })))
+        expect(outcome.deploy).toBe(startedText({ push: 'ok', takedown: false }))
         expect(JSON.parse(outcome.output)).toMatchObject({ published: [NOTE] })
-        expect(fake.runs).toEqual([{ takedown: false, push: 'ok' }])
+        expect(center.state.deployment).toEqual({ running: true })
+        fake.release()
+        await deployEnd(center)
+        expect(fake.runs).toEqual([{ push: 'ok', takedown: false }])
     }, 60_000)
 
-    test('the deploy tool runs the deploy again, and fails when the deploy failed', async () => {
-        await using stores = await makeTestStores()
-        let fails = false
-        const fake = fakeDeploy((kind) => (fails ? reportOfRun(2, 'no line\n', kind) : live(kind)))
-        const { center } = await setUp(stores, true, fake.deploy)
+    test('the deploy tool starts a deploy again, and reads the last report with no deploy', async () => {
+        const fake = fakeDeploy(live)
+        fake.held = true
+        const saved: string[] = []
+        const record = {
+            setRunning: () => Promise.resolve(),
+            running: () => Promise.resolve(false),
+            saveLast: (text: string) => {
+                saved.push(text)
+                return Promise.resolve()
+            },
+            last: () => Promise.resolve(saved.at(-1))
+        }
+        const center = new PublicationCenter({
+            device: () => {
+                throw new Error('no device')
+            },
+            pull: () => Promise.resolve(),
+            now: () => new Date(Date.UTC(2031, 3, 1, 8, 0)),
+            deviceName: 'garden-shed',
+            deploy: async (kind) => {
+                const deployment = await fake.deploy(kind)
+                await record.saveLast(deploymentText(deployment.report))
+                return deployment
+            },
+            record: () => record
+        })
 
-        const done = await center.serve({ tool: 'deploy' })
-        fails = true
-        const failed = await center.serve({ tool: 'deploy' })
+        const started = await center.serve({ tool: 'deploy' })
+        const during = await center.serve({ tool: 'deploy', last: true })
+        fake.release()
+        await deployEnd(center)
+        const after = await center.serve({ tool: 'deploy', last: true })
 
-        expect(done).toEqual({ output: deploymentText(live({ push: 'skipped', takedown: false })) })
-        expect(failed.failure).toBe(
-            'the deploy gave no result line (exit code 2): read the output of the deploy'
-        )
-        expect(fake.runs).toEqual([
-            { takedown: false, push: 'skipped' },
-            { takedown: false, push: 'skipped' }
-        ])
+        expect(started).toEqual({ output: startedText({ push: 'skipped', takedown: false }) })
+        expect(during).toEqual({ output: lastText(undefined, true) })
+        expect(after).toEqual({
+            output: lastText(deploymentText(live({ push: 'skipped', takedown: false })), false)
+        })
+        expect(fake.runs).toEqual([{ push: 'skipped', takedown: false }])
     }, 60_000)
 })

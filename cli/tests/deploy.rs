@@ -74,13 +74,18 @@ impl Setup {
     /// The fake bun: it keeps its folder and its arguments, writes to both
     /// outputs, and ends with the result line and the exit code of the test.
     fn answer(&self, line: &str, status: u8) {
+        self.answer_after(line, status, 0);
+    }
+
+    /// The fake bun, which takes `seconds` before its answer.
+    fn answer_after(&self, line: &str, status: u8, seconds: u8) {
         use std::os::unix::fs::PermissionsExt;
 
         let kept = self.stores.root().join("kept");
         fs::write(
             &self.bun,
             format!(
-                "#!/bin/sh\npwd > '{kept}.folder'\nprintf '%s\\n' \"$@\" > '{kept}.arguments'\necho 'Building the site'\necho 'a warning of the build' >&2\nprintf '%s\\n' '{line}'\nexit {status}\n",
+                "#!/bin/sh\npwd > '{kept}.folder'\nprintf '%s\\n' \"$@\" > '{kept}.arguments'\nsleep {seconds}\necho 'Building the site'\necho 'a warning of the build' >&2\nprintf '%s\\n' '{line}'\nexit {status}\n",
                 kept = kept.display()
             ),
         )
@@ -238,6 +243,7 @@ fn deploy_runs_bun_in_the_folder_of_the_site_code_and_writes_the_deploy_report()
             "deploy": "ok",
             "live": true,
             "push": "skipped",
+            "state": "done",
             "takedown": false,
             "uploaded": 1,
             "url": "https://preview.example.org/",
@@ -390,10 +396,11 @@ fn a_takedown_deploys_with_takedown() {
 }
 
 #[test]
-fn the_mcp_server_deploys_after_a_takedown_and_runs_the_deploy_tool() {
+fn the_mcp_server_never_waits_for_a_build_and_reads_the_last_report_later() {
     let setup = Setup::new();
     let published = setup.publish(false);
     assert!(published.status.success(), "{}", errors_of(&published));
+    setup.answer_after(LIVE, 0, 1);
     let mut command = setup.places("mcp");
     setup.deploy_options(&mut command);
     let mut child = command
@@ -406,6 +413,8 @@ fn the_mcp_server_deploys_after_a_takedown_and_runs_the_deploy_tool() {
         json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": { "name": "takedown", "arguments": { "paths": [NOTE] } } }),
         json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "deploy", "arguments": { "last": true } } }),
+        json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "deploy", "arguments": {} } }),
     ];
     {
@@ -429,13 +438,33 @@ fn the_mcp_server_deploys_after_a_takedown_and_runs_the_deploy_tool() {
     };
     let takedown = texts(&answers[0]);
     assert_eq!(answers[0]["result"]["isError"], false);
-    assert_eq!(takedown.len(), 2);
     assert_eq!(takedown[0]["takenDown"], json!([NOTE]));
-    assert_eq!(takedown[1]["deployment"]["push"], "ok");
-    let again = texts(&answers[1]);
-    assert_eq!(again.len(), 1);
-    assert_eq!(again[0]["deployment"]["push"], "skipped");
-    // The last run is the deploy again, with no `--takedown`.
+    assert_eq!(
+        takedown[1],
+        json!({ "deployment": { "push": "ok", "state": "started", "takedown": true } })
+    );
+    // The deploy of the takedown takes a second: it still runs.
+    assert_eq!(texts(&answers[1]), [json!({ "running": true })]);
+    assert_eq!(
+        texts(&answers[2]),
+        [json!({ "deployment": { "push": "skipped", "state": "started", "takedown": false } })]
+    );
+    // The server waited for its deploys before its end.
+    let last = support::program()
+        .arg("deploy")
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .arg("--last")
+        .output()
+        .expect("the program starts");
+    let read = &objects_of(&last)[0];
+    assert_eq!(read["running"], false);
+    assert_eq!(read["deployment"]["state"], "done");
+    assert_eq!(read["deployment"]["push"], "skipped");
+    // The deploy of the takedown succeeded and removed the marker, so the
+    // deploy again ran with no --takedown.
     assert_eq!(setup.arguments(), Some(setup.expected_arguments(false)));
 }
 

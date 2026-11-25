@@ -1333,6 +1333,71 @@
                     "isError": true
                 }
             }
+        },
+        {
+            "name": "deploy with last reads the last report",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 62,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "last": true } }
+            },
+            "call": { "tool": "deploy", "last": true },
+            "operation": { "output": "last" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 62,
+                "result": {
+                    "content": [{ "type": "text", "text": "last" }],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "deploy with last and takedown makes no call",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 63,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "last": true, "takedown": true } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 63,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "deploy takes \"last\" to read the last report or \"takedown\" to deploy, not both"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "deploy with a last that is not true or false makes no call",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 64,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "last": 1 } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 64,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "the argument \"last\" of deploy must be true or false"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
         }
     ]
 }

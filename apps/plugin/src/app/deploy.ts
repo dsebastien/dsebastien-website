@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
-import { access, mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import type {
     ChildRun,
     DeployCommand,
     DeployProcess,
+    DeployRecord,
     DeploySettings,
     TakedownMarker
 } from '../publishing/deploy.ts'
@@ -137,36 +138,58 @@ export function deploySettingsOf(settings: DeviceSettings): DeploySettings {
 }
 
 /**
- * The marker of a takedown of this device: `.git/vault-publish/takedown-pending`
- * of the copy, beside the lock and the run journal, so every face of this
- * device sees it. A marker that cannot be read counts as set. A copy that is
- * not set has no marker.
+ * The files of the deploy of this device, in `.git/vault-publish/` of the
+ * copy, beside the lock and the run journal, so every face of this device
+ * sees them: the marker of a takedown (`takedown-pending`; one that cannot
+ * be read counts as set), whether a deploy runs (`deploy-running`) and the
+ * last deploy report (`deploy-report.json`). A copy that is not set has none.
  */
-export function fileMarker(contentStore: string): TakedownMarker {
+export function deployFiles(contentStore: string): TakedownMarker & DeployRecord {
     const folder = contentStore.trim()
     if (!isAbsolute(folder)) {
         return {
             pending: () => Promise.resolve(false),
             set: () => Promise.resolve(),
-            remove: () => Promise.resolve()
+            remove: () => Promise.resolve(),
+            setRunning: () => Promise.resolve(),
+            running: () => Promise.resolve(false),
+            saveLast: () => Promise.resolve(),
+            last: () => Promise.resolve(undefined)
         }
     }
-    const file = join(folder, '.git', 'vault-publish', 'takedown-pending')
-    return {
-        pending: async () => {
-            try {
-                await access(file)
-                return true
-            } catch (error) {
-                return !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
-            }
-        },
-        set: async () => {
-            await mkdir(join(folder, '.git', 'vault-publish'), { recursive: true })
-            await writeFile(file, 'A takedown waits for a deploy with --takedown that succeeds.\n')
-        },
-        remove: async () => {
-            await rm(file, { force: true })
+    const local = join(folder, '.git', 'vault-publish')
+    const exists = async (file: string, unreadable: boolean): Promise<boolean> => {
+        try {
+            await access(join(local, file))
+            return true
+        } catch (error) {
+            return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+                ? false
+                : unreadable
         }
+    }
+    const write = async (file: string, text: string): Promise<void> => {
+        await mkdir(local, { recursive: true })
+        await writeFile(join(local, file), text)
+    }
+    return {
+        pending: () => exists('takedown-pending', true),
+        set: () =>
+            write(
+                'takedown-pending',
+                'A takedown waits for a deploy with --takedown that succeeds.\n'
+            ),
+        remove: () => rm(join(local, 'takedown-pending'), { force: true }),
+        setRunning: (running) =>
+            running
+                ? write(
+                      'deploy-running',
+                      `A deploy of the plugin runs since ${new Date().toISOString()}.\n`
+                  )
+                : rm(join(local, 'deploy-running'), { force: true }),
+        running: () => exists('deploy-running', false),
+        saveLast: (text) => write('deploy-report.json', text),
+        last: async () =>
+            await readFile(join(local, 'deploy-report.json'), 'utf8').catch(() => undefined)
     }
 }

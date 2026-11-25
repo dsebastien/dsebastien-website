@@ -3,13 +3,22 @@ import { fileURLToPath } from 'node:url'
 import {
     deployCommandOf,
     isAbsolutePath,
+    lastText,
+    startedText,
     deploymentText,
     reportOfRun,
     reportOfStartError,
     reportOfStop,
     runDeploy
 } from './deploy.ts'
-import type { DeployCommand, DeployProcess, DeploySettings, TakedownMarker } from './deploy.ts'
+import type {
+    DeployCommand,
+    DeployKind,
+    DeployProcess,
+    DeployRecord,
+    DeploySettings,
+    TakedownMarker
+} from './deploy.ts'
 
 // The deploy that the tool starts after a push (issue 32, BUILD-02, PUB-42):
 // the command that it runs and the report that it reads from the result line
@@ -44,6 +53,8 @@ const CASES = (await Bun.file(FILE).json()) as {
     paths: { path: string; windows: boolean; absolute: boolean }[]
     commands: CommandCase[]
     results: ResultCase[]
+    started: { name: string; kind: DeployKind; text: string }[]
+    last: { name: string; stored: string | null; running: boolean; text: string }[]
 }
 
 describe('an absolute path', () => {
@@ -85,15 +96,44 @@ describe('the report of a deploy', () => {
         const report = reportOfStartError('no program', { push: 'ok', takedown: false })
 
         expect(deploymentText(report)).toBe(
-            '{\n  "deployment": {\n    "build": "skipped",\n    "deleted": 0,\n    "deploy": "failed",\n    "error": "the deploy could not start: no program",\n    "live": false,\n    "push": "ok",\n    "takedown": false,\n    "uploaded": 0,\n    "warnings": []\n  }\n}\n'
+            '{\n  "deployment": {\n    "build": "skipped",\n    "deleted": 0,\n    "deploy": "failed",\n    "error": "the deploy could not start: no program",\n    "live": false,\n    "push": "ok",\n    "state": "done",\n    "takedown": false,\n    "uploaded": 0,\n    "warnings": []\n  }\n}\n'
         )
     })
 })
 
-/** A marker of a takedown in memory. */
-function marker(pending = false): TakedownMarker & { is: () => boolean } {
+describe('the report of a deploy that starts in the background, and the last report', () => {
+    for (const one of CASES.started) {
+        test(one.name, () => {
+            expect(startedText(one.kind)).toBe(one.text)
+        })
+    }
+    for (const one of CASES.last) {
+        test(one.name, () => {
+            expect(lastText(one.stored ?? undefined, one.running)).toBe(one.text)
+        })
+    }
+})
+
+/** A marker of a takedown and a record in memory. */
+function marker(
+    pending = false
+): TakedownMarker & DeployRecord & { is: () => boolean; runs: boolean[]; saved: string[] } {
     let on = pending
+    const runs: boolean[] = []
+    const saved: string[] = []
     return {
+        runs,
+        saved,
+        setRunning: (running) => {
+            runs.push(running)
+            return Promise.resolve()
+        },
+        running: () => Promise.resolve(runs.at(-1) === true),
+        saveLast: (text) => {
+            saved.push(text)
+            return Promise.resolve()
+        },
+        last: () => Promise.resolve(saved.at(-1)),
         pending: () => Promise.resolve(on),
         set: () => {
             on = true
@@ -240,5 +280,23 @@ describe('a deploy', () => {
         expect(second.report.takedown).toBe(true)
         expect(pending.is()).toBe(false)
         expect(third.report.takedown).toBe(false)
+    })
+
+    test('says in the record that it runs, then keeps its report', async () => {
+        const child: DeployProcess = {
+            run: () => Promise.resolve({ code: 0, stdout: `${LINE}\n`, output: '' })
+        }
+        const files = marker()
+
+        const deployment = await runDeploy(
+            child,
+            files,
+            SETTINGS,
+            { push: 'ok', takedown: false },
+            false
+        )
+
+        expect(files.runs).toEqual([true, false])
+        expect(files.saved).toEqual([deploymentText(deployment.report)])
     })
 })

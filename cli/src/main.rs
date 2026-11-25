@@ -10,6 +10,7 @@ mod canonical;
 mod clean;
 mod configuration;
 mod deploy;
+mod deploying;
 mod device;
 mod edits;
 mod frontmatter;
@@ -37,8 +38,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand};
 
-use deploy::{DeployKind, DeployReport, DeploySettings, TakedownMarker, deployment_text};
-use device::{AttachmentStorage, ChildProcess, ContentStore, Vault};
+use deploy::{DeployKind, DeploySettings, deployment_text, started_text};
+use deploying::{Background, Deploy, last_of, mark_takedown, run_deploy};
+use device::{AttachmentStorage, ContentStore, Vault};
 use plan::Selection;
 use queue::Move;
 use tool::{Device, Outcome, Run};
@@ -465,8 +467,15 @@ enum Command {
         /// notes taken down from the object storage. A deploy runs with
         /// `--takedown` anyway while a takedown of this device waits for a
         /// deploy that succeeds (`.git/vault-publish/takedown-pending`).
-        #[arg(long)]
+        #[arg(long, conflicts_with = "last")]
         takedown: bool,
+
+        /// Starts no deploy: writes the last deploy report of this device
+        /// (`deployment`, from `.git/vault-publish/deploy-report.json` of the
+        /// copy, absent when there is none) and whether a deploy runs
+        /// (`running`).
+        #[arg(long)]
+        last: bool,
     },
 
     /// Removes the lock of this device that a publication left when it
@@ -696,12 +705,6 @@ fn warn_about_lists(plan: &str) {
     }
 }
 
-/// A deploy of the site to run (issue 32): its settings, and what it follows.
-struct Deploy {
-    settings: DeploySettings,
-    kind: DeployKind,
-}
-
 /// The deploy settings of the options, with the folders of the publication.
 fn deploy_settings(
     places: &DeployPlaces,
@@ -735,68 +738,6 @@ fn deploy_after(
     })
 }
 
-/// Sets the marker of a takedown right after its push, also with
-/// `--no-deploy`: every later deploy then runs with `--takedown` until one
-/// succeeds. A marker that cannot be written is a warning: the deploy after
-/// the takedown still runs with `--takedown`.
-fn mark_takedown(content_store: &Path) {
-    if let Err(error) = ContentStore::new(content_store).set() {
-        eprintln!("warning: the marker of the takedown could not be written: {error}");
-    }
-}
-
-/// No marker: a deploy with no copy of the content store deploys nothing.
-struct NoMarker;
-
-impl TakedownMarker for NoMarker {
-    fn pending(&self) -> bool {
-        false
-    }
-    fn set(&self) -> Result<(), String> {
-        Ok(())
-    }
-    fn remove(&self) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-/// Runs the deploy, and keeps its whole output in the deploy log of the copy:
-/// it can name the address of a removed note, so it goes to no other place.
-/// The deploy report never holds it.
-fn run_deploy(deploy: &Deploy) -> DeployReport {
-    let store = deploy
-        .settings
-        .content_store
-        .as_deref()
-        .filter(|copy| !copy.as_os_str().is_empty())
-        .map(ContentStore::new);
-    let marker: &dyn TakedownMarker = match &store {
-        Some(store) => store,
-        None => &NoMarker,
-    };
-    let deployment = deploy::run_deploy(
-        &ChildProcess::new(),
-        marker,
-        &deploy.settings,
-        deploy.kind,
-        cfg!(windows),
-    );
-    if let (false, Some(copy)) = (
-        deployment.output.is_empty(),
-        deploy.settings.content_store.as_deref(),
-    ) {
-        let store = ContentStore::new(copy);
-        match store.save_deploy_log(&deployment.output) {
-            Ok(()) => eprintln!(
-                "the whole output of the deploy is in {}",
-                store.deploy_log().display()
-            ),
-            Err(error) => eprintln!("warning: the output of the deploy is not kept: {error}"),
-        }
-    }
-    deployment.report
-}
-
 /// The `deploy` command and tool: the deploy report as the output, and a
 /// failure when the deploy did not succeed.
 fn deploy_again(settings: DeploySettings, takedown: bool) -> Outcome {
@@ -818,15 +759,36 @@ fn deploy_again(settings: DeploySettings, takedown: bool) -> Outcome {
     }
 }
 
+/// The `deploy` command: the last deploy report with `--last`, else the
+/// deploy again, which it waits for.
+fn deploy_command(
+    content_store: &Path,
+    attachment_storage: &Path,
+    places: &DeployPlaces,
+    takedown: bool,
+    last: bool,
+) -> Outcome {
+    if last {
+        return Outcome::of(last_of(content_store, false));
+    }
+    deploy_again(
+        deploy_settings(places, content_store, attachment_storage),
+        takedown,
+    )
+}
+
 /// What the `mcp` command needs for the deploy of its tools.
 struct McpDeploy<'a> {
     options: &'a DeployAfterPush,
     content_store: &'a Path,
     attachment_storage: &'a Path,
+    background: &'a Background,
 }
 
 /// Runs the call of a tool of the MCP server, as the command of the same name
-/// does, with the deploy after a push: its report comes as the last text.
+/// does, with the deploy after a push. The server never waits for a build:
+/// the deploy runs in the background, the last text is the report of a deploy
+/// that started, and the tool `deploy` with `last` reads the result later.
 fn operate(
     device: &Device,
     attachment_storage: &AttachmentStorage,
@@ -834,16 +796,23 @@ fn operate(
     call: &mcp::Call,
     deploy: &McpDeploy,
 ) -> Result<mcp::ToolOutcome, String> {
-    if let mcp::Call::Deploy { takedown } = call {
-        return Ok(deploy_again(
-            deploy_settings(
+    if let mcp::Call::Deploy { takedown, last } = call {
+        if *last {
+            return Ok(Outcome::of(last_of(deploy.content_store, deploy.background.busy())).into());
+        }
+        let kind = DeployKind {
+            push: "skipped",
+            takedown: *takedown,
+        };
+        deploy.background.start(Deploy {
+            settings: deploy_settings(
                 &deploy.options.places,
                 deploy.content_store,
                 deploy.attachment_storage,
             ),
-            *takedown,
-        )
-        .into());
+            kind,
+        });
+        return Ok(Outcome::of(started_text(kind)).into());
     }
     let takedown = matches!(call, mcp::Call::Takedown { .. });
     let pushed = matches!(
@@ -861,10 +830,12 @@ fn operate(
         takedown,
     )
     .filter(|_| pushed);
-    Ok(mcp::ToolOutcome {
-        outcome,
-        deploy: after.map(|after| deployment_text(&run_deploy(&after))),
-    })
+    let deploy = after.map(|after| {
+        let text = started_text(after.kind);
+        deploy.background.start(after);
+        text
+    });
+    Ok(mcp::ToolOutcome { outcome, deploy })
 }
 
 /// Runs the call of a tool of the MCP server but `deploy`, as the command of
@@ -924,20 +895,25 @@ fn serve(
     };
     // A new device for each call: a device keeps the listing of each folder
     // of the vault for one run, and one call is one run, as one command is.
+    let background = Background::default();
     let deploy = McpDeploy {
         options: deploy,
         content_store: &places.content_store,
         attachment_storage,
+        background: &background,
     };
     let mut operations =
         |call: &mcp::Call| operate(&device(places)?, &storage, &name, call, &deploy);
-    mcp::serve(
+    let served = mcp::serve(
         io::stdin().lock(),
         io::stdout().lock(),
         &info,
         &mut operations,
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string());
+    // The program never ends in the middle of a deploy.
+    background.wait();
+    served
 }
 
 /// Runs an edit of the guards from the command line.
@@ -1097,11 +1073,10 @@ fn run(command: Command) -> Result<Ran, String> {
             attachment_storage,
             places,
             takedown,
-        } => Ok(deploy_again(
-            deploy_settings(&places, &content_store, &attachment_storage),
-            takedown,
-        )
-        .into()),
+            last,
+        } => {
+            Ok(deploy_command(&content_store, &attachment_storage, &places, takedown, last).into())
+        }
         Command::Unlock { content_store } => unlock(&content_store).map(done),
         Command::Publish {
             places,

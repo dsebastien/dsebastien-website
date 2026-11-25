@@ -18,7 +18,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use crate::canonical::to_canonical_json;
-use crate::deploy::{ChildRun, DeployCommand, DeployProcess, Stop, TakedownMarker};
+use crate::deploy::{ChildRun, DeployCommand, DeployProcess, DeployRecord, Stop, TakedownMarker};
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -1866,5 +1866,40 @@ impl TakedownMarker for ContentStore {
             }
             _ => Ok(()),
         }
+    }
+}
+
+/// The record of the deploys of this device: `.git/vault-publish/deploy-running`
+/// while a deploy runs, and `deploy-report.json`, the last deploy report.
+impl DeployRecord for ContentStore {
+    fn set_running(&self, running: bool) -> Result<(), String> {
+        let file = self.local_file("deploy-running");
+        if running {
+            return write_whole(
+                &file,
+                &format!(
+                    "A deploy of the command line program runs (process {}).\n",
+                    std::process::id()
+                ),
+            );
+        }
+        match fs::remove_file(&file) {
+            Err(error) if error.kind() != ErrorKind::NotFound => {
+                Err(format!("{} cannot be removed: {error}", file.display()))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn running(&self) -> bool {
+        self.local_file("deploy-running").is_file()
+    }
+
+    fn save_last(&self, text: &str) -> Result<(), String> {
+        write_whole(&self.local_file("deploy-report.json"), text)
+    }
+
+    fn last(&self) -> Option<String> {
+        fs::read_to_string(self.local_file("deploy-report.json")).ok()
     }
 }

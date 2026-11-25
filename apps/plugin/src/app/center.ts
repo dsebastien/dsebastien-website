@@ -14,8 +14,8 @@ import type { PublicationPlan } from '../publishing/plan.ts'
 import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
 import type { Device, RefreshResult } from '../publishing/ports.ts'
-import { deploymentText, reportOfStartError } from '../publishing/deploy.ts'
-import type { DeployKind, Deployment, DeployReport } from '../publishing/deploy.ts'
+import { lastText, reportOfStartError, startedText } from '../publishing/deploy.ts'
+import type { DeployKind, Deployment, DeployRecord, DeployReport } from '../publishing/deploy.ts'
 import {
     outcomeOfEdit,
     outcomeOfGuards,
@@ -79,6 +79,8 @@ export interface CenterHost {
     deploy?(kind: DeployKind, signal: AbortSignal): Promise<Deployment>
     /** Sets the marker of a takedown, right after the push of a takedown (`TakedownMarker`). */
     markTakedown?(): Promise<void>
+    /** The record of the deploys of this device: whether one runs, and the last report. */
+    record?(): DeployRecord
 }
 
 /**
@@ -888,7 +890,7 @@ export class PublicationCenter {
      */
     async serve(call: ToolCall): Promise<ToolOutcome> {
         if (call.tool === 'deploy') {
-            return await this.#serveDeploy(call.takedown === true)
+            return await this.#serveDeploy(call.takedown === true, call.last === true)
         }
         let outcome: ToolOutcome | undefined
         let failure: unknown
@@ -918,33 +920,40 @@ export class PublicationCenter {
         )
         if (outcome !== undefined) {
             // A push that succeeded starts the deploy, after the check of the
-            // run; the agent gets the deploy report with the result (PUB-42).
+            // run. The agent never waits for a build: it gets the report of
+            // a deploy that started, and reads the result later with the
+            // tool deploy and last (PUB-42).
             const pushed =
                 call.tool === 'publish' || call.tool === 'unpublish' || call.tool === 'takedown'
-            const deployment = pushed
-                ? await this.#deploy({ push: 'ok', takedown: call.tool === 'takedown' })
-                : undefined
-            return deployment === undefined
-                ? outcome
-                : { ...outcome, deploy: deploymentText(deployment.report) }
+            const kind: DeployKind = { push: 'ok', takedown: call.tool === 'takedown' }
+            const deployment = pushed ? this.#deploy(kind) : undefined
+            return deployment === undefined ? outcome : { ...outcome, deploy: startedText(kind) }
         }
         throw failure instanceof Error
             ? failure
             : new Error(`a ${ACTIVITY_NAMES[this.#state.activity]} runs already: try again`)
     }
 
-    /** The `deploy` tool: the deploy again, with no publication. It fails when the deploy did not succeed. */
-    async #serveDeploy(takedown: boolean): Promise<ToolOutcome> {
+    /**
+     * The `deploy` tool. With `last`, the last deploy report of the record
+     * and whether a deploy runs, with no new deploy. Else the deploy again,
+     * in the background: the answer is the report of a deploy that started.
+     */
+    async #serveDeploy(takedown: boolean, last: boolean): Promise<ToolOutcome> {
+        if (last) {
+            const record = this.host.record?.()
+            const stored = await record?.last().catch(() => undefined)
+            const running =
+                this.#deploying !== undefined ||
+                (await record?.running().catch(() => false)) === true
+            return { output: lastText(stored, running) }
+        }
         this.#log(takedown ? 'Agent deploy, with --takedown' : 'Agent deploy')
-        const deployment = await this.#deploy({ push: 'skipped', takedown })
-        if (deployment === undefined) {
+        const kind: DeployKind = { push: 'skipped', takedown }
+        if (this.#deploy(kind) === undefined) {
             throw new Error('this face deploys nothing')
         }
-        const { report } = deployment
-        const output = deploymentText(report)
-        return report.deploy === 'ok'
-            ? { output }
-            : { output, failure: report.error ?? 'the deploy did not succeed' }
+        return { output: startedText(kind) }
     }
 
     async #serve(call: Exclude<ToolCall, { tool: 'deploy' }>): Promise<ToolOutcome> {

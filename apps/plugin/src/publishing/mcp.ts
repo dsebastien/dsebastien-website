@@ -64,6 +64,8 @@ export type ToolCall =
           readonly tool: 'deploy'
           /** True to run with `--takedown`; no key when the call has none or false. */
           readonly takedown?: true
+          /** True to read the last deploy report, with no deploy; no key when the call has none or false. */
+          readonly last?: true
       }
 
 /**
@@ -137,7 +139,7 @@ const ARGUMENTS: Record<ToolName, readonly string[]> = {
     ignore: ['path'],
     unignore: ['path'],
     unlock: [],
-    deploy: ['takedown']
+    deploy: ['last', 'takedown']
 }
 
 function listOf(args: Record<string, unknown>, key: string, tool = 'plan'): readonly string[] {
@@ -216,11 +218,26 @@ export function toolCallOf(name: string, args: unknown): ToolCall {
         case 'unlock':
             return { tool: name }
         case 'deploy': {
-            const takedown = given['takedown']
-            if (takedown !== undefined && typeof takedown !== 'boolean') {
-                throw new ArgumentError('the argument "takedown" of deploy must be true or false')
+            const flag = (key: 'takedown' | 'last'): boolean => {
+                const value = given[key]
+                if (value !== undefined && typeof value !== 'boolean') {
+                    throw new ArgumentError(`the argument "${key}" of deploy must be true or false`)
+                }
+                return value === true
             }
-            return takedown === true ? { tool: 'deploy', takedown } : { tool: 'deploy' }
+            // In the order of their names, as the Rust face checks them.
+            const last = flag('last')
+            const takedown = flag('takedown')
+            if (takedown && last) {
+                throw new ArgumentError(
+                    'deploy takes "last" to read the last report or "takedown" to deploy, not both'
+                )
+            }
+            return {
+                tool: 'deploy',
+                ...(takedown ? { takedown } : {}),
+                ...(last ? { last } : {})
+            }
         }
         case 'deny':
         case 'allow':
