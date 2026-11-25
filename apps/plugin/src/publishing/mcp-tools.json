@@ -1,5 +1,5 @@
 {
-    "instructions": "The publishing tool of the notes website of the author. It publishes notes of the vault to the content store, from which the site is built. Use status to read the publication queue, plan to compute a publication plan with an id, and publish to apply exactly that plan. Publish alone only the new versions of notes that are already published. Include a new note, unpublish, pair or take down a note only when the author named that note. Use guards to read the deny list, the open proposals and the edits since the last publication. deny and ignore make the guards stricter and apply at once, unless they take a note off the site; allow and unignore make them looser. An edit that does not apply is stored as a proposal, which only the author confirms, in the publication center of Obsidian. Never edit configuration.json or the publish_ignore property yourself. When a tool gives an error (a guard, a lock), report it to the author and stop. After a stale plan, make the plan again, show it to the author, and wait for a yes. The skill developassion-publish-notes explains the process.",
+    "instructions": "The publishing tool of the notes website of the author. It publishes notes of the vault to the content store, from which the site is built. Use status to read the publication queue, plan to compute a publication plan with an id, and publish to apply exactly that plan. Publish alone only the new versions of notes that are already published. Include a new note, unpublish, pair or take down a note only when the author named that note. Use guards to read the deny list, the open proposals and the edits since the last publication. deny and ignore make the guards stricter and apply at once, unless they take a note off the site; allow and unignore make them looser. An edit that does not apply is stored as a proposal, which only the author confirms, in the publication center of Obsidian. Never edit configuration.json or the publish_ignore property yourself. publish, unpublish and takedown deploy the site after their push and give the deploy report (the object deployment) as their last text: tell the author what is live, and report a failed deploy, which never undoes the publication; deploy runs the deploy again. When a tool gives an error (a guard, a lock), report it to the author and stop. After a stale plan, make the plan again, show it to the author, and wait for a yes. The skill developassion-publish-notes explains the process.",
     "tools": [
         {
             "name": "status",
@@ -277,6 +277,22 @@
                 "destructiveHint": true,
                 "idempotentHint": true,
                 "openWorldHint": false
+            }
+        },
+        {
+            "name": "deploy",
+            "title": "Deploy the site again",
+            "description": "Runs the deploy of the site again from the copy of the content store, with no publication, as the deploy command of the command line program does: for example after a deploy that failed. publish, unpublish and takedown already deploy after their push, and give the deploy report as their last text. The report is the object deployment: push, build and deploy (ok, failed or skipped), live with the url, the counts of the files that the deploy uploaded and deleted, the warnings, and the error. It is an error when the deploy did not succeed; a deploy with a missing setting deploys nothing and names the setting. The publication is done at the push: a failed deploy never undoes it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true
             }
         }
     ]

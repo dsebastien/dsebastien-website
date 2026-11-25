@@ -1,0 +1,601 @@
+//! The deploy that the tool starts after a push (issue 32, BUILD-02, PUB-42,
+//! decision R76): the deploy command of the site runs on this machine, in a
+//! clean clone of the site code that is kept for deploys, and gives its
+//! result as the last line of its standard output. This module makes the
+//! command and reads the result. It starts no process: the device gives the
+//! port that does (`device::ChildProcess`), and a test gives a fake. The
+//! TypeScript twin is `apps/plugin/src/publishing/deploy.ts`; both read the
+//! shared cases of `fixtures/canonical/deploy.json`.
+//!
+//! The publication is done at the push: a deploy that fails never undoes it,
+//! and never turns the publication report into a failure. The deploy report
+//! is apart from the publication report, which the parity rule compares.
+
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+
+use serde_json::{Map, Value, json};
+
+use crate::canonical::to_canonical_json;
+
+/// The settings of a deploy on this device. `None` or an empty path is a
+/// setting that is not set.
+#[derive(Debug, Clone, Default)]
+pub struct DeploySettings {
+    /// The folder of the clean clone of the site code, kept for deploys.
+    pub site_code: Option<PathBuf>,
+    /// The private target file of the deployment (the names of the host).
+    pub target: Option<PathBuf>,
+    /// The private env file that holds the token of the deployment.
+    pub env_file: Option<PathBuf>,
+    /// The bun program. `None` for `bun` of the path of the system.
+    pub bun: Option<PathBuf>,
+    /// The folder of the copy of the content store.
+    pub content_store: Option<PathBuf>,
+    /// The folder of the attachment storage.
+    pub attachments: Option<PathBuf>,
+}
+
+/// What the tool runs: a program with a list of arguments, no shell, in a
+/// folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeployCommand {
+    pub program: PathBuf,
+    pub args: Vec<OsString>,
+    pub folder: PathBuf,
+}
+
+/// What a run of the deploy gave.
+pub struct ChildRun {
+    /// The exit code, or `None` when a signal stopped the program.
+    pub code: Option<i32>,
+    /// The standard output, where the last line is the result.
+    pub stdout: String,
+    /// The whole output (standard output and errors), for the author only.
+    pub output: String,
+}
+
+/// The port that starts the deploy as a child process.
+pub trait DeployProcess {
+    /// Runs the command to its end.
+    ///
+    /// # Errors
+    ///
+    /// The program cannot start: the message of the system.
+    fn run(&self, command: &DeployCommand) -> Result<ChildRun, String>;
+}
+
+/// The deploy report: the push, the build and the deploy apart (PUB-42), and
+/// "live" with the URL when the deployment record names the new revision
+/// (STORE-08, PUB-43). A field that is not known is `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeployReport {
+    /// `skipped` for a deploy again, with no publication.
+    pub push: &'static str,
+    pub build: &'static str,
+    pub deploy: &'static str,
+    pub live: bool,
+    pub url: Option<String>,
+    pub content_revision: Option<String>,
+    pub uploaded: u64,
+    pub deleted: u64,
+    pub warnings: Vec<String>,
+    pub error: Option<String>,
+}
+
+impl DeployReport {
+    /// True when the deploy succeeded.
+    pub fn succeeded(&self) -> bool {
+        self.deploy == "ok"
+    }
+}
+
+/// A deploy report with the whole output of the child, which only the author
+/// sees.
+pub struct Deployment {
+    pub report: DeployReport,
+    pub output: String,
+}
+
+/// The start of the last line of the standard output of the deploy.
+pub const RESULT_PREFIX: &str = "DEPLOY-RESULT ";
+
+const READ_OUTPUT: &str = "read the output of the deploy";
+
+/// "a", "a and b", "a, b and c".
+fn listed(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => (*one).to_owned(),
+        [first @ .., last] => format!("{} and {last}", first.join(", ")),
+    }
+}
+
+/// A setting that is set: not `None` and not empty.
+fn set(path: Option<&PathBuf>) -> Option<&Path> {
+    path.map(PathBuf::as_path)
+        .filter(|path| !path.as_os_str().is_empty())
+}
+
+/// The command of the deploy (the interface of `scripts/deploy.ts`), or the
+/// error of a deploy report that deploys nothing: a setting that is not set,
+/// or a path that is not absolute.
+///
+/// # Errors
+///
+/// A setting is not set, or a path is not absolute: the message names it.
+pub fn deploy_command(
+    settings: &DeploySettings,
+    takedown: bool,
+    is_absolute: fn(&Path) -> bool,
+) -> Result<DeployCommand, String> {
+    // The name of each setting in a message, and its option.
+    let site_code = ("the folder of the site code", "--site-code");
+    let target = ("the target file of the deployment", "--deploy-target");
+    let env_file = ("the env file of the deployment", "--deploy-env-file");
+    let bun = ("the bun program", "--bun");
+    let content_store = ("the copy of the content store", "--content-store");
+    let attachments = ("the attachment storage", "--attachment-storage");
+    let required = [
+        (site_code, set(settings.site_code.as_ref())),
+        (target, set(settings.target.as_ref())),
+        (content_store, set(settings.content_store.as_ref())),
+        (attachments, set(settings.attachments.as_ref())),
+    ];
+    let missing: Vec<(&str, &str)> = required
+        .iter()
+        .filter(|(_, path)| path.is_none())
+        .map(|(names, _)| *names)
+        .collect();
+    if !missing.is_empty() {
+        let names: Vec<&str> = missing.iter().map(|(name, _)| *name).collect();
+        let options: Vec<&str> = missing.iter().map(|(_, option)| *option).collect();
+        return Err(format!(
+            "nothing was deployed: {} {} not set (in the settings of Vault Publish, or {} of the command line program)",
+            listed(&names),
+            if missing.len() == 1 { "is" } else { "are" },
+            listed(&options)
+        ));
+    }
+    let paths = [
+        (site_code, set(settings.site_code.as_ref())),
+        (target, set(settings.target.as_ref())),
+        (env_file, set(settings.env_file.as_ref())),
+        (bun, set(settings.bun.as_ref())),
+        (content_store, set(settings.content_store.as_ref())),
+        (attachments, set(settings.attachments.as_ref())),
+    ];
+    if let Some(((name, _), Some(path))) = paths
+        .iter()
+        .find(|(_, path)| path.is_some_and(|path| !is_absolute(path)))
+    {
+        return Err(format!(
+            "nothing was deployed: {name} must be an absolute path: \"{}\"",
+            path.display()
+        ));
+    }
+    // Every required setting is set here.
+    let path = |path: Option<&PathBuf>| set(path).map_or_else(PathBuf::new, Path::to_path_buf);
+    let mut args: Vec<OsString> = Vec::new();
+    if let Some(file) = set(settings.env_file.as_ref()) {
+        let mut option = OsString::from("--env-file=");
+        option.push(file);
+        args.push(option);
+    }
+    for arg in ["run", "deploy", "--from-main", "--target"] {
+        args.push(arg.into());
+    }
+    args.push(path(settings.target.as_ref()).into());
+    args.push("--content-store".into());
+    args.push(path(settings.content_store.as_ref()).into());
+    args.push("--attachments".into());
+    args.push(path(settings.attachments.as_ref()).into());
+    if takedown {
+        args.push("--takedown".into());
+    }
+    Ok(DeployCommand {
+        program: set(settings.bun.as_ref()).map_or_else(|| PathBuf::from("bun"), Path::to_path_buf),
+        args,
+        folder: path(settings.site_code.as_ref()),
+    })
+}
+
+/// A deploy report that deploys nothing, with its reason.
+pub fn report_of_nothing(error: String, push: &'static str) -> DeployReport {
+    DeployReport {
+        push,
+        build: "skipped",
+        deploy: "skipped",
+        live: false,
+        url: None,
+        content_revision: None,
+        uploaded: 0,
+        deleted: 0,
+        warnings: Vec::new(),
+        error: Some(error),
+    }
+}
+
+/// The deploy report of a program that could not start.
+pub fn report_of_start_error(message: &str, push: &'static str) -> DeployReport {
+    DeployReport {
+        deploy: "failed",
+        ..report_of_nothing(format!("the deploy could not start: {message}"), push)
+    }
+}
+
+fn failed(error: String, push: &'static str) -> DeployReport {
+    DeployReport {
+        build: "failed",
+        deploy: "failed",
+        ..report_of_nothing(error, push)
+    }
+}
+
+fn step(value: Option<&Value>) -> Option<&'static str> {
+    match value.and_then(Value::as_str) {
+        Some("ok") => Some("ok"),
+        Some("failed") => Some("failed"),
+        Some("skipped") => Some("skipped"),
+        _ => None,
+    }
+}
+
+/// A count: a whole number from 0 that a double holds exactly, as in the
+/// TypeScript face.
+fn count(value: Option<&Value>) -> Option<u64> {
+    value
+        .and_then(Value::as_u64)
+        .filter(|count| *count <= 9_007_199_254_740_991)
+}
+
+/// An optional text: absent, `null` or a text. An empty text is a field that
+/// the deploy did not know (a target file that cannot be read gives an empty
+/// URL). `Err` for any other value.
+fn optional_text(value: Option<&Value>) -> Result<Option<String>, ()> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) if text.is_empty() => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text.clone())),
+        Some(_) => Err(()),
+    }
+}
+
+/// The result line, read strictly, or `None` when its shape is wrong. Unknown
+/// fields are ignored.
+fn result_of(value: &Value, push: &'static str) -> Option<DeployReport> {
+    let object = value.as_object()?;
+    let warnings = object
+        .get("warnings")?
+        .as_array()?
+        .iter()
+        .map(|one| one.as_str().map(str::to_owned))
+        .collect::<Option<Vec<String>>>()?;
+    Some(DeployReport {
+        push,
+        build: step(object.get("build"))?,
+        deploy: step(object.get("deploy"))?,
+        live: object.get("live")?.as_bool()?,
+        url: optional_text(object.get("url")).ok()?,
+        content_revision: optional_text(object.get("contentRevision")).ok()?,
+        uploaded: count(object.get("uploaded"))?,
+        deleted: count(object.get("deleted"))?,
+        warnings,
+        error: optional_text(object.get("error")).ok()?,
+    })
+}
+
+/// The deploy report of a run of the deploy, from its exit code and its
+/// standard output: the last line is the result. A missing or broken result
+/// line is a failed deploy. The deploy succeeded only when the exit code is 0
+/// and the result says so.
+pub fn report_of_run(code: Option<i32>, stdout: &str, push: &'static str) -> DeployReport {
+    let ended = code.map_or_else(
+        || "stopped by a signal".to_owned(),
+        |code| format!("exit code {code}"),
+    );
+    let last = stdout
+        .split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .rfind(|line| !line.trim().is_empty())
+        .unwrap_or("");
+    let Some(text) = last.strip_prefix(RESULT_PREFIX) else {
+        return failed(
+            format!("the deploy gave no result line ({ended}): {READ_OUTPUT}"),
+            push,
+        );
+    };
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return failed(
+            format!("the result line of the deploy is not JSON: {READ_OUTPUT}"),
+            push,
+        );
+    };
+    let Some(result) = result_of(&value, push) else {
+        return failed(
+            format!("the result line of the deploy has the wrong shape: {READ_OUTPUT}"),
+            push,
+        );
+    };
+    if result.deploy == "ok" && code == Some(0) {
+        return result;
+    }
+    if result.deploy == "ok" {
+        let how = code.map_or_else(
+            || "was stopped by a signal".to_owned(),
+            |code| format!("ended with the exit code {code}"),
+        );
+        return DeployReport {
+            deploy: "failed",
+            live: false,
+            error: Some(format!(
+                "the deploy {how}, but its result line says that it succeeded: {READ_OUTPUT}"
+            )),
+            ..result
+        };
+    }
+    let error = result
+        .error
+        .clone()
+        .unwrap_or_else(|| format!("the deploy did not succeed ({ended}): {READ_OUTPUT}"));
+    DeployReport {
+        live: false,
+        error: Some(error),
+        ..result
+    }
+}
+
+/// Runs the deploy of the settings, or gives the report that names the
+/// missing setting. The deploy never fails: its failures are in the report.
+pub fn run_deploy(
+    child: &dyn DeployProcess,
+    settings: &DeploySettings,
+    takedown: bool,
+    push: &'static str,
+    is_absolute: fn(&Path) -> bool,
+) -> Deployment {
+    let command = match deploy_command(settings, takedown, is_absolute) {
+        Ok(command) => command,
+        Err(error) => {
+            return Deployment {
+                report: report_of_nothing(error, push),
+                output: String::new(),
+            };
+        }
+    };
+    match child.run(&command) {
+        Ok(run) => Deployment {
+            report: report_of_run(run.code, &run.stdout, push),
+            output: run.output,
+        },
+        Err(message) => Deployment {
+            report: report_of_start_error(&message, push),
+            output: String::new(),
+        },
+    }
+}
+
+/// The deploy report as the tool writes it: its own object `deployment`, in
+/// the canonical form.
+pub fn deployment_text(report: &DeployReport) -> String {
+    let mut object = Map::new();
+    object.insert("push".into(), json!(report.push));
+    object.insert("build".into(), json!(report.build));
+    object.insert("deploy".into(), json!(report.deploy));
+    object.insert("live".into(), json!(report.live));
+    if let Some(url) = &report.url {
+        object.insert("url".into(), json!(url));
+    }
+    if let Some(revision) = &report.content_revision {
+        object.insert("contentRevision".into(), json!(revision));
+    }
+    object.insert("uploaded".into(), json!(report.uploaded));
+    object.insert("deleted".into(), json!(report.deleted));
+    object.insert("warnings".into(), json!(report.warnings));
+    if let Some(error) = &report.error {
+        object.insert("error".into(), json!(error));
+    }
+    // Texts, booleans and counts below the limit always have a canonical form.
+    to_canonical_json(&json!({ "deployment": Value::Object(object) })).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    /// The cases that the TypeScript implementation reads too
+    /// (`apps/plugin/src/publishing/deploy.spec.ts`).
+    const CASES: &str = include_str!("../../fixtures/canonical/deploy.json");
+
+    fn cases() -> Value {
+        serde_json::from_str(CASES).expect("the cases file is JSON")
+    }
+
+    /// The rule of the shared cases: a path is absolute when it starts with a
+    /// slash, on every system.
+    fn posix_absolute(path: &Path) -> bool {
+        path.to_string_lossy().starts_with('/')
+    }
+
+    fn setting(settings: &Value, key: &str) -> Option<PathBuf> {
+        settings[key].as_str().map(PathBuf::from)
+    }
+
+    fn settings_of(settings: &Value) -> DeploySettings {
+        DeploySettings {
+            site_code: setting(settings, "siteCode"),
+            target: setting(settings, "target"),
+            env_file: setting(settings, "envFile"),
+            bun: setting(settings, "bun"),
+            content_store: setting(settings, "contentStore"),
+            attachments: setting(settings, "attachments"),
+        }
+    }
+
+    fn push_of(case: &Value) -> &'static str {
+        if case["push"] == "ok" {
+            "ok"
+        } else {
+            "skipped"
+        }
+    }
+
+    #[test]
+    fn makes_the_command_of_every_shared_case() {
+        for case in cases()["commands"].as_array().expect("the commands") {
+            let name = case["name"].as_str().expect("a case has a name");
+            let made = deploy_command(
+                &settings_of(&case["settings"]),
+                case["takedown"].as_bool().expect("takedown"),
+                posix_absolute,
+            );
+            if let Some(error) = case["error"].as_str() {
+                assert_eq!(made, Err(error.to_owned()), "{name}");
+            } else {
+                {
+                    let command = &case["command"];
+                    let expected = DeployCommand {
+                        program: PathBuf::from(command["program"].as_str().expect("program")),
+                        args: command["args"]
+                            .as_array()
+                            .expect("args")
+                            .iter()
+                            .map(|arg| OsString::from(arg.as_str().expect("an argument")))
+                            .collect(),
+                        folder: PathBuf::from(command["folder"].as_str().expect("folder")),
+                    };
+                    assert_eq!(made, Ok(expected), "{name}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reads_the_result_of_every_shared_case() {
+        for case in cases()["results"].as_array().expect("the results") {
+            let name = case["name"].as_str().expect("a case has a name");
+            let push = push_of(case);
+            let report = match case["startError"].as_str() {
+                Some(message) => report_of_start_error(message, push),
+                None => report_of_run(
+                    case["code"]
+                        .as_i64()
+                        .map(|code| i32::try_from(code).expect("a small code")),
+                    case["stdout"].as_str().expect("stdout"),
+                    push,
+                ),
+            };
+            let written: Value =
+                serde_json::from_str(&deployment_text(&report)).expect("the report is JSON");
+            assert_eq!(written, json!({ "deployment": case["report"] }), "{name}");
+        }
+    }
+
+    #[test]
+    fn writes_the_report_in_the_canonical_form_in_its_own_object() {
+        let report = report_of_start_error("no program", "ok");
+
+        assert_eq!(
+            deployment_text(&report),
+            "{\n  \"deployment\": {\n    \"build\": \"skipped\",\n    \"deleted\": 0,\n    \"deploy\": \"failed\",\n    \"error\": \"the deploy could not start: no program\",\n    \"live\": false,\n    \"push\": \"ok\",\n    \"uploaded\": 0,\n    \"warnings\": []\n  }\n}\n"
+        );
+    }
+
+    /// A child that records the commands and gives one answer.
+    struct Fake {
+        runs: RefCell<Vec<DeployCommand>>,
+        answer: Result<(Option<i32>, &'static str), &'static str>,
+    }
+
+    impl DeployProcess for Fake {
+        fn run(&self, command: &DeployCommand) -> Result<ChildRun, String> {
+            self.runs.borrow_mut().push(command.clone());
+            match self.answer {
+                Ok((code, stdout)) => Ok(ChildRun {
+                    code,
+                    stdout: stdout.to_owned(),
+                    output: format!("{stdout}a warning of the build\n"),
+                }),
+                Err(message) => Err(message.to_owned()),
+            }
+        }
+    }
+
+    const LINE: &str = "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":0,\"deleted\":0,\"warnings\":[],\"error\":null}\n";
+
+    fn settings() -> DeploySettings {
+        DeploySettings {
+            site_code: Some("/work/site-code".into()),
+            target: Some("/private/target.json".into()),
+            env_file: None,
+            bun: None,
+            content_store: Some("/data/copy".into()),
+            attachments: Some("/data/files".into()),
+        }
+    }
+
+    #[test]
+    fn a_deploy_runs_the_command_and_keeps_its_whole_output() {
+        let child = Fake {
+            runs: RefCell::new(Vec::new()),
+            answer: Ok((Some(0), LINE)),
+        };
+
+        let deployment = run_deploy(&child, &settings(), true, "ok", posix_absolute);
+
+        let runs = child.runs.borrow();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].program, PathBuf::from("bun"));
+        assert_eq!(runs[0].folder, PathBuf::from("/work/site-code"));
+        assert_eq!(runs[0].args.last(), Some(&OsString::from("--takedown")));
+        assert!(deployment.report.live);
+        assert_eq!(
+            deployment.report.url.as_deref(),
+            Some("https://preview.example.org/")
+        );
+        assert_eq!(deployment.output, format!("{LINE}a warning of the build\n"));
+    }
+
+    #[test]
+    fn a_deploy_with_a_missing_setting_starts_nothing() {
+        let child = Fake {
+            runs: RefCell::new(Vec::new()),
+            answer: Err("never"),
+        };
+        let missing = DeploySettings {
+            target: None,
+            ..settings()
+        };
+
+        let deployment = run_deploy(&child, &missing, false, "ok", posix_absolute);
+
+        assert!(child.runs.borrow().is_empty());
+        assert_eq!(
+            (deployment.report.build, deployment.report.deploy),
+            ("skipped", "skipped")
+        );
+        assert!(
+            deployment
+                .report
+                .error
+                .is_some_and(|error| error.contains("the target file of the deployment is not set"))
+        );
+    }
+
+    #[test]
+    fn a_program_that_cannot_start_is_a_failed_deploy() {
+        let child = Fake {
+            runs: RefCell::new(Vec::new()),
+            answer: Err("No such file or directory"),
+        };
+
+        let deployment = run_deploy(&child, &settings(), false, "ok", posix_absolute);
+
+        assert_eq!(
+            deployment.report.error.as_deref(),
+            Some("the deploy could not start: No such file or directory")
+        );
+        assert_eq!(deployment.report.deploy, "failed");
+    }
+}

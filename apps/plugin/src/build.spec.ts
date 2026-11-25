@@ -275,7 +275,7 @@ describe('the built plugin', () => {
         const count = (name: string): number => calls.filter((call) => call === name).length
         expect(count('registerView')).toBe(1)
         expect(registered.get('registerView')).toEqual(['dsebastien-vault-publish-center'])
-        expect(count('addCommand')).toBe(7)
+        expect(count('addCommand')).toBe(8)
         expect(
             (registered.get('addCommand') ?? []).map((command) =>
                 isRecord(command) ? command['id'] : undefined
@@ -286,6 +286,7 @@ describe('the built plugin', () => {
             'unpublish-open-note',
             'take-down-open-note',
             'copy-live-address',
+            'deploy-again',
             'remove-lock',
             'show-measures'
         ])

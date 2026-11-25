@@ -58,6 +58,7 @@ impl Published {
             .command("publish")
             .arg("--attachment-storage")
             .arg(published.stores.attachment_storage())
+            .arg("--no-deploy")
             .args(["--plan", &id, "--time", "2031-07-01T08:00:00Z"])
             .output()
             .expect("the program starts");
@@ -284,6 +285,7 @@ fn never_asks_the_program_about_a_note_under_a_guard() {
         .command("publish")
         .arg("--attachment-storage")
         .arg(published.stores.attachment_storage())
+        .arg("--no-deploy")
         .args(["--plan", &id, "--time", "2031-07-02T08:00:00Z"])
         .output()
         .expect("the program starts");
@@ -386,6 +388,7 @@ fn never_asks_the_program_about_a_note_whose_path_holds_a_line_feed() {
         .command("publish")
         .arg("--attachment-storage")
         .arg(published.stores.attachment_storage())
+        .arg("--no-deploy")
         .args(["--plan", &id, "--time", "2031-07-02T08:00:00Z"])
         .output()
         .expect("the program starts");

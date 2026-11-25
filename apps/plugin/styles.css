@@ -200,3 +200,11 @@
 .vault-publish-name {
     unicode-bidi: isolate;
 }
+
+/* The output of the deploy (issue 32): on demand, with its long lines kept. */
+.vault-publish-output {
+    max-height: 24em;
+    overflow: auto;
+    font-size: var(--font-ui-smaller);
+    white-space: pre;
+}

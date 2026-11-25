@@ -25,7 +25,7 @@ interface Case {
     readonly name: string
     readonly request: unknown
     readonly call: unknown
-    readonly operation?: { output?: string; failure?: string; error?: string }
+    readonly operation?: { output?: string; failure?: string; deploy?: string; error?: string }
     readonly response: unknown
 }
 
@@ -63,7 +63,8 @@ describe('the shared cases of the MCP server', () => {
             }
             return Promise.resolve({
                 output: outcome.output ?? '',
-                ...(outcome.failure === undefined ? {} : { failure: outcome.failure })
+                ...(outcome.failure === undefined ? {} : { failure: outcome.failure }),
+                ...(outcome.deploy === undefined ? {} : { deploy: outcome.deploy })
             })
         }
         const message = typeof one.request === 'string' ? one.request : JSON.stringify(one.request)
@@ -94,6 +95,7 @@ describe('the tools of the MCP server', () => {
         expect([...TOOL_NAMES].sort()).toEqual([
             'allow',
             'deny',
+            'deploy',
             'guards',
             'ignore',
             'plan',

@@ -132,7 +132,8 @@ impl Setup {
         if command == "publish" || command == "takedown" {
             program
                 .arg("--attachment-storage")
-                .arg(self.stores.attachment_storage());
+                .arg(self.stores.attachment_storage())
+                .arg("--no-deploy");
         }
         program
             .args(arguments)
@@ -1100,6 +1101,7 @@ fn a_folder_that_is_not_a_copy_of_the_content_store_gets_no_file_of_the_tool() {
         "publish",
         "--attachment-storage",
         text(setup.stores.attachment_storage()),
+        "--no-deploy",
         "--plan",
         &id,
         "--time",
@@ -1211,6 +1213,7 @@ fn a_publication_whose_lock_another_run_took_before_the_commit_makes_no_commit()
         .arg(&setup.copy)
         .arg("--attachment-storage")
         .arg(setup.stores.attachment_storage())
+        .arg("--no-deploy")
         .args(["--plan", &id, "--time", TIME])
         .env("DSEBASTIEN_VAULT_PUBLISH_TEST_STEAL_LOCK", "commit")
         .output()
@@ -1242,6 +1245,7 @@ fn a_plan_whose_lock_another_run_took_during_its_recovery_changes_nothing_more()
         .arg(&setup.copy)
         .arg("--attachment-storage")
         .arg(setup.stores.attachment_storage())
+        .arg("--no-deploy")
         .args(["--plan", &id, "--time", TIME])
         .env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", "write")
         .output()
@@ -1306,6 +1310,7 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
         .arg(&setup.copy)
         .arg("--attachment-storage")
         .arg(setup.stores.attachment_storage())
+        .arg("--no-deploy")
         .args(["--plan", &second, "--time", TIME])
         .env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", "push")
         .output()
@@ -1329,6 +1334,7 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
         .arg(&setup.copy)
         .arg("--attachment-storage")
         .arg(setup.stores.attachment_storage())
+        .arg("--no-deploy")
         .args(["--plan", &first, "--time", TIME])
         .env("DSEBASTIEN_VAULT_PUBLISH_TEST_STEAL_LOCK", "journal")
         .output()

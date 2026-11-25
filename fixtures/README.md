@@ -13,6 +13,7 @@ Test data of the repository. Everything here is invented. Nothing comes from a r
 - `canonical/note-types.json`: the shared cases of the note type of a note: answers of the Starter Kit that must be read or refused, and the `noteType` of a manifest entry.
 - `note-types.json`: the answers of an invented Obsidian Starter Kit for the fixture vault (decision R61): the types and the type of each note. A new note of the fixture vault gets its type here; a note that is not named has no type.
 - `canonical/mcp.json`: the shared cases of the MCP server of the publishing tool: one message of the client, the call that the server makes and the answer that it gives. Both faces read them, with a stand-in for the operations.
+- `canonical/deploy.json`: the shared cases of the deploy after a push (issue 32): the command that the tool runs from the settings of a device, and the deploy report that it reads from the result line of the deploy. Both faces read them.
 - `canonical/queue.json`: the shared scenarios of the publication queue. Each scenario has its own small invented vault, written inside the file, so that a new note of the fixture vault changes no scenario.
 
 ## Rules

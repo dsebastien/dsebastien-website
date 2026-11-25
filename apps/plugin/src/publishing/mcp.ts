@@ -33,7 +33,8 @@ export const TOOL_NAMES = [
     'allow',
     'ignore',
     'unignore',
-    'unlock'
+    'unlock',
+    'deploy'
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
@@ -59,11 +60,17 @@ export type ToolCall =
     | { readonly tool: 'guards' }
     | { readonly tool: EditAction; readonly path: string }
     | { readonly tool: 'unlock' }
+    | { readonly tool: 'deploy' }
 
-/** What a tool gives: the output of its command, and what failed in a command that still wrote its output. */
+/**
+ * What a tool gives: the output of its command, what failed in a command that
+ * still wrote its output, and the deploy report of the deploy after its push
+ * (issue 32), which never turns the result into a failure.
+ */
 export interface ToolOutcome {
     readonly output: string
     readonly failure?: string
+    readonly deploy?: string
 }
 
 /** Runs the call of a tool. A failure throws with the message for the agent. */
@@ -125,7 +132,8 @@ const ARGUMENTS: Record<ToolName, readonly string[]> = {
     allow: ['path'],
     ignore: ['path'],
     unignore: ['path'],
-    unlock: []
+    unlock: [],
+    deploy: []
 }
 
 function listOf(args: Record<string, unknown>, key: string, tool = 'plan'): readonly string[] {
@@ -202,6 +210,7 @@ export function toolCallOf(name: string, args: unknown): ToolCall {
         case 'status':
         case 'guards':
         case 'unlock':
+        case 'deploy':
             return { tool: name }
         case 'deny':
         case 'allow':
@@ -290,12 +299,13 @@ async function callResult(id: Id, params: unknown, operations: Operations): Prom
     }
     try {
         const outcome = await operations(call)
-        return resultAnswer(
-            id,
-            outcome.failure === undefined
-                ? toolResult([outcome.output], false)
-                : toolResult([outcome.output, outcome.failure], true)
-        )
+        // The deploy report comes last: a failed deploy is no error of the tool.
+        const texts = [
+            outcome.output,
+            ...(outcome.failure === undefined ? [] : [outcome.failure]),
+            ...(outcome.deploy === undefined ? [] : [outcome.deploy])
+        ]
+        return resultAnswer(id, toolResult(texts, outcome.failure !== undefined))
     } catch (error) {
         return resultAnswer(id, toolResult([messageOf(error)], true))
     }

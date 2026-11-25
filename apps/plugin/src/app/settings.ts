@@ -8,7 +8,9 @@ import type { DeviceStorage } from './rename-journal.ts'
 // of the copy of the content store, the folder of the attachment storage
 // (until the slice of the hosting gives the tool an object storage), and the
 // git program, for an Obsidian that starts with another path of the system
-// than a terminal. They are kept in the local storage of Obsidian, never in
+// than a terminal; and the settings of the deploy after a push (issue 32): the
+// folder of the clean clone of the site code, the private target file, the
+// private env file with the token, and the bun program. They are kept in the local storage of Obsidian, never in
 // `data.json`: they never travel with the vault to another device.
 
 export interface DeviceSettings {
@@ -18,6 +20,14 @@ export interface DeviceSettings {
     readonly attachmentStorage: string
     /** The git program. Empty for `git` of the path of the system. */
     readonly git: string
+    /** The folder of the clean clone of the site code, kept for deploys (issue 32). */
+    readonly siteCode: string
+    /** The private target file of the deployment. */
+    readonly deployTarget: string
+    /** The private env file of the deployment, with its token. Empty for none. */
+    readonly deployEnvFile: string
+    /** The bun program. Empty for `bun` of the path of the system. */
+    readonly bun: string
 }
 
 /** The key of the settings of this device in the local storage of Obsidian. */
@@ -37,7 +47,11 @@ export function loadSettings(storage: DeviceStorage): DeviceSettings {
     return {
         contentStore: textOf(kept, 'contentStore'),
         attachmentStorage: textOf(kept, 'attachmentStorage'),
-        git: textOf(kept, 'git')
+        git: textOf(kept, 'git'),
+        siteCode: textOf(kept, 'siteCode'),
+        deployTarget: textOf(kept, 'deployTarget'),
+        deployEnvFile: textOf(kept, 'deployEnvFile'),
+        bun: textOf(kept, 'bun')
     }
 }
 
@@ -45,7 +59,11 @@ export function saveSettings(storage: DeviceStorage, settings: DeviceSettings): 
     storage.saveLocalStorage(SETTINGS_KEY, {
         contentStore: settings.contentStore,
         attachmentStorage: settings.attachmentStorage,
-        git: settings.git
+        git: settings.git,
+        siteCode: settings.siteCode,
+        deployTarget: settings.deployTarget,
+        deployEnvFile: settings.deployEnvFile,
+        bun: settings.bun
     })
 }
 

@@ -11,7 +11,10 @@ import {
 import type { TestStores } from '@dsebastien-website/testing'
 import { NO_CHOICES, toggleRow, markUnpublish } from '../publishing/center.ts'
 import { fileNoteTypes, nodeDevice, pullContentStore } from '../publishing/node/device.ts'
+import { deploymentText, reportOfNothing, reportOfRun } from '../publishing/deploy.ts'
+import type { Deployment, DeployReport } from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
+import type { CenterHost } from './center.ts'
 
 // The controller of the publication center (issue 39, R67): what the view
 // starts, one activity at a time, with the run log and the report. It runs
@@ -39,7 +42,11 @@ interface Setup {
     readonly started: string[]
 }
 
-async function setUp(stores: TestStores, configured = true): Promise<Setup> {
+async function setUp(
+    stores: TestStores,
+    configured = true,
+    deploy?: CenterHost['deploy']
+): Promise<Setup> {
     const vault = await copyFixtureVault(stores)
     const copy = await makeContentStoreCopy(stores)
     let minute = 0
@@ -62,7 +69,8 @@ async function setUp(stores: TestStores, configured = true): Promise<Setup> {
         deviceName: 'garden-shed',
         started: (label) => {
             started.push(label)
-        }
+        },
+        ...(deploy === undefined ? {} : { deploy })
     })
     return { vault, copy, center, started }
 }
@@ -924,5 +932,194 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
         await center.publish()
 
         expect(center.state.error).toBeUndefined()
+    }, 60_000)
+})
+
+/** The result line of a deploy that went live, as the deploy of the site writes it (issue 32). */
+const LIVE_LINE =
+    'DEPLOY-RESULT {"build":"ok","deploy":"ok","live":true,"url":"https://preview.example.org/","contentRevision":"0123456789abcdef0123456789abcdef01234567","uploaded":1,"deleted":0,"warnings":[],"error":null}'
+
+/**
+ * A deploy of the host that the test drives: it records each run, and holds
+ * it until the test lets it go when `held` is true. It starts no process.
+ */
+function fakeDeploy(answer: (push: DeployReport['push']) => DeployReport) {
+    const runs: { takedown: boolean; push: DeployReport['push'] }[] = []
+    const waiting: (() => void)[] = []
+    const fake = {
+        runs,
+        held: false,
+        /** Lets the oldest held run go on. */
+        release: (): void => {
+            waiting.shift()?.()
+        },
+        deploy: async (takedown: boolean, push: DeployReport['push']): Promise<Deployment> => {
+            runs.push({ takedown, push })
+            if (fake.held) {
+                await new Promise<void>((resolve) => waiting.push(resolve))
+            }
+            return { report: answer(push), output: `Building the site\n${LIVE_LINE}\n` }
+        }
+    }
+    return fake
+}
+
+/** Waits until no deploy runs. */
+async function deployEnd(center: PublicationCenter): Promise<void> {
+    while (center.state.deployment?.running !== false) {
+        await Bun.sleep(5)
+    }
+}
+
+const live = (push: DeployReport['push']): DeployReport => reportOfRun(0, `${LIVE_LINE}\n`, push)
+
+describe('the deploy after a push (issue 32, PUB-42)', () => {
+    test('a publication deploys after its push, and the center stays usable while it runs', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy(live)
+        fake.held = true
+        const { center } = await setUp(stores, true, fake.deploy)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+
+        expect(center.state.deployment).toEqual({ running: true })
+        expect(center.state.activity).toBe('idle')
+        await center.dryRun()
+        expect(center.state.error).toBeUndefined()
+        fake.release()
+        await deployEnd(center)
+        const { state } = center
+        expect(fake.runs).toEqual([{ takedown: false, push: 'ok' }])
+        expect(state.report?.kind).toBe('publication')
+        expect(state.deployment).toEqual({
+            running: false,
+            report: live('ok'),
+            output: `Building the site\n${LIVE_LINE}\n`
+        })
+        expect(state.log.map((line) => line.text)).toContain(
+            'Deploy done: live at https://preview.example.org/'
+        )
+    }, 60_000)
+
+    test('a failed deploy never turns the publication into a failure', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy((push) => reportOfRun(1, 'error: the build broke\n', push))
+        const { center } = await setUp(stores, true, fake.deploy)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+        await deployEnd(center)
+
+        const { state } = center
+        expect(state.error).toBeUndefined()
+        expect(state.report?.kind === 'publication' ? state.report.report.published : []).toEqual([
+            NOTE
+        ])
+        expect(state.deployment?.running === false ? state.deployment.report.deploy : '').toBe(
+            'failed'
+        )
+        expect(state.log.at(-1)?.text).toBe(
+            'Deploy failed (build failed, deploy failed): the deploy gave no result line (exit code 1): read the output of the deploy'
+        )
+    }, 60_000)
+
+    test('a missing setting deploys nothing and says which one, after the push', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy((push) =>
+            reportOfNothing('nothing was deployed: the folder of the site code is not set', push)
+        )
+        const { center } = await setUp(stores, true, fake.deploy)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+        await deployEnd(center)
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.queue?.unchanged).toEqual([NOTE])
+        expect(center.state.log.at(-1)?.text).toBe(
+            'Nothing deployed: nothing was deployed: the folder of the site code is not set'
+        )
+    }, 60_000)
+
+    test('a takedown never waits for a deploy, and its deploy follows with --takedown', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy(live)
+        fake.held = true
+        const { center } = await setUp(stores, true, fake.deploy)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+
+        await center.takedown([NOTE])
+        // A deploy again asked meanwhile is the same deploy after the current one.
+        const again = center.deploy()
+
+        expect(center.state.report?.kind).toBe('takedown')
+        expect(fake.runs).toEqual([{ takedown: false, push: 'ok' }])
+        fake.held = false
+        fake.release()
+        expect((await again)?.push).toBe('ok')
+        await deployEnd(center)
+        expect(fake.runs).toEqual([
+            { takedown: false, push: 'ok' },
+            { takedown: true, push: 'ok' }
+        ])
+    }, 60_000)
+
+    test('a publication that stops before its push deploys nothing', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy(live)
+        const { center } = await setUp(stores, true, fake.deploy)
+
+        await center.publish()
+
+        expect(center.state.error).toBe('check the vault first')
+        expect(center.state.deployment).toBeUndefined()
+        expect(fake.runs).toEqual([])
+    }, 60_000)
+
+    test('an agent gets the deploy report with the result of its publication', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy(live)
+        const { center } = await setUp(stores, true, fake.deploy)
+        const planned = await center.serve({
+            tool: 'plan',
+            include: [NOTE],
+            hold: [],
+            remove: [],
+            pair: []
+        })
+        const { id } = JSON.parse(planned.output) as { id: string }
+
+        const outcome = await center.serve({ tool: 'publish', plan: id })
+
+        expect(outcome.failure).toBeUndefined()
+        expect(outcome.deploy).toBe(deploymentText(live('ok')))
+        expect(JSON.parse(outcome.output)).toMatchObject({ published: [NOTE] })
+        expect(fake.runs).toEqual([{ takedown: false, push: 'ok' }])
+    }, 60_000)
+
+    test('the deploy tool runs the deploy again, and fails when the deploy failed', async () => {
+        await using stores = await makeTestStores()
+        let fails = false
+        const fake = fakeDeploy((push) => (fails ? reportOfRun(2, 'no line\n', push) : live(push)))
+        const { center } = await setUp(stores, true, fake.deploy)
+
+        const done = await center.serve({ tool: 'deploy' })
+        fails = true
+        const failed = await center.serve({ tool: 'deploy' })
+
+        expect(done).toEqual({ output: deploymentText(live('skipped')) })
+        expect(failed.failure).toBe(
+            'the deploy gave no result line (exit code 2): read the output of the deploy'
+        )
+        expect(fake.runs).toEqual([
+            { takedown: false, push: 'skipped' },
+            { takedown: false, push: 'skipped' }
+        ])
     }, 60_000)
 })

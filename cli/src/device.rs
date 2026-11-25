@@ -6,16 +6,18 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
 use serde_json::{Value, json};
 
 use crate::canonical::to_canonical_json;
+use crate::deploy::{ChildRun, DeployCommand, DeployProcess};
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -1236,6 +1238,22 @@ impl ContentStore {
         self.folder.join(".git").join("vault-publish").join(name)
     }
 
+    /// The whole output of the last deploy of this device (issue 32): it can
+    /// name the address of a removed note, so it stays on the device, for
+    /// the author.
+    pub fn deploy_log(&self) -> PathBuf {
+        self.local_file("deploy.log")
+    }
+
+    /// Keeps the whole output of the last deploy in its file.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be written.
+    pub fn save_deploy_log(&self, output: &str) -> Result<(), String> {
+        write_whole(&self.deploy_log(), output)
+    }
+
     fn plan_file(&self, id: &str) -> PathBuf {
         self.local_file("plans").join(format!("{id}.json"))
     }
@@ -1631,4 +1649,76 @@ fn write_text(path: &Path, text: &str) -> Result<(), String> {
         fs::create_dir_all(folder).map_err(failed)?;
     }
     fs::write(path, text).map_err(failed)
+}
+
+/// The child process of the deploy (issue 32, BUILD-02, R76): the port
+/// `DeployProcess` of `deploy.rs` on this device. It runs the program with a
+/// list of arguments, with no shell, in the folder of the site code, and keeps
+/// the whole output for the author.
+pub struct ChildProcess;
+
+impl DeployProcess for ChildProcess {
+    fn run(&self, command: &DeployCommand) -> Result<ChildRun, String> {
+        if !command.folder.is_dir() {
+            return Err(format!(
+                "the folder of the site code is not a folder: {}",
+                command.folder.display()
+            ));
+        }
+        let mut child = Command::new(&command.program);
+        child
+            .args(&command.args)
+            .current_dir(&command.folder)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        // Inside a git hook, these variables point git to another repository:
+        // the deploy runs git in the clone of the site code.
+        for (name, _) in env::vars_os() {
+            if name.to_string_lossy().starts_with("GIT_") {
+                child.env_remove(name);
+            }
+        }
+        let mut child = child
+            .spawn()
+            .map_err(|error| format!("{} cannot start: {error}", command.program.display()))?;
+        // The standard output and the errors, in the order they came.
+        let output = Mutex::new(Vec::new());
+        let stdout = thread::scope(|scope| {
+            let errors = child.stderr.take().map(|mut pipe| {
+                let output = &output;
+                scope.spawn(move || {
+                    let mut chunk = [0_u8; 8_192];
+                    while let Ok(read @ 1..) = pipe.read(&mut chunk) {
+                        if let Ok(mut all) = output.lock() {
+                            all.extend_from_slice(&chunk[..read]);
+                        }
+                    }
+                })
+            });
+            let mut stdout = Vec::new();
+            if let Some(mut pipe) = child.stdout.take() {
+                let mut chunk = [0_u8; 8_192];
+                while let Ok(read @ 1..) = pipe.read(&mut chunk) {
+                    stdout.extend_from_slice(&chunk[..read]);
+                    if let Ok(mut all) = output.lock() {
+                        all.extend_from_slice(&chunk[..read]);
+                    }
+                }
+            }
+            if let Some(errors) = errors {
+                let _ = errors.join();
+            }
+            stdout
+        });
+        let status = child
+            .wait()
+            .map_err(|error| format!("the deploy could not run: {error}"))?;
+        let output = output.into_inner().unwrap_or_default();
+        Ok(ChildRun {
+            code: status.code(),
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            output: String::from_utf8_lossy(&output).into_owned(),
+        })
+    }
 }

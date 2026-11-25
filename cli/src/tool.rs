@@ -74,6 +74,16 @@ pub struct Outcome {
     pub failure: Option<String>,
 }
 
+impl Outcome {
+    /// The outcome of a command that wrote its output and failed in nothing.
+    pub fn of(output: String) -> Self {
+        Self {
+            output,
+            failure: None,
+        }
+    }
+}
+
 fn canonical(value: &Value) -> Result<String, String> {
     to_canonical_json(value).map_err(|error| error.to_string())
 }

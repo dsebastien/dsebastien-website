@@ -107,7 +107,8 @@ impl Setup {
         if command == "publish" || command == "unpublish" {
             program
                 .arg("--attachment-storage")
-                .arg(self.stores.attachment_storage());
+                .arg(self.stores.attachment_storage())
+                .arg("--no-deploy");
         }
         if let Some(point) = crash {
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", point);

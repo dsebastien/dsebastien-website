@@ -35,6 +35,9 @@ function storage(values: Record<string, unknown> = {}): DeviceStorage & {
     }
 }
 
+/** The settings of the deploy of a device where none is set (issue 32). */
+const NO_DEPLOY = { siteCode: '', deployTarget: '', deployEnvFile: '', bun: '' }
+
 const NO_TYPES = { recognize: () => Promise.resolve({ success: true, data: [] }) }
 
 describe('the settings of a device', () => {
@@ -42,7 +45,8 @@ describe('the settings of a device', () => {
         expect(loadSettings(storage())).toEqual({
             contentStore: '',
             attachmentStorage: '',
-            git: ''
+            git: '',
+            ...NO_DEPLOY
         })
     })
 
@@ -51,29 +55,50 @@ describe('the settings of a device', () => {
         saveSettings(kept, {
             contentStore: '/data/copy',
             attachmentStorage: '/data/files',
-            git: ''
+            git: '',
+            ...NO_DEPLOY
         })
 
         expect(kept.values.get(SETTINGS_KEY)).toEqual({
             contentStore: '/data/copy',
             attachmentStorage: '/data/files',
-            git: ''
+            git: '',
+            ...NO_DEPLOY
         })
         expect(loadSettings(kept)).toEqual({
             contentStore: '/data/copy',
             attachmentStorage: '/data/files',
-            git: ''
+            git: '',
+            ...NO_DEPLOY
         })
+    })
+
+    test('keep the settings of the deploy (issue 32)', () => {
+        const kept = storage()
+        const settings = {
+            contentStore: '/data/copy',
+            attachmentStorage: '/data/files',
+            git: '',
+            siteCode: '/work/site-code',
+            deployTarget: '/private/target.json',
+            deployEnvFile: '/private/deploy.env',
+            bun: '/opt/bun/bin/bun'
+        }
+        saveSettings(kept, settings)
+
+        expect(kept.values.get(SETTINGS_KEY)).toEqual(settings)
+        expect(loadSettings(kept)).toEqual(settings)
     })
 
     test('read a value that is not text as empty', () => {
         expect(
             loadSettings(storage({ [SETTINGS_KEY]: { contentStore: 3, attachmentStorage: '/a' } }))
-        ).toEqual({ contentStore: '', attachmentStorage: '/a', git: '' })
+        ).toEqual({ contentStore: '', attachmentStorage: '/a', git: '', ...NO_DEPLOY })
         expect(loadSettings(storage({ [SETTINGS_KEY]: 'text' }))).toEqual({
             contentStore: '',
             attachmentStorage: '',
-            git: ''
+            git: '',
+            ...NO_DEPLOY
         })
     })
 })
@@ -84,7 +109,7 @@ describe('the device of the settings', () => {
     test('names the missing setting', () => {
         expect(() =>
             deviceOf(
-                { contentStore: '', attachmentStorage: '/a', git: '' },
+                { contentStore: '', attachmentStorage: '/a', git: '', ...NO_DEPLOY },
                 vault,
                 '.obsidian',
                 NO_TYPES
@@ -94,7 +119,7 @@ describe('the device of the settings', () => {
         )
         expect(() =>
             deviceOf(
-                { contentStore: '/c', attachmentStorage: '', git: '' },
+                { contentStore: '/c', attachmentStorage: '', git: '', ...NO_DEPLOY },
                 vault,
                 '.obsidian',
                 NO_TYPES
@@ -105,7 +130,7 @@ describe('the device of the settings', () => {
     test('wants absolute paths', () => {
         expect(() =>
             deviceOf(
-                { contentStore: 'copy', attachmentStorage: '/a', git: '' },
+                { contentStore: 'copy', attachmentStorage: '/a', git: '', ...NO_DEPLOY },
                 vault,
                 '.obsidian',
                 NO_TYPES
@@ -113,7 +138,7 @@ describe('the device of the settings', () => {
         ).toThrow('The folder of the copy of the content store must be an absolute path: "copy"')
         expect(() =>
             deviceOf(
-                { contentStore: '/c', attachmentStorage: '/a', git: 'bin/git' },
+                { contentStore: '/c', attachmentStorage: '/a', git: 'bin/git', ...NO_DEPLOY },
                 vault,
                 '.obsidian',
                 NO_TYPES
@@ -136,7 +161,7 @@ describe('the device of the settings', () => {
             await mkdir(journals, { recursive: true })
             await writeFile(join(journals, '00000000000000aa.jsonl'), '')
             const device = deviceOf(
-                { contentStore: '/c', attachmentStorage: '/a', git: '' },
+                { contentStore: '/c', attachmentStorage: '/a', git: '', ...NO_DEPLOY },
                 folder,
                 '.config-of-obsidian',
                 NO_TYPES
@@ -155,19 +180,25 @@ describe('the pull of the settings', () => {
             pullOptionsOf({
                 contentStore: ' /data/copy ',
                 attachmentStorage: '',
-                git: ' /usr/bin/git '
+                git: ' /usr/bin/git ',
+                ...NO_DEPLOY
             })
         ).toEqual({ contentStore: '/data/copy', git: '/usr/bin/git' })
         expect(
-            pullOptionsOf({ contentStore: '/data/copy', attachmentStorage: '', git: '' })
+            pullOptionsOf({
+                contentStore: '/data/copy',
+                attachmentStorage: '',
+                git: '',
+                ...NO_DEPLOY
+            })
         ).toEqual({
             contentStore: '/data/copy'
         })
         expect(() =>
-            pullOptionsOf({ contentStore: 'copy', attachmentStorage: '', git: '' })
+            pullOptionsOf({ contentStore: 'copy', attachmentStorage: '', git: '', ...NO_DEPLOY })
         ).toThrow('The folder of the copy of the content store must be an absolute path: "copy"')
         expect(() =>
-            pullOptionsOf({ contentStore: '/c', attachmentStorage: '', git: 'git' })
+            pullOptionsOf({ contentStore: '/c', attachmentStorage: '', git: 'git', ...NO_DEPLOY })
         ).toThrow('The git program must be an absolute path: "git"')
     })
 })

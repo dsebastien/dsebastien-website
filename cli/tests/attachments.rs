@@ -97,6 +97,7 @@ impl Setup {
             TIME,
             "--attachment-storage",
             text(self.stores.attachment_storage()),
+            "--no-deploy",
         ])
     }
 
@@ -341,6 +342,7 @@ fn a_note_whose_storage_is_missing_is_left_out() {
         TIME,
         "--attachment-storage",
         text(missing),
+        "--no-deploy",
     ]);
 
     assert_eq!(output.status.code(), Some(1), "a note was left out");

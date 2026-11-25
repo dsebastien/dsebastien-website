@@ -9,6 +9,7 @@ mod attachments;
 mod canonical;
 mod clean;
 mod configuration;
+mod deploy;
 mod device;
 mod edits;
 mod frontmatter;
@@ -36,7 +37,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand};
 
-use device::{AttachmentStorage, ContentStore, Vault};
+use deploy::{DeployReport, DeploySettings, deployment_text};
+use device::{AttachmentStorage, ChildProcess, ContentStore, Vault};
 use plan::Selection;
 use queue::Move;
 use tool::{Device, Outcome, Run};
@@ -73,6 +75,45 @@ struct Places {
     /// `.obsidian/plugins/dsebastien-vault-publish/renames` in the vault.
     #[arg(long, value_name = "FOLDER")]
     renames: Option<PathBuf>,
+}
+
+/// The settings of the deploy of the site after a push, on this device
+/// (issue 32, BUILD-02, PUB-42). Without the folder of the site code or the
+/// target file, nothing is deployed, and the deploy report says which one is
+/// missing.
+#[derive(Args)]
+struct DeployPlaces {
+    /// The folder of a clean clone of the repository of the site, on its
+    /// branch main, used only for deploys. The deploy runs
+    /// `bun run deploy --from-main` there, which pulls it first.
+    #[arg(long, value_name = "FOLDER")]
+    site_code: Option<PathBuf>,
+
+    /// The private target file of the deployment (the names of the host).
+    #[arg(long, value_name = "FILE")]
+    deploy_target: Option<PathBuf>,
+
+    /// The private env file with the token of the deployment, which bun reads
+    /// (`bun --env-file=<file>`). Without it, the token comes from the
+    /// environment.
+    #[arg(long, value_name = "FILE")]
+    deploy_env_file: Option<PathBuf>,
+
+    /// The bun program. The default is `bun` of the path of the system.
+    #[arg(long, value_name = "PROGRAM")]
+    bun: Option<PathBuf>,
+}
+
+/// The deploy after the push of a publication, an unpublish or a takedown.
+#[derive(Args)]
+struct DeployAfterPush {
+    #[command(flatten)]
+    places: DeployPlaces,
+
+    /// Pushes with no deploy: the deploy report is not written. The command
+    /// `deploy` deploys later.
+    #[arg(long)]
+    no_deploy: bool,
 }
 
 /// The options of an edit of the guards (R69).
@@ -178,7 +219,9 @@ enum Command {
     /// storage that no published note uses are deleted.
     /// It writes the publication report. It ends with an error when a note of
     /// the plan was left out, and it publishes nothing when a forced removal
-    /// fails.
+    /// fails. After the push, it deploys the site and writes the deploy
+    /// report after the publication report; a failed deploy never changes
+    /// the exit code.
     Publish {
         #[command(flatten)]
         places: Places,
@@ -192,6 +235,9 @@ enum Command {
         /// The id that the `plan` command gave.
         #[arg(long, value_name = "ID")]
         plan: String,
+
+        #[command(flatten)]
+        deploy: DeployAfterPush,
 
         /// The time of the run, in UTC and to the second, for example
         /// 2031-04-01T08:00:00Z. The default is the time of the clock.
@@ -208,7 +254,8 @@ enum Command {
     /// that removes them and holds every other changed note, and applies it
     /// as `publish` does. Only the named notes leave, with the forced
     /// removals that every plan holds. Their addresses then answer 410. It
-    /// writes the publication report.
+    /// writes the publication report, then deploys the site and writes the
+    /// deploy report.
     Unpublish {
         #[command(flatten)]
         places: Places,
@@ -229,6 +276,9 @@ enum Command {
         /// Give the option one time per note.
         #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
         accept: Vec<String>,
+
+        #[command(flatten)]
+        deploy: DeployAfterPush,
 
         /// The time of the run, in UTC and to the second, for example
         /// 2031-04-01T08:00:00Z. The default is the time of the clock.
@@ -253,6 +303,8 @@ enum Command {
     /// and ends with an error after it when the attachment storage gave a
     /// warning: a file that stays there can still be public. Each takedown
     /// first deletes the files of the storage that no published note uses.
+    /// After the push, it deploys the site with `--takedown` and writes the
+    /// deploy report.
     Takedown {
         /// The folder of the vault. The takedown reads only the named notes
         /// in it, to remove their `public_note` property: on a device with
@@ -286,6 +338,12 @@ enum Command {
         /// default is the name of the host.
         #[arg(long, value_name = "NAME")]
         device: Option<String>,
+
+        /// The deploy after the takedown runs with `--takedown`: it deletes
+        /// the files of the takedown from the object storage, also when the
+        /// build or the deploy fails.
+        #[command(flatten)]
+        deploy: DeployAfterPush,
     },
 
     /// Writes the guards: the deny list (`denyList`), the open proposals that
@@ -367,10 +425,36 @@ enum Command {
         #[arg(long, value_name = "FOLDER")]
         attachment_storage: PathBuf,
 
+        /// The deploy after the push of the tools publish, unpublish and
+        /// takedown, whose deploy report comes as the last text of their
+        /// result, and of the tool deploy.
+        #[command(flatten)]
+        deploy: DeployAfterPush,
+
         /// The name of this device, for the message of the commit. The
         /// default is the name of the host.
         #[arg(long, value_name = "NAME")]
         device: Option<String>,
+    },
+
+    /// Runs the deploy of the site again, with no publication, for example
+    /// after a deploy that failed (issue 32): `bun run deploy --from-main` in
+    /// the folder of the site code, from the copy of the content store and
+    /// the attachment storage. It writes the deploy report (the object
+    /// `deployment`), and ends with an error when the deploy did not succeed.
+    /// The whole output of the deploy is in `.git/vault-publish/deploy.log` of
+    /// the copy, for the author only.
+    Deploy {
+        /// The folder of the copy of the content store on this device.
+        #[arg(long)]
+        content_store: PathBuf,
+
+        /// The folder of the attachment storage.
+        #[arg(long, value_name = "FOLDER")]
+        attachment_storage: PathBuf,
+
+        #[command(flatten)]
+        places: DeployPlaces,
     },
 
     /// Removes the lock of this device that a publication left when it
@@ -600,9 +684,136 @@ fn warn_about_lists(plan: &str) {
     }
 }
 
+/// A deploy of the site to run (issue 32): its settings, whether it follows a
+/// takedown, and its push (`skipped` for a deploy again).
+struct Deploy {
+    settings: DeploySettings,
+    takedown: bool,
+    push: &'static str,
+}
+
+/// The deploy settings of the options, with the folders of the publication.
+fn deploy_settings(
+    places: &DeployPlaces,
+    content_store: &Path,
+    attachment_storage: &Path,
+) -> DeploySettings {
+    DeploySettings {
+        site_code: places.site_code.clone(),
+        target: places.deploy_target.clone(),
+        env_file: places.deploy_env_file.clone(),
+        bun: places.bun.clone(),
+        content_store: Some(content_store.to_path_buf()),
+        attachments: Some(attachment_storage.to_path_buf()),
+    }
+}
+
+/// The deploy after a push, or `None` with `--no-deploy`.
+fn deploy_after(
+    options: &DeployAfterPush,
+    content_store: &Path,
+    attachment_storage: &Path,
+    takedown: bool,
+) -> Option<Deploy> {
+    (!options.no_deploy).then(|| Deploy {
+        settings: deploy_settings(&options.places, content_store, attachment_storage),
+        takedown,
+        push: "ok",
+    })
+}
+
+/// Runs the deploy, and keeps its whole output in the deploy log of the copy:
+/// it can name the address of a removed note, so it goes to no other place.
+/// The deploy report never holds it.
+fn run_deploy(deploy: &Deploy) -> DeployReport {
+    let deployment = deploy::run_deploy(
+        &ChildProcess,
+        &deploy.settings,
+        deploy.takedown,
+        deploy.push,
+        Path::is_absolute,
+    );
+    if let (false, Some(copy)) = (
+        deployment.output.is_empty(),
+        deploy.settings.content_store.as_deref(),
+    ) {
+        let store = ContentStore::new(copy);
+        match store.save_deploy_log(&deployment.output) {
+            Ok(()) => eprintln!(
+                "the whole output of the deploy is in {}",
+                store.deploy_log().display()
+            ),
+            Err(error) => eprintln!("warning: the output of the deploy is not kept: {error}"),
+        }
+    }
+    deployment.report
+}
+
+/// The `deploy` command and tool: the deploy report as the output, and a
+/// failure when the deploy did not succeed.
+fn deploy_again(settings: DeploySettings) -> Outcome {
+    let report = run_deploy(&Deploy {
+        settings,
+        takedown: false,
+        push: "skipped",
+    });
+    Outcome {
+        output: deployment_text(&report),
+        failure: (!report.succeeded()).then(|| {
+            report
+                .error
+                .clone()
+                .unwrap_or_else(|| "the deploy did not succeed".to_owned())
+        }),
+    }
+}
+
+/// What the `mcp` command needs for the deploy of its tools.
+struct McpDeploy<'a> {
+    options: &'a DeployAfterPush,
+    content_store: &'a Path,
+    attachment_storage: &'a Path,
+}
+
 /// Runs the call of a tool of the MCP server, as the command of the same name
-/// does.
+/// does, with the deploy after a push: its report comes as the last text.
 fn operate(
+    device: &Device,
+    attachment_storage: &AttachmentStorage,
+    name: &str,
+    call: &mcp::Call,
+    deploy: &McpDeploy,
+) -> Result<mcp::ToolOutcome, String> {
+    if *call == mcp::Call::Deploy {
+        return Ok(deploy_again(deploy_settings(
+            &deploy.options.places,
+            deploy.content_store,
+            deploy.attachment_storage,
+        ))
+        .into());
+    }
+    let takedown = matches!(call, mcp::Call::Takedown { .. });
+    let pushed = matches!(
+        call,
+        mcp::Call::Publish { .. } | mcp::Call::Unpublish { .. } | mcp::Call::Takedown { .. }
+    );
+    let outcome = run_tool(device, attachment_storage, name, call)?;
+    let after = deploy_after(
+        deploy.options,
+        deploy.content_store,
+        deploy.attachment_storage,
+        takedown,
+    )
+    .filter(|_| pushed);
+    Ok(mcp::ToolOutcome {
+        outcome,
+        deploy: after.map(|after| deployment_text(&run_deploy(&after))),
+    })
+}
+
+/// Runs the call of a tool of the MCP server but `deploy`, as the command of
+/// the same name does.
+fn run_tool(
     device: &Device,
     attachment_storage: &AttachmentStorage,
     name: &str,
@@ -635,11 +846,17 @@ fn operate(
         mcp::Call::Guards => tool::guards(device).map(done),
         mcp::Call::Edit { action, path } => tool::edit(device, action, path, &run).map(done),
         mcp::Call::Unlock => tool::unlock(&device.store).map(done),
+        mcp::Call::Deploy => Err("deploy is no command of the publishing logic".to_owned()),
     }
 }
 
 /// Serves the MCP server over the standard input and output (`mcp`).
-fn serve(places: &Places, attachment_storage: &Path, name: Option<String>) -> Result<(), String> {
+fn serve(
+    places: &Places,
+    attachment_storage: &Path,
+    name: Option<String>,
+    deploy: &DeployAfterPush,
+) -> Result<(), String> {
     // The places are checked at the start, so a wrong folder stops the
     // program before the first message.
     device(places)?;
@@ -651,7 +868,13 @@ fn serve(places: &Places, attachment_storage: &Path, name: Option<String>) -> Re
     };
     // A new device for each call: a device keeps the listing of each folder
     // of the vault for one run, and one call is one run, as one command is.
-    let mut operations = |call: &mcp::Call| operate(&device(places)?, &storage, &name, call);
+    let deploy = McpDeploy {
+        options: deploy,
+        content_store: &places.content_store,
+        attachment_storage,
+    };
+    let mut operations =
+        |call: &mcp::Call| operate(&device(places)?, &storage, &name, call, &deploy);
     mcp::serve(
         io::stdin().lock(),
         io::stdout().lock(),
@@ -690,11 +913,41 @@ fn unlock(content_store: &Path) -> Result<String, String> {
     tool::unlock(&ContentStore::new(content_store))
 }
 
-fn run(command: Command) -> Result<Outcome, String> {
-    let done = |output: String| Outcome {
-        output,
-        failure: None,
-    };
+/// A plan of the command line, with its warnings on the error output.
+fn run_plan(places: &Places, selection: &Selection) -> Result<String, String> {
+    let output = tool::plan(&device(places)?, selection)?;
+    warn_when_offline(&output);
+    warn_about_lists(&output);
+    Ok(output)
+}
+
+/// The run of a command of the command line program.
+fn command_line_run<'a>(time: &'a str, device: &'a str) -> Run<'a> {
+    Run {
+        time,
+        device,
+        face: "command-line",
+    }
+}
+
+/// What a command gives: its outcome, and the deploy to run after its output
+/// (issue 32).
+struct Ran {
+    outcome: Outcome,
+    deploy: Option<Deploy>,
+}
+
+impl From<Outcome> for Ran {
+    fn from(outcome: Outcome) -> Self {
+        Self {
+            outcome,
+            deploy: None,
+        }
+    }
+}
+
+fn run(command: Command) -> Result<Ran, String> {
+    let done = |output: String| Ran::from(Outcome::of(output));
     match command {
         Command::Status { places } => {
             let output = tool::status(&device(&places)?)?;
@@ -709,34 +962,32 @@ fn run(command: Command) -> Result<Outcome, String> {
             pair,
             accept,
             selection,
-        } => {
-            let selection = match selection {
-                Some(file) => selection_from_file(&file)?,
-                None => Selection::new(&include, &hold, &remove, &pairings_of(&pair), &accept),
-            };
-            let output = tool::plan(&device(&places)?, &selection)?;
-            warn_when_offline(&output);
-            warn_about_lists(&output);
-            Ok(done(output))
+        } => match selection {
+            Some(file) => run_plan(&places, &selection_from_file(&file)?),
+            None => run_plan(
+                &places,
+                &Selection::new(&include, &hold, &remove, &pairings_of(&pair), &accept),
+            ),
         }
+        .map(done),
         Command::Unpublish {
             places,
             attachment_storage,
             path,
             accept,
+            deploy,
             time,
             device: name,
-        } => tool::unpublish(
-            &device(&places)?,
-            &storage(&attachment_storage),
-            &path,
-            &accept,
-            &Run {
-                time: &time.unwrap_or_else(now),
-                device: &name.unwrap_or_else(host_name),
-                face: "command-line",
-            },
-        ),
+        } => Ok(Ran {
+            outcome: tool::unpublish(
+                &device(&places)?,
+                &storage(&attachment_storage),
+                &path,
+                &accept,
+                &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
+            )?,
+            deploy: deploy_after(&deploy, &places.content_store, &attachment_storage, false),
+        }),
         Command::Takedown {
             vault,
             content_store,
@@ -744,46 +995,57 @@ fn run(command: Command) -> Result<Outcome, String> {
             path,
             time,
             device: name,
-        } => tool::takedown(
-            &device_of(&vault, &content_store, None, None)?,
-            &storage(&attachment_storage),
-            &path,
-            &Run {
-                time: &time.unwrap_or_else(now),
-                device: &name.unwrap_or_else(host_name),
-                face: "command-line",
-            },
-        ),
+            deploy,
+        } => Ok(Ran {
+            outcome: tool::takedown(
+                &device_of(&vault, &content_store, None, None)?,
+                &storage(&attachment_storage),
+                &path,
+                &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
+            )?,
+            deploy: deploy_after(&deploy, &content_store, &attachment_storage, true),
+        }),
         Command::Guards {
             vault,
             content_store,
         } => tool::guards(&device_of(&vault, &content_store, None, None)?).map(done),
-        Command::Deny { edit } => run_edit("deny", edit),
-        Command::Allow { edit } => run_edit("allow", edit),
-        Command::Ignore { edit } => run_edit("ignore", edit),
-        Command::Unignore { edit } => run_edit("unignore", edit),
+        Command::Deny { edit } => run_edit("deny", edit).map(Ran::from),
+        Command::Allow { edit } => run_edit("allow", edit).map(Ran::from),
+        Command::Ignore { edit } => run_edit("ignore", edit).map(Ran::from),
+        Command::Unignore { edit } => run_edit("unignore", edit).map(Ran::from),
         Command::Mcp {
             places,
             attachment_storage,
+            deploy,
             device: name,
-        } => serve(&places, &attachment_storage, name).map(|()| done(String::new())),
+        } => serve(&places, &attachment_storage, name, &deploy).map(|()| done(String::new())),
+        Command::Deploy {
+            content_store,
+            attachment_storage,
+            places,
+        } => Ok(deploy_again(deploy_settings(
+            &places,
+            &content_store,
+            &attachment_storage,
+        ))
+        .into()),
         Command::Unlock { content_store } => unlock(&content_store).map(done),
         Command::Publish {
             places,
             attachment_storage,
             plan,
+            deploy,
             time,
             device: name,
-        } => tool::publish(
-            &device(&places)?,
-            &storage(&attachment_storage),
-            &plan,
-            &Run {
-                time: &time.unwrap_or_else(now),
-                device: &name.unwrap_or_else(host_name),
-                face: "command-line",
-            },
-        ),
+        } => Ok(Ran {
+            outcome: tool::publish(
+                &device(&places)?,
+                &storage(&attachment_storage),
+                &plan,
+                &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
+            )?,
+            deploy: deploy_after(&deploy, &places.content_store, &attachment_storage, false),
+        }),
     }
 }
 
@@ -804,10 +1066,26 @@ fn write_output(output: &str) -> io::Result<()> {
 }
 
 fn main() -> ExitCode {
-    let written = run(Arguments::parse().command).and_then(|outcome| {
-        write_output(&outcome.output).map_err(|error| error.to_string())?;
+    let written = run(Arguments::parse().command).and_then(|ran| {
+        write_output(&ran.outcome.output).map_err(|error| error.to_string())?;
+        // The publication is done at the push: the deploy report comes after
+        // its report, as its own object, and a failed deploy never changes
+        // the exit code of the publication (PUB-42).
+        if let Some(deploy) = &ran.deploy {
+            let report = run_deploy(deploy);
+            write_output(&deployment_text(&report)).map_err(|error| error.to_string())?;
+            if !report.succeeded() {
+                eprintln!(
+                    "warning: the publication is done, but nothing new is live: {}",
+                    report
+                        .error
+                        .as_deref()
+                        .unwrap_or("the deploy did not succeed")
+                );
+            }
+        }
         // The report is written. The exit code says that it names a failure.
-        outcome.failure.map_or(Ok(()), Err)
+        ran.outcome.failure.map_or(Ok(()), Err)
     });
     match written {
         Ok(()) => ExitCode::SUCCESS,

@@ -1,5 +1,5 @@
 {
-    "about": "The shared cases of the MCP server of the publishing tool (issue 41). Both faces read them: apps/plugin/src/publishing/mcp.spec.ts and cli/src/mcp.rs. A case gives one message of the client: an object, or a text when the message is not valid JSON. The test answers it with the server info {\"name\": \"dsebastien-vault-publish\", \"version\": \"test\"} and with a stand-in for the operations: it records the call that the server makes, and gives the outcome of the case (operation: output and failure, or error). call is the call that the server must make, or null when it must make none. response is the answer that the server must give, or null when it must give none. In response, the text \"<instructions>\" stands for the instructions of mcp-tools.json, and \"<tools>\" for its list of tools.",
+    "about": "The shared cases of the MCP server of the publishing tool (issue 41). Both faces read them: apps/plugin/src/publishing/mcp.spec.ts and cli/src/mcp.rs. A case gives one message of the client: an object, or a text when the message is not valid JSON. The test answers it with the server info {\"name\": \"dsebastien-vault-publish\", \"version\": \"test\"} and with a stand-in for the operations: it records the call that the server makes, and gives the outcome of the case (operation: output, failure and deploy, or error). call is the call that the server must make, or null when it must make none. response is the answer that the server must give, or null when it must give none. In response, the text \"<instructions>\" stands for the instructions of mcp-tools.json, and \"<tools>\" for its list of tools.",
     "cases": [
         {
             "name": "initialize with a version that the server knows gives that version",
@@ -1159,6 +1159,119 @@
                 "result": {
                     "content": [{ "type": "text", "text": "{\n  \"removed\": false\n}\n" }],
                     "isError": false
+                }
+            }
+        },
+        {
+            "name": "deploy runs the deploy again and gives its report",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 54,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": {} }
+            },
+            "call": { "tool": "deploy" },
+            "operation": { "output": "deployment" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 54,
+                "result": {
+                    "content": [{ "type": "text", "text": "deployment" }],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "a deploy that failed is an error with its report",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 55,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": {} }
+            },
+            "call": { "tool": "deploy" },
+            "operation": { "output": "deployment", "failure": "the build stopped" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 55,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "deployment" },
+                        { "type": "text", "text": "the build stopped" }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "deploy takes no argument",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 56,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "takedown": true } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 56,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "deploy takes no argument \"takedown\"" }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "a publication gives the deploy report after its report, and a failed deploy is no error",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 57,
+                "method": "tools/call",
+                "params": { "name": "publish", "arguments": { "plan": "fedcba9876543210" } }
+            },
+            "call": { "tool": "publish", "plan": "fedcba9876543210" },
+            "operation": { "output": "report", "deploy": "deployment that failed" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 57,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "report" },
+                        { "type": "text", "text": "deployment that failed" }
+                    ],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "a publication that left a note out gives its failure, then the deploy report",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 58,
+                "method": "tools/call",
+                "params": { "name": "publish", "arguments": { "plan": "fedcba9876543210" } }
+            },
+            "call": { "tool": "publish", "plan": "fedcba9876543210" },
+            "operation": {
+                "output": "report",
+                "failure": "1 note of the plan was left out: the report says why",
+                "deploy": "deployment"
+            },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 58,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "report" },
+                        {
+                            "type": "text",
+                            "text": "1 note of the plan was left out: the report says why"
+                        },
+                        { "type": "text", "text": "deployment" }
+                    ],
+                    "isError": true
                 }
             }
         }

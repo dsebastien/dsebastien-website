@@ -222,7 +222,8 @@ impl Setup {
         if ["publish", "takedown", "unpublish", "mcp"].contains(&command) {
             program
                 .arg("--attachment-storage")
-                .arg(self.stores.attachment_storage());
+                .arg(self.stores.attachment_storage())
+                .arg("--no-deploy");
         }
         program
             .args(arguments)
@@ -337,6 +338,7 @@ impl Setup {
             .arg(&self.copy)
             .arg("--attachment-storage")
             .arg(self.stores.attachment_storage())
+            .arg("--no-deploy")
             .arg("--device")
             .arg("garden-shed")
             // The server takes the time of the clock: the switch of the debug
@@ -1730,6 +1732,7 @@ fn a_copy_of_the_content_store_in_a_relative_folder_takes_new_notes_and_updates(
             "garden-shed",
             "--attachment-storage",
             text(setup.stores.attachment_storage()),
+            "--no-deploy",
         ]);
         assert!(output.status.success(), "{}", errors_of(&output));
         json_of(&output)

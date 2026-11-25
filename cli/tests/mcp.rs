@@ -55,6 +55,7 @@ impl Setup {
             .arg(&self.copy)
             .arg("--attachment-storage")
             .arg(self.stores.attachment_storage())
+            .arg("--no-deploy")
             .args(["--device", "garden-shed"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -182,7 +183,8 @@ fn initializes_and_lists_the_tools_of_the_commands() {
             "allow",
             "ignore",
             "unignore",
-            "unlock"
+            "unlock",
+            "deploy"
         ]
     );
     assert!(server.stop().success());
@@ -351,6 +353,7 @@ fn stops_at_the_start_when_a_place_is_not_a_folder() {
         .arg(&setup.copy)
         .arg("--attachment-storage")
         .arg(setup.stores.attachment_storage())
+        .arg("--no-deploy")
         .stdin(Stdio::null())
         .output()
         .expect("the program starts");

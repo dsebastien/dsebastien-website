@@ -133,6 +133,7 @@ function rustTool(vault: string, copy: string): Tool {
                 'publish',
                 '--attachment-storage',
                 storageOf(copy),
+                '--no-deploy',
                 '--plan',
                 id,
                 '--time',

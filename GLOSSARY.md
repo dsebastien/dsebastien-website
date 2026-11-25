@@ -46,6 +46,9 @@ A note that is not published and that no guard excludes. The author can select i
 The act, started by the author in Obsidian, that makes selected changes live.
 _Avoid_: deploy, sync, upload
 
+**Deploy report**:
+What the tool says about the deploy of the site that follows the push of a publication, an unpublish or a takedown: the push, the build and the deploy apart, whether the new release is live and its URL, the warnings and the error. It is apart from the publication report: the publication is done at the push, and a failed deploy never undoes it.
+
 **Publication queue**:
 The list of new, changed and removed notes that wait for a publication.
 

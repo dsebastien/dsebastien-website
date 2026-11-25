@@ -14,6 +14,8 @@ import type { PublicationPlan } from '../publishing/plan.ts'
 import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
 import type { Device, RefreshResult } from '../publishing/ports.ts'
+import { deploymentText, reportOfStartError } from '../publishing/deploy.ts'
+import type { Deployment, DeployReport } from '../publishing/deploy.ts'
 import {
     outcomeOfEdit,
     outcomeOfGuards,
@@ -67,7 +69,27 @@ export interface CenterHost {
      * (PERF-04). `clickedAt` is the moment of the click, when the view gave it.
      */
     started?(label: string, clickedAt: number | undefined): void
+    /**
+     * Runs the deploy of the site after a push (issue 32, BUILD-02, PUB-42):
+     * the deploy command of the site, as a child process, with the settings
+     * of this device. It never throws: a failure, or a missing setting, is in
+     * the report. Without it, nothing is deployed (the tests of the logic).
+     *
+     * @param takedown true after a takedown
+     * @param push `skipped` for a deploy again, with no publication
+     */
+    deploy?(takedown: boolean, push: DeployReport['push']): Promise<Deployment>
 }
+
+/**
+ * The deploy after the last push (PUB-42): it runs, or its report with the
+ * whole output of the child, until the author closes it. The output can name
+ * the address of a removed note: the view shows it on demand, and it goes
+ * nowhere else (an agent gets the report only).
+ */
+export type DeploymentState =
+    | { readonly running: true }
+    | { readonly running: false; readonly report: DeployReport; readonly output: string }
 
 /** What the controller does now. */
 export type Activity =
@@ -102,7 +124,7 @@ const ACTIVITY_NAMES: Record<Activity, string> = {
  * publication that stopped halfway, which `status` refuses to read; in
  * Obsidian it also refreshes the frozen lists of its notes, R71).
  */
-const TOOL_ACTIVITIES: Record<ToolCall['tool'], Activity> = {
+const TOOL_ACTIVITIES: Record<Exclude<ToolCall['tool'], 'deploy'>, Activity> = {
     status: 'answering',
     plan: 'answering',
     publish: 'publishing',
@@ -163,6 +185,8 @@ export interface CenterState {
     /** The plan of the last dry run, or of a publication that stopped because its plan changed. */
     readonly dryRun?: StoredPlan
     readonly report?: Report
+    /** The deploy after the last push, apart from the report of the publication. */
+    readonly deployment?: DeploymentState
     readonly log: readonly LogLine[]
     /**
      * The last line of the log of the last activity, before the check that
@@ -170,6 +194,13 @@ export interface CenterState {
      */
     readonly outcome?: string
     readonly choices: Choices
+}
+
+/** A deploy that waits for the end of the current one. */
+interface PendingDeploy {
+    takedown: boolean
+    push: DeployReport['push']
+    done: Promise<Deployment>
 }
 
 /** The most lines that the run log keeps. */
@@ -189,6 +220,19 @@ function addressesOf(report: PublicationReport): Address[] {
     return [...report.published, ...report.updated, ...report.moved.map((move) => move.to)]
         .sort()
         .map((path) => ({ path, url: addressOf(path) }))
+}
+
+/** The line of the run log at the end of a deploy. */
+function deployLine(report: DeployReport): string {
+    if (report.deploy === 'ok') {
+        return report.live
+            ? `Deploy done: live at ${report.url ?? 'the host'}`
+            : `Deploy done, not live yet: ${report.warnings.join('; ') || 'the deployment record does not name the new revision'}`
+    }
+    if (report.deploy === 'skipped' && report.build === 'skipped') {
+        return `Nothing deployed: ${report.error ?? 'no reason'}`
+    }
+    return `Deploy failed (build ${report.build}, deploy ${report.deploy}): ${report.error ?? 'no reason'}`
 }
 
 /** The counts of a publication, for the log. */
@@ -228,6 +272,10 @@ export class PublicationCenter {
     #current: Promise<void> = Promise.resolve()
     /** False after a run changed the copy, until the next check: the queue is old then. */
     #fresh = false
+    /** The deploy that runs now. */
+    #deploying: Promise<Deployment> | undefined
+    /** The deploy that waits for the end of the current one: one for every push that came meanwhile. */
+    #pendingDeploy: PendingDeploy | undefined
     /** The plan of the last queue and choices: a render asks for it more than one time. */
     #counted:
         | {
@@ -425,6 +473,91 @@ export class PublicationCenter {
         this.#set({})
     }
 
+    /** Closes the report of the deploy. A deploy that runs stays. */
+    closeDeployment(): void {
+        if (this.#state.deployment?.running !== false) {
+            return
+        }
+        const { deployment: _closed, ...rest } = this.#state
+        this.#state = rest
+        this.#set({})
+    }
+
+    /**
+     * Runs the deploy again, with no publication (for example after a
+     * failure). It waits for the end of the deploy that runs.
+     */
+    async deploy(): Promise<DeployReport | undefined> {
+        return (await this.#deploy(false, 'skipped'))?.report
+    }
+
+    /**
+     * Starts the deploy after a push (issue 32). It runs outside the lock of
+     * the device and outside the activities: the publication is done at the
+     * push, the author keeps working, and a takedown never waits for the
+     * deploy of a normal publication (business rule 16). One deploy runs at a
+     * time, in the order of the pushes: a push during a deploy gets one more
+     * deploy after it, which covers every push that came meanwhile (with
+     * `--takedown` when one was a takedown), so the last release is the
+     * build of the last push. `undefined` when the host deploys nothing.
+     */
+    #deploy(takedown: boolean, push: DeployReport['push']): Promise<Deployment> | undefined {
+        const run = this.host.deploy?.bind(this.host)
+        if (run === undefined) {
+            return undefined
+        }
+        const pending = this.#pendingDeploy
+        if (pending !== undefined) {
+            pending.takedown ||= takedown
+            if (push === 'ok') {
+                pending.push = 'ok'
+            }
+            return pending.done
+        }
+        const current = this.#deploying
+        if (current === undefined) {
+            return this.#startDeploy(run, takedown, push)
+        }
+        const next: PendingDeploy = {
+            takedown,
+            push,
+            done: current.then(() => {
+                this.#pendingDeploy = undefined
+                return this.#startDeploy(run, next.takedown, next.push)
+            })
+        }
+        this.#pendingDeploy = next
+        return next.done
+    }
+
+    #startDeploy(
+        run: NonNullable<CenterHost['deploy']>,
+        takedown: boolean,
+        push: DeployReport['push']
+    ): Promise<Deployment> {
+        this.#log(takedown ? 'Deploy started, after a takedown' : 'Deploy started')
+        this.#set({ deployment: { running: true } })
+        const running = (async (): Promise<Deployment> => {
+            let deployment: Deployment
+            try {
+                deployment = await run(takedown, push)
+            } catch (error) {
+                deployment = { report: reportOfStartError(messageOf(error), push), output: '' }
+            }
+            const { report, output } = deployment
+            this.#set({ deployment: { running: false, report, output } })
+            this.#log(deployLine(report))
+            return deployment
+        })()
+        this.#deploying = running
+        void running.finally(() => {
+            if (this.#deploying === running) {
+                this.#deploying = undefined
+            }
+        })
+        return running
+    }
+
     /**
      * Runs one activity, when no other one runs. It refuses the activity
      * with a line of the log otherwise. A request of an agent that only
@@ -591,6 +724,8 @@ export class PublicationCenter {
      * is published, and the view shows the new plan.
      */
     async publish(clickedAt?: number): Promise<void> {
+        // Set by the work of the run: the push succeeded.
+        const done = { pushed: false }
         await this.#run(
             'publishing',
             'Publication',
@@ -634,6 +769,7 @@ export class PublicationCenter {
                     device: this.host.deviceName,
                     face: 'plugin'
                 })
+                done.pushed = true
                 this.#wrote([...report.propertySet, ...report.propertyRemoved])
                 this.#set({
                     report: { kind: 'publication', report, addresses: addressesOf(report) }
@@ -642,6 +778,9 @@ export class PublicationCenter {
             },
             'author'
         )
+        if (done.pushed) {
+            void this.#deploy(false, 'ok')
+        }
     }
 
     /**
@@ -655,6 +794,8 @@ export class PublicationCenter {
         while (this.#state.activity !== 'idle') {
             await this.#current
         }
+        // Set by the work of the run: the push succeeded.
+        const done = { pushed: false }
         await this.#run(
             'taking down',
             'Takedown',
@@ -689,6 +830,7 @@ export class PublicationCenter {
                     device: this.host.deviceName,
                     face: 'plugin'
                 })
+                done.pushed = true
                 this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
@@ -701,6 +843,9 @@ export class PublicationCenter {
             },
             'author'
         )
+        if (done.pushed) {
+            void this.#deploy(true, 'ok')
+        }
     }
 
     /**
@@ -712,6 +857,9 @@ export class PublicationCenter {
      * failure throws, with its message for the agent.
      */
     async serve(call: ToolCall): Promise<ToolOutcome> {
+        if (call.tool === 'deploy') {
+            return await this.#serveDeploy()
+        }
         let outcome: ToolOutcome | undefined
         let failure: unknown
         const activity = TOOL_ACTIVITIES[call.tool]
@@ -739,14 +887,37 @@ export class PublicationCenter {
             activity === 'answering' ? 'none' : 'agent'
         )
         if (outcome !== undefined) {
-            return outcome
+            // A push that succeeded starts the deploy, after the check of the
+            // run; the agent gets the deploy report with the result (PUB-42).
+            const pushed =
+                call.tool === 'publish' || call.tool === 'unpublish' || call.tool === 'takedown'
+            const deployment = pushed
+                ? await this.#deploy(call.tool === 'takedown', 'ok')
+                : undefined
+            return deployment === undefined
+                ? outcome
+                : { ...outcome, deploy: deploymentText(deployment.report) }
         }
         throw failure instanceof Error
             ? failure
             : new Error(`a ${ACTIVITY_NAMES[this.#state.activity]} runs already: try again`)
     }
 
-    async #serve(call: ToolCall): Promise<ToolOutcome> {
+    /** The `deploy` tool: the deploy again, with no publication. It fails when the deploy did not succeed. */
+    async #serveDeploy(): Promise<ToolOutcome> {
+        this.#log('Agent deploy')
+        const deployment = await this.#deploy(false, 'skipped')
+        if (deployment === undefined) {
+            throw new Error('this face deploys nothing')
+        }
+        const { report } = deployment
+        const output = deploymentText(report)
+        return report.deploy === 'ok'
+            ? { output }
+            : { output, failure: report.error ?? 'the deploy did not succeed' }
+    }
+
+    async #serve(call: Exclude<ToolCall, { tool: 'deploy' }>): Promise<ToolOutcome> {
         const device = this.#device()
         const run: Run = {
             time: canonicalTime(this.host.now()),

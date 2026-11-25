@@ -13,12 +13,12 @@ metadata:
     effects: external
     tier: primitive
     created: 2026-11-23T14:00
-    updated: 2026-11-24T16:00
+    updated: 2026-11-25T12:00
 ---
 
 # Publish Notes
 
-The publishing tool of the notes website takes notes of the vault to the content store, from which the site is built. An agent drives it through eleven operations, each with the same name and the same output on every face: `status`, `plan`, `publish`, `unpublish`, `takedown` and `unlock` for the publications, and `guards`, `deny`, `allow`, `ignore` and `unignore` for the guards. The tool holds every rule; this skill says how to use it the way the author wants.
+The publishing tool of the notes website takes notes of the vault to the content store, from which the site is built. An agent drives it through twelve operations, each with the same name and the same output on every face: `status`, `plan`, `publish`, `unpublish`, `takedown` and `unlock` for the publications, `deploy` for the site, and `guards`, `deny`, `allow`, `ignore` and `unignore` for the guards. After its push, a publication, an unpublish and a takedown deploy the site on this machine. The tool holds every rule; this skill says how to use it the way the author wants.
 
 ## Critical Rules
 
@@ -38,7 +38,7 @@ The publishing tool of the notes website takes notes of the vault to the content
 | Obsidian is closed  | `dsebastien-vault-publish mcp --vault <vault> --content-store <copy> --attachment-storage <folder>`, over the standard input and output. Add it with `claude mcp add vault-publish -- dsebastien-vault-publish mcp ...` |
 | No MCP in the agent | The commands of the same names: `dsebastien-vault-publish status --vault <vault> --content-store <copy>`, and so on (`--help` gives every option)                                                                       |
 
-The tools take the arguments of the commands: `plan` takes `include`, `hold`, `remove`, `pair` (a list of `{ "from", "to" }`) and `accept`; `publish` takes `plan` (the id); `unpublish` and `takedown` take `paths` (`unpublish` also `accept`); `deny`, `allow`, `ignore` and `unignore` take `path`. The places of the device are set one time: in the settings of the plugin, or as arguments of `mcp`. Ask the author for them; never guess a folder. Give the server the name `vault-publish` in both faces, so the tool names of this skill match. A call holds 1 MiB at most in the plugin: for a very large selection, use the command `plan --selection <file>`.
+The tools take the arguments of the commands: `plan` takes `include`, `hold`, `remove`, `pair` (a list of `{ "from", "to" }`) and `accept`; `publish` takes `plan` (the id); `unpublish` and `takedown` take `paths` (`unpublish` also `accept`); `deny`, `allow`, `ignore` and `unignore` take `path`. The places of the device are set one time: in the settings of the plugin, or as arguments of `mcp`. The deploy after a push needs four more settings of the device: the folder of the site code, the target file, the env file and the bun program (in the settings of the plugin, or `--site-code`, `--deploy-target`, `--deploy-env-file` and `--bun` of the commands and of `mcp`; `--no-deploy` skips the deploy). Ask the author for them; never guess a folder. Give the server the name `vault-publish` in both faces, so the tool names of this skill match. A call holds 1 MiB at most in the plugin: for a very large selection, use the command `plan --selection <file>`.
 
 ## Process
 
@@ -46,7 +46,8 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 2. When `behind` is above 0, stop and ask the author to pull the copy first (the Pull button of the publication center, or `git pull --ff-only origin main` in the copy).
 3. Build the selection. By default a plan holds the `changed` notes only. Add to `include` the new notes that the author named, and the notes of `movedEdited` that the author confirmed (a moved note whose text changed can be another note at that path). Add to `hold` the changed notes that must wait.
 4. Run `plan`. When `offline` is true, say that the plan uses the last fetch. When `listsNotRefreshed` is not empty, name those notes: their Dataview lists are published as they are in the note now, maybe not refreshed (the face of Obsidian refreshes them first; the command line program never does, and the log of the publication center gives the reason). When `liveQueries` is not empty, name those notes: their live Dataview or Bases blocks are not on the page. Show the plan as rule 2 says.
-5. Run `publish` with the id. Report `published`, `updated`, `removed`, `forcedRemoved`, `moved`, `failed` and `warnings`. A result with `isError` and a report means that a note was left out: its last text names each such note with its reason. Give them to the author.
+5. Run `publish` with the id. Report `published`, `updated`, `removed`, `forcedRemoved`, `moved`, `failed` and `warnings`. A result with `isError` and a report means that a note was left out: its second text names each such note with its reason. Give them to the author.
+6. Read the deploy report: the last text of `publish`, `unpublish` and `takedown` (the command line program writes it after the report, as its own object). It is the object `deployment`: `push`, `build` and `deploy` (`ok`, `failed` or `skipped`), `live` with `url`, `uploaded`, `deleted`, `warnings` and `error`. Tell the author what is live. A failed build or deploy never undoes the publication and is no error of the tool: report its `error`, and run `deploy` only when the author asks for it. A deploy that names a missing setting deployed nothing: ask the author to set it. The output of the deploy is for the author only (the publication center, or `.git/vault-publish/deploy.log` of the copy for the command line program): never read it into the conversation.
 
 ## Guards
 

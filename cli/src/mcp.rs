@@ -15,6 +15,23 @@ use serde_json::{Map, Value, json};
 use crate::queue::Move;
 use crate::tool::Outcome;
 
+/// What a tool gives: the outcome of its command, and the deploy report of the
+/// deploy after its push (issue 32), which never turns the result into a
+/// failure.
+pub struct ToolOutcome {
+    pub outcome: Outcome,
+    pub deploy: Option<String>,
+}
+
+impl From<Outcome> for ToolOutcome {
+    fn from(outcome: Outcome) -> Self {
+        Self {
+            outcome,
+            deploy: None,
+        }
+    }
+}
+
 /// The tools and the instructions, in the file that the TypeScript face reads.
 const TOOLS_FILE: &str = include_str!("../../apps/plugin/src/publishing/mcp-tools.json");
 
@@ -23,7 +40,7 @@ pub const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-2
 
 /// The names of the tools: the names of the commands of the program, but
 /// `mcp`.
-pub const TOOL_NAMES: [&str; 11] = [
+pub const TOOL_NAMES: [&str; 12] = [
     "status",
     "plan",
     "publish",
@@ -35,6 +52,7 @@ pub const TOOL_NAMES: [&str; 11] = [
     "ignore",
     "unignore",
     "unlock",
+    "deploy",
 ];
 
 /// The tools that edit the guards: each takes one path (R69).
@@ -81,6 +99,8 @@ pub enum Call {
         path: String,
     },
     Unlock,
+    /// The deploy again, with no publication (issue 32).
+    Deploy,
 }
 
 impl Call {
@@ -96,6 +116,7 @@ impl Call {
             Self::Guards => "guards",
             Self::Edit { action, .. } => action,
             Self::Unlock => "unlock",
+            Self::Deploy => "deploy",
         }
     }
 
@@ -103,7 +124,7 @@ impl Call {
     #[cfg(test)]
     fn to_value(&self) -> Value {
         let mut value = match self {
-            Self::Status | Self::Guards | Self::Unlock => json!({}),
+            Self::Status | Self::Guards | Self::Unlock | Self::Deploy => json!({}),
             Self::Edit { path, .. } => json!({ "path": path }),
             Self::Plan {
                 include,
@@ -254,6 +275,7 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
         "status" => Call::Status,
         "guards" => Call::Guards,
         "unlock" => Call::Unlock,
+        "deploy" => Call::Deploy,
         "plan" => Call::Plan {
             include: list_of(arguments, "include", name)?,
             hold: list_of(arguments, "hold", name)?,
@@ -343,7 +365,7 @@ fn initialize_result(params: Option<&Value>, info: &Info) -> Value {
 fn call_result(
     id: &Value,
     params: Option<&Value>,
-    operations: &mut dyn FnMut(&Call) -> Result<Outcome, String>,
+    operations: &mut dyn FnMut(&Call) -> Result<ToolOutcome, String>,
 ) -> String {
     let Some(name) = params
         .filter(|params| params.is_object())
@@ -364,14 +386,14 @@ fn call_result(
         }
     };
     let result = match operations(&call) {
-        Ok(Outcome {
-            output,
-            failure: None,
-        }) => tool_result(&[&output], false),
-        Ok(Outcome {
-            output,
-            failure: Some(failure),
-        }) => tool_result(&[&output, &failure], true),
+        Ok(ToolOutcome { outcome, deploy }) => {
+            // The deploy report comes last: a failed deploy is no error of
+            // the tool.
+            let mut texts = vec![outcome.output.as_str()];
+            texts.extend(outcome.failure.as_deref());
+            texts.extend(deploy.as_deref());
+            tool_result(&texts, outcome.failure.is_some())
+        }
         Err(message) => tool_result(&[&message], true),
     };
     result_answer(id, &result)
@@ -383,7 +405,7 @@ fn call_result(
 pub fn answer(
     message: &str,
     info: &Info,
-    operations: &mut dyn FnMut(&Call) -> Result<Outcome, String>,
+    operations: &mut dyn FnMut(&Call) -> Result<ToolOutcome, String>,
 ) -> Option<String> {
     let Ok(value) = serde_json::from_str::<Value>(message) else {
         return Some(error_answer(
@@ -476,7 +498,7 @@ pub fn serve(
     input: impl BufRead,
     mut output: impl Write,
     info: &Info,
-    operations: &mut dyn FnMut(&Call) -> Result<Outcome, String>,
+    operations: &mut dyn FnMut(&Call) -> Result<ToolOutcome, String>,
 ) -> io::Result<()> {
     let mut input = input;
     let mut bytes = Vec::new();
@@ -564,9 +586,12 @@ mod tests {
                 if let Some(error) = outcome["error"].as_str() {
                     return Err(error.to_owned());
                 }
-                Ok(Outcome {
-                    output: outcome["output"].as_str().unwrap_or("").to_owned(),
-                    failure: outcome["failure"].as_str().map(str::to_owned),
+                Ok(ToolOutcome {
+                    outcome: Outcome {
+                        output: outcome["output"].as_str().unwrap_or("").to_owned(),
+                        failure: outcome["failure"].as_str().map(str::to_owned),
+                    },
+                    deploy: outcome["deploy"].as_str().map(str::to_owned),
                 })
             };
 

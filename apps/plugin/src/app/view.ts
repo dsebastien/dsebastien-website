@@ -18,7 +18,7 @@ import type { PublicationPlan } from '../publishing/plan.ts'
 import type { ProposalReview } from '../publishing/tool.ts'
 import { FolderSuggest } from './folder-suggest.ts'
 import { addressOf } from './center.ts'
-import type { PublicationCenter } from './center.ts'
+import type { PublicationCenter, Report } from './center.ts'
 import type { Measures } from './measures.ts'
 
 // The view of the publication center (TOOL-20 to TOOL-22, TOOL-25, decision
@@ -437,6 +437,10 @@ export class PublicationCenterView extends ItemView {
                     : `Checked at ${timeOf(state.checkedAt)}`
                 : `${state.activity[0]?.toUpperCase() ?? ''}${state.activity.slice(1)}…`
         line.createSpan({ text: activity })
+        // The deploy runs apart from the activities (issue 32): the view stays usable.
+        if (state.deployment?.running === true) {
+            line.createSpan({ cls: 'vault-publish-deploying', text: ' · Deploying the site…' })
+        }
         const refresh = this.#header.createEl('button', { text: 'Refresh' })
         refresh.disabled = state.activity !== 'idle'
         refresh.addEventListener('click', () => {
@@ -957,9 +961,15 @@ export class PublicationCenterView extends ItemView {
                 }
             }
         }
-        if (report === undefined) {
-            return
+        if (report !== undefined) {
+            this.#renderReport(report)
         }
+        this.#renderDeployment()
+    }
+
+    /** The report of the last run (PUB-43). */
+    #renderReport(report: Report): void {
+        const { center } = this.host
         const panel = this.#panels.createDiv({ cls: 'vault-publish-panel vault-publish-report' })
         const head = panel.createDiv({ cls: 'vault-publish-section-title' })
         head.createSpan({
@@ -1012,6 +1022,74 @@ export class PublicationCenterView extends ItemView {
             for (const item of items.slice(0, 500)) {
                 part.createDiv({ text: item })
             }
+        }
+    }
+
+    /**
+     * The deploy after the last push (issue 32, PUB-42), after the report:
+     * the push, the build and the deploy apart, live with the URL, the
+     * warnings, the error, and the whole output of the deploy on demand.
+     */
+    #renderDeployment(): void {
+        const { center } = this.host
+        const { deployment } = center.state
+        if (deployment === undefined) {
+            return
+        }
+        const panel = this.#panels.createDiv({
+            cls: 'vault-publish-panel vault-publish-deployment'
+        })
+        const head = panel.createDiv({ cls: 'vault-publish-section-title' })
+        if (deployment.running) {
+            head.createSpan({ text: 'Deploy: it runs. You can go on working.' })
+            return
+        }
+        const { report, output } = deployment
+        head.createSpan({ text: 'Deploy report' })
+        const again = head.createEl('button', { text: 'Deploy again' })
+        again.addEventListener('click', () => {
+            void center.deploy()
+        })
+        const close = head.createEl('button', { text: 'Close' })
+        close.addEventListener('click', () => {
+            center.closeDeployment()
+        })
+        const steps = panel.createDiv()
+        steps.createDiv({
+            text: `Push: ${report.push === 'ok' ? 'done' : 'none (a deploy again)'}`
+        })
+        steps.createDiv({ text: `Build: ${report.build}` })
+        steps.createDiv({
+            text: `Deploy: ${report.deploy}${report.deploy === 'ok' ? ` (${String(report.uploaded)} files uploaded, ${String(report.deleted)} deleted)` : ''}`
+        })
+        const liveLine = steps.createDiv()
+        if (report.live && report.url !== undefined) {
+            liveLine.createSpan({ text: 'Live: ' })
+            liveLine.createEl('a', { text: report.url, href: report.url })
+        } else {
+            liveLine.setText(
+                report.deploy === 'ok'
+                    ? 'Live: not yet (the host does not show the new revision yet)'
+                    : 'Live: no, the release before stays'
+            )
+        }
+        if (report.error !== undefined) {
+            panel.createDiv({ cls: 'vault-publish-error', text: report.error })
+        }
+        if (report.warnings.length > 0) {
+            const part = panel.createEl('details', { attr: { open: '' } })
+            part.createEl('summary', {
+                text: `Warnings: ${report.warnings.length.toLocaleString()}`
+            })
+            for (const warning of report.warnings) {
+                part.createDiv({ text: warning })
+            }
+        }
+        if (output !== '') {
+            // On demand only: it can name the address of a removed note.
+            const part = panel.createEl('details')
+            part.createEl('summary', { text: 'Output of the deploy' })
+            part.createEl('pre', { cls: 'vault-publish-output', text: output })
         }
     }
 

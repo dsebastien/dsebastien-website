@@ -1,4 +1,5 @@
 import { hostname } from 'node:os'
+import { isAbsolute } from 'node:path'
 import {
     Modal,
     normalizePath,
@@ -12,9 +13,12 @@ import {
 import type { App, TAbstractFile, WorkspaceLeaf } from 'obsidian'
 import { markUnpublish } from '../publishing/center.ts'
 import type { NoteStateKind } from '../publishing/center.ts'
+import { runDeploy } from '../publishing/deploy.ts'
+import type { DeployReport } from '../publishing/deploy.ts'
 import { pullContentStore } from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
+import { childProcess, deploySettingsOf } from './deploy.ts'
 import { Measures } from './measures.ts'
 import { LocalMcpServer, MCP_HOST } from './mcp-server.ts'
 import { journalName, RenameRecorder } from './rename-journal.ts'
@@ -118,6 +122,16 @@ export class VaultPublishPlugin extends Plugin {
                     serializerLists(this.app as unknown as PluginHost, normalizePath)
                 ),
             pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
+            // The deploy of the site after a push (issue 32), as a child
+            // process in the clean clone of the site code of this device.
+            deploy: (takedown, push) =>
+                runDeploy(
+                    childProcess(),
+                    deploySettingsOf(loadSettings(this.app)),
+                    takedown,
+                    push,
+                    isAbsolute
+                ),
             now: () => new Date(),
             deviceName: hostname().replace(/\s+/gu, ' ').trim() || 'unnamed device',
             // The message that the publication started (PERF-04): its plan
@@ -358,6 +372,13 @@ export class VaultPublishPlugin extends Plugin {
             }
         })
         this.addCommand({
+            id: 'deploy-again',
+            name: 'Deploy the site again, with no publication',
+            callback: () => {
+                void this.center.deploy()
+            }
+        })
+        this.addCommand({
             id: 'remove-lock',
             name: 'Remove the lock of this device, after a run that stopped',
             callback: () => {
@@ -427,9 +448,19 @@ export class VaultPublishPlugin extends Plugin {
         update()
     }
 
-    /** A notice at the end of a run, also when the view is closed (PERF-11). */
+    /** A notice at the end of a run and of a deploy, also when the view is closed (PERF-11). */
     #watchRuns(): void {
         let before = this.center.state.activity
+        let deploying = false
+        this.register(
+            this.center.subscribe(() => {
+                const { deployment } = this.center.state
+                if (deploying && deployment?.running === false) {
+                    new Notice(`Vault Publish: ${deployNotice(deployment.report)}`)
+                }
+                deploying = deployment?.running === true
+            })
+        )
         this.register(
             this.center.subscribe(() => {
                 const { activity, error, outcome } = this.center.state
@@ -464,6 +495,19 @@ export class VaultPublishPlugin extends Plugin {
             observer.disconnect()
         })
     }
+}
+
+/** The text of the notice at the end of a deploy (PUB-42): live, not live yet, failed, or nothing deployed. */
+function deployNotice(report: DeployReport): string {
+    if (report.deploy === 'ok') {
+        return report.live
+            ? `the site is live at ${report.url ?? 'its host'}`
+            : 'the site is deployed, but the host does not show the new revision yet'
+    }
+    if (report.deploy === 'skipped' && report.build === 'skipped') {
+        return report.error ?? 'nothing was deployed'
+    }
+    return `the publication is done, but the deploy failed: ${report.error ?? 'read its output in the publication center'}`
 }
 
 /** The settings of this device (decision R67): kept in the local storage of Obsidian. */
@@ -524,6 +568,7 @@ class DeviceSettingTab extends PluginSettingTab {
                         save({ git: value })
                     })
             )
+        deployRows(this.app, containerEl, save)
         mcpRows(this.plugin, containerEl)
         new Setting(containerEl)
             .setName('Check the settings')
@@ -536,6 +581,61 @@ class DeviceSettingTab extends PluginSettingTab {
                         )
                     })
                 })
+            )
+    }
+}
+
+/**
+ * The rows of the deploy after a push (issue 32): the site goes live from this
+ * machine, from a clean clone of the site code that is kept for deploys.
+ */
+function deployRows(
+    app: App,
+    containerEl: HTMLElement,
+    save: (change: Partial<DeviceSettings>) => void
+): void {
+    const settings = loadSettings(app)
+    new Setting(containerEl).setName('Deploy after a push').setHeading()
+    containerEl.createEl('p', {
+        text: 'After each publication, unpublish and takedown, the plugin runs the deploy of the site on this device: bun run deploy in the folder of the site code. The publication is done at the push: a failed deploy never undoes it. Without the folder of the site code or the target file, nothing is deployed.'
+    })
+    const rows: [string, string, string, keyof DeviceSettings][] = [
+        [
+            'Folder of the site code',
+            'The absolute path of a clean clone of the repository of the site, on its branch main, used only for deploys. The deploy pulls it first.',
+            '/home/me/deploy/dsebastien-website',
+            'siteCode'
+        ],
+        [
+            'Target file',
+            'The absolute path of the private target file of the deployment (the names of the host). Never in the vault or in the repository.',
+            '/home/me/private/deploy-target.json',
+            'deployTarget'
+        ],
+        [
+            'Env file',
+            'The absolute path of the private env file with the token of the deployment, read with bun --env-file. Empty when the token is in the environment of Obsidian.',
+            '/home/me/private/deploy.env',
+            'deployEnvFile'
+        ],
+        [
+            'Bun program',
+            'The absolute path of bun, when Obsidian does not find it. Empty for bun of the path of the system.',
+            '/home/me/.bun/bin/bun',
+            'bun'
+        ]
+    ]
+    for (const [name, description, placeholder, key] of rows) {
+        new Setting(containerEl)
+            .setName(name)
+            .setDesc(description)
+            .addText((text) =>
+                text
+                    .setPlaceholder(placeholder)
+                    .setValue(settings[key])
+                    .onChange((value) => {
+                        save({ [key]: value })
+                    })
             )
     }
 }
