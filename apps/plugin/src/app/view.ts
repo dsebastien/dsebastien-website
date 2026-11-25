@@ -1060,7 +1060,7 @@ export class PublicationCenterView extends ItemView {
         })
         steps.createDiv({ text: `Build: ${report.build}` })
         steps.createDiv({
-            text: `Deploy: ${report.deploy}${report.deploy === 'ok' ? ` (${String(report.uploaded)} files uploaded, ${String(report.deleted)} deleted)` : ''}`
+            text: `Deploy: ${report.deploy}${report.takedown ? ', with --takedown' : ''} (${String(report.uploaded)} files uploaded, ${String(report.deleted)} deleted)`
         })
         const liveLine = steps.createDiv()
         if (report.live && report.url !== undefined) {

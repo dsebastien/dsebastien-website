@@ -1,5 +1,5 @@
 {
-    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system). A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank.",
+    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system; \"takedown\": true for a deploy with --takedown). A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank.",
     "commands": [
         {
             "name": "a publication with every setting",
@@ -300,6 +300,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": ["the deployment record named the commit after 3 tries"]
@@ -317,6 +318,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "skipped",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -334,6 +336,7 @@
                 "deploy": "ok",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": ["the deployment record did not name the commit yet"]
@@ -352,6 +355,7 @@
                 "error": "the build stopped: 100001 files, more than the limit of 100000",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -370,6 +374,7 @@
                 "error": "the deploy did not succeed (exit code 2): read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -388,6 +393,7 @@
                 "error": "the deploy did not succeed (exit code 0): read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -406,6 +412,7 @@
                 "error": "the deploy ended with the exit code 1, but its result line says that it succeeded: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": ["the deployment record named the commit after 3 tries"]
@@ -423,6 +430,7 @@
                 "error": "the copy of the site code has changes",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -439,6 +447,7 @@
                 "error": "the target file cannot be read",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -455,6 +464,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -472,6 +482,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -489,6 +500,7 @@
                 "error": "the deploy gave no result line (exit code 1): read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -505,6 +517,7 @@
                 "error": "the deploy gave no result line (exit code 0): read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -521,6 +534,7 @@
                 "error": "the deploy gave no result line (exit code 0): read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -537,6 +551,7 @@
                 "error": "the deploy gave no result line (stopped by a signal): read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -553,6 +568,7 @@
                 "error": "the result line of the deploy is not JSON: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -569,6 +585,7 @@
                 "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -585,6 +602,7 @@
                 "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -601,6 +619,7 @@
                 "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -616,6 +635,7 @@
                 "error": "the deploy could not start: no such file or directory",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -632,6 +652,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -649,6 +670,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -666,6 +688,7 @@
                 "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -682,6 +705,7 @@
                 "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -698,6 +722,7 @@
                 "error": "the result line of the deploy has the wrong shape: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -714,6 +739,7 @@
                 "error": "the result line of the deploy is not JSON: read the output of the deploy",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "warnings": []
             }
@@ -730,6 +756,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -747,6 +774,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -764,6 +792,7 @@
                 "deploy": "ok",
                 "live": true,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 2,
                 "url": "https://preview.example.org/",
                 "warnings": []
@@ -781,9 +810,90 @@
                 "error": "another deploy of this target runs (process 4242): try again when it ends",
                 "live": false,
                 "push": "ok",
+                "takedown": false,
                 "uploaded": 0,
                 "url": "https://preview.example.org/",
                 "warnings": []
+            }
+        },
+        {
+            "name": "a takedown deploy that succeeded says that it was a takedown deploy",
+            "code": 0,
+            "push": "ok",
+            "takedown": true,
+            "stdout": "DEPLOY-RESULT {\"build\":\"ok\",\"deploy\":\"ok\",\"live\":true,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":0,\"deleted\":3,\"warnings\":[],\"error\":null}\n",
+            "report": {
+                "build": "ok",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 3,
+                "deploy": "ok",
+                "live": true,
+                "push": "ok",
+                "takedown": true,
+                "uploaded": 0,
+                "url": "https://preview.example.org/",
+                "warnings": []
+            }
+        },
+        {
+            "name": "a takedown deploy whose build failed keeps its counts and warns that the takedown waits",
+            "code": 1,
+            "push": "ok",
+            "takedown": true,
+            "stdout": "DEPLOY-RESULT {\"build\":\"failed\",\"deploy\":\"skipped\",\"live\":false,\"url\":\"https://preview.example.org/\",\"contentRevision\":\"0123456789abcdef0123456789abcdef01234567\",\"uploaded\":0,\"deleted\":3,\"warnings\":[],\"error\":\"the build stopped\"}\n",
+            "report": {
+                "build": "failed",
+                "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+                "deleted": 3,
+                "deploy": "skipped",
+                "error": "the build stopped",
+                "live": false,
+                "push": "ok",
+                "takedown": true,
+                "uploaded": 0,
+                "url": "https://preview.example.org/",
+                "warnings": [
+                    "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown"
+                ]
+            }
+        },
+        {
+            "name": "a takedown deploy with no result line warns that the takedown waits",
+            "code": 1,
+            "push": "skipped",
+            "takedown": true,
+            "stdout": "crash\n",
+            "report": {
+                "build": "failed",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the deploy gave no result line (exit code 1): read the output of the deploy",
+                "live": false,
+                "push": "skipped",
+                "takedown": true,
+                "uploaded": 0,
+                "warnings": [
+                    "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown"
+                ]
+            }
+        },
+        {
+            "name": "a takedown deploy that could not start warns that the takedown waits",
+            "startError": "no such file or directory",
+            "push": "ok",
+            "takedown": true,
+            "report": {
+                "build": "skipped",
+                "deleted": 0,
+                "deploy": "failed",
+                "error": "the deploy could not start: no such file or directory",
+                "live": false,
+                "push": "ok",
+                "takedown": true,
+                "uploaded": 0,
+                "warnings": [
+                    "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown"
+                ]
             }
         }
     ],

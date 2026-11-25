@@ -46,6 +46,26 @@ export interface ChildRun {
     readonly output: string
 }
 
+/**
+ * The marker of a takedown on this device, in the git folder of the copy
+ * (`.git/vault-publish/takedown-pending`): it is set after the push of a
+ * takedown, and every deploy runs with `--takedown` while it is there. Only
+ * a deploy with `--takedown` that succeeded removes it, so a takedown is
+ * never lost when its deploy fails, is skipped or is stopped.
+ */
+export interface TakedownMarker {
+    /** True when a takedown waits for a deploy that succeeds. A marker that cannot be read counts as set. */
+    pending(): Promise<boolean>
+    set(): Promise<void>
+    remove(): Promise<void>
+}
+
+/** What a deploy follows: a push, or nothing (a deploy again), and whether it runs with `--takedown`. */
+export interface DeployKind {
+    readonly push: 'ok' | 'skipped'
+    readonly takedown: boolean
+}
+
 /** The port that starts the deploy as a child process. It throws when the program cannot start. */
 export interface DeployProcess {
     run(command: DeployCommand): Promise<ChildRun>
@@ -61,6 +81,8 @@ export type StepResult = 'ok' | 'failed' | 'skipped'
 export interface DeployReport {
     /** `skipped` for a deploy again, with no publication. */
     readonly push: 'ok' | 'skipped'
+    /** True for a deploy with `--takedown`. */
+    readonly takedown: boolean
     readonly build: StepResult
     readonly deploy: StepResult
     readonly live: boolean
@@ -175,10 +197,11 @@ export function deployCommandOf(
     }
 }
 
-/** A deploy report that deploys nothing, with its reason. */
-export function reportOfNothing(error: string, push: DeployReport['push']): DeployReport {
+/** A report with no step done, before the warning of a takedown. */
+function bare(error: string, kind: DeployKind): DeployReport {
     return {
-        push,
+        push: kind.push,
+        takedown: kind.takedown,
         build: 'skipped',
         deploy: 'skipped',
         live: false,
@@ -189,16 +212,32 @@ export function reportOfNothing(error: string, push: DeployReport['push']): Depl
     }
 }
 
-/** The deploy report of a program that could not start. */
-export function reportOfStartError(message: string, push: DeployReport['push']): DeployReport {
-    return {
-        ...reportOfNothing(`the deploy could not start: ${message}`, push),
-        deploy: 'failed'
-    }
+/** The warning of a takedown whose deploy did not succeed (PUB-42). */
+export const TAKEDOWN_WAITS =
+    'the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown'
+
+/** A report of a deploy with `--takedown` that did not succeed warns that the takedown waits. */
+function withTakedown(report: DeployReport): DeployReport {
+    return report.takedown && report.deploy !== 'ok'
+        ? { ...report, warnings: [...report.warnings, TAKEDOWN_WAITS] }
+        : report
 }
 
-function failed(error: string, push: DeployReport['push']): DeployReport {
-    return { ...reportOfNothing(error, push), build: 'failed', deploy: 'failed' }
+/** A deploy report that deploys nothing, with its reason. */
+export function reportOfNothing(error: string, kind: DeployKind): DeployReport {
+    return withTakedown(bare(error, kind))
+}
+
+/** The deploy report of a program that could not start. */
+export function reportOfStartError(message: string, kind: DeployKind): DeployReport {
+    return withTakedown({
+        ...bare(`the deploy could not start: ${message}`, kind),
+        deploy: 'failed'
+    })
+}
+
+function failed(error: string, kind: DeployKind): DeployReport {
+    return withTakedown({ ...bare(error, kind), build: 'failed', deploy: 'failed' })
 }
 
 const READ_OUTPUT = 'read the output of the deploy'
@@ -238,7 +277,7 @@ function isOptionalText(value: unknown): value is string | null | undefined {
 }
 
 /** The result line, read strictly, or `undefined` when its shape is wrong. Unknown fields are ignored. */
-function resultOf(value: unknown, push: DeployReport['push']): DeployReport | undefined {
+function resultOf(value: unknown, kind: DeployKind): DeployReport | undefined {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return undefined
     }
@@ -259,7 +298,8 @@ function resultOf(value: unknown, push: DeployReport['push']): DeployReport | un
         return undefined
     }
     return {
-        push,
+        push: kind.push,
+        takedown: kind.takedown,
         build,
         deploy,
         live,
@@ -283,11 +323,7 @@ function resultOf(value: unknown, push: DeployReport['push']): DeployReport | un
  * line is a failed deploy. The deploy succeeded only when the exit code is 0
  * and the result says so.
  */
-export function reportOfRun(
-    code: number | null,
-    stdout: string,
-    push: DeployReport['push']
-): DeployReport {
+export function reportOfRun(code: number | null, stdout: string, kind: DeployKind): DeployReport {
     const ended = code === null ? 'stopped by a signal' : `exit code ${String(code)}`
     const last =
         stdout
@@ -295,7 +331,7 @@ export function reportOfRun(
             .map(lineOf)
             .findLast((line) => !isBlank(line)) ?? ''
     if (!last.startsWith(RESULT_PREFIX)) {
-        return failed(`the deploy gave no result line (${ended}): ${READ_OUTPUT}`, push)
+        return failed(`the deploy gave no result line (${ended}): ${READ_OUTPUT}`, kind)
     }
     let value: unknown
     try {
@@ -304,53 +340,76 @@ export function reportOfRun(
         value = Infinity
     }
     if (holdsInfinity(value)) {
-        return failed(`the result line of the deploy is not JSON: ${READ_OUTPUT}`, push)
+        return failed(`the result line of the deploy is not JSON: ${READ_OUTPUT}`, kind)
     }
-    const result = resultOf(value, push)
+    const result = resultOf(value, kind)
     if (result === undefined) {
-        return failed(`the result line of the deploy has the wrong shape: ${READ_OUTPUT}`, push)
+        return failed(`the result line of the deploy has the wrong shape: ${READ_OUTPUT}`, kind)
     }
     if (result.deploy === 'ok' && code === 0) {
         return result
     }
     if (result.deploy === 'ok') {
-        return {
+        return withTakedown({
             ...result,
             deploy: 'failed',
             live: false,
             error: `the deploy ${code === null ? 'was stopped by a signal' : `ended with the exit code ${String(code)}`}, but its result line says that it succeeded: ${READ_OUTPUT}`
-        }
+        })
     }
-    return {
+    return withTakedown({
         ...result,
         live: false,
         error: result.error ?? `the deploy did not succeed (${ended}): ${READ_OUTPUT}`
-    }
+    })
 }
 
 /**
  * Runs the deploy of the settings, or gives the report that names the
  * missing setting. The deploy never throws: its failures are in the report.
+ * It runs with `--takedown` when the run asks for it or when the marker of a
+ * takedown is set, and removes the marker only when such a deploy succeeded.
  */
 export async function runDeploy(
     child: DeployProcess,
+    marker: TakedownMarker,
     settings: DeploySettings,
-    takedown: boolean,
-    push: DeployReport['push'],
+    asked: DeployKind,
     windows: boolean
 ): Promise<Deployment> {
-    const made = deployCommandOf(settings, takedown, windows)
+    // A marker that cannot be read counts as set.
+    const pending = await marker.pending().catch(() => true)
+    const kind: DeployKind = { push: asked.push, takedown: asked.takedown || pending }
+    const made = deployCommandOf(settings, kind.takedown, windows)
     if ('error' in made) {
-        return { report: reportOfNothing(made.error, push), output: '' }
+        return { report: reportOfNothing(made.error, kind), output: '' }
     }
     let run: ChildRun
     try {
         run = await child.run(made.command)
     } catch (error) {
         const message = error instanceof Error ? error.message : 'it failed'
-        return { report: reportOfStartError(message, push), output: '' }
+        return { report: reportOfStartError(message, kind), output: '' }
     }
-    return { report: reportOfRun(run.code, run.stdout, push), output: run.output }
+    const report = reportOfRun(run.code, run.stdout, kind)
+    if (report.takedown && report.deploy === 'ok') {
+        try {
+            await marker.remove()
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'it failed'
+            return {
+                report: {
+                    ...report,
+                    warnings: [
+                        ...report.warnings,
+                        `the marker of the takedown could not be removed, so the next deploy runs with --takedown too: ${message}`
+                    ]
+                },
+                output: run.output
+            }
+        }
+    }
+    return { report, output: run.output }
 }
 
 /** The deploy report as the tool writes it: its own object `deployment`, in the canonical form. */

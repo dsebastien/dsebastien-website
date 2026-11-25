@@ -17,7 +17,7 @@ import type { DeployReport } from '../publishing/deploy.ts'
 import { pullContentStore } from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
-import { childProcess, deploySettingsOf } from './deploy.ts'
+import { childProcess, deploySettingsOf, fileMarker } from './deploy.ts'
 import { Measures } from './measures.ts'
 import { LocalMcpServer, MCP_HOST } from './mcp-server.ts'
 import { journalName, RenameRecorder } from './rename-journal.ts'
@@ -123,14 +123,17 @@ export class VaultPublishPlugin extends Plugin {
             pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
             // The deploy of the site after a push (issue 32), as a child
             // process in the clean clone of the site code of this device.
-            deploy: (takedown, push) =>
-                runDeploy(
+            deploy: (kind) => {
+                const settings = loadSettings(this.app)
+                return runDeploy(
                     childProcess(),
-                    deploySettingsOf(loadSettings(this.app)),
-                    takedown,
-                    push,
+                    fileMarker(settings.contentStore),
+                    deploySettingsOf(settings),
+                    kind,
                     process.platform === 'win32'
-                ),
+                )
+            },
+            markTakedown: () => fileMarker(loadSettings(this.app).contentStore).set(),
             now: () => new Date(),
             deviceName: hostname().replace(/\s+/gu, ' ').trim() || 'unnamed device',
             // The message that the publication started (PERF-04): its plan

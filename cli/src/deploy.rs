@@ -55,6 +55,33 @@ pub struct ChildRun {
     pub output: String,
 }
 
+/// The marker of a takedown on this device, in the git folder of the copy
+/// (`.git/vault-publish/takedown-pending`): it is set after the push of a
+/// takedown, and every deploy runs with `--takedown` while it is there. Only
+/// a deploy with `--takedown` that succeeded removes it, so a takedown is
+/// never lost when its deploy fails, is skipped or is stopped.
+pub trait TakedownMarker {
+    /// True when a takedown waits for a deploy that succeeds. A marker that
+    /// cannot be read counts as set.
+    fn pending(&self) -> bool;
+    /// # Errors
+    ///
+    /// The marker cannot be written.
+    fn set(&self) -> Result<(), String>;
+    /// # Errors
+    ///
+    /// The marker cannot be removed.
+    fn remove(&self) -> Result<(), String>;
+}
+
+/// What a deploy follows: a push (`ok`), or nothing (`skipped`, a deploy
+/// again), and whether it runs with `--takedown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeployKind {
+    pub push: &'static str,
+    pub takedown: bool,
+}
+
 /// The port that starts the deploy as a child process.
 pub trait DeployProcess {
     /// Runs the command to its end.
@@ -72,6 +99,8 @@ pub trait DeployProcess {
 pub struct DeployReport {
     /// `skipped` for a deploy again, with no publication.
     pub push: &'static str,
+    /// True for a deploy with `--takedown`.
+    pub takedown: bool,
     pub build: &'static str,
     pub deploy: &'static str,
     pub live: bool,
@@ -221,10 +250,11 @@ pub fn deploy_command(
     })
 }
 
-/// A deploy report that deploys nothing, with its reason.
-pub fn report_of_nothing(error: String, push: &'static str) -> DeployReport {
+/// A report with no step done, before the warning of a takedown.
+fn bare(error: String, kind: DeployKind) -> DeployReport {
     DeployReport {
-        push,
+        push: kind.push,
+        takedown: kind.takedown,
         build: "skipped",
         deploy: "skipped",
         live: false,
@@ -237,19 +267,36 @@ pub fn report_of_nothing(error: String, push: &'static str) -> DeployReport {
     }
 }
 
-/// The deploy report of a program that could not start.
-pub fn report_of_start_error(message: &str, push: &'static str) -> DeployReport {
-    DeployReport {
-        deploy: "failed",
-        ..report_of_nothing(format!("the deploy could not start: {message}"), push)
+/// The warning of a takedown whose deploy did not succeed (PUB-42).
+pub const TAKEDOWN_WAITS: &str = "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown";
+
+/// A report of a deploy with `--takedown` that did not succeed warns that
+/// the takedown waits.
+fn with_takedown(mut report: DeployReport) -> DeployReport {
+    if report.takedown && !report.succeeded() {
+        report.warnings.push(TAKEDOWN_WAITS.to_owned());
     }
+    report
 }
 
-fn failed(error: String, push: &'static str) -> DeployReport {
+/// A deploy report that deploys nothing, with its reason.
+pub fn report_of_nothing(error: String, kind: DeployKind) -> DeployReport {
+    with_takedown(bare(error, kind))
+}
+
+/// The deploy report of a program that could not start.
+pub fn report_of_start_error(message: &str, kind: DeployKind) -> DeployReport {
+    with_takedown(DeployReport {
+        deploy: "failed",
+        ..bare(format!("the deploy could not start: {message}"), kind)
+    })
+}
+
+fn failed(error: String, kind: DeployKind) -> DeployReport {
     DeployReport {
         build: "failed",
         deploy: "failed",
-        ..report_of_nothing(error, push)
+        ..bare(error, kind)
     }
 }
 
@@ -309,7 +356,7 @@ fn optional_text(value: Option<&Value>) -> Result<Option<String>, ()> {
 
 /// The result line, read strictly, or `None` when its shape is wrong. Unknown
 /// fields are ignored.
-fn result_of(value: &Value, push: &'static str) -> Option<DeployReport> {
+fn result_of(value: &Value, kind: DeployKind) -> Option<DeployReport> {
     let object = value.as_object()?;
     let warnings = object
         .get("warnings")?
@@ -318,7 +365,8 @@ fn result_of(value: &Value, push: &'static str) -> Option<DeployReport> {
         .map(|one| one.as_str().map(str::to_owned))
         .collect::<Option<Vec<String>>>()?;
     Some(DeployReport {
-        push,
+        push: kind.push,
+        takedown: kind.takedown,
         build: step(object.get("build"))?,
         deploy: step(object.get("deploy"))?,
         live: object.get("live")?.as_bool()?,
@@ -335,7 +383,11 @@ fn result_of(value: &Value, push: &'static str) -> Option<DeployReport> {
 /// standard output: the last line is the result. A missing or broken result
 /// line is a failed deploy. The deploy succeeded only when the exit code is 0
 /// and the result says so.
-pub fn report_of_run(code: Option<i32>, stdout: &str, push: &'static str) -> DeployReport {
+pub fn report_of_run(code: Option<i32>, stdout: &str, kind: DeployKind) -> DeployReport {
+    with_takedown(read_run(code, stdout, kind))
+}
+
+fn read_run(code: Option<i32>, stdout: &str, kind: DeployKind) -> DeployReport {
     let ended = code.map_or_else(
         || "stopped by a signal".to_owned(),
         |code| format!("exit code {code}"),
@@ -348,19 +400,19 @@ pub fn report_of_run(code: Option<i32>, stdout: &str, push: &'static str) -> Dep
     let Some(text) = last.strip_prefix(RESULT_PREFIX) else {
         return failed(
             format!("the deploy gave no result line ({ended}): {READ_OUTPUT}"),
-            push,
+            kind,
         );
     };
     let Ok(value) = serde_json::from_str::<Value>(text) else {
         return failed(
             format!("the result line of the deploy is not JSON: {READ_OUTPUT}"),
-            push,
+            kind,
         );
     };
-    let Some(result) = result_of(&value, push) else {
+    let Some(result) = result_of(&value, kind) else {
         return failed(
             format!("the result line of the deploy has the wrong shape: {READ_OUTPUT}"),
-            push,
+            kind,
         );
     };
     if result.deploy == "ok" && code == Some(0) {
@@ -393,29 +445,47 @@ pub fn report_of_run(code: Option<i32>, stdout: &str, push: &'static str) -> Dep
 
 /// Runs the deploy of the settings, or gives the report that names the
 /// missing setting. The deploy never fails: its failures are in the report.
+/// It runs with `--takedown` when the run asks for it or when the marker of a
+/// takedown is set, and removes the marker only when such a deploy
+/// succeeded. A marker that cannot be removed is a warning.
 pub fn run_deploy(
     child: &dyn DeployProcess,
+    marker: &dyn TakedownMarker,
     settings: &DeploySettings,
-    takedown: bool,
-    push: &'static str,
+    asked: DeployKind,
     windows: bool,
 ) -> Deployment {
-    let command = match deploy_command(settings, takedown, windows) {
+    let kind = DeployKind {
+        push: asked.push,
+        takedown: asked.takedown || marker.pending(),
+    };
+    let command = match deploy_command(settings, kind.takedown, windows) {
         Ok(command) => command,
         Err(error) => {
             return Deployment {
-                report: report_of_nothing(error, push),
+                report: report_of_nothing(error, kind),
                 output: String::new(),
             };
         }
     };
     match child.run(&command) {
-        Ok(run) => Deployment {
-            report: report_of_run(run.code, &run.stdout, push),
-            output: run.output,
-        },
+        Ok(run) => {
+            let mut report = report_of_run(run.code, &run.stdout, kind);
+            if report.takedown
+                && report.succeeded()
+                && let Err(error) = marker.remove()
+            {
+                report.warnings.push(format!(
+                    "the marker of the takedown could not be removed, so the next deploy runs with --takedown too: {error}"
+                ));
+            }
+            Deployment {
+                report,
+                output: run.output,
+            }
+        }
         Err(message) => Deployment {
-            report: report_of_start_error(&message, push),
+            report: report_of_start_error(&message, kind),
             output: String::new(),
         },
     }
@@ -426,6 +496,7 @@ pub fn run_deploy(
 pub fn deployment_text(report: &DeployReport) -> String {
     let mut object = Map::new();
     object.insert("push".into(), json!(report.push));
+    object.insert("takedown".into(), json!(report.takedown));
     object.insert("build".into(), json!(report.build));
     object.insert("deploy".into(), json!(report.deploy));
     object.insert("live".into(), json!(report.live));
@@ -486,11 +557,14 @@ mod tests {
         }
     }
 
-    fn push_of(case: &Value) -> &'static str {
-        if case["push"] == "ok" {
-            "ok"
-        } else {
-            "skipped"
+    fn kind_of(case: &Value) -> DeployKind {
+        DeployKind {
+            push: if case["push"] == "ok" {
+                "ok"
+            } else {
+                "skipped"
+            },
+            takedown: case["takedown"].as_bool().unwrap_or(false),
         }
     }
 
@@ -528,15 +602,15 @@ mod tests {
     fn reads_the_result_of_every_shared_case() {
         for case in cases()["results"].as_array().expect("the results") {
             let name = case["name"].as_str().expect("a case has a name");
-            let push = push_of(case);
+            let kind = kind_of(case);
             let report = match case["startError"].as_str() {
-                Some(message) => report_of_start_error(message, push),
+                Some(message) => report_of_start_error(message, kind),
                 None => report_of_run(
                     case["code"]
                         .as_i64()
                         .map(|code| i32::try_from(code).expect("a small code")),
                     case["stdout"].as_str().expect("stdout"),
-                    push,
+                    kind,
                 ),
             };
             let written: Value =
@@ -547,12 +621,38 @@ mod tests {
 
     #[test]
     fn writes_the_report_in_the_canonical_form_in_its_own_object() {
-        let report = report_of_start_error("no program", "ok");
+        let report = report_of_start_error("no program", PUSHED);
 
         assert_eq!(
             deployment_text(&report),
-            "{\n  \"deployment\": {\n    \"build\": \"skipped\",\n    \"deleted\": 0,\n    \"deploy\": \"failed\",\n    \"error\": \"the deploy could not start: no program\",\n    \"live\": false,\n    \"push\": \"ok\",\n    \"uploaded\": 0,\n    \"warnings\": []\n  }\n}\n"
+            "{\n  \"deployment\": {\n    \"build\": \"skipped\",\n    \"deleted\": 0,\n    \"deploy\": \"failed\",\n    \"error\": \"the deploy could not start: no program\",\n    \"live\": false,\n    \"push\": \"ok\",\n    \"takedown\": false,\n    \"uploaded\": 0,\n    \"warnings\": []\n  }\n}\n"
         );
+    }
+
+    const PUSHED: DeployKind = DeployKind {
+        push: "ok",
+        takedown: false,
+    };
+
+    /// A marker of a takedown in memory.
+    struct Marker(std::cell::Cell<bool>);
+
+    impl TakedownMarker for Marker {
+        fn pending(&self) -> bool {
+            self.0.get()
+        }
+        fn set(&self) -> Result<(), String> {
+            self.0.set(true);
+            Ok(())
+        }
+        fn remove(&self) -> Result<(), String> {
+            self.0.set(false);
+            Ok(())
+        }
+    }
+
+    fn marker(pending: bool) -> Marker {
+        Marker(std::cell::Cell::new(pending))
     }
 
     /// A child that records the commands and gives one answer.
@@ -595,7 +695,16 @@ mod tests {
             answer: Ok((Some(0), LINE)),
         };
 
-        let deployment = run_deploy(&child, &settings(), true, "ok", false);
+        let deployment = run_deploy(
+            &child,
+            &marker(false),
+            &settings(),
+            DeployKind {
+                push: "ok",
+                takedown: true,
+            },
+            false,
+        );
 
         let runs = child.runs.borrow();
         assert_eq!(runs.len(), 1);
@@ -621,7 +730,9 @@ mod tests {
             ..settings()
         };
 
-        let deployment = run_deploy(&child, &missing, false, "ok", false);
+        let pending = marker(true);
+
+        let deployment = run_deploy(&child, &pending, &missing, PUSHED, false);
 
         assert!(child.runs.borrow().is_empty());
         assert_eq!(
@@ -634,6 +745,7 @@ mod tests {
                 .error
                 .is_some_and(|error| error.contains("the target file of the deployment is not set"))
         );
+        assert!(deployment.report.takedown && pending.pending());
     }
 
     #[test]
@@ -643,12 +755,46 @@ mod tests {
             answer: Err("No such file or directory"),
         };
 
-        let deployment = run_deploy(&child, &settings(), false, "ok", false);
+        let deployment = run_deploy(&child, &marker(false), &settings(), PUSHED, false);
 
         assert_eq!(
             deployment.report.error.as_deref(),
             Some("the deploy could not start: No such file or directory")
         );
         assert_eq!(deployment.report.deploy, "failed");
+    }
+
+    #[test]
+    fn runs_with_takedown_while_the_marker_is_set_and_removes_it_when_it_succeeded() {
+        let failing = Fake {
+            runs: RefCell::new(Vec::new()),
+            answer: Ok((Some(1), "crash\n")),
+        };
+        let working = Fake {
+            runs: RefCell::new(Vec::new()),
+            answer: Ok((Some(0), LINE)),
+        };
+        let pending = marker(true);
+        let again = DeployKind {
+            push: "skipped",
+            takedown: false,
+        };
+
+        let first = run_deploy(&failing, &pending, &settings(), again, false);
+        let kept = pending.pending();
+        let second = run_deploy(&working, &pending, &settings(), again, false);
+        let third = run_deploy(&working, &pending, &settings(), again, false);
+
+        assert_eq!(
+            failing.runs.borrow()[0].args.last(),
+            Some(&OsString::from("--takedown"))
+        );
+        let runs = working.runs.borrow();
+        assert_eq!(runs[0].args.last(), Some(&OsString::from("--takedown")));
+        assert_eq!(runs[1].args.last(), Some(&OsString::from("/data/files")));
+        assert!(first.report.takedown && kept);
+        assert!(first.report.warnings.contains(&TAKEDOWN_WAITS.to_owned()));
+        assert!(second.report.takedown && !pending.pending());
+        assert!(!third.report.takedown);
     }
 }

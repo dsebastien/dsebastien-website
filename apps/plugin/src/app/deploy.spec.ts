@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { makeTestStores, rejectionOf } from '@dsebastien-website/testing'
-import { childProcess, deploySettingsOf } from './deploy.ts'
+import { childProcess, deploySettingsOf, fileMarker } from './deploy.ts'
 
 // The port that starts the deploy as a child process (issue 32): a real
 // program here, the bun of the tests, never the deploy of the site.
@@ -83,5 +83,31 @@ describe('the deploy settings of a device', () => {
             contentStore: '/data/copy',
             attachments: '/data/files'
         })
+    })
+})
+
+describe('the marker of a takedown (issue 32)', () => {
+    test('is a file of the git folder of the copy, until it is removed', async () => {
+        await using stores = await makeTestStores()
+        const marker = fileMarker(stores.root)
+
+        const before = await marker.pending()
+        await marker.set()
+        const set = await marker.pending()
+        const text = await readFile(
+            join(stores.root, '.git', 'vault-publish', 'takedown-pending'),
+            'utf8'
+        )
+        await marker.remove()
+
+        expect([before, set, await marker.pending()]).toEqual([false, true, false])
+        expect(text).toContain('takedown')
+    })
+
+    test('is never set for a copy that is not set', async () => {
+        const marker = fileMarker('')
+        await marker.set()
+
+        expect(await marker.pending()).toBe(false)
     })
 })

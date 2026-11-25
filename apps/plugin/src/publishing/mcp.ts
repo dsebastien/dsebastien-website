@@ -60,7 +60,11 @@ export type ToolCall =
     | { readonly tool: 'guards' }
     | { readonly tool: EditAction; readonly path: string }
     | { readonly tool: 'unlock' }
-    | { readonly tool: 'deploy' }
+    | {
+          readonly tool: 'deploy'
+          /** True to run with `--takedown`; no key when the call has none or false. */
+          readonly takedown?: true
+      }
 
 /**
  * What a tool gives: the output of its command, what failed in a command that
@@ -133,7 +137,7 @@ const ARGUMENTS: Record<ToolName, readonly string[]> = {
     ignore: ['path'],
     unignore: ['path'],
     unlock: [],
-    deploy: []
+    deploy: ['takedown']
 }
 
 function listOf(args: Record<string, unknown>, key: string, tool = 'plan'): readonly string[] {
@@ -210,8 +214,14 @@ export function toolCallOf(name: string, args: unknown): ToolCall {
         case 'status':
         case 'guards':
         case 'unlock':
-        case 'deploy':
             return { tool: name }
+        case 'deploy': {
+            const takedown = given['takedown']
+            if (takedown !== undefined && typeof takedown !== 'boolean') {
+                throw new ArgumentError('the argument "takedown" of deploy must be true or false')
+            }
+            return takedown === true ? { tool: 'deploy', takedown } : { tool: 'deploy' }
+        }
         case 'deny':
         case 'allow':
         case 'ignore':

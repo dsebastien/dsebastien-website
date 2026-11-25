@@ -1204,21 +1204,19 @@
             }
         },
         {
-            "name": "deploy takes no argument",
+            "name": "deploy takes no other argument",
             "request": {
                 "jsonrpc": "2.0",
                 "id": 56,
                 "method": "tools/call",
-                "params": { "name": "deploy", "arguments": { "takedown": true } }
+                "params": { "name": "deploy", "arguments": { "force": true } }
             },
             "call": null,
             "response": {
                 "jsonrpc": "2.0",
                 "id": 56,
                 "result": {
-                    "content": [
-                        { "type": "text", "text": "deploy takes no argument \"takedown\"" }
-                    ],
+                    "content": [{ "type": "text", "text": "deploy takes no argument \"force\"" }],
                     "isError": true
                 }
             }
@@ -1270,6 +1268,67 @@
                             "text": "1 note of the plan was left out: the report says why"
                         },
                         { "type": "text", "text": "deployment" }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
+            "name": "deploy with takedown runs the deploy with --takedown",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 59,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "takedown": true } }
+            },
+            "call": { "tool": "deploy", "takedown": true },
+            "operation": { "output": "deployment" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 59,
+                "result": {
+                    "content": [{ "type": "text", "text": "deployment" }],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "deploy with takedown false is a deploy",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 60,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "takedown": false } }
+            },
+            "call": { "tool": "deploy" },
+            "operation": { "output": "deployment" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 60,
+                "result": {
+                    "content": [{ "type": "text", "text": "deployment" }],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "deploy with a takedown that is not true or false makes no call",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 61,
+                "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "takedown": "yes" } }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 61,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "the argument \"takedown\" of deploy must be true or false"
+                        }
                     ],
                     "isError": true
                 }

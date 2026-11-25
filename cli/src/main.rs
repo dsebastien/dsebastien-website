@@ -37,7 +37,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand};
 
-use deploy::{DeployReport, DeploySettings, deployment_text};
+use deploy::{DeployKind, DeployReport, DeploySettings, TakedownMarker, deployment_text};
 use device::{AttachmentStorage, ChildProcess, ContentStore, Vault};
 use plan::Selection;
 use queue::Move;
@@ -455,6 +455,13 @@ enum Command {
 
         #[command(flatten)]
         places: DeployPlaces,
+
+        /// Runs the deploy with `--takedown`: it deletes the files of the
+        /// notes taken down from the object storage. A deploy runs with
+        /// `--takedown` anyway while a takedown of this device waits for a
+        /// deploy that succeeds (`.git/vault-publish/takedown-pending`).
+        #[arg(long)]
+        takedown: bool,
     },
 
     /// Removes the lock of this device that a publication left when it
@@ -684,12 +691,10 @@ fn warn_about_lists(plan: &str) {
     }
 }
 
-/// A deploy of the site to run (issue 32): its settings, whether it follows a
-/// takedown, and its push (`skipped` for a deploy again).
+/// A deploy of the site to run (issue 32): its settings, and what it follows.
 struct Deploy {
     settings: DeploySettings,
-    takedown: bool,
-    push: &'static str,
+    kind: DeployKind,
 }
 
 /// The deploy settings of the options, with the folders of the publication.
@@ -717,20 +722,57 @@ fn deploy_after(
 ) -> Option<Deploy> {
     (!options.no_deploy).then(|| Deploy {
         settings: deploy_settings(&options.places, content_store, attachment_storage),
-        takedown,
-        push: "ok",
+        kind: DeployKind {
+            push: "ok",
+            takedown,
+        },
     })
+}
+
+/// Sets the marker of a takedown right after its push, also with
+/// `--no-deploy`: every later deploy then runs with `--takedown` until one
+/// succeeds. A marker that cannot be written is a warning: the deploy after
+/// the takedown still runs with `--takedown`.
+fn mark_takedown(content_store: &Path) {
+    if let Err(error) = ContentStore::new(content_store).set() {
+        eprintln!("warning: the marker of the takedown could not be written: {error}");
+    }
+}
+
+/// No marker: a deploy with no copy of the content store deploys nothing.
+struct NoMarker;
+
+impl TakedownMarker for NoMarker {
+    fn pending(&self) -> bool {
+        false
+    }
+    fn set(&self) -> Result<(), String> {
+        Ok(())
+    }
+    fn remove(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Runs the deploy, and keeps its whole output in the deploy log of the copy:
 /// it can name the address of a removed note, so it goes to no other place.
 /// The deploy report never holds it.
 fn run_deploy(deploy: &Deploy) -> DeployReport {
+    let store = deploy
+        .settings
+        .content_store
+        .as_deref()
+        .filter(|copy| !copy.as_os_str().is_empty())
+        .map(ContentStore::new);
+    let marker: &dyn TakedownMarker = match &store {
+        Some(store) => store,
+        None => &NoMarker,
+    };
     let deployment = deploy::run_deploy(
         &ChildProcess,
+        marker,
         &deploy.settings,
-        deploy.takedown,
-        deploy.push,
+        deploy.kind,
         cfg!(windows),
     );
     if let (false, Some(copy)) = (
@@ -751,11 +793,13 @@ fn run_deploy(deploy: &Deploy) -> DeployReport {
 
 /// The `deploy` command and tool: the deploy report as the output, and a
 /// failure when the deploy did not succeed.
-fn deploy_again(settings: DeploySettings) -> Outcome {
+fn deploy_again(settings: DeploySettings, takedown: bool) -> Outcome {
     let report = run_deploy(&Deploy {
         settings,
-        takedown: false,
-        push: "skipped",
+        kind: DeployKind {
+            push: "skipped",
+            takedown,
+        },
     });
     Outcome {
         output: deployment_text(&report),
@@ -784,12 +828,15 @@ fn operate(
     call: &mcp::Call,
     deploy: &McpDeploy,
 ) -> Result<mcp::ToolOutcome, String> {
-    if *call == mcp::Call::Deploy {
-        return Ok(deploy_again(deploy_settings(
-            &deploy.options.places,
-            deploy.content_store,
-            deploy.attachment_storage,
-        ))
+    if let mcp::Call::Deploy { takedown } = call {
+        return Ok(deploy_again(
+            deploy_settings(
+                &deploy.options.places,
+                deploy.content_store,
+                deploy.attachment_storage,
+            ),
+            *takedown,
+        )
         .into());
     }
     let takedown = matches!(call, mcp::Call::Takedown { .. });
@@ -798,6 +845,9 @@ fn operate(
         mcp::Call::Publish { .. } | mcp::Call::Unpublish { .. } | mcp::Call::Takedown { .. }
     );
     let outcome = run_tool(device, attachment_storage, name, call)?;
+    if takedown {
+        mark_takedown(deploy.content_store);
+    }
     let after = deploy_after(
         deploy.options,
         deploy.content_store,
@@ -846,7 +896,7 @@ fn run_tool(
         mcp::Call::Guards => tool::guards(device).map(done),
         mcp::Call::Edit { action, path } => tool::edit(device, action, path, &run).map(done),
         mcp::Call::Unlock => tool::unlock(&device.store).map(done),
-        mcp::Call::Deploy => Err("deploy is no command of the publishing logic".to_owned()),
+        mcp::Call::Deploy { .. } => Err("deploy is no command of the publishing logic".to_owned()),
     }
 }
 
@@ -930,6 +980,24 @@ fn command_line_run<'a>(time: &'a str, device: &'a str) -> Run<'a> {
     }
 }
 
+/// A takedown of the command line: the marker of the takedown right after
+/// its push, then the deploy with `--takedown`.
+fn run_takedown(
+    device: &Device,
+    content_store: &Path,
+    attachment_storage: &Path,
+    paths: &[String],
+    run: &Run,
+    deploy: &DeployAfterPush,
+) -> Result<Ran, String> {
+    let outcome = tool::takedown(device, &storage(attachment_storage), paths, run)?;
+    mark_takedown(content_store);
+    Ok(Ran {
+        outcome,
+        deploy: deploy_after(deploy, content_store, attachment_storage, true),
+    })
+}
+
 /// What a command gives: its outcome, and the deploy to run after its output
 /// (issue 32).
 struct Ran {
@@ -996,15 +1064,14 @@ fn run(command: Command) -> Result<Ran, String> {
             time,
             device: name,
             deploy,
-        } => Ok(Ran {
-            outcome: tool::takedown(
-                &device_of(&vault, &content_store, None, None)?,
-                &storage(&attachment_storage),
-                &path,
-                &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
-            )?,
-            deploy: deploy_after(&deploy, &content_store, &attachment_storage, true),
-        }),
+        } => run_takedown(
+            &device_of(&vault, &content_store, None, None)?,
+            &content_store,
+            &attachment_storage,
+            &path,
+            &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
+            &deploy,
+        ),
         Command::Guards {
             vault,
             content_store,
@@ -1023,11 +1090,11 @@ fn run(command: Command) -> Result<Ran, String> {
             content_store,
             attachment_storage,
             places,
-        } => Ok(deploy_again(deploy_settings(
-            &places,
-            &content_store,
-            &attachment_storage,
-        ))
+            takedown,
+        } => Ok(deploy_again(
+            deploy_settings(&places, &content_store, &attachment_storage),
+            takedown,
+        )
         .into()),
         Command::Unlock { content_store } => unlock(&content_store).map(done),
         Command::Publish {

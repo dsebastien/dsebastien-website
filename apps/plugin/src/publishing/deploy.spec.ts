@@ -8,7 +8,7 @@ import {
     reportOfStartError,
     runDeploy
 } from './deploy.ts'
-import type { DeployCommand, DeployProcess, DeploySettings } from './deploy.ts'
+import type { DeployCommand, DeployProcess, DeploySettings, TakedownMarker } from './deploy.ts'
 
 // The deploy that the tool starts after a push (issue 32, BUILD-02, PUB-42):
 // the command that it runs and the report that it reads from the result line
@@ -29,6 +29,7 @@ interface ResultCase {
     readonly stdout?: string
     readonly startError?: string
     readonly push: 'ok' | 'skipped'
+    readonly takedown?: boolean
     readonly report: unknown
 }
 
@@ -65,23 +66,41 @@ describe('the command of the deploy', () => {
 describe('the report of a deploy', () => {
     for (const one of CASES.results) {
         test(one.name, () => {
+            const kind = { push: one.push, takedown: one.takedown === true }
             const report =
                 one.startError === undefined
-                    ? reportOfRun(one.code ?? null, one.stdout ?? '', one.push)
-                    : reportOfStartError(one.startError, one.push)
+                    ? reportOfRun(one.code ?? null, one.stdout ?? '', kind)
+                    : reportOfStartError(one.startError, kind)
 
             expect(JSON.parse(deploymentText(report))).toEqual({ deployment: one.report })
         })
     }
 
     test('is written in the canonical form, in its own object', () => {
-        const report = reportOfStartError('no program', 'ok')
+        const report = reportOfStartError('no program', { push: 'ok', takedown: false })
 
         expect(deploymentText(report)).toBe(
-            '{\n  "deployment": {\n    "build": "skipped",\n    "deleted": 0,\n    "deploy": "failed",\n    "error": "the deploy could not start: no program",\n    "live": false,\n    "push": "ok",\n    "uploaded": 0,\n    "warnings": []\n  }\n}\n'
+            '{\n  "deployment": {\n    "build": "skipped",\n    "deleted": 0,\n    "deploy": "failed",\n    "error": "the deploy could not start: no program",\n    "live": false,\n    "push": "ok",\n    "takedown": false,\n    "uploaded": 0,\n    "warnings": []\n  }\n}\n'
         )
     })
 })
+
+/** A marker of a takedown in memory. */
+function marker(pending = false): TakedownMarker & { is: () => boolean } {
+    let on = pending
+    return {
+        pending: () => Promise.resolve(on),
+        set: () => {
+            on = true
+            return Promise.resolve()
+        },
+        remove: () => {
+            on = false
+            return Promise.resolve()
+        },
+        is: () => on
+    }
+}
 
 const SETTINGS: DeploySettings = {
     siteCode: '/work/site-code',
@@ -109,7 +128,13 @@ describe('a deploy', () => {
             }
         }
 
-        const deployment = await runDeploy(child, SETTINGS, true, 'ok', false)
+        const deployment = await runDeploy(
+            child,
+            marker(),
+            SETTINGS,
+            { push: 'ok', takedown: true },
+            false
+        )
 
         expect(runs).toEqual([
             {
@@ -143,12 +168,22 @@ describe('a deploy', () => {
             }
         }
 
-        const deployment = await runDeploy(child, { ...SETTINGS, target: '' }, false, 'ok', false)
+        const pending = marker(true)
+
+        const deployment = await runDeploy(
+            child,
+            pending,
+            { ...SETTINGS, target: '' },
+            { push: 'ok', takedown: false },
+            false
+        )
 
         expect(started).toBe(false)
         expect(deployment.report).toMatchObject({ build: 'skipped', deploy: 'skipped' })
         expect(deployment.report.error).toContain('the target file of the deployment is not set')
+        expect(deployment.report.takedown).toBe(true)
         expect(deployment.output).toBe('')
+        expect(pending.is()).toBe(true)
     })
 
     test('reports a program that cannot start as a failed deploy', async () => {
@@ -156,12 +191,48 @@ describe('a deploy', () => {
             run: () => Promise.reject(new Error('spawn bun ENOENT'))
         }
 
-        const deployment = await runDeploy(child, SETTINGS, false, 'ok', false)
+        const deployment = await runDeploy(
+            child,
+            marker(),
+            SETTINGS,
+            { push: 'ok', takedown: false },
+            false
+        )
 
         expect(deployment.report).toMatchObject({
             build: 'skipped',
             deploy: 'failed',
             error: 'the deploy could not start: spawn bun ENOENT'
         })
+    })
+
+    test('runs with --takedown while the marker of a takedown is set, and removes it when it succeeded', async () => {
+        const runs: DeployCommand[] = []
+        const crashed = { code: 1, stdout: 'crash\n', output: 'crash\n' }
+        const done = { code: 0, stdout: `${LINE}\n`, output: `${LINE}\n` }
+        const child: DeployProcess = {
+            run: (command) => {
+                runs.push(command)
+                return Promise.resolve(runs.length === 1 ? crashed : done)
+            }
+        }
+        const pending = marker(true)
+        const again = { push: 'skipped', takedown: false } as const
+
+        const first = await runDeploy(child, pending, SETTINGS, again, false)
+        const kept = pending.is()
+        const second = await runDeploy(child, pending, SETTINGS, again, false)
+        const third = await runDeploy(child, pending, SETTINGS, again, false)
+
+        expect(runs.map((one) => one.args.at(-1))).toEqual([
+            '--takedown',
+            '--takedown',
+            '/data/files'
+        ])
+        expect(first.report.takedown).toBe(true)
+        expect(kept).toBe(true)
+        expect(second.report.takedown).toBe(true)
+        expect(pending.is()).toBe(false)
+        expect(third.report.takedown).toBe(false)
     })
 })

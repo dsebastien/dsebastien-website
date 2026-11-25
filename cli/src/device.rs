@@ -17,7 +17,7 @@ use std::thread;
 use serde_json::{Value, json};
 
 use crate::canonical::to_canonical_json;
-use crate::deploy::{ChildRun, DeployCommand, DeployProcess};
+use crate::deploy::{ChildRun, DeployCommand, DeployProcess, TakedownMarker};
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -1720,5 +1720,35 @@ impl DeployProcess for ChildProcess {
             stdout: String::from_utf8_lossy(&stdout).into_owned(),
             output: String::from_utf8_lossy(&output).into_owned(),
         })
+    }
+}
+
+/// The marker of a takedown of this device: `.git/vault-publish/takedown-pending`
+/// of the copy, beside the lock and the run journal, so every face of this
+/// device sees it.
+impl TakedownMarker for ContentStore {
+    fn pending(&self) -> bool {
+        // A marker that cannot be read counts as set.
+        !matches!(
+            fs::symlink_metadata(self.local_file("takedown-pending")),
+            Err(error) if error.kind() == ErrorKind::NotFound
+        )
+    }
+
+    fn set(&self) -> Result<(), String> {
+        write_whole(
+            &self.local_file("takedown-pending"),
+            "A takedown waits for a deploy with --takedown that succeeds.\n",
+        )
+    }
+
+    fn remove(&self) -> Result<(), String> {
+        let file = self.local_file("takedown-pending");
+        match fs::remove_file(&file) {
+            Err(error) if error.kind() != ErrorKind::NotFound => {
+                Err(format!("{} cannot be removed: {error}", file.display()))
+            }
+            _ => Ok(()),
+        }
     }
 }

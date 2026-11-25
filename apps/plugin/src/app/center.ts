@@ -15,7 +15,7 @@ import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
 import type { Device, RefreshResult } from '../publishing/ports.ts'
 import { deploymentText, reportOfStartError } from '../publishing/deploy.ts'
-import type { Deployment, DeployReport } from '../publishing/deploy.ts'
+import type { DeployKind, Deployment, DeployReport } from '../publishing/deploy.ts'
 import {
     outcomeOfEdit,
     outcomeOfGuards,
@@ -73,12 +73,12 @@ export interface CenterHost {
      * Runs the deploy of the site after a push (issue 32, BUILD-02, PUB-42):
      * the deploy command of the site, as a child process, with the settings
      * of this device. It never throws: a failure, or a missing setting, is in
-     * the report. Without it, nothing is deployed (the tests of the logic).
-     *
-     * @param takedown true after a takedown
-     * @param push `skipped` for a deploy again, with no publication
+     * the report. It runs with `--takedown` also while the marker of a
+     * takedown is set. Without it, nothing is deployed (the tests of the logic).
      */
-    deploy?(takedown: boolean, push: DeployReport['push']): Promise<Deployment>
+    deploy?(kind: DeployKind): Promise<Deployment>
+    /** Sets the marker of a takedown, right after the push of a takedown (`TakedownMarker`). */
+    markTakedown?(): Promise<void>
 }
 
 /**
@@ -198,8 +198,7 @@ export interface CenterState {
 
 /** A deploy that waits for the end of the current one. */
 interface PendingDeploy {
-    takedown: boolean
-    push: DeployReport['push']
+    kind: DeployKind
     done: Promise<Deployment>
 }
 
@@ -487,62 +486,72 @@ export class PublicationCenter {
      * Runs the deploy again, with no publication (for example after a
      * failure). It waits for the end of the deploy that runs.
      */
-    async deploy(): Promise<DeployReport | undefined> {
-        return (await this.#deploy(false, 'skipped'))?.report
+    async deploy(takedown = false): Promise<DeployReport | undefined> {
+        return (await this.#deploy({ push: 'skipped', takedown }))?.report
+    }
+
+    /**
+     * Sets the marker of a takedown right after its push, so that a deploy
+     * that fails, waits or is skipped never loses it. A marker that cannot be
+     * written is logged: the deploy after it still runs with `--takedown`.
+     */
+    async #markTakedown(): Promise<void> {
+        try {
+            await this.host.markTakedown?.()
+        } catch (error) {
+            this.#log(`The marker of the takedown could not be written: ${messageOf(error)}`)
+        }
     }
 
     /**
      * Starts the deploy after a push (issue 32). It runs outside the lock of
      * the device and outside the activities: the publication is done at the
-     * push, the author keeps working, and a takedown never waits for the
-     * deploy of a normal publication (business rule 16). One deploy runs at a
-     * time, in the order of the pushes: a push during a deploy gets one more
-     * deploy after it, which covers every push that came meanwhile (with
-     * `--takedown` when one was a takedown), so the last release is the
-     * build of the last push. `undefined` when the host deploys nothing.
+     * push, the author keeps working, and the push of a takedown never waits
+     * for a deploy. One deploy runs at a time, in the order of the pushes: a
+     * push during a deploy gets one more deploy after it, which covers every
+     * push that came meanwhile (with `--takedown` when one was a takedown), so
+     * the last release is the build of the last push. The deploy of a
+     * takedown waits behind the deploy that runs (about a minute), and the
+     * marker of the takedown keeps it until a deploy with `--takedown`
+     * succeeds. `undefined` when the host deploys nothing.
      */
-    #deploy(takedown: boolean, push: DeployReport['push']): Promise<Deployment> | undefined {
+    #deploy(asked: DeployKind): Promise<Deployment> | undefined {
         const run = this.host.deploy?.bind(this.host)
         if (run === undefined) {
             return undefined
         }
         const pending = this.#pendingDeploy
         if (pending !== undefined) {
-            pending.takedown ||= takedown
-            if (push === 'ok') {
-                pending.push = 'ok'
+            pending.kind = {
+                push: pending.kind.push === 'ok' || asked.push === 'ok' ? 'ok' : 'skipped',
+                takedown: pending.kind.takedown || asked.takedown
             }
             return pending.done
         }
         const current = this.#deploying
         if (current === undefined) {
-            return this.#startDeploy(run, takedown, push)
+            return this.#startDeploy(run, asked)
         }
         const next: PendingDeploy = {
-            takedown,
-            push,
+            kind: asked,
             done: current.then(() => {
                 this.#pendingDeploy = undefined
-                return this.#startDeploy(run, next.takedown, next.push)
+                return this.#startDeploy(run, next.kind)
             })
         }
         this.#pendingDeploy = next
         return next.done
     }
 
-    #startDeploy(
-        run: NonNullable<CenterHost['deploy']>,
-        takedown: boolean,
-        push: DeployReport['push']
-    ): Promise<Deployment> {
-        this.#log(takedown ? 'Deploy started, after a takedown' : 'Deploy started')
+    #startDeploy(run: NonNullable<CenterHost['deploy']>, kind: DeployKind): Promise<Deployment> {
+        this.#log(kind.takedown ? 'Deploy started, after a takedown' : 'Deploy started')
         this.#set({ deployment: { running: true } })
         const running = (async (): Promise<Deployment> => {
             let deployment: Deployment
             try {
-                deployment = await run(takedown, push)
+                deployment = await run(kind)
             } catch (error) {
-                deployment = { report: reportOfStartError(messageOf(error), push), output: '' }
+                deployment = { report: reportOfStartError(messageOf(error), kind), output: '' }
             }
             const { report, output } = deployment
             this.#set({ deployment: { running: false, report, output } })
@@ -779,7 +788,7 @@ export class PublicationCenter {
             'author'
         )
         if (done.pushed) {
-            void this.#deploy(false, 'ok')
+            void this.#deploy({ push: 'ok', takedown: false })
         }
     }
 
@@ -831,6 +840,7 @@ export class PublicationCenter {
                     face: 'plugin'
                 })
                 done.pushed = true
+                await this.#markTakedown()
                 this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
@@ -844,7 +854,7 @@ export class PublicationCenter {
             'author'
         )
         if (done.pushed) {
-            void this.#deploy(true, 'ok')
+            void this.#deploy({ push: 'ok', takedown: true })
         }
     }
 
@@ -858,7 +868,7 @@ export class PublicationCenter {
      */
     async serve(call: ToolCall): Promise<ToolOutcome> {
         if (call.tool === 'deploy') {
-            return await this.#serveDeploy()
+            return await this.#serveDeploy(call.takedown === true)
         }
         let outcome: ToolOutcome | undefined
         let failure: unknown
@@ -892,7 +902,7 @@ export class PublicationCenter {
             const pushed =
                 call.tool === 'publish' || call.tool === 'unpublish' || call.tool === 'takedown'
             const deployment = pushed
-                ? await this.#deploy(call.tool === 'takedown', 'ok')
+                ? await this.#deploy({ push: 'ok', takedown: call.tool === 'takedown' })
                 : undefined
             return deployment === undefined
                 ? outcome
@@ -904,9 +914,9 @@ export class PublicationCenter {
     }
 
     /** The `deploy` tool: the deploy again, with no publication. It fails when the deploy did not succeed. */
-    async #serveDeploy(): Promise<ToolOutcome> {
-        this.#log('Agent deploy')
-        const deployment = await this.#deploy(false, 'skipped')
+    async #serveDeploy(takedown: boolean): Promise<ToolOutcome> {
+        this.#log(takedown ? 'Agent deploy, with --takedown' : 'Agent deploy')
+        const deployment = await this.#deploy({ push: 'skipped', takedown })
         if (deployment === undefined) {
             throw new Error('this face deploys nothing')
         }
@@ -974,6 +984,7 @@ export class PublicationCenter {
                 )
                 this.#fresh = false
                 const report = await takedown(device, call.paths, run)
+                await this.#markTakedown()
                 this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)

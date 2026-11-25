@@ -99,8 +99,11 @@ pub enum Call {
         path: String,
     },
     Unlock,
-    /// The deploy again, with no publication (issue 32).
-    Deploy,
+    /// The deploy again, with no publication (issue 32), with `--takedown`
+    /// when `takedown` is true.
+    Deploy {
+        takedown: bool,
+    },
 }
 
 impl Call {
@@ -116,7 +119,7 @@ impl Call {
             Self::Guards => "guards",
             Self::Edit { action, .. } => action,
             Self::Unlock => "unlock",
-            Self::Deploy => "deploy",
+            Self::Deploy { .. } => "deploy",
         }
     }
 
@@ -124,7 +127,15 @@ impl Call {
     #[cfg(test)]
     fn to_value(&self) -> Value {
         let mut value = match self {
-            Self::Status | Self::Guards | Self::Unlock | Self::Deploy => json!({}),
+            Self::Status | Self::Guards | Self::Unlock => json!({}),
+            // The shared cases name `takedown` only when it is true.
+            Self::Deploy { takedown } => {
+                if *takedown {
+                    json!({ "takedown": true })
+                } else {
+                    json!({})
+                }
+            }
             Self::Edit { path, .. } => json!({ "path": path }),
             Self::Plan {
                 include,
@@ -182,6 +193,7 @@ fn arguments_of(tool: &str) -> &'static [&'static str] {
         "unpublish" => &["paths", "accept"],
         "takedown" => &["paths"],
         "deny" | "allow" | "ignore" | "unignore" => &["path"],
+        "deploy" => &["takedown"],
         _ => &[],
     }
 }
@@ -275,7 +287,17 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
         "status" => Call::Status,
         "guards" => Call::Guards,
         "unlock" => Call::Unlock,
-        "deploy" => Call::Deploy,
+        "deploy" => Call::Deploy {
+            takedown: match arguments.get("takedown") {
+                None => false,
+                Some(Value::Bool(takedown)) => *takedown,
+                Some(_) => {
+                    return Err(Refusal::Arguments(
+                        "the argument \"takedown\" of deploy must be true or false".to_owned(),
+                    ));
+                }
+            },
+        },
         "plan" => Call::Plan {
             include: list_of(arguments, "include", name)?,
             hold: list_of(arguments, "hold", name)?,

@@ -285,7 +285,12 @@
             "description": "Runs the deploy of the site again from the copy of the content store, with no publication, as the deploy command of the command line program does: for example after a deploy that failed. publish, unpublish and takedown already deploy after their push, and give the deploy report as their last text. The report is the object deployment: push, build and deploy (ok, failed or skipped), live with the url, the counts of the files that the deploy uploaded and deleted, the warnings, and the error. It is an error when the deploy did not succeed; a deploy with a missing setting deploys nothing and names the setting. The publication is done at the push: a failed deploy never undoes it.",
             "inputSchema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "takedown": {
+                        "type": "boolean",
+                        "description": "True to run the deploy with --takedown: it deletes the files of the notes taken down from the object storage. A deploy runs with --takedown anyway while a takedown of this device waits for a deploy that succeeds."
+                    }
+                },
                 "additionalProperties": false
             },
             "annotations": {

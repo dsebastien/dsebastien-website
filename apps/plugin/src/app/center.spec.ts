@@ -12,7 +12,7 @@ import type { TestStores } from '@dsebastien-website/testing'
 import { NO_CHOICES, toggleRow, markUnpublish } from '../publishing/center.ts'
 import { fileNoteTypes, nodeDevice, pullContentStore } from '../publishing/node/device.ts'
 import { deploymentText, reportOfNothing, reportOfRun } from '../publishing/deploy.ts'
-import type { Deployment, DeployReport } from '../publishing/deploy.ts'
+import type { DeployKind, Deployment, DeployReport } from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
 import type { CenterHost } from './center.ts'
 
@@ -45,7 +45,8 @@ interface Setup {
 async function setUp(
     stores: TestStores,
     configured = true,
-    deploy?: CenterHost['deploy']
+    deploy?: CenterHost['deploy'],
+    markTakedown?: CenterHost['markTakedown']
 ): Promise<Setup> {
     const vault = await copyFixtureVault(stores)
     const copy = await makeContentStoreCopy(stores)
@@ -70,7 +71,8 @@ async function setUp(
         started: (label) => {
             started.push(label)
         },
-        ...(deploy === undefined ? {} : { deploy })
+        ...(deploy === undefined ? {} : { deploy }),
+        ...(markTakedown === undefined ? {} : { markTakedown })
     })
     return { vault, copy, center, started }
 }
@@ -943,8 +945,8 @@ const LIVE_LINE =
  * A deploy of the host that the test drives: it records each run, and holds
  * it until the test lets it go when `held` is true. It starts no process.
  */
-function fakeDeploy(answer: (push: DeployReport['push']) => DeployReport) {
-    const runs: { takedown: boolean; push: DeployReport['push'] }[] = []
+function fakeDeploy(answer: (kind: DeployKind) => DeployReport) {
+    const runs: DeployKind[] = []
     const waiting: (() => void)[] = []
     const fake = {
         runs,
@@ -953,12 +955,12 @@ function fakeDeploy(answer: (push: DeployReport['push']) => DeployReport) {
         release: (): void => {
             waiting.shift()?.()
         },
-        deploy: async (takedown: boolean, push: DeployReport['push']): Promise<Deployment> => {
-            runs.push({ takedown, push })
+        deploy: async (kind: DeployKind): Promise<Deployment> => {
+            runs.push(kind)
             if (fake.held) {
                 await new Promise<void>((resolve) => waiting.push(resolve))
             }
-            return { report: answer(push), output: `Building the site\n${LIVE_LINE}\n` }
+            return { report: answer(kind), output: `Building the site\n${LIVE_LINE}\n` }
         }
     }
     return fake
@@ -971,7 +973,7 @@ async function deployEnd(center: PublicationCenter): Promise<void> {
     }
 }
 
-const live = (push: DeployReport['push']): DeployReport => reportOfRun(0, `${LIVE_LINE}\n`, push)
+const live = (kind: DeployKind): DeployReport => reportOfRun(0, `${LIVE_LINE}\n`, kind)
 
 describe('the deploy after a push (issue 32, PUB-42)', () => {
     test('a publication deploys after its push, and the center stays usable while it runs', async () => {
@@ -995,7 +997,7 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         expect(state.report?.kind).toBe('publication')
         expect(state.deployment).toEqual({
             running: false,
-            report: live('ok'),
+            report: live({ push: 'ok', takedown: false }),
             output: `Building the site\n${LIVE_LINE}\n`
         })
         expect(state.log.map((line) => line.text)).toContain(
@@ -1028,8 +1030,8 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
 
     test('a missing setting deploys nothing and says which one, after the push', async () => {
         await using stores = await makeTestStores()
-        const fake = fakeDeploy((push) =>
-            reportOfNothing('nothing was deployed: the folder of the site code is not set', push)
+        const fake = fakeDeploy((kind) =>
+            reportOfNothing('nothing was deployed: the folder of the site code is not set', kind)
         )
         const { center } = await setUp(stores, true, fake.deploy)
         await center.check()
@@ -1070,6 +1072,40 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         ])
     }, 60_000)
 
+    test('a takedown sets its marker right after its push, before its deploy runs', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy(live)
+        fake.held = true
+        let marks = 0
+        const { center } = await setUp(stores, true, fake.deploy, () => {
+            marks += 1
+            return Promise.resolve()
+        })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        expect(marks).toBe(0)
+
+        await center.takedown([NOTE])
+
+        expect(marks).toBe(1)
+        expect(fake.runs).toEqual([{ push: 'ok', takedown: false }])
+        fake.held = false
+        fake.release()
+        await deployEnd(center)
+        expect(fake.runs.at(-1)).toEqual({ push: 'ok', takedown: true })
+    }, 60_000)
+
+    test('the deploy tool asks for --takedown when the agent does', async () => {
+        await using stores = await makeTestStores()
+        const fake = fakeDeploy(live)
+        const { center } = await setUp(stores, true, fake.deploy)
+
+        await center.serve({ tool: 'deploy', takedown: true })
+
+        expect(fake.runs).toEqual([{ push: 'skipped', takedown: true }])
+    }, 60_000)
+
     test('a publication that stops before its push deploys nothing', async () => {
         await using stores = await makeTestStores()
         const fake = fakeDeploy(live)
@@ -1098,7 +1134,7 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         const outcome = await center.serve({ tool: 'publish', plan: id })
 
         expect(outcome.failure).toBeUndefined()
-        expect(outcome.deploy).toBe(deploymentText(live('ok')))
+        expect(outcome.deploy).toBe(deploymentText(live({ push: 'ok', takedown: false })))
         expect(JSON.parse(outcome.output)).toMatchObject({ published: [NOTE] })
         expect(fake.runs).toEqual([{ takedown: false, push: 'ok' }])
     }, 60_000)
@@ -1106,14 +1142,14 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
     test('the deploy tool runs the deploy again, and fails when the deploy failed', async () => {
         await using stores = await makeTestStores()
         let fails = false
-        const fake = fakeDeploy((push) => (fails ? reportOfRun(2, 'no line\n', push) : live(push)))
+        const fake = fakeDeploy((kind) => (fails ? reportOfRun(2, 'no line\n', kind) : live(kind)))
         const { center } = await setUp(stores, true, fake.deploy)
 
         const done = await center.serve({ tool: 'deploy' })
         fails = true
         const failed = await center.serve({ tool: 'deploy' })
 
-        expect(done).toEqual({ output: deploymentText(live('skipped')) })
+        expect(done).toEqual({ output: deploymentText(live({ push: 'skipped', takedown: false })) })
         expect(failed.failure).toBe(
             'the deploy gave no result line (exit code 2): read the output of the deploy'
         )

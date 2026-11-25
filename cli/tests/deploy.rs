@@ -125,6 +125,10 @@ impl Setup {
     }
 
     fn deploy(&self) -> Output {
+        self.deploy_with(&[])
+    }
+
+    fn deploy_with(&self, options: &[&str]) -> Output {
         let mut command = support::program();
         command
             .arg("deploy")
@@ -133,7 +137,15 @@ impl Setup {
             .arg("--attachment-storage")
             .arg(self.stores.attachment_storage());
         self.deploy_options(&mut command);
+        command.args(options);
         command.output().expect("the program starts")
+    }
+
+    fn marker(&self) -> PathBuf {
+        self.copy
+            .join(".git")
+            .join("vault-publish")
+            .join("takedown-pending")
     }
 
     /// The arguments that the deploy of the site gets.
@@ -226,6 +238,7 @@ fn deploy_runs_bun_in_the_folder_of_the_site_code_and_writes_the_deploy_report()
             "deploy": "ok",
             "live": true,
             "push": "skipped",
+            "takedown": false,
             "uploaded": 1,
             "url": "https://preview.example.org/",
             "warnings": [],
@@ -424,4 +437,55 @@ fn the_mcp_server_deploys_after_a_takedown_and_runs_the_deploy_tool() {
     assert_eq!(again[0]["deployment"]["push"], "skipped");
     // The last run is the deploy again, with no `--takedown`.
     assert_eq!(setup.arguments(), Some(setup.expected_arguments(false)));
+}
+
+#[test]
+fn a_takedown_is_never_lost_its_marker_stays_until_a_deploy_with_takedown_succeeds() {
+    let setup = Setup::new();
+    let published = setup.publish(false);
+    assert!(published.status.success(), "{}", errors_of(&published));
+
+    let taken = setup
+        .places("takedown")
+        .args(["--path", NOTE, "--time", TIME, "--no-deploy"])
+        .output()
+        .expect("the program starts");
+    assert!(taken.status.success(), "{}", errors_of(&taken));
+    assert!(setup.marker().is_file());
+    setup.answer(BUILD_FAILED, 1);
+    let failed = setup.deploy();
+    let failed_report = &objects_of(&failed)[0]["deployment"];
+    let after_failure = setup.marker().is_file();
+    setup.answer(LIVE, 0);
+    let done = setup.deploy();
+    let after_success = setup.marker().is_file();
+
+    assert_eq!(failed_report["takedown"], true);
+    assert!(
+        failed_report["warnings"]
+            .as_array()
+            .expect("the warnings")
+            .iter()
+            .any(|warning| warning
+                .as_str()
+                .is_some_and(|text| text.contains("still be live")))
+    );
+    assert!(after_failure);
+    assert!(done.status.success(), "{}", errors_of(&done));
+    assert_eq!(objects_of(&done)[0]["deployment"]["takedown"], true);
+    assert_eq!(setup.arguments(), Some(setup.expected_arguments(true)));
+    assert!(!after_success);
+    let again = setup.deploy();
+    assert_eq!(objects_of(&again)[0]["deployment"]["takedown"], false);
+}
+
+#[test]
+fn deploy_takedown_asks_for_takedown() {
+    let setup = Setup::new();
+
+    let output = setup.deploy_with(&["--takedown"]);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(setup.arguments(), Some(setup.expected_arguments(true)));
+    assert_eq!(objects_of(&output)[0]["deployment"]["takedown"], true);
 }
