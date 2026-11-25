@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -1723,11 +1723,10 @@ fn tree_of(pid: u32) -> Vec<u32> {
     tree
 }
 
-/// Stops a deploy with the programs that it started: on Unix every process
-/// of its tree, first with TERM, then with KILL after the grace, unless it
-/// ended; on Windows its tree, with `taskkill`. The child stays in the
-/// process group of the program, so that a stop of the program (Ctrl-C in a
-/// terminal) stops the deploy too.
+/// Stops a deploy with the programs that it started: on Unix its process
+/// group (the child leads a group of its own) and every process of its tree
+/// (a program can leave the group), first with TERM, then with KILL after the
+/// grace, unless it ended; on Windows its tree, with `taskkill`.
 fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>) {
     #[cfg(unix)]
     {
@@ -1735,6 +1734,8 @@ fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>) {
         let signal = |name: &str, pids: &[u32]| {
             let _ = Command::new("kill")
                 .arg(name)
+                .arg("--")
+                .arg(format!("-{pid}"))
                 .args(pids.iter().map(u32::to_string))
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -1759,6 +1760,36 @@ fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>) {
     }
 }
 
+/// How long the readers of the output get after the child ended: a program
+/// that the child started can keep a pipe open, and the deploy must not wait
+/// for it.
+const READ_GRACE: Duration = Duration::from_secs(2);
+
+/// Reads a pipe on a thread of its own into its buffers, and says when it
+/// ends. The thread is not joined: an orphan can keep the pipe open.
+fn read_pipe(
+    mut pipe: impl Read + Send + 'static,
+    own: Option<Arc<Mutex<Vec<u8>>>>,
+    all: Arc<Mutex<Vec<u8>>>,
+) -> mpsc::Receiver<()> {
+    let (done, ended) = mpsc::channel();
+    thread::spawn(move || {
+        let mut chunk = [0_u8; 8_192];
+        while let Ok(read @ 1..) = pipe.read(&mut chunk) {
+            if let Some(own) = &own
+                && let Ok(mut bytes) = own.lock()
+            {
+                bytes.extend_from_slice(&chunk[..read]);
+            }
+            if let Ok(mut bytes) = all.lock() {
+                bytes.extend_from_slice(&chunk[..read]);
+            }
+        }
+        let _ = done.send(());
+    });
+    ended
+}
+
 impl DeployProcess for ChildProcess {
     fn run(&self, command: &DeployCommand) -> Result<ChildRun, String> {
         if !command.folder.is_dir() {
@@ -1774,6 +1805,14 @@ impl DeployProcess for ChildProcess {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // A group of its own on Unix, as in the plugin, so that a stop
+        // reaches every program that the deploy started. Ctrl-C in a
+        // terminal then stops the program and not the deploy.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            child.process_group(0);
+        }
         // Inside a git hook, these variables point git to another repository:
         // the deploy runs git in the clone of the site code.
         for (name, _) in env::vars_os() {
@@ -1800,56 +1839,55 @@ impl DeployProcess for ChildProcess {
         let limit = self
             .minute
             .saturating_mul(u32::try_from(command.timeout_minutes).unwrap_or(u32::MAX));
-        let stopped = AtomicBool::new(false);
-        let (end, ended) = mpsc::channel::<()>();
         let pid = child.id();
         let grace = self.grace;
-        // The standard output and the errors, in the order they came.
-        let output = Mutex::new(Vec::new());
-        let stdout = thread::scope(|scope| {
-            let stopped = &stopped;
-            scope.spawn(move || {
+        // The standard output, and both outputs in the order they came.
+        let stdout = Arc::new(Mutex::new(Vec::new()));
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let readers: Vec<mpsc::Receiver<()>> = [
+            child
+                .stdout
+                .take()
+                .map(|pipe| read_pipe(pipe, Some(Arc::clone(&stdout)), Arc::clone(&output))),
+            child
+                .stderr
+                .take()
+                .map(|pipe| read_pipe(pipe, None, Arc::clone(&output))),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let (end, ended) = mpsc::channel::<()>();
+        let watch = {
+            let stopped = Arc::clone(&stopped);
+            thread::spawn(move || {
                 if ended.recv_timeout(limit).is_err() {
                     stopped.store(true, Ordering::Relaxed);
                     stop_tree(pid, grace, &ended);
                 }
-            });
-            let errors = child.stderr.take().map(|mut pipe| {
-                let output = &output;
-                scope.spawn(move || {
-                    let mut chunk = [0_u8; 8_192];
-                    while let Ok(read @ 1..) = pipe.read(&mut chunk) {
-                        if let Ok(mut all) = output.lock() {
-                            all.extend_from_slice(&chunk[..read]);
-                        }
-                    }
-                })
-            });
-            let mut stdout = Vec::new();
-            if let Some(mut pipe) = child.stdout.take() {
-                let mut chunk = [0_u8; 8_192];
-                while let Ok(read @ 1..) = pipe.read(&mut chunk) {
-                    stdout.extend_from_slice(&chunk[..read]);
-                    if let Ok(mut all) = output.lock() {
-                        all.extend_from_slice(&chunk[..read]);
-                    }
-                }
-            }
-            if let Some(errors) = errors {
-                let _ = errors.join();
-            }
-            let status = child.wait();
-            // The watch of the time limit ends with the program.
-            let _ = end.send(());
-            (stdout, status)
-        });
-        let (stdout, status) = stdout;
+            })
+        };
+        let status = child.wait();
+        // The watch of the time limit ends with the child.
+        let _ = end.send(());
+        let _ = watch.join();
+        // The readers end with the pipes; an orphan that keeps one open gets
+        // a short grace, then its output is not waited for.
+        for reader in &readers {
+            let _ = reader.recv_timeout(READ_GRACE);
+        }
         let status = status.map_err(|error| format!("the deploy could not run: {error}"))?;
-        let output = output.into_inner().unwrap_or_default();
+        let text = |buffer: &Arc<Mutex<Vec<u8>>>| {
+            buffer.lock().map_or_else(
+                |_| String::new(),
+                |bytes| String::from_utf8_lossy(&bytes).into_owned(),
+            )
+        };
         Ok(ChildRun {
             code: status.code(),
-            stdout: String::from_utf8_lossy(&stdout).into_owned(),
-            output: String::from_utf8_lossy(&output).into_owned(),
+            stdout: text(&stdout),
+            output: text(&output),
             stopped: stopped.load(Ordering::Relaxed).then_some(Stop::Time),
         })
     }

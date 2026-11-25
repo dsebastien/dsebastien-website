@@ -685,3 +685,29 @@ fn a_takedown_that_pushed_nothing_leaves_no_entry_and_status_says_when_one_waits
     let last = setup.deploy_with(&["--last"]);
     assert_eq!(objects_of(&last)[0]["takedownWaits"], true);
 }
+
+#[test]
+fn an_orphan_that_keeps_the_output_open_does_not_hold_a_deploy_that_succeeded() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let setup = Setup::new();
+    // The child ends at once with a result that says success; a program
+    // that it started keeps its standard output open for 30 seconds.
+    fs::write(
+        &setup.bun,
+        format!(
+            "#!/bin/sh\nsleep 30 &\nprintf '%s\\n' '{LIVE}' | sed \"s/@HEAD@/$(git -C '{}' rev-parse HEAD)/\"\nexit 0\n",
+            setup.copy.display()
+        ),
+    )
+    .expect("the script can be written");
+    fs::set_permissions(&setup.bun, fs::Permissions::from_mode(0o755))
+        .expect("the script can be made a program");
+    let started = std::time::Instant::now();
+
+    let output = setup.deploy();
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert!(started.elapsed() < std::time::Duration::from_secs(15));
+    assert_eq!(objects_of(&output)[0]["deployment"]["deploy"], "ok");
+}
