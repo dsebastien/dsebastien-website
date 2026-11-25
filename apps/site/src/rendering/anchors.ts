@@ -20,7 +20,10 @@
 /** The id of the main element of every page: the target of the skip link. */
 export const MAIN_ID = 'content'
 
-/** The ids of the frame of a page, which no heading of a note takes. */
+/**
+ * The ids of the frame of a page, which no heading of a note takes. A new
+ * fixed id of `layouts/Page.astro` goes into this set.
+ */
 export const FRAME_IDS: ReadonlySet<string> = new Set([MAIN_ID])
 
 /** A heading of a note: its level, its text and its id. */
@@ -129,7 +132,10 @@ export function headingFor(
 /**
  * The script of a note page for an old hash: when no element has the id of
  * the hash, it reads the hash as a heading path and goes to that heading. It
- * is one block, so it declares no global name.
+ * is one block, so it declares no global name. An id of the frame wins too:
+ * the skip link sets the hash `#content`, so that hash stays on the main
+ * element. The old form of a heading "Content" is `#Content`, which no element
+ * has as its id, so it reaches the heading.
  */
 export const oldAnchorScript = `{
     const find = ${headingFor.toString()}
