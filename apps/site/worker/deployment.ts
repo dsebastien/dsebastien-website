@@ -296,20 +296,23 @@ export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefin
     return previous === undefined ? undefined : { ...build, previous }
 }
 
-/** The variables that can hold the token of a deployment. */
+/** The variables that can hold the token of a deployment, in their order. */
 const TOKEN_VARIABLES = ['NOTES_DEPLOY_CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_TOKEN'] as const
 
+/** The words of the names of the variables that can hold a secret, in any letter case. */
+const SECRET_WORDS = /TOKEN|SECRET|KEY|PASSWORD/iu
+
 /**
- * The environment without the variables of the token: the steps that run
- * code of packages (the install, the build) never get it.
+ * The environment without every variable whose name holds TOKEN, SECRET,
+ * KEY or PASSWORD, in any letter case: the steps that run code of packages
+ * (the pull, the install, the build) never get the token of the deployment
+ * or another secret of the machine.
  */
 export function withoutTokens(
     environment: Record<string, string | undefined>
 ): Record<string, string | undefined> {
     return Object.fromEntries(
-        Object.entries(environment).filter(
-            ([name]) => !(TOKEN_VARIABLES as readonly string[]).includes(name)
-        )
+        Object.entries(environment).filter(([name]) => !SECRET_WORDS.test(name))
     )
 }
 

@@ -270,6 +270,21 @@ describe('the token of a deployment', () => {
     })
 
     // The install and the build run code of packages: they get no token.
+    test('leaves out every variable whose name holds a secret, in any letter case', () => {
+        expect(
+            withoutTokens({
+                GITHUB_TOKEN: 'one',
+                npm_config__authToken: 'two',
+                AWS_SECRET_ACCESS_KEY: 'three',
+                OPENAI_API_KEY: 'four',
+                Db_Password: 'five',
+                PATH: '/usr/bin',
+                SSH_AUTH_SOCK: '/run/agent',
+                HOME: '/home/test'
+            })
+        ).toEqual({ PATH: '/usr/bin', SSH_AUTH_SOCK: '/run/agent', HOME: '/home/test' })
+    })
+
     test('leaves an environment for the steps that need no token', () => {
         expect(
             withoutTokens({
