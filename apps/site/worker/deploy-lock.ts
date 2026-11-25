@@ -186,3 +186,19 @@ export function processIsAlive(pid: number): boolean {
         return error instanceof Error && 'code' in error && error.code === 'EPERM'
     }
 }
+
+/** The variable that gives the restart of `--from-main` the warning of a lock that its parent took over. */
+const INHERITED_WARNING = 'NOTES_DEPLOY_LOCK_TAKEN_OVER'
+
+/** The variables of the restart of `--from-main` for the warning of the lock of its parent. */
+export function lockWarningFor(warning: string | undefined): Record<string, string> {
+    return warning === undefined ? {} : { [INHERITED_WARNING]: warning }
+}
+
+/** The warning of a lock that the parent took over, in a restart of `--from-main`. */
+export function inheritedLockWarning(
+    environment: Record<string, string | undefined>
+): string | undefined {
+    const warning = environment[INHERITED_WARNING]
+    return warning === undefined || warning === '' ? undefined : warning
+}

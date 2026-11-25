@@ -13,7 +13,13 @@ import {
     type DeployTarget
 } from '../apps/site/worker/deployment.ts'
 import { checkContentCopy, descendsFrom } from '../apps/site/worker/content-copy.ts'
-import { lockHeldBy, processIsAlive, takeDeployLock } from '../apps/site/worker/deploy-lock.ts'
+import {
+    inheritedLockWarning,
+    lockHeldBy,
+    lockWarningFor,
+    processIsAlive,
+    takeDeployLock
+} from '../apps/site/worker/deploy-lock.ts'
 import { r2Storage } from '../apps/site/worker/r2.ts'
 import {
     deployRelease,
@@ -117,7 +123,8 @@ async function underLock<T>(
 ): Promise<T> {
     const file = lockFileOf(target)
     if (await lockHeldBy(file, process.ppid)) {
-        return await task(undefined)
+        // The warning of a lock that the parent took over goes into the result.
+        return await task(inheritedLockWarning(process.env))
     }
     const lock = await takeDeployLock(file, {
         pid: process.pid,
@@ -142,7 +149,11 @@ function finish(result: DeployResult): number {
  * runs the deployment again without the flag, so that the new code runs. A
  * clone with changes or on another branch stops it.
  */
-async function fromMain(args: readonly string[], target: DeployTarget): Promise<number> {
+async function fromMain(
+    args: readonly string[],
+    target: DeployTarget,
+    warning: string | undefined
+): Promise<number> {
     const changes = await git(ROOT, 'status', '--porcelain')
     if (changes !== '') {
         throw new Error(
@@ -165,7 +176,11 @@ async function fromMain(args: readonly string[], target: DeployTarget): Promise<
     await run(['bun', 'install', '--frozen-lockfile'])
     const child = Bun.spawn(
         ['bun', join(ROOT, 'scripts', 'deploy.ts'), ...args.filter((arg) => arg !== '--from-main')],
-        { cwd: ROOT, env: process.env, stdio: ['inherit', 'pipe', 'inherit'] }
+        {
+            cwd: ROOT,
+            env: { ...process.env, ...lockWarningFor(warning) },
+            stdio: ['inherit', 'pipe', 'inherit']
+        }
     )
     // The output goes on as it comes; a run that ends with no result gets one.
     let last = ''
@@ -358,7 +373,7 @@ async function main(): Promise<number> {
             }
             if (values['from-main']) {
                 try {
-                    return await fromMain(args, target)
+                    return await fromMain(args, target, warning)
                 } catch (error) {
                     return finish(stopped(error, target))
                 }

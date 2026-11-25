@@ -3,7 +3,13 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rejectionOf } from '@dsebastien-website/testing'
-import { lockHeldBy, STALE_AFTER_MS, takeDeployLock } from './deploy-lock.ts'
+import {
+    inheritedLockWarning,
+    lockHeldBy,
+    lockWarningFor,
+    STALE_AFTER_MS,
+    takeDeployLock
+} from './deploy-lock.ts'
 
 // One deployment at a time per target on a machine (issue 32): the plugin
 // and the command line program can both start one in the clone of the
@@ -144,5 +150,19 @@ describe('the lock of the deployments of a target', () => {
             pid: 41,
             startedAt: '2031-04-01T08:00:00Z'
         })
+    })
+
+    // The restart of `--from-main` runs under the lock of its parent: the
+    // warning of a lock that the parent took over reaches its result.
+    test('gives the warning of a lock that the parent took over to the restart', () => {
+        const environment = lockWarningFor(
+            'took over the lock of a deployment that stopped (process 41)'
+        )
+
+        expect(inheritedLockWarning({ HOME: '/home/test', ...environment })).toBe(
+            'took over the lock of a deployment that stopped (process 41)'
+        )
+        expect(lockWarningFor(undefined)).toEqual({})
+        expect(inheritedLockWarning({ HOME: '/home/test' })).toBeUndefined()
     })
 })
