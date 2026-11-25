@@ -10,6 +10,7 @@ import {
     readHostRecord,
     resultLine,
     revertRelease,
+    stoppedResult,
     type DeployResult,
     type DeployRun,
     type RevertRun
@@ -166,6 +167,37 @@ const OK: Omit<DeployResult, 'uploaded' | 'deleted' | 'warnings'> = {
     contentRevision: CONTENT,
     error: null
 }
+
+describe('a deployment that stops before its first step', () => {
+    test('says why, with the host when it is known', () => {
+        expect(
+            stoppedResult(
+                new Error('the copy has changes'),
+                'https://preview.notes.example/',
+                false
+            )
+        ).toEqual({
+            build: 'skipped',
+            deploy: 'skipped',
+            live: false,
+            url: 'https://preview.notes.example/',
+            contentRevision: null,
+            uploaded: 0,
+            deleted: 0,
+            warnings: [],
+            error: 'the copy has changes'
+        })
+    })
+
+    // The takedown of the tool says it too: the files of the takedown stay.
+    test('after a takedown, warns that a file can still be public', () => {
+        expect(
+            stoppedResult(new Error('the copy is behind origin/main'), '', true).warnings
+        ).toEqual([
+            'a file can still be public: the deployment stopped before its first step, so no file of the takedown was deleted'
+        ])
+    })
+})
 
 describe('a deployment', () => {
     test('uploads the used files that the storage lacks before the build, then cleans the storage once live', async () => {

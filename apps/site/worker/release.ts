@@ -134,6 +134,33 @@ export function resultLine(result: DeployResult): string {
     return `${RESULT_MARK} ${JSON.stringify(result)}`
 }
 
+/**
+ * The result of a deployment that stopped before its first step (wrong
+ * arguments, a target file that cannot be read, the lock, a copy with
+ * changes or behind its content store, keys that cannot be read). After a
+ * takedown it warns that a file can still be public, as the takedown of the
+ * tool does: no file of the takedown was deleted.
+ *
+ * @param url the address of the site, or `''` when the target is not known
+ */
+export function stoppedResult(error: unknown, url: string, takedown: boolean): DeployResult {
+    return {
+        build: 'skipped',
+        deploy: 'skipped',
+        live: false,
+        url,
+        contentRevision: null,
+        uploaded: 0,
+        deleted: 0,
+        warnings: takedown
+            ? [
+                  'a file can still be public: the deployment stopped before its first step, so no file of the takedown was deleted'
+              ]
+            : [],
+        error: error instanceof Error ? error.message : String(error)
+    }
+}
+
 /** How many uploads or deletions run at the same time. */
 const PARALLEL = 8
 

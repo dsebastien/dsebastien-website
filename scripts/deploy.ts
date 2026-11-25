@@ -21,6 +21,7 @@ import {
     readHostRecord,
     RESULT_MARK,
     resultLine,
+    stoppedResult,
     type DeployResult
 } from '../apps/site/worker/release.ts'
 
@@ -92,19 +93,12 @@ async function git(folder: string, ...command: string[]): Promise<string> {
     return text.trimEnd()
 }
 
+/** True when the arguments ask for a takedown: also when they cannot be read, a takedown counts. */
+const TAKEDOWN = Bun.argv.slice(2).includes('--takedown')
+
 /** The result of a run that stopped before its first step. */
 function stopped(error: unknown, target?: DeployTarget): DeployResult {
-    return {
-        build: 'skipped',
-        deploy: 'skipped',
-        live: false,
-        url: target === undefined ? '' : `https://${target.host}/`,
-        contentRevision: null,
-        uploaded: 0,
-        deleted: 0,
-        warnings: [],
-        error: error instanceof Error ? error.message : String(error)
-    }
+    return stoppedResult(error, target === undefined ? '' : `https://${target.host}/`, TAKEDOWN)
 }
 
 /** The lock of the deployments of a target in this clone. */
