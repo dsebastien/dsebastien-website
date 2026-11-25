@@ -11,6 +11,7 @@ import {
     workerConfiguration,
     type DeployTarget
 } from '../apps/site/worker/deployment.ts'
+import { checkContentCopy, descendsFrom } from '../apps/site/worker/content-copy.ts'
 import { r2Storage } from '../apps/site/worker/r2.ts'
 import {
     deployRelease,
@@ -207,12 +208,15 @@ async function deploy(values: {
             }
             return join(attachments, key)
         }
+        // The record names this commit, so the keys and the build come from it.
+        const contentRevision = store === undefined ? null : await checkContentCopy(store)
+        const usedKeys = store === undefined ? [] : await usedAttachmentKeys(store)
         const result = await deployRelease({
             url,
-            contentRevision: store === undefined ? null : await git(store, 'rev-parse', 'HEAD'),
+            contentRevision,
             siteRevision: await git(ROOT, 'rev-parse', 'HEAD'),
             now: () => new Date(),
-            usedKeys: store === undefined ? [] : await usedAttachmentKeys(store),
+            usedKeys,
             // A dry run reaches no host. `--dist` has no manifest: the
             // storage must not be cleaned by it.
             ...(dryRun || token === undefined || store === undefined
@@ -231,6 +235,19 @@ async function deploy(values: {
             },
             takedown: values.takedown,
             dryRun,
+            ...(store === undefined
+                ? {}
+                : {
+                      descendsFrom: (revision: string) => descendsFrom(store, revision),
+                      beforeDeploy: async () => {
+                          // No fetch: the copy must still be what the build read.
+                          if ((await checkContentCopy(store, false)) !== contentRevision) {
+                              throw new Error(
+                                  'the copy of the content store moved during the build'
+                              )
+                          }
+                      }
+                  }),
             headers: headersFile(target),
             build: async () => {
                 if (store === undefined) {

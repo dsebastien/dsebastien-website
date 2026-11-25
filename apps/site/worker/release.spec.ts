@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { rejectionOf } from '@dsebastien-website/testing'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     deployRelease,
@@ -110,6 +111,7 @@ function fixture(
             }
         },
         takedown: false,
+        descendsFrom: () => Promise.resolve(true),
         headers: '/*\n  X-Robots-Tag: noindex\n',
         build: async () => {
             events.push('build')
@@ -170,9 +172,11 @@ describe('a deployment', () => {
         const result = await deployRelease(site.run)
         expect(result).toEqual({ ...OK, uploaded: 1, deleted: 1, warnings: [] })
         expect(site.events).toEqual([
+            'live?',
             'list',
             `put ${PLAN.key}`,
             'build',
+            'live?',
             'deploy',
             'live?',
             'wait 1000',
@@ -222,7 +226,7 @@ describe('a deployment', () => {
         expect(result.deleted).toBe(0)
         expect(result.error).toContain(PLAN.key)
         expect(result.error).not.toContain(PHOTO.key)
-        expect(site.events).toEqual(['list'])
+        expect(site.events).toEqual(['live?', 'list'])
     })
 
     // A file of the folder must be the file of its key: a wrong one would be
@@ -291,7 +295,7 @@ describe('a deployment', () => {
             deleted: 0
         })
         expect(result.error).toContain('the host takes 2 at most')
-        expect(site.events).toEqual(['list', 'build'])
+        expect(site.events).toEqual(['live?', 'list', 'build'])
     })
 
     test('deletes nothing when the build fails', async () => {
@@ -339,7 +343,7 @@ describe('a deployment', () => {
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ build: 'skipped', deleted: 1 })
         expect(result.error).toContain(PLAN.key)
-        expect(site.events).toEqual(['list', `remove ${OLD.key}`])
+        expect(site.events).toEqual(['live?', 'list', `remove ${OLD.key}`])
     })
 
     test('waits a bounded time for the host to give its record, then warns and still succeeds', async () => {
@@ -347,7 +351,7 @@ describe('a deployment', () => {
             stored: [PHOTO.key, PLAN.key],
             overrides: {
                 live: {
-                    read: () => Promise.resolve({ contentRevision: 'e'.repeat(40) }),
+                    read: () => Promise.resolve(undefined),
                     checks: 3,
                     pause: 1000,
                     inARow: 3
@@ -409,8 +413,8 @@ describe('a deployment', () => {
             siteRevision: SITE,
             builtAt: '2031-03-01T08:00:00Z'
         }
-        // old, a failure, new, old, new, new, new
-        const plan = ['old', 'fail', 'new', 'old', 'new', 'new', 'new']
+        // The two checks before the deployment, then: old, a failure, new, old, new, new, new.
+        const plan = ['none', 'none', 'old', 'fail', 'new', 'old', 'new', 'new', 'new']
         let calls = 0
         const result = await deployRelease({
             ...site.run,
@@ -421,6 +425,9 @@ describe('a deployment', () => {
                     if (step === 'fail' || read === undefined) {
                         return Promise.reject(new Error('offline'))
                     }
+                    if (step === 'none') {
+                        return Promise.resolve(undefined)
+                    }
                     return step === 'old' ? Promise.resolve(OLD_RECORD) : read()
                 },
                 checks: 8,
@@ -430,7 +437,7 @@ describe('a deployment', () => {
         })
         expect(result.live).toBe(true)
         expect(result.warnings).toEqual([])
-        expect(calls).toBe(7)
+        expect(calls).toBe(9)
     })
 
     test('is not live while the old and the new release answer in turn', async () => {
@@ -578,6 +585,142 @@ describe('a revert', () => {
     })
 })
 
+// Issue 32: a takedown must never come back with
+// older content. A release whose content is not a descendant of the live
+// one is refused, before anything and again right before the deployment.
+describe('the release that is live', () => {
+    const LIVE = {
+        contentRevision: 'a'.repeat(40),
+        siteRevision: SITE,
+        builtAt: '2031-03-01T08:00:00Z'
+    }
+
+    /** A run whose host gives these answers in turn before the deployment. */
+    function liveAnswers(answers: unknown[], overrides: Partial<DeployRun> = {}): Fixture {
+        const site = fixture({ stored: [PHOTO.key, PLAN.key, OLD.key], overrides })
+        const read = site.run.live?.read
+        let calls = 0
+        return {
+            ...site,
+            run: {
+                ...site.run,
+                live: {
+                    checks: 5,
+                    pause: 1000,
+                    inARow: 1,
+                    read: () => {
+                        site.events.push('live?')
+                        calls += 1
+                        if (calls > answers.length) {
+                            return read === undefined ? Promise.resolve(undefined) : read()
+                        }
+                        const answer = answers[calls - 1]
+                        return answer instanceof Error
+                            ? Promise.reject(answer)
+                            : Promise.resolve(answer)
+                    }
+                }
+            }
+        }
+    }
+
+    test('is replaced by a release of a copy that holds its content revision', async () => {
+        const asked: string[] = []
+        const site = liveAnswers([LIVE, LIVE], {
+            descendsFrom: (revision) => {
+                asked.push(revision)
+                return Promise.resolve(true)
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ deploy: 'ok', live: true, error: null })
+        expect(asked).toEqual([LIVE.contentRevision, LIVE.contentRevision])
+    })
+
+    test('is never replaced by older content, and nothing is touched, also after a takedown', async () => {
+        const site = liveAnswers([LIVE], {
+            takedown: true,
+            descendsFrom: () => Promise.resolve(false)
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({
+            build: 'skipped',
+            deploy: 'skipped',
+            live: false,
+            deleted: 0
+        })
+        expect(result.error).toContain(LIVE.contentRevision)
+        expect(result.error).toContain('not in the history')
+        expect(site.events.filter((event) => event !== 'live?')).toEqual([])
+    })
+
+    test('refuses a live revision that the copy does not know', async () => {
+        const site = liveAnswers([LIVE], { descendsFrom: () => Promise.resolve(undefined) })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+        expect(result.error).toContain('does not know')
+    })
+
+    test('refuses when the record of the live release cannot be read', async () => {
+        const site = liveAnswers([new Error('the host answers 503')])
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+        expect(result.error).toContain('503')
+    })
+
+    test('refuses a record of the live release that is not a record', async () => {
+        const site = liveAnswers([{ contentRevision: 'latest' }])
+        expect((await deployRelease(site.run)).error).toContain('cannot be read')
+    })
+
+    test('refuses right before the deployment when a newer release went live during the build', async () => {
+        const NEWER = { ...LIVE, contentRevision: 'b'.repeat(40) }
+        const site = liveAnswers([LIVE, NEWER], {
+            takedown: true,
+            descendsFrom: (revision) => Promise.resolve(revision === LIVE.contentRevision)
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'ok', deploy: 'skipped', live: false, deleted: 0 })
+        expect(result.error).toContain(NEWER.contentRevision)
+        expect(result.warnings.join('\n')).toContain('can still be public')
+        expect(site.events).not.toContain('deploy')
+        expect(site.storage.names.has(OLD.key)).toBe(true)
+    })
+
+    test('refuses right before the deployment when the copy changed during the build', async () => {
+        const site = liveAnswers([], {
+            takedown: true,
+            beforeDeploy: () =>
+                Promise.reject(new Error('the copy of the content store has changes'))
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'ok', deploy: 'skipped', deleted: 0 })
+        expect(result.error).toContain('has changes')
+        expect(site.events).not.toContain('deploy')
+    })
+
+    test('lets an output built elsewhere replace no release of the content store', async () => {
+        const dist = liveAnswers([LIVE], { contentRevision: null })
+        const refused = await deployRelease(dist.run)
+        expect(refused).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+        expect(refused.error).toContain('--dist')
+
+        const first = liveAnswers([undefined, undefined], { contentRevision: null })
+        expect(await deployRelease(first.run)).toMatchObject({ deploy: 'ok', error: null })
+
+        const over = liveAnswers(
+            [
+                { ...LIVE, contentRevision: null },
+                { ...LIVE, contentRevision: null }
+            ],
+            {
+                contentRevision: null
+            }
+        )
+        expect(await deployRelease(over.run)).toMatchObject({ deploy: 'ok', error: null })
+    })
+})
+
 describe('the record that a host gives', () => {
     test('is read at its path, never from a cache', async () => {
         const asked: string[] = []
@@ -587,6 +730,16 @@ describe('the record that a host gives', () => {
         })
         expect(record).toEqual({ contentRevision: CONTENT })
         expect(asked).toEqual(['https://preview.notes.example/-/deployment.json no-store'])
+    })
+
+    test('fails when the host fails', async () => {
+        expect(
+            await rejectionOf(
+                readHostRecord('https://preview.notes.example/', () =>
+                    Promise.resolve(new Response('upstream', { status: 503 }))
+                )
+            )
+        ).toContain('503')
     })
 
     test('is none when the host answers no record', async () => {

@@ -72,6 +72,14 @@ export interface DeployRun {
     readonly attachments: AttachmentFolder
     /** True when a takedown started the run. */
     readonly takedown: boolean
+    /**
+     * True when the revision is the revision of the copy or one of its
+     * ancestors, false when it is not, `undefined` when the copy does not
+     * know it. Without it, a live release of the content store is refused.
+     */
+    readonly descendsFrom?: (revision: string) => Promise<boolean | undefined>
+    /** Checks right before the deployment that the copy is still what the build read. It throws when not. */
+    readonly beforeDeploy?: () => Promise<void>
     /** The whole `_headers` file of the output. */
     readonly headers: string
     /** Builds the site and gives the folder of its output. It throws when the build fails. */
@@ -159,6 +167,53 @@ function messageOf(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * A refusal: the release must not replace the live one. It deletes nothing,
+ * also after a takedown, because a newer release can be live.
+ */
+class Refusal extends Error {}
+
+/**
+ * Why the release of the run must not replace the live release, or
+ * `undefined` when it can: its content
+ * must descend from the live content, so a takedown never comes back with
+ * older content. A host with no record (a first deployment) takes any
+ * release; an output built elsewhere (`--dist`) never replaces a release of
+ * the content store.
+ */
+async function refusalOver(run: DeployRun): Promise<string | undefined> {
+    if (run.live === undefined) {
+        return undefined
+    }
+    let value: unknown
+    try {
+        value = await run.live.read()
+    } catch (error) {
+        return `the record of the live release cannot be read, so the command cannot know that this release is not older: ${messageOf(error)}`
+    }
+    if (value === undefined) {
+        return undefined
+    }
+    const live = deploymentRecordFrom(value)
+    if (live === undefined) {
+        return 'the host gives a deployment record that cannot be read'
+    }
+    if (live.contentRevision === null) {
+        return undefined
+    }
+    if (run.contentRevision === null) {
+        return `--dist would replace the live release of the content store ${live.contentRevision}`
+    }
+    const descends = await run.descendsFrom?.(live.contentRevision)
+    if (descends === undefined) {
+        return `the copy of the content store does not know the live content revision ${live.contentRevision}: fetch the copy, or check the target`
+    }
+    if (!descends) {
+        return `the live content revision ${live.contentRevision} is not in the history of this copy (${run.contentRevision}): older or other content would go live`
+    }
+    return undefined
+}
+
 /** The time of a build, in UTC, to the second. */
 function timeOf(date: Date): string {
     return `${date.toISOString().slice(0, 19)}Z`
@@ -220,6 +275,10 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
 
     let error: string | null = null
     try {
+        const refusal = await refusalOver(run)
+        if (refusal !== undefined) {
+            throw new Refusal(refusal)
+        }
         if (run.storage !== undefined) {
             stored = await run.storage.list()
             await upload(run, run.storage, new Set(stored), () => {
@@ -258,6 +317,15 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
 
         try {
+            await run.beforeDeploy?.()
+        } catch (failure) {
+            throw new Refusal(messageOf(failure))
+        }
+        const late = await refusalOver(run)
+        if (late !== undefined) {
+            throw new Refusal(late)
+        }
+        try {
             await run.deploy(dist)
             deploy = run.dryRun === true ? 'skipped' : 'ok'
         } catch (failure) {
@@ -295,12 +363,23 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
     } catch (failure) {
         error = messageOf(failure)
-        if (run.takedown && run.storage !== undefined && stored === undefined) {
+        const refused = failure instanceof Refusal
+        if (run.takedown && refused) {
+            warnings.push(
+                'a file can still be public: the deployment was refused, so no file of the takedown was deleted'
+            )
+        } else if (run.takedown && run.storage !== undefined && stored === undefined) {
             warnings.push(
                 'a file can still be public: the attachment storage could not be listed, so no file of the takedown was deleted'
             )
         }
-        if (run.takedown && deploy !== 'ok' && run.storage !== undefined && stored !== undefined) {
+        if (
+            run.takedown &&
+            !refused &&
+            deploy !== 'ok' &&
+            run.storage !== undefined &&
+            stored !== undefined
+        ) {
             try {
                 await cleanUp(run.storage, stored)
             } catch (cleanup) {
@@ -426,7 +505,8 @@ function sameRecord(one: DeploymentRecord, two: DeploymentRecord | undefined): b
 
 /**
  * The deployment record that a host gives (STORE-08), as JSON, or
- * `undefined` when it answers no record. The record is never kept, so each
+ * `undefined` when it answers "not found" (no record). Any other failure
+ * throws. The record is never kept, so each
  * read asks the host.
  */
 export async function readHostRecord(
@@ -435,9 +515,13 @@ export async function readHostRecord(
         globalThis.fetch(address, init)
 ): Promise<unknown> {
     const response = await fetch(new URL(DEPLOYMENT_RECORD_FILE, url), { cache: 'no-store' })
-    if (!response.ok) {
+    if (response.status === 404) {
         await response.body?.cancel()
         return undefined
+    }
+    if (!response.ok) {
+        await response.body?.cancel()
+        throw new Error(`the host answers ${String(response.status)} for ${DEPLOYMENT_RECORD_FILE}`)
     }
     return (await response.json()) as unknown
 }

@@ -1,0 +1,111 @@
+// The copy of the content store on the machine that deploys (issue 32), as
+// git sees it. A release is built from a copy that is clean and at the last
+// `main` of the content store, so the deployment record names what the
+// build read. The history of the copy says whether a release would put older
+// content live than the live release, and which takedowns a revert would
+// undo.
+
+/** The output of git in a folder, with its exit code and what it wrote on its error output. */
+async function git(
+    folder: string,
+    ...args: string[]
+): Promise<{ code: number; text: string; errors: string }> {
+    // A variable of git of the caller (a hook) must not choose another repository.
+    const env = Object.fromEntries(
+        Object.entries(process.env).filter(
+            (entry): entry is [string, string] =>
+                entry[1] !== undefined && !entry[0].startsWith('GIT_')
+        )
+    )
+    const child = Bun.spawn(['git', '-C', folder, ...args], {
+        env,
+        stdio: ['ignore', 'pipe', 'pipe']
+    })
+    const [text, errors, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited
+    ])
+    return { code, text: text.trimEnd(), errors: errors.trim() }
+}
+
+/** The output of git, or an error with what git said. */
+async function gitText(folder: string, ...args: string[]): Promise<string> {
+    const result = await git(folder, ...args)
+    if (result.code !== 0) {
+        throw new Error(
+            `git ${args.join(' ')} failed in the copy of the content store ${folder}: ${result.errors}`
+        )
+    }
+    return result.text
+}
+
+/**
+ * Fetches the content store into the copy, and gives the commit of the copy
+ * when the copy is clean (no change of a tracked file, no new file) and its
+ * `HEAD` is the `main` of the content store. Else it throws: the build would
+ * read something else than the commit of the record.
+ *
+ * @param fetch false after the build: the copy must still be what the build
+ * read, also when another device pushed since.
+ */
+export async function checkContentCopy(store: string, fetch = true): Promise<string> {
+    if (fetch) {
+        await gitText(
+            store,
+            'fetch',
+            '--quiet',
+            'origin',
+            '+refs/heads/main:refs/remotes/origin/main'
+        )
+    }
+    const changes = await gitText(store, 'status', '--porcelain', '--untracked-files=all')
+    if (changes !== '') {
+        throw new Error(
+            `the copy of the content store has changes, so the build would not be the commit of the record: ${store}\n${changes}`
+        )
+    }
+    const head = await gitText(store, 'rev-parse', 'HEAD')
+    const main = await gitText(store, 'rev-parse', 'refs/remotes/origin/main')
+    if (head !== main) {
+        throw new Error(
+            `the copy of the content store is at ${head}, not at origin/main (${main}): pull the copy first (${store})`
+        )
+    }
+    return head
+}
+
+/**
+ * True when the revision is the commit of the copy or one of its ancestors,
+ * false when it is not, `undefined` when the copy does not know the revision.
+ */
+export async function descendsFrom(store: string, revision: string): Promise<boolean | undefined> {
+    const known = await git(store, 'cat-file', '-e', `${revision}^{commit}`)
+    if (known.code !== 0) {
+        return undefined
+    }
+    const result = await git(store, 'merge-base', '--is-ancestor', revision, 'HEAD')
+    if (result.code === 0 || result.code === 1) {
+        return result.code === 0
+    }
+    throw new Error(`git merge-base failed in the copy of the content store: ${result.errors}`)
+}
+
+/**
+ * The subjects of the takedown commits (a subject that starts with
+ * `Takedown:`) after `from` up to `to`, the newest first. `undefined` when
+ * the copy does not know one of the revisions.
+ */
+export async function takedownsBetween(
+    store: string,
+    from: string,
+    to: string
+): Promise<string[] | undefined> {
+    for (const revision of [from, to]) {
+        if ((await git(store, 'cat-file', '-e', `${revision}^{commit}`)).code !== 0) {
+            return undefined
+        }
+    }
+    const subjects = await gitText(store, 'log', '--format=%s', `${from}..${to}`)
+    return subjects.split('\n').filter((subject) => subject.startsWith('Takedown:'))
+}
