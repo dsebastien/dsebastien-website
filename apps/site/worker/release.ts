@@ -43,10 +43,15 @@ export interface LiveRecord {
     readonly checks: number
     /** The pause between two reads, in milliseconds. */
     readonly pause: number
+    /**
+     * How many reads in a row must give the record. After a switch, the old
+     * and the new release answer in turn for some seconds.
+     */
+    readonly inARow: number
 }
 
-/** The checks of the host after a deployment or a revert: 10 reads, 3 seconds apart. */
-export const LIVE_CHECKS = { checks: 10, pause: 3000 } as const
+/** The checks of the host after a deployment or a revert: 30 reads, 1 second apart, 3 in a row. */
+export const LIVE_CHECKS = { checks: 30, pause: 1000, inARow: 3 } as const
 
 /** What a run of a deployment takes. */
 export interface DeployRun {
@@ -244,8 +249,11 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
 
         if (run.live !== undefined) {
-            live = await waitUntilLive(run, run.live, record)
-            if (!live) {
+            live = (await waitForRecord(run.live, run.wait, (seen) => sameRecord(record, seen)))
+                .accepted
+            if (live) {
+                run.log(`live: ${run.url}`)
+            } else {
                 warnings.push(
                     `the host did not give the record of this build yet: check ${new URL(DEPLOYMENT_RECORD_FILE, run.url).href}`
                 )
@@ -327,23 +335,29 @@ async function upload(
     run.log(`uploaded ${String(wanted.length)} attachments to the attachment storage`)
 }
 
-/** Reads the record that the host gives until it is the record of this build. */
-async function waitUntilLive(
-    run: DeployRun,
+/**
+ * Reads the record that the host gives until `accept` takes it on
+ * `inARow` reads in a row, at most `checks` times. It gives that record, or
+ * `undefined` and the last record that it read.
+ */
+async function waitForRecord(
     live: LiveRecord,
-    record: DeploymentRecord
-): Promise<boolean> {
+    wait: (milliseconds: number) => Promise<void>,
+    accept: (record: DeploymentRecord | undefined) => boolean
+): Promise<{ accepted: boolean; last: DeploymentRecord | undefined }> {
+    let row = 0
+    let last: DeploymentRecord | undefined
     for (let check = 1; check <= live.checks; check += 1) {
-        const value = await live.read().catch(() => undefined)
-        if (sameRecord(record, deploymentRecordFrom(value))) {
-            run.log(`live: ${run.url}`)
-            return true
+        last = deploymentRecordFrom(await live.read().catch(() => undefined))
+        row = accept(last) ? row + 1 : 0
+        if (row >= live.inARow) {
+            return { accepted: true, last }
         }
         if (check < live.checks) {
-            await run.wait(live.pause)
+            await wait(live.pause)
         }
     }
-    return false
+    return { accepted: false, last }
 }
 
 /** What a revert takes (BUILD-07). */
@@ -368,21 +382,14 @@ export interface RevertResult {
  * a bounded number of times. The switch of the host takes a few seconds.
  */
 export async function revertRelease(run: RevertRun): Promise<RevertResult> {
-    const read = async (): Promise<DeploymentRecord | undefined> =>
-        deploymentRecordFrom(await run.live.read().catch(() => undefined))
-    const before = await read()
+    const before = deploymentRecordFrom(await run.live.read().catch(() => undefined))
     await run.rollback()
-    let after: DeploymentRecord | undefined
-    for (let check = 1; check <= run.live.checks; check += 1) {
-        after = await read()
-        if (after !== undefined && !sameRecord(after, before)) {
-            return { before, after, changed: true }
-        }
-        if (check < run.live.checks) {
-            await run.wait(run.live.pause)
-        }
-    }
-    return { before, after, changed: false }
+    const { accepted, last } = await waitForRecord(
+        run.live,
+        run.wait,
+        (seen) => seen !== undefined && !sameRecord(seen, before)
+    )
+    return { before, after: last, changed: accepted }
 }
 
 /** True when two records name the same build. */

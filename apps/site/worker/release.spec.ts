@@ -131,8 +131,9 @@ function fixture(
                 events.push('live?')
                 return Promise.resolve(deployed)
             },
-            checks: 3,
-            pause: 1000
+            checks: 5,
+            pause: 1000,
+            inARow: 3
         },
         wait: (milliseconds) => {
             events.push(`wait ${String(milliseconds)}`)
@@ -173,6 +174,10 @@ describe('a deployment', () => {
             `put ${PLAN.key}`,
             'build',
             'deploy',
+            'live?',
+            'wait 1000',
+            'live?',
+            'wait 1000',
             'live?',
             `remove ${OLD.key}`
         ])
@@ -325,7 +330,8 @@ describe('a deployment', () => {
                 live: {
                     read: () => Promise.resolve({ contentRevision: 'e'.repeat(40) }),
                     checks: 3,
-                    pause: 1000
+                    pause: 1000,
+                    inARow: 3
                 }
             }
         })
@@ -345,7 +351,8 @@ describe('a deployment', () => {
         const notLive = {
             read: () => Promise.resolve(undefined),
             checks: 2,
-            pause: 1000
+            pause: 1000,
+            inARow: 3
         }
         const site = fixture({
             stored: [PHOTO.key, PLAN.key, OLD.key],
@@ -374,8 +381,41 @@ describe('a deployment', () => {
         expect(result.deleted).toBe(0)
     })
 
-    test('is live at the check where the host gives its record, after an old record and a failure', async () => {
+    // After a switch, the old and the new release answer in turn for some seconds.
+    test('is live once the host gives the record of this build three times in a row', async () => {
         const site = fixture({ stored: [PHOTO.key, PLAN.key] })
+        const read = site.run.live?.read
+        const OLD_RECORD = {
+            contentRevision: 'e'.repeat(40),
+            siteRevision: SITE,
+            builtAt: '2031-03-01T08:00:00Z'
+        }
+        // old, a failure, new, old, new, new, new
+        const plan = ['old', 'fail', 'new', 'old', 'new', 'new', 'new']
+        let calls = 0
+        const result = await deployRelease({
+            ...site.run,
+            live: {
+                read: () => {
+                    const step = plan[calls] ?? 'new'
+                    calls += 1
+                    if (step === 'fail' || read === undefined) {
+                        return Promise.reject(new Error('offline'))
+                    }
+                    return step === 'old' ? Promise.resolve(OLD_RECORD) : read()
+                },
+                checks: 8,
+                pause: 1000,
+                inARow: 3
+            }
+        })
+        expect(result.live).toBe(true)
+        expect(result.warnings).toEqual([])
+        expect(calls).toBe(7)
+    })
+
+    test('is not live while the old and the new release answer in turn', async () => {
+        const site = fixture({ stored: [PHOTO.key, PLAN.key, OLD.key] })
         const read = site.run.live?.read
         let calls = 0
         const result = await deployRelease({
@@ -383,21 +423,16 @@ describe('a deployment', () => {
             live: {
                 read: () => {
                     calls += 1
-                    if (calls === 1) {
-                        return Promise.resolve({ contentRevision: 'e'.repeat(40) })
-                    }
-                    if (calls === 2 || read === undefined) {
-                        return Promise.reject(new Error('offline'))
-                    }
-                    return read()
+                    return calls % 2 === 0 || read === undefined
+                        ? Promise.resolve(undefined)
+                        : read()
                 },
-                checks: 5,
-                pause: 1000
+                checks: 6,
+                pause: 1000,
+                inARow: 3
             }
         })
-        expect(result.live).toBe(true)
-        expect(result.warnings).toEqual([])
-        expect(calls).toBe(3)
+        expect(result).toMatchObject({ live: false, deleted: 0, error: null })
     })
 
     test('leaves a name of the storage that is not a key, with a warning', async () => {
@@ -475,7 +510,7 @@ describe('a revert', () => {
                 live.events.push('rollback')
                 return Promise.resolve()
             },
-            live: { read: live.read, checks: 5, pause: 1000 },
+            live: { read: live.read, checks: 5, pause: 1000, inARow: 1 },
             wait: (milliseconds) => {
                 live.events.push(`wait ${String(milliseconds)}`)
                 return Promise.resolve()
@@ -492,7 +527,7 @@ describe('a revert', () => {
                 live.events.push('rollback')
                 return Promise.resolve()
             },
-            live: { read: live.read, checks: 3, pause: 1000 },
+            live: { read: live.read, checks: 3, pause: 1000, inARow: 1 },
             wait: () => Promise.resolve()
         })
         expect(result).toEqual({ before: BEFORE, after: BEFORE, changed: false })
