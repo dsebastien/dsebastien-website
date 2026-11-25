@@ -77,8 +77,13 @@ export interface DeployRun {
     readonly build: () => Promise<string>
     /** The limits of the host. By default `HOST_LIMITS`. */
     readonly limits?: HostLimits
-    /** Puts the output on the host as one new release. It throws when it fails. */
+    /**
+     * Puts the output on the host as one new release. It throws when it
+     * fails. In a dry run it checks the bundle only.
+     */
     readonly deploy: (dist: string) => Promise<void>
+    /** True for a dry run: it never counts as a deployment. */
+    readonly dryRun?: boolean
     /** Reads the deployment record that the host gives. Without it (a dry run), no wait. */
     readonly live?: LiveRecord
     readonly wait: (milliseconds: number) => Promise<void>
@@ -243,7 +248,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
 
         try {
             await run.deploy(dist)
-            deploy = 'ok'
+            deploy = run.dryRun === true ? 'skipped' : 'ok'
         } catch (failure) {
             deploy = 'failed'
             throw failure

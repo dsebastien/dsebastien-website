@@ -230,6 +230,7 @@ async function deploy(values: {
                 read: async (key) => new Uint8Array(await readFile(keyPath(key)))
             },
             takedown: values.takedown,
+            dryRun,
             headers: headersFile(target),
             build: async () => {
                 if (store === undefined) {

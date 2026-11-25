@@ -485,11 +485,12 @@ describe('a deployment', () => {
         expect(result.error).toContain('refused')
     })
 
-    test('without an object storage (a dry run), builds and deploys and touches no storage', async () => {
+    // A dry run never counts as a deployment.
+    test('in a dry run, builds and checks the bundle, touches no storage and deploys nothing', async () => {
         const site = fixture()
         const { storage: _storage, live: _live, ...run } = site.run
-        const result = await deployRelease(run)
-        expect(result).toMatchObject({ build: 'ok', deploy: 'ok', live: false, error: null })
+        const result = await deployRelease({ ...run, dryRun: true })
+        expect(result).toMatchObject({ build: 'ok', deploy: 'skipped', live: false, error: null })
         expect(site.events).toEqual(['build', 'deploy'])
     })
 })
