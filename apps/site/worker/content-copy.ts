@@ -10,13 +10,18 @@ async function git(
     folder: string,
     ...args: string[]
 ): Promise<{ code: number; text: string; errors: string }> {
-    // A variable of git of the caller (a hook) must not choose another repository.
-    const env = Object.fromEntries(
-        Object.entries(process.env).filter(
-            (entry): entry is [string, string] =>
-                entry[1] !== undefined && !entry[0].startsWith('GIT_')
-        )
-    )
+    // A variable of git of the caller (a hook) must not choose another
+    // repository. No optional lock: `git status` then never refreshes the
+    // index, which the tool writes during a publication.
+    const env = {
+        ...Object.fromEntries(
+            Object.entries(process.env).filter(
+                (entry): entry is [string, string] =>
+                    entry[1] !== undefined && !entry[0].startsWith('GIT_')
+            )
+        ),
+        GIT_OPTIONAL_LOCKS: '0'
+    }
     const child = Bun.spawn(['git', '-C', folder, ...args], {
         env,
         stdio: ['ignore', 'pipe', 'pipe']
@@ -41,7 +46,14 @@ async function gitText(folder: string, ...args: string[]): Promise<string> {
 }
 
 /**
- * Fetches the content store into the copy, and gives the commit of the copy
+ * The ref of the copy that the fetch of a deployment writes: the tool
+ * fetches and pushes with `refs/remotes/origin/main`, which the deployment
+ * never writes.
+ */
+export const DEPLOY_REF = 'refs/deploy/origin-main'
+
+/**
+ * Fetches the content store into the copy (into `DEPLOY_REF`), and gives the commit of the copy
  * when the copy is clean (no change of a tracked file, no new file) and its
  * `HEAD` is the `main` of the content store. Else it throws: the build would
  * read something else than the commit of the record.
@@ -51,12 +63,15 @@ async function gitText(folder: string, ...args: string[]): Promise<string> {
  */
 export async function checkContentCopy(store: string, fetch = true): Promise<string> {
     if (fetch) {
+        // `--refmap=`: no update of the remote-tracking ref that the
+        // configuration of the remote names, only the ref of the refspec.
         await gitText(
             store,
             'fetch',
             '--quiet',
+            '--refmap=',
             'origin',
-            '+refs/heads/main:refs/remotes/origin/main'
+            `+refs/heads/main:${DEPLOY_REF}`
         )
     }
     const changes = await gitText(store, 'status', '--porcelain', '--untracked-files=all')
@@ -66,7 +81,7 @@ export async function checkContentCopy(store: string, fetch = true): Promise<str
         )
     }
     const head = await gitText(store, 'rev-parse', 'HEAD')
-    const main = await gitText(store, 'rev-parse', 'refs/remotes/origin/main')
+    const main = await gitText(store, 'rev-parse', DEPLOY_REF)
     if (head !== main) {
         throw new Error(
             `the copy of the content store is at ${head}, not at origin/main (${main}): pull the copy first (${store})`

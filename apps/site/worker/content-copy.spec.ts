@@ -52,6 +52,8 @@ describe('the copy of the content store of a deployment', () => {
     test('refuses a copy that is behind the content store, after a fetch', async () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
+        // The check before the build fetches.
+        await checkContentCopy(copy)
         // Another device publishes.
         const other = join(stores.root, 'other')
         await git(stores.root, 'clone', '--quiet', stores.contentStore, other)
@@ -70,6 +72,28 @@ describe('the copy of the content store of a deployment', () => {
         const copy = await makeContentStoreCopy(stores)
         await commit(copy, 'Publish: not pushed', false)
         expect(await rejectionOf(checkContentCopy(copy))).toContain('origin/main')
+    })
+})
+
+describe('the fetch of a deployment', () => {
+    // The tool fetches and pushes with refs/remotes/origin/main: the
+    // deployment writes nothing there.
+    test('writes only a ref of its own, and compares the copy with it', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const tracked = await git(copy, 'rev-parse', 'refs/remotes/origin/main')
+        const other = join(stores.root, 'other')
+        await git(stores.root, 'clone', '--quiet', stores.contentStore, other)
+        await git(other, 'config', 'user.name', 'Test')
+        await git(other, 'config', 'user.email', 'test@example.invalid')
+        await git(other, 'config', 'commit.gpgsign', 'false')
+        const newer = await commit(other, 'Publish: from another device')
+
+        const message = await rejectionOf(checkContentCopy(copy))
+
+        expect(message).toContain(newer)
+        expect(await git(copy, 'rev-parse', 'refs/remotes/origin/main')).toBe(tracked)
+        expect(await git(copy, 'rev-parse', 'refs/deploy/origin-main')).toBe(newer)
     })
 })
 
