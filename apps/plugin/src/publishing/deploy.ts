@@ -327,10 +327,18 @@ export function deployCommandOf(
     }
 }
 
-/** True when the deploy succeeded: `deploy` is `ok` and no error came. */
+/**
+ * True when the deploy succeeded: `deploy` is `ok` and no error came. A
+ * deploy with `--takedown` must also be seen live: the pages of the
+ * takedown must be gone.
+ */
 export function succeeded(report: DeployReport): boolean {
-    return report.deploy === 'ok' && report.error === undefined
+    return report.deploy === 'ok' && report.error === undefined && (!report.takedown || report.live)
 }
+
+/** The error of a deploy with `--takedown` that was not seen live, as the deploy command writes it. */
+export const TAKEDOWN_NOT_LIVE =
+    'the release of the takedown was not seen live, so the takedown waits for a deploy that is seen live'
 
 /** A report with no step done, before the warning of a takedown. */
 function bare(error: string, kind: DeployKind): DeployReport {
@@ -498,7 +506,9 @@ export function reportOfRun(code: number | null, stdout: string, kind: DeployKin
         return failed(`the result line of the deploy has the wrong shape: ${READ_OUTPUT}`, kind)
     }
     if (result.deploy === 'ok' && code === 0 && result.error === undefined) {
-        return result
+        return result.takedown && !result.live
+            ? withTakedown({ ...result, error: TAKEDOWN_NOT_LIVE })
+            : result
     }
     // A step after the switch failed (a cleanup of a takedown): the error
     // of the deploy and "live" stay, and the deploy is no success.

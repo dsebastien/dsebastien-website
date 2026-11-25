@@ -427,6 +427,13 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 warnings.push(messageOf(failure))
             }
         }
+        // The pages of a takedown must go: a release that was not seen live
+        // is no success, and the tools keep the takedown waiting.
+        if (run.takedown && run.live !== undefined && !live) {
+            throw new Error(
+                'the release of the takedown was not seen live, so the takedown waits for a deploy that is seen live'
+            )
+        }
     } catch (failure) {
         error = messageOf(failure)
         const refused = failure instanceof Refusal

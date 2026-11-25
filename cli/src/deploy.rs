@@ -287,9 +287,11 @@ pub struct DeployReport {
 }
 
 impl DeployReport {
-    /// True when the deploy succeeded: `deploy` is `ok` and no error came.
+    /// True when the deploy succeeded: `deploy` is `ok` and no error came. A
+    /// deploy with `--takedown` must also be seen live: the pages of the
+    /// takedown must be gone.
     pub fn succeeded(&self) -> bool {
-        self.deploy == "ok" && self.error.is_none()
+        self.deploy == "ok" && self.error.is_none() && (!self.takedown || self.live)
     }
 }
 
@@ -447,6 +449,10 @@ fn bare(error: String, kind: DeployKind) -> DeployReport {
         error: Some(error),
     }
 }
+
+/// The error of a deploy with `--takedown` that was not seen live, as the
+/// deploy command writes it.
+pub const TAKEDOWN_NOT_LIVE: &str = "the release of the takedown was not seen live, so the takedown waits for a deploy that is seen live";
 
 /// The warning of a takedown whose deploy did not succeed (PUB-42).
 pub const TAKEDOWN_WAITS: &str = "the notes of the takedown can still be live until a deploy with --takedown succeeds: the next deploy runs with --takedown";
@@ -610,6 +616,12 @@ fn read_run(code: Option<i32>, stdout: &str, kind: DeployKind) -> DeployReport {
         );
     };
     if result.deploy == "ok" && code == Some(0) && result.error.is_none() {
+        if result.takedown && !result.live {
+            return DeployReport {
+                error: Some(TAKEDOWN_NOT_LIVE.to_owned()),
+                ..result
+            };
+        }
         return result;
     }
     // A step after the switch failed (a cleanup of a takedown): the error of

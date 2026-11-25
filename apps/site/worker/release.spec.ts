@@ -465,7 +465,11 @@ describe('a deployment', () => {
             overrides: { live: notLive, takedown: true }
         })
         const removed = await deployRelease(takedown.run)
-        expect(removed).toMatchObject({ deploy: 'ok', live: false, deleted: 1, error: null })
+        // A takedown that is not seen live is a failure: the cleanup still ran.
+        expect(removed).toMatchObject({ deploy: 'ok', live: false, deleted: 1 })
+        expect(removed.error).toBe(
+            'the release of the takedown was not seen live, so the takedown waits for a deploy that is seen live'
+        )
         expect(takedown.storage.names.has(OLD.key)).toBe(false)
     })
 
