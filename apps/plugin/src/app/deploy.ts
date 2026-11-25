@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process'
-import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { execFile, spawn } from 'node:child_process'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import type {
     ChildRun,
@@ -7,8 +7,10 @@ import type {
     DeployProcess,
     DeployRecord,
     DeploySettings,
+    TakedownEntry,
     TakedownMarker
 } from '../publishing/deploy.ts'
+import { takedownEntryOf, takedownEntryText } from '../publishing/deploy.ts'
 import type { DeviceSettings } from './settings.ts'
 
 // The child process of the deploy (issue 32, BUILD-02, R76): the port
@@ -173,20 +175,43 @@ export function deploySettingsOf(settings: DeviceSettings): DeploySettings {
     }
 }
 
+/** True when a process runs, by its number. A process of another user runs too. */
+function isAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0)
+        return true
+    } catch (error) {
+        return error instanceof Error && 'code' in error && error.code === 'EPERM'
+    }
+}
+
+function isMissing(error: unknown): boolean {
+    return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+/** The number of writes of this process: each entry of a takedown gets a name of its own. */
+let entries = 0
+
 /**
  * The files of the deploy of this device, in `.git/vault-publish/` of the
  * copy, beside the lock and the run journal, so every face of this device
- * sees them: the marker of a takedown (`takedown-pending`; one that cannot
- * be read counts as set), whether a deploy runs (`deploy-running`) and the
- * last deploy report (`deploy-report.json`). A copy that is not set has none.
+ * sees them: the marker of the takedowns (`takedowns/<id>.json`, one file
+ * per takedown), the deploys that run (`deploy-running/<process>`, one file
+ * per process: `running` is true while a process of one of them runs) and
+ * the last deploy report (`deploy-report.json`). A copy that is not set has
+ * none.
+ *
+ * @param git the git program of the settings, or `git` of the path
  */
-export function deployFiles(contentStore: string): TakedownMarker & DeployRecord {
+export function deployFiles(contentStore: string, git = 'git'): TakedownMarker & DeployRecord {
     const folder = contentStore.trim()
     if (!isAbsolute(folder)) {
         return {
-            pending: () => Promise.resolve(false),
-            set: () => Promise.resolve(),
+            entries: () => Promise.resolve([]),
+            add: () => Promise.resolve(''),
+            replace: () => Promise.resolve(),
             remove: () => Promise.resolve(),
+            isAncestor: () => Promise.resolve(undefined),
             setRunning: () => Promise.resolve(),
             running: () => Promise.resolve(false),
             saveLast: () => Promise.resolve(),
@@ -194,37 +219,75 @@ export function deployFiles(contentStore: string): TakedownMarker & DeployRecord
         }
     }
     const local = join(folder, '.git', 'vault-publish')
-    const exists = async (file: string, unreadable: boolean): Promise<boolean> => {
-        try {
-            await access(join(local, file))
-            return true
-        } catch (error) {
-            return error instanceof Error && 'code' in error && error.code === 'ENOENT'
-                ? false
-                : unreadable
-        }
-    }
+    const takedowns = join(local, 'takedowns')
+    const runs = join(local, 'deploy-running')
     const write = async (file: string, text: string): Promise<void> => {
-        await mkdir(local, { recursive: true })
-        await writeFile(join(local, file), text)
+        await mkdir(dirname(file), { recursive: true })
+        await writeFile(file, text)
     }
     return {
-        pending: () => exists('takedown-pending', true),
-        set: () =>
-            write(
-                'takedown-pending',
-                'A takedown waits for a deploy with --takedown that succeeds.\n'
-            ),
-        remove: () => rm(join(local, 'takedown-pending'), { force: true }),
+        entries: async () => {
+            let names: string[]
+            try {
+                names = await readdir(takedowns)
+            } catch (error) {
+                if (isMissing(error)) {
+                    return []
+                }
+                throw error
+            }
+            const found: { id: string; entry: TakedownEntry }[] = []
+            for (const name of names.filter((one) => one.endsWith('.json')).sort()) {
+                const text = await readFile(join(takedowns, name), 'utf8').catch(
+                    (error: unknown) => {
+                        if (isMissing(error)) {
+                            return undefined
+                        }
+                        throw error
+                    }
+                )
+                if (text !== undefined) {
+                    found.push({ id: name.slice(0, -'.json'.length), entry: takedownEntryOf(text) })
+                }
+            }
+            return found
+        },
+        add: async (entry) => {
+            entries += 1
+            const id = `${String(Date.now())}-${String(process.pid)}-${String(entries)}`
+            await write(join(takedowns, `${id}.json`), takedownEntryText(entry))
+            return id
+        },
+        replace: (id, entry) => write(join(takedowns, `${id}.json`), takedownEntryText(entry)),
+        remove: (id) => rm(join(takedowns, `${id}.json`), { force: true }),
+        isAncestor: (ancestor, revision) =>
+            new Promise((resolve) => {
+                execFile(
+                    git,
+                    ['-C', folder, 'merge-base', '--is-ancestor', ancestor, revision],
+                    { env: childEnvironment(process.env, []) },
+                    (error) => {
+                        if (error === null) {
+                            resolve(true)
+                        } else {
+                            // 1: not an ancestor; another code: a commit that the copy does not know.
+                            resolve('code' in error && error.code === 1 ? false : undefined)
+                        }
+                    }
+                )
+            }),
         setRunning: (running) =>
             running
                 ? write(
-                      'deploy-running',
+                      join(runs, String(process.pid)),
                       `A deploy of the plugin runs since ${new Date().toISOString()}.\n`
                   )
-                : rm(join(local, 'deploy-running'), { force: true }),
-        running: () => exists('deploy-running', false),
-        saveLast: (text) => write('deploy-report.json', text),
+                : rm(join(runs, String(process.pid)), { force: true }),
+        running: async () => {
+            const names = await readdir(runs).catch(() => [])
+            return names.some((name) => /^[0-9]+$/u.test(name) && isAlive(Number(name)))
+        },
+        saveLast: (text) => write(join(local, 'deploy-report.json'), text),
         last: async () =>
             await readFile(join(local, 'deploy-report.json'), 'utf8').catch(() => undefined)
     }

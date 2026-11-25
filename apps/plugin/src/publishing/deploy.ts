@@ -62,17 +62,101 @@ export interface ChildRun {
 }
 
 /**
- * The marker of a takedown on this device, in the git folder of the copy
- * (`.git/vault-publish/takedown-pending`): it is set after the push of a
- * takedown, and every deploy runs with `--takedown` while it is there. Only
- * a deploy with `--takedown` that succeeded removes it, so a takedown is
- * never lost when its deploy fails, is skipped or is stopped.
+ * A takedown that waits for its deploy: the commit of its push, or, before
+ * the push, the commit of the copy before it (`above`, `null` for a copy
+ * with no commit): the commit of the takedown comes after it. `any` is an
+ * entry that cannot be read: any deploy with `--takedown` that succeeds
+ * settles it.
+ */
+export type TakedownEntry =
+    { readonly commit: string } | { readonly above: string | null } | { readonly any: true }
+
+/**
+ * The marker of the takedowns of this device, one entry per takedown, in the
+ * git folder of the copy (`.git/vault-publish/takedowns/`). An entry is
+ * written before the push of a takedown and holds its commit after it; it
+ * goes when nothing was pushed. Every deploy runs with `--takedown` while an
+ * entry is there, and a deploy with `--takedown` that succeeded removes only
+ * the entries that its release holds: its content revision is the commit of
+ * the entry or descends from it. So a takedown is never lost when its
+ * deploy fails, waits, is skipped or is stopped, or when an older deploy
+ * ends after its push.
  */
 export interface TakedownMarker {
-    /** True when a takedown waits for a deploy that succeeds. A marker that cannot be read counts as set. */
-    pending(): Promise<boolean>
-    set(): Promise<void>
-    remove(): Promise<void>
+    /** The entries, with their ids. It throws when they cannot be read: the marker then counts as set. */
+    entries(): Promise<readonly { readonly id: string; readonly entry: TakedownEntry }[]>
+    /** Adds an entry, and gives its id. */
+    add(entry: TakedownEntry): Promise<string>
+    /** Writes the entry of this id again. */
+    replace(id: string, entry: TakedownEntry): Promise<void>
+    remove(id: string): Promise<void>
+    /**
+     * True when `ancestor` is `revision` or one of its ancestors in the copy,
+     * false when it is not, `undefined` when the copy does not know them.
+     */
+    isAncestor(ancestor: string, revision: string): Promise<boolean | undefined>
+}
+
+/** The entry of a takedown as its file holds it, or `any` for a text that cannot be read. */
+export function takedownEntryOf(text: string): TakedownEntry {
+    try {
+        const value: unknown = JSON.parse(text)
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+            const keys = Object.keys(value)
+            const record = value as Record<string, unknown>
+            if (keys.length === 1 && typeof record['commit'] === 'string') {
+                return { commit: record['commit'] }
+            }
+            if (
+                keys.length === 1 &&
+                'above' in record &&
+                (typeof record['above'] === 'string' || record['above'] === null)
+            ) {
+                return { above: record['above'] }
+            }
+        }
+    } catch {
+        // A file that a stop cut: it still counts.
+    }
+    return { any: true }
+}
+
+/** The text of the file of an entry, in the canonical form (`any` is never written). */
+export function takedownEntryText(entry: TakedownEntry): string {
+    if ('commit' in entry) {
+        return toCanonicalJson({ commit: entry.commit })
+    }
+    if ('above' in entry) {
+        return entry.above === null
+            ? '{\n  "above": null\n}\n'
+            : toCanonicalJson({ above: entry.above })
+    }
+    return toCanonicalJson({ any: true })
+}
+
+/**
+ * True when a release of this content revision holds the takedown of the
+ * entry. A release built elsewhere (`null`) holds none, and a commit that
+ * the copy does not know counts as not held.
+ */
+export async function holdsTakedown(
+    entry: TakedownEntry,
+    revision: string | null,
+    isAncestor: (ancestor: string, revision: string) => Promise<boolean | undefined>
+): Promise<boolean> {
+    if ('any' in entry) {
+        return true
+    }
+    if (revision === null) {
+        return false
+    }
+    if ('commit' in entry) {
+        return revision === entry.commit || (await isAncestor(entry.commit, revision)) === true
+    }
+    if (revision === entry.above) {
+        return false
+    }
+    return entry.above === null || (await isAncestor(entry.above, revision)) === true
 }
 
 /**
@@ -463,6 +547,60 @@ export async function runDeploy(
     return deployment
 }
 
+/** True when a takedown waits for its deploy. A marker that cannot be read counts as set. */
+export async function takedownWaits(marker: TakedownMarker): Promise<boolean> {
+    try {
+        return (await marker.entries()).length > 0
+    } catch {
+        return true
+    }
+}
+
+/**
+ * Removes the entries of the marker that a release of this content revision
+ * holds, after a deploy with `--takedown` that succeeded. It gives the
+ * warnings: the takedowns that still wait, and an entry that could not be
+ * removed.
+ */
+async function settleTakedowns(marker: TakedownMarker, revision: string | null): Promise<string[]> {
+    const warnings: string[] = []
+    let entries: Awaited<ReturnType<TakedownMarker['entries']>>
+    try {
+        entries = await marker.entries()
+    } catch (error) {
+        return [
+            `the marker of the takedowns cannot be read, so the next deploy runs with --takedown too: ${messageOf(error)}`
+        ]
+    }
+    let waiting = 0
+    for (const { id, entry } of entries) {
+        const held = await holdsTakedown(entry, revision, (one, two) =>
+            marker.isAncestor(one, two).catch(() => undefined)
+        )
+        if (!held) {
+            waiting += 1
+            continue
+        }
+        try {
+            await marker.remove(id)
+        } catch (error) {
+            warnings.push(
+                `the marker of a takedown could not be removed, so the next deploy runs with --takedown too: ${messageOf(error)}`
+            )
+        }
+    }
+    if (waiting > 0) {
+        warnings.push(
+            `${String(waiting)} takedown(s) came after the content of this release and wait for their deploy: the next deploy runs with --takedown`
+        )
+    }
+    return warnings
+}
+
+function messageOf(error: unknown): string {
+    return error instanceof Error ? error.message : 'it failed'
+}
+
 async function deployWith(
     child: DeployProcess,
     marker: TakedownMarker,
@@ -471,8 +609,7 @@ async function deployWith(
     windows: boolean,
     signal?: AbortSignal
 ): Promise<Deployment> {
-    // A marker that cannot be read counts as set.
-    const pending = await marker.pending().catch(() => true)
+    const pending = await takedownWaits(marker)
     const kind: DeployKind = { push: asked.push, takedown: asked.takedown || pending }
     const made = deployCommandOf(settings, kind.takedown, windows)
     if ('error' in made) {
@@ -490,20 +627,10 @@ async function deployWith(
             ? reportOfRun(run.code, run.stdout, kind)
             : reportOfStop(run.stopped, made.command.timeoutMinutes, kind)
     if (report.takedown && succeeded(report)) {
-        try {
-            await marker.remove()
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'it failed'
-            return {
-                report: {
-                    ...report,
-                    warnings: [
-                        ...report.warnings,
-                        `the marker of the takedown could not be removed, so the next deploy runs with --takedown too: ${message}`
-                    ]
-                },
-                output: run.output
-            }
+        const warnings = await settleTakedowns(marker, report.contentRevision ?? null)
+        return {
+            report: { ...report, warnings: [...report.warnings, ...warnings] },
+            output: run.output
         }
     }
     return { report, output: run.output }
@@ -529,12 +656,21 @@ export function startedText(kind: DeployKind): string {
     })
 }
 
+/** The text that `status` of the MCP server adds after its report while a takedown waits for its deploy, outside the report. */
+export function takedownWaitsText(): string {
+    return toCanonicalJson({ takedownWaits: true })
+}
+
 /**
  * What the `deploy` tool and command give with `last`: the last deploy
  * report of the record (absent when there is none, or when its text is
  * broken), and whether a deploy runs. It starts no deploy.
  */
-export function lastText(stored: string | undefined, running: boolean): string {
+export function lastText(
+    stored: string | undefined,
+    running: boolean,
+    takedownWaits: boolean
+): string {
     let deployment: unknown
     try {
         deployment =
@@ -545,7 +681,7 @@ export function lastText(stored: string | undefined, running: boolean): string {
         deployment = undefined
     }
     const kept = isCanonicalObject(deployment) ? { deployment } : {}
-    return toCanonicalJson({ ...kept, running })
+    return toCanonicalJson({ ...kept, running, takedownWaits })
 }
 
 /** A JSON object whose values have a canonical form: texts, booleans, whole numbers, lists and objects of them. */

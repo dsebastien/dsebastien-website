@@ -14,8 +14,21 @@ import type { PublicationPlan } from '../publishing/plan.ts'
 import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
 import type { Device, RefreshResult } from '../publishing/ports.ts'
-import { lastText, reportOfStartError, startedText, succeeded } from '../publishing/deploy.ts'
-import type { DeployKind, Deployment, DeployRecord, DeployReport } from '../publishing/deploy.ts'
+import {
+    lastText,
+    reportOfStartError,
+    startedText,
+    succeeded,
+    takedownWaits,
+    takedownWaitsText
+} from '../publishing/deploy.ts'
+import type {
+    DeployKind,
+    Deployment,
+    DeployRecord,
+    DeployReport,
+    TakedownMarker
+} from '../publishing/deploy.ts'
 import {
     outcomeOfEdit,
     outcomeOfGuards,
@@ -77,8 +90,8 @@ export interface CenterHost {
      * takedown is set. Without it, nothing is deployed (the tests of the logic).
      */
     deploy?(kind: DeployKind, signal: AbortSignal): Promise<Deployment>
-    /** Sets the marker of a takedown, right after the push of a takedown (`TakedownMarker`). */
-    markTakedown?(): Promise<void>
+    /** The marker of the takedowns of this device (`TakedownMarker`). */
+    takedowns?(): TakedownMarker
     /** The record of the deploys of this device: whether one runs, and the last report. */
     record?(): DeployRecord
 }
@@ -189,6 +202,8 @@ export interface CenterState {
     readonly report?: Report
     /** The deploy after the last push, apart from the report of the publication. */
     readonly deployment?: DeploymentState
+    /** True when a takedown of this device waits for a deploy that succeeds. */
+    readonly takedownWaits?: boolean
     readonly log: readonly LogLine[]
     /**
      * The last line of the log of the last activity, before the check that
@@ -522,7 +537,10 @@ export class PublicationCenter {
      * Runs a publication, an unpublish or a takedown. When it fails after
      * its push (the run journal says that the correction is owed, and the
      * commit of the copy moved), the push happened: `pushed` is called, so
-     * that the deploy still starts, and the message says so.
+     * that the deploy still starts, and the message says so. A takedown
+     * writes its entry in the marker of the takedowns before its push, with
+     * the commit of the copy before it, then the commit of its push after
+     * it; the entry goes when nothing was pushed.
      */
     async #pushing<T>(
         device: Device,
@@ -531,21 +549,67 @@ export class PublicationCenter {
         isTakedown = false
     ): Promise<T> {
         const before = await device.store.head().catch(() => undefined)
+        const entry = isTakedown ? await this.#addTakedown(before) : undefined
+        const settle = async (done: boolean): Promise<void> => {
+            if (entry === undefined) {
+                return
+            }
+            try {
+                const after = done ? await device.store.head().catch(() => undefined) : undefined
+                if (!done) {
+                    await entry.marker.remove(entry.id)
+                } else if (after !== undefined && after !== before) {
+                    await entry.marker.replace(entry.id, { commit: after })
+                }
+            } catch (error) {
+                this.#log(`The marker of the takedown could not be written: ${messageOf(error)}`)
+            }
+            await this.refreshTakedowns()
+        }
         try {
-            return await work()
+            const result = await work()
+            await settle(true)
+            return result
         } catch (error) {
             if (!(await this.#pushedAnyway(device, before))) {
+                await settle(false)
                 throw error
             }
+            await settle(true)
             pushed()
-            if (isTakedown) {
-                await this.#markTakedown()
-            }
             throw new Error(
                 `The push happened, so the deploy starts, but a later step of the run failed: ${messageOf(error)}`,
                 { cause: error }
             )
         }
+    }
+
+    /** Writes the entry of a takedown before its push. A marker that cannot be written is logged. */
+    async #addTakedown(
+        before: string | undefined
+    ): Promise<{ marker: TakedownMarker; id: string } | undefined> {
+        const marker = this.host.takedowns?.()
+        if (marker === undefined) {
+            return undefined
+        }
+        try {
+            return { marker, id: await marker.add({ above: before ?? null }) }
+        } catch (error) {
+            this.#log(
+                `The marker of the takedown could not be written: ${messageOf(error)}. Deploy with --takedown until a deploy succeeds`
+            )
+            return undefined
+        }
+    }
+
+    /** Reads again whether a takedown of this device waits for its deploy (the view shows it). */
+    async refreshTakedowns(): Promise<boolean> {
+        const marker = this.host.takedowns?.()
+        const waits = marker === undefined ? false : await takedownWaits(marker)
+        if (this.#state.takedownWaits !== waits) {
+            this.#set({ takedownWaits: waits })
+        }
+        return waits
     }
 
     /** True when the run journal says that a push happened and the commit of the copy is not the one before the run. */
@@ -563,19 +627,6 @@ export class PublicationCenter {
         }
         const after = await device.store.head().catch(() => before)
         return after !== before
-    }
-
-    /**
-     * Sets the marker of a takedown right after its push, so that a deploy
-     * that fails, waits or is skipped never loses it. A marker that cannot be
-     * written is logged: the deploy after it still runs with `--takedown`.
-     */
-    async #markTakedown(): Promise<void> {
-        try {
-            await this.host.markTakedown?.()
-        } catch (error) {
-            this.#log(`The marker of the takedown could not be written: ${messageOf(error)}`)
-        }
     }
 
     /**
@@ -633,6 +684,7 @@ export class PublicationCenter {
             const { report, output } = deployment
             this.#set({ deployment: { running: false, report, output } })
             this.#log(deployLine(report))
+            await this.refreshTakedowns()
             return deployment
         })()
         this.#deploying = running
@@ -933,7 +985,6 @@ export class PublicationCenter {
                     true
                 )
                 done.pushed = true
-                await this.#markTakedown()
                 this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
@@ -1022,7 +1073,8 @@ export class PublicationCenter {
             const running =
                 this.#deploying !== undefined ||
                 (await record?.running().catch(() => false)) === true
-            return { output: lastText(stored, running) }
+            const waits = await this.refreshTakedowns()
+            return { output: lastText(stored, running, waits) }
         }
         this.#log(takedown ? 'Agent deploy, with --takedown' : 'Agent deploy')
         const kind: DeployKind = { push: 'skipped', takedown }
@@ -1042,7 +1094,11 @@ export class PublicationCenter {
         switch (call.tool) {
             case 'status': {
                 this.#log('Agent status')
-                return { output: toCanonicalJson(await status(device)) }
+                const output = toCanonicalJson(await status(device))
+                // A takedown that waits is said after the report, outside it.
+                return (await this.refreshTakedowns())
+                    ? { output, deploy: takedownWaitsText() }
+                    : { output }
             }
             case 'plan': {
                 this.#log('Agent plan')
@@ -1102,7 +1158,6 @@ export class PublicationCenter {
                     },
                     true
                 )
-                await this.#markTakedown()
                 this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)

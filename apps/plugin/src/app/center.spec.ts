@@ -19,7 +19,13 @@ import {
     reportOfStop,
     startedText
 } from '../publishing/deploy.ts'
-import type { DeployKind, Deployment, DeployReport } from '../publishing/deploy.ts'
+import type {
+    DeployKind,
+    Deployment,
+    DeployReport,
+    TakedownEntry,
+    TakedownMarker
+} from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
 import type { CenterHost } from './center.ts'
 import type { Device } from '../publishing/ports.ts'
@@ -54,7 +60,7 @@ async function setUp(
     stores: TestStores,
     configured = true,
     deploy?: CenterHost['deploy'],
-    markTakedown?: CenterHost['markTakedown']
+    takedowns?: CenterHost['takedowns']
 ): Promise<Setup> {
     const vault = await copyFixtureVault(stores)
     const copy = await makeContentStoreCopy(stores)
@@ -80,7 +86,7 @@ async function setUp(
             started.push(label)
         },
         ...(deploy === undefined ? {} : { deploy }),
-        ...(markTakedown === undefined ? {} : { markTakedown })
+        ...(takedowns === undefined ? {} : { takedowns })
     })
     return { vault, copy, center, started }
 }
@@ -974,6 +980,36 @@ function fakeDeploy(answer: (kind: DeployKind) => DeployReport) {
     return fake
 }
 
+/** A marker of the takedowns in memory: the entries that it holds, and every entry that it got. */
+function memoryMarker(): TakedownMarker & {
+    held: Map<string, TakedownEntry>
+    added: TakedownEntry[]
+} {
+    const held = new Map<string, TakedownEntry>()
+    const added: TakedownEntry[] = []
+    let next = 0
+    return {
+        held,
+        added,
+        entries: () => Promise.resolve([...held].map(([id, entry]) => ({ id, entry }))),
+        add: (entry) => {
+            next += 1
+            held.set(String(next), entry)
+            added.push(entry)
+            return Promise.resolve(String(next))
+        },
+        replace: (id, entry) => {
+            held.set(id, entry)
+            return Promise.resolve()
+        },
+        remove: (id) => {
+            held.delete(id)
+            return Promise.resolve()
+        },
+        isAncestor: () => Promise.resolve(undefined)
+    }
+}
+
 /** Waits until no deploy runs. */
 async function deployEnd(center: PublicationCenter): Promise<void> {
     while (center.state.deployment?.running !== false) {
@@ -1080,28 +1116,44 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         ])
     }, 60_000)
 
-    test('a takedown sets its marker right after its push, before its deploy runs', async () => {
+    test('a takedown writes its entry before its push, holds its commit after it, and shows that it waits', async () => {
         await using stores = await makeTestStores()
         const fake = fakeDeploy(live)
         fake.held = true
-        let marks = 0
-        const { center } = await setUp(stores, true, fake.deploy, () => {
-            marks += 1
-            return Promise.resolve()
-        })
+        const marker = memoryMarker()
+        const { center, copy } = await setUp(stores, true, fake.deploy, () => marker)
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
         await center.publish()
-        expect(marks).toBe(0)
+        const head = await git('-C', copy, 'rev-parse', 'HEAD')
+        expect(marker.added).toEqual([])
 
         await center.takedown([NOTE])
 
-        expect(marks).toBe(1)
+        const after = await git('-C', copy, 'rev-parse', 'HEAD')
+        expect(marker.added).toEqual([{ above: head }])
+        expect([...marker.held.values()]).toEqual([{ commit: after }])
+        expect(center.state.takedownWaits).toBe(true)
         expect(fake.runs).toEqual([{ push: 'ok', takedown: false }])
         fake.held = false
         fake.release()
         await deployEnd(center)
         expect(fake.runs.at(-1)).toEqual({ push: 'ok', takedown: true })
+    }, 60_000)
+
+    test('a takedown that pushed nothing removes its entry', async () => {
+        await using stores = await makeTestStores()
+        const marker = memoryMarker()
+        const { center, copy } = await setUp(stores, true, fakeDeploy(live).deploy, () => marker)
+        await center.check()
+        const head = await git('-C', copy, 'rev-parse', 'HEAD')
+
+        await center.takedown([NOTE])
+
+        expect(center.state.error).toContain('is the path of no manifest entry')
+        expect(marker.added).toEqual([{ above: head }])
+        expect(marker.held.size).toBe(0)
+        expect(center.state.takedownWaits).toBe(false)
     }, 60_000)
 
     test('the author stops a deploy, and the deploy that waits runs after it', async () => {
@@ -1265,9 +1317,13 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
         const after = await center.serve({ tool: 'deploy', last: true })
 
         expect(started).toEqual({ output: startedText({ push: 'skipped', takedown: false }) })
-        expect(during).toEqual({ output: lastText(undefined, true) })
+        expect(during).toEqual({ output: lastText(undefined, true, false) })
         expect(after).toEqual({
-            output: lastText(deploymentText(live({ push: 'skipped', takedown: false })), false)
+            output: lastText(
+                deploymentText(live({ push: 'skipped', takedown: false })),
+                false,
+                false
+            )
         })
         expect(fake.runs).toEqual([{ push: 'skipped', takedown: false }])
     }, 60_000)

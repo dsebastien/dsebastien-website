@@ -1,5 +1,5 @@
 {
-    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system; \"takedown\": true for a deploy with --takedown; \"stopped\": the tool stopped the deploy after its time limit of \"timeoutMinutes\", or for the author). A time limit that the settings do not name is 30 minutes, and the most is 1440 (24 hours). A deploy succeeded only when its result says \"deploy\": \"ok\" with no error and the exit code is 0; a result with \"deploy\": \"ok\" and an error keeps that error and \"live\". A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank. Every finished report has \"state\": \"done\". \"started\": the report of a deploy that starts in the background (the MCP server never waits for a build). \"last\": what the deploy tool and command give with last, from the text of the last report that the record of the device keeps (\"stored\", null for none) and whether a deploy runs.",
+    "about": "The shared cases of the deploy that the publishing tool starts after a push (issue 32, BUILD-02, PUB-42). Both faces read them: apps/plugin/src/publishing/deploy.spec.ts and cli/src/deploy.rs. \"commands\": the settings of a device (an empty text is a setting that is not set), whether the run is a takedown, and the command that the tool runs (the program, its arguments, and the folder where it runs), or the error of a deploy report that deploys nothing. \"windows\": true runs a case with the rule of Windows for an absolute path, else the rule of Unix. \"paths\": the one rule of an absolute path of both faces. \"results\": the exit code of the deploy (null: stopped by a signal), its standard output, and the deploy report that the tool gives, as the \"deployment\" object of its output (\"startError\": the deploy could not start, with this message of the system; \"takedown\": true for a deploy with --takedown; \"stopped\": the tool stopped the deploy after its time limit of \"timeoutMinutes\", or for the author). A time limit that the settings do not name is 30 minutes, and the most is 1440 (24 hours). A deploy succeeded only when its result says \"deploy\": \"ok\" with no error and the exit code is 0; a result with \"deploy\": \"ok\" and an error keeps that error and \"live\". A count of the result is a whole number from 0 in any form of JSON (1.0, 1e2, -0). A byte order mark at the start of a line is taken away, and a line of spaces and tabs only is blank. Every finished report has \"state\": \"done\". \"started\": the report of a deploy that starts in the background (the MCP server never waits for a build). \"last\": what the deploy tool and command give with last, from the text of the last report that the record of the device keeps (\"stored\", null for none) and whether a deploy runs. \"takedowns\": the entries of the marker of the takedowns, whether a release of a content revision holds each one, and the text of their files. \"last\" names \"takedownWaits\" too. \"takedownWaitsText\": the text that status of the MCP server adds after its report while a takedown waits for its deploy.",
     "commands": [
         {
             "name": "a publication with every setting",
@@ -1167,25 +1167,163 @@
             "name": "the last report while no deploy runs",
             "stored": "{\n  \"deployment\": {\n    \"build\": \"ok\",\n    \"deleted\": 0,\n    \"deploy\": \"ok\",\n    \"live\": true,\n    \"push\": \"ok\",\n    \"state\": \"done\",\n    \"takedown\": false,\n    \"uploaded\": 1,\n    \"url\": \"https://preview.example.org/\",\n    \"warnings\": []\n  }\n}\n",
             "running": false,
-            "text": "{\n  \"deployment\": {\n    \"build\": \"ok\",\n    \"deleted\": 0,\n    \"deploy\": \"ok\",\n    \"live\": true,\n    \"push\": \"ok\",\n    \"state\": \"done\",\n    \"takedown\": false,\n    \"uploaded\": 1,\n    \"url\": \"https://preview.example.org/\",\n    \"warnings\": []\n  },\n  \"running\": false\n}\n"
+            "text": "{\n  \"deployment\": {\n    \"build\": \"ok\",\n    \"deleted\": 0,\n    \"deploy\": \"ok\",\n    \"live\": true,\n    \"push\": \"ok\",\n    \"state\": \"done\",\n    \"takedown\": false,\n    \"uploaded\": 1,\n    \"url\": \"https://preview.example.org/\",\n    \"warnings\": []\n  },\n  \"running\": false,\n  \"takedownWaits\": false\n}\n",
+            "takedownWaits": false
         },
         {
             "name": "no report yet while a deploy runs",
             "stored": null,
             "running": true,
-            "text": "{\n  \"running\": true\n}\n"
+            "text": "{\n  \"running\": true,\n  \"takedownWaits\": false\n}\n",
+            "takedownWaits": false
         },
         {
             "name": "a broken record is no report",
             "stored": "{\"deployment\": ",
             "running": false,
-            "text": "{\n  \"running\": false\n}\n"
+            "text": "{\n  \"running\": false,\n  \"takedownWaits\": false\n}\n",
+            "takedownWaits": false
         },
         {
             "name": "a record whose deployment is not an object is no report",
             "stored": "{\"deployment\": [1]}",
             "running": false,
-            "text": "{\n  \"running\": false\n}\n"
+            "text": "{\n  \"running\": false,\n  \"takedownWaits\": false\n}\n",
+            "takedownWaits": false
+        },
+        {
+            "name": "a takedown that waits is said",
+            "stored": null,
+            "running": false,
+            "takedownWaits": true,
+            "text": "{\n  \"running\": false,\n  \"takedownWaits\": true\n}\n"
         }
-    ]
+    ],
+    "takedowns": {
+        "about": "The entries of the marker of the takedowns. \"ancestors\" lists the pairs [ancestor, revision] for which the ancestor is the revision or one of its ancestors in the copy; \"unknown\" the revisions that the copy does not know; every other pair is not an ancestor.",
+        "ancestors": [
+            [
+                "1111111111111111111111111111111111111111",
+                "2222222222222222222222222222222222222222"
+            ],
+            [
+                "1111111111111111111111111111111111111111",
+                "3333333333333333333333333333333333333333"
+            ],
+            ["3333333333333333333333333333333333333333", "2222222222222222222222222222222222222222"]
+        ],
+        "unknown": ["4444444444444444444444444444444444444444"],
+        "entries": [
+            {
+                "name": "a release of the commit of the takedown holds it",
+                "entry": {
+                    "commit": "3333333333333333333333333333333333333333"
+                },
+                "revision": "3333333333333333333333333333333333333333",
+                "holds": true
+            },
+            {
+                "name": "a release after the takedown holds it",
+                "entry": {
+                    "commit": "3333333333333333333333333333333333333333"
+                },
+                "revision": "2222222222222222222222222222222222222222",
+                "holds": true
+            },
+            {
+                "name": "a deploy of an older commit that ended after the push of the takedown does not hold it",
+                "entry": {
+                    "commit": "3333333333333333333333333333333333333333"
+                },
+                "revision": "1111111111111111111111111111111111111111",
+                "holds": false
+            },
+            {
+                "name": "a release of a commit that the copy does not know does not hold it",
+                "entry": {
+                    "commit": "3333333333333333333333333333333333333333"
+                },
+                "revision": "4444444444444444444444444444444444444444",
+                "holds": false
+            },
+            {
+                "name": "a release built elsewhere holds no takedown",
+                "entry": {
+                    "commit": "3333333333333333333333333333333333333333"
+                },
+                "revision": null,
+                "holds": false
+            },
+            {
+                "name": "before its push, a release of the commit before it does not hold it",
+                "entry": {
+                    "above": "1111111111111111111111111111111111111111"
+                },
+                "revision": "1111111111111111111111111111111111111111",
+                "holds": false
+            },
+            {
+                "name": "before its push, a release after the commit before it holds it",
+                "entry": {
+                    "above": "1111111111111111111111111111111111111111"
+                },
+                "revision": "2222222222222222222222222222222222222222",
+                "holds": true
+            },
+            {
+                "name": "before its push in a copy with no commit, any release holds it",
+                "entry": {
+                    "above": null
+                },
+                "revision": "1111111111111111111111111111111111111111",
+                "holds": true
+            },
+            {
+                "name": "an entry that cannot be read is held by any deploy that succeeded",
+                "entry": {
+                    "any": true
+                },
+                "revision": null,
+                "holds": true
+            }
+        ],
+        "texts": [
+            {
+                "name": "a commit",
+                "text": "{\n  \"commit\": \"3333333333333333333333333333333333333333\"\n}\n",
+                "entry": {
+                    "commit": "3333333333333333333333333333333333333333"
+                }
+            },
+            {
+                "name": "the commit before the push",
+                "text": "{\n  \"above\": \"1111111111111111111111111111111111111111\"\n}\n",
+                "entry": {
+                    "above": "1111111111111111111111111111111111111111"
+                }
+            },
+            {
+                "name": "a copy with no commit before the push",
+                "text": "{\n  \"above\": null\n}\n",
+                "entry": {
+                    "above": null
+                }
+            },
+            {
+                "name": "a file that a stop cut",
+                "text": "{\"comm",
+                "entry": {
+                    "any": true
+                }
+            },
+            {
+                "name": "a field too many",
+                "text": "{\"commit\": \"3333333333333333333333333333333333333333\", \"above\": null}",
+                "entry": {
+                    "any": true
+                }
+            }
+        ]
+    },
+    "takedownWaitsText": "{\n  \"takedownWaits\": true\n}\n"
 }

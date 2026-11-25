@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
-import { makeTestStores, rejectionOf } from '@dsebastien-website/testing'
+import { gitEnvironment, makeTestStores, rejectionOf } from '@dsebastien-website/testing'
 import { childEnvironment, childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
 
 // The port that starts the deploy as a child process (issue 32): a real
@@ -249,27 +249,75 @@ describe('the files of the deploy (issue 32)', () => {
         expect(await files.last()).toBe('{"deployment": {}}')
     })
 
-    test('is a file of the git folder of the copy, until it is removed', async () => {
+    test('keep one record of a running deploy per process: a record of a process that ended counts for nothing', async () => {
+        await using stores = await makeTestStores()
+        const files = deployFiles(stores.root)
+        const runs = join(stores.root, '.git', 'vault-publish', 'deploy-running')
+        await mkdir(runs, { recursive: true })
+        // A process that ended long ago, and the other face of this machine.
+        await writeFile(join(runs, '999999999'), 'ended\n')
+
+        const before = await files.running()
+        await files.setRunning(true)
+        await files.setRunning(false)
+        await writeFile(join(runs, String(process.ppid)), 'the other face\n')
+
+        expect(before).toBe(false)
+        expect(await files.running()).toBe(true)
+    })
+
+    test('keep one file per takedown, by its commit, until it is removed', async () => {
         await using stores = await makeTestStores()
         const marker = deployFiles(stores.root)
 
-        const before = await marker.pending()
-        await marker.set()
-        const set = await marker.pending()
-        const text = await readFile(
-            join(stores.root, '.git', 'vault-publish', 'takedown-pending'),
-            'utf8'
-        )
-        await marker.remove()
+        const first = await marker.add({ above: null })
+        const second = await marker.add({ above: 'a'.repeat(40) })
+        await marker.replace(first, { commit: 'b'.repeat(40) })
+        const both = await marker.entries()
+        await marker.remove(first)
 
-        expect([before, set, await marker.pending()]).toEqual([false, true, false])
-        expect(text).toContain('takedown')
+        expect(both.map((one) => one.entry)).toEqual([
+            { commit: 'b'.repeat(40) },
+            { above: 'a'.repeat(40) }
+        ])
+        expect(await marker.entries()).toEqual([{ id: second, entry: { above: 'a'.repeat(40) } }])
+        expect(
+            await readFile(
+                join(stores.root, '.git', 'vault-publish', 'takedowns', `${second}.json`),
+                'utf8'
+            )
+        ).toBe(`{\n  "above": "${'a'.repeat(40)}"\n}\n`)
     })
 
-    test('is never set for a copy that is not set', async () => {
-        const marker = deployFiles('')
-        await marker.set()
+    test('know which commit of the copy comes before another one', async () => {
+        await using stores = await makeTestStores()
+        const copy = join(stores.root, 'copy')
+        const git = async (...args: string[]): Promise<string> => {
+            const child = Bun.spawn(['git', '-C', copy, ...args], {
+                env: gitEnvironment(),
+                stdout: 'pipe'
+            })
+            const out = await new Response(child.stdout).text()
+            await child.exited
+            return out.trim()
+        }
+        await mkdir(copy)
+        await git('init', '--quiet')
+        await git('commit', '--allow-empty', '--quiet', '-m', 'one')
+        const one = await git('rev-parse', 'HEAD')
+        await git('commit', '--allow-empty', '--quiet', '-m', 'two')
+        const two = await git('rev-parse', 'HEAD')
+        const marker = deployFiles(copy)
 
-        expect(await marker.pending()).toBe(false)
+        expect(await marker.isAncestor(one, two)).toBe(true)
+        expect(await marker.isAncestor(two, one)).toBe(false)
+        expect(await marker.isAncestor('c'.repeat(40), two)).toBeUndefined()
+    })
+
+    test('are never set for a copy that is not set', async () => {
+        const marker = deployFiles('')
+        await marker.add({ above: null })
+
+        expect(await marker.entries()).toEqual([])
     })
 })

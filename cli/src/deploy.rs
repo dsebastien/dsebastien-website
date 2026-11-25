@@ -84,23 +84,141 @@ pub struct ChildRun {
     pub stopped: Option<Stop>,
 }
 
-/// The marker of a takedown on this device, in the git folder of the copy
-/// (`.git/vault-publish/takedown-pending`): it is set after the push of a
-/// takedown, and every deploy runs with `--takedown` while it is there. Only
-/// a deploy with `--takedown` that succeeded removes it, so a takedown is
-/// never lost when its deploy fails, is skipped or is stopped.
+/// A takedown that waits for its deploy: the commit of its push, or, before
+/// the push, the commit of the copy before it (`Above`, `None` for a copy
+/// with no commit): the commit of the takedown comes after it. `Any` is an
+/// entry that cannot be read: any deploy with `--takedown` that succeeds
+/// settles it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TakedownEntry {
+    Commit(String),
+    Above(Option<String>),
+    Any,
+}
+
+/// The marker of the takedowns of this device, one entry per takedown, in
+/// the git folder of the copy (`.git/vault-publish/takedowns/`). An entry is
+/// written before the push of a takedown and holds its commit after it; it
+/// goes when nothing was pushed. Every deploy runs with `--takedown` while an
+/// entry is there, and a deploy with `--takedown` that succeeded removes only
+/// the entries that its release holds: its content revision is the commit of
+/// the entry or descends from it.
 pub trait TakedownMarker {
-    /// True when a takedown waits for a deploy that succeeds. A marker that
-    /// cannot be read counts as set.
-    fn pending(&self) -> bool;
+    /// The entries, with their ids.
+    ///
+    /// # Errors
+    ///
+    /// They cannot be read: the marker then counts as set.
+    fn entries(&self) -> Result<Vec<(String, TakedownEntry)>, String>;
+    /// Adds an entry, and gives its id.
+    ///
     /// # Errors
     ///
     /// The marker cannot be written.
-    fn set(&self) -> Result<(), String>;
+    fn add(&self, entry: &TakedownEntry) -> Result<String, String>;
+    /// Writes the entry of this id again.
+    ///
     /// # Errors
     ///
-    /// The marker cannot be removed.
-    fn remove(&self) -> Result<(), String>;
+    /// The marker cannot be written.
+    fn replace(&self, id: &str, entry: &TakedownEntry) -> Result<(), String>;
+    /// # Errors
+    ///
+    /// The entry cannot be removed.
+    fn remove(&self, id: &str) -> Result<(), String>;
+    /// True when `ancestor` is `revision` or one of its ancestors in the copy,
+    /// false when it is not, `None` when the copy does not know them.
+    fn is_ancestor(&self, ancestor: &str, revision: &str) -> Option<bool>;
+}
+
+/// The entry of a takedown as its file holds it, or `Any` for a text that
+/// cannot be read.
+pub fn takedown_entry_of(text: &str) -> TakedownEntry {
+    let Ok(Value::Object(object)) = serde_json::from_str::<Value>(text) else {
+        return TakedownEntry::Any;
+    };
+    if object.len() != 1 {
+        return TakedownEntry::Any;
+    }
+    match (object.get("commit"), object.get("above")) {
+        (Some(Value::String(commit)), _) => TakedownEntry::Commit(commit.clone()),
+        (_, Some(Value::String(above))) => TakedownEntry::Above(Some(above.clone())),
+        (_, Some(Value::Null)) => TakedownEntry::Above(None),
+        _ => TakedownEntry::Any,
+    }
+}
+
+/// The text of the file of an entry, in the canonical form.
+pub fn takedown_entry_text(entry: &TakedownEntry) -> String {
+    match entry {
+        TakedownEntry::Commit(commit) => to_canonical_json(&json!({ "commit": commit })),
+        TakedownEntry::Above(Some(above)) => to_canonical_json(&json!({ "above": above })),
+        TakedownEntry::Above(None) => return "{\n  \"above\": null\n}\n".to_owned(),
+        TakedownEntry::Any => to_canonical_json(&json!({ "any": true })),
+    }
+    .unwrap_or_default()
+}
+
+/// True when a release of this content revision holds the takedown of the
+/// entry. A release built elsewhere (`None`) holds none, and a commit that
+/// the copy does not know counts as not held.
+pub fn holds_takedown(
+    entry: &TakedownEntry,
+    revision: Option<&str>,
+    is_ancestor: &dyn Fn(&str, &str) -> Option<bool>,
+) -> bool {
+    match (entry, revision) {
+        (TakedownEntry::Any, _) => true,
+        (_, None) => false,
+        (TakedownEntry::Commit(commit), Some(revision)) => {
+            revision == commit || is_ancestor(commit, revision) == Some(true)
+        }
+        (TakedownEntry::Above(above), Some(revision)) => match above {
+            Some(above) if above == revision => false,
+            Some(above) => is_ancestor(above, revision) == Some(true),
+            None => true,
+        },
+    }
+}
+
+/// True when a takedown waits for its deploy. A marker that cannot be read
+/// counts as set.
+pub fn takedown_waits(marker: &dyn TakedownMarker) -> bool {
+    marker.entries().map_or(true, |entries| !entries.is_empty())
+}
+
+/// Removes the entries of the marker that a release of this content
+/// revision holds, after a deploy with `--takedown` that succeeded. It gives
+/// the warnings: the takedowns that still wait, and an entry that could not
+/// be removed.
+fn settle_takedowns(marker: &dyn TakedownMarker, revision: Option<&str>) -> Vec<String> {
+    let entries = match marker.entries() {
+        Ok(entries) => entries,
+        Err(error) => {
+            return vec![format!(
+                "the marker of the takedowns cannot be read, so the next deploy runs with --takedown too: {error}"
+            )];
+        }
+    };
+    let mut warnings = Vec::new();
+    let mut waiting = 0;
+    for (id, entry) in entries {
+        if !holds_takedown(&entry, revision, &|one, two| marker.is_ancestor(one, two)) {
+            waiting += 1;
+            continue;
+        }
+        if let Err(error) = marker.remove(&id) {
+            warnings.push(format!(
+                "the marker of a takedown could not be removed, so the next deploy runs with --takedown too: {error}"
+            ));
+        }
+    }
+    if waiting > 0 {
+        warnings.push(format!(
+            "{waiting} takedown(s) came after the content of this release and wait for their deploy: the next deploy runs with --takedown"
+        ));
+    }
+    warnings
 }
 
 /// The record of the deploys of this device, in the git folder of the copy:
@@ -554,7 +672,7 @@ fn deploy_with(
 ) -> Deployment {
     let kind = DeployKind {
         push: asked.push,
-        takedown: asked.takedown || marker.pending(),
+        takedown: asked.takedown || takedown_waits(marker),
     };
     let command = match deploy_command(settings, kind.takedown, windows) {
         Ok(command) => command,
@@ -571,13 +689,9 @@ fn deploy_with(
                 Some(stop) => report_of_stop(stop, command.timeout_minutes, kind),
                 None => report_of_run(run.code, &run.stdout, kind),
             };
-            if report.takedown
-                && report.succeeded()
-                && let Err(error) = marker.remove()
-            {
-                report.warnings.push(format!(
-                    "the marker of the takedown could not be removed, so the next deploy runs with --takedown too: {error}"
-                ));
+            if report.takedown && report.succeeded() {
+                let warnings = settle_takedowns(marker, report.content_revision.as_deref());
+                report.warnings.extend(warnings);
             }
             Deployment {
                 report,
@@ -630,10 +744,16 @@ pub fn started_text(kind: DeployKind) -> String {
     .unwrap_or_default()
 }
 
+/// The text that `status` of the MCP server adds after its report when a
+/// takedown waits for its deploy, outside the report.
+pub fn takedown_waits_text() -> String {
+    to_canonical_json(&json!({ "takedownWaits": true })).unwrap_or_default()
+}
+
 /// What the `deploy` tool and command give with `last`: the last deploy
 /// report of the record (absent when there is none, or when its text is
 /// broken), and whether a deploy runs. It starts no deploy.
-pub fn last_text(stored: Option<&str>, running: bool) -> String {
+pub fn last_text(stored: Option<&str>, running: bool, takedown_waits: bool) -> String {
     let mut object = Map::new();
     if let Some(deployment) = stored
         .and_then(|text| serde_json::from_str::<Value>(text).ok())
@@ -646,6 +766,7 @@ pub fn last_text(stored: Option<&str>, running: bool) -> String {
         object.insert("deployment".into(), deployment);
     }
     object.insert("running".into(), json!(running));
+    object.insert("takedownWaits".into(), json!(takedown_waits));
     to_canonical_json(&Value::Object(object)).unwrap_or_default()
 }
 
@@ -776,12 +897,21 @@ mod tests {
         takedown: false,
     };
 
-    /// A marker of a takedown and a record in memory.
+    /// A marker of the takedowns and a record in memory: the entries, the
+    /// records of a run, the reports, and the pairs [ancestor, revision] of
+    /// the copy.
     struct Marker(
-        std::cell::Cell<bool>,
+        RefCell<Vec<(String, TakedownEntry)>>,
         RefCell<Vec<bool>>,
         RefCell<Vec<String>>,
+        Vec<(String, String)>,
     );
+
+    impl Marker {
+        fn pending(&self) -> bool {
+            !self.0.borrow().is_empty()
+        }
+    }
 
     impl DeployRecord for Marker {
         fn set_running(&self, running: bool) -> Result<(), String> {
@@ -801,25 +931,164 @@ mod tests {
     }
 
     impl TakedownMarker for Marker {
-        fn pending(&self) -> bool {
-            self.0.get()
+        fn entries(&self) -> Result<Vec<(String, TakedownEntry)>, String> {
+            Ok(self.0.borrow().clone())
         }
-        fn set(&self) -> Result<(), String> {
-            self.0.set(true);
+        fn add(&self, entry: &TakedownEntry) -> Result<String, String> {
+            let id = (self.0.borrow().len() + 1).to_string();
+            self.0.borrow_mut().push((id.clone(), entry.clone()));
+            Ok(id)
+        }
+        fn replace(&self, id: &str, entry: &TakedownEntry) -> Result<(), String> {
+            for one in self.0.borrow_mut().iter_mut() {
+                if one.0 == id {
+                    one.1 = entry.clone();
+                }
+            }
             Ok(())
         }
-        fn remove(&self) -> Result<(), String> {
-            self.0.set(false);
+        fn remove(&self, id: &str) -> Result<(), String> {
+            self.0.borrow_mut().retain(|one| one.0 != id);
             Ok(())
+        }
+        fn is_ancestor(&self, ancestor: &str, revision: &str) -> Option<bool> {
+            Some(
+                ancestor == revision
+                    || self
+                        .3
+                        .iter()
+                        .any(|(one, two)| one == ancestor && two == revision),
+            )
         }
     }
 
     fn marker(pending: bool) -> Marker {
+        marker_with(pending, Vec::new())
+    }
+
+    fn marker_with(pending: bool, ancestors: Vec<(String, String)>) -> Marker {
+        let entries = if pending {
+            vec![("one".to_owned(), TakedownEntry::Above(None))]
+        } else {
+            Vec::new()
+        };
         Marker(
-            std::cell::Cell::new(pending),
+            RefCell::new(entries),
             RefCell::new(Vec::new()),
             RefCell::new(Vec::new()),
+            ancestors,
         )
+    }
+
+    fn entry_of_case(value: &Value) -> TakedownEntry {
+        match (value.get("commit"), value.get("above"), value.get("any")) {
+            (Some(commit), _, _) => {
+                TakedownEntry::Commit(commit.as_str().expect("a commit").to_owned())
+            }
+            (_, Some(above), _) => TakedownEntry::Above(above.as_str().map(str::to_owned)),
+            _ => TakedownEntry::Any,
+        }
+    }
+
+    #[test]
+    fn status_adds_the_text_of_the_shared_case() {
+        assert_eq!(
+            takedown_waits_text(),
+            cases()["takedownWaitsText"].as_str().expect("a text")
+        );
+    }
+
+    #[test]
+    fn knows_which_release_holds_a_takedown_in_the_shared_cases() {
+        let all = cases();
+        let takedowns = &all["takedowns"];
+        let pairs: Vec<(String, String)> = takedowns["ancestors"]
+            .as_array()
+            .expect("the ancestors")
+            .iter()
+            .map(|pair| {
+                (
+                    pair[0].as_str().expect("a commit").to_owned(),
+                    pair[1].as_str().expect("a commit").to_owned(),
+                )
+            })
+            .collect();
+        let unknown: Vec<&str> = takedowns["unknown"]
+            .as_array()
+            .expect("the unknown")
+            .iter()
+            .map(|one| one.as_str().expect("a commit"))
+            .collect();
+        let is_ancestor = |one: &str, two: &str| {
+            if unknown.contains(&one) || unknown.contains(&two) {
+                return None;
+            }
+            Some(
+                one == two
+                    || pairs
+                        .iter()
+                        .any(|(first, second)| first == one && second == two),
+            )
+        };
+        for case in takedowns["entries"].as_array().expect("the entries") {
+            assert_eq!(
+                holds_takedown(
+                    &entry_of_case(&case["entry"]),
+                    case["revision"].as_str(),
+                    &is_ancestor
+                ),
+                case["holds"].as_bool().expect("holds"),
+                "{}",
+                case["name"]
+            );
+        }
+        for case in takedowns["texts"].as_array().expect("the texts") {
+            let text = case["text"].as_str().expect("a text");
+            let entry = entry_of_case(&case["entry"]);
+            assert_eq!(takedown_entry_of(text), entry, "{}", case["name"]);
+            if entry != TakedownEntry::Any {
+                assert_eq!(takedown_entry_text(&entry), text, "{}", case["name"]);
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_a_takedown_that_was_pushed_while_an_older_deploy_ran_which_succeeds() {
+        let c1 = "1".repeat(40);
+        let t2 = "3".repeat(40);
+        let line: &'static str = Box::leak(
+            LINE.replace("0123456789abcdef0123456789abcdef01234567", &c1)
+                .into_boxed_str(),
+        );
+        let child = Fake {
+            runs: RefCell::new(Vec::new()),
+            answer: Ok((Some(0), line)),
+        };
+        // T2 came after C1: C1 is an ancestor of T2, not the reverse.
+        let files = marker_with(false, vec![(c1.clone(), t2.clone())]);
+        files
+            .add(&TakedownEntry::Commit(t2.clone()))
+            .expect("added");
+
+        let deployment = run_deploy(&child, &files, &settings(), PUSHED, false);
+
+        assert!(deployment.report.takedown);
+        assert_eq!(
+            deployment.report.content_revision.as_deref(),
+            Some(c1.as_str())
+        );
+        assert_eq!(
+            files
+                .0
+                .borrow()
+                .iter()
+                .map(|one| one.1.clone())
+                .collect::<Vec<_>>(),
+            vec![TakedownEntry::Commit(t2)]
+        );
+        assert!(deployment.report.warnings.contains(
+            &"1 takedown(s) came after the content of this release and wait for their deploy: the next deploy runs with --takedown".to_owned()
+        ));
     }
 
     /// A child that records the commands and gives one answer.
@@ -982,7 +1251,8 @@ mod tests {
             assert_eq!(
                 last_text(
                     case["stored"].as_str(),
-                    case["running"].as_bool().expect("running")
+                    case["running"].as_bool().expect("running"),
+                    case["takedownWaits"].as_bool().expect("takedownWaits")
                 ),
                 case["text"].as_str().expect("a text"),
                 "{}",

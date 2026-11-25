@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 
 use crate::deploy::{
-    self, DeployFiles, DeployKind, DeployRecord, DeployReport, DeploySettings, TakedownMarker,
+    self, DeployFiles, DeployKind, DeployRecord, DeployReport, DeploySettings, TakedownEntry,
+    TakedownMarker,
 };
 use crate::device::{ChildProcess, ContentStore};
 use crate::tool::Outcome;
@@ -21,32 +22,9 @@ pub struct Deploy {
     pub kind: DeployKind,
 }
 
-/// Sets the marker of a takedown right after its push, also with
-/// `--no-deploy`: every later deploy then runs with `--takedown` until one
-/// succeeds. A marker that cannot be written is a warning: the deploy after
-/// the takedown still runs with `--takedown`.
-pub fn mark_takedown(content_store: &Path) {
-    if let Err(error) = ContentStore::new(content_store).set() {
-        eprintln!("warning: the marker of the takedown could not be written: {error}");
-    }
-}
-
-/// Runs a publication, an unpublish or a takedown. When it fails after its
-/// push (the run journal says that the correction is owed, and the commit of
-/// the copy moved), the push happened: the result is an outcome with no
-/// output and the failure, so that the deploy still starts, and the message
-/// says so. After a takedown, the marker of the takedown is set.
-pub fn pushing(
-    content_store: &Path,
-    takedown: bool,
-    work: impl FnOnce() -> Result<Outcome, String>,
-) -> Result<Outcome, String> {
-    let store = ContentStore::new(content_store);
-    let before = store.head();
-    let error = match work() {
-        Ok(outcome) => return Ok(outcome),
-        Err(error) => error,
-    };
+/// True when the run journal says that the push of the run happened and the
+/// commit of the copy is not the one before it.
+fn pushed_anyway(store: &ContentStore, before: Option<&String>) -> bool {
     let step = store
         .load_journal()
         .ok()
@@ -57,12 +35,63 @@ pub fn pushing(
                 .get("step")
                 .and_then(|step| step.as_str().map(str::to_owned))
         });
-    if step.as_deref() != Some("correct") || store.head() == before {
+    step.as_deref() == Some("correct") && store.head().as_ref() != before
+}
+
+/// Runs a publication, an unpublish or a takedown. When it fails after its
+/// push (the run journal says that the correction is owed, and the commit of
+/// the copy moved), the push happened: the result is an outcome with no
+/// output and the failure, so that the deploy still starts, and the message
+/// says so. A takedown writes its entry in the marker of the takedowns before
+/// its push, with the commit of the copy before it, then the commit of its
+/// push after it, also with `--no-deploy`; the entry goes when nothing was
+/// pushed. A marker that cannot be written is a warning.
+pub fn pushing(
+    content_store: &Path,
+    takedown: bool,
+    work: impl FnOnce() -> Result<Outcome, String>,
+) -> Result<Outcome, String> {
+    let store = ContentStore::new(content_store);
+    let before = store.head();
+    let entry = if takedown {
+        TakedownMarker::add(&store, &TakedownEntry::Above(before.clone()))
+            .map_err(|error| {
+                eprintln!(
+                    "warning: the marker of the takedown could not be written, so deploy with --takedown until a deploy succeeds: {error}"
+                );
+            })
+            .ok()
+    } else {
+        None
+    };
+    let settle = |done: bool| {
+        let Some(id) = &entry else {
+            return;
+        };
+        let after = store.head();
+        let written = if !done {
+            TakedownMarker::remove(&store, id)
+        } else if let Some(after) = after.filter(|after| Some(after) != before.as_ref()) {
+            TakedownMarker::replace(&store, id, &TakedownEntry::Commit(after))
+        } else {
+            Ok(())
+        };
+        if let Err(error) = written {
+            eprintln!("warning: the marker of the takedown could not be written: {error}");
+        }
+    };
+    let error = match work() {
+        Ok(outcome) => {
+            settle(true);
+            return Ok(outcome);
+        }
+        Err(error) => error,
+    };
+    if !pushed_anyway(&store, before.as_ref()) {
+        settle(false);
         return Err(error);
     }
-    if takedown {
-        mark_takedown(content_store);
-    }
+    settle(true);
     Ok(Outcome {
         output: String::new(),
         failure: Some(format!(
@@ -75,14 +104,20 @@ pub fn pushing(
 struct NoFiles;
 
 impl TakedownMarker for NoFiles {
-    fn pending(&self) -> bool {
-        false
+    fn entries(&self) -> Result<Vec<(String, TakedownEntry)>, String> {
+        Ok(Vec::new())
     }
-    fn set(&self) -> Result<(), String> {
+    fn add(&self, _: &TakedownEntry) -> Result<String, String> {
+        Ok(String::new())
+    }
+    fn replace(&self, _: &str, _: &TakedownEntry) -> Result<(), String> {
         Ok(())
     }
-    fn remove(&self) -> Result<(), String> {
+    fn remove(&self, _: &str) -> Result<(), String> {
         Ok(())
+    }
+    fn is_ancestor(&self, _: &str, _: &str) -> Option<bool> {
+        None
     }
 }
 
@@ -142,7 +177,16 @@ pub fn run_deploy(deploy: &Deploy) -> DeployReport {
 /// runs (`deploy` with `last`). It starts no deploy.
 pub fn last_of(content_store: &Path, busy: bool) -> String {
     let store = ContentStore::new(content_store);
-    deploy::last_text(store.last().as_deref(), busy || store.running())
+    deploy::last_text(
+        store.last().as_deref(),
+        busy || store.running(),
+        deploy::takedown_waits(&store),
+    )
+}
+
+/// True when a takedown of the copy waits for its deploy.
+pub fn takedown_waits(content_store: &Path) -> bool {
+    deploy::takedown_waits(&ContentStore::new(content_store))
 }
 
 #[derive(Default)]

@@ -127,14 +127,17 @@ export class VaultPublishPlugin extends Plugin {
                 const settings = loadSettings(this.app)
                 return runDeploy(
                     childProcess({ programs: [settings.git.trim(), settings.bun.trim()] }),
-                    deployFiles(settings.contentStore),
+                    deployFiles(settings.contentStore, gitOf(settings)),
                     deploySettingsOf(settings),
                     kind,
                     process.platform === 'win32',
                     signal
                 )
             },
-            markTakedown: () => deployFiles(loadSettings(this.app).contentStore).set(),
+            takedowns: () => {
+                const settings = loadSettings(this.app)
+                return deployFiles(settings.contentStore, gitOf(settings))
+            },
             record: () => deployFiles(loadSettings(this.app).contentStore),
             now: () => new Date(),
             deviceName: hostname().replace(/\s+/gu, ' ').trim() || 'unnamed device',
@@ -174,6 +177,15 @@ export class VaultPublishPlugin extends Plugin {
             }
             this.registerEvent(this.app.vault.on('modify', changed))
             this.registerEvent(this.app.vault.on('create', changed))
+            // A takedown whose deploy did not succeed is tried again (issue 32).
+            void this.center.refreshTakedowns().then((waits) => {
+                if (waits) {
+                    new Notice(
+                        'Vault Publish: a takedown waits for its deploy, so the deploy runs again with --takedown'
+                    )
+                    void this.center.deploy()
+                }
+            })
         })
 
         this.registerView(
@@ -499,6 +511,11 @@ export class VaultPublishPlugin extends Plugin {
             observer.disconnect()
         })
     }
+}
+
+/** The git program of the settings, or `git` of the path of the system. */
+function gitOf(settings: DeviceSettings): string {
+    return settings.git.trim() === '' ? 'git' : settings.git.trim()
 }
 
 /** The text of the notice at the end of a deploy (PUB-42): live, not live yet, failed, or nothing deployed. */

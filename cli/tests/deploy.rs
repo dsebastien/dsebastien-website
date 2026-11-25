@@ -19,10 +19,10 @@ const NOTE: &str = "A.md";
 const TIME: &str = "2031-07-01T08:00:00Z";
 
 /// The result line of a deploy that went live.
-const LIVE: &str = r#"DEPLOY-RESULT {"build":"ok","deploy":"ok","live":true,"url":"https://preview.example.org/","contentRevision":"0123456789abcdef0123456789abcdef01234567","uploaded":1,"deleted":0,"warnings":[],"error":null}"#;
+const LIVE: &str = r#"DEPLOY-RESULT {"build":"ok","deploy":"ok","live":true,"url":"https://preview.example.org/","contentRevision":"@HEAD@","uploaded":1,"deleted":0,"warnings":[],"error":null}"#;
 
 /// The result line of a deploy whose build failed.
-const BUILD_FAILED: &str = r#"DEPLOY-RESULT {"build":"failed","deploy":"skipped","live":false,"url":"https://preview.example.org/","contentRevision":"0123456789abcdef0123456789abcdef01234567","uploaded":0,"deleted":0,"warnings":[],"error":"the build stopped"}"#;
+const BUILD_FAILED: &str = r#"DEPLOY-RESULT {"build":"failed","deploy":"skipped","live":false,"url":"https://preview.example.org/","contentRevision":"@HEAD@","uploaded":0,"deleted":0,"warnings":[],"error":"the build stopped"}"#;
 
 /// A vault with one note, its copy of the content store, a folder of the site
 /// code, and a fake bun.
@@ -85,8 +85,9 @@ impl Setup {
         fs::write(
             &self.bun,
             format!(
-                "#!/bin/sh\npwd > '{kept}.folder'\nprintf '%s\\n' \"$PATH\" > '{kept}.path'\nprintf '%s\\n' \"$@\" > '{kept}.arguments'\nsleep {seconds}\necho 'Building the site'\necho 'a warning of the build' >&2\nprintf '%s\\n' '{line}'\nexit {status}\n",
-                kept = kept.display()
+                "#!/bin/sh\npwd > '{kept}.folder'\nprintf '%s\\n' \"$PATH\" > '{kept}.path'\nprintf '%s\\n' \"$@\" > '{kept}.arguments'\nsleep {seconds}\necho 'Building the site'\necho 'a warning of the build' >&2\nprintf '%s\\n' '{line}' | sed \"s/@HEAD@/$(git -C '{copy}' rev-parse HEAD)/\"\nexit {status}\n",
+                kept = kept.display(),
+                copy = self.copy.display()
             ),
         )
         .expect("the script can be written");
@@ -146,11 +147,29 @@ impl Setup {
         command.output().expect("the program starts")
     }
 
-    fn marker(&self) -> PathBuf {
-        self.copy
+    /// The entries of the marker of the takedowns of the copy.
+    fn takedowns(&self) -> Vec<Value> {
+        let folder = self
+            .copy
             .join(".git")
             .join("vault-publish")
-            .join("takedown-pending")
+            .join("takedowns");
+        let mut names: Vec<PathBuf> = fs::read_dir(folder).map_or_else(
+            |_| Vec::new(),
+            |listing| {
+                listing
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .collect()
+            },
+        );
+        names.sort();
+        names
+            .iter()
+            .map(|file| {
+                serde_json::from_str(&fs::read_to_string(file).expect("an entry")).expect("JSON")
+            })
+            .collect()
     }
 
     /// The arguments that the deploy of the site gets.
@@ -238,7 +257,7 @@ fn deploy_runs_bun_in_the_folder_of_the_site_code_and_writes_the_deploy_report()
         objects_of(&output),
         [json!({ "deployment": {
             "build": "ok",
-            "contentRevision": "0123456789abcdef0123456789abcdef01234567",
+            "contentRevision": support::git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]).trim(),
             "deleted": 0,
             "deploy": "ok",
             "live": true,
@@ -444,7 +463,10 @@ fn the_mcp_server_never_waits_for_a_build_and_reads_the_last_report_later() {
         json!({ "deployment": { "push": "ok", "state": "started", "takedown": true } })
     );
     // The deploy of the takedown takes a second: it still runs.
-    assert_eq!(texts(&answers[1]), [json!({ "running": true })]);
+    assert_eq!(
+        texts(&answers[1]),
+        [json!({ "running": true, "takedownWaits": true })]
+    );
     assert_eq!(
         texts(&answers[2]),
         [json!({ "deployment": { "push": "skipped", "state": "started", "takedown": false } })]
@@ -480,14 +502,15 @@ fn a_takedown_is_never_lost_its_marker_stays_until_a_deploy_with_takedown_succee
         .output()
         .expect("the program starts");
     assert!(taken.status.success(), "{}", errors_of(&taken));
-    assert!(setup.marker().is_file());
+    let head = support::git(&["-C", text(&setup.copy), "rev-parse", "HEAD"]);
+    assert_eq!(setup.takedowns(), [json!({ "commit": head.trim() })]);
     setup.answer(BUILD_FAILED, 1);
     let failed = setup.deploy();
     let failed_report = &objects_of(&failed)[0]["deployment"];
-    let after_failure = setup.marker().is_file();
+    let after_failure = !setup.takedowns().is_empty();
     setup.answer(LIVE, 0);
     let done = setup.deploy();
-    let after_success = setup.marker().is_file();
+    let after_success = !setup.takedowns().is_empty();
 
     assert_eq!(failed_report["takedown"], true);
     assert!(
@@ -619,4 +642,46 @@ fn the_folders_of_the_deploy_are_absolute_and_bun_comes_first_in_the_path() {
         .unwrap_or_default()
         .to_owned();
     assert!(same_folder(&first, root), "{path}");
+}
+
+#[test]
+fn a_takedown_that_pushed_nothing_leaves_no_entry_and_status_says_when_one_waits() {
+    let setup = Setup::new();
+
+    let refused = setup
+        .places("takedown")
+        .args(["--path", "No such note.md", "--time", TIME, "--no-deploy"])
+        .output()
+        .expect("the program starts");
+    let quiet = support::program()
+        .arg("status")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .output()
+        .expect("the program starts");
+    let published = setup.publish(false);
+    assert!(published.status.success(), "{}", errors_of(&published));
+    let taken = setup
+        .places("takedown")
+        .args(["--path", NOTE, "--time", TIME, "--no-deploy"])
+        .output()
+        .expect("the program starts");
+    assert!(taken.status.success(), "{}", errors_of(&taken));
+    let waiting = support::program()
+        .arg("status")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .output()
+        .expect("the program starts");
+
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(!errors_of(&quiet).contains("a takedown waits"));
+    assert!(errors_of(&waiting).contains("a takedown waits for a deploy that succeeds"));
+    assert_eq!(setup.takedowns().len(), 1);
+    let last = setup.deploy_with(&["--last"]);
+    assert_eq!(objects_of(&last)[0]["takedownWaits"], true);
 }

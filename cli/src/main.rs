@@ -39,7 +39,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Args, Parser, Subcommand};
 
 use deploy::{DeployKind, DeploySettings, deployment_text, started_text};
-use deploying::{Background, Deploy, last_of, mark_takedown, pushing, run_deploy};
+use deploying::{Background, Deploy, last_of, pushing, run_deploy, takedown_waits};
 use device::{AttachmentStorage, ContentStore, Vault};
 use plan::Selection;
 use queue::Move;
@@ -446,7 +446,9 @@ enum Command {
     },
 
     /// Runs the deploy of the site again, with no publication, for example
-    /// after a deploy that failed (issue 32): `bun run deploy --from-main` in
+    /// after a deploy that failed (issue 32). With no option, it runs with
+    /// `--takedown` while a takedown of this device waits for a deploy that
+    /// succeeds (`.git/vault-publish/takedowns/` of the copy): `bun run deploy --from-main` in
     /// the folder of the site code, from the copy of the content store and
     /// the attachment storage. It writes the deploy report (the object
     /// `deployment`), and ends with an error when the deploy did not succeed.
@@ -666,6 +668,16 @@ fn warn_when_behind(queue: &str) {
     }
 }
 
+/// A takedown that waits for its deploy (issue 32): `status` says so on the
+/// error output, outside its report.
+fn warn_when_takedown_waits(content_store: &Path) {
+    if takedown_waits(content_store) {
+        eprintln!(
+            "warning: a takedown waits for a deploy that succeeds, and its notes can still be live: every deploy runs with --takedown until then (dsebastien-vault-publish deploy)"
+        );
+    }
+}
+
 /// A plan without a network uses the last fetch (PERF-16): it says so on the
 /// error output too.
 fn warn_when_offline(plan: &str) {
@@ -826,6 +838,12 @@ fn operate(
         });
         return Ok(Outcome::of(started_text(kind)).into());
     }
+    if *call == mcp::Call::Status && takedown_waits(deploy.content_store) {
+        return Ok(mcp::ToolOutcome {
+            outcome: run_tool(device, attachment_storage, name, call)?,
+            deploy: Some(deploy::takedown_waits_text()),
+        });
+    }
     let takedown = matches!(call, mcp::Call::Takedown { .. });
     let pushed = matches!(
         call,
@@ -838,9 +856,6 @@ fn operate(
     } else {
         run_tool(device, attachment_storage, name, call)?
     };
-    if takedown {
-        mark_takedown(deploy.content_store);
-    }
     let after = deploy_after(
         deploy.options,
         deploy.content_store,
@@ -1028,7 +1043,6 @@ fn run_takedown(
     let outcome = pushing(content_store, true, || {
         tool::takedown(device, &storage(attachment_storage), paths, run)
     })?;
-    mark_takedown(content_store);
     Ok(Ran {
         outcome,
         deploy: deploy_after(deploy, content_store, attachment_storage, true),
@@ -1057,6 +1071,7 @@ fn run(command: Command) -> Result<Ran, String> {
         Command::Status { places } => {
             let output = tool::status(&device(&places)?)?;
             warn_when_behind(&output);
+            warn_when_takedown_waits(&places.content_store);
             Ok(done(output))
         }
         Command::Plan {

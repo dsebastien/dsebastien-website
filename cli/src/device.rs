@@ -13,12 +13,15 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, mpsc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde_json::{Value, json};
 
 use crate::canonical::to_canonical_json;
-use crate::deploy::{ChildRun, DeployCommand, DeployProcess, DeployRecord, Stop, TakedownMarker};
+use crate::deploy::{
+    ChildRun, DeployCommand, DeployProcess, DeployRecord, Stop, TakedownEntry, TakedownMarker,
+    takedown_entry_of, takedown_entry_text,
+};
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -1852,27 +1855,94 @@ impl DeployProcess for ChildProcess {
     }
 }
 
-/// The marker of a takedown of this device: `.git/vault-publish/takedown-pending`
-/// of the copy, beside the lock and the run journal, so every face of this
-/// device sees it.
+/// True when a process runs, by its number.
+pub fn process_is_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // A process of another user runs too: `kill -0` then says that it
+        // has no right, and names the process.
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .is_ok_and(|output| {
+                output.status.success() || String::from_utf8_lossy(&output.stderr).contains("ermi")
+            })
+    }
+    #[cfg(windows)]
+    {
+        Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .stderr(Stdio::null())
+            .output()
+            .is_ok_and(|output| {
+                String::from_utf8_lossy(&output.stdout).contains(&format!(" {pid} "))
+            })
+    }
+}
+
+/// The number of entries of takedowns that this process wrote: each one gets
+/// a name of its own.
+static ENTRIES: AtomicU64 = AtomicU64::new(0);
+
+/// The marker of the takedowns of this device: `.git/vault-publish/takedowns/`
+/// of the copy, one file per takedown, beside the lock and the run journal,
+/// so every face of this device sees it.
 impl TakedownMarker for ContentStore {
-    fn pending(&self) -> bool {
-        // A marker that cannot be read counts as set.
-        !matches!(
-            fs::symlink_metadata(self.local_file("takedown-pending")),
-            Err(error) if error.kind() == ErrorKind::NotFound
-        )
+    fn entries(&self) -> Result<Vec<(String, TakedownEntry)>, String> {
+        let folder = self.local_file("takedowns");
+        let listing = match fs::read_dir(&folder) {
+            Ok(listing) => listing,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(format!("{} cannot be read: {error}", folder.display())),
+        };
+        let mut names: Vec<String> = listing
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| {
+                Path::new(name)
+                    .extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .collect();
+        names.sort();
+        let mut found = Vec::new();
+        for name in names {
+            match fs::read_to_string(folder.join(&name)) {
+                Ok(text) => found.push((
+                    name.trim_end_matches(".json").to_owned(),
+                    takedown_entry_of(&text),
+                )),
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("{name} cannot be read: {error}")),
+            }
+        }
+        Ok(found)
     }
 
-    fn set(&self) -> Result<(), String> {
+    fn add(&self, entry: &TakedownEntry) -> Result<String, String> {
+        let since = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis());
+        let id = format!(
+            "{since}-{}-{}",
+            std::process::id(),
+            ENTRIES.fetch_add(1, Ordering::Relaxed) + 1
+        );
+        self.replace(&id, entry)?;
+        Ok(id)
+    }
+
+    fn replace(&self, id: &str, entry: &TakedownEntry) -> Result<(), String> {
         write_whole(
-            &self.local_file("takedown-pending"),
-            "A takedown waits for a deploy with --takedown that succeeds.\n",
+            &self.local_file("takedowns").join(format!("{id}.json")),
+            &takedown_entry_text(entry),
         )
     }
 
-    fn remove(&self) -> Result<(), String> {
-        let file = self.local_file("takedown-pending");
+    fn remove(&self, id: &str) -> Result<(), String> {
+        let file = self.local_file("takedowns").join(format!("{id}.json"));
         match fs::remove_file(&file) {
             Err(error) if error.kind() != ErrorKind::NotFound => {
                 Err(format!("{} cannot be removed: {error}", file.display()))
@@ -1880,21 +1950,34 @@ impl TakedownMarker for ContentStore {
             _ => Ok(()),
         }
     }
+
+    fn is_ancestor(&self, ancestor: &str, revision: &str) -> Option<bool> {
+        let status = Command::new("git")
+            .args(["merge-base", "--is-ancestor", ancestor, revision])
+            .current_dir(&self.folder)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()?;
+        // 1: not an ancestor; another code: a commit that the copy does not know.
+        match status.code() {
+            Some(0) => Some(true),
+            Some(1) => Some(false),
+            _ => None,
+        }
+    }
 }
 
-/// The record of the deploys of this device: `.git/vault-publish/deploy-running`
-/// while a deploy runs, and `deploy-report.json`, the last deploy report.
+/// The record of the deploys of this device: `.git/vault-publish/deploy-running/`
+/// holds one file per process whose deploy runs, and `deploy-report.json` the
+/// last deploy report. `running` is true while a process of one of them runs.
 impl DeployRecord for ContentStore {
     fn set_running(&self, running: bool) -> Result<(), String> {
-        let file = self.local_file("deploy-running");
+        let file = self
+            .local_file("deploy-running")
+            .join(std::process::id().to_string());
         if running {
-            return write_whole(
-                &file,
-                &format!(
-                    "A deploy of the command line program runs (process {}).\n",
-                    std::process::id()
-                ),
-            );
+            return write_whole(&file, "A deploy of the command line program runs.\n");
         }
         match fs::remove_file(&file) {
             Err(error) if error.kind() != ErrorKind::NotFound => {
@@ -1905,7 +1988,13 @@ impl DeployRecord for ContentStore {
     }
 
     fn running(&self) -> bool {
-        self.local_file("deploy-running").is_file()
+        fs::read_dir(self.local_file("deploy-running")).is_ok_and(|listing| {
+            listing
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .filter_map(|name| name.parse::<u32>().ok())
+                .any(process_is_alive)
+        })
     }
 
     fn save_last(&self, text: &str) -> Result<(), String> {

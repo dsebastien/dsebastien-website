@@ -441,6 +441,17 @@ export class PublicationCenterView extends ItemView {
         if (state.deployment?.running === true) {
             line.createSpan({ cls: 'vault-publish-deploying', text: ' · Deploying the site…' })
         }
+        if (state.takedownWaits === true) {
+            const waits = this.#header.createDiv({ cls: 'vault-publish-behind' })
+            waits.createSpan({
+                text: 'A takedown waits for a deploy that succeeds: its notes can still be live. Every deploy runs with --takedown until then.'
+            })
+            const again = waits.createEl('button', { text: 'Deploy again' })
+            again.disabled = state.deployment?.running === true
+            again.addEventListener('click', () => {
+                void center.deploy()
+            })
+        }
         const refresh = this.#header.createEl('button', { text: 'Refresh' })
         refresh.disabled = state.activity !== 'idle'
         refresh.addEventListener('click', () => {

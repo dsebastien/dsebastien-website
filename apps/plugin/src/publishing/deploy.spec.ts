@@ -2,8 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import {
     deployCommandOf,
+    holdsTakedown,
     isAbsolutePath,
+    takedownEntryOf,
+    takedownEntryText,
     lastText,
+    takedownWaitsText,
     startedText,
     deploymentText,
     reportOfRun,
@@ -12,6 +16,7 @@ import {
     runDeploy
 } from './deploy.ts'
 import type {
+    TakedownEntry,
     DeployCommand,
     DeployKind,
     DeployProcess,
@@ -54,7 +59,20 @@ const CASES = (await Bun.file(FILE).json()) as {
     commands: CommandCase[]
     results: ResultCase[]
     started: { name: string; kind: DeployKind; text: string }[]
-    last: { name: string; stored: string | null; running: boolean; text: string }[]
+    last: {
+        name: string
+        stored: string | null
+        running: boolean
+        takedownWaits: boolean
+        text: string
+    }[]
+    takedownWaitsText: string
+    takedowns: {
+        ancestors: [string, string][]
+        unknown: string[]
+        entries: { name: string; entry: TakedownEntry; revision: string | null; holds: boolean }[]
+        texts: { name: string; text: string; entry: TakedownEntry }[]
+    }
 }
 
 describe('an absolute path', () => {
@@ -101,6 +119,34 @@ describe('the report of a deploy', () => {
     })
 })
 
+describe('the takedowns that wait for their deploy', () => {
+    test('status adds its text after its report', () => {
+        expect(takedownWaitsText()).toBe(CASES.takedownWaitsText)
+    })
+
+    const { ancestors, unknown } = CASES.takedowns
+    const isAncestor = (one: string, two: string): Promise<boolean | undefined> =>
+        Promise.resolve(
+            unknown.includes(one) || unknown.includes(two)
+                ? undefined
+                : one === two ||
+                      ancestors.some(([first, second]) => first === one && second === two)
+        )
+    for (const one of CASES.takedowns.entries) {
+        test(one.name, async () => {
+            expect(await holdsTakedown(one.entry, one.revision, isAncestor)).toBe(one.holds)
+        })
+    }
+    for (const one of CASES.takedowns.texts) {
+        test(`the text of ${one.name}`, () => {
+            expect(takedownEntryOf(one.text)).toEqual(one.entry)
+            if (!('any' in one.entry)) {
+                expect(takedownEntryText(one.entry)).toBe(one.text)
+            }
+        })
+    }
+})
+
 describe('the report of a deploy that starts in the background, and the last report', () => {
     for (const one of CASES.started) {
         test(one.name, () => {
@@ -109,21 +155,34 @@ describe('the report of a deploy that starts in the background, and the last rep
     }
     for (const one of CASES.last) {
         test(one.name, () => {
-            expect(lastText(one.stored ?? undefined, one.running)).toBe(one.text)
+            expect(lastText(one.stored ?? undefined, one.running, one.takedownWaits)).toBe(one.text)
         })
     }
 })
 
-/** A marker of a takedown and a record in memory. */
+/**
+ * A marker of the takedowns and a record in memory. `pending` adds an entry
+ * that any release holds; `ancestors` are the pairs [ancestor, revision] of
+ * the copy.
+ */
 function marker(
-    pending = false
-): TakedownMarker & DeployRecord & { is: () => boolean; runs: boolean[]; saved: string[] } {
-    let on = pending
+    pending = false,
+    ancestors: readonly (readonly [string, string])[] = []
+): TakedownMarker &
+    DeployRecord & {
+        is: () => boolean
+        runs: boolean[]
+        saved: string[]
+        held: Map<string, TakedownEntry>
+    } {
+    const held = new Map<string, TakedownEntry>(pending ? [['one', { above: null }]] : [])
     const runs: boolean[] = []
     const saved: string[] = []
+    let next = 0
     return {
         runs,
         saved,
+        held,
         setRunning: (running) => {
             runs.push(running)
             return Promise.resolve()
@@ -134,16 +193,25 @@ function marker(
             return Promise.resolve()
         },
         last: () => Promise.resolve(saved.at(-1)),
-        pending: () => Promise.resolve(on),
-        set: () => {
-            on = true
+        entries: () => Promise.resolve([...held].map(([id, entry]) => ({ id, entry }))),
+        add: (entry) => {
+            next += 1
+            held.set(String(next), entry)
+            return Promise.resolve(String(next))
+        },
+        replace: (id, entry) => {
+            held.set(id, entry)
             return Promise.resolve()
         },
-        remove: () => {
-            on = false
+        remove: (id) => {
+            held.delete(id)
             return Promise.resolve()
         },
-        is: () => on
+        isAncestor: (one, two) =>
+            Promise.resolve(
+                one === two || ancestors.some(([first, second]) => first === one && second === two)
+            ),
+        is: () => held.size > 0
     }
 }
 
@@ -298,5 +366,32 @@ describe('a deploy', () => {
 
         expect(files.runs).toEqual([true, false])
         expect(files.saved).toEqual([deploymentText(deployment.report)])
+    })
+
+    test('keeps a takedown that was pushed while an older deploy ran, which succeeds', async () => {
+        const C1 = '1'.repeat(40)
+        const T2 = '3'.repeat(40)
+        const line = LINE.replace('0123456789abcdef0123456789abcdef01234567', C1)
+        const child: DeployProcess = {
+            run: () => Promise.resolve({ code: 0, stdout: `${line}\n`, output: '' })
+        }
+        // T2 came after C1: C1 is an ancestor of T2, not the reverse.
+        const files = marker(false, [[C1, T2]])
+        await files.add({ commit: T2 })
+
+        const deployment = await runDeploy(
+            child,
+            files,
+            SETTINGS,
+            { push: 'ok', takedown: false },
+            false
+        )
+
+        expect(deployment.report.takedown).toBe(true)
+        expect(deployment.report.contentRevision).toBe(C1)
+        expect([...files.held.values()]).toEqual([{ commit: T2 }])
+        expect(deployment.report.warnings).toContain(
+            '1 takedown(s) came after the content of this release and wait for their deploy: the next deploy runs with --takedown'
+        )
     })
 })
