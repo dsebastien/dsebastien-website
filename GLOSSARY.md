@@ -27,6 +27,9 @@ A media note with the default status, no rating and no text of the author.
 The form of a note that can be published: the note without its private parts. Every output of the site derives from it.
 _Avoid_: artifact, export
 
+**Withdrawn key**:
+The key of an attachment whose file came under a guard while a published entry still lists it. It is in `withdrawn.json` of the content store, and every deployment deletes it from the object storage (R78).
+
 **Fixture vault**:
 A small vault with invented notes only, made for tests.
 
