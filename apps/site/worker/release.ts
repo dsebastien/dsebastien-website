@@ -79,6 +79,12 @@ export interface DeployRun {
      * know it. Without it, a live release of the content store is refused.
      */
     readonly descendsFrom?: (revision: string) => Promise<boolean | undefined>
+    /**
+     * True when the author moves the host to another content store (issue
+     * 127, `--new-content-store`): the live content revision must then be
+     * one that the copy does not know. The tools never set it.
+     */
+    readonly newContentStore?: boolean
     /** Checks right before the deployment that the copy is still what the build read. It throws when not. */
     readonly beforeDeploy?: () => Promise<void>
     /** The whole `_headers` file of the output. */
@@ -232,6 +238,10 @@ async function liveRecordOf(live: LiveRecord): Promise<DeploymentRecord | null> 
  * of the content store.
  */
 async function checkOver(run: DeployRun, live: DeploymentRecord | null): Promise<void> {
+    if (run.newContentStore === true) {
+        await checkMove(run, live)
+        return
+    }
     if (live === null || live.contentRevision === null) {
         return
     }
@@ -251,6 +261,35 @@ async function checkOver(run: DeployRun, live: DeploymentRecord | null): Promise
             `the live content revision ${live.contentRevision} is not in the history of this copy (${run.contentRevision}): older or other content would go live`
         )
     }
+}
+
+/**
+ * Refuses a move to another content store (issue 127) that is no move: the
+ * host has no release of a content store, the copy knows the live content
+ * revision (the same store), or the run is `--dist` or a takedown.
+ */
+async function checkMove(run: DeployRun, live: DeploymentRecord | null): Promise<void> {
+    if (run.contentRevision === null) {
+        throw new Refusal('--dist cannot move the host to another content store')
+    }
+    if (run.takedown) {
+        throw new Refusal(
+            'a takedown cannot move the host to another content store: deploy the takedown from the content store of the live release first'
+        )
+    }
+    if (live === null || live.contentRevision === null) {
+        throw new Refusal(
+            'the host has no release of a content store, so there is nothing to move: deploy without --new-content-store'
+        )
+    }
+    if ((await run.descendsFrom?.(live.contentRevision)) !== undefined) {
+        throw new Refusal(
+            `the copy knows the live content revision ${live.contentRevision}, so it is the same content store: deploy without --new-content-store`
+        )
+    }
+    run.log(
+        `moving the host to another content store: this release replaces the live content revision ${live.contentRevision}`
+    )
 }
 
 /** The three fields of the build of a record. */
@@ -356,7 +395,10 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 builtAt: timeOf(run.now()),
                 ...(replaced === undefined
                     ? {}
-                    : { previous: replaced === null ? null : buildOf(replaced) })
+                    : { previous: replaced === null ? null : buildOf(replaced) }),
+                ...(replaced !== undefined && run.newContentStore === true
+                    ? { newContentStore: true as const }
+                    : {})
             }
             await writeFile(join(dist, '_headers'), run.headers)
             await writeFile(
@@ -579,6 +621,11 @@ export async function revertRelease(run: RevertRun): Promise<RevertResult> {
     if (before === undefined || target === undefined || target === null) {
         throw new Error(
             'the live release names no release before it with a record: deploy a new release instead'
+        )
+    }
+    if (before.newContentStore === true) {
+        throw new Error(
+            'the live release moved the host to another content store, so the release before has other content: deploy a new release instead'
         )
     }
     if (before.contentRevision !== null && target.contentRevision !== null) {

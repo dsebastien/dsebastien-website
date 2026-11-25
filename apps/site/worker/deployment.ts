@@ -255,6 +255,12 @@ export interface DeploymentRecord extends ReleaseBuild {
      * Missing in a record of a release deployed before it existed.
      */
     readonly previous?: ReleaseBuild | null
+    /**
+     * True when this release moved the host to another content store (issue
+     * 127): `previous` came from a content store that the copy did not know.
+     * Missing otherwise.
+     */
+    readonly newContentStore?: true
 }
 
 const REVISION = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u
@@ -286,14 +292,21 @@ export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefin
     if (build === undefined || typeof value !== 'object' || value === null) {
         return undefined
     }
+    let move: { newContentStore?: true } = {}
+    if ('newContentStore' in value && value.newContentStore !== undefined) {
+        if (value.newContentStore !== true) {
+            return undefined
+        }
+        move = { newContentStore: true }
+    }
     if (!('previous' in value) || value.previous === undefined) {
-        return build
+        return { ...build, ...move }
     }
     if (value.previous === null) {
-        return { ...build, previous: null }
+        return { ...build, previous: null, ...move }
     }
     const previous = releaseBuildFrom(value.previous)
-    return previous === undefined ? undefined : { ...build, previous }
+    return previous === undefined ? undefined : { ...build, previous, ...move }
 }
 
 /** The variables that can hold the token of a deployment, in their order. */

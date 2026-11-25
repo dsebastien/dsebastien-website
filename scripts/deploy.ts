@@ -38,6 +38,7 @@ import {
 //
 //     bun run deploy --target <file> --content-store <folder> --attachments <folder>
 //                    [--takedown] [--from-main] [--dry-run]
+//                    [--new-content-store <host name>]
 //     bun run deploy --target <file> --dist <folder> [--dry-run]
 //
 // `--target` names a private JSON file with the names of the host (see
@@ -52,6 +53,9 @@ import {
 // `NOTES_DEPLOY_CLOUDFLARE_API_TOKEN`, else `CLOUDFLARE_API_TOKEN`; `--dry-run`
 // checks the bundle with wrangler, reaches no host and needs no token. The
 // last line of the standard output is the result (`resultLine()`).
+// `--new-content-store` moves the host to a content store that does not know
+// the live content revision (issue 127): the author gives the host name of
+// the target again, and the tools never pass it.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'apps', 'site')
@@ -64,7 +68,8 @@ const OPTIONS = {
     'dist': { type: 'string' },
     'takedown': { type: 'boolean', default: false },
     'from-main': { type: 'boolean', default: false },
-    'dry-run': { type: 'boolean', default: false }
+    'dry-run': { type: 'boolean', default: false },
+    'new-content-store': { type: 'string' }
 } as const
 
 async function isFolder(path: string): Promise<boolean> {
@@ -217,10 +222,17 @@ async function deploy(
         'dist'?: string | undefined
         'takedown': boolean
         'dry-run': boolean
+        'new-content-store'?: string | undefined
     }
 ): Promise<DeployResult> {
     try {
         const dryRun = values['dry-run']
+        const move = values['new-content-store']
+        if (move !== undefined && move !== target.host) {
+            throw new Error(
+                `--new-content-store must repeat the host name of the target (${target.host}), not "${move}"`
+            )
+        }
         if ((values['content-store'] === undefined) === (values.dist === undefined)) {
             throw new Error('give one of --content-store <folder> and --dist <folder>')
         }
@@ -280,6 +292,7 @@ async function deploy(
                 read: async (key) => new Uint8Array(await readFile(keyPath(key)))
             },
             takedown: values.takedown,
+            newContentStore: move !== undefined,
             dryRun,
             ...(store === undefined
                 ? {}

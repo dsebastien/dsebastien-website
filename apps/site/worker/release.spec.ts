@@ -654,6 +654,16 @@ describe('a revert', () => {
         }
     }
 
+    // Issue 127: the release before came from another content store.
+    test('refuses to go back across a move to another content store', async () => {
+        const site = host({ ...LIVE, newContentStore: true }, [])
+        const error = await rejectionOf(
+            revertRelease({ ...site.run, takedownsBetween: () => Promise.resolve([]) })
+        )
+        expect(error).toContain('another content store')
+        expect(site.events).not.toContain('rollback')
+    })
+
     test('rolls back, then gives the record of the release before once the host gives it in a row', async () => {
         const site = host(LIVE, [LIVE, BEFORE, BEFORE])
         const asked: string[] = []
@@ -873,6 +883,73 @@ describe('the release that is live', () => {
             }
         )
         expect(await deployRelease(over.run)).toMatchObject({ deploy: 'ok', error: null })
+    })
+
+    // Issue 127: a host moves to another content store only when the author
+    // asks for it, and the record says so.
+    test('moves to another content store when the run asks for it, and the record names the move', async () => {
+        const lines: string[] = []
+        const site = liveAnswers([LIVE, LIVE], {
+            newContentStore: true,
+            descendsFrom: () => Promise.resolve(undefined),
+            log: (line) => lines.push(line)
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ deploy: 'ok', live: true, error: null })
+        const record: unknown = JSON.parse(
+            await readFile(join(site.dist(), '-', 'deployment.json'), 'utf8')
+        )
+        expect(record).toMatchObject({ newContentStore: true, previous: LIVE })
+        expect(lines.join('\n')).toContain(
+            `replaces the live content revision ${LIVE.contentRevision}`
+        )
+    })
+
+    test('names no move in the record of a release of the same content store', async () => {
+        const site = liveAnswers([LIVE, LIVE])
+        await deployRelease(site.run)
+        const record: unknown = JSON.parse(
+            await readFile(join(site.dist(), '-', 'deployment.json'), 'utf8')
+        )
+        expect(record).not.toHaveProperty('newContentStore')
+    })
+
+    test('refuses a move when the copy knows the live content revision', async () => {
+        for (const known of [true, false]) {
+            const site = liveAnswers([LIVE], {
+                newContentStore: true,
+                descendsFrom: () => Promise.resolve(known)
+            })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+            expect(result.error).toContain('knows the live content revision')
+        }
+    })
+
+    test('refuses a move when the host has no release of a content store', async () => {
+        for (const live of [undefined, { ...LIVE, contentRevision: null }]) {
+            const site = liveAnswers([live], {
+                newContentStore: true,
+                descendsFrom: () => Promise.resolve(undefined)
+            })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+            expect(result.error).toContain('no release of a content store')
+        }
+    })
+
+    test('refuses a move with --dist and with a takedown, and touches nothing', async () => {
+        const dist = liveAnswers([LIVE], { newContentStore: true, contentRevision: null })
+        expect((await deployRelease(dist.run)).error).toContain('--dist')
+        const takedown = liveAnswers([LIVE], {
+            newContentStore: true,
+            takedown: true,
+            descendsFrom: () => Promise.resolve(undefined)
+        })
+        const result = await deployRelease(takedown.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted: 0 })
+        expect(result.error).toContain('takedown')
+        expect(takedown.events.filter((event) => event !== 'live?')).toEqual([])
     })
 })
 

@@ -247,6 +247,16 @@ describe('the deployment record', () => {
         })
     })
 
+    // Issue 127: the record of a move to another content store says so.
+    test('reads the move to another content store, and nothing else in its place', () => {
+        expect(deploymentRecordFrom({ ...RECORD, newContentStore: true })).toEqual({
+            ...RECORD,
+            newContentStore: true
+        })
+        expect(deploymentRecordFrom({ ...RECORD, newContentStore: false })).toBeUndefined()
+        expect(deploymentRecordFrom({ ...RECORD, newContentStore: 'yes' })).toBeUndefined()
+    })
+
     test('is no record when the record that it replaced is not one', () => {
         expect(deploymentRecordFrom({ ...RECORD, previous: { builtAt: 'x' } })).toBeUndefined()
     })
