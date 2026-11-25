@@ -106,13 +106,17 @@ describe('the configuration of the Worker', () => {
 })
 
 describe('the headers file of the static files', () => {
-    // The files of `/_astro/` and `/-/search/` do not run the Worker.
-    test('marks every file noindex on a preview host', () => {
-        expect(headersFile(PREVIEW)).toBe('/*\n  X-Robots-Tag: noindex\n')
+    const IMMUTABLE = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n'
+
+    // Point 4 of the comment of issue 21 on issue 32: the host gives them
+    // `max-age=0, must-revalidate` by default, and their names hold a hash.
+    test('keeps the hashed files of the pages for a year on every host', () => {
+        expect(headersFile({ ...PREVIEW, noindex: false })).toBe(IMMUTABLE)
     })
 
-    test('is empty on a host that is indexed', () => {
-        expect(headersFile({ ...PREVIEW, noindex: false })).toBe('')
+    // The files of `/_astro/` and `/-/search/` do not run the Worker.
+    test('also marks every file noindex on a preview host', () => {
+        expect(headersFile(PREVIEW)).toBe(`${IMMUTABLE}/*\n  X-Robots-Tag: noindex\n`)
     })
 })
 

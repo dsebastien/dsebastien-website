@@ -136,12 +136,16 @@ export function workerConfiguration(
 
 /**
  * The whole `_headers` file of the static files: the deployment writes it
- * into the output, over any file of that name. It marks every static file;
- * that is what covers the files that the host gives without the Worker
- * (`/_astro/`, `/-/search/`), because the Worker marks its own answers.
+ * into the output, over any file of that name. On every host, the files of
+ * `/_astro/` are kept for a year: Astro names them with a hash of their
+ * bytes, and the host gives them `max-age=0, must-revalidate` by default. On
+ * a preview host, it marks every static file noindex; that is what covers
+ * the files that the host gives without the Worker (`/_astro/`,
+ * `/-/search/`), because the Worker marks its own answers.
  */
 export function headersFile(target: DeployTarget): string {
-    return target.noindex ? '/*\n  X-Robots-Tag: noindex\n' : ''
+    const immutable = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n'
+    return target.noindex ? `${immutable}/*\n  X-Robots-Tag: noindex\n` : immutable
 }
 
 /**
