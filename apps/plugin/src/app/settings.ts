@@ -5,12 +5,13 @@ import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import type { DeviceStorage } from './rename-journal.ts'
 
 // The settings of a device (decision R67, ST6a of the tool study): the folder
-// of the copy of the content store, the folder of the attachment storage
-// (until the slice of the hosting gives the tool an object storage), and the
-// git program, for an Obsidian that starts with another path of the system
-// than a terminal; and the settings of the deploy after a push (issue 32): the
+// of the copy of the content store, the attachment folder (the deploy uploads
+// its files to the object storage of the host, issue 32), and the git
+// program, for an Obsidian that starts with another path of the system than a
+// terminal. Then the settings of the deploy after a push (issue 32): the
 // folder of the clean clone of the site code, the private target file, the
-// private env file with the token, and the bun program. They are kept in the local storage of Obsidian, never in
+// private env file with the token, the bun program, and the time limit of a
+// deploy. They are kept in the local storage of Obsidian, never in
 // `data.json`: they never travel with the vault to another device.
 
 export interface DeviceSettings {

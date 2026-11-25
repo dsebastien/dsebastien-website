@@ -44,7 +44,10 @@ A note that is not published and that no guard excludes. The author can select i
 
 **Publication**:
 The act, started by the author in Obsidian, that makes selected changes live.
-_Avoid_: deploy, sync, upload
+_Avoid_: deploy, sync, upload. A publication is not a deploy: it is done at its push to the content store, and the deploy follows it.
+
+**Deploy**:
+The build of the site from the content store and its upload to the host, as one release. The tool starts it on the machine that publishes after each push of a publication, an unpublish or a takedown, and the author can start it again. A failed deploy never undoes a publication.
 
 **Deploy report**:
 What the tool says about the deploy of the site that follows the push of a publication, an unpublish or a takedown: the push, the build and the deploy apart, whether the new release is live and its URL, the warnings and the error. It is apart from the publication report: the publication is done at the push, and a failed deploy never undoes it.
