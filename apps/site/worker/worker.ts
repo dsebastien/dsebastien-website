@@ -196,7 +196,12 @@ async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
                 await discard(read.value)
             }
         }
-        const reason: unknown = mapRead.status === 'rejected' ? mapRead.reason : pageRead.reason
+        const reason: unknown =
+            mapRead.status === 'rejected'
+                ? mapRead.reason
+                : pageRead.status === 'rejected'
+                  ? pageRead.reason
+                  : undefined
         throw new ShortFailure('the host fails to give a file of the release', { cause: reason })
     }
     const map = mapRead.value
