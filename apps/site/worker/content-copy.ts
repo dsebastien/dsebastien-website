@@ -1,3 +1,4 @@
+import { parseWithdrawn, WITHDRAWN_FILE } from '../../plugin/src/publishing/withdrawn.ts'
 import { publishedNotesOf } from '../src/content-store.ts'
 
 // The copy of the content store on the machine that deploys (issue 32), as
@@ -395,4 +396,19 @@ export async function releaseAttachmentKeys(
         }))
     )
     return [...new Set(notes.flatMap((note) => note.attachments.map((item) => item.key)))].sort()
+}
+
+/**
+ * The keys that the guards withdrew (`withdrawn.json` of the copy at its
+ * commit, issue 120), read as the tool reads them: none without the file. It
+ * throws for a file that the tool would refuse, so the deployment stops
+ * before its first step: it could put a file under a guard back on the host.
+ */
+export async function withdrawnAttachmentKeys(store: string): Promise<string[]> {
+    const name = `HEAD:${WITHDRAWN_FILE}`
+    if ((await git(store, 'cat-file', '-e', name)).code !== 0) {
+        return []
+    }
+    const [text] = await objectTexts(store, [name])
+    return parseWithdrawn(text)
 }

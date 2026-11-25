@@ -1143,3 +1143,36 @@ fn a_path_of_accept_in_another_form_stops_the_plan() {
         assert_refused(&setup.run("plan", &[&format!("--accept={path}")]), says);
     }
 }
+
+/// `withdrawn.json` (issue 120) is read strictly, and the copy must hold the
+/// file of its last commit, as `edits.json`: a list that differs could put a
+/// file under a guard back on the host.
+#[test]
+fn a_withdrawn_list_that_is_not_valid_or_not_the_file_of_its_last_commit_stops_the_runs() {
+    let setup = set_up();
+    setup.commit_file("withdrawn.json", "{\"keys\": []}");
+    for output in [setup.run("status", &[]), setup.run("plan", &[])] {
+        assert_refused(
+            &output,
+            "withdrawn.json of the content store cannot be read",
+        );
+    }
+
+    let setup = set_up();
+    let key = "a".repeat(64);
+    setup.commit_file("withdrawn.json", &format!("{{\"keys\": [\"{key}\"]}}"));
+    let id = setup.plan_id(&[]);
+    fs::write(setup.copy.join("withdrawn.json"), "{}\n").expect("the list is edited");
+    for output in [
+        setup.run("status", &[]),
+        setup.run("plan", &[]),
+        setup.publish_plan(&id),
+    ] {
+        assert_eq!(output.status.code(), Some(1));
+        let message = errors_of(&output);
+        assert!(
+            message.contains("not the files of its last commit: withdrawn.json"),
+            "{message}"
+        );
+    }
+}

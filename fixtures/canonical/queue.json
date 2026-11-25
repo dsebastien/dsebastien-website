@@ -2907,9 +2907,11 @@
                 },
                 {
                     "do": "expect",
-                    "why": "no file under a guard stays in the storage",
+                    "why": "no file under a guard stays in the storage, and its key is withdrawn in the content store, so the deployment deletes it from the host (issue 120)",
                     "vault": {},
-                    "store": {},
+                    "store": {
+                        "withdrawn.json": "{\n  \"keys\": [\n    \"9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3\"\n  ]\n}\n"
+                    },
                     "attachmentStorage": {}
                 },
                 {
@@ -2983,10 +2985,187 @@
                 },
                 {
                     "do": "expect",
-                    "why": "the storage is empty",
+                    "why": "the storage is empty, and both keys are withdrawn",
                     "vault": {},
-                    "store": {},
+                    "store": {
+                        "withdrawn.json": "{\n  \"keys\": [\n    \"8562e21c2aa4b56f3f17978bed50d566fbb5abd8729e05ad1761f2e71c024a23\",\n    \"9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3\"\n  ]\n}\n"
+                    },
                     "attachmentStorage": {}
+                }
+            ]
+        },
+        {
+            "name": "the keys that the guards withdrew go into the content store, and leave it when a note uses the file openly again (issue 120)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Pub/A.md": "![[img.png]]\n",
+                "Pub/img.png": "An invented image\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the note and its image are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Pub/A.md"],
+                        "remove": []
+                    },
+                    "time": "2031-07-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Pub/A.md"],
+                        "published": ["Pub/A.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "no guard withdrew a file: the content store has no withdrawn.json",
+                    "vault": {},
+                    "store": {
+                        "withdrawn.json": null
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the author moves the image under the guard",
+                    "paths": ["Pub/img.png"]
+                },
+                {
+                    "do": "write",
+                    "why": "the image under the guard",
+                    "files": {
+                        "Locked/img.png": "An invented image\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the held note still lists the image: the image leaves the storage, and its key is withdrawn in the same commit",
+                    "selection": {
+                        "hold": ["Pub/A.md"],
+                        "include": [],
+                        "remove": [],
+                        "accept": ["Pub/A.md"]
+                    },
+                    "time": "2031-07-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Pub/A.md"],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the key only, never a path or a name",
+                    "vault": {},
+                    "store": {
+                        "withdrawn.json": "{\n  \"keys\": [\n    \"9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3\"\n  ]\n}\n"
+                    },
+                    "attachmentStorage": {}
+                },
+                {
+                    "do": "publish",
+                    "why": "the next publication keeps the key",
+                    "selection": {
+                        "hold": ["Pub/A.md"],
+                        "include": [],
+                        "remove": [],
+                        "accept": ["Pub/A.md"]
+                    },
+                    "time": "2031-07-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Pub/A.md"],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the key stays withdrawn",
+                    "vault": {},
+                    "store": {
+                        "withdrawn.json": "{\n  \"keys\": [\n    \"9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3\"\n  ]\n}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the author takes the image out of the guard",
+                    "paths": ["Locked/img.png"]
+                },
+                {
+                    "do": "write",
+                    "why": "the image at its old path",
+                    "files": {
+                        "Pub/img.png": "An invented image\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a plan with no note: the note uses the file openly again, so its key leaves the list, and the file is uploaded again (R46)",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-07-04T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["Pub/img.png"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "no key is withdrawn: the publication removed the file in its commit",
+                    "vault": {},
+                    "store": {
+                        "withdrawn.json": null
+                    },
+                    "attachmentStorage": {
+                        "9f77f59b9f5a9c21985ebf4c3be773c631d542137ea9c3f4a9f8d7f97fe360f3": "An invented image\n"
+                    }
                 }
             ]
         },

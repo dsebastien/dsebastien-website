@@ -1016,3 +1016,54 @@ describe('the decisions of the author', () => {
         expect((await guards(device)).proposals).toEqual([proposal])
     }, 60_000)
 })
+
+// Issue 120: the keys that the guards withdrew live in the content store, in
+// `withdrawn.json`, so every deployment deletes them from the object storage.
+describe('the withdrawn keys of the content store', () => {
+    test('a withdrawn.json that is not valid stops status and plan, and names the file', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUp(stores)
+        await pushFiles(copy, { 'withdrawn.json': '{"keys": []}' })
+
+        for (const run of [() => status(device), () => plan(device, { include: [] })]) {
+            expect(await rejectionOf(run())).toContain(
+                'withdrawn.json of the content store cannot be read'
+            )
+        }
+    }, 60_000)
+
+    test.each([
+        ['edited', (copy: string) => writeFile(join(copy, 'withdrawn.json'), '{}\n')],
+        ['removed', (copy: string) => rm(join(copy, 'withdrawn.json'))]
+    ] as const)(
+        'a withdrawn.json %s in the copy stops status, plan and publish',
+        async (_name, change) => {
+            await using stores = await makeTestStores()
+            const { copy, device } = await setUp(stores)
+            await pushFiles(copy, { 'withdrawn.json': `{"keys": ["${'a'.repeat(64)}"]}` })
+            const planned = await plan(device, { include: ['Notes/Public.md'] })
+            await change(copy)
+
+            for (const run of [
+                () => status(device),
+                () => plan(device, { include: [] }),
+                () => publish(device, planned.id, AUTHOR)
+            ]) {
+                expect(await rejectionOf(run())).toContain(
+                    'are not the files of its last commit: withdrawn.json'
+                )
+            }
+        },
+        120_000
+    )
+
+    test('a withdrawn.json added to the copy and not committed stops status', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUp(stores)
+        await writeFile(join(copy, 'withdrawn.json'), `{"keys": ["${'a'.repeat(64)}"]}`)
+
+        expect(await rejectionOf(status(device))).toContain(
+            'are not the files of its last commit: withdrawn.json'
+        )
+    }, 60_000)
+})

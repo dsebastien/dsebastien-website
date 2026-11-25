@@ -38,6 +38,7 @@ use crate::queue::{GuardChange, Move, Scan, compute_guard_queues, compute_queue,
 use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
 };
+use crate::withdrawn::{WITHDRAWN_FILE, parse_withdrawn, withdrawn_keys, withdrawn_text};
 
 /// Everything that a publication needs on one device.
 pub struct Device {
@@ -167,6 +168,8 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
     let (configuration, configuration_hash) = read_configuration(device, &journals)?;
     let manifest = read_manifest(&device.store)?;
     let edits = read_edits(device)?;
+    // So does a list of withdrawn keys that is not valid (issue 120).
+    parse_withdrawn(device.store.read(WITHDRAWN_FILE)?.as_deref())?;
     let mut scan = compute_queue(
         &device.vault,
         &manifest,
@@ -308,6 +311,7 @@ fn is_store_path(path: &str) -> bool {
         && (path == RENAMES_FILE
             || path == CONFIGURATION_FILE
             || path == EDITS_FILE
+            || path == WITHDRAWN_FILE
             || path.starts_with(&format!("{NOTES_FOLDER}/"))
             || (path.starts_with(&format!("{MANIFEST_FOLDER}/")) && path.split('/').count() == 2))
 }
@@ -1054,6 +1058,75 @@ fn used_keys(
         .collect()
 }
 
+/// The text of `withdrawn.json` after a publication whose manifest is
+/// `after`, or `None` for no file (issue 120, rule 8 of a publication): the
+/// earlier withdrawn keys and the keys that the guards withdraw from the
+/// manifest before and after the run, less the keys that a published entry
+/// after the run lists from a file under no guard.
+fn withdrawn_after(
+    device: &Device,
+    scan: &Scan,
+    after: &BTreeMap<String, ManifestEntry>,
+    guarded: Guarded,
+) -> Result<Option<String>, String> {
+    let withdrawn_of = |manifest: &BTreeMap<String, ManifestEntry>| -> BTreeSet<String> {
+        let used = used_keys(manifest, scan, &device.vault, guarded);
+        published_keys(manifest)
+            .into_iter()
+            .filter(|key| !used.contains(key))
+            .collect()
+    };
+    let earlier = parse_withdrawn(device.store.read(WITHDRAWN_FILE)?.as_deref())?;
+    Ok(withdrawn_text(&withdrawn_keys(
+        &earlier,
+        &withdrawn_of(&scan.manifest),
+        &withdrawn_of(after),
+        &used_keys(after, scan, &device.vault, Guarded::Deleted),
+    )))
+}
+
+/// Writes `withdrawn.json` into the copy, in the commit of the publication
+/// (issue 120): every deployment deletes those keys from the object storage
+/// of the host. It gives the path when the file changed.
+fn write_withdrawn(
+    device: &Device,
+    journal: &mut Backup,
+    computed: &Computed,
+    after: &BTreeMap<String, ManifestEntry>,
+    run: &Run,
+) -> Result<Option<String>, String> {
+    let file = StoreFile {
+        path: WITHDRAWN_FILE.to_owned(),
+        text: withdrawn_after(
+            device,
+            &computed.scan,
+            after,
+            Guarded::of(run, &computed.selection),
+        )?,
+    };
+    Ok(journal.apply(&file)?.then_some(file.path))
+}
+
+/// The paths of the content store that the journal of a publication names:
+/// the paths of its plan, and `withdrawn.json` when the plan has one, or
+/// when the withdrawn keys change: a plan with no note still writes them
+/// (issue 120).
+fn journal_paths(device: &Device, current: &Computed, run: &Run) -> Result<Vec<String>, String> {
+    let mut paths = store_paths_of(&current.plan, &current.scan, run.time);
+    if !paths.is_empty()
+        || withdrawn_after(
+            device,
+            &current.scan,
+            &current.scan.manifest,
+            Guarded::of(run, &current.selection),
+        )? != device.store.read(WITHDRAWN_FILE)?
+    {
+        paths.push(WITHDRAWN_FILE.to_owned());
+        paths.sort();
+    }
+    Ok(paths)
+}
+
 /// True when a name has the form of a file of the attachment storage: a key,
 /// or a key that is being written (`.<key>.part`).
 fn is_storage_name(name: &str) -> bool {
@@ -1754,6 +1827,7 @@ fn write_all(
         }
     }
     paths.extend(write_markers(journal, plan, scan)?);
+    paths.extend(write_withdrawn(device, journal, computed, &manifest, run)?);
     // Each path one time, in the order of the writes.
     let mut seen = BTreeSet::new();
     paths.retain(|path| seen.insert(path.clone()));
@@ -1936,7 +2010,7 @@ fn apply_current(
     refuse_unaccepted(current, run)?;
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
-    let paths = store_paths_of(&current.plan, &current.scan, run.time);
+    let paths = journal_paths(device, current, run)?;
     let head = device.store.head();
     own_lock()?;
     if !paths.is_empty() {

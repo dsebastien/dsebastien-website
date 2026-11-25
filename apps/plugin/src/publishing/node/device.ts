@@ -304,9 +304,26 @@ function waysOut(different: readonly { code: string; path: string }[], folder: s
             'Put edits.json back with git checkout HEAD -- edits.json: only the tool writes the log of the edits of the guards'
         )
     }
+    // The keys that the guards withdrew (issue 120): only the tool writes them.
+    const withdrawn = different.filter((entry) => entry.path === 'withdrawn.json')
+    if (withdrawn.some((entry) => entry.code === 'skipped')) {
+        ways.push(
+            'Let git compare withdrawn.json again (git update-index --no-skip-worktree --no-assume-unchanged withdrawn.json)'
+        )
+    } else if (withdrawn.some((entry) => entry.code.startsWith('A') && entry.code.includes('D'))) {
+        ways.push(
+            'Take withdrawn.json out of the index (git rm --cached --quiet withdrawn.json): the last commit has no such file'
+        )
+    } else if (withdrawn.some((entry) => entry.code === '??' || entry.code === '!!')) {
+        ways.push('Remove withdrawn.json: the last commit has no such file')
+    } else if (withdrawn.length > 0) {
+        ways.push(
+            'Put withdrawn.json back with git checkout HEAD -- withdrawn.json: only the tool writes the keys that the guards withdrew'
+        )
+    }
     const manifest = different.filter(
         (entry) =>
-            !['configuration.json', 'edits.json'].includes(entry.path) &&
+            !['configuration.json', 'edits.json', 'withdrawn.json'].includes(entry.path) &&
             !entry.path.startsWith('notes/')
     )
     const notes = different.filter((entry) => entry.path.startsWith('notes/'))
@@ -656,7 +673,8 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                     'configuration.json',
                     'edits.json',
                     'manifest',
-                    'renames.json'
+                    'renames.json',
+                    'withdrawn.json'
                 ],
                 '',
                 COMPARE_OPTIONS
@@ -687,6 +705,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                 'edits.json',
                 'manifest',
                 'renames.json',
+                'withdrawn.json',
                 'notes'
             )
             // Git status trusts the stat data of a file: an edit of the same
@@ -711,7 +730,8 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                     'configuration.json',
                     'edits.json',
                     'manifest',
-                    'renames.json'
+                    'renames.json',
+                    'withdrawn.json'
                 )
                 const committed = tree
                     .split('\0')

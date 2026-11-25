@@ -42,6 +42,7 @@ import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult } from './port
 import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
 import type { Move, PublicationQueue, Scan } from './queue.ts'
 import { movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
+import { parseWithdrawn, WITHDRAWN_FILE, withdrawnKeys, withdrawnText } from './withdrawn.ts'
 import type { JournalState } from './renames.ts'
 import { FACES, isCanonicalTime, isOneLine } from './run.ts'
 import type { Face } from './run.ts'
@@ -217,6 +218,8 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
     const { configuration, hash } = await readConfiguration(device, journals)
     // A log that is not valid stops every run (R69).
     const edits = parseEdits(await device.store.read(EDITS_FILE))
+    // So does a list of withdrawn keys that is not valid (issue 120).
+    parseWithdrawn(await device.store.read(WITHDRAWN_FILE))
     const manifest = await readManifest(device.store)
     return {
         scan: await computeQueue({
@@ -334,6 +337,7 @@ function isStorePath(path: string): boolean {
         (path === RENAMES_FILE ||
             path === CONFIGURATION_FILE ||
             path === EDITS_FILE ||
+            path === WITHDRAWN_FILE ||
             path.startsWith(`${NOTES_FOLDER}/`) ||
             (path.startsWith(`${MANIFEST_FOLDER}/`) && path.split('/').length === 2))
     )
@@ -1025,6 +1029,33 @@ type KeepsGuarded = (path: string) => boolean
 /** The cleanup of a run of the face plugin: a file under a guard counts for no note. */
 const NEVER_KEEPS: KeepsGuarded = () => false
 
+/**
+ * The text of `withdrawn.json` after a publication whose manifest is
+ * `after`, or `undefined` for no file (issue 120, rule 8 of a publication):
+ * the earlier withdrawn keys and the keys that the guards withdraw from the
+ * manifest before and after the run, less the keys that a published entry
+ * after the run lists from a file under no guard.
+ */
+async function withdrawnAfter(
+    device: Device,
+    scan: Scan,
+    after: ReadonlyMap<string, ManifestEntry>,
+    keepsGuarded: KeepsGuarded
+): Promise<string | undefined> {
+    const guarded = async (manifest: ReadonlyMap<string, ManifestEntry>): Promise<string[]> => {
+        const used = await usedKeys(manifest, scan.isGuardedFile, keepsGuarded)
+        return [...publishedKeys(manifest)].filter((key) => !used.has(key))
+    }
+    return withdrawnText(
+        withdrawnKeys({
+            earlier: parseWithdrawn(await device.store.read(WITHDRAWN_FILE)),
+            guardedBefore: await guarded(scan.manifest),
+            guardedAfter: await guarded(after),
+            usedAfter: await usedKeys(after, scan.isGuardedFile)
+        })
+    )
+}
+
 /** What the cleanups of a run keep (rule 10): for an agent face, the guarded files of every entry that `accept` does not name. */
 function keepsGuardedFor(face: Face, selection: NormalSelection): KeepsGuarded {
     if (face === 'plugin') {
@@ -1266,6 +1297,8 @@ async function writeAll(
         readonly plan: string
         /** Throws when the lock of the run is not its own any more. */
         readonly ownLock: () => Promise<void>
+        /** What the cleanups of the run keep (rule 10). */
+        readonly keepsGuarded: KeepsGuarded
     }
 ): Promise<Written> {
     const { scan, texts } = computed
@@ -1475,6 +1508,12 @@ async function writeAll(
         if (await journal.apply({ path: EDITS_FILE, text: editsText(log) })) {
             written.push(EDITS_FILE)
         }
+    }
+    // The keys that the guards withdrew, in the same commit (issue 120): every
+    // deployment deletes them from the object storage of the host.
+    const withdrawn = await withdrawnAfter(device, scan, manifest, run.keepsGuarded)
+    if (await journal.apply({ path: WITHDRAWN_FILE, text: withdrawn })) {
+        written.push(WITHDRAWN_FILE)
     }
     const planned = new Set([...lists.update, ...lists.remove])
     const skipped = scan.queue.changed.filter((path) => !planned.has(path))
@@ -1923,8 +1962,19 @@ async function applyCurrent(
 ): Promise<PublicationReport> {
     const { scan } = current
     // The journal comes before the first write into the copy: a run that
-    // stops halfway is put back by the next one.
-    const paths = storePathsOf(current.plan, scan, run.time)
+    // stops halfway is put back by the next one. A plan with no note still
+    // writes the withdrawn keys when they change (issue 120).
+    const planned = storePathsOf(current.plan, scan, run.time)
+    const paths =
+        planned.length > 0 ||
+        (await withdrawnAfter(
+            device,
+            scan,
+            scan.manifest,
+            keepsGuardedFor(run.face, current.selection)
+        )) !== (await device.store.read(WITHDRAWN_FILE))
+            ? sortByCodePoint([...planned, WITHDRAWN_FILE])
+            : planned
     const head = await device.store.head()
     await ownLock()
     if (paths.length > 0) {
@@ -1944,7 +1994,12 @@ async function applyCurrent(
     const uploads = new Uploads(device)
     let outcome: Written
     try {
-        outcome = await writeAll(device, journal, uploads, current, { ...run, plan: id, ownLock })
+        outcome = await writeAll(device, journal, uploads, current, {
+            ...run,
+            plan: id,
+            ownLock,
+            keepsGuarded: keepsGuardedFor(run.face, current.selection)
+        })
     } catch (error) {
         // Another run took the copy: this run touches nothing of it any more,
         // or it would put its files back over the work of the other run.

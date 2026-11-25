@@ -1156,6 +1156,35 @@ describe('parity of the guards', () => {
     }, 120_000)
 })
 
+// Issue 120: a held note still lists an image that came under a guard. Both
+// implementations delete it from the attachment storage and write the same
+// withdrawn.json into the content store, so every deployment deletes it from
+// the object storage of the host.
+describe('parity of the withdrawn keys', () => {
+    async function withdrawStory(toolOf: (vault: string, copy: string) => Tool): Promise<Result> {
+        await using stores = await makeTestStores()
+        const vault = await copyFixtureVault(stores)
+        const copy = await makeContentStoreCopy(stores)
+        const tool = toolOf(vault, copy)
+        await tool.publish({ include: [PLAN] }, TIME)
+        await rename(join(vault, IMAGE), join(vault, '90 Locked Shed', 'garden-plan.png'))
+        await tool.publish({ include: [], hold: [PLAN], accept: [PLAN] }, LATER)
+        return await resultOf(vault, copy)
+    }
+
+    test('both implementations write the same withdrawn.json, with the key only', async () => {
+        const fromTypeScript = await withdrawStory(typescriptTool)
+        const fromRust = await withdrawStory(rustTool)
+
+        expect(fromRust.store).toEqual(fromTypeScript.store)
+        expect(fromRust.storage).toEqual(fromTypeScript.storage)
+        expect(fromTypeScript.store['withdrawn.json']).toBe(
+            `{\n  "keys": [\n    "${IMAGE_KEY}"\n  ]\n}\n`
+        )
+        expect(fromTypeScript.storage).toEqual({})
+    }, 240_000)
+})
+
 // A run that stops halfway (issue 36): each implementation must put back what
 // the other one left, and see the lock of the other one. One implementation
 // stops after its commit, before its push, as after a power cut; the other one

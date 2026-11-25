@@ -17,7 +17,8 @@ import {
     contentStoreHas,
     descendsFrom,
     releaseAttachmentKeys,
-    removedAttachmentKeys
+    removedAttachmentKeys,
+    withdrawnAttachmentKeys
 } from '../apps/site/worker/content-copy.ts'
 import {
     inheritedLockWarning,
@@ -287,6 +288,8 @@ async function deploy(
         const usedKeys = store === undefined ? [] : await usedAttachmentKeys(store)
         // The files of the takedowns and of the forced removals leave at once (issue 120).
         const removedKeys = store === undefined ? [] : await removedAttachmentKeys(store)
+        // The files that the guards withdrew: never uploaded, deleted at once (R45).
+        const withdrawnKeys = store === undefined ? [] : await withdrawnAttachmentKeys(store)
         const result = await deployRelease({
             url,
             contentRevision,
@@ -294,6 +297,7 @@ async function deploy(
             now: () => new Date(),
             usedKeys,
             removedKeys,
+            withdrawnKeys,
             // A dry run reaches no host. `--dist` has no manifest: the
             // storage must not be cleaned by it.
             ...(dryRun || token === undefined || store === undefined

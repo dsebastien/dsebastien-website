@@ -802,6 +802,7 @@ impl ContentStore {
                 "manifest",
                 "renames.json",
                 "edits.json",
+                "withdrawn.json",
             ],
             &[],
         )?;
@@ -831,6 +832,7 @@ impl ContentStore {
             "manifest",
             "renames.json",
             "edits.json",
+            "withdrawn.json",
             "notes",
         ])?;
         let edited = self.edited_files()?;
@@ -895,6 +897,7 @@ impl ContentStore {
             "manifest",
             "renames.json",
             "edits.json",
+            "withdrawn.json",
         ])?;
         let present: Vec<(&str, &str)> = tree
             .split('\0')
@@ -1493,6 +1496,37 @@ fn unwritable_cause(path: &str, folder: &Path) -> Option<&'static str> {
     None
 }
 
+/// The way out for a file of the content store that only the tool writes
+/// (`edits.json`, `withdrawn.json`), when the copy differs from its last
+/// commit there.
+fn tool_file_way(different: &[(&str, &str)], name: &str, why: &str) -> Option<String> {
+    let codes: Vec<&str> = different
+        .iter()
+        .filter(|(_, path)| *path == name)
+        .map(|(code, _)| *code)
+        .collect();
+    if codes.contains(&"skipped") {
+        Some(format!(
+            "Let git compare {name} again (git update-index --no-skip-worktree --no-assume-unchanged {name})"
+        ))
+    } else if codes
+        .iter()
+        .any(|code| code.starts_with('A') && code.contains('D'))
+    {
+        Some(format!(
+            "Take {name} out of the index (git rm --cached --quiet {name}): the last commit has no such file"
+        ))
+    } else if codes.iter().any(|code| *code == "??" || *code == "!!") {
+        Some(format!("Remove {name}: the last commit has no such file"))
+    } else if codes.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "Put {name} back with git checkout HEAD -- {name}: {why}"
+        ))
+    }
+}
+
 fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
     let mut ways = Vec::new();
     // `skipped` first, because no `git add` stages a file that git skips, then
@@ -1522,24 +1556,21 @@ fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
             "When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
         });
     }
-    // The log of the edits of the guards (R69): only the tool writes it.
-    let edits: Vec<&str> = different
-        .iter()
-        .filter(|(_, path)| *path == "edits.json")
-        .map(|(code, _)| *code)
-        .collect();
-    if edits.contains(&"skipped") {
-        ways.push("Let git compare edits.json again (git update-index --no-skip-worktree --no-assume-unchanged edits.json)");
-    } else if edits
-        .iter()
-        .any(|code| code.starts_with('A') && code.contains('D'))
-    {
-        ways.push("Take edits.json out of the index (git rm --cached --quiet edits.json): the last commit has no such file");
-    } else if edits.iter().any(|code| *code == "??" || *code == "!!") {
-        ways.push("Remove edits.json: the last commit has no such file");
-    } else if !edits.is_empty() {
-        ways.push("Put edits.json back with git checkout HEAD -- edits.json: only the tool writes the log of the edits of the guards");
-    }
+    // The log of the edits of the guards (R69) and the keys that the guards
+    // withdrew (issue 120): only the tool writes them.
+    let tool_ways = [
+        tool_file_way(
+            different,
+            "edits.json",
+            "only the tool writes the log of the edits of the guards",
+        ),
+        tool_file_way(
+            different,
+            "withdrawn.json",
+            "only the tool writes the keys that the guards withdrew",
+        ),
+    ];
+    ways.extend(tool_ways.iter().flatten().map(String::as_str));
     let notes: Vec<&str> = different
         .iter()
         .filter(|(_, path)| path.starts_with("notes/"))
@@ -1573,7 +1604,10 @@ fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
     let manifest: Vec<&str> = different
         .iter()
         .filter(|(_, path)| {
-            *path != "configuration.json" && *path != "edits.json" && !path.starts_with("notes/")
+            *path != "configuration.json"
+                && *path != "edits.json"
+                && *path != "withdrawn.json"
+                && !path.starts_with("notes/")
         })
         .map(|(code, _)| *code)
         .collect();

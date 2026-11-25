@@ -1,5 +1,5 @@
 {
-    "about": "Cases of the canonical form (documentation/Canonical Form.md). The TypeScript and the Rust implementation both read this file. Each canonical text is written by hand. The list \"markers\" holds texts of renames.json of the content store, and \"journalLines\" one line of a rename journal (issue 37): each valid or not.",
+    "about": "Cases of the canonical form (documentation/Canonical Form.md). The TypeScript and the Rust implementation both read this file. Each canonical text is written by hand. The list \"markers\" holds texts of renames.json of the content store, and \"journalLines\" one line of a rename journal (issue 37): each valid or not. The list \"withdrawn\" holds texts of withdrawn.json of the content store (issue 120): each valid or not.",
     "cases": [
         {
             "name": "an empty object",
@@ -658,6 +658,83 @@
         {
             "name": "a list",
             "text": "[]",
+            "valid": false
+        }
+    ],
+    "withdrawn": [
+        {
+            "name": "one key",
+            "text": "{\"keys\": [\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+            "valid": true
+        },
+        {
+            "name": "two keys in their order, as the tool writes them",
+            "text": "{\n  \"keys\": [\n    \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n    \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\n  ]\n}\n",
+            "valid": true
+        },
+        {
+            "name": "no key: the tool removes the file instead",
+            "text": "{\"keys\": []}",
+            "valid": false
+        },
+        {
+            "name": "two keys out of their order",
+            "text": "{\"keys\": [\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+            "valid": false
+        },
+        {
+            "name": "a key two times",
+            "text": "{\"keys\": [\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+            "valid": false
+        },
+        {
+            "name": "a key in capital letters",
+            "text": "{\"keys\": [\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"]}",
+            "valid": false
+        },
+        {
+            "name": "a key with sha256:",
+            "text": "{\"keys\": [\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+            "valid": false
+        },
+        {
+            "name": "a key that is too short",
+            "text": "{\"keys\": [\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+            "valid": false
+        },
+        {
+            "name": "a key that is not a text",
+            "text": "{\"keys\": [1]}",
+            "valid": false
+        },
+        {
+            "name": "a vault path",
+            "text": "{\"keys\": [\"Assets/image.png\"]}",
+            "valid": false
+        },
+        {
+            "name": "another field",
+            "text": "{\"keys\": [\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"], \"paths\": []}",
+            "valid": false
+        },
+        {
+            "name": "the field two times",
+            "text": "{\"keys\": [\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"], \"keys\": [\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]}",
+            "valid": false
+        },
+        {
+            "name": "no field",
+            "text": "{}",
+            "valid": false
+        },
+        {
+            "name": "a list",
+            "text": "[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]",
+            "valid": false
+        },
+        {
+            "name": "no JSON",
+            "text": "keys",
             "valid": false
         }
     ]

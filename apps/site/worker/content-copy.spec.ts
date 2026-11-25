@@ -9,7 +9,8 @@ import {
     descendsFrom,
     releaseAttachmentKeys,
     removalsBetween,
-    removedAttachmentKeys
+    removedAttachmentKeys,
+    withdrawnAttachmentKeys
 } from './content-copy.ts'
 
 // The copy of the content store that a deployment builds (issue 32): the
@@ -328,5 +329,33 @@ describe('the removals between two revisions', () => {
             'Publish: 0 new, 0 updated, 0 removed, 10 forced, 0 skipped, 0 moved',
             'Publish: 0 new, 0 updated, 0 removed, 2 forced, 0 skipped, 0 moved'
         ])
+    })
+})
+
+// Issue 120, decision 2 of the author: the keys that the guards withdrew are
+// in the content store, so every machine that deploys reads them.
+describe('the withdrawn keys of the copy', () => {
+    /** Commits withdrawn.json with this text. */
+    async function withdraw(copy: string, text: string): Promise<void> {
+        await writeFile(join(copy, 'withdrawn.json'), text)
+        await git(copy, 'add', 'withdrawn.json')
+        await git(copy, 'commit', '--quiet', '--message', 'Publish: 0 new')
+    }
+
+    test('are the keys of withdrawn.json at the commit of the copy, and none without the file', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        expect(await withdrawnAttachmentKeys(copy)).toEqual([])
+        await withdraw(copy, `{"keys": ["${'a'.repeat(64)}", "${'b'.repeat(64)}"]}\n`)
+        expect(await withdrawnAttachmentKeys(copy)).toEqual(['a'.repeat(64), 'b'.repeat(64)])
+    })
+
+    test('stop on a file that the tool would refuse', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await withdraw(copy, '{"keys": ["Assets/image.png"]}\n')
+        expect(await rejectionOf(withdrawnAttachmentKeys(copy))).toContain(
+            'withdrawn.json of the content store cannot be read'
+        )
     })
 })

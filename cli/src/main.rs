@@ -30,6 +30,7 @@ mod queue;
 mod renames;
 mod small_letters;
 mod tool;
+mod withdrawn;
 
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
