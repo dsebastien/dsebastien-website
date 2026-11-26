@@ -266,12 +266,11 @@ describe('build of a content store with one published note', () => {
                 prefixLengths: [],
                 temporary: {},
                 counts: {
-                    deadTarget: 0,
-                    goneTarget: 0,
                     hidesNameOrAlias: 0,
                     loop: 0,
                     prefixFallback: 0,
                     prefixOnLiveFolder: 0,
+                    rowFallback: 0,
                     shadowed: 0
                 }
             }

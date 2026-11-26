@@ -24,9 +24,8 @@ export const GET: APIRoute = async () => {
     const { map, dropped, kept } = applyRedirectList(base, await readRedirectList())
     const counts = [
         [dropped.shadowed, 'rows dropped because a live address has their old path (shadowed)'],
-        [dropped.deadTarget, 'rows dropped because their target leads to no page'],
         [dropped.loop, 'rows dropped because their target leads round in the list (loop)'],
-        [kept.goneTarget, 'rows gone because their target is gone'],
+        [kept.rowFallback, 'rows sent to a fallback'],
         [kept.prefixOnLiveFolder, 'prefix rules kept on a live folder'],
         [kept.prefixFallback, 'prefix rules sent to a fallback'],
         [kept.hidesNameOrAlias, 'rows kept that hide a file name or an alias of a live note']

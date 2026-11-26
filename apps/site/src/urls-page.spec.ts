@@ -460,7 +460,7 @@ describe('the command of the URL parity test', () => {
             join(outDir ?? '', '-', 'resolver-map.json')
         )
         expect(output).toContain('the redirect list of the build: ')
-        expect(output).toContain('goneTarget 1')
+        expect(output).toContain('rowFallback 1')
         expect(output).toContain('prefixFallback 0')
         expect(output).toContain('shadowed 1')
     })

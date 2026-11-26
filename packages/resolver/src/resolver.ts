@@ -330,10 +330,6 @@ function withEncodedQuery(
     for (const reading of readingsOf(path)) {
         const at = reading.indexOf('?')
         if (at > 0) {
-            // The text before the query can be the address of an unpublished note.
-            if (isGoneForm(formsOf(reading.slice(0, at)).map(foldedForm), map.gone)) {
-                return gone
-            }
             const found = resolvePublished(
                 [reading.slice(0, at)],
                 map,
@@ -341,6 +337,11 @@ function withEncodedQuery(
             )
             if (found?.kind === 'redirect') {
                 return found
+            }
+            // The text before the query is the address of an unpublished
+            // note only when no published address and no row has it.
+            if (isGoneForm(formsOf(reading.slice(0, at)).map(foldedForm), map.gone)) {
+                return gone
             }
         }
     }

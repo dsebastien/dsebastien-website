@@ -186,15 +186,10 @@ export function redirectListFrom(value: unknown): RedirectList {
     return list
 }
 
-/** The rows that the build drops: they would hide a live address, or lead nowhere. */
+/** The rows that the build drops: they would hide a live address, or go round in the list. */
 export interface DroppedRows {
     /** Rows whose old path a published note, a folder or a former path has: the live address wins (business rule 1). */
     readonly shadowed: number
-    /**
-     * Rows whose target leads to no page, with no prefix rule over their old
-     * path: an unpublish or a takedown never blocks a build (business rule 16).
-     */
-    readonly deadTarget: number
     /** Rows whose target uses one row or one prefix rule of the list twice. */
     readonly loop: number
 }
@@ -208,8 +203,13 @@ export interface KeptRows {
      * only leads a path under the folder that no exact address has.
      */
     readonly prefixOnLiveFolder: number
-    /** Rows whose target is gone, with no prefix rule over their old path: the old path is gone too (410). */
-    readonly goneTarget: number
+    /**
+     * Rows whose target is gone or leads to no page, with no prefix rule over
+     * their old path: they lead to the hub of the parent folder of their old
+     * path when that folder is live, else to the home page. Only a row of the
+     * gone part of the list answers 410 (decision 1 of the author, R79).
+     */
+    readonly rowFallback: number
     /**
      * Prefix rules whose target is gone or leads nowhere: they lead where the
      * next shorter prefix rule leads, else to the hub of their parent folder,
@@ -394,15 +394,25 @@ function prefixEnds(
         const shorter = rows.prefixes.find(
             ([other]) => other.length < folder.length && folder.startsWith(other)
         )
-        const parent = folder.slice(0, -1).split('/').slice(0, -1).join('/')
-        const hub =
-            parent !== '' && map.folded !== undefined && Object.hasOwn(map.folded, parent)
-                ? map.folded[parent]
-                : undefined
         const kept = shorter === undefined ? undefined : ends.get(shorter[0])
-        ends.set(folder, kept ?? { kind: 'location', location: hub ?? '/', temporary: false })
+        ends.set(
+            folder,
+            kept ?? {
+                kind: 'location',
+                location: hubOf(folder.slice(0, -1), map),
+                temporary: false
+            }
+        )
     }
     return { ends, fallback }
+}
+
+/** The hub of the parent folder of a folded old path, when that folder is live, else the home page. */
+function hubOf(folded: string, map: ResolverMap): string {
+    const parent = folded.split('/').slice(0, -1).join('/')
+    return parent !== '' && map.folded !== undefined && Object.hasOwn(map.folded, parent)
+        ? (map.folded[parent] ?? '/')
+        : '/'
 }
 
 /**
@@ -410,8 +420,8 @@ function prefixEnds(
  * prefix rule go into `redirects`, by the key of their folded old path
  * (`goneKey()`), with their target as text: the map holds no old path, so a
  * release that leaks it shows no title (as the gone part, decision R64). A
- * gone row, and a row whose target is gone with no prefix rule over it, go
- * into the gone part, as keys. The build reads every row first, then
+ * gone row goes into the gone part, as a key: only the author makes an old
+ * path gone. The build reads every row first, then
  * follows each target through the release and through the list, and keeps
  * the canonical location where it ends. It counts what it drops and what it
  * keeps with a warning, and names no row: the warning of the build and the
@@ -440,12 +450,12 @@ export function applyRedirectList(
             .sort(([one], [two]) => two.length - one.length || compareCodePoints(one, two))
     }
     const { ends, fallback } = prefixEnds(map, rows)
-    const dropped = { shadowed, deadTarget: 0, loop: 0 }
+    const dropped = { shadowed, loop: 0 }
     const kept = {
         hidesNameOrAlias: 0,
         prefixOnLiveFolder: 0,
-        goneTarget: 0,
-        prefixFallback: fallback
+        prefixFallback: fallback,
+        rowFallback: 0
     }
     let longest = 0
     const folded = new Map<string, string>()
@@ -455,21 +465,22 @@ export function applyRedirectList(
         const key = foldedForm(row.from)
         let end = follow(row.to, map, rows, ends)
         if (end.kind === 'gone' || end.kind === 'dead') {
-            // Every old URL keeps working: the prefix rule over the old path of the row.
+            // Every old URL keeps working, to the nearest public note: the
+            // prefix rule over the old path of the row, else the hub of its
+            // parent folder, else the home page.
             const over = prefixOver([key], rows.prefixes)
-            end = (over === undefined ? undefined : ends.get(over[0])) ?? end
+            const rule = over === undefined ? undefined : ends.get(over[0])
+            if (rule === undefined) {
+                kept.rowFallback++
+            }
+            end = rule ?? { kind: 'location', location: hubOf(key, map), temporary: false }
         }
-        if (end.kind === 'dead' || end.kind === 'loop') {
-            dropped[end.kind === 'dead' ? 'deadTarget' : 'loop']++
+        if (end.kind === 'loop') {
+            dropped.loop++
             continue
         }
         if ((!key.includes('/') && own(map.names, key)) || own(map.aliases, key)) {
             kept.hidesNameOrAlias++
-        }
-        if (end.kind === 'gone') {
-            kept.goneTarget++
-            goneTexts.push(key)
-            continue
         }
         folded.set(goneKey(key), end.location)
         if (end.temporary) {

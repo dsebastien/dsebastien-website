@@ -45,6 +45,14 @@ export async function buildUrlTableSite(
     const stores = await makeTestStores()
     try {
         const vault = await copyFixtureVault(stores)
+        // An invented note of the table that is not in the fixture vault
+        // (issue 44: an unpublished namesake of a live note) goes into the copy.
+        for (const note of [...table.notes, ...table.removed]) {
+            if (note.text !== undefined) {
+                await mkdir(dirname(join(vault, note.path)), { recursive: true })
+                await writeFile(join(vault, note.path), note.text)
+            }
+        }
         const contentStore = await makeContentStoreCopy(stores)
         const device = nodeDevice({
             noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),

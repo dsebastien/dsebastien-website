@@ -33,6 +33,8 @@ export interface UrlTableNote {
     path: string
     aliases: string[]
     formerPaths?: string[]
+    /** The text of an invented note that is not in the fixture vault: the table site writes it into its copy. */
+    text?: string
 }
 
 /** The URL table: its published notes, its unpublished notes, its redirect list and its cases. */
