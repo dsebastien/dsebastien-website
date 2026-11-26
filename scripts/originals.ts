@@ -6,23 +6,21 @@ import { parseArgs } from 'node:util'
 import { SITE_ORIGIN } from '@dsebastien-website/resolver'
 import { readPublishedNotes } from '../apps/site/src/content-store.ts'
 import { originalFindings, type OriginalNote } from '../apps/site/src/original-check.ts'
-import {
-    CHECK_TIME_LIMIT,
-    hasOriginal,
-    postUrlOf
-} from '../apps/plugin/src/publishing/originals.ts'
+import { CHECK_TIME_LIMIT, postOf } from '../apps/plugin/src/publishing/originals.ts'
 import { httpsMainSite, requestWith } from '../apps/plugin/src/publishing/node/main-site.ts'
 
 // The check of the originals between the two sites (IDX-15, the switch gate
 // of ADR 0010, issue 55): for each published note of a type that the main
 // site also publishes, the notes page names the post in its canonical link,
-// and the post on the live main site names itself.
+// and the post on the live main site names itself. A note that the Ghost
+// Publish plugin posted is checked whatever its type.
 //
 //     bun run originals --content-store <folder> (--dist <folder> | --base <address>)
 //
-// `--content-store` is a copy of the content store: its manifest says which
-// notes to check and which post the tool verified (else the property `url`
-// of the cleaned note names it). `--dist` reads the notes pages from a built
+// `--content-store` is a copy of the content store: its manifest and its
+// cleaned notes say which notes to check (a type with an original, or the
+// property `public_ghost_blog_news_url`) and which post the tool verified
+// (else the property of the cleaned note names it). `--dist` reads the notes pages from a built
 // site (`-/note/<id>.html`); `--base` asks a host for them (the preview host,
 // or the real host after the switch), at the canonical path of each note. It
 // only reads, with `GET`. It prints one line per note for which the two
@@ -51,11 +49,12 @@ if (store === undefined || (dist === undefined) === (base === undefined)) {
 const published = await readPublishedNotes(resolve(store))
 const notes: (OriginalNote & { readonly file: string })[] = []
 for (const note of published) {
-    if (!hasOriginal(note.noteType)) {
+    const cleaned = await readFile(join(resolve(store), 'notes', note.vaultPath), 'utf8')
+    const found = postOf(cleaned, note.noteType)
+    if (!found.inScope) {
         continue
     }
-    const cleaned = await readFile(join(resolve(store), 'notes', note.vaultPath), 'utf8')
-    const post = note.original ?? postUrlOf(cleaned)
+    const post = note.original ?? found.url
     notes.push({
         vaultPath: note.vaultPath,
         pageUrl: `${base ?? SITE_ORIGIN}${note.path}`,

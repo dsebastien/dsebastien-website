@@ -1,6 +1,7 @@
 {
-    "about": "Cases of the check of the original on the main site (documentation/Canonical Form.md, section \"The original of a note\", PUB-100, IDX-11 to IDX-13). The TypeScript and the Rust implementation both read this file. `noteTypes`: the note types whose notes also exist on the main site. `forms`: a text and its comparison form (`null`: not a URL that the check reads). `properties`: a note and the post URL that its property `url` gives (`null`: none). `canonicals`: the head of a page, the URL of the page, and the canonical links that it names, resolved. `entries`: the key `original` of a manifest entry, as JSON text (`null`: no such key), and whether the entry is read. `judged`: the post URL of a note, the answer of the main site (or the failure of the request), and whether the post is verified. Each expected result is written by hand.",
+    "about": "Cases of the check of the original on the main site (documentation/Canonical Form.md, section \"The original of a note\", PUB-100, IDX-11 to IDX-13). The TypeScript and the Rust implementation both read this file. `noteTypes`: the note types whose notes also exist on the main site. `forms`: a text and its comparison form (`null`: not a URL that the check reads). `ghostProperty`: the property that the Ghost Publish plugin writes into every note that it posted. `properties`: a note with its note type (`null`: none), whether it also exists on the main site (`inScope`), and its post URL (`null`: none). `canonicals`: the head of a page, the URL of the page, and the canonical links that it names, resolved. `entries`: the key `original` of a manifest entry, as JSON text (`null`: no such key), and whether the entry is read. `judged`: the post URL of a note, the answer of the main site (or the failure of the request), and whether the post is verified. Each expected result is written by hand.",
     "noteTypes": ["own-articles", "own-news", "own-newsletters"],
+    "ghostProperty": "public_ghost_blog_news_url",
     "forms": [
         {
             "name": "a post URL as the main site writes it",
@@ -112,101 +113,183 @@
         {
             "name": "a post URL",
             "note": "---\nurl: https://www.dsebastien.net/a-post/\n---\nText\n",
-            "url": "https://www.dsebastien.net/a-post/"
+            "url": "https://www.dsebastien.net/a-post/",
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "a post URL in double quotes",
             "note": "---\nurl: \"https://www.dsebastien.net/a-post\"\n---\nText\n",
-            "url": "https://www.dsebastien.net/a-post/"
+            "url": "https://www.dsebastien.net/a-post/",
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "a post URL in single quotes",
             "note": "---\nurl: 'https://www.dsebastien.net/a-post/'\n---\nText\n",
-            "url": "https://www.dsebastien.net/a-post/"
+            "url": "https://www.dsebastien.net/a-post/",
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "a comment after the value",
             "note": "---\nurl: https://www.dsebastien.net/a-post/ # the post\n---\nText\n",
-            "url": "https://www.dsebastien.net/a-post/"
+            "url": "https://www.dsebastien.net/a-post/",
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "Windows line ends",
             "note": "---\r\nurl: https://www.dsebastien.net/a-post/\r\n---\r\nText\r\n",
-            "url": "https://www.dsebastien.net/a-post/"
+            "url": "https://www.dsebastien.net/a-post/",
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "another key before",
             "note": "---\ntags:\n  - a\nurl: https://www.dsebastien.net/a-post/\n---\nText\n",
-            "url": "https://www.dsebastien.net/a-post/"
+            "url": "https://www.dsebastien.net/a-post/",
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "the home page of the main site",
             "note": "---\nurl: https://www.dsebastien.net/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "a page with a query",
             "note": "---\nurl: https://www.dsebastien.net/a-post/?ref=x\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "another host",
             "note": "---\nurl: https://dsebastien.net/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "the notes site",
             "note": "---\nurl: https://notes.dsebastien.net/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "another port",
             "note": "---\nurl: https://www.dsebastien.net:8443/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "an empty value",
             "note": "---\nurl:\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "a value on the lines below",
             "note": "---\nurl:\n  - https://www.dsebastien.net/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "the key two times",
             "note": "---\nurl: https://www.dsebastien.net/a-post/\nurl: https://www.dsebastien.net/b-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "an indented key",
             "note": "---\nmeta:\n  url: https://www.dsebastien.net/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "the key in capital letters",
             "note": "---\nURL: https://www.dsebastien.net/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "a longer key",
             "note": "---\nurl_old: https://www.dsebastien.net/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "a quote that is not closed",
             "note": "---\nurl: \"https://www.dsebastien.net/a-post/\n---\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "properties that are never closed",
             "note": "---\nurl: https://www.dsebastien.net/a-post/\nText\n",
-            "url": null
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
         },
         {
             "name": "no properties",
             "note": "url: https://www.dsebastien.net/a-post/\n",
+            "url": null,
+            "noteType": "own-articles",
+            "inScope": true
+        },
+        {
+            "name": "a tool note with a url of another site and a post of the main site",
+            "noteType": "tools",
+            "note": "---\nurl: https://tool.example/\npublic_ghost_blog_news_url: https://www.dsebastien.net/a-tool/\n---\nText\n",
+            "inScope": true,
+            "url": "https://www.dsebastien.net/a-tool/"
+        },
+        {
+            "name": "a note of a type with an original and both properties: the property of the Ghost Publish plugin wins",
+            "noteType": "own-news",
+            "note": "---\nurl: https://www.dsebastien.net/an-old-post/\npublic_ghost_blog_news_url: https://www.dsebastien.net/a-news-post\n---\nText\n",
+            "inScope": true,
+            "url": "https://www.dsebastien.net/a-news-post/"
+        },
+        {
+            "name": "a note without a type and the property of the Ghost Publish plugin",
+            "noteType": null,
+            "note": "---\npublic_ghost_blog_news_url: 'https://www.dsebastien.net/a-post/'\n---\nText\n",
+            "inScope": true,
+            "url": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "a tool note whose url names the main site, without the property of the Ghost Publish plugin",
+            "noteType": "tools",
+            "note": "---\nurl: https://www.dsebastien.net/a-tool/\n---\nText\n",
+            "inScope": false,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin on another host: never the url",
+            "noteType": "own-articles",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/\npublic_ghost_blog_news_url: https://ghost.example/a-post/\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "an empty property of the Ghost Publish plugin",
+            "noteType": "tools",
+            "note": "---\npublic_ghost_blog_news_url:\n---\nText\n",
+            "inScope": false,
             "url": null
         }
     ],
@@ -296,7 +379,11 @@
             "original": "{\"checked\":\"2031-04-01T08:00:00Z\",\"url\":\"https://www.dsebastien.net/a-post/\"}",
             "valid": true
         },
-        { "name": "no original", "original": null, "valid": true },
+        {
+            "name": "no original",
+            "original": null,
+            "valid": true
+        },
         {
             "name": "an original without its time",
             "original": "{\"url\":\"https://www.dsebastien.net/a-post/\"}",
@@ -422,7 +509,9 @@
         {
             "name": "the request failed",
             "url": "https://www.dsebastien.net/a-post/",
-            "answer": { "failure": "the main site did not answer in 10 seconds" },
+            "answer": {
+                "failure": "the main site did not answer in 10 seconds"
+            },
             "verified": false
         }
     ]

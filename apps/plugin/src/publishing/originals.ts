@@ -33,8 +33,16 @@ export const ORIGINAL_NOTE_TYPES: readonly string[] = [
     'own-newsletters'
 ]
 
-/** The property of a note that holds the URL of its post. */
+/** The property of a note of a type with an original that holds the URL of its post. */
 export const POST_URL_PROPERTY = 'url'
+
+/**
+ * The property that the Ghost Publish plugin writes into every note that it
+ * posted to the main site, with the URL of the post (decision of the author
+ * on issue 55, R90). A note with it also exists on the main site, whatever
+ * its type, and its post URL comes from it, never from `url`.
+ */
+export const GHOST_POST_PROPERTY = 'public_ghost_blog_news_url'
 
 /** The most notes that the check asks the main site for at one time. */
 export const CHECK_CONCURRENCY = 4
@@ -129,14 +137,45 @@ function hostOf(form: string): string {
     return end < 0 ? rest : rest.slice(0, end)
 }
 
+/** The post of a note on the main site (rule 3). */
+export interface PostOfNote {
+    /** True when the note also exists on the main site (IDX-11). */
+    readonly inScope: boolean
+    /** The property that names its post: `public_ghost_blog_news_url`, else `url`. */
+    readonly property: string
+    /** The post URL in its comparison form, when the property names a page of the main site. */
+    readonly url?: string
+}
+
 /**
- * The post URL of a note (rule 3): its property `url`, in the comparison
- * form, when it names a page of the main site: its host with no other port,
- * a path that is not the root, and no query. `undefined` in every other case.
+ * The post of a note (rule 3). A note also exists on the main site when it
+ * has a text in `public_ghost_blog_news_url` (any note type), or when its
+ * type has an original. Its post URL is the comparison form of that
+ * property, else of `url` for a note of a type with an original, when the
+ * form names a page of the main site: its host with no other port, a path
+ * that is not the root, and no query.
  */
-export function postUrlOf(source: string): string | undefined {
+export function postOf(source: string, noteType: NoteType | string | undefined): PostOfNote {
+    const ghost = textProperty(source, GHOST_POST_PROPERTY)
+    if (ghost !== undefined) {
+        const url = postUrlOfText(ghost)
+        return {
+            inScope: true,
+            property: GHOST_POST_PROPERTY,
+            ...(url === undefined ? {} : { url })
+        }
+    }
+    if (!hasOriginal(noteType)) {
+        return { inScope: false, property: POST_URL_PROPERTY }
+    }
     const value = textProperty(source, POST_URL_PROPERTY)
-    const form = value === undefined ? undefined : comparisonForm(value)
+    const url = value === undefined ? undefined : postUrlOfText(value)
+    return { inScope: true, property: POST_URL_PROPERTY, ...(url === undefined ? {} : { url }) }
+}
+
+/** The comparison form of a text when it names a page of the main site, else `undefined`. */
+function postUrlOfText(value: string): string | undefined {
+    const form = comparisonForm(value)
     if (form === undefined || hostOf(form) !== MAIN_SITE_HOST) {
         return undefined
     }
@@ -341,8 +380,8 @@ export interface CheckedNote {
 export type CheckResult = { readonly original: Original } | { readonly reason: string }
 
 /**
- * Checks the post of each note of a type with an original (rule 6), with at
- * most `CHECK_CONCURRENCY` requests at one time. A note of another type has
+ * Checks the post of each note that also exists on the main site (rule 6), with at
+ * most `CHECK_CONCURRENCY` requests at one time. Another note has
  * no result. Without the port of the main site, nothing is checked. The
  * check never throws: a failure is a reason.
  */
@@ -354,13 +393,14 @@ export async function checkOriginals(
     const results = new Map<string, CheckResult>()
     const asked: { path: string; url: string }[] = []
     for (const note of notes) {
-        if (!hasOriginal(note.noteType)) {
+        const post = postOf(note.source, note.noteType)
+        if (!post.inScope) {
             continue
         }
-        const url = postUrlOf(note.source)
+        const url = post.url
         if (url === undefined) {
             results.set(note.path, {
-                reason: `the note has no property ${POST_URL_PROPERTY} with the address of a post of ${MAIN_SITE_ORIGIN}`
+                reason: `the note has no property ${post.property} with the address of a post of ${MAIN_SITE_ORIGIN}`
             })
         } else if (mainSite === undefined) {
             results.set(note.path, {

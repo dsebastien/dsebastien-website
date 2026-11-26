@@ -156,7 +156,7 @@ The URL that a page names to search engines as the one to rank. For a note that 
 _Avoid_: canonical URL (that is the address of a note on this site)
 
 **Post URL**:
-The address of the post on the main site of a note that also exists there: its property `url`. The tool verifies it at each publication of the note; only a verified post URL becomes the original of the note.
+The address of the post on the main site of a note that also exists there: its property `public_ghost_blog_news_url`, which the Ghost Publish plugin writes into every note that it posted, else, for an article, a newsletter or a news post, its property `url`. The tool verifies it at each publication of the note; only a verified post URL becomes the original of the note.
 _Avoid_: main site URL, Ghost URL
 
 **Main site**:

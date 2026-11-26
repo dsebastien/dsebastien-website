@@ -7,10 +7,11 @@ import {
     canonicalLinksOf,
     checkOriginals,
     comparisonForm,
+    GHOST_POST_PROPERTY,
     hasOriginal,
     judgePost,
     ORIGINAL_NOTE_TYPES,
-    postUrlOf,
+    postOf,
     type Answer
 } from './originals.ts'
 import type { MainSite, PageAnswer } from './ports.ts'
@@ -23,8 +24,15 @@ const CASES = fileURLToPath(
 
 interface Cases {
     noteTypes: string[]
+    ghostProperty: string
     forms: { name: string; text: string; form: string | null }[]
-    properties: { name: string; note: string; url: string | null }[]
+    properties: {
+        name: string
+        noteType: string | null
+        note: string
+        inScope: boolean
+        url: string | null
+    }[]
     canonicals: { name: string; page: string; html: string; links: string[] }[]
     entries: { name: string; original: string | null; valid: boolean }[]
     judged: { name: string; url: string; answer: Answer; verified: boolean }[]
@@ -36,6 +44,10 @@ const cases = (await Bun.file(CASES).json()) as Cases
 describe('the note types with an original', () => {
     test('are the types of the shared cases', () => {
         expect([...ORIGINAL_NOTE_TYPES]).toEqual(cases.noteTypes)
+    })
+
+    test('and the property of the Ghost Publish plugin are those of the shared cases', () => {
+        expect(GHOST_POST_PROPERTY).toBe(cases.ghostProperty)
     })
 
     test('are known by their canonical name only', () => {
@@ -52,11 +64,13 @@ describe('the comparison form of a URL', () => {
     })
 })
 
-describe('the post URL of a note', () => {
+describe('the post of a note', () => {
     test.each(cases.properties.map((entry) => [entry.name, entry] as const))(
         '%s',
         (_name, entry) => {
-            expect(postUrlOf(entry.note) ?? null).toBe(entry.url)
+            const post = postOf(entry.note, entry.noteType ?? undefined)
+            expect(post.inScope).toBe(entry.inScope)
+            expect(post.url ?? null).toBe(entry.url)
         }
     )
 })
@@ -204,5 +218,32 @@ describe('the check of the originals of a publication', () => {
         const results = await checkOriginals(site, notes, TIME)
         expect(most).toBe(CHECK_CONCURRENCY)
         expect([...results.values()].every((result) => 'original' in result)).toBe(true)
+    })
+})
+
+describe('the check of a note that the Ghost Publish plugin posted', () => {
+    test('asks for the post of the property of the plugin, whatever the type of the note', async () => {
+        const asked: string[] = []
+        const site: MainSite = {
+            page: (url) => {
+                asked.push(url)
+                return Promise.resolve(selfNaming(url))
+            }
+        }
+        const results = await checkOriginals(
+            site,
+            [
+                {
+                    path: 'Tool.md',
+                    noteType: { name: 'tools', displayName: 'Tools' },
+                    source: '---\nurl: https://tool.example/\npublic_ghost_blog_news_url: https://www.dsebastien.net/a-tool/\n---\nText\n'
+                }
+            ],
+            TIME
+        )
+        expect(asked).toEqual(['https://www.dsebastien.net/a-tool/'])
+        expect(results.get('Tool.md')).toEqual({
+            original: { checked: TIME, url: 'https://www.dsebastien.net/a-tool/' }
+        })
     })
 })

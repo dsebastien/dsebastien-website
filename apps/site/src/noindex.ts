@@ -1,4 +1,4 @@
-import { hasOriginal } from '../../plugin/src/publishing/originals.ts'
+import { GHOST_POST_PROPERTY, hasOriginal } from '../../plugin/src/publishing/originals.ts'
 import type { NoteType } from '../../plugin/src/publishing/note-types.ts'
 
 // The noindex property of a note (IDX-20, story 100, decision R85). A note
@@ -11,7 +11,8 @@ import type { NoteType } from '../../plugin/src/publishing/note-types.ts'
 // parity do not change. Only the value `true` counts.
 //
 // The original of a note (issue 55, ADR 0010, IDX-11 to IDX-14): a note of a
-// type that the main site also publishes names the post there in its
+// type that the main site also publishes, or a note that the Ghost Publish
+// plugin posted (its property `public_ghost_blog_news_url`), names the post there in its
 // canonical link, when its manifest entry holds the post that the tool
 // verified at publication. The build reads only that, and opens no
 // connection (IDX-12). Without a verified post, the note is noindex
@@ -50,7 +51,9 @@ export function signalsOf(
     properties: Readonly<Record<string, unknown>>
 ): NoteSignals {
     const noindexProperty = isNoindexNote(properties)
-    if (!hasOriginal(note.noteType)) {
+    const ghost = properties[GHOST_POST_PROPERTY]
+    const posted = typeof ghost === 'string' && ghost.trim() !== ''
+    if (!hasOriginal(note.noteType) && !posted) {
         return { noindex: noindexProperty, inSitemaps: !noindexProperty }
     }
     return note.original === undefined

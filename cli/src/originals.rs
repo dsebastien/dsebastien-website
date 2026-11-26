@@ -35,8 +35,15 @@ const NOTES_HOST: &str = "notes.dsebastien.net";
 /// counts.
 pub const ORIGINAL_NOTE_TYPES: [&str; 3] = ["own-articles", "own-news", "own-newsletters"];
 
-/// The property of a note that holds the URL of its post.
+/// The property of a note of a type with an original that holds the URL of
+/// its post.
 pub const POST_URL_PROPERTY: &str = "url";
+
+/// The property that the Ghost Publish plugin writes into every note that it
+/// posted to the main site, with the URL of the post (decision of the author
+/// on issue 55, R90). A note with it also exists on the main site, whatever
+/// its type, and its post URL comes from it, never from `url`.
+pub const GHOST_POST_PROPERTY: &str = "public_ghost_blog_news_url";
 
 /// The most notes that the check asks the main site for at one time.
 pub const CHECK_CONCURRENCY: usize = 4;
@@ -74,9 +81,9 @@ pub struct PageAnswer {
     pub body: String,
 }
 
-/// True when notes of this type also exist on the main site (IDX-11).
-pub fn has_original(note_type: Option<&NoteType>) -> bool {
-    note_type.is_some_and(|note_type| ORIGINAL_NOTE_TYPES.contains(&note_type.name.as_str()))
+/// True when the canonical name of a note type is a type with an original.
+fn is_original_type(name: Option<&str>) -> bool {
+    name.is_some_and(|name| ORIGINAL_NOTE_TYPES.contains(&name))
 }
 
 /// The comparison form of a URL (rule 2 of "The original of a note"): the
@@ -140,11 +147,49 @@ fn host_of(form: &str) -> &str {
     rest.find('/').map_or(rest, |end| &rest[..end])
 }
 
-/// The post URL of a note (rule 3): its property `url`, in the comparison
-/// form, when it names a page of the main site: its host with no other port,
-/// a path that is not the root, and no query. `None` in every other case.
-pub fn post_url_of(source: &str) -> Option<String> {
-    let form = comparison_form(&text_property(source, POST_URL_PROPERTY)?)?;
+/// The post of a note on the main site (rule 3).
+pub struct PostOfNote {
+    /// True when the note also exists on the main site (IDX-11).
+    pub in_scope: bool,
+    /// The property that names its post: `public_ghost_blog_news_url`, else
+    /// `url`.
+    pub property: &'static str,
+    /// The post URL in its comparison form, when the property names a page
+    /// of the main site.
+    pub url: Option<String>,
+}
+
+/// The post of a note (rule 3). A note also exists on the main site when it
+/// has a text in `public_ghost_blog_news_url` (any note type), or when its
+/// type has an original. Its post URL is the comparison form of that
+/// property, else of `url` for a note of a type with an original, when the
+/// form names a page of the main site: its host with no other port, a path
+/// that is not the root, and no query. The TypeScript twin is `postOf`.
+pub fn post_of(source: &str, note_type: Option<&str>) -> PostOfNote {
+    if let Some(ghost) = text_property(source, GHOST_POST_PROPERTY) {
+        return PostOfNote {
+            in_scope: true,
+            property: GHOST_POST_PROPERTY,
+            url: post_url_of_text(&ghost),
+        };
+    }
+    if !is_original_type(note_type) {
+        return PostOfNote {
+            in_scope: false,
+            property: POST_URL_PROPERTY,
+            url: None,
+        };
+    }
+    PostOfNote {
+        in_scope: true,
+        property: POST_URL_PROPERTY,
+        url: text_property(source, POST_URL_PROPERTY).and_then(|value| post_url_of_text(&value)),
+    }
+}
+
+/// The comparison form of a text when it names a page of the main site.
+fn post_url_of_text(value: &str) -> Option<String> {
+    let form = comparison_form(value)?;
     if host_of(&form) != MAIN_SITE_HOST {
         return None;
     }
@@ -394,23 +439,28 @@ impl MainSite {
         }
     }
 
-    /// Checks the post of each note of a type with an original (rule 6),
-    /// with at most `CHECK_CONCURRENCY` requests at one time. A note of
-    /// another type has no result. The check never fails: a failure is a
+    /// Checks the post of each note that also exists on the main site (rule 6),
+    /// with at most `CHECK_CONCURRENCY` requests at one time. Another note
+    /// has no result. The check never fails: a failure is a
     /// reason.
     pub fn check(&self, notes: &[CheckedNote], time: &str) -> BTreeMap<String, CheckResult> {
         let mut results = BTreeMap::new();
         let mut asked: Vec<(String, String)> = Vec::new();
         for note in notes {
-            if !has_original(note.note_type) {
+            let post = post_of(
+                note.source,
+                note.note_type.map(|note_type| note_type.name.as_str()),
+            );
+            if !post.in_scope {
                 continue;
             }
-            match post_url_of(note.source) {
+            match post.url {
                 None => {
                     results.insert(
                         note.path.to_owned(),
                         Err(format!(
-                            "the note has no property {POST_URL_PROPERTY} with the address of a post of {MAIN_SITE_ORIGIN}"
+                            "the note has no property {} with the address of a post of {MAIN_SITE_ORIGIN}",
+                            post.property
                         )),
                     );
                 }
@@ -571,8 +621,8 @@ pub fn original_of_entry(value: &Value) -> Option<Original> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ORIGINAL_NOTE_TYPES, PageAnswer, canonical_links_of, comparison_form, judge_post,
-        page_of_value, post_url_of,
+        GHOST_POST_PROPERTY, ORIGINAL_NOTE_TYPES, PageAnswer, canonical_links_of, comparison_form,
+        judge_post, page_of_value, post_of,
     };
     use serde_json::Value;
 
@@ -617,10 +667,23 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_post_urls_of_the_shared_cases() {
+    fn has_the_property_of_the_ghost_publish_plugin_of_the_shared_cases() {
+        let all: Value = serde_json::from_str(CASES).expect("the cases file is JSON");
+        assert_eq!(all["ghostProperty"].as_str(), Some(GHOST_POST_PROPERTY));
+    }
+
+    #[test]
+    fn reads_the_posts_of_the_shared_cases() {
         for case in &cases("properties") {
+            let post = post_of(text(case, "note"), case["noteType"].as_str());
             assert_eq!(
-                post_url_of(text(case, "note")).as_deref(),
+                Some(post.in_scope),
+                case["inScope"].as_bool(),
+                "{}",
+                text(case, "name")
+            );
+            assert_eq!(
+                post.url.as_deref(),
                 case["url"].as_str(),
                 "{}",
                 text(case, "name")

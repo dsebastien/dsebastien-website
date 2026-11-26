@@ -99,8 +99,8 @@ export type PublicationReport = {
     /** The moves of the publication: their old paths are former paths now (R66). */
     readonly moved: readonly Move[]
     /**
-     * The published and updated notes of a type with an original on the main
-     * site whose post is not verified, with the reason: they are `noindex`
+     * The published and updated notes that also exist on the main site
+     * (IDX-11) whose post is not verified, with the reason: they are `noindex`
      * until a publication verifies it (IDX-13).
      */
     readonly originalsNotVerified: readonly { readonly path: string; readonly reason: string }[]

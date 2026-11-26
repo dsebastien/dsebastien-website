@@ -56,3 +56,31 @@ describe('the search signals of a note', () => {
         })
     })
 })
+
+// Issue 55, decision R90: a note that the Ghost Publish plugin posted also
+// exists on the main site, whatever its type.
+describe('the search signals of a note that the Ghost Publish plugin posted', () => {
+    const TOOL = { name: 'tools', displayName: 'Tools' }
+    const POST = 'https://www.dsebastien.net/a-tool/'
+    const POSTED = { public_ghost_blog_news_url: POST, url: 'https://tool.example/' }
+
+    test('names the verified post, and leaves the sitemaps', () => {
+        expect(signalsOf({ noteType: TOOL, original: POST }, POSTED)).toEqual({
+            noindex: false,
+            original: POST,
+            inSitemaps: false
+        })
+    })
+
+    test('without a verified post is noindex', () => {
+        expect(signalsOf({ noteType: TOOL }, POSTED)).toEqual({ noindex: true, inSitemaps: false })
+        expect(signalsOf({}, POSTED)).toEqual({ noindex: true, inSitemaps: false })
+    })
+
+    test('an empty property is no post', () => {
+        expect(signalsOf({ noteType: TOOL }, { public_ghost_blog_news_url: '' })).toEqual({
+            noindex: false,
+            inSitemaps: true
+        })
+    })
+})

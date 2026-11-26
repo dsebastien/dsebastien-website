@@ -13700,6 +13700,14 @@
                         "suffix": "",
                         "prefixOptional": false,
                         "suffixOptional": false
+                    },
+                    {
+                        "name": "tools",
+                        "displayName": "Tools",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
                     }
                 ],
                 "notes": {
@@ -13707,7 +13715,8 @@
                     "Down.md": "own-articles",
                     "Lost.md": "own-articles",
                     "News.md": "own-news",
-                    "Recipe.md": "recipes"
+                    "Recipe.md": "recipes",
+                    "Tool.md": "tools"
                 }
             },
             "mainSite": {
@@ -13728,6 +13737,11 @@
                 },
                 "https://www.dsebastien.net/down/": {
                     "failure": "the main site did not answer in 10 seconds"
+                },
+                "https://www.dsebastien.net/a-tool/": {
+                    "status": 200,
+                    "url": "https://www.dsebastien.net/a-tool/",
+                    "body": "<html><head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-tool/\"></head></html>"
                 }
             },
             "vault": {
@@ -13735,15 +13749,23 @@
                 "Down.md": "---\nurl: https://www.dsebastien.net/down/\n---\nDown\n",
                 "Lost.md": "Lost\n",
                 "News.md": "---\nurl: https://www.dsebastien.net/a-news-post/\n---\nNews\n",
-                "Recipe.md": "---\nurl: https://www.dsebastien.net/a-recipe/\n---\nRecipe\n"
+                "Recipe.md": "---\nurl: https://www.dsebastien.net/a-recipe/\n---\nRecipe\n",
+                "Tool.md": "---\nurl: https://tool.example/\npublic_ghost_blog_news_url: https://www.dsebastien.net/a-tool/\n---\nTool\n"
             },
             "steps": [
                 {
                     "do": "publish",
-                    "why": "the tool checks the post of each note of a type with an original: the article is verified; the news post names the notes site (a loop), the lost note has no post URL and the main site does not answer for the last one, so they are listed and stay noindex; a recipe keeps its own canonical link, also with a URL of the main site",
+                    "why": "the tool checks the post of each note of a type with an original: the article is verified; the news post names the notes site (a loop), the lost note has no post URL and the main site does not answer for the last one, so they are listed and stay noindex; a tool note that the Ghost Publish plugin posted is checked by the URL of the plugin, never by its url; a recipe keeps its own canonical link, also with a URL of the main site",
                     "selection": {
                         "hold": [],
-                        "include": ["Article.md", "Down.md", "Lost.md", "News.md", "Recipe.md"],
+                        "include": [
+                            "Article.md",
+                            "Down.md",
+                            "Lost.md",
+                            "News.md",
+                            "Recipe.md",
+                            "Tool.md"
+                        ],
                         "remove": []
                     },
                     "time": "2031-07-01T08:00:00Z",
@@ -13755,8 +13777,22 @@
                         "moved": [],
                         "originalsNotVerified": ["Down.md", "Lost.md", "News.md"],
                         "propertyRemoved": [],
-                        "propertySet": ["Article.md", "Down.md", "Lost.md", "News.md", "Recipe.md"],
-                        "published": ["Article.md", "Down.md", "Lost.md", "News.md", "Recipe.md"],
+                        "propertySet": [
+                            "Article.md",
+                            "Down.md",
+                            "Lost.md",
+                            "News.md",
+                            "Recipe.md",
+                            "Tool.md"
+                        ],
+                        "published": [
+                            "Article.md",
+                            "Down.md",
+                            "Lost.md",
+                            "News.md",
+                            "Recipe.md",
+                            "Tool.md"
+                        ],
                         "removed": [],
                         "skipped": [],
                         "updated": [],
@@ -13771,7 +13807,8 @@
                         "manifest/7e07a34b787cb04d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:0b33f30f7ef19f19c825d8f22b20d74dd3b5f741f059f520b6901fc62ff91bd0\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"7e07a34b787cb04d\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"original\": {\n    \"checked\": \"2031-07-01T08:00:00Z\",\n    \"url\": \"https://www.dsebastien.net/an-article/\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:0b33f30f7ef19f19c825d8f22b20d74dd3b5f741f059f520b6901fc62ff91bd0\",\n  \"state\": \"published\"\n}\n",
                         "manifest/dfb33736e7afda30.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:f065e8b93330e669150cd16be56d3d28082e67d6b97fa4fa873e3e884d155d70\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"dfb33736e7afda30\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own News\",\n    \"name\": \"own-news\"\n  },\n  \"path\": \"News.md\",\n  \"sourceHash\": \"sha256:f065e8b93330e669150cd16be56d3d28082e67d6b97fa4fa873e3e884d155d70\",\n  \"state\": \"published\"\n}\n",
                         "manifest/ef62ec321b500064.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e2d7744145645599412bfe6110b4a97b50174cbf40ff1f807519c188302bc509\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"ef62ec321b500064\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"path\": \"Down.md\",\n  \"sourceHash\": \"sha256:e2d7744145645599412bfe6110b4a97b50174cbf40ff1f807519c188302bc509\",\n  \"state\": \"published\"\n}\n",
-                        "manifest/3878ec8f4ae24bf5.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:07cc768c8b239cc241850ff7a02ff537aec00a5d5768310821b5ab95ace6f9ea\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"3878ec8f4ae24bf5\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Recipes\",\n    \"name\": \"recipes\"\n  },\n  \"path\": \"Recipe.md\",\n  \"sourceHash\": \"sha256:07cc768c8b239cc241850ff7a02ff537aec00a5d5768310821b5ab95ace6f9ea\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/3878ec8f4ae24bf5.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:07cc768c8b239cc241850ff7a02ff537aec00a5d5768310821b5ab95ace6f9ea\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"3878ec8f4ae24bf5\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Recipes\",\n    \"name\": \"recipes\"\n  },\n  \"path\": \"Recipe.md\",\n  \"sourceHash\": \"sha256:07cc768c8b239cc241850ff7a02ff537aec00a5d5768310821b5ab95ace6f9ea\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/ffaa21e2e6406dc9.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:f5c6ca0f17e1c1a5096b46ca54b34172f0f5f26c18f0b22fac9aa5b691480a1d\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"ffaa21e2e6406dc9\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Tools\",\n    \"name\": \"tools\"\n  },\n  \"original\": {\n    \"checked\": \"2031-07-01T08:00:00Z\",\n    \"url\": \"https://www.dsebastien.net/a-tool/\"\n  },\n  \"path\": \"Tool.md\",\n  \"sourceHash\": \"sha256:f5c6ca0f17e1c1a5096b46ca54b34172f0f5f26c18f0b22fac9aa5b691480a1d\",\n  \"state\": \"published\"\n}\n"
                     }
                 },
                 {
