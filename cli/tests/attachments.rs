@@ -360,6 +360,8 @@ fn a_note_whose_storage_is_missing_is_left_out() {
 struct NoRead {
     #[cfg(windows)]
     _handle: fs::File,
+    #[cfg(unix)]
+    path: PathBuf,
 }
 
 impl NoRead {
@@ -379,8 +381,20 @@ impl NoRead {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(path, fs::Permissions::from_mode(0o000))
                 .expect("the permissions can be set");
-            Self {}
+            Self {
+                path: path.to_path_buf(),
+            }
         }
+    }
+}
+
+/// On Unix, the drop gives the file its read permission back, so a step after
+/// the guard reads it again, as on Windows when the handle closes.
+#[cfg(unix)]
+impl Drop for NoRead {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(0o644));
     }
 }
 
