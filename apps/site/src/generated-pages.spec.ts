@@ -48,7 +48,8 @@ describe('the type hubs', () => {
                 description: 'Movies of Sébastien’s Notes: 2 notes from A to Z.',
                 notes: [note('Alien'), note('Zorro')],
                 children: [],
-                indexed: false
+                indexed: false,
+                start: 1
             }
         ])
     })
@@ -65,6 +66,9 @@ describe('the type hubs', () => {
             'Movies of Sébastien’s Notes: 4,890 notes from A to Z, page 2 of 49.'
         )
         expect(hub?.pages.at(-1)?.notes).toHaveLength(90)
+        // The number of the first note of each page, for its ordered list.
+        expect(hub?.pages.slice(0, 3).map((page) => page.start)).toEqual([1, 101, 201])
+        expect(hub?.pages.at(-1)?.start).toBe(4801)
     })
 
     test('are indexed with 5 notes or more (IDX-22)', () => {

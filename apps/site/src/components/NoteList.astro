@@ -23,6 +23,10 @@ const order = list.kind === 'recent' ? 'newest first' : 'from A to Z'
 const summary = `${cut ?? `${notes}, ${order}`}${pages > 1 ? `, page ${String(page.number)} of ${String(pages)}` : ''}.`
 // The filter of a recent list: its first link is `All`, the others are the types.
 const types = list.filters.length - 1
+// A recent list is ordered, and each page goes on with the numbers of the page
+// before it: note 101 is number 101, not 1.
+const List = list.kind === 'recent' ? 'ol' : 'ul'
+const when = list.key.startsWith('added') ? 'Added' : 'Changed'
 ---
 
 <p class='section-title'>
@@ -75,37 +79,33 @@ const types = list.filters.length - 1
         </nav>
     </details>
 )}
-{(() => {
-    const List = list.kind === 'recent' ? 'ol' : 'ul'
-    const when = list.key.startsWith('added') ? 'Added' : 'Changed'
-    return (
-        <List class='mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3' data-list>
-            {page.notes.map((note) => (
-                <li>
-                    <a class='card-link h-full' href={note.path} data-listed-note>
-                        <span class='font-semibold break-words'>{note.title}</span>
-                        {(list.kind === 'tag' || list.kind === 'recent') &&
-                            (note.type !== undefined || note.date !== undefined) && (
-                                <span class='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted'>
-                                    {note.type !== undefined && (
-                                        <span class='badge'>{note.type.one}</span>
-                                    )}
-                                    {note.date !== undefined && (
-                                        <span data-listed-when>
-                                            {when}{' '}
-                                            <time datetime={note.date.datetime} data-listed-date>
-                                                {note.date.shown}
-                                            </time>
-                                        </span>
-                                    )}
+<List
+    class='mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
+    start={List === 'ol' ? page.start : undefined}
+    data-list
+>
+    {page.notes.map((note) => (
+        <li>
+            <a class='card-link h-full' href={note.path} data-listed-note>
+                <span class='font-semibold break-words'>{note.title}</span>
+                {(list.kind === 'tag' || list.kind === 'recent') &&
+                    (note.type !== undefined || note.date !== undefined) && (
+                        <span class='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted'>
+                            {note.type !== undefined && <span class='badge'>{note.type.one}</span>}
+                            {note.date !== undefined && (
+                                <span data-listed-when>
+                                    {when}{' '}
+                                    <time datetime={note.date.datetime} data-listed-date>
+                                        {note.date.shown}
+                                    </time>
                                 </span>
                             )}
-                    </a>
-                </li>
-            ))}
-        </List>
-    )
-})()}
+                        </span>
+                    )}
+            </a>
+        </li>
+    ))}
+</List>
 {pages > 1 && (
     <nav class='mt-10 flex flex-wrap gap-2' aria-label='Pages' data-list-pages>
         {list.pages.map((other) =>

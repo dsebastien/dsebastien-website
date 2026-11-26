@@ -54,6 +54,8 @@ export interface ListPage {
     readonly children: readonly ListLink[]
     /** False for a page that search engines must not index (IDX-22, IDX-23). */
     readonly indexed: boolean
+    /** The number of its first note in the whole list, from 1: the start of its ordered list. */
+    readonly start: number
 }
 
 /** The list of a type hub or of a tag, with its pages. */
@@ -105,8 +107,11 @@ export function listPages(
     ordered = false
 ): ListPage[] {
     const pages = pagesOf(ordered ? notes : byTitle(notes))
+    let start = 1
     return pages.map((page, index) => {
         const number = index + 1
+        const first = start
+        start += page.length
         return {
             number,
             path: pathOf(number),
@@ -114,7 +119,8 @@ export function listPages(
             description: about(number, pages.length),
             notes: page,
             children: number === 1 ? children : [],
-            indexed: number === 1 ? indexed.first : indexed.later
+            indexed: number === 1 ? indexed.first : indexed.later,
+            start: first
         }
     })
 }

@@ -243,6 +243,10 @@ describe('the pages of a recent list (NAV-05, IDX-22, IDX-23)', () => {
             ...Array<boolean>(9).fill(false)
         ])
         expect(added.pages[1]?.path).toBe('/-/recent/added/page/2')
+        // Note 101 is number 101 of its ordered list, not 1.
+        expect(added.pages.map((page) => page.start)).toEqual(
+            Array.from({ length: 10 }, (_item, index) => index * 100 + 1)
+        )
         expect(added.label).toBe('Recently added notes')
     })
 

@@ -455,7 +455,7 @@ describe('the recent pages (NAV-05, PUB-70, PUB-71, R62)', () => {
     test('say what each date is, in an ordered list, with a canonical link', async () => {
         const added = await served('/-/recent/added')
         expect(textOf(select('[data-listed-when]', added))).toBe('Added 2031-06-01')
-        expect(select('ol[data-list]', added)).toBeDefined()
+        expect(select('ol[data-list]', added)?.properties['start']).toBe(1)
         expect(select('link[rel="canonical"]', added)?.properties['href']).toBe(
             'https://notes.dsebastien.net/-/recent/added'
         )
