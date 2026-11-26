@@ -8,6 +8,8 @@ import {
     typeHubsOf,
     type ListedNote
 } from './generated-pages.ts'
+import { tagsOfNote } from './lists.ts'
+import { tagPagePath } from '@dsebastien-website/resolver'
 
 const MOVIE = { name: 'movies', one: 'Movie', many: 'Movies', media: true }
 const NOTE = {
@@ -172,6 +174,27 @@ describe('the tag pages', () => {
             ['pkm', '#PKM', '/-/tags/pkm']
         ])
         expect(lists[0]?.pages[0]?.title).toBe('#PKM · Sébastien’s Notes')
+    })
+
+    test('show the tag in the first form by code points when two forms have as many notes', () => {
+        const lists = tagListsOf([
+            { note: note('Alien'), tags: tags('pkm') },
+            { note: note('Atlas'), tags: tags('PKM') }
+        ])
+        expect(lists.map((list) => list.label)).toEqual(['#PKM'])
+    })
+
+    test('are one page for a tag that the notes write in two Unicode forms', () => {
+        const decomposed = 'Café'
+        const lists = tagListsOf([
+            { note: note('Alien'), tags: tagsOfNote([decomposed], '') },
+            { note: note('Atlas'), tags: tagsOfNote(['café'], '') },
+            { note: note('Brave'), tags: tagsOfNote(['Café'], '') }
+        ])
+        expect(lists.map((list) => [list.key, list.label, list.count])).toEqual([
+            ['café', '#Café', 3]
+        ])
+        expect(lists[0]?.pages[0]?.path).toBe(tagPagePath('café', 1))
     })
 })
 

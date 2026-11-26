@@ -136,9 +136,12 @@ describe('the descriptions of the notes', () => {
             { key: '2.md', title: 'Garden letter 2', description: long }
         ])
         const first = descriptions.get('1.md') ?? ''
+        const second = descriptions.get('2.md') ?? ''
         expect(first.length).toBeLessThanOrEqual(DESCRIPTION_LENGTH)
         expect(first.startsWith('Garden letter 1: A long garden letter')).toBe(true)
         expect(first.endsWith('…')).toBe(true)
+        expect(second.startsWith('Garden letter 2: A long garden letter')).toBe(true)
+        expect(second).not.toBe(first)
     })
 
     test('stop the build when two pages still share one', () => {
