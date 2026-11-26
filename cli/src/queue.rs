@@ -712,7 +712,7 @@ fn queue_of(
         ignored: &ignored,
         denied_file_names: &denied_file_names,
         moved_under: &moves.under_guard,
-        moved_elsewhere: &moves.left_behind,
+        moved_elsewhere: &moves.moved_elsewhere,
     };
     queue.missing = missing_of(&queue.to_remove, &guards);
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
@@ -1021,9 +1021,12 @@ struct Moves {
     /// The entries that moved under a guard: they stay, and are forced
     /// removals.
     under_guard: BTreeSet<String>,
-    /// The unpublished entries that a line moved to a path with no guard:
-    /// they stay at their paths.
+    /// The unpublished entries that stay at their paths, moved away by a line
+    /// or not.
     left_behind: BTreeSet<String>,
+    /// The unpublished entries that a line moved to a path with no guard
+    /// where the vault has a file.
+    moved_elsewhere: BTreeSet<String>,
     /// The unpublished entries that leave the manifest: another entry moved
     /// into the path that their note left (rule 6 of the moves).
     displaced: Vec<ManifestEntry>,
@@ -1073,6 +1076,10 @@ fn apply_moves(
     // or not: they do not count at their paths for the collisions when the
     // published note really moved in (rules 5 and 6).
     let mut left_behind = BTreeSet::new();
+    // The unpublished entries that a line moved to a path with no guard where
+    // the vault has a file: the exact move, so the name rule of the forced
+    // removals does not apply to them (issue 105).
+    let mut moved_elsewhere = BTreeSet::new();
     let not_moved = |to: &str, why: &str| -> String {
         format!("the rename journal moves the note to \"{to}\", {why}")
     };
@@ -1123,7 +1130,13 @@ fn apply_moves(
             .get(from)
             .is_none_or(|entry| entry.state != State::Published)
         {
+            // The line counts as the exact move only when the vault has a
+            // file at its new path: a stale line proves nothing, so the name
+            // rule of the forced removals still applies (fails closed).
             left_behind.insert(from.clone());
+            if in_vault(&to) {
+                moved_elsewhere.insert(from.clone());
+            }
             continue;
         }
         if !shown {
@@ -1181,6 +1194,7 @@ fn apply_moves(
         applied: moves,
         under_guard,
         left_behind,
+        moved_elsewhere,
         displaced,
         warnings,
     }

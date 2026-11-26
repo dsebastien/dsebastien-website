@@ -9639,6 +9639,95 @@
             ]
         },
         {
+            "name": "a line that moves an unpublished note to a path with no file is no proof: a note of its name in a folder of the deny list still makes it a forced removal (issue 105)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Locked/Plan.md": "A private plan\n",
+                "Notes/Plan.md": "Plan\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Notes/Plan.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Plan.md"],
+                        "published": ["Notes/Plan.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the note is unpublished",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Notes/Plan.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Notes/Plan.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a stale line moves the note to a folder with no guard, but the vault has no file there: the note went to the folder of the deny list with no line",
+                    "files": {
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Notes/Plan.md\",\"kind\":\"note\",\"time\":\"2031-06-03T08:00:00Z\",\"to\":\"Elsewhere/Plan.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Notes/Plan.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the vault does not show the move of the line, so the name rule applies: the tool fails closed",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": [],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublished": ["Notes/Plan.md"],
+                        "unpublishedUnderGuard": ["Notes/Plan.md"]
+                    }
+                }
+            ]
+        },
+        {
             "name": "a published note that moves into the path that an unpublished note left takes it, and the unpublished entry leaves the manifest (issue 105)",
             "denyList": [],
             "vault": {

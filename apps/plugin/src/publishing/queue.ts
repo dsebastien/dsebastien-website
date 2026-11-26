@@ -452,7 +452,7 @@ export async function computeQueue(input: {
                 (guardOfPath(path, input.configuration) !== undefined ||
                     ignored.has(path) ||
                     moves.underGuard.has(path) ||
-                    (!notes.has(path) && !moves.leftBehind.has(path) && movedUnderGuard(path)))
+                    (!notes.has(path) && !moves.movedElsewhere.has(path) && movedUnderGuard(path)))
         )
         .map(([path]) => path)
     const changedPaths = new Set(lists.changed)
@@ -675,8 +675,10 @@ export function applyMoves(
     readonly manifest: Map<string, ManifestEntry>
     readonly moves: Move[]
     readonly underGuard: Set<string>
-    /** The unpublished entries that a line moved to a path with no guard: they stay at their paths. */
+    /** The unpublished entries that stay at their paths, moved away by a line or not. */
     readonly leftBehind: ReadonlySet<string>
+    /** The unpublished entries that a line moved to a path with no guard where the vault has a file. */
+    readonly movedElsewhere: ReadonlySet<string>
     /** The unpublished entries that leave the manifest: another entry moved into the path that their note left (rule 6 of the moves). */
     readonly displaced: ManifestEntry[]
     readonly warnings: RenameWarning[]
@@ -688,6 +690,10 @@ export function applyMoves(
     // or not: they do not count at their paths for the collisions when the
     // published note really moved in (rules 5 and 6).
     const leftBehind = new Set<string>()
+    // The unpublished entries that a line moved to a path with no guard where
+    // the vault has a file: the exact move, so the name rule of the forced
+    // removals does not apply to them (issue 105).
+    const movedElsewhere = new Set<string>()
     for (const from of sortByCodePoint([...entries.keys()])) {
         const to = folded.positions.get(from) ?? from
         final.set(from, from)
@@ -724,8 +730,14 @@ export function applyMoves(
         // An unpublished entry does not move: its old address stays gone
         // (R64), and a path that it had only while it was unpublished never
         // becomes a public former path. The guard rule above still applies.
+        // The line counts as the exact move only when the vault has a file at
+        // its new path: a stale line proves nothing, so the name rule of the
+        // forced removals still applies (fails closed).
         if (entries.get(from)?.state !== 'published') {
             leftBehind.add(from)
+            if (vault.inVault(to)) {
+                movedElsewhere.add(from)
+            }
             continue
         }
         const entry = entries.get(from)
@@ -837,7 +849,7 @@ export function applyMoves(
             moves.push({ from, to })
         }
     }
-    return { manifest, moves, underGuard, leftBehind, displaced, warnings }
+    return { manifest, moves, underGuard, leftBehind, movedElsewhere, displaced, warnings }
 }
 
 /** The entry of a note that moves: its new path, and its former paths (rule 4 of the moves). */
