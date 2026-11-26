@@ -28,6 +28,7 @@ export const GET: APIRoute = async () => {
         [dropped.loop, 'rows dropped because their target leads round in the list (loop)'],
         [kept.goneTarget, 'rows gone because their target is gone'],
         [kept.prefixOnLiveFolder, 'prefix rules kept on a live folder'],
+        [kept.prefixFallback, 'prefix rules sent to a fallback'],
         [kept.hidesNameOrAlias, 'rows kept that hide a file name or an alias of a live note']
     ] as const
     const shown = counts.filter(([count]) => count > 0)

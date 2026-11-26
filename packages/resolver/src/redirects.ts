@@ -190,13 +190,16 @@ export function redirectListFrom(value: unknown): RedirectList {
 export interface DroppedRows {
     /** Rows whose old path a published note, a folder or a former path has: the live address wins (business rule 1). */
     readonly shadowed: number
-    /** Rows whose target leads to no page: an unpublish or a takedown never blocks a build (business rule 16). */
+    /**
+     * Rows whose target leads to no page, with no prefix rule over their old
+     * path: an unpublish or a takedown never blocks a build (business rule 16).
+     */
     readonly deadTarget: number
-    /** Rows whose target leads through the list back to itself, or through too many rows. */
+    /** Rows whose target uses one row or one prefix rule of the list twice. */
     readonly loop: number
 }
 
-/** The rows that the build keeps and counts, for the warning of the build. */
+/** The rows that the build keeps and counts, for the warning of the build and the parity run. */
 export interface KeptRows {
     /** Rows that hide a file name or an alias of a live note: the row wins. */
     readonly hidesNameOrAlias: number
@@ -205,19 +208,25 @@ export interface KeptRows {
      * only leads a path under the folder that no exact address has.
      */
     readonly prefixOnLiveFolder: number
-    /** Rows whose target is gone (an unpublished note, a gone row): the old path is gone too (410). */
+    /** Rows whose target is gone, with no prefix rule over their old path: the old path is gone too (410). */
     readonly goneTarget: number
+    /**
+     * Prefix rules whose target is gone or leads nowhere: they lead where the
+     * next shorter prefix rule leads, else to the hub of their parent folder,
+     * else to the home page (every old URL keeps working, R79).
+     */
+    readonly prefixFallback: number
 }
 
 /** The answers that a target can be: a page, or a file of the site (the Markdown of a note). */
 const LIVE: readonly Resolution['kind'][] = ['page', 'file']
 
-/** How many steps a target can take through the list before the build calls it a loop. */
-const STEPS = 8
-
 /** Where a target leads, as the build follows it. */
 type Followed =
-    { kind: 'location'; location: string } | { kind: 'gone' } | { kind: 'dead' } | { kind: 'loop' }
+    | { kind: 'location'; location: string; temporary: boolean }
+    | { kind: 'gone' }
+    | { kind: 'dead' }
+    | { kind: 'loop' }
 
 /** The origin of the site, in the form that `URL` gives: no slash, small letters, no default port. */
 const SITE = new URL(SITE_ORIGIN).origin
@@ -253,60 +262,98 @@ function foldedFormsOf(path: string): string[] {
 interface Rows {
     readonly redirects: ReadonlyMap<string, string>
     readonly gone: ReadonlySet<string>
-    /** The prefix rules, the longest first. */
+    /** The prefix rules, the longest first, by their folded folder with its slash. */
     readonly prefixes: readonly (readonly [string, string])[]
+}
+
+/** The longest prefix rule over a folded old path: its folder is a part of the path, with something after it. */
+function prefixOver(
+    forms: readonly string[],
+    prefixes: readonly (readonly [string, string])[]
+): readonly [string, string] | undefined {
+    return prefixes.find(([folder]) =>
+        forms.some((form) => form.length > folder.length && form.startsWith(folder))
+    )
 }
 
 /**
  * Where a target leads (URL-05: a target never redirects). The build
- * follows it as a reader would: the resolver of the release first (a page or
- * a file is the end, a redirect is followed), then a row of the list with
- * that old path, then a gone address (of the list, or of an unpublished
- * note), then a prefix rule, as the resolver orders them. An `https://`
- * address of the site is a path of the site; an address of another host is
- * the end.
+ * follows it as a request would be answered, in the order of the resolver:
+ * a current note or folder or a former path of the release (the end, or one
+ * redirect of the release), then a row of the list, then a file name, an
+ * alias or a former file name of the release, then a gone address (of the
+ * list, or of an unpublished note), then a prefix rule. A redirect of the
+ * release is no step. A loop is one row or one prefix rule used twice, and
+ * a chain uses at most every row and prefix rule of the list one time, plus
+ * two. An `https://` address of the site is a path of the site; an address
+ * of another host is the end. A chain that went through an alias keeps the
+ * answer of an alias.
+ *
+ * @param ends the ends of the prefix rules, when the build knows them: a
+ * chain that reaches a prefix rule ends where that rule ends
  */
-function follow(to: string, map: ResolverMap, rows: Rows): Followed {
-    const seen = new Set<string>()
+function follow(
+    to: string,
+    map: ResolverMap,
+    rows: Rows,
+    ends?: ReadonlyMap<string, Followed>
+): Followed {
+    const limit = rows.redirects.size + rows.prefixes.length + 2
+    const used = new Set<string>()
+    let temporary = false
     let next = to
-    for (let step = 0; step < STEPS; step++) {
+    // A redirect of the release leads to a page (URL-05): the hops are
+    // bounded by the steps of the list.
+    for (let hops = 0; hops <= 2 * limit + 2; hops++) {
         const target = onSite(next)
         if (target === undefined) {
-            return { kind: 'location', location: next }
+            return { kind: 'location', location: next, temporary }
         }
         const { path, query } = target
         const forms = foldedFormsOf(path)
-        // The path as written: a redirect of the release leads from a
-        // variant to its canonical form, which is no loop. A loop through
-        // two forms of one old path ends with the limit of the steps.
-        const visit = path + query
-        if (seen.has(visit)) {
-            return { kind: 'loop' }
-        }
-        seen.add(visit)
-        const answer = resolve(path, map, query)
-        if (LIVE.includes(answer.kind)) {
-            return { kind: 'location', location: path + query }
-        }
-        if (answer.kind === 'redirect') {
-            next = answer.location
+        const own = (record: Readonly<Record<string, unknown>> | undefined): boolean =>
+            record !== undefined && forms.some((form) => Object.hasOwn(record, form))
+        const row = forms.find((form) => rows.redirects.has(form))
+        if (row !== undefined && !own(map.folded) && !own(map.former?.folded)) {
+            if (used.has(`row ${row}`) || used.size >= limit) {
+                return { kind: 'loop' }
+            }
+            used.add(`row ${row}`)
+            next = withQueryOf(rows.redirects.get(row) ?? '', query)
             continue
         }
-        const row = forms.map((form) => rows.redirects.get(form)).find((one) => one !== undefined)
-        if (row !== undefined) {
-            next = withQueryOf(row, query)
+        const answer = resolve(path, map, query)
+        if (LIVE.includes(answer.kind)) {
+            return { kind: 'location', location: path + query, temporary }
+        }
+        if (answer.kind === 'redirect') {
+            temporary ||= answer.status === 302
+            next = answer.location
             continue
         }
         if (answer.kind === 'gone' || forms.some((form) => rows.gone.has(form))) {
             return { kind: 'gone' }
         }
-        const prefix = rows.prefixes.find(([folder]) =>
-            forms.some((form) => form.length > folder.length && form.startsWith(folder))
-        )
+        const prefix = prefixOver(forms, rows.prefixes)
         if (prefix === undefined) {
             return { kind: 'dead' }
         }
-        next = withQueryOf(prefix[1], query)
+        const [folder, location] = prefix
+        if (used.has(`prefix ${folder}`) || used.size >= limit) {
+            return { kind: 'loop' }
+        }
+        used.add(`prefix ${folder}`)
+        const end = ends?.get(folder)
+        if (end !== undefined) {
+            return end.kind === 'location'
+                ? {
+                      ...end,
+                      location: withQueryOf(end.location, query),
+                      temporary: temporary || end.temporary
+                  }
+                : end
+        }
+        next = withQueryOf(location, query)
     }
     return { kind: 'loop' }
 }
@@ -325,16 +372,50 @@ function sortedRecord<T>(entries: Iterable<[string, T]>): Record<string, T> {
 }
 
 /**
+ * The ends of the prefix rules. A rule whose target is gone, leads nowhere
+ * or loops is never dropped: it leads where the next shorter prefix rule
+ * over its folder leads, else to the hub of its parent folder when that
+ * folder is live, else to the home page.
+ */
+function prefixEnds(
+    map: ResolverMap,
+    rows: Rows
+): { ends: Map<string, Followed & { kind: 'location' }>; fallback: number } {
+    const ends = new Map<string, Followed & { kind: 'location' }>()
+    let fallback = 0
+    // The shortest first, so the end of a shorter rule is known.
+    for (const [folder, to] of [...rows.prefixes].reverse()) {
+        const end = follow(to, map, rows)
+        if (end.kind === 'location') {
+            ends.set(folder, end)
+            continue
+        }
+        fallback++
+        const shorter = rows.prefixes.find(
+            ([other]) => other.length < folder.length && folder.startsWith(other)
+        )
+        const parent = folder.slice(0, -1).split('/').slice(0, -1).join('/')
+        const hub =
+            parent !== '' && map.folded !== undefined && Object.hasOwn(map.folded, parent)
+                ? map.folded[parent]
+                : undefined
+        const kept = shorter === undefined ? undefined : ends.get(shorter[0])
+        ends.set(folder, kept ?? { kind: 'location', location: hub ?? '/', temporary: false })
+    }
+    return { ends, fallback }
+}
+
+/**
  * The resolver map with the redirect list (issue 44). A redirect and a
  * prefix rule go into `redirects`, by the key of their folded old path
  * (`goneKey()`), with their target as text: the map holds no old path, so a
  * release that leaks it shows no title (as the gone part, decision R64). A
- * gone row, and a row whose target is gone, go into the gone part, as keys.
- * The build follows each target through the release and through the list
- * (a chain of rows, a prefix rule), and keeps the canonical location where
- * it ends. It counts the rows that it drops and the rows that it keeps with
- * a warning, and names none of them: the warning of the build never shows
- * an old path.
+ * gone row, and a row whose target is gone with no prefix rule over it, go
+ * into the gone part, as keys. The build reads every row first, then
+ * follows each target through the release and through the list, and keeps
+ * the canonical location where it ends. It counts what it drops and what it
+ * keeps with a warning, and names no row: the warning of the build and the
+ * counts of the map never show an old path.
  */
 export function applyRedirectList(
     map: ResolverMap,
@@ -344,25 +425,40 @@ export function applyRedirectList(
         record !== undefined && Object.hasOwn(record, key)
     const taken = (folded: string): boolean =>
         own(map.folded, folded) || own(map.former?.folded, folded)
+    // A row whose old path a live address has is no row: the live address wins.
+    let shadowed = 0
+    const live = list.redirects.filter((row) => {
+        const free = !taken(foldedForm(row.from))
+        shadowed += free ? 0 : 1
+        return free
+    })
     const rows: Rows = {
-        redirects: new Map(list.redirects.map((row) => [foldedForm(row.from), row.to])),
+        redirects: new Map(live.map((row) => [foldedForm(row.from), row.to])),
         gone: new Set(list.gone.map(foldedForm)),
         prefixes: list.prefixes
             .map((row): [string, string] => [foldedForm(row.from), row.to])
             .sort(([one], [two]) => two.length - one.length || compareCodePoints(one, two))
     }
-    const dropped = { shadowed: 0, deadTarget: 0, loop: 0 }
-    const kept = { hidesNameOrAlias: 0, prefixOnLiveFolder: 0, goneTarget: 0 }
+    const { ends, fallback } = prefixEnds(map, rows)
+    const dropped = { shadowed, deadTarget: 0, loop: 0 }
+    const kept = {
+        hidesNameOrAlias: 0,
+        prefixOnLiveFolder: 0,
+        goneTarget: 0,
+        prefixFallback: fallback
+    }
     let longest = 0
     const folded = new Map<string, string>()
+    const temporary = new Set<string>()
     const goneTexts: string[] = []
-    for (const row of list.redirects) {
+    for (const row of live) {
         const key = foldedForm(row.from)
-        if (taken(key)) {
-            dropped.shadowed++
-            continue
+        let end = follow(row.to, map, rows, ends)
+        if (end.kind === 'gone' || end.kind === 'dead') {
+            // Every old URL keeps working: the prefix rule over the old path of the row.
+            const over = prefixOver([key], rows.prefixes)
+            end = (over === undefined ? undefined : ends.get(over[0])) ?? end
         }
-        const end = follow(row.to, map, rows)
         if (end.kind === 'dead' || end.kind === 'loop') {
             dropped[end.kind === 'dead' ? 'deadTarget' : 'loop']++
             continue
@@ -376,6 +472,9 @@ export function applyRedirectList(
             continue
         }
         folded.set(goneKey(key), end.location)
+        if (end.temporary) {
+            temporary.add(goneKey(key))
+        }
         longest = Math.max(longest, key.length)
     }
     for (const path of list.gone) {
@@ -388,26 +487,29 @@ export function applyRedirectList(
     }
     const prefixes = new Map<string, string>()
     const lengths = new Set<number>()
-    for (const [key, to] of rows.prefixes) {
-        const end = follow(to, map, rows)
-        if (end.kind !== 'location') {
-            // A prefix rule that leads to no page leads nowhere: a gone
-            // target is no answer for every path under a folder.
-            dropped[end.kind === 'loop' ? 'loop' : 'deadTarget']++
+    for (const [key] of rows.prefixes) {
+        const end = ends.get(key)
+        if (end === undefined) {
             continue
         }
         if (taken(key.slice(0, -1))) {
             kept.prefixOnLiveFolder++
         }
         prefixes.set(goneKey(key), end.location)
+        if (end.temporary) {
+            temporary.add(goneKey(key))
+        }
         lengths.add(key.length)
         longest = Math.max(longest, key.length)
     }
+    const counts = sortedRecord<number>(Object.entries({ ...dropped, ...kept }))
     const redirects: RedirectMap = {
         longest,
         folded: sortedRecord(folded),
         prefixes: sortedRecord(prefixes),
-        prefixLengths: [...lengths].sort((one, two) => two - one)
+        prefixLengths: [...lengths].sort((one, two) => two - one),
+        temporary: sortedRecord([...temporary].map((key): [string, true] => [key, true])),
+        counts
     }
     const gone = map.gone ?? { longest: 0, paths: {}, folded: {}, names: {}, aliases: {} }
     const result: ResolverMap =

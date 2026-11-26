@@ -44,6 +44,8 @@ const isRedirectMap = (value: unknown): boolean =>
     value['longest'] >= 0 &&
     everyValue(value['folded'], isText) &&
     everyValue(value['prefixes'], isText) &&
+    isSet(value['temporary']) &&
+    everyValue(value['counts'], (count) => typeof count === 'number') &&
     Array.isArray(value['prefixLengths']) &&
     value['prefixLengths'].every(
         (length: unknown) => typeof length === 'number' && Number.isInteger(length) && length > 0

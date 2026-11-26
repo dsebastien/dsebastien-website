@@ -34,6 +34,7 @@ interface Applied {
     hidesNameOrAlias: number
     prefixOnLiveFolder: number
     goneTarget: number
+    prefixFallback: number
 }
 
 function mapOf(
@@ -51,7 +52,8 @@ function mapOf(
         loop: applied.dropped.loop,
         hidesNameOrAlias: applied.kept.hidesNameOrAlias,
         prefixOnLiveFolder: applied.kept.prefixOnLiveFolder,
-        goneTarget: applied.kept.goneTarget
+        goneTarget: applied.kept.goneTarget,
+        prefixFallback: applied.kept.prefixFallback
     }
 }
 
@@ -64,6 +66,12 @@ const REDIRECT = (location: string): Resolution => ({
 })
 const NOT_FOUND: Resolution = { kind: 'not-found', suggestions: [], file: '404.html' }
 const GONE: Resolution = { kind: 'gone', file: '410.html' }
+const TEMPORARY = (location: string): Resolution => ({
+    kind: 'redirect',
+    status: 302,
+    location,
+    cacheControl: 'no-store'
+})
 
 /** The message of the refusal of a value. */
 function refusalOf(value: unknown): string {
@@ -297,15 +305,106 @@ describe('redirect list in the resolver map', () => {
         expect(resolve('/Humus', map)).toEqual(REDIRECT('/Garden/Thyme'))
     })
 
-    test('a row whose target leads nowhere is dropped', () => {
+    test('a row whose target leads nowhere, with no prefix rule over it, is dropped', () => {
         const { map, deadTarget } = mapOf({
             ...EMPTY,
-            redirects: [{ from: 'Old/Nowhere', to: '/Garden/No+such+note' }],
-            prefixes: [{ from: 'Old docs/', to: '/Garden/No+such+note' }]
+            redirects: [{ from: 'Old/Nowhere', to: '/Garden/No+such+note' }]
         })
-        expect(deadTarget).toBe(2)
+        expect(deadTarget).toBe(1)
         expect(resolve('/Old/Nowhere', map)).toEqual(NOT_FOUND)
-        expect(resolve('/Old+docs/Any', map)).toEqual(NOT_FOUND)
+    })
+
+    // Every old URL keeps working (R79): a row whose target is gone or leads
+    // nowhere leads where the prefix rule over its old path leads.
+    test('a row whose target is gone or dead falls back to the prefix rule over it', () => {
+        const { map, goneTarget, deadTarget } = mapOf({
+            redirects: [
+                { from: 'Old docs/Gone page', to: '/Garden/Trellis' },
+                { from: 'Old docs/Dead page', to: '/Garden/No+such+note' }
+            ],
+            gone: [],
+            prefixes: [{ from: 'Old docs/', to: '/Garden/Thyme' }]
+        })
+        expect(goneTarget).toBe(0)
+        expect(deadTarget).toBe(0)
+        expect(resolve('/Old+docs/Gone+page', map)).toEqual(REDIRECT('/Garden/Thyme'))
+        expect(resolve('/Old+docs/Dead+page', map)).toEqual(REDIRECT('/Garden/Thyme'))
+    })
+
+    // A prefix rule is never dropped: its target that is gone or dead falls
+    // back to the next shorter prefix rule, then the hub of its parent
+    // folder, then the home page.
+    test('a prefix rule whose target is gone or dead falls back, and is counted', () => {
+        const { map, prefixFallback, deadTarget } = mapOf({
+            ...EMPTY,
+            prefixes: [
+                { from: 'Old docs/', to: '/Garden/Thyme' },
+                { from: 'Old docs/How-to/', to: '/Garden/Trellis' },
+                { from: 'Garden/Old part/', to: '/Garden/No+such+note' },
+                { from: 'Nowhere/', to: '/No+such+note' }
+            ]
+        })
+        expect(prefixFallback).toBe(3)
+        expect(deadTarget).toBe(0)
+        expect(resolve('/Old+docs/How-to/Any', map)).toEqual(REDIRECT('/Garden/Thyme'))
+        expect(resolve('/Garden/Old+part/Any', map)).toEqual(REDIRECT('/Garden'))
+        expect(resolve('/Nowhere/Any', map)).toEqual(REDIRECT('/'))
+        expect(map.redirects?.counts).toEqual({
+            deadTarget: 0,
+            goneTarget: 0,
+            hidesNameOrAlias: 0,
+            loop: 0,
+            prefixFallback: 3,
+            prefixOnLiveFolder: 0,
+            shadowed: 0
+        })
+    })
+
+    // The build answers as a request would: a row of the list wins over a
+    // file name and an alias of a live note.
+    test('a target that is an old path of the list and an alias follows the row', () => {
+        const { map } = mapOf({
+            ...EMPTY,
+            redirects: [
+                { from: 'Humus', to: '/Garden/Thyme' },
+                { from: 'Old/To humus', to: '/Humus' }
+            ]
+        })
+        expect(resolve('/Old/To+humus', map)).toEqual(REDIRECT('/Garden/Thyme'))
+    })
+
+    // R47: an alias is not kept, as a note can take it later.
+    test('a chain through an alias keeps the answer of an alias', () => {
+        const { map } = mapOf({
+            ...EMPTY,
+            redirects: [{ from: 'Old/Via alias', to: '/Humus' }],
+            prefixes: [{ from: 'Old docs/', to: '/humus' }]
+        })
+        expect(resolve('/Old/Via+alias', map)).toEqual(TEMPORARY('/Garden/Compost'))
+        expect(resolve('/Old+docs/Any', map)).toEqual(TEMPORARY('/Garden/Compost'))
+    })
+
+    // A loop is the same row or prefix rule used twice; a redirect of the
+    // release is no step.
+    test('a chain of nine renames works, and a real loop is dropped', () => {
+        const renames = Array.from({ length: 9 }, (_, index) => ({
+            from: `Old/Name ${String(index)}`,
+            to: index === 8 ? '/garden/COMPOST' : `/old/name+${String(index + 1)}`
+        }))
+        const { map, loop } = mapOf({
+            ...EMPTY,
+            redirects: [
+                ...renames,
+                { from: 'Old/Ring one', to: '/Old/Ring+two' },
+                { from: 'Old/Ring two', to: '/Old/Ring+three' },
+                { from: 'Old/Ring three', to: '/OLD/RING+ONE' }
+            ]
+        })
+        for (let index = 0; index < 9; index++) {
+            expect(resolve(`/Old/Name+${String(index)}`, map)).toEqual(REDIRECT('/Garden/Compost'))
+        }
+        expect(loop).toBe(3)
+        expect(resolve('/Old/Ring+one', map)).toEqual(NOT_FOUND)
     })
 
     // The target of a row was unpublished: the old path is gone too (410).
@@ -435,11 +534,46 @@ describe('redirect list in the resolver map', () => {
         expect(resolve('/Garden/Why%3Fref%3Dx', map)).toEqual(REDIRECT('/Garden/Why?ref=x'))
     })
 
+    // The limit of a chain: every row and every prefix rule of the list, one time each.
+    test('a chain that uses every row and every prefix rule of the list works', () => {
+        const { map, loop } = mapOf({
+            redirects: [
+                { from: 'Old/One', to: '/Old/Two' },
+                { from: 'Old/Two', to: '/Old/Three' },
+                { from: 'Old/Three', to: '/Old+docs/Four' }
+            ],
+            gone: [],
+            prefixes: [{ from: 'Old docs/', to: '/Compost' }]
+        })
+        expect(loop).toBe(0)
+        expect(resolve('/Old/One', map)).toEqual(REDIRECT('/Garden/Compost'))
+    })
+
+    test('the text before a query encoded into the path can be gone', () => {
+        const { map } = mapOf(EMPTY, NOTES, [{ path: 'Garden/Shed.md', aliases: [] }])
+        expect(resolve('/Garden/Shed%3Fref%3Dx', map)).toEqual(GONE)
+    })
+
     test('a map without a redirect list answers as before', () => {
         const base = resolverMapOf(NOTES, FILES, {}, {}, REMOVED)
         expect(applyRedirectList(base, EMPTY).map).toEqual({
             ...base,
-            redirects: { longest: 0, folded: {}, prefixes: {}, prefixLengths: [] }
+            redirects: {
+                longest: 0,
+                folded: {},
+                prefixes: {},
+                prefixLengths: [],
+                temporary: {},
+                counts: {
+                    deadTarget: 0,
+                    goneTarget: 0,
+                    hidesNameOrAlias: 0,
+                    loop: 0,
+                    prefixFallback: 0,
+                    prefixOnLiveFolder: 0,
+                    shadowed: 0
+                }
+            }
         })
     })
 })

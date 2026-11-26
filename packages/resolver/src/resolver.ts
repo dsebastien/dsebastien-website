@@ -65,6 +65,14 @@ export interface RedirectMap {
      * the resolver hashes only the folders of a request of these lengths.
      */
     readonly prefixLengths: readonly number[]
+    /**
+     * The keys of `folded` and `prefixes` whose target the build reached
+     * through an alias: their answer is the one of an alias (302, not kept,
+     * R47), as a note can take the alias later.
+     */
+    readonly temporary: Readonly<Record<string, true>>
+    /** What the build did with the rows: numbers only, for the warning of the build and the parity run. */
+    readonly counts: Readonly<Record<string, number>>
 }
 
 /**
@@ -304,7 +312,7 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
     if (isGone(path, map.gone)) {
         return gone
     }
-    return withEncodedQuery(path, map, query) ?? underOldFolder(path, map, query) ?? notFound
+    return withEncodedQuery(path, map, query, gone) ?? underOldFolder(path, map, query) ?? notFound
 }
 
 /**
@@ -313,10 +321,19 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
  * and the redirect list. It comes after the gone addresses: a name with a
  * question mark is a name, so an unpublished note "Why?" stays gone.
  */
-function withEncodedQuery(path: string, map: ResolverMap, query: string): Resolution | undefined {
+function withEncodedQuery(
+    path: string,
+    map: ResolverMap,
+    query: string,
+    gone: Resolution
+): Resolution | undefined {
     for (const reading of readingsOf(path)) {
         const at = reading.indexOf('?')
         if (at > 0) {
+            // The text before the query can be the address of an unpublished note.
+            if (isGoneForm(formsOf(reading.slice(0, at)).map(foldedForm), map.gone)) {
+                return gone
+            }
             const found = resolvePublished(
                 [reading.slice(0, at)],
                 map,
@@ -328,6 +345,32 @@ function withEncodedQuery(path: string, map: ResolverMap, query: string): Resolu
         }
     }
     return undefined
+}
+
+/**
+ * The answer of a row of the redirect list, by the key of its old path: a
+ * 301 kept one hour, or the answer of an alias when the build reached the
+ * target through an alias.
+ */
+function listAnswer(
+    redirects: RedirectMap,
+    key: string,
+    location: string,
+    query: string
+): Resolution {
+    return Object.hasOwn(redirects.temporary, key)
+        ? {
+              kind: 'redirect',
+              status: 302,
+              location: withQuery(location, query),
+              cacheControl: CACHE.alias
+          }
+        : {
+              kind: 'redirect',
+              status: 301,
+              location: withQuery(location, query),
+              cacheControl: CACHE.former
+          }
 }
 
 /** The target of an old path of the redirect list, by the key of its folded form. */
@@ -376,14 +419,10 @@ function underOldFolder(path: string, map: ResolverMap, query: string): Resoluti
                 continue
             }
             seen.add(folder)
-            const location = own(redirects.prefixes, keyOf(folder))
+            const key = keyOf(folder)
+            const location = own(redirects.prefixes, key)
             if (location !== undefined) {
-                return {
-                    kind: 'redirect',
-                    status: 301,
-                    location: withQuery(location, kept),
-                    cacheControl: CACHE.former
-                }
+                return listAnswer(redirects, key, location, kept)
             }
         }
     }
@@ -435,13 +474,8 @@ function resolvePublished(
         // name and an alias, and over an address of an unpublished note.
         for (const form of forms) {
             const location = redirectOf(form, map.redirects)
-            if (location !== undefined) {
-                return {
-                    kind: 'redirect',
-                    status: 301,
-                    location: withQuery(location, query),
-                    cacheControl: CACHE.former
-                }
+            if (location !== undefined && map.redirects !== undefined) {
+                return listAnswer(map.redirects, keyOf(form), location, query)
             }
         }
         for (const form of forms) {
@@ -477,8 +511,18 @@ function isGone(path: string, gone: GoneMap | undefined): boolean {
     if (isGonePath(path, gone)) {
         return true
     }
-    const forms = new Set(readingsOf(path).flatMap((reading) => formsOf(reading).map(foldedForm)))
-    for (const form of forms) {
+    return isGoneForm(
+        readingsOf(path).flatMap((reading) => formsOf(reading).map(foldedForm)),
+        gone
+    )
+}
+
+/** True when a folded form is the text, the file name or an alias of an unpublished note. */
+function isGoneForm(forms: readonly string[], gone: GoneMap | undefined): boolean {
+    if (gone === undefined) {
+        return false
+    }
+    for (const form of new Set(forms)) {
         if (form.length > gone.longest) {
             continue
         }

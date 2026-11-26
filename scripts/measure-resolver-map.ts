@@ -170,6 +170,7 @@ async function main(): Promise<void> {
                           droppedLoop: applied?.dropped.loop ?? 0,
                           goneTarget: applied?.kept.goneTarget ?? 0,
                           prefixOnLiveFolder: applied?.kept.prefixOnLiveFolder ?? 0,
+                          prefixFallback: applied?.kept.prefixFallback ?? 0,
                           hidesNameOrAlias: applied?.kept.hidesNameOrAlias ?? 0,
                           firstRequestMilliseconds: Math.round(firstRequestTime * 10) / 10,
                           microsecondsPerOldPath:
