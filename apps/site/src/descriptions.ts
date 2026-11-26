@@ -62,7 +62,7 @@ interface TextNode {
 const PARSER = unified().use(remarkParse).use(remarkObsidian)
 
 /** The nodes whose children are blocks: a space is put between them (`One` and a list). */
-const BLOCKS = new Set(['root', 'blockquote', 'list', 'listItem', 'table', 'tableRow'])
+const BLOCKS = new Set(['root', 'blockquote', 'list', 'listItem', 'table', 'tableRow', 'callout'])
 
 /** The text that a reader sees of a node of the tree of a property. */
 function shownOf(node: TextNode): string {
