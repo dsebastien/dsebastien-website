@@ -42,6 +42,7 @@
         "@types/mdast": "4.0.4",
         "happy-dom": "21.0.4",
         "hast-util-select": "6.0.4",
+        "sharp": "0.35.5",
         "wrangler": "4.166.0"
     }
 }
