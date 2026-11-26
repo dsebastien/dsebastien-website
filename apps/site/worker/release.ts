@@ -77,7 +77,7 @@ export interface DeployRun {
      */
     readonly removedKeys?: readonly string[]
     /**
-     * The keys that the guards withdrew (`withdrawn.json` of the copy, R45,
+     * The keys that the guards withdrew (`withdrawn.json` of the copy, decision of the author R78, after R45,
      * issue 120): they leave the object storage at once, also when the
      * release uses them, and are never uploaded.
      */
@@ -89,6 +89,13 @@ export interface DeployRun {
      * revision can be read.
      */
     readonly releaseKeys?: (revision: string) => Promise<readonly string[] | undefined>
+    /**
+     * The subjects of the commits after `from` up to `to` in the copy that
+     * take notes away at once: takedowns and forced removals (review round 1
+     * of issue 120). When one lies between the live release and this one,
+     * the run counts as a takedown. `undefined` when the copy cannot say.
+     */
+    readonly removalsBetween?: (from: string, to: string) => Promise<string[] | undefined>
     /** The object storage of the host. Without it (a dry run), no attachment moves. */
     readonly storage?: AttachmentStorage
     /** The attachment folder of the machine. */
@@ -372,6 +379,9 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         ...(run.removedKeys ?? []).filter((key) => !used.has(key))
     ])
     const warnings: string[] = []
+    // A takedown, or a run whose copy holds a takedown or a forced removal
+    // that the live release does not have yet: its pages must go.
+    let takedown = run.takedown
     /** The failures that come after the error of the run, when there is one. */
     const failures: string[] = []
     let build: StepResult = 'skipped'
@@ -411,7 +421,8 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         storage: AttachmentStorage,
         names: readonly string[]
     ): Promise<string[]> {
-        const keys = names.filter((name) => forced.has(name)).sort()
+        // The withdrawn files left before the check of the live release.
+        const keys = names.filter((name) => forced.has(name) && !withdrawn.has(name)).sort()
         const failed = await remove(storage, keys)
         if (failed.length > 0) {
             warnings.push(
@@ -423,7 +434,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
         // As the takedown of the tool: such a name can be a file of the takedown.
         const others = othersOf(names)
-        if (run.takedown && others > 0) {
+        if (takedown && others > 0) {
             warnings.push(
                 `a file can still be public: the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
             )
@@ -433,6 +444,60 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
         const gone = new Set(keys)
         return names.filter((name) => !gone.has(name))
+    }
+
+    /**
+     * Deletes the withdrawn files first, before the live release is read:
+     * a file under a guard leaves also when the run is refused (review
+     * round 1 of issue 120). A failure goes on as in `removeForced()`.
+     */
+    async function removeWithdrawn(storage: AttachmentStorage): Promise<void> {
+        const failed = await remove(storage, [...withdrawn].sort())
+        if (failed.length > 0) {
+            warnings.push(
+                'a file can still be public: the attachment storage kept files under a guard'
+            )
+            failures.push(
+                `the attachment storage kept files that must leave it: ${failed.join('; ')}`
+            )
+        }
+    }
+
+    /**
+     * True when a takedown or a forced removal lies between the live release
+     * and this one, or when the copy cannot say: it gives its warning.
+     */
+    async function removalsSinceLive(live: DeploymentRecord | null | undefined): Promise<boolean> {
+        const from = live?.contentRevision
+        if (
+            from === undefined ||
+            from === null ||
+            run.contentRevision === null ||
+            run.newContentStore === true ||
+            run.removalsBetween === undefined
+        ) {
+            return false
+        }
+        let between: string[] | undefined
+        try {
+            between = await run.removalsBetween(from, run.contentRevision)
+        } catch (error) {
+            run.log(`the removals since ${from} cannot be read: ${messageOf(error)}`)
+            between = undefined
+        }
+        if (between === undefined) {
+            warnings.push(
+                `the copy cannot say whether a takedown or a forced removal lies between the live release (${from}) and this one, so the deployment counts as a takedown`
+            )
+            return true
+        }
+        if (between.length === 0) {
+            return false
+        }
+        warnings.push(
+            `a takedown or a forced removal lies between the live release and this one (${between.join('; ')}), so the deployment counts as a takedown: its pages can still be live until a deployment is seen live`
+        )
+        return true
     }
 
     /**
@@ -477,7 +542,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         const others = othersOf(names)
         // Only their count goes into the result, which the tools show and an
         // agent reads. After a takedown, the forced step warned already.
-        if (others > 0 && !run.takedown) {
+        if (others > 0 && !takedown) {
             warnings.push(
                 `the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
             )
@@ -497,9 +562,15 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     // before it was read.
     let replaced: DeploymentRecord | null | undefined
     try {
+        if (run.storage !== undefined) {
+            await removeWithdrawn(run.storage)
+        }
         replaced = run.live === undefined ? undefined : await liveRecordOf(run.live)
         if (replaced !== undefined) {
             await checkOver(run, replaced)
+        }
+        if (!takedown && (await removalsSinceLive(replaced))) {
+            takedown = true
         }
         if (run.storage !== undefined) {
             stored = await removeForced(run.storage, await run.storage.list())
@@ -592,7 +663,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 await cleanUp(run.storage, stored)
             } catch (failure) {
                 // A file that stays costs nothing, but the files of a takedown must go.
-                if (run.takedown) {
+                if (takedown) {
                     throw failure
                 }
                 warnings.push(messageOf(failure))
@@ -600,20 +671,22 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         }
         // The pages of a takedown must go: a release that was not seen live
         // is no success, and the tools keep the takedown waiting.
-        if (run.takedown && run.live !== undefined && !live) {
+        if (takedown && run.live !== undefined && !live) {
             throw new Error(
-                'the release of the takedown was not seen live, so the takedown waits for a deploy that is seen live'
+                run.takedown
+                    ? 'the release of the takedown was not seen live, so the takedown waits for a deploy that is seen live'
+                    : 'the release was not seen live, and it holds a takedown or a forced removal that the live release does not have: deploy again until a release is seen live'
             )
         }
     } catch (failure) {
         error = messageOf(failure)
         // A failure deletes no other file than the forced ones (F4), which
         // left right after the list of the storage.
-        if (run.takedown && stored === undefined && failure instanceof Refusal) {
+        if (takedown && stored === undefined && failure instanceof Refusal) {
             warnings.push(
                 'a file can still be public: the deployment was refused, so no file of the takedown was deleted'
             )
-        } else if (run.takedown && stored === undefined && run.storage !== undefined) {
+        } else if (takedown && stored === undefined && run.storage !== undefined) {
             warnings.push(
                 'a file can still be public: the attachment storage could not be listed, so no file of the takedown was deleted'
             )
@@ -702,8 +775,9 @@ export interface RevertRun {
     /** Makes the release before the live one live again. It throws when it fails. */
     readonly rollback: () => Promise<void>
     /**
-     * The subjects of the takedown commits after `from` up to `to` in the copy
-     * of the content store, or `undefined` when the copy does not know them.
+     * The subjects of the commits after `from` up to `to` in the copy of the
+     * content store that took a manifest entry away (a takedown, a forced
+     * removal), or `undefined` when the copy does not know them.
      */
     readonly removalsBetween: (from: string, to: string) => Promise<string[] | undefined>
     readonly live: LiveRecord
@@ -722,8 +796,8 @@ export interface RevertResult {
  * Goes back to the release before (BUILD-07). The live record names the
  * release that it replaced; a revert that would bring back a note that a
  * takedown or a forced removal took away in between is refused (a commit
- * whose subject starts with `Takedown:`, or a publication with a forced
- * removal, issue 120), and so is a live release that names no release before it,
+ * that deleted a manifest entry, whatever its subject says, issue 120), and
+ * so is a live release that names no release before it,
  * and a live release that moved the host to another content store.
  * Then it rolls back and reads the host until it gives the record of the
  * release before on reads in a row, a bounded number of times. It throws

@@ -17,6 +17,7 @@ import {
     contentStoreHas,
     descendsFrom,
     releaseAttachmentKeys,
+    removalsBetween,
     removedAttachmentKeys,
     withdrawnAttachmentKeys
 } from '../apps/site/worker/content-copy.ts'
@@ -288,7 +289,7 @@ async function deploy(
         const usedKeys = store === undefined ? [] : await usedAttachmentKeys(store)
         // The files of the takedowns and of the forced removals leave at once (issue 120).
         const removedKeys = store === undefined ? [] : await removedAttachmentKeys(store)
-        // The files that the guards withdrew: never uploaded, deleted at once (R45).
+        // The files that the guards withdrew: never uploaded, deleted at once (issue 120, decision of the author R78, after R45).
         const withdrawnKeys = store === undefined ? [] : await withdrawnAttachmentKeys(store)
         const result = await deployRelease({
             url,
@@ -322,6 +323,8 @@ async function deploy(
                 : {
                       descendsFrom: (revision: string) => descendsFrom(store, revision),
                       releaseKeys: (revision: string) => releaseAttachmentKeys(store, revision),
+                      removalsBetween: (from: string, to: string) =>
+                          removalsBetween(store, from, to),
                       contentStoreHas: (revision: string) => contentStoreHas(store, revision),
                       beforeDeploy: async () => {
                           // No fetch: the copy must still be what the build read.

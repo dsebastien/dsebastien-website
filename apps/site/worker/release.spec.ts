@@ -1328,6 +1328,111 @@ describe('the cleanup of the object storage', () => {
         expect([...site.storage.names]).toEqual([A_NEW.key])
     })
 
+    // Review round 1, A1: a takedown or a forced removal between the live
+    // release and the copy makes the run a takedown, from any machine and
+    // any tool: its pages must go.
+    const FORCED = 'Publish: 0 new, 0 updated, 0 removed, 1 forced, 0 skipped, 0 moved'
+
+    test('counts as a takedown when a forced removal lies between the live release and the copy: not seen live is a failure', async () => {
+        const asked: string[] = []
+        const site = overLive({
+            stored: [A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                releaseKeys: liveUses([A_NEW.key]),
+                removalsBetween: (from, to) => {
+                    asked.push(`${from}..${to}`)
+                    return Promise.resolve([FORCED])
+                },
+                live: {
+                    read: () => Promise.resolve(LIVE_RELEASE),
+                    checks: 2,
+                    pause: 1000,
+                    inARow: 3
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(asked).toEqual([`${LIVE_RELEASE.contentRevision}..${CONTENT}`])
+        expect(result).toMatchObject({ deploy: 'ok', live: false })
+        expect(result.error).toContain('was not seen live')
+        expect(result.warnings.join('\n')).toContain(FORCED)
+    })
+
+    test('counts as a takedown when a forced removal lies between: a failed cleanup fails it', async () => {
+        const site = overLive({
+            stored: [A_NEW.key, GONE.key],
+            used: [A_NEW.key],
+            overrides: {
+                releaseKeys: liveUses([A_NEW.key]),
+                removalsBetween: () => Promise.resolve([FORCED])
+            }
+        })
+        const result = await deployRelease({
+            ...site.run,
+            storage: { ...site.storage, remove: () => Promise.reject(new Error('refused')) }
+        })
+        expect(result).toMatchObject({ deploy: 'ok', live: true })
+        expect(result.error).toContain('refused')
+    })
+
+    test('counts as a takedown when the copy cannot say what lies between', async () => {
+        const site = overLive({
+            stored: [A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                releaseKeys: liveUses([A_NEW.key]),
+                removalsBetween: () => Promise.reject(new Error('git failed')),
+                live: {
+                    read: () => Promise.resolve(LIVE_RELEASE),
+                    checks: 2,
+                    pause: 1000,
+                    inARow: 3
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result.error).toContain('was not seen live')
+    })
+
+    test('is no takedown when nothing lies between the live release and the copy', async () => {
+        const site = overLive({
+            stored: [A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                releaseKeys: liveUses([A_NEW.key]),
+                removalsBetween: () => Promise.resolve([]),
+                live: {
+                    read: () => Promise.resolve(LIVE_RELEASE),
+                    checks: 2,
+                    pause: 1000,
+                    inARow: 3
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ deploy: 'ok', live: false, error: null })
+    })
+
+    // Review round 1, A2: the withdrawn files leave also when the release is refused.
+    test('deletes the withdrawn files before it reads the live release, so a refusal still deletes them', async () => {
+        const site = overLive({
+            stored: [A_NEW.key, B.key, GONE.key],
+            used: [A_NEW.key],
+            overrides: {
+                withdrawnKeys: [B.key],
+                removedKeys: [GONE.key],
+                descendsFrom: () => Promise.resolve(false)
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deleted: 1 })
+        expect(result.error).toContain('is not in the history of this copy')
+        expect(site.events[0]).toBe(`remove ${B.key}`)
+        // The files of a takedown wait for the check of the live release.
+        expect([...site.storage.names].sort()).toEqual([A_NEW.key, GONE.key].sort())
+    })
+
     // A revert across a move is refused: the release before cannot come back.
     test('after a move to another content store, keeps only the files of the new release', async () => {
         const site = overLive({
