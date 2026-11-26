@@ -1,54 +1,12 @@
-import { createSearch, type FullTextHit, type Search } from './engine.ts'
-import { pagefindEngine } from './full-text.ts'
+import { createSearch, type FullTextHit } from './engine.ts'
 import { createSession, type SearchView } from './session.ts'
-import { partFile, type TitleMatch, type TitleRow } from './titles.ts'
+import { siteSources } from './site-sources.ts'
+import type { TitleMatch } from './titles.ts'
 
 // The script of the search page (SRCH-01, SRCH-02, decision R63): the page
 // part of the search. `session.ts` decides what shows for each query; this
 // module reads the files of the site and writes the results into the page.
 // Every text of a result goes into the page as text, never as HTML.
-
-async function fetchJson(url: string): Promise<unknown> {
-    const answer = await fetch(url)
-    if (!answer.ok) {
-        throw new Error(`${url}: ${String(answer.status)}`)
-    }
-    return answer.json()
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** The search over the files of the site. */
-function siteSearch(titles: string, fullText: string): Search {
-    return createSearch({
-        async keys() {
-            const index = await fetchJson(`${titles}.json`)
-            if (!isRecord(index) || !isRecord(index['keys'])) {
-                throw new Error('the title index has no keys')
-            }
-            const keys: Record<string, boolean> = {}
-            for (const [key, complete] of Object.entries(index['keys'])) {
-                keys[key] = complete === true
-            }
-            return keys
-        },
-        async part(key) {
-            const rows = await fetchJson(`${titles}/${partFile(key)}.json`)
-            if (!Array.isArray(rows)) {
-                throw new Error(`the part "${key}" of the title index is not a list`)
-            }
-            return rows.filter(
-                (row): row is TitleRow =>
-                    Array.isArray(row) &&
-                    (row.length === 3 || row.length === 4) &&
-                    row.every((cell) => typeof cell === 'string')
-            )
-        },
-        fullText: pagefindEngine(fullText)
-    })
-}
 
 /** An element of the page, of its kind; the page is broken without it. */
 function part<T extends Element>(
@@ -124,15 +82,20 @@ function textRow(document: Document, hit: FullTextHit): HTMLLIElement {
 
 /** Starts the search of the search page. */
 export function startSearchPage(document: Document): void {
-    const form = part(document, '[data-search-form]', HTMLFormElement)
-    const input = part(document, '[data-search-input]', HTMLInputElement)
-    const status = part(document, '[data-search-status]', HTMLElement)
-    const titlesBlock = part(document, '[data-search-titles]', HTMLElement)
-    const titlesList = part(titlesBlock, '[data-search-list]', HTMLElement)
-    const textBlock = part(document, '[data-search-text]', HTMLElement)
-    const textList = part(textBlock, '[data-search-list]', HTMLElement)
-    const more = part(textBlock, '[data-search-more]', HTMLButtonElement)
-    const updating = part(textBlock, '[data-search-updating]', HTMLElement)
+    // The kinds of the elements come from the window of the page, so a test runs the page in its own DOM.
+    const window = document.defaultView
+    if (window === null) {
+        throw new Error('the search page has no window')
+    }
+    const form = part(document, '[data-search-form]', window.HTMLFormElement)
+    const input = part(document, '[data-search-input]', window.HTMLInputElement)
+    const status = part(document, '[data-search-status]', window.HTMLElement)
+    const titlesBlock = part(document, '[data-search-titles]', window.HTMLElement)
+    const titlesList = part(titlesBlock, '[data-search-list]', window.HTMLElement)
+    const textBlock = part(document, '[data-search-text]', window.HTMLElement)
+    const textList = part(textBlock, '[data-search-list]', window.HTMLElement)
+    const more = part(textBlock, '[data-search-more]', window.HTMLButtonElement)
+    const updating = part(textBlock, '[data-search-updating]', window.HTMLElement)
 
     const view: SearchView = {
         showTitles(matches) {
@@ -177,11 +140,11 @@ export function startSearchPage(document: Document): void {
             } else {
                 url.searchParams.set('q', query)
             }
-            history.replaceState(null, '', url)
+            window.history.replaceState(null, '', url)
         }
     }
     const session = createSession(
-        siteSearch(input.dataset['titles'] ?? '', input.dataset['fullText'] ?? ''),
+        createSearch(siteSources(input.dataset['titles'] ?? '', input.dataset['fullText'] ?? '')),
         view
     )
     // Every input event counts, also while a word is composed: Android
@@ -201,5 +164,8 @@ export function startSearchPage(document: Document): void {
     if (query !== '') {
         input.value = query
         session.submit(query)
+    } else {
+        // A reader who arrives with no query types at once (issue 122).
+        input.focus()
     }
 }
