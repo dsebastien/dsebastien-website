@@ -34,7 +34,12 @@ const map = resolverMapOf(
     { [SONG]: KEY }
 )
 
-type AskedFiles = StaticFiles & { asked: string[]; cancelled: string[] }
+type AskedFiles = StaticFiles & {
+    asked: string[]
+    cancelled: string[]
+    /** Settles the reads that wait (`'hold'`): with their file, or with a failed fetch. */
+    settle(outcome: 'answer' | 'reject'): void
+}
 type AskedStorage = ObjectStorage & { asked: string[] }
 
 /** The text of a static file for which the host fails. */
@@ -44,9 +49,9 @@ const UNTAGGED = 'a file with no tag'
 
 /**
  * A failure of the host for one read of a file: a fetch that rejects, a fetch
- * that never settles, or a status.
+ * that never settles, a fetch that waits until the test settles it, or a status.
  */
-type Failure = 'reject' | 'hang' | number
+type Failure = 'reject' | 'hang' | 'hold' | number
 
 /**
  * Static files in memory, by the path of their URL as the Worker asks it. The
@@ -60,9 +65,42 @@ function staticFiles(
     const asked: string[] = []
     const cancelled: string[] = []
     const left = new Map(Object.entries(failures).map(([path, list]) => [path, [...list]]))
+    const held: ((outcome: 'answer' | 'reject') => void)[] = []
+    function answer(pathname: string): Promise<Response> {
+        const body = files[pathname]
+        if (body === undefined) {
+            return Promise.resolve(new Response('', { status: 404 }))
+        }
+        if (body === BROKEN) {
+            return Promise.resolve(new Response('upstream detail', { status: 500 }))
+        }
+        const bytes = new TextEncoder().encode(body)
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(bytes)
+                controller.close()
+            },
+            cancel() {
+                cancelled.push(pathname)
+            }
+        })
+        return Promise.resolve(
+            new Response(stream, {
+                headers: {
+                    ...(body === UNTAGGED ? {} : { etag: `"tag of ${pathname}"` }),
+                    'content-type': 'application/x-host-guess'
+                }
+            })
+        )
+    }
     return {
         asked,
         cancelled,
+        settle(outcome) {
+            for (const settle of held.splice(0)) {
+                settle(outcome)
+            }
+        },
         fetch(request) {
             const { pathname } = new URL(request.url)
             asked.push(pathname)
@@ -73,34 +111,21 @@ function staticFiles(
             if (failure === 'hang') {
                 return new Promise<Response>(() => undefined)
             }
+            if (failure === 'hold') {
+                return new Promise<Response>((resolve, reject) => {
+                    held.push((outcome) => {
+                        if (outcome === 'reject') {
+                            reject(new Error('the host fails for a short time'))
+                        } else {
+                            resolve(answer(pathname))
+                        }
+                    })
+                })
+            }
             if (failure !== undefined) {
                 return Promise.resolve(new Response('upstream detail', { status: failure }))
             }
-            const body = files[pathname]
-            if (body === undefined) {
-                return Promise.resolve(new Response('', { status: 404 }))
-            }
-            if (body === BROKEN) {
-                return Promise.resolve(new Response('upstream detail', { status: 500 }))
-            }
-            const bytes = new TextEncoder().encode(body)
-            const stream = new ReadableStream<Uint8Array>({
-                start(controller) {
-                    controller.enqueue(bytes)
-                    controller.close()
-                },
-                cancel() {
-                    cancelled.push(pathname)
-                }
-            })
-            return Promise.resolve(
-                new Response(stream, {
-                    headers: {
-                        ...(body === UNTAGGED ? {} : { etag: `"tag of ${pathname}"` }),
-                        'content-type': 'application/x-host-guess'
-                    }
-                })
-            )
+            return answer(pathname)
         }
     }
 }
@@ -173,6 +198,8 @@ interface Host {
     paused: number[]
     /** The timers that the Worker started, in the order of their start. */
     timers: Timer[]
+    /** The promises that the Worker gave to `waitUntil()` of the context of its requests. */
+    keptAlive: Promise<unknown>[]
     /** Moves the clock of the Worker forward. */
     wait(milliseconds: number): void
     get(path: string, headers?: Record<string, string>, method?: string): Promise<Response>
@@ -188,7 +215,9 @@ function host(
     files: Record<string, string> = SITE,
     withStorage = true,
     variables: Pick<Environment, 'NOINDEX'> = {},
-    failures: Record<string, Failure[]> = {}
+    failures: Record<string, Failure[]> = {},
+    /** True for a pause that never ends. */
+    hangingPause = false
 ): Host {
     const assets = staticFiles(files, failures)
     const storage = objectStorage({ [KEY]: '0123456789' })
@@ -201,12 +230,18 @@ function host(
     let time = 1_000_000
     const paused: number[] = []
     const timers: Timer[] = []
+    const keptAlive: Promise<unknown>[] = []
+    const context = {
+        waitUntil: (promise: Promise<unknown>) => {
+            keptAlive.push(promise)
+        }
+    }
     const worker = createWorker({
         report: (error) => reported.push(error),
         now: () => time,
         pause: (milliseconds) => {
             paused.push(milliseconds)
-            return Promise.resolve()
+            return hangingPause ? new Promise<void>(() => undefined) : Promise.resolve()
         },
         startTimer: (milliseconds, expire) => {
             const timer: Timer = { milliseconds, fire: expire, stopped: false }
@@ -222,11 +257,12 @@ function host(
         reported,
         paused,
         timers,
+        keptAlive,
         wait: (milliseconds) => {
             time += milliseconds
         },
         get: (path, headers = {}, method = 'GET') =>
-            worker.fetch(new Request(`${ORIGIN}${path}`, { headers, method }), env)
+            worker.fetch(new Request(`${ORIGIN}${path}`, { headers, method }), env, context)
     }
 }
 
@@ -578,20 +614,79 @@ describe('the Worker', () => {
         )
     })
 
-    test('reads a release whose read never settled again after ten seconds', async () => {
+    test('reads the release again at once after a read that took too long', async () => {
         const site = host(SITE, true, {}, { [MAP]: ['hang'] })
         const answer = site.get('/Welcome')
         await Bun.sleep(0)
         site.wait(5_000)
         site.timers[0]?.fire()
         expect((await answer).status).toBe(500)
-        site.wait(9_999)
-        expect((await site.get('/Welcome')).status).toBe(500)
-        expect(mapReads(site)).toBe(1)
-        site.wait(1)
         expect((await site.get('/Welcome')).status).toBe(200)
         expect(mapReads(site)).toBe(2)
         expect(site.reported).toHaveLength(1)
+    })
+
+    test('keeps the result of a read that settles after the time limit of one request', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hold'] })
+        const first = site.get('/Welcome')
+        await Bun.sleep(0)
+        const second = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await first).status).toBe(500)
+        site.files.settle('answer')
+        expect((await second).status).toBe(200)
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect(mapReads(site)).toBe(1)
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('does not go on with a read after its time limit', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hold'] })
+        const answer = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await answer).status).toBe(500)
+        site.files.settle('reject')
+        await Bun.sleep(0)
+        // No report of a first failure, no pause, no second read.
+        expect(site.reported).toHaveLength(1)
+        expect(site.paused).toEqual([])
+        expect(mapReads(site)).toBe(1)
+    })
+
+    test('answers 500 after the time limit when the pause between the two reads never ends', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['reject'] }, true)
+        const answer = site.get('/Welcome')
+        await Bun.sleep(0)
+        expect(site.paused).toEqual([50])
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await answer).status).toBe(500)
+        expect(mapReads(site)).toBe(1)
+        expect(site.reported).toHaveLength(2)
+    })
+
+    test('gives a request that comes after the end of a pending read no time to wait', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hang'] })
+        void site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(6_000)
+        const late = site.get('/Welcome')
+        await Bun.sleep(0)
+        expect(site.timers.map((timer) => timer.milliseconds)).toEqual([5_000, 0])
+        site.timers[1]?.fire()
+        expect((await late).status).toBe(500)
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('keeps the shared read alive with the context of the request that starts it', async () => {
+        const site = host()
+        await Promise.all([site.get('/Welcome'), site.get('/Welcome')])
+        await site.get('/Welcome')
+        expect(site.keptAlive).toHaveLength(1)
     })
 
     test('gives requests that wait for the same read one time limit', async () => {
@@ -613,7 +708,7 @@ describe('the Worker', () => {
         expect(site.reported).toHaveLength(1)
     })
 
-    test('covers the pause between the two reads with the time limit', async () => {
+    test('covers the second read with the time limit', async () => {
         const site = host(SITE, true, {}, { [MAP]: ['reject', 'hang'] })
         const answer = site.get('/Welcome')
         await Bun.sleep(0)

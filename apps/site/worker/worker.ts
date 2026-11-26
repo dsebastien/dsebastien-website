@@ -227,27 +227,37 @@ async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
 /** How long the Worker waits before its second read of the release, in milliseconds. */
 const PAUSE_BEFORE_SECOND_READ = 50
 
+/** The failure of a read of the release that went past its time limit, and goes no further. */
+const ABANDONED = 'the read of the release went past its time limit'
+
 /**
  * Reads the release, and reads it again one time, after a short pause, when
  * that read fails for a reason that can be short (issue 128): a short failure
  * of the host at the start of an isolate must not reach a reader. It reports
  * the first failure, wrapped so that the log tells it apart, and throws the
  * second one. Any other failure it throws at once.
+ *
+ * @param abandoned true once the read went past its time limit (issue 129):
+ * the read then reports nothing more, and does not pause or read again.
  */
 async function openReleaseWithRetry(
     files: StaticFiles,
     report: (error: unknown) => void,
-    pause: (milliseconds: number) => Promise<void>
+    pause: (milliseconds: number) => Promise<void>,
+    abandoned: () => boolean
 ): Promise<OpenedRelease> {
     try {
         return await openRelease(files)
     } catch (error) {
-        if (!(error instanceof ShortFailure)) {
+        if (!(error instanceof ShortFailure) || abandoned()) {
             throw error
         }
         report(new Error('first read of the release failed, reading it again', { cause: error }))
     }
     await pause(PAUSE_BEFORE_SECOND_READ)
+    if (abandoned()) {
+        throw new Error(ABANDONED)
+    }
     return await openRelease(files)
 }
 
@@ -258,29 +268,34 @@ async function openReleaseWithRetry(
 const RETRY_AFTER = 10_000
 
 /**
- * The most time that the whole read of the release can take, in milliseconds:
- * its two reads and the pause between them (issue 129). A read that hangs then
- * fails as any other, and does not keep every request of the isolate waiting.
+ * The most time that the whole read of the release can take, in milliseconds,
+ * from the start of the shared read: its two reads and the pause between them
+ * (issue 129). A read that hangs then fails, and does not keep every request
+ * of the isolate waiting.
  */
 const READ_TIME_LIMIT = 5_000
 
 /** Starts a timer that calls `expire` after a time in milliseconds. It gives the function that stops it. */
 type StartTimer = (milliseconds: number, expire: () => void) => () => void
 
+/** A read of the release that went past its time limit. */
+class TimeLimitFailure extends Error {}
+
 /**
- * The value of `read`, or a failure when it does not settle within the time.
- * The timer stops when `read` settles.
+ * The value of `read`, or a `TimeLimitFailure` when it does not settle within
+ * `milliseconds`, the time left of `limit`. The timer stops when `read` settles.
  */
 async function withinTime<T>(
     read: Promise<T>,
     milliseconds: number,
+    limit: number,
     startTimer: StartTimer
 ): Promise<T> {
     let stop = (): void => undefined
     const expired = new Promise<never>((_resolve, reject) => {
         stop = startTimer(Math.max(0, milliseconds), () => {
             reject(
-                new Error(`the read of the release takes more than ${String(READ_TIME_LIMIT)} ms`)
+                new TimeLimitFailure(`the read of the release takes more than ${String(limit)} ms`)
             )
         })
     })
@@ -296,6 +311,14 @@ interface SharedRead {
     readonly read: Promise<OpenedRelease>
     /** The time at which the read fails if it has not settled, in milliseconds. */
     readonly deadline: number
+    /** Marks the read as past its time limit: it then goes no further. */
+    readonly abandon: () => void
+}
+
+/** What the Worker uses of the context of a request of the host. */
+export interface RequestContext {
+    /** Keeps the isolate working for a promise after the answer, or after the request is cancelled. */
+    waitUntil(promise: Promise<unknown>): void
 }
 
 /** What a Worker takes from its host. */
@@ -316,11 +339,12 @@ export interface WorkerOptions {
  * new release is a new Worker version, so a new isolate. A read of the release
  * that fails for a reason that can be short (a failed fetch, a status 5xx) is
  * done again once, after a short pause. The whole read has a time limit of five
- * seconds. A release that it cannot read answers 500, and it reads it again
+ * seconds: past it, the request answers 500 and the next request reads again
+ * at once. A release that it cannot read answers 500, and it reads it again
  * after ten seconds, not at each request: the resolver map is large.
  */
 export function createWorker(options: WorkerOptions = {}): {
-    fetch(request: Request, env: Environment): Promise<Response>
+    fetch(request: Request, env: Environment, context?: RequestContext): Promise<Response>
 } {
     const report =
         options.report ??
@@ -342,29 +366,71 @@ export function createWorker(options: WorkerOptions = {}): {
         })
     let opened: SharedRead | undefined
     let failedAt: number | undefined
-    async function answer(request: Request, env: Environment): Promise<Response> {
+    /** Starts the shared read, kept alive by the context of the request that starts it. */
+    function startRead(env: Environment, context: RequestContext | undefined): SharedRead {
+        const deadline = now() + READ_TIME_LIMIT
+        let abandoned = false
+        const read = openReleaseWithRetry(env.ASSETS, report, pause, () => abandoned)
+        // A cancelled request may stop its fetches and its timers; this keeps
+        // them going for the requests that wait, within the limits of the host.
+        context?.waitUntil(
+            read.then(
+                () => undefined,
+                () => undefined
+            )
+        )
+        return {
+            read,
+            deadline,
+            abandon: () => {
+                abandoned = true
+            }
+        }
+    }
+    /** The shared read now: another request can change it while a request waits. */
+    function currentRead(): SharedRead | undefined {
+        return opened
+    }
+    async function answer(
+        request: Request,
+        env: Environment,
+        context: RequestContext | undefined
+    ): Promise<Response> {
         if (failedAt !== undefined && now() - failedAt < RETRY_AFTER) {
             return failureResponse(request)
         }
         let release: OpenedRelease
-        opened ??= {
-            read: openReleaseWithRetry(env.ASSETS, report, pause),
-            deadline: now() + READ_TIME_LIMIT
-        }
+        opened ??= startRead(env, context)
         const shared = opened
         try {
             // Each request has a timer of its own, to the end of the shared
             // read: the timer of a request that the host cancels may never fire.
-            release = await withinTime(shared.read, shared.deadline - now(), startTimer)
-            failedAt = undefined
+            release = await withinTime(
+                shared.read,
+                shared.deadline - now(),
+                READ_TIME_LIMIT,
+                startTimer
+            )
         } catch (error) {
-            // Requests that waited for the same read report it one time.
+            // Requests that waited for the same read report it one time. A
+            // request of an older read never changes the state of a newer one.
             if (opened === shared) {
                 opened = undefined
-                failedAt = now()
+                if (error instanceof TimeLimitFailure) {
+                    // The next request reads again at once.
+                    shared.abandon()
+                } else {
+                    failedAt = now()
+                }
                 report(error)
             }
             return failureResponse(request)
+        }
+        // A read that settles after the time limit of another request is kept.
+        const current = currentRead()
+        if (current === undefined || current === shared) {
+            opened = shared
+            failedAt = undefined
         }
         const storage = env.ATTACHMENTS
         // A request that does not need the whole file of an attachment.
@@ -389,8 +455,8 @@ export function createWorker(options: WorkerOptions = {}): {
         return await handle(request)
     }
     return {
-        async fetch(request, env) {
-            const response = await answer(request, env)
+        async fetch(request, env, context) {
+            const response = await answer(request, env, context)
             return env.NOINDEX === 'true' ? markedNoindex(response) : response
         }
     }
