@@ -13,7 +13,7 @@ import { SelectionError } from '../publishing/plan.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
 import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
-import { refreshAfterRun } from '../publishing/after.ts'
+import { refreshAfterRun, SeenNotes, seeingVault } from '../publishing/after.ts'
 import type { ListsAfterRun } from '../publishing/after.ts'
 import type { Device, RefreshResult } from '../publishing/ports.ts'
 import {
@@ -102,7 +102,23 @@ export interface CenterHost {
      * the note cannot be read. Without it, every event is an edit.
      */
     stat?(path: string): Promise<FileStat | undefined>
+    /**
+     * Waits until Obsidian read the state property of each note as the run
+     * left it (its metadata cache), at most `limit` milliseconds, before the
+     * refresh after a run (R84). It gives the paths that it still has not
+     * read. Without it, the refresh does not wait.
+     */
+    indexed?(written: readonly PropertyWrite[], limit: number): Promise<readonly string[]>
 }
+
+/** A note whose state property a run wrote: set when `published`, else removed. */
+export interface PropertyWrite {
+    readonly path: string
+    readonly published: boolean
+}
+
+/** The longest wait for Obsidian to read the property that a run wrote, before the refresh after the run. */
+export const INDEX_LIMIT = 30 * 1000
 
 /** The size and the time of the last change of a file, as the face reads them. */
 export interface FileStat {
@@ -196,15 +212,15 @@ export type Report =
           readonly kind: 'publication'
           readonly report: PublicationReport
           readonly addresses: readonly Address[]
-          /** The refresh of the frozen lists after the run (R84). */
-          readonly lists: ListsAfterRun
+          /** The refresh of the frozen lists after the run (R84), when it ended. */
+          readonly lists?: ListsAfterRun
       }
     | {
           readonly kind: 'takedown'
           readonly report: TakedownReport
           readonly addresses: readonly Address[]
-          /** The refresh of the frozen lists after the run (R84). */
-          readonly lists: ListsAfterRun
+          /** The refresh of the frozen lists after the run (R84), when it ended. */
+          readonly lists?: ListsAfterRun
       }
 
 export interface CenterState {
@@ -321,6 +337,10 @@ export class PublicationCenter {
     readonly #ownWrites = new Map<string, FileStat>()
     /** The edits that Obsidian reports while a refresh of the lists runs (R71). */
     #duringRefresh: NoteEvent[] | undefined
+    /** The notes whose state property the run wrote: the refresh after the run is owed (R84). */
+    #owed: readonly PropertyWrite[] | undefined
+    /** What the check after a run read, while a refresh after the run is owed. */
+    #seen: SeenNotes | undefined
     /** The edits that Obsidian reports while a run that writes into the notes runs: judged after the run recorded its writes. */
     #duringRun: NoteEvent[] | undefined
     /** The activity that runs now, so that a takedown can wait for its end. */
@@ -479,7 +499,10 @@ export class PublicationCenter {
      * that write too, and every other event is an edit.
      */
     #device(): Device {
-        const device = this.host.device()
+        const given = this.host.device()
+        const seen = this.#seen
+        const device =
+            seen === undefined ? given : { ...given, vault: seeingVault(given.vault, seen) }
         const { lists } = device
         if (lists === undefined) {
             return device
@@ -487,12 +510,12 @@ export class PublicationCenter {
         return {
             ...device,
             lists: {
-                refresh: async (paths) => {
+                refresh: async (paths, moment) => {
                     const waiting: NoteEvent[] = []
                     this.#duringRefresh = waiting
                     let result: RefreshResult | undefined
                     try {
-                        result = await lists.refresh(paths)
+                        result = await lists.refresh(paths, moment)
                         return result
                     } finally {
                         const writes = new Map(result?.written ?? [])
@@ -553,21 +576,63 @@ export class PublicationCenter {
         }
     }
 
+    /** Records that the run wrote the state property of these notes: the refresh after the run is owed (R84). */
+    #oweRefresh(set: readonly string[], removed: readonly string[]): void {
+        this.#owed = [
+            ...set.map((path) => ({ path, published: true })),
+            ...removed.map((path) => ({ path, published: false }))
+        ]
+    }
+
     /**
-     * Refreshes the frozen lists that read the state property, after the
-     * correction of the property of a publication, an unpublish or a takedown
-     * (R84). The run is done: a refresh that fails is logged and reported,
-     * and fails nothing. The device is the one of `#device`, so the writes of
-     * the refresh are no edits and the log names them.
+     * Refreshes the frozen lists that read the state property, after a
+     * publication, an unpublish or a takedown and the check after it (R84).
+     * The report and the log of the run are already there: a restart during
+     * the refresh loses only the refresh. It first waits until Obsidian read
+     * the new property of each note that the run wrote, at most
+     * `INDEX_LIMIT`. The run is done: a refresh that fails is logged and
+     * reported, and fails nothing. The device is the one of `#device`, so
+     * the writes of the refresh are no edits and the log names them.
      */
-    async #refreshAfter(device: Device): Promise<ListsAfterRun> {
-        const lists = await refreshAfterRun(device)
+    async #refreshAfter(
+        written: readonly PropertyWrite[],
+        seen: SeenNotes | undefined
+    ): Promise<void> {
+        let device: Device
+        try {
+            device = this.#device()
+        } catch (error) {
+            this.#log(`Lists not refreshed after the run: ${messageOf(error)}`)
+            return
+        }
+        if (device.lists === undefined) {
+            return
+        }
+        const indexed = this.host.indexed?.bind(this.host)
+        const late =
+            written.length > 0 && indexed !== undefined
+                ? await indexed(written, INDEX_LIMIT).catch(() => written.map((one) => one.path))
+                : []
+        const found = await refreshAfterRun(device, seen)
+        const lists: ListsAfterRun = {
+            listsRefreshed: found.listsRefreshed,
+            refreshProblems: [
+                ...late.map((path) => ({
+                    path,
+                    message: `Obsidian had not read the new public_note property of this note after ${String(INDEX_LIMIT / 1000)} s, so a list that reads it can still show the old state: run the Dataview Serializer on that list later`
+                })),
+                ...found.refreshProblems
+            ]
+        }
         if (lists.refreshProblems.length > 0) {
             this.#log(
-                `Lists not refreshed after the run: ${lists.refreshProblems.map((one) => (one.path === '' ? one.message : `"${one.path}": ${one.message}`)).join('; ')}`
+                `Lists not refreshed after the run, they stay as they are in the note: ${lists.refreshProblems.map((one) => (one.path === '' ? one.message : `"${one.path}": ${one.message}`)).join('; ')}`
             )
         }
-        return lists
+        const { report } = this.#state
+        if (report !== undefined) {
+            this.#set({ report: { ...report, lists } })
+        }
     }
 
     /** The state of a note at the last check (TOOL-23). */
@@ -853,16 +918,29 @@ export class PublicationCenter {
                 if (outcome !== undefined) {
                     this.#set({ outcome })
                 }
+                // A run that wrote the state property owes the refresh of the
+                // lists that read it (R84): after the check, which reads the
+                // notes that it needs.
+                const owed = this.#owed
+                this.#owed = undefined
+                let seen: SeenNotes | undefined
                 if (after !== 'none') {
+                    this.#seen = owed === undefined ? undefined : new SeenNotes()
                     try {
                         await this.#check(after === 'agent')
+                        seen = this.#seen
                     } catch (error) {
                         this.#log(`Check failed: ${messageOf(error)}`)
                         failure ??= messageOf(error)
                         if (this.#state.error === undefined) {
                             this.#set({ error: messageOf(error) })
                         }
+                    } finally {
+                        this.#seen = undefined
                     }
+                }
+                if (owed !== undefined) {
+                    await this.#refreshAfter(owed, seen)
                 }
             } finally {
                 this.#set({ activity: 'idle' })
@@ -1033,11 +1111,11 @@ export class PublicationCenter {
                 )
                 done.pushed = true
                 await this.#wrote([...report.propertySet, ...report.propertyRemoved])
-                const lists = await this.#refreshAfter(device)
                 this.#set({
-                    report: { kind: 'publication', report, addresses: addressesOf(report), lists }
+                    report: { kind: 'publication', report, addresses: addressesOf(report) }
                 })
                 this.#log(`Publication done: ${countsOf(report)}`)
+                this.#oweRefresh(report.propertySet, report.propertyRemoved)
             },
             'author'
         )
@@ -1103,9 +1181,9 @@ export class PublicationCenter {
                 )
                 done.pushed = true
                 await this.#wrote(report.propertyRemoved)
-                const lists = await this.#refreshAfter(device)
-                this.#set({ report: { kind: 'takedown', report, addresses: [], lists } })
+                this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
+                this.#oweRefresh([], report.propertyRemoved)
                 if (report.storageWarnings.length > 0) {
                     // A file that stays in the storage can still be public (issue 38).
                     throw new Error(
@@ -1253,16 +1331,11 @@ export class PublicationCenter {
                     }
                 )
                 await this.#wrote([...report.propertySet, ...report.propertyRemoved])
-                const lists = await this.#refreshAfter(device)
                 this.#set({
-                    report: {
-                        kind: 'publication',
-                        report,
-                        addresses: addressesOf(report),
-                        lists
-                    }
+                    report: { kind: 'publication', report, addresses: addressesOf(report) }
                 })
                 this.#log(`Agent publication done: ${countsOf(report)}`)
+                this.#oweRefresh(report.propertySet, report.propertyRemoved)
                 return outcomeOfPublication(report)
             }
             case 'takedown': {
@@ -1279,8 +1352,8 @@ export class PublicationCenter {
                     true
                 )
                 await this.#wrote(report.propertyRemoved)
-                const lists = await this.#refreshAfter(device)
-                this.#set({ report: { kind: 'takedown', report, addresses: [], lists } })
+                this.#set({ report: { kind: 'takedown', report, addresses: [] } })
+                this.#oweRefresh([], report.propertyRemoved)
                 this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)
                 return outcomeOfTakedown(report)
             }

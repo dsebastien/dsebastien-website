@@ -12,13 +12,14 @@ import {
 } from 'obsidian'
 import type { App, TAbstractFile, TFile, WorkspaceLeaf } from 'obsidian'
 import { markUnpublish } from '../publishing/center.ts'
+import { STATE_PROPERTY } from '../publishing/clean.ts'
 import type { NoteStateKind } from '../publishing/center.ts'
 import { runDeploy, succeeded } from '../publishing/deploy.ts'
 import type { DeployReport } from '../publishing/deploy.ts'
 import { lockHolderOf, processRuns, pullContentStore, SYSTEM } from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
-import type { FileStat } from './center.ts'
+import type { FileStat, PropertyWrite } from './center.ts'
 import { editorWrites, saveUnsavedEditors } from './editor-writes.ts'
 import { isolateNames, lockState } from './messages.ts'
 import { childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
@@ -139,6 +140,8 @@ export class VaultPublishPlugin extends Plugin {
             // The size and the time of a note, read the same way for an
             // event and for a write of a run (issue 106).
             stat: (path) => this.#statOf(path),
+            // The wait for the metadata cache before the refresh after a run (R84).
+            indexed: (written, limit) => this.#indexed(written, limit),
             pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
             // The deploy of the site after a push (issue 32), as a child
             // process in the clean clone of the site code of this device.
@@ -446,6 +449,43 @@ export class VaultPublishPlugin extends Plugin {
     }
 
     /** The size and the time of the last change of a note, from the adapter of Obsidian. */
+    /**
+     * Waits until the metadata cache of Obsidian holds the state property of
+     * each note as the run left it (`true`, or no property), at most `limit`
+     * milliseconds. It gives the paths that it still does not hold. Dataview
+     * indexes from the same events; the serializer says itself when its
+     * index is still busy.
+     */
+    #indexed(written: readonly PropertyWrite[], limit: number): Promise<readonly string[]> {
+        const { metadataCache, vault } = this.app
+        const isRead = (one: PropertyWrite): boolean => {
+            const file = vault.getFileByPath(one.path)
+            if (file === null) {
+                return true
+            }
+            const value: unknown = metadataCache.getFileCache(file)?.frontmatter?.[STATE_PROPERTY]
+            return one.published ? value === true : value === undefined
+        }
+        let waiting = written.filter((one) => !isRead(one))
+        if (waiting.length === 0) {
+            return Promise.resolve([])
+        }
+        return new Promise((resolve) => {
+            const done = (): void => {
+                window.clearTimeout(timer)
+                metadataCache.offref(ref)
+                resolve(waiting.map((one) => one.path))
+            }
+            const ref = metadataCache.on('changed', () => {
+                waiting = waiting.filter((one) => !isRead(one))
+                if (waiting.length === 0) {
+                    done()
+                }
+            })
+            const timer = window.setTimeout(done, limit)
+        })
+    }
+
     async #statOf(path: string): Promise<FileStat | undefined> {
         try {
             const stat = await this.app.vault.adapter.stat(path)

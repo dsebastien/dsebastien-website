@@ -1486,11 +1486,23 @@ describe('the refresh of the frozen lists after a run in the publication center 
     const PUBLIC_LIST = '50 Field guide/Queries/Public notes.md'
     const QUERY = '<!-- QueryToSerialize: LIST FROM "10 Garden" WHERE public_note -->'
 
-    /** A center whose stand-in serializer writes a line into each note that it is asked. */
-    async function setUpAfter(stores: TestStores): Promise<{
+    interface AfterSetup {
         center: PublicationCenter
+        /** The paths of each call of the refresh after a run. */
         asked: string[][]
-    }> {
+        /** What happened, in order: `indexed`, `refresh`, and the report and the log at the refresh. */
+        events: string[]
+    }
+
+    /**
+     * A center whose stand-in serializer writes a line into each note that
+     * it is asked after a run, and whose stand-in metadata cache has not
+     * read the notes of `late`.
+     */
+    async function setUpAfter(
+        stores: TestStores,
+        late: readonly string[] = []
+    ): Promise<AfterSetup> {
         const vault = await copyFixtureVault(stores)
         const copy = await makeContentStoreCopy(stores)
         await writeFile(
@@ -1498,6 +1510,7 @@ describe('the refresh of the frozen lists after a run in the publication center 
             `# Public notes\n\n${QUERY}\n<!-- SerializedQuery: x -->\n\n<!-- SerializedQuery END -->\n`
         )
         const asked: string[][] = []
+        const events: string[] = []
         let minute = 0
         const center: PublicationCenter = new PublicationCenter({
             device: () => ({
@@ -1508,8 +1521,19 @@ describe('the refresh of the frozen lists after a run in the publication center 
                     noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES)
                 }),
                 lists: {
-                    async refresh(paths) {
+                    async refresh(paths, moment) {
+                        if (moment !== 'after-run') {
+                            return {
+                                refreshed: new Set(paths),
+                                written: new Map(),
+                                wrote: false,
+                                problems: []
+                            }
+                        }
                         asked.push([...paths])
+                        events.push(
+                            `refresh: report ${center.state.report?.kind ?? 'none'}, ${center.state.log.at(-1)?.text ?? ''}`
+                        )
                         for (const path of paths) {
                             const file = join(vault, path)
                             await writeFile(file, `${await Bun.file(file).text()}- refreshed\n`)
@@ -1527,14 +1551,22 @@ describe('the refresh of the frozen lists after a run in the publication center 
             pull: () => pullContentStore({ contentStore: copy }),
             now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
             deviceName: 'garden-shed',
-            stat: (path) => statOf(vault, path)
+            stat: (path) => statOf(vault, path),
+            indexed: (written) => {
+                events.push(
+                    `indexed: ${written.map((one) => `${one.path} ${String(one.published)}`).join(', ')}`
+                )
+                return Promise.resolve(
+                    written.map((one) => one.path).filter((path) => late.includes(path))
+                )
+            }
         })
-        return { center, asked }
+        return { center, asked, events }
     }
 
     /** What the report of the last run says about the refresh after it. */
     function refreshedOf(center: PublicationCenter): readonly string[] | undefined {
-        return center.state.report?.lists.listsRefreshed
+        return center.state.report?.lists?.listsRefreshed
     }
 
     test('after a publication, the notes whose query reads public_note are refreshed', async () => {
@@ -1581,5 +1613,61 @@ describe('the refresh of the frozen lists after a run in the publication center 
         expect(center.state.error).toBeUndefined()
         expect(asked).toEqual([[PUBLIC_LIST]])
         expect(refreshedOf(center)).toEqual([PUBLIC_LIST])
+    }, 60_000)
+
+    test('the report and the log of the run come before the refresh, which waits for Obsidian first', async () => {
+        await using stores = await makeTestStores()
+        const { center, events } = await setUpAfter(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+
+        // The check after the run ends before the refresh.
+        expect(events).toEqual([
+            expect.stringContaining(`indexed: ${NOTE} true`) as string,
+            expect.stringMatching(/^refresh: report publication, Check done/u) as string
+        ])
+        const log = center.state.log.map((line) => line.text)
+        expect(log.findIndex((text) => text.startsWith('Publication done'))).toBeLessThan(
+            log.findIndex((text) => text.startsWith('Lists refreshed'))
+        )
+    }, 60_000)
+
+    test('a note that Obsidian has not read in time is reported, and the refresh still runs', async () => {
+        await using stores = await makeTestStores()
+        const { center, asked } = await setUpAfter(stores, [NOTE])
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+
+        expect(asked).toEqual([[PUBLIC_LIST]])
+        expect(center.state.report?.lists?.refreshProblems).toEqual([
+            {
+                path: NOTE,
+                message: expect.stringContaining(
+                    'Obsidian had not read the new public_note property of this note'
+                ) as string
+            }
+        ])
+    }, 60_000)
+
+    test('a published note that the refresh wrote is a changed note at the next check', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUpAfter(stores)
+        await center.check()
+        center.choose((queue, choices) =>
+            toggleRow(queue, toggleRow(queue, choices, NOTE), PUBLIC_LIST)
+        )
+        await center.publish()
+        expect(refreshedOf(center)).toEqual([PUBLIC_LIST])
+        expect(center.state.log.map((line) => line.text)).toContain(
+            `Lists refreshed by the Dataview Serializer: "${PUBLIC_LIST}"`
+        )
+
+        await center.check()
+
+        expect(center.state.queue?.changed).toContain(PUBLIC_LIST)
     }, 60_000)
 })
