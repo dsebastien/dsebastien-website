@@ -32,6 +32,80 @@ describe('the order of a list', () => {
         ]).map((note) => note.vaultPath)
         expect(paths).toEqual(['A/Mint.md', 'B/Mint.md'])
     })
+
+    // The order comes from the ICU data of the runtime (Intl.Collator), which
+    // an upgrade of Bun can change (issue 97). This test pins it on hard
+    // titles. When it fails, the runtime sorts in a new way: review the new
+    // order, and if a reader still finds it right, take it as the expected
+    // order here. Know that the pages of the lists can then move: a URL such
+    // as /-/types/movies/page/3 can hold other notes after the next build.
+    test('is pinned on hard titles: on a failure, review the new order, as pages of lists can move', () => {
+        const expected = [
+            '_under',
+            '-5 degrees',
+            '¡Hola!',
+            '...Ellipsis',
+            '"Quoted"',
+            '(Aside)',
+            '[Bracket]',
+            '#hashtag',
+            '+1 idea',
+            '😀 Smile',
+            '🚀 Launch',
+            '2 tips',
+            '10 tips',
+            '42',
+            '2001',
+            '½ cup',
+            'a b',
+            'a-b',
+            'A.B',
+            'ab',
+            'Æther',
+            'Alpha',
+            'Ångström',
+            'Äpfel',
+            'Apple',
+            'apple',
+            'Çà va',
+            'emile',
+            'Émile',
+            'Łódź',
+            'naïve',
+            'Ñandú',
+            'Œuvre',
+            'Ørsted',
+            'Resume',
+            'resume',
+            'résumé',
+            'Strasse',
+            'straße',
+            'Week 1.5',
+            'Week 02',
+            'Week 2',
+            'Week 10',
+            'Ⅻ',
+            'Zebra',
+            'zebra',
+            'άλφα',
+            'Ελλάδα',
+            'Ёлка',
+            'Елка',
+            'Москва',
+            'とうきょう',
+            'トウキョウ',
+            '東京'
+        ]
+        // A fixed shuffle of the expected order, the same at each run.
+        const shuffled = expected.map(
+            (_title, index) => expected[(index * 7) % expected.length] ?? ''
+        )
+        expect(new Set(shuffled).size).toBe(expected.length)
+        const titles = byTitle(shuffled.map((title) => ({ title, vaultPath: `${title}.md` }))).map(
+            (note) => note.title
+        )
+        expect(titles).toEqual(expected)
+    })
 })
 
 describe('the pages of a list', () => {

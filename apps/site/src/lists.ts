@@ -16,7 +16,12 @@ export const INDEXED_LIST_NOTES = 5
 /** The first levels of the tags of the system, whose pages repeat the type hubs: never indexed. */
 const SYSTEM_TAGS = new Set(['type', 'zone'])
 
-/** The order of titles for a reader: letters as a reader sorts them, numbers by their value. */
+/**
+ * The order of titles for a reader: letters as a reader sorts them, numbers by
+ * their value. It comes from the ICU data of the runtime; a test of
+ * `lists.spec.ts` pins it on hard titles, so a runtime that sorts in a new way
+ * is seen (issue 97).
+ */
 const COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 
 /** A note in a list: its title and its vault path, which breaks a tie. */
