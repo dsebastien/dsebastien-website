@@ -1,0 +1,5 @@
+# A test of the site run from this folder reads this file, not the one of the
+# root: its builds run their checks in the strict mode too (issue 104).
+# `site-checks.spec.ts` checks that both files preload the same file.
+[test]
+preload = ["../../scripts/test-environment.ts"]

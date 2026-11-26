@@ -127,10 +127,13 @@ try {
         `Took down ${TAKEN_DOWN_NOTE}, and ${String(takenDown.attachmentsDeleted.length)} file(s) of the attachment storage.`
     )
 
+    // The output of the build shows its warnings, as a build of real notes
+    // gives them after a takedown or an unpublish (R65). The notes are
+    // invented: a build of real notes keeps its log private (the deploy log).
     build = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
         env: { ...process.env, CONTENT_STORE: contentStore },
-        stdout: 'ignore',
+        stdout: 'inherit',
         stderr: 'inherit'
     })
     const built = await build.exited

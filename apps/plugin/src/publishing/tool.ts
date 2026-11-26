@@ -657,6 +657,30 @@ interface StoreFile {
 /** The mark of a file whose text could not be read before its removal. */
 const UNKNOWN = Symbol('unknown')
 
+/**
+ * Puts back the files of the copy after a run that failed before its push
+ * arrived, and then settles the journal of the run, but only when every file
+ * is back and git took the commit back: else the journal stays, so the next
+ * run puts the copy back. The result is the end of the message of the
+ * failure. A run that lost the lock never calls it: it would put its files
+ * back over the work of the other run.
+ */
+async function putCopyBack(
+    device: Device,
+    backup: Backup,
+    head: string | undefined,
+    settle: () => Promise<void>,
+    nextRuns = 'plan, publish or takedown'
+): Promise<string> {
+    const stayed = await backup.putAllBack()
+    if (stayed.length === 0 && (await device.store.head()) === head) {
+        await settle()
+    }
+    return stayed.length === 0
+        ? 'and the files of the copy are as they were before'
+        : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next ${nextRuns} puts them back`
+}
+
 class Backup {
     readonly #store: Device['store']
     /** The text of each file before the run, `undefined` for no file, `UNKNOWN` for a file that cannot be read as text. */
@@ -866,11 +890,11 @@ async function correctState(
                 warnings.push({ path, message: CHANGED_DURING_RUN })
                 continue
             }
-            const warning = await writeState(device, path, text, isPublished)
-            if (warning === undefined) {
+            const write = await writeState(device, path, text, isPublished)
+            if (write.written) {
                 ;(isPublished ? propertySet : propertyRemoved).push(path)
             } else {
-                warnings.push({ path, message: warning })
+                warnings.push({ path, message: write.warning })
             }
         } catch (error) {
             warnings.push({
@@ -882,21 +906,23 @@ async function correctState(
     return { propertyRemoved, propertySet, warnings }
 }
 
-/**
- * Sets the state property of a note to true, or removes it. The result is
- * `undefined` when the note was written, else the warning that says why it
- * was not. It throws when the write fails.
- */
+/** What `writeState` did with a note: written, or left with the warning that says why. */
+type StateWrite = { readonly written: true } | { readonly written: false; readonly warning: string }
+
+/** Sets the state property of a note to true, or removes it. It throws when the write fails. */
 async function writeState(
     device: Device,
     path: string,
     text: string,
     isPublished: boolean
-): Promise<string | undefined> {
+): Promise<StateWrite> {
     // A new line below a line in the flow form of YAML (`{ }`, `[ ]`) is not
     // valid YAML. The note stays as the author wrote it.
     if (hasFlowProperties(text)) {
-        return `the properties of the note are in the flow form of YAML ({ } or [ ]), and the tool does not write into that form: correct the ${STATE_PROPERTY} property by hand`
+        return {
+            written: false,
+            warning: `the properties of the note are in the flow form of YAML ({ } or [ ]), and the tool does not write into that form: correct the ${STATE_PROPERTY} property by hand`
+        }
     }
     const wanted = isPublished
         ? setProperty(text, STATE_PROPERTY, 'true')
@@ -906,12 +932,15 @@ async function writeState(
     // property, or the new lines can close properties that were open. Such a
     // note is never written.
     if (namesInProperties(wanted, IGNORE_PROPERTY) !== namesInProperties(text, IGNORE_PROPERTY)) {
-        return `the ${STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand`
+        return {
+            written: false,
+            warning: `the ${STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand`
+        }
     }
     if (!(await device.vault.write(path, wanted, text))) {
-        return CHANGED_DURING_RUN
+        return { written: false, warning: CHANGED_DURING_RUN }
     }
-    return undefined
+    return { written: true }
 }
 
 /**
@@ -1766,20 +1795,13 @@ async function takeDownLocked(
         if (error instanceof LockLost) {
             throw error
         }
-        const stayed = await journal.putAllBack()
-        // A file that could not be put back, or a commit that git could not
-        // take back, stays in the journal, so the next run puts it back.
-        if (stayed.length === 0 && (await device.store.head()) === head) {
+        const files = await putCopyBack(device, journal, head, async () => {
             if (owed) {
                 await device.local.saveJournal(journalText({ step: 'correct' }))
             } else {
                 await device.local.removeJournal()
             }
-        }
-        const files =
-            stayed.length === 0
-                ? 'and the files of the copy are as they were before'
-                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan, publish or takedown puts them back`
+        })
         throw new Error(`${messageOf(error)}. Nothing is taken down, ${files}`, { cause: error })
     }
     // The push arrived. When another run took the copy, this run changes
@@ -1939,11 +1961,11 @@ async function removeState(
             if (text === undefined || removeProperty(text, STATE_PROPERTY) === text) {
                 continue
             }
-            const warning = await writeState(device, path, text, false)
-            if (warning === undefined) {
+            const write = await writeState(device, path, text, false)
+            if (write.written) {
                 propertyRemoved.push(path)
             } else {
-                warnings.push({ path, message: warning })
+                warnings.push({ path, message: write.warning })
             }
         } catch (error) {
             warnings.push({
@@ -2109,24 +2131,11 @@ async function applyCurrent(
         if (error instanceof LockLost) {
             throw error
         }
-        // Files that stay in the copy would be read as published at the next
-        // run, and an upload that stays would be public with no entry.
-        const stayed = await journal.putAllBack()
+        // An upload that stays would be public with no entry.
         const kept = await uploads.takeBack(scan.manifest, scan.isGuardedFile)
-        // A file that could not be put back, or a commit that git could not
-        // take back, stays in the journal, so the next run puts it back. The
-        // journal of another run that took the copy is never touched.
-        if (
-            !(error instanceof LockLost) &&
-            stayed.length === 0 &&
-            (await device.store.head()) === head
-        ) {
+        const files = await putCopyBack(device, journal, head, async () => {
             await settle(owed)
-        }
-        const files =
-            stayed.length === 0
-                ? 'and the files of the copy are as they were before'
-                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan, publish or takedown puts them back`
+        })
         const storage =
             kept.length === 0
                 ? ''
@@ -2754,16 +2763,15 @@ async function commitEvent(
         if (error instanceof LockLost) {
             throw error
         }
-        const stayed = await backup.putAllBack()
-        // A file that could not be put back, or a commit that git could not
-        // take back, stays in the journal, so the next run puts it back.
-        if (stayed.length === 0 && (await device.store.head()) === head) {
-            await settleEdit(device, owed)
-        }
-        const files =
-            stayed.length === 0
-                ? 'and the files of the copy are as they were before'
-                : `and these files of the copy could not be put back: ${stayed.join(', ')}. The next plan, publish, takedown or edit puts them back`
+        const files = await putCopyBack(
+            device,
+            backup,
+            head,
+            async () => {
+                await settleEdit(device, owed)
+            },
+            'plan, publish, takedown or edit'
+        )
         throw new Error(`${messageOf(error)}. ${failed}, ${files}`, { cause: error })
     }
     await ownLock()

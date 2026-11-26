@@ -53,9 +53,9 @@ struct Arguments {
     command: Command,
 }
 
-/// The two places of a publication on this device.
+/// The folders of a publication on this device.
 #[derive(Args)]
-struct Places {
+struct Folders {
     /// The folder of the vault.
     #[arg(long)]
     vault: PathBuf,
@@ -65,6 +65,20 @@ struct Places {
     #[arg(long)]
     content_store: PathBuf,
 
+    /// The folder of the rename journals that the plugin writes in the vault
+    /// (one file per device). The default is
+    /// `.obsidian/plugins/dsebastien-vault-publish/renames` in the vault.
+    #[arg(long, value_name = "FOLDER")]
+    renames: Option<PathBuf>,
+}
+
+/// The places of a publication on this device: its folders and the program
+/// of the Starter Kit.
+#[derive(Args)]
+struct Places {
+    #[command(flatten)]
+    folders: Folders,
+
     /// The command line program of the Obsidian Starter Kit, which gives the
     /// note type of each note (`osk-cli recognize`). The default is the
     /// program that the plugin installs in the vault:
@@ -72,12 +86,6 @@ struct Places {
     /// (`osk-cli-windows-x64.exe` on Windows).
     #[arg(long, value_name = "PROGRAM")]
     osk_cli: Option<PathBuf>,
-
-    /// The folder of the rename journals that the plugin writes in the vault
-    /// (one file per device). The default is
-    /// `.obsidian/plugins/dsebastien-vault-publish/renames` in the vault.
-    #[arg(long, value_name = "FOLDER")]
-    renames: Option<PathBuf>,
 }
 
 /// The settings of the deploy of the site after a push, on this device
@@ -314,18 +322,12 @@ enum Command {
     /// warning: a file that stays there can still be public. Each takedown
     /// first deletes the files of the storage that no published note uses.
     /// After the push, it deploys the site with `--takedown` and writes the
-    /// deploy report.
+    /// deploy report. In the vault, it reads only the named notes, to remove
+    /// their `public_note` property (on a device with no copy of the vault,
+    /// an empty folder works).
     Takedown {
-        /// The folder of the vault. The takedown reads only the named notes
-        /// in it, to remove their `public_note` property: on a device with
-        /// no copy of the vault, an empty folder works.
-        #[arg(long)]
-        vault: PathBuf,
-
-        /// The folder of the copy of the content store on this device: a git
-        /// clone whose `origin` is the content store.
-        #[arg(long)]
-        content_store: PathBuf,
+        #[command(flatten)]
+        folders: Folders,
 
         /// The folder of the attachment storage.
         #[arg(long, value_name = "FOLDER")]
@@ -496,17 +498,22 @@ enum Command {
 }
 
 fn device(places: &Places) -> Result<Device, String> {
-    device_of(
-        &places.vault,
-        &places.content_store,
-        places.osk_cli.as_deref(),
-        places.renames.as_deref(),
+    device_of(&places.folders, places.osk_cli.as_deref())
+}
+
+/// The device of the folders of a publication. A takedown asks no Starter
+/// Kit: it gets the default program, which it never runs.
+fn device_of(folders: &Folders, osk_cli: Option<&Path>) -> Result<Device, String> {
+    device_at(
+        &folders.vault,
+        &folders.content_store,
+        osk_cli,
+        folders.renames.as_deref(),
     )
 }
 
-/// The device of a vault and a copy of the content store. A takedown asks no
-/// Starter Kit: it gets the default program, which it never runs.
-fn device_of(
+/// The device of a vault and a copy of the content store.
+fn device_at(
     vault: &Path,
     content_store: &Path,
     osk_cli: Option<&Path>,
@@ -957,7 +964,7 @@ fn serve(
     let background = Background::default();
     let deploy = McpDeploy {
         options: deploy,
-        content_store: &places.content_store,
+        content_store: &places.folders.content_store,
         attachment_storage,
         background: &background,
     };
@@ -1031,10 +1038,15 @@ fn run_publish(
 ) -> Result<Ran, String> {
     let device = device(places)?;
     Ok(Ran {
-        outcome: pushing(&places.content_store, false, || {
+        outcome: pushing(&places.folders.content_store, false, || {
             tool::publish(&device, &storage(attachment_storage), plan, run)
         })?,
-        deploy: deploy_after(deploy, &places.content_store, attachment_storage, false),
+        deploy: deploy_after(
+            deploy,
+            &places.folders.content_store,
+            attachment_storage,
+            false,
+        ),
     })
 }
 
@@ -1049,10 +1061,15 @@ fn run_unpublish(
 ) -> Result<Ran, String> {
     let device = device(places)?;
     Ok(Ran {
-        outcome: pushing(&places.content_store, false, || {
+        outcome: pushing(&places.folders.content_store, false, || {
             tool::unpublish(&device, &storage(attachment_storage), paths, accept, run)
         })?,
-        deploy: deploy_after(deploy, &places.content_store, attachment_storage, false),
+        deploy: deploy_after(
+            deploy,
+            &places.folders.content_store,
+            attachment_storage,
+            false,
+        ),
     })
 }
 
@@ -1097,7 +1114,7 @@ fn run(command: Command) -> Result<Ran, String> {
         Command::Status { places } => {
             let output = tool::status(&device(&places)?)?;
             warn_when_behind(&output);
-            warn_when_takedown_waits(&places.content_store);
+            warn_when_takedown_waits(&places.folders.content_store);
             Ok(done(output))
         }
         Command::Plan {
@@ -1132,16 +1149,15 @@ fn run(command: Command) -> Result<Ran, String> {
             &deploy,
         ),
         Command::Takedown {
-            vault,
-            content_store,
+            folders,
             attachment_storage,
             path,
             time,
             device: name,
             deploy,
         } => run_takedown(
-            &device_of(&vault, &content_store, None, None)?,
-            &content_store,
+            &device_of(&folders, None)?,
+            &folders.content_store,
             &attachment_storage,
             &path,
             &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
@@ -1150,7 +1166,7 @@ fn run(command: Command) -> Result<Ran, String> {
         Command::Guards {
             vault,
             content_store,
-        } => tool::guards(&device_of(&vault, &content_store, None, None)?).map(done),
+        } => tool::guards(&device_at(&vault, &content_store, None, None)?).map(done),
         Command::Deny { edit } => run_edit("deny", edit).map(Ran::from),
         Command::Allow { edit } => run_edit("allow", edit).map(Ran::from),
         Command::Ignore { edit } => run_edit("ignore", edit).map(Ran::from),

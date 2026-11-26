@@ -47,6 +47,8 @@ const EMBEDS = '50 Field guide/Embeds/Embed of a note.md'
 interface Build {
     readonly dir: string
     readonly exitCode: number
+    /** The standard output of the build: the warnings of its checks are there. */
+    readonly log: string
     readonly server: Server | undefined
     readonly search: Search
 }
@@ -89,10 +91,10 @@ async function build(
     const child = Bun.spawn(['bun', 'run', 'build', '--outDir', dir], {
         cwd: SITE,
         env: { ...environment, CONTENT_STORE: contentStore },
-        stdout: 'ignore',
+        stdout: 'pipe',
         stderr: 'inherit'
     })
-    const exitCode = await child.exited
+    const [log, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited])
     const server =
         exitCode === 0
             ? await startServer({ dist: dir, port: 0, attachments: storage() })
@@ -105,7 +107,7 @@ async function build(
         part: async (key) => (await json(`-/search/titles/${partFile(key)}.json`)) as TitleRow[],
         fullText: pagefindEngine(pathToFileURL(join(dir, '-', 'search', 'pagefind')).href + '/')
     })
-    return { dir, exitCode, server, search }
+    return { dir, exitCode, log, server, search }
 }
 
 function ready(build: Build | undefined): Build & { server: Server } {
@@ -224,6 +226,17 @@ describe('a takedown on the built site', () => {
 
     test('is built again as a build of real notes', () => {
         expect(after?.exitCode).toBe(0)
+    })
+
+    // A build of real notes warns where the strict mode stops (R65): the
+    // warnings are in its output, so the test reads it (issue 104). The
+    // takedown leaves no link to an address that is gone.
+    test('writes the result of the site checks in the output of both builds', () => {
+        for (const build of [before, after]) {
+            expect(build?.log).toContain(
+                'titles and descriptions unique, every indexable note within 4 links of the home page, no link to a missing page'
+            )
+        }
     })
 
     test('answers 404 at every address of a note that was taken down, also of an unpublished one', async () => {

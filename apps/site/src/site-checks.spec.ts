@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFile } from 'node:fs/promises'
 import { goneKey, type ResolverMap } from '@dsebastien-website/resolver'
 import {
     fileOfLink,
@@ -149,6 +150,23 @@ describe('the verdict on the findings of a build', () => {
     // (the preload of `bunfig.toml`).
     test('is strict in the tests', () => {
         expect(process.env[SITE_CHECKS_MODE]).toBe('strict')
+    })
+
+    // Bun reads the bunfig.toml of the folder that it runs in only: a test
+    // run from the folder of the site would build without the strict mode.
+    test('is strict also for a test run from the folder of the site', async () => {
+        const preloads = async (file: string): Promise<string[]> =>
+            [
+                ...(await readFile(new URL(file, import.meta.url), 'utf8')).matchAll(
+                    /^preload = .*$/gmu
+                )
+            ].map((match) => match[0])
+        expect(await preloads('../../../bunfig.toml')).toEqual([
+            'preload = ["./scripts/test-environment.ts"]'
+        ])
+        expect(await preloads('../bunfig.toml')).toEqual([
+            'preload = ["../../scripts/test-environment.ts"]'
+        ])
     })
 
     test('says nothing and stops nothing when there is no finding', () => {

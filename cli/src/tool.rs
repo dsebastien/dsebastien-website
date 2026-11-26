@@ -782,6 +782,34 @@ struct StoreFile {
 /// The files of the copy as they were before a publication touched them. A
 /// failure puts them back from here, not from a commit of the copy: a copy can
 /// have no commit, and a file of it can be in no commit.
+/// Puts back the files of the copy after a run that failed before its push
+/// arrived, and then settles the journal of the run, but only when every
+/// file is back and git took the commit back: else the journal stays, so the
+/// next run puts the copy back. The result is the end of the message of the
+/// failure, which names the runs that put back a file that stayed. A run
+/// that lost the lock never calls it: it would put its files back over the
+/// work of the other run.
+fn put_copy_back(
+    device: &Device,
+    journal: &mut Backup,
+    head: Option<&String>,
+    settle: impl FnOnce() -> Result<(), String>,
+    next_runs: &str,
+) -> Result<String, String> {
+    let stayed = journal.put_all_back();
+    if stayed.is_empty() && device.store.head().as_ref() == head {
+        settle()?;
+    }
+    Ok(if stayed.is_empty() {
+        "and the files of the copy are as they were before".to_owned()
+    } else {
+        format!(
+            "and these files of the copy could not be put back: {}. The next {next_runs} puts them back",
+            stayed.join(", ")
+        )
+    })
+}
+
 struct Backup<'a> {
     store: &'a ContentStore,
     /// The text of each file before the run (`None` for no file), or `Err`
@@ -1558,9 +1586,9 @@ fn correct_state(device: &Device, scan: &Scan, published: &BTreeSet<String>) -> 
             }
         };
         match write_state(device, path, &text, is_published) {
-            Ok(None) if is_published => correction.property_set.push(path.clone()),
-            Ok(None) => correction.property_removed.push(path.clone()),
-            Ok(Some(warning)) => warn(warning),
+            Ok(StateWrite::Written) if is_published => correction.property_set.push(path.clone()),
+            Ok(StateWrite::Written) => correction.property_removed.push(path.clone()),
+            Ok(StateWrite::Left(warning)) => warn(warning),
             Err(error) => warn(format!(
                 "the {STATE_PROPERTY} property could not be corrected: {error}"
             )),
@@ -1569,19 +1597,26 @@ fn correct_state(device: &Device, scan: &Scan, published: &BTreeSet<String>) -> 
     correction
 }
 
-/// Sets the state property of a note to true, or removes it. `Ok(None)` when
-/// the note was written, `Ok(Some(warning))` when it was not, with the reason,
-/// and `Err` when the write failed.
+/// What `write_state` did with a note.
+enum StateWrite {
+    /// The note was written.
+    Written,
+    /// The note was not written, with the warning that says why.
+    Left(String),
+}
+
+/// Sets the state property of a note to true, or removes it. `Err` when the
+/// write failed.
 fn write_state(
     device: &Device,
     path: &str,
     text: &str,
     is_published: bool,
-) -> Result<Option<String>, String> {
+) -> Result<StateWrite, String> {
     // A new line below a line in the flow form of YAML (`{ }`, `[ ]`) is not
     // valid YAML. The note stays as the author wrote it.
     if has_flow_properties(text) {
-        return Ok(Some(format!(
+        return Ok(StateWrite::Left(format!(
             "the properties of the note are in the flow form of YAML ({{ }} or [ ]), and the tool does not write into that form: correct the {STATE_PROPERTY} property by hand"
         )));
     }
@@ -1595,7 +1630,7 @@ fn write_state(
     // property, or the new lines can close properties that were open. Such a
     // note is never written.
     if names_in_properties(&wanted, IGNORE_PROPERTY) != names_in_properties(text, IGNORE_PROPERTY) {
-        return Ok(Some(format!(
+        return Ok(StateWrite::Left(format!(
             "the {STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand"
         )));
     }
@@ -1606,7 +1641,7 @@ fn write_state(
         return Ok(Some(changed_during_run()));
     }
     device.vault.write(path, &wanted)?;
-    Ok(None)
+    Ok(StateWrite::Written)
 }
 
 /// The warning of a note that changed between the read of the tool and its
@@ -2158,29 +2193,19 @@ fn apply_current(
         // or it would put its files back over the work of the other run.
         Err(error) if error == LOCK_LOST => return Err(error),
         Err(error) => {
-            // Files that stay in the copy would be read as published at the
-            // next run, and an upload that stays would be public with no
-            // entry.
-            let stayed = journal.put_all_back();
+            // An upload that stays would be public with no entry.
             let kept = uploads.take_back(
                 &current.scan.manifest,
                 &current.scan,
                 Guarded::of(run, &current.selection),
             );
-            // A file that could not be put back, or a commit that git could
-            // not take back, stays in the journal, so the next run puts it
-            // back.
-            if stayed.is_empty() && device.store.head() == head {
-                settle(owed)?;
-            }
-            let files = if stayed.is_empty() {
-                "and the files of the copy are as they were before".to_owned()
-            } else {
-                format!(
-                    "and these files of the copy could not be put back: {}. The next plan, publish or takedown puts them back",
-                    stayed.join(", ")
-                )
-            };
+            let files = put_copy_back(
+                device,
+                &mut journal,
+                head.as_ref(),
+                || settle(owed),
+                "plan, publish or takedown",
+            )?;
             let storage = if kept.is_empty() {
                 String::new()
             } else {
@@ -2559,26 +2584,21 @@ fn take_down_locked(
         if error == LOCK_LOST {
             return Err(error);
         }
-        let stayed = journal.put_all_back();
-        // A file that could not be put back, or a commit that git could not
-        // take back, stays in the journal, so the next run puts it back.
-        if stayed.is_empty() && device.store.head() == head {
-            if owed {
-                device
-                    .store
-                    .save_journal(&journal_text(&RunJournal::Correct)?)?;
-            } else {
-                device.store.remove_journal()?;
-            }
-        }
-        let files = if stayed.is_empty() {
-            "and the files of the copy are as they were before".to_owned()
-        } else {
-            format!(
-                "and these files of the copy could not be put back: {}. The next plan, publish or takedown puts them back",
-                stayed.join(", ")
-            )
-        };
+        let files = put_copy_back(
+            device,
+            &mut journal,
+            head.as_ref(),
+            || {
+                if owed {
+                    device
+                        .store
+                        .save_journal(&journal_text(&RunJournal::Correct)?)
+                } else {
+                    device.store.remove_journal()
+                }
+            },
+            "plan, publish or takedown",
+        )?;
         return Err(format!("{error}. Nothing is taken down, {files}"));
     }
     crash_point("push");
@@ -2803,8 +2823,10 @@ fn remove_state(device: &Device, paths: &[String]) -> (Vec<String>, Vec<Value>) 
             _ => Ok(None),
         });
         match written {
-            Ok(Some(None)) => removed.push(path.clone()),
-            Ok(Some(Some(warning))) => warnings.push(json!({ "message": warning, "path": path })),
+            Ok(Some(StateWrite::Written)) => removed.push(path.clone()),
+            Ok(Some(StateWrite::Left(warning))) => {
+                warnings.push(json!({ "message": warning, "path": path }));
+            }
             Ok(None) => {}
             Err(error) => warnings.push(json!({
                 "message": format!("the {STATE_PROPERTY} property could not be removed: {error}"),
@@ -3030,20 +3052,13 @@ fn commit_edit(
         if error == LOCK_LOST {
             return Err(error);
         }
-        let stayed = journal.put_all_back();
-        // A file that could not be put back, or a commit that git could not
-        // take back, stays in the journal, so the next run puts it back.
-        if stayed.is_empty() && device.store.head() == head {
-            settle_edit(device, owed)?;
-        }
-        let files = if stayed.is_empty() {
-            "and the files of the copy are as they were before".to_owned()
-        } else {
-            format!(
-                "and these files of the copy could not be put back: {}. The next plan, publish, takedown or edit puts them back",
-                stayed.join(", ")
-            )
-        };
+        let files = put_copy_back(
+            device,
+            &mut journal,
+            head.as_ref(),
+            || settle_edit(device, owed),
+            "plan, publish, takedown or edit",
+        )?;
         return Err(format!("{error}. {failed}, {files}"));
     }
     crash_point("push");
