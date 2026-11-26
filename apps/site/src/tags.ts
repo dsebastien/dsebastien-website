@@ -4,7 +4,8 @@ import { foldedForm } from '@dsebastien-website/resolver'
 // links of the markup, the tags of the properties panel and the tag pages
 // of the lists accept the same tags, so that no tag link leads to a page
 // that the lists do not build. The markup uses it: a change of what it
-// accepts raises `MARKUP_VERSION` (`rendering/markup.ts`).
+// accepts raises `MARKUP_VERSION` (`rendering/markup.ts`), as does a change of
+// `tagPath()`, `foldedForm()` or `smallLetters()` of the resolver.
 
 /**
  * The form of a tag: levels of letters, digits, marks, pictographs,

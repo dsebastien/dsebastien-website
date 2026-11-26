@@ -32,8 +32,9 @@ import { encode, MARK } from './mark.ts'
  * what these steps write: it is an option of a step, so a part of the
  * configuration, and every note is rendered again. That holds also for a
  * change of the two functions of the publishing tool that read a link here
- * (`wikilinksOf`, `linkPathOfDestination`) and of the reader of the tags
- * (`tagOfText` in `tags.ts`).
+ * (`wikilinksOf`, `linkPathOfDestination`), of the reader of the tags
+ * (`tagOfText` in `tags.ts`), and of `tagPath()` of the resolver, with the
+ * `foldedForm()` and `smallLetters()` that it uses.
  */
 export const MARKUP_VERSION = 11
 
