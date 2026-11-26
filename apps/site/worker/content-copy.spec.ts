@@ -7,6 +7,7 @@ import {
     checkContentCopy,
     contentStoreHas,
     descendsFrom,
+    inspectContentCopy,
     releaseAttachmentKeys,
     removalsBetween,
     removedAttachmentKeys,
@@ -56,6 +57,46 @@ describe('the copy of the content store of a deployment', () => {
         const copy = await makeContentStoreCopy(stores)
         await writeFile(join(copy, name), 'changed\n')
         expect(await rejectionOf(checkContentCopy(copy))).toContain('changes')
+    })
+
+    // Review round 3, T4: the deployment reads the copy after the fetch, and
+    // refuses it later, after the withdrawn files left when that is safe.
+    test('says that a copy with an untracked file is at main but not clean', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await commit(copy, 'Publish: 1 new')
+        await writeFile(join(copy, 'stray.txt'), 'stray\n')
+        const state = await inspectContentCopy(copy)
+        expect(state.atMain).toBe(true)
+        expect(state.head).toBe(await git(copy, 'rev-parse', 'HEAD'))
+        expect(state.refusal).toContain('changes')
+    })
+
+    test('says that a copy behind the content store is not at main', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await commit(copy, 'Publish: 1 new')
+        const other = join(stores.root, 'other')
+        await git(stores.root, 'clone', '--quiet', stores.contentStore, other)
+        await git(other, 'config', 'user.name', 'Test')
+        await git(other, 'config', 'user.email', 'test@example.invalid')
+        await git(other, 'config', 'commit.gpgsign', 'false')
+        await commit(other, 'Publish: from another device')
+        const state = await inspectContentCopy(copy)
+        expect(state.atMain).toBe(false)
+        expect(state.refusal).toContain('origin/main')
+    })
+
+    test('gives a clean copy with no refusal, and stops when the fetch fails', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await commit(copy, 'Publish: 1 new')
+        expect(await inspectContentCopy(copy)).toEqual({
+            head: await git(copy, 'rev-parse', 'HEAD'),
+            atMain: true
+        })
+        await git(copy, 'remote', 'set-url', 'origin', join(stores.root, 'gone'))
+        expect(await rejectionOf(inspectContentCopy(copy))).toContain('fetch')
     })
 
     test('refuses a copy that is behind the content store, after a fetch', async () => {
@@ -227,6 +268,32 @@ describe('the attachments in the history of the copy', () => {
         return keys.notLive
     }
 
+    /** Writes entries of the index from `git update-index -z --index-info`. */
+    async function indexInfo(copy: string, lines: string): Promise<void> {
+        const child = Bun.spawn(
+            // Git for Windows refuses such a name unless told otherwise.
+            [
+                'git',
+                '-C',
+                copy,
+                '-c',
+                'core.protectNTFS=false',
+                'update-index',
+                '-z',
+                '--index-info'
+            ],
+            {
+                stdin: new TextEncoder().encode(lines),
+                stdout: 'pipe',
+                stderr: 'pipe'
+            }
+        )
+        const [errors, code] = await Promise.all([new Response(child.stderr).text(), child.exited])
+        if (code !== 0) {
+            throw new Error(`git update-index failed: ${errors}`)
+        }
+    }
+
     const A = 'a1a1a1a1a1a1a1a1'
     const B = 'b2b2b2b2b2b2b2b2'
     const C = 'c3c3c3c3c3c3c3c3'
@@ -344,7 +411,7 @@ describe('the attachments in the history of the copy', () => {
     })
 
     // Review round 1, A5: the manifest of the first publications had no attachments.
-    test('gives no key for an entry with no attachments, and names the commit of an entry that it cannot read', async () => {
+    test('gives no key for an entry with no attachments, and a warning with the commit of an entry that it cannot read', async () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
         const old = JSON.stringify({ id: A, path: 'A.md', state: 'published' })
@@ -355,9 +422,11 @@ describe('the attachments in the history of the copy', () => {
         await change(copy, 'Takedown: 1 note', { [`manifest/${A}.json`]: undefined })
         expect(await allKeys(copy)).toEqual([])
         const broken = await change(copy, 'Takedown: 1 note', { [`manifest/${B}.json`]: undefined })
-        const message = await rejectionOf(removedAttachmentKeys(copy, null))
-        expect(message).toContain(broken)
-        expect(message).toContain(`manifest/${B}.json`)
+        // Review round 3, T1: no edit by hand stops the deployments.
+        const keys = await removedAttachmentKeys(copy, null)
+        expect(keys.notLive).toEqual([])
+        expect(keys.warnings.join('\n')).toContain(broken)
+        expect(keys.warnings.join('\n')).toContain(`manifest/${B}.json`)
     })
 
     // Review round 1, A3: a shallow copy does not have the whole history.
@@ -426,7 +495,7 @@ describe('the attachments in the history of the copy', () => {
     })
 
     // Review round 2, R1: one file that cannot be read never stops every deployment.
-    test('takes the keys of every version that can be read of a deleted file that cannot be read', async () => {
+    test('takes the keys of the newest version that can be read of a deleted file that cannot be read', async () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
         await change(copy, 'Publish: 1 new', {
@@ -439,7 +508,7 @@ describe('the attachments in the history of the copy', () => {
             [`manifest/${A}.json`]: '{"attachments": 1}\n'
         })
         await change(copy, 'Takedown: 1 note', { [`manifest/${A}.json`]: undefined })
-        expect(await allKeys(copy)).toEqual([key('1'), key('2')])
+        expect(await allKeys(copy)).toEqual([key('2')])
     })
 
     test('never stops on an entry that cannot be read and that a commit wrote', async () => {
@@ -467,31 +536,74 @@ describe('the attachments in the history of the copy', () => {
         await change(copy, 'Takedown: 1 note', { [`manifest/${B}.json`]: undefined })
         expect(await removedAttachmentKeys(copy, live)).toEqual({
             notLive: [key('2')],
-            inLive: [key('1')]
+            inLive: [key('1')],
+            warnings: []
         })
         expect(await removedAttachmentKeys(copy, null)).toEqual({
             notLive: [key('1'), key('2')],
-            inLive: []
+            inLive: [],
+            warnings: []
         })
     })
 
-    // Review round 2, R5: a merge hides what its sides removed.
-    test('cannot say when the history has a merge commit', async () => {
+    // Review round 3, T2: a merge is read against each of its parents.
+    test('counts the entries that a merge or one of its sides deleted, and the revert still refuses a merge', async () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
-        const base = await change(copy, 'Publish: 1 new', {
-            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')])
+        const base = await change(copy, 'Publish: 3 new', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')]),
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')]),
+            [`manifest/${C}.json`]: entry(C, 'C.md', [key('3')])
         })
         await git(copy, 'checkout', '--quiet', '-b', 'side')
         await change(copy, 'Takedown: 1 note', { [`manifest/${A}.json`]: undefined })
         await git(copy, 'checkout', '--quiet', '-')
-        await change(copy, 'Publish: 1 new', {
-            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')])
+        await change(copy, 'Publish: 0 new, 1 updated', {
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('4')])
         })
-        await git(copy, 'merge', '--quiet', '--no-edit', 'side')
+        // The merge itself drops the entry of C.
+        await git(copy, 'merge', '--quiet', '--no-commit', 'side')
+        await git(copy, 'rm', '--quiet', '--', `manifest/${C}.json`)
+        await git(copy, 'commit', '--quiet', '--no-edit')
         const head = await git(copy, 'rev-parse', 'HEAD')
-        expect(await rejectionOf(removedAttachmentKeys(copy, null))).toContain('merge')
+        expect(await allKeys(copy)).toEqual([key('1'), key('3')])
         expect(await rejectionOf(removalsBetween(copy, base, head))).toContain('merge')
+    })
+
+    // Review round 3, T3: a name with a control character never puts the
+    // reader of git out of step.
+    test('gives a warning and no key for a deleted name with a line feed, and reads the entry next to it', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 1 new', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')])
+        })
+        const odd = 'manifest/a\nb.json'
+        const blob = await git(copy, 'rev-parse', `HEAD:manifest/${A}.json`)
+        await indexInfo(copy, `100644 ${blob}\t${odd}\0`)
+        await git(
+            copy,
+            '-c',
+            'core.protectNTFS=false',
+            'commit',
+            '--quiet',
+            '--message',
+            'A change by hand'
+        )
+        await indexInfo(copy, `0 ${'0'.repeat(40)}\t${odd}\0`)
+        await git(copy, 'rm', '--quiet', '--cached', '--', `manifest/${A}.json`)
+        await git(
+            copy,
+            '-c',
+            'core.protectNTFS=false',
+            'commit',
+            '--quiet',
+            '--message',
+            'Takedown: 2 notes'
+        )
+        const keys = await removedAttachmentKeys(copy, null)
+        expect(keys.notLive).toEqual([key('1')])
+        expect(keys.warnings.join('\n')).toContain('control character')
     })
 
     test('stops on a revision whose manifest the build would refuse', async () => {

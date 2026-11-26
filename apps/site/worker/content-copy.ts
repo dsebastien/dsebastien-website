@@ -100,6 +100,34 @@ export async function checkContentCopy(store: string, fetch = true): Promise<str
 }
 
 /**
+ * Fetches the content store into the copy and says what a deployment needs
+ * before its first step (review round 3): the commit of the copy, whether it
+ * is the `main` of the content store, and, when the copy is not clean or not
+ * at `main`, the refusal, which the deployment gives after the withdrawn
+ * files left. A fetch that fails throws: nothing is known then.
+ */
+export async function inspectContentCopy(
+    store: string
+): Promise<{ head: string; atMain: boolean; refusal?: string }> {
+    await gitText(
+        store,
+        'fetch',
+        '--quiet',
+        '--refmap=',
+        'origin',
+        `+refs/heads/main:${DEPLOY_REF}`
+    )
+    const head = await gitText(store, 'rev-parse', 'HEAD')
+    const atMain = head === (await gitText(store, 'rev-parse', DEPLOY_REF))
+    try {
+        await checkContentCopy(store, false)
+        return { head, atMain }
+    } catch (error) {
+        return { head, atMain, refusal: error instanceof Error ? error.message : String(error) }
+    }
+}
+
+/**
  * True when the revision is the commit of the copy or one of its ancestors,
  * false when it is not, `undefined` when the copy does not know the revision.
  */
@@ -157,7 +185,10 @@ export async function contentStoreHas(store: string, revision: string): Promise<
 }
 
 /** The form of the path of a manifest entry in the content store. */
-const MANIFEST_PATH = /^manifest\/[^/]+\.json$/u
+// A name with a control character is no entry of the tool, and a line feed
+// would put the reader of `git cat-file` out of step (review round 3).
+// eslint-disable-next-line no-control-regex
+const MANIFEST_PATH = /^manifest\/[^/\x00-\x1f]+\.json$/u
 
 /** How many objects one request asks `git cat-file` for: the answers are read before the next one. */
 const BATCH = 256
@@ -356,8 +387,15 @@ interface Removal {
     readonly keys: readonly string[]
 }
 
-/** The commits of `git log -z --name-status --format=%x01%H%x09%s`, with their manifest files by status. */
-function commitsOf(log: string): { commit: string; subject: string; files: [string, string][] }[] {
+/**
+ * The commits of `git log -z --name-status --format=%x01%H%x09%s`, with
+ * their manifest files by status. A file of `manifest/` whose name has a
+ * control character is left out with a warning: it is no entry of the tool.
+ */
+function commitsOf(
+    log: string,
+    warnings: string[]
+): { commit: string; subject: string; files: [string, string][] }[] {
     return log
         .split('\x01')
         .slice(1)
@@ -365,6 +403,7 @@ function commitsOf(log: string): { commit: string; subject: string; files: [stri
             const end = record.indexOf('\0')
             const header = end < 0 ? record : record.slice(0, end)
             const tab = header.indexOf('\t')
+            const commit = tab < 0 ? header : header.slice(0, tab)
             const parts = (end < 0 ? '' : record.slice(end + 1))
                 .replace(/^\n/u, '')
                 .split('\0')
@@ -374,66 +413,84 @@ function commitsOf(log: string): { commit: string; subject: string; files: [stri
                 const path = parts[index + 1] ?? ''
                 if (MANIFEST_PATH.test(path)) {
                     files.push([parts[index] ?? '', path])
+                } else if (path.startsWith('manifest/') && parts[index] === 'D') {
+                    warnings.push(oddName(commit))
                 }
             }
-            return {
-                commit: tab < 0 ? header : header.slice(0, tab),
-                subject: tab < 0 ? '' : header.slice(tab + 1),
-                files
-            }
+            return { commit, subject: tab < 0 ? '' : header.slice(tab + 1), files }
         })
 }
 
+/** The warning of a deleted file of `manifest/` whose name has a control character. */
+function oddName(commit: string): string {
+    return `the commit ${commit} of the copy of the content store deleted a file of manifest/ whose name has a control character: it is no entry of the tool, so it gives no file to delete`
+}
+
 /**
- * The entry of a deleted file of the history (review round 2): its version
- * at the parent of the commit, or, when that version is no entry (an edit
- * by hand), every older version of that file that is one, with all their
- * keys. It throws, with the commit and the file, only when no version can be
- * read: the files of that note are not known.
+ * The entry of a deleted file of the history (review rounds 2 and 3): its
+ * version at `at`, the revision where it was last present, or, when that
+ * version is no entry (an edit by hand), the newest older version of that
+ * file that is one. When no version can be read, it gives no key and a
+ * warning: no edit by hand in the content store stops the deployments.
  */
 async function deletedEntry(
     store: string,
     blobs: Blobs,
-    commit: string,
+    at: string,
     path: string,
-    text: string | undefined
+    text: string | undefined,
+    warnings: string[]
 ): Promise<OldEntry> {
     const entry = oldEntryOf(text)
     if (entry !== undefined) {
         return entry
     }
-    const versions = (
-        await gitText(store, 'log', '--full-history', '--format=%H', `${commit}^`, '--', path)
-    )
+    const versions = (await gitText(store, 'log', '--full-history', '--format=%H', at, '--', path))
         .split('\n')
         .filter((line) => line !== '')
-    const read = (await blobs.read(versions.map((version) => `${version}:${path}`)))
-        .map(oldEntryOf)
-        .filter((item) => item !== undefined)
-    const newest = read[0]
-    if (newest === undefined) {
-        throw new Error(
-            `${path} of the commit ${commit} of the copy of the content store is not a manifest entry, and no older version of it is one, so the files of its note are not known`
-        )
+    for (const [index, text] of (
+        await blobs.read(versions.map((version) => `${version}:${path}`))
+    ).entries()) {
+        const older = oldEntryOf(text)
+        if (older !== undefined) {
+            warnings.push(
+                `${path} at ${at} of the copy of the content store is not a manifest entry: the files of its note are the ones of its version of the commit ${versions[index] ?? ''}`
+            )
+            return older
+        }
     }
-    return { ...newest, keys: [...new Set(read.flatMap((item) => item.keys))] }
+    warnings.push(
+        `${path} at ${at} of the copy of the content store is not a manifest entry, and no older version of it is one: it gives no file to delete`
+    )
+    return { path: undefined, state: undefined, formerPaths: [], keys: [] }
 }
 
 /**
  * The commits of the copy in this range that took notes away, the newest
- * first (issue 120, review rounds 1 and 2): each commit that deleted a
+ * first (issue 120, review rounds 1 to 3): each commit that deleted a
  * manifest entry, whatever its subject says, with the keys of the
  * attachments of those entries, read at its parent. An unpublished entry is
  * left out when a move of the same commit displaced it (rule 6 of the
  * moves): a published entry of the commit holds its path now, held another
  * path at the parent, and names that path in `formerPaths`. A merge commit
- * in the range stops it: its sides can remove entries that no diff shows.
- * One `git log` and one `git cat-file` read the history.
+ * deleted every entry that one of its parents has and that it has not, read
+ * at that parent, with no move left out: it deletes more, never less. With
+ * `merges` `refuse`, a merge in the range throws instead (the revert fails
+ * safe). One `git log` and one `git cat-file` read the history, and one
+ * `git diff-tree` each parent of a merge.
  */
-async function removalsIn(store: string, range: string): Promise<Removal[]> {
-    if ((await gitText(store, 'rev-list', '--merges', '--count', range)) !== '0') {
+async function removalsIn(
+    store: string,
+    range: string,
+    merges: 'read' | 'refuse',
+    warnings: string[]
+): Promise<Removal[]> {
+    const merged = (await gitText(store, 'rev-list', '--merges', range))
+        .split('\n')
+        .filter((line) => line !== '')
+    if (merged.length > 0 && merges === 'refuse') {
         throw new Error(
-            `the history of the copy of the content store has a merge commit, so the deployment cannot say which notes its commits took away: ${store}`
+            `the history of the copy of the content store has a merge commit between the two releases, so the command cannot say which notes it took away: ${store}`
         )
     }
     const commits = commitsOf(
@@ -449,29 +506,77 @@ async function removalsIn(store: string, range: string): Promise<Removal[]> {
             range,
             '--',
             'manifest'
-        )
-    ).filter((commit) => commit.files.some(([status]) => status === 'D'))
-    if (commits.length === 0) {
+        ),
+        warnings
+    ).filter(
+        (commit) =>
+            !merged.includes(commit.commit) && commit.files.some(([status]) => status === 'D')
+    )
+    // Each deleted file of a merge, against each parent that has it.
+    const fromMerges: { commit: string; subject: string; at: string; path: string }[] = []
+    for (const merge of merged) {
+        const [, ...parents] = (await gitText(store, 'rev-list', '--parents', '-n', '1', merge))
+            .split(' ')
+            .filter((part) => part !== '')
+        const subject = await gitText(store, 'log', '-n', '1', '--format=%s', merge)
+        for (const parent of parents) {
+            const parts = (
+                await gitText(
+                    store,
+                    'diff-tree',
+                    '-r',
+                    '-z',
+                    '--no-renames',
+                    '--name-status',
+                    '--diff-filter=D',
+                    parent,
+                    merge,
+                    '--',
+                    'manifest'
+                )
+            )
+                .split('\0')
+                .filter((part) => part !== '')
+            for (let index = 0; index + 1 < parts.length; index += 2) {
+                const path = parts[index + 1] ?? ''
+                if (MANIFEST_PATH.test(path)) {
+                    fromMerges.push({ commit: merge, subject, at: parent, path })
+                } else if (path.startsWith('manifest/')) {
+                    warnings.push(oddName(merge))
+                }
+            }
+        }
+    }
+    if (commits.length === 0 && fromMerges.length === 0) {
         return []
     }
     return await withBlobs(store, async (blobs) => {
-        const deleted = commits.flatMap(({ commit, files }) =>
-            files.filter(([status]) => status === 'D').map(([, path]) => ({ commit, path }))
-        )
-        const texts = await blobs.read(deleted.map(({ commit, path }) => `${commit}^:${path}`))
+        const deleted = [
+            ...commits.flatMap(({ commit, files }) =>
+                files
+                    .filter(([status]) => status === 'D')
+                    .map(([, path]) => ({ commit, at: `${commit}^`, path }))
+            ),
+            ...fromMerges
+        ]
+        const texts = await blobs.read(deleted.map(({ at, path }) => `${at}:${path}`))
         const entries = new Map<string, OldEntry[]>()
-        for (const [index, { commit, path }] of deleted.entries()) {
-            const entry = await deletedEntry(store, blobs, commit, path, texts[index])
+        for (const [index, { commit, at, path }] of deleted.entries()) {
+            const entry = await deletedEntry(store, blobs, at, path, texts[index], warnings)
             entries.set(commit, [...(entries.get(commit) ?? []), entry])
         }
-        // The moves of the commits that deleted an unpublished entry.
+        // The moves of the commits that deleted an unpublished entry (no merge).
         const moving = commits
             .map(({ commit }) => commit)
             .filter((commit) =>
                 (entries.get(commit) ?? []).some((entry) => entry.state === 'unpublished')
             )
-        const taken = await movedPaths(store, blobs, moving)
-        return commits.flatMap(({ commit, subject }) => {
+        const taken = await movedPaths(store, blobs, moving, warnings)
+        const subjects = new Map([
+            ...commits.map(({ commit, subject }): [string, string] => [commit, subject]),
+            ...fromMerges.map(({ commit, subject }): [string, string] => [commit, subject])
+        ])
+        return [...subjects].flatMap(([commit, subject]) => {
             const removed = (entries.get(commit) ?? []).filter(
                 (entry) =>
                     entry.state !== 'unpublished' ||
@@ -495,7 +600,8 @@ async function removalsIn(store: string, range: string): Promise<Removal[]> {
 async function movedPaths(
     store: string,
     blobs: Blobs,
-    commits: readonly string[]
+    commits: readonly string[],
+    warnings: string[]
 ): Promise<Map<string, Set<string>>> {
     const taken = new Map<string, Set<string>>()
     if (commits.length === 0) {
@@ -513,7 +619,8 @@ async function movedPaths(
             ...commits,
             '--',
             'manifest'
-        )
+        ),
+        warnings
     ).flatMap(({ commit, files }) =>
         files.filter(([status]) => status === 'M').map(([, path]) => ({ commit, path }))
     )
@@ -552,7 +659,9 @@ export async function removalsBetween(
             return undefined
         }
     }
-    return (await removalsIn(store, `${from}..${to}`)).map((removal) => removal.subject)
+    return (await removalsIn(store, `${from}..${to}`, 'refuse', [])).map(
+        (removal) => removal.subject
+    )
 }
 
 /**
@@ -567,16 +676,17 @@ export async function removalsBetween(
 export async function removedAttachmentKeys(
     store: string,
     live: string | null
-): Promise<{ notLive: string[]; inLive: string[] }> {
+): Promise<{ notLive: string[]; inLive: string[]; warnings: string[] }> {
     if ((await git(store, 'rev-parse', '--verify', '--quiet', 'HEAD')).code !== 0) {
-        return { notLive: [], inLive: [] }
+        return { notLive: [], inLive: [], warnings: [] }
     }
     if ((await gitText(store, 'rev-parse', '--is-shallow-repository')) !== 'false') {
         throw new Error(
             `the copy of the content store is shallow, so the deployment cannot know the files of its takedowns and forced removals: fetch its whole history (git fetch --unshallow) in ${store}`
         )
     }
-    const removals = await removalsIn(store, 'HEAD')
+    const warnings: string[] = []
+    const removals = await removalsIn(store, 'HEAD', 'read', warnings)
     // The commits that the live release does not hold. A live revision that
     // the copy does not know holds none of them.
     let after: Set<string> | undefined
@@ -596,7 +706,7 @@ export async function removedAttachmentKeys(
             .flatMap((removal) => removal.keys)
             .filter((key) => !notLive.has(key))
     )
-    return { notLive: [...notLive].sort(), inLive: [...inLive].sort() }
+    return { notLive: [...notLive].sort(), inLive: [...inLive].sort(), warnings }
 }
 
 /**
