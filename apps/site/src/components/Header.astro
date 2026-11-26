@@ -1,6 +1,7 @@
 ---
 import { SEARCH_PATH } from '@dsebastien-website/resolver'
 import ModeSwitch from './ModeSwitch.astro'
+import logo from '../icons/icon.svg?raw'
 import { SITE_NAME } from '../site.ts'
 
 // The header of every page, from variant B of the mockups (R49): the site
@@ -10,24 +11,27 @@ import { SITE_NAME } from '../site.ts'
 // The switch comes first: it is hidden until its script runs, and it shows in
 // the free space at the left, so nothing moves (CLS, R57). On a very small
 // screen the site name gives way with an ellipsis, so nothing goes past the edge.
+// The logo is the mark of the main site (issue 133), the icon of the site: it
+// is in the page, with its size, so it costs no request and moves nothing,
+// and the server error page keeps it (NAV-20). It has its own background, so
+// it shows the same in both modes. The site name is the name of the link.
 interface Props {
     /** False on a page with no script: the switch needs its script (NAV-20). */
     modeSwitch?: boolean
 }
 
 const { modeSwitch = true } = Astro.props
+const mark = logo.replace(
+    '<svg ',
+    '<svg width="32" height="32" aria-hidden="true" focusable="false" class="block" '
+)
 const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '/-/search.html'
 ---
 
 <header class='sticky top-0 z-40 border-b border-border bg-surface'>
     <div class='mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6'>
         <a href='/' class='flex min-w-0 items-center gap-2.5 text-lg font-bold'>
-            <span
-                class='flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-secondary text-sm text-on-secondary'
-                aria-hidden='true'
-            >
-                S
-            </span>
+            <span class='h-8 w-8 shrink-0 overflow-hidden rounded-control' set:html={mark} />
             <span class='truncate'>{SITE_NAME}</span>
         </a>
         <div class='ml-auto flex shrink-0 items-center gap-2'>

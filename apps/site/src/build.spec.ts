@@ -126,6 +126,29 @@ describe('design base', () => {
         )
     })
 
+    // Issue 133: the logo of the main site leads home with the site name, in
+    // the page itself (no request, a fixed size: nothing moves, CLS), also on
+    // the server error page, which loads no other file (NAV-20).
+    test.each([['index.html'], ['404.html'], ['500.html']])(
+        '%s shows the logo in the header, with the site name as the name of its link',
+        async (file) => {
+            const html = await readOutput(file)
+            const link =
+                /<header[^>]*>[\s\S]*?(<a href="\/"[^>]*>[\s\S]*?<\/a>)/u.exec(html)?.[1] ?? ''
+            const logo = /<svg\b[^>]*>/u.exec(link)?.[0] ?? ''
+            expect(logo).toContain('viewBox="0 0 192 192"')
+            expect(logo).toContain('width="32" height="32"')
+            expect(logo).toContain('aria-hidden="true"')
+            expect(link).not.toMatch(/<img\b/u)
+            // The text of the link, without the hidden logo, is the site name.
+            const text = link
+                .replace(/<svg\b[\s\S]*?<\/svg>/gu, '')
+                .replace(/<[^>]*>/gu, '')
+                .trim()
+            expect(text).toBe('Sébastien’s Notes')
+        }
+    )
+
     test('sets the mode before any style, with no flash (MODE-01)', async () => {
         const html = await readOutput('index.html')
         const script = html.indexOf('prefers-color-scheme: light')
