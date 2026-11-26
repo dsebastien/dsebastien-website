@@ -199,6 +199,10 @@ describe('the title of a note page (IDX-01, IDX-03, IDX-07)', () => {
         expect(select('meta[property="og:title"]', noteOf(LETTER_1))?.properties['content']).toBe(
             'Garden letter 1 · Newsletter'
         )
+        // The full-text search shows the title of the title index: the fallback.
+        expect(select('h1', noteOf(LETTER_1))?.properties['dataPagefindMeta']).toBe(
+            'title:Garden letter 1'
+        )
     })
 
     test('has no type word for a note with no type', () => {

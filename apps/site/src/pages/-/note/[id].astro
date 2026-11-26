@@ -49,6 +49,8 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
     bare
 >
     {/* `data-heading` keeps the text of the H1 of the note, which an old hash names (URL-14). */}
+    {/* The full-text search shows the title of the title index: the fallback title when */}
+    {/* two pages share one (issue 94). */}
     {/* The text of the page uses this file: a late font moves the text (PERF-20, R57). */}
     <link slot='head' rel='preload' href={latinFont} as='font' type='font/woff2' crossorigin />
     <div class='border-b border-border bg-well'>
@@ -58,7 +60,7 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
                 data-note-title
                 data-heading={body.heading?.text}
                 data-pagefind-body
-                data-pagefind-meta='title'
+                data-pagefind-meta={`title:${header.title}`}
                 class='max-w-4xl text-3xl font-bold tracking-tight break-words sm:text-5xl'
             >
                 {header.heading}
