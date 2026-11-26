@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
+    gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
     type TestStores
@@ -19,6 +20,27 @@ const FROZEN = '50 Field guide/Queries/Frozen table.md'
 const LIVE = '50 Field guide/Queries/Live Dataview.md'
 const PLAIN = '10 Garden/Frost dates explained.md'
 const RUN = { time: '2031-04-01T08:00:00Z', device: 'garden-shed', face: 'plugin' } as const
+
+/** A folder of the deny list whose path Obsidian reads as `My Private` (issue 110). */
+const DENIED_FOLDER = 'My\u00a0Private'
+
+/** Another device adds a folder to the deny list of the content store, and pushes it. */
+async function denyAlso(copy: string, folder: string): Promise<void> {
+    await writeFile(
+        join(copy, 'configuration.json'),
+        `${JSON.stringify({ denyList: ['80 Templates', '90 Locked Shed', folder] }, null, 4)}\n`
+    )
+    for (const args of [
+        ['add', '--', 'configuration.json'],
+        ['commit', '--quiet', '--message', 'Deny one more folder'],
+        ['push', '--quiet', 'origin', 'HEAD:main']
+    ]) {
+        const child = Bun.spawn(['git', ...args], { cwd: copy, env: gitEnvironment() })
+        if ((await child.exited) !== 0) {
+            throw new Error(`git ${args.join(' ')} failed`)
+        }
+    }
+}
 
 /** The row that the stand-in serializer adds to a frozen list. */
 const NEW_ROW = '| [[Water butt]] | 2031-03-04T07:00 |\n'
@@ -178,5 +200,22 @@ describe('the refresh of the frozen lists before a plan', () => {
 
         expect(planned.listsNotRefreshed).toEqual([FROZEN])
         expect(planned.refreshProblems).toEqual([])
+    })
+})
+
+describe('the refresh before a plan and the files of the deny list (R72)', () => {
+    test('a note whose path Obsidian gives to a file of the deny list is never asked', async () => {
+        await using stores = await makeTestStores()
+        const { device, vault, copy, calls } = await setUp(stores)
+        await denyAlso(copy, DENIED_FOLDER)
+        const text = await readFile(join(vault, FROZEN), 'utf8')
+        await mkdir(join(vault, DENIED_FOLDER), { recursive: true })
+        await mkdir(join(vault, 'My Private'), { recursive: true })
+        await writeFile(join(vault, DENIED_FOLDER, 'Frozen copy.md'), text)
+        await writeFile(join(vault, 'My Private', 'Frozen copy.md'), text)
+
+        await plan(device, { include: ['My Private/Frozen copy.md', FROZEN] })
+
+        expect(calls).toEqual([[FROZEN]])
     })
 })

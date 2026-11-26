@@ -555,8 +555,9 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     // computed again, so the record holds the refreshed text (PUB-92).
     // Only the notes with a list to refresh (rule 4) are asked: a first
     // publication of every note asks far fewer.
-    // A note with a twin is not asked: Obsidian can refresh the twin (R72).
-    const twins = obsidianTwins(computed.scan.notes.keys())
+    // A note with a twin is not asked: Obsidian can refresh the twin (R72),
+    // also a file of the deny list, which the scan does not read.
+    const twins = obsidianTwins([...computed.scan.notes.keys(), ...computed.scan.denied])
     const paths = sortByCodePoint(
         [...computed.plan.publish, ...computed.plan.update].filter((path) => {
             const source = computed.texts.get(path)?.source

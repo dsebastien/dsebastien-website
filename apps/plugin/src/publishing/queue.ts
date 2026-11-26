@@ -129,6 +129,12 @@ export interface Scan {
     readonly index: LinkIndex
     /** The files that a guard excludes: a link to one of them gives no item. */
     readonly guarded: ReadonlySet<string>
+    /**
+     * The files of the folders of the deny list that Obsidian shows, by their
+     * paths. Obsidian can take a note of the scan for one of them when the
+     * two have one Obsidian path (R72): a twin is computed over both.
+     */
+    readonly denied: readonly string[]
     /** The files that the notes link to, each one read one time per run. */
     readonly files: FileReader
     /**
@@ -535,6 +541,7 @@ export async function computeQueue(input: {
         ignored,
         index,
         guarded,
+        denied,
         files,
         tooLargeOf: async (paths) => {
             const found: TooLarge[] = []
