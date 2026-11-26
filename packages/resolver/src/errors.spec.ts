@@ -92,6 +92,24 @@ describe('form of an error answer', () => {
             'text/html, text/x-markdown;q=0.5',
             'html'
         ],
+        [
+            'the old name of Markdown refused before the new name',
+            '/Nothing',
+            'text/x-markdown;q=0, text/markdown',
+            'markdown'
+        ],
+        [
+            'the new name of Markdown refused before the old name',
+            '/Nothing',
+            'text/markdown;q=0, text/x-markdown;q=0.5',
+            'markdown'
+        ],
+        [
+            'both names of Markdown refused',
+            '/Nothing',
+            'text/markdown;q=0, text/x-markdown;q=0',
+            'html'
+        ],
         ['a Markdown path', '/-/md/Nothing.md', null, 'markdown'],
         ['a Markdown path, asked as HTML', '/-/md/Nothing.md', 'text/html', 'markdown']
     ] as const)('%s', (_name, path, accept, format) => {

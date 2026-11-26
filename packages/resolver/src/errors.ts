@@ -9,6 +9,9 @@ export type ErrorStatus = 404 | 410 | 500
 /** The prefix of the Markdown of the notes (URL-10). */
 const MARKDOWN_PREFIX = '/-/md/'
 
+/** The names of the Markdown type: the name of RFC 7763 and the name before it. */
+const MARKDOWN_TYPES = ['text/markdown', 'text/x-markdown'] as const
+
 /** The form of a weight of the `Accept` header: 0 to 1, with three decimals at most (RFC 9110). */
 const WEIGHT = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u
 
@@ -74,13 +77,7 @@ function rangesOf(accept: string): MediaRange[] {
             }
         }
         if (type.includes('/') && !Number.isNaN(weight)) {
-            // `text/x-markdown` is the name of Markdown before RFC 7763.
-            const name = type.toLowerCase()
-            ranges.push({
-                type: name === 'text/x-markdown' ? 'text/markdown' : name,
-                charset,
-                weight
-            })
+            ranges.push({ type: type.toLowerCase(), charset, weight })
         }
     }
     return ranges
@@ -128,16 +125,19 @@ export function errorFormat(path: string, accept: string | null): 'html' | 'mark
     }
     const ranges = rangesOf(accept)
     // Markdown only when a range of Markdown itself matches: a group or any
-    // type is no wish for Markdown.
-    const markdown = rangeOf(ranges, 'text/markdown')
+    // type is no wish for Markdown. `text/x-markdown` is the name of Markdown
+    // before RFC 7763: the two names are one type, which takes the higher weight.
+    const markdown = Math.max(
+        ...MARKDOWN_TYPES.map((type) => rangeOf(ranges, type)).map((range) =>
+            range?.exact === true ? range.weight : 0
+        )
+    )
     // HTML is `text/html` or XHTML, whichever the header weighs more.
     const html = Math.max(
         rangeOf(ranges, 'text/html')?.weight ?? 0,
         rangeOf(ranges, 'application/xhtml+xml')?.weight ?? 0
     )
-    return markdown?.exact === true && markdown.weight > 0 && markdown.weight >= html
-        ? 'markdown'
-        : 'html'
+    return markdown > 0 && markdown >= html ? 'markdown' : 'html'
 }
 
 /** An absolute address of the site as a Markdown link: an agent that reads the text has no base address. */
