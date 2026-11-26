@@ -31,9 +31,9 @@ import { aliasesOf } from '../apps/plugin/src/publishing/frontmatter.ts'
 // that reads it: the read of the text, the check of its shape, and one
 // resolution of an old path of the list. A vault has no former path:
 // `--former-paths <count>` gives every note that many invented former paths
-// (`<folder>/Former <n> of <name>.md`), so the measure counts the part
-// `former` of the map, which grows with every move and never loses a path
-// (issue 105, URL rule 1 of the business rules). The script
+// (`Former <n>/<vault path>`), so the measure counts the part `former` of
+// the map, with its former folders (R82), which grows with every move and
+// never loses a path (issue 105, URL rule 1 of the business rules). The script
 // prints numbers only, never a name of a note: it can run on the export of the
 // published notes of the author (`.cache/published/vault`), whose numbers stay
 // out of this repository.
@@ -81,14 +81,10 @@ async function main(): Promise<void> {
         throw new Error('--former-paths takes a whole number, 0 or more')
     }
     const notes: SiteNote[] = []
-    const formerPathsOf = (path: string): string[] => {
-        const slash = path.lastIndexOf('/') + 1
-        return Array.from(
-            { length: formerCount },
-            (_, index) =>
-                `${path.slice(0, slash)}Former ${String(index + 1)} of ${path.slice(slash)}`
-        )
-    }
+    // Each invented former path is in another folder, so the former folders
+    // of the map are measured too (R82).
+    const formerPathsOf = (path: string): string[] =>
+        Array.from({ length: formerCount }, (_, index) => `Former ${String(index + 1)}/${path}`)
     if (values.paths === undefined) {
         const vault = resolvePath(values.vault)
         for (const path of await notePaths(vault)) {
@@ -181,6 +177,7 @@ async function main(): Promise<void> {
                 formerTexts: count(map.former?.folded),
                 formerNames: count(map.former?.names),
                 formerMarkdown: count(map.former?.markdown),
+                formerFolders: count(map.former?.folders),
                 bytes,
                 gzipBytes: gzip,
                 ...(list === undefined
