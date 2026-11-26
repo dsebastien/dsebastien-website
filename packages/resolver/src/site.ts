@@ -276,8 +276,45 @@ export function resolverMapOf(
         choices,
         notFound: files.notFound,
         gone: goneMapOf(removed, files.gone),
-        former: formerMapOf(ordered, removed)
+        former: formerMapOf(ordered, removed, folded)
     }
+}
+
+/**
+ * The former folders whose notes all moved to one folder (decision of the
+ * author R79): for each folder of a former path of a published note, by its
+ * folded form, the address of the one folder where those notes are now, as
+ * the map gives it (its folder note or its folder page). A folder that is an
+ * address now (a note, a folder) keeps it, and a folder whose notes moved to
+ * more than one folder, or to the root, is no address.
+ */
+function formerFoldersOf(
+    notes: readonly SiteNote[],
+    folded: ReadonlyMap<string, string>
+): Record<string, string> {
+    const targets = new Map<string, Set<string>>()
+    for (const note of notes) {
+        const now = parentOf(note.path)
+        for (const former of note.formerPaths ?? []) {
+            const before = parentOf(former)
+            if (before === undefined) {
+                continue
+            }
+            const key = foldedForm(before)
+            const set = targets.get(key) ?? new Set<string>()
+            set.add(now === undefined ? '' : foldedForm(now))
+            targets.set(key, set)
+        }
+    }
+    const folders: Record<string, string> = {}
+    for (const key of [...targets.keys()].sort(compareCodePoints)) {
+        const [now, ...others] = [...(targets.get(key) ?? [])]
+        const target = now === undefined || now === '' ? undefined : folded.get(now)
+        if (others.length === 0 && now !== key && !folded.has(key) && target !== undefined) {
+            folders[key] = target
+        }
+    }
+    return folders
 }
 
 /**
@@ -285,7 +322,11 @@ export function resolverMapOf(
  * last owner of an address wins (business rule 1): a former path that is now
  * the path of an unpublished note is gone, not a redirect.
  */
-function formerMapOf(notes: readonly SiteNote[], removed: readonly SiteNote[]): FormerMap {
+function formerMapOf(
+    notes: readonly SiteNote[],
+    removed: readonly SiteNote[],
+    folded: ReadonlyMap<string, string>
+): FormerMap {
     const taken = new Set(removed.map((note) => foldedForm(note.path.slice(0, -'.md'.length))))
     const takenMarkdown = new Set(removed.map((note) => markdownPath(note.path)))
     const { names } = formersOf(notes)
@@ -305,9 +346,11 @@ function formerMapOf(notes: readonly SiteNote[], removed: readonly SiteNote[]): 
             ])
         }
     }
+    const folders = formerFoldersOf(notes, folded)
     return {
         folded: urls(texts),
         names: urls(names),
+        ...(Object.keys(folders).length === 0 ? {} : { folders }),
         markdown: Object.fromEntries(
             [...markdown]
                 .filter(([, targets]) => targets.length === 1)

@@ -36,7 +36,8 @@ const isFormerMap = (value: unknown): boolean =>
     isRecord(value) &&
     everyValue(value['folded'], isTextList) &&
     everyValue(value['names'], isTextList) &&
-    everyValue(value['markdown'], isText)
+    everyValue(value['markdown'], isText) &&
+    everyValue(value['folders'] ?? {}, isText)
 const isRedirectMap = (value: unknown): boolean =>
     isRecord(value) &&
     typeof value['longest'] === 'number' &&

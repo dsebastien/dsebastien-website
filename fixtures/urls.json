@@ -746,11 +746,11 @@
             "cacheControl": "public, max-age=3600"
         },
         {
-            "name": "the former folder of a note that moved is no address",
+            "name": "the former folder whose published notes all moved to one folder leads to that folder (R79)",
             "request": "/Old+Beds",
-            "status": 404,
-            "suggestions": [],
-            "format": "html"
+            "status": 301,
+            "location": "/10+Garden/Herb+bed/Herb+bed",
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "the former path of an unpublished note",

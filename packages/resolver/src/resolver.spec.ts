@@ -377,12 +377,36 @@ describe('resolver of former paths', () => {
         expect(resolve('/Worm+bin', mapOf([NOTE]))).toEqual(moved('/Garden/Wormery'))
     })
 
-    test('the old folder is no address of the note', () => {
-        expect(resolve('/Shed', mapOf([NOTE]))).toEqual({
+    // Decision R79: a former folder whose notes all moved to one folder.
+    test('the old folder leads to the folder that all its notes moved to', () => {
+        const map = mapOf([
+            NOTE,
+            { path: 'Garden/Compost.md', aliases: [], formerPaths: ['Shed/Compost.md'] }
+        ])
+        expect(resolve('/Shed', map)).toEqual(moved('/Garden'))
+        expect(resolve('/shed/', map, '?ref=x')).toEqual(moved('/Garden?ref=x'))
+    })
+
+    test('the old folder leads to the folder note of that folder when it is published', () => {
+        const map = mapOf([NOTE, { path: 'Garden/Garden.md', aliases: [] }])
+        expect(resolve('/Shed', map)).toEqual(moved('/Garden/Garden'))
+    })
+
+    test('an old folder whose notes moved to two folders is no address', () => {
+        const map = mapOf([
+            NOTE,
+            { path: 'Kitchen/Compost.md', aliases: [], formerPaths: ['Shed/Compost.md'] }
+        ])
+        expect(resolve('/Shed', map)).toEqual({
             kind: 'not-found',
             suggestions: [],
             file: '404.html'
         })
+    })
+
+    test('a folder that holds notes again wins over its old target', () => {
+        const map = mapOf([NOTE, { path: 'Shed/Rake.md', aliases: [] }])
+        expect(resolve('/Shed', map)).toEqual({ kind: 'page', file: 'folder:Shed' })
     })
 
     test('a current path wins over a former path, and a former path over a name and an alias', () => {
@@ -439,6 +463,16 @@ describe('resolver of former paths', () => {
         expect(resolve('/-/md/Shed/Rain+butt.md', map)).toEqual(GONE)
         expect(resolve('/Herbs/Basil', map)).toEqual(moved('/Garden/Mint'))
         expect(JSON.stringify(map)).not.toContain('Rain butt')
+    })
+
+    // Decision R79: a published note had the name, so it is a reading of it.
+    test('a former file name of a published note wins over the file name of an unpublished note', () => {
+        const map = mapOf(
+            [{ path: 'Garden/Mint.md', aliases: [], formerPaths: ['Herbs/Basil.md'] }],
+            [{ path: 'Kitchen/Basil.md', aliases: [] }]
+        )
+        expect(resolve('/Basil', map)).toEqual(moved('/Garden/Mint'))
+        expect(resolve('/Kitchen/Basil', map)).toEqual({ kind: 'gone', file: '410.html' })
     })
 
     // The last owner of an address wins (business rule 1): a note took the

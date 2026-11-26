@@ -91,6 +91,12 @@ export interface FormerMap {
     readonly names: Readonly<Record<string, readonly string[]>>
     /** The Markdown path of the note of each former Markdown path, as written. */
     readonly markdown: Readonly<Record<string, string>>
+    /**
+     * The target of each former folder whose notes all moved to one folder,
+     * by its folded form (decision of the author R79): the folder note of
+     * that folder, or its folder page.
+     */
+    readonly folders?: Readonly<Record<string, string>>
 }
 
 /**
@@ -480,6 +486,19 @@ function resolvePublished(
             const location = redirectOf(form, map.redirects)
             if (location !== undefined && map.redirects !== undefined) {
                 return listAnswer(map.redirects, keyOf(form), location, query)
+            }
+        }
+        // A row of the redirect list wins over a former folder: the author wrote it.
+        // A former folder whose notes all moved to one folder (R79).
+        for (const form of forms) {
+            const target = own(map.former?.folders, form)
+            if (target !== undefined) {
+                return {
+                    kind: 'redirect',
+                    status: 301,
+                    location: target + query,
+                    cacheControl: CACHE.former
+                }
             }
         }
         for (const form of forms) {
