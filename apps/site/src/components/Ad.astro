@@ -1,0 +1,44 @@
+---
+import type { Product } from '../ads/catalog.ts'
+import { ctaAttributes, END_POSITION } from '../ads/cta.ts'
+
+// The ad at the end of a note (AD-01): the products of the store catalog that
+// match the topic of the note, two at most, each one link to the store (the
+// card of today without its image: a note page loads nothing from another host
+// at view time, PERF-27). The ad is complete in the HTML of the build and holds
+// no image, so it moves no text when the page loads (AD-09, AD-10). Each link
+// carries the properties of `cta_clicked` (AN-02, `ads/cta.ts`).
+interface Props {
+    products: readonly Product[]
+    /** The vault path of the note: the `page` property of the event. */
+    page: string
+}
+
+const { products, page } = Astro.props
+---
+
+<aside class='note-ad' aria-label='From the store' data-ad data-ad-position={END_POSITION}>
+    <h2 class='section-title'>Go deeper</h2>
+    <ul class='ad-cards'>
+        {products.map((product, slot) => (
+            <li>
+                <a
+                    class='card-link ad-card'
+                    href={product.href}
+                    target='_blank'
+                    rel='noopener'
+                    {...ctaAttributes(product.id, END_POSITION, slot, page)}
+                >
+                    <span class='ad-kicker'>
+                        {[product.badge, product.priceTier, product.mainCategory]
+                            .filter((part) => part !== undefined)
+                            .join(' · ')}
+                    </span>
+                    <span class='ad-name'>{product.name}</span>
+                    <span class='ad-line'>{product.shortDescription}</span>
+                    <span class='ad-more'>Learn more</span>
+                </a>
+            </li>
+        ))}
+    </ul>
+</aside>

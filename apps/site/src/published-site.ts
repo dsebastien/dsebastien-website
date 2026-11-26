@@ -1,5 +1,8 @@
 import type { ResolverMap } from '@dsebastien-website/resolver'
 import { getCollection } from 'astro:content'
+import { storeCatalog } from './ads/build-catalog.ts'
+import type { Product } from './ads/catalog.ts'
+import { adProductsOf } from './ads/matching.ts'
 import { backlinkList, BACKLINKS_ON_PAGE, type ShownBacklink } from './backlink-list.ts'
 import {
     readCleanedNote,
@@ -82,11 +85,15 @@ export interface PublishedSite {
     backlinksOf(vaultPath: string): readonly ShownBacklink[]
     /** The notes with more backlinks than a note page holds: each has a page with all of them. */
     notesWithBacklinksPage(): readonly PublishedNote[]
+    /** The products of the ad at the end of a published note, from the store catalog: none for no ad (AD-01). */
+    adOf(vaultPath: string): readonly Product[]
 }
 
 async function read(): Promise<PublishedSite> {
     const entries = new Map((await getCollection('notes')).map((entry) => [entry.id, entry]))
     const { notes, removed, importRun } = await readPublication()
+    // The store catalog, read one time per build (BUILD-06, CAT-01).
+    const catalog = await storeCatalog()
     const byPath = new Map(notes.map((note) => [note.vaultPath, note]))
     // The properties of each note, read from its cleaned note with every date
     // as the text of the vault (`note-properties.ts`), not from the collection.
@@ -307,7 +314,23 @@ async function read(): Promise<PublishedSite> {
         ),
         backlinksOf,
         notesWithBacklinksPage: () =>
-            notes.filter((note) => pages.backlinks(note.vaultPath).length > BACKLINKS_ON_PAGE)
+            notes.filter((note) => pages.backlinks(note.vaultPath).length > BACKLINKS_ON_PAGE),
+        adOf: (vaultPath) => {
+            const note = noteOf(vaultPath)
+            const noteProperties = properties.get(vaultPath) ?? {}
+            return adProductsOf(
+                {
+                    title: headers.get(vaultPath)?.heading ?? note.title,
+                    ...(note.noteType === undefined ? {} : { noteType: note.noteType.name }),
+                    tags: tagsOfNote(
+                        noteProperties['tags'],
+                        entries.get(vaultPath)?.rendered?.html ?? ''
+                    ).keys(),
+                    topics: noteProperties['topics']
+                },
+                catalog
+            )
+        }
     }
 }
 

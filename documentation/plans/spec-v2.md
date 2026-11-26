@@ -1176,6 +1176,8 @@ Known fact for the baseline: every ad click of today comes from the ad strip at 
 | AD-15 | M   | A "why this ad" link explains: own products only, matched by topic                                                                        | v1 9.10                       |
 | AD-16 | -   | The Gumroad script is dropped                                                                                                             | decisions D27                 |
 
+The matching of AD-01 and AD-02 (issue 56, `apps/site/src/ads/matching.ts`). The tokens of a note: the last level of each of its tags (not `type/` and `zone/`), its `topics`, and its title, whole and as each phrase of two words or more in it; a single word of a longer title is never a token. An alias map adds tokens. A product matches when one of its tags is a token. The order: the number of matching tags, the share of the tags of the product that match, the commercial rank (best value, bestseller, featured, priority) as a nudge, then the id. Two products at most, at the end of the note, with `position` `end` and `slot` 0 or 1. No match gives no ad until AD-06. No ad on person and quote notes (AD-11). The card is the card of today without its image, because a note page loads nothing from another host (PERF-27).
+
 ### 14.2 The store catalog is the contract
 
 Everything about products needs a strong relationship with the store, which stays a separate thing (decisions, round 5, requirement 2).
@@ -1188,6 +1190,8 @@ Everything about products needs a strong relationship with the store, which stay
 | CAT-04 | G   | This project changes nothing in the store. A need on the store side is a dependency (section 20)                                                                                | ADR 0001                       |
 | CAT-05 | M   | When the catalog cannot be read at view time, the ad shows the data of the build. A page never breaks because of the catalog                                                    | sites item 324                 |
 | CAT-06 | -   | The PKM Library becomes a part of the site later. It waits for the login of issue 1 and is not part of the first release                                                        | round 5 req. 5, consequence 28 |
+
+The source of the catalog (issue 56): `products-light.json` on the `www` host of the store, which a deployment names to the build (`STORE_CATALOG`). The schema of CAT-02 is `storeCatalogFrom()` of `apps/site/src/ads/catalog.ts`: per product `id`, `name`, `shortDescription`, `tags`, `mainCategory`, `priceTier`, `href` (https), `badge` (a text or null), `featured`, `bestseller`, `bestValue`, `priority`; `count`, when present, is the number of products, and an id is unique. Other fields are free. A catalog that breaks it does not stop the build (BUILD-06): the build uses the last valid copy, else shows no product ad, and says why. Broken data never reaches a page.
 
 ## 15. Design
 

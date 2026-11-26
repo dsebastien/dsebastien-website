@@ -240,6 +240,35 @@
         @apply bg-transparent font-semibold text-primary;
     }
 
+    /* The ad at the end of a note (AD-01): text cards, with no image, so it moves nothing (AD-10). */
+    .note-ad {
+        @apply mt-12 max-w-[72ch];
+    }
+
+    .ad-cards {
+        @apply grid gap-4 sm:grid-cols-2;
+    }
+
+    .ad-card {
+        @apply h-full;
+    }
+
+    .ad-kicker {
+        @apply block text-xs font-semibold tracking-wide text-muted uppercase;
+    }
+
+    .ad-name {
+        @apply mt-1 block font-semibold;
+    }
+
+    .ad-line {
+        @apply mt-1 block text-muted;
+    }
+
+    .ad-more {
+        @apply mt-3 block text-sm font-semibold text-link;
+    }
+
     /* The text of a note. */
     .note-text {
         @apply text-lg leading-8;

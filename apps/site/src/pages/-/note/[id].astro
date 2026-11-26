@@ -2,7 +2,9 @@
 import type { GetStaticPaths } from 'astro'
 import { backlinksPath, typeHubPath } from '@dsebastien-website/resolver'
 import latinFont from '@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2?url'
+import { ctaScript } from '../../../ads/cta.ts'
 import { BACKLINKS_ON_PAGE } from '../../../backlink-list.ts'
+import Ad from '../../../components/Ad.astro'
 import Backlinks from '../../../components/Backlinks.astro'
 import Outline from '../../../components/Outline.astro'
 import Properties from '../../../components/Properties.astro'
@@ -39,6 +41,8 @@ const properties = propertiesOf(data, (linkPath, fragment) =>
 // The note page holds the first backlinks only (PAGE-03, PERF-20, PERF-26).
 const backlinks = site.backlinksOf(note.vaultPath)
 const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
+// The ad at the end of the note, from the store catalog (AD-01).
+const ad = site.adOf(note.vaultPath)
 ---
 
 <Page
@@ -125,6 +129,7 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
                 data-pagefind-body
                 set:html={body.html}
             />
+            {ad.length > 0 && <Ad products={ad} page={note.vaultPath} />}
             {backlinks.length > 0 && (
                 <section
                     class='mt-12 max-w-[72ch]'
@@ -147,4 +152,5 @@ const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
         </div>
     </div>
     <script is:inline set:html={oldAnchorScript} />
+    {ad.length > 0 && <script is:inline set:html={ctaScript} />}
 </Page>
