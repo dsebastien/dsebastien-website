@@ -20,15 +20,21 @@ import { caseOf, type Action, type Case, type FileContent } from './case.ts'
 
 // The run of a random case on both implementations (issue 112). Each one runs
 // the steps on stores of its own and gives, for each step, what the step gave
-// (the queue, the plan, the lists of a report, an event, or a refusal) and
-// every file that it left behind (the vault, the content store, the
-// attachment storage and the stored plans). The two runs must be equal, step
-// by step.
+// (the queue, the plan, a report, an event, or a refusal with its reason) and
+// what it left behind: every file of the vault, of the content store and of
+// the attachment storage, the stored plans, the lock and the run journal of
+// the device, and the tree of the content store. The two runs must be equal,
+// step by step.
 
 const DEVICE = 'garden-shed'
 
-/** What a step gave: data in the canonical form, or a refusal with its message. */
-export type Outcome = { value: unknown } | { refused: string }
+/**
+ * What a step gave: data in the canonical form, or a refusal with its message.
+ * `failure` marks a report that names a failure (a note left out, a warning of
+ * the attachment storage): the Rust program then ends with exit code 1.
+ * `crashed` is a Rust program that panicked.
+ */
+export type Outcome = { value: unknown; failure?: true } | { refused: string } | { crashed: string }
 
 /** Every file that a run left behind after a step, each as text, by its path. */
 export interface Files {
@@ -37,6 +43,25 @@ export interface Files {
     storage: Record<string, string>
     /** The stored plans: the records, sorted. Their ids are their file names, which are left out. */
     plans: string[]
+    /** The state of the device in the git folder of the copy, and the tree of the content store. */
+    device: DeviceState
+}
+
+/**
+ * What the git folder of the copy holds, without the names that hold a time
+ * or a process. The markers of the takedowns that wait for a deploy
+ * (`takedowns/`) are left out: the Rust program writes them in its command
+ * `takedown`, and the plugin in its deploy layer (`apps/plugin/src/app/deploy.ts`),
+ * which the TypeScript side of this test does not run. Each holds the id of a
+ * commit, which differs between the two runs (the commits are not the same
+ * objects; their trees are compared).
+ */
+export interface DeviceState {
+    lock: boolean
+    /** The text of the run journal, or null when there is none. */
+    journal: string | null
+    /** The tree of the branch `main` of the content store (`main^{tree}`). */
+    tree: string
 }
 
 export interface StepResult {
@@ -50,6 +75,8 @@ export interface StepResult {
 /** The places of one run: a vault, a copy of the content store and an attachment storage. */
 interface Places {
     vault: string
+    /** The content store of the case: a bare repository. */
+    bare: string
     copy: string
     storage: string
     answers: string
@@ -67,17 +94,22 @@ interface Tool {
     guards(): Promise<Outcome>
 }
 
-async function git(cwd: string, ...args: string[]): Promise<void> {
+/** Runs git and gives its output. */
+async function git(cwd: string, ...args: string[]): Promise<string> {
     const child = Bun.spawn(['git', ...args], {
         cwd,
         env: gitEnvironment(),
-        stdout: 'ignore',
+        stdout: 'pipe',
         stderr: 'pipe'
     })
-    const errors = await new Response(child.stderr).text()
+    const [output, errors] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text()
+    ])
     if ((await child.exited) !== 0) {
         throw new Error(`git ${args.join(' ')} failed: ${errors.trim()}`)
     }
+    return output.trim()
 }
 
 async function writeFiles(folder: string, files: Record<string, FileContent>): Promise<void> {
@@ -160,11 +192,23 @@ async function placesOf(root: string, templates: Templates, given: Case): Promis
     await mkdir(storage)
     const answers = join(root, 'note-types.json')
     await writeFile(answers, JSON.stringify({ noteTypes: [], notes: {} }))
-    return { vault, copy, storage, answers }
+    return { vault, bare, copy, storage, answers }
 }
 
 function sorted(entries: [string, string][]): Record<string, string> {
     return Object.fromEntries(entries.sort(([one], [two]) => compareCodePoints(one, two)))
+}
+
+/** A file as text, or its bytes in hexadecimal for an image or for bytes that are not UTF-8. */
+function textOrHex(name: string, bytes: Uint8Array): string {
+    if (name.endsWith('.png')) {
+        return bytes.toHex()
+    }
+    try {
+        return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+    } catch {
+        return bytes.toHex()
+    }
 }
 
 /** Every file of a folder as text, the git folder left out. An image is its bytes in hexadecimal. */
@@ -175,13 +219,7 @@ async function filesOf(folder: string): Promise<Record<string, string>> {
         const path = join(entry.parentPath, entry.name)
         const name = path.slice(folder.length + 1).replaceAll('\\', '/')
         if (entry.isFile() && !name.startsWith('.git/')) {
-            const bytes = await Bun.file(path).bytes()
-            files.push([
-                name,
-                name.endsWith('.png')
-                    ? bytes.toHex()
-                    : new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
-            ])
+            files.push([name, textOrHex(name, await Bun.file(path).bytes())])
         }
     }
     return sorted(files)
@@ -199,7 +237,18 @@ async function filesLeft(places: Places): Promise<Files> {
         vault: await filesOf(places.vault),
         store: await filesOf(places.copy),
         storage: sorted(storage),
-        plans: records.sort(compareCodePoints)
+        plans: records.sort(compareCodePoints),
+        device: await deviceState(places)
+    }
+}
+
+async function deviceState(places: Places): Promise<DeviceState> {
+    const folder = join(places.copy, '.git', 'vault-publish')
+    const journal = Bun.file(join(folder, 'journal.json'))
+    return {
+        lock: await Bun.file(join(folder, 'lock')).exists(),
+        journal: (await journal.exists()) ? await journal.text() : null,
+        tree: await git(places.bare, 'rev-parse', 'main^{tree}')
     }
 }
 
@@ -226,6 +275,23 @@ export function reportLists(report: unknown): unknown {
         }
     }
     return lists
+}
+
+/** True when a report names a failure: a note left out, or a warning of the attachment storage. */
+function namesFailure(report: unknown): boolean {
+    const lists = report as Record<string, unknown>
+    return ['failed', 'storageWarnings'].some((key) => {
+        const list = lists[key]
+        return Array.isArray(list) && list.length > 0
+    })
+}
+
+/** The outcome of a run with a report: the whole report, marked when it names a failure. */
+async function reportOf(work: () => Promise<unknown>): Promise<Outcome> {
+    const outcome = await outcomeOf(work)
+    return 'value' in outcome && namesFailure(outcome.value)
+        ? { ...outcome, failure: true }
+        : outcome
 }
 
 async function outcomeOf(
@@ -267,11 +333,10 @@ function typescriptTool(places: Places): Tool {
             }, planParts)
             return id === undefined ? { outcome } : { outcome, id }
         },
-        publish: (id, time) => outcomeOf(() => publish(device, id, runAt(time)), reportLists),
+        publish: (id, time) => reportOf(() => publish(device, id, runAt(time))),
         unpublish: (paths, time, accept) =>
-            outcomeOf(() => unpublish(device, paths, runAt(time), accept), reportLists),
-        takedown: (paths, time) =>
-            outcomeOf(() => takedown(device, paths, runAt(time)), reportLists),
+            reportOf(() => unpublish(device, paths, runAt(time), accept)),
+        takedown: (paths, time) => reportOf(() => takedown(device, paths, runAt(time))),
         edit: (action, path, time) =>
             outcomeOf(() => edit(device, { action: action as never, path }, runAt(time))),
         guards: () => outcomeOf(() => guards(device))
@@ -292,10 +357,18 @@ function rustTool(program: string, places: Places): Tool {
             [command, '--vault', places.vault, '--content-store', places.copy, ...writes, ...args],
             { DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES: places.answers }
         )
-        if (result.exitCode !== 0) {
-            return { refused: result.stderr.trim().replace(/^error: /u, '') }
+        if (result.stderr.includes('panicked at')) {
+            return { crashed: result.stderr }
         }
-        return { value: shape(JSON.parse(new TextDecoder().decode(result.stdout))) }
+        const output = new TextDecoder().decode(result.stdout)
+        if (result.exitCode === 0) {
+            return { value: shape(JSON.parse(output)) }
+        }
+        // Exit code 1 after a report: the report names a failure.
+        if (result.exitCode === 1 && output.trim().startsWith('{')) {
+            return { value: shape(JSON.parse(output)), failure: true }
+        }
+        return { refused: result.stderr.trim().replace(/^error: /u, '') }
     }
     const at = (time: string) => ['--time', time, '--device', DEVICE]
     // With `=`: a path can start with a hyphen.
@@ -325,15 +398,10 @@ function rustTool(program: string, places: Places): Tool {
             )
             return id === undefined ? { outcome } : { outcome, id }
         },
-        publish: (id, time) => run('publish', ['--plan', id, ...at(time)], reportLists),
+        publish: (id, time) => run('publish', ['--plan', id, ...at(time)]),
         unpublish: (list, time, accept) =>
-            run(
-                'unpublish',
-                [...paths('path', list), ...paths('accept', accept), ...at(time)],
-                reportLists
-            ),
-        takedown: (list, time) =>
-            run('takedown', [...paths('path', list), ...at(time)], reportLists),
+            run('unpublish', [...paths('path', list), ...paths('accept', accept), ...at(time)]),
+        takedown: (list, time) => run('takedown', [...paths('path', list), ...at(time)]),
         edit: async (action, path, time) => {
             const outcome = await run(action, [`--path=${path}`, ...at(time)])
             return 'value' in outcome
@@ -420,14 +488,43 @@ export interface Difference {
     rust: string
 }
 
-/** An outcome with the message of a refusal left out. */
-function withoutMessage(outcome: Outcome | undefined): unknown {
-    return outcome !== undefined && 'refused' in outcome ? { refused: true } : outcome
+/** The texts in double quotes of a message: the paths that it names, sorted. */
+function quoted(message: string): string[] {
+    return [...message.matchAll(/"([^"]*)"/gu)].map((match) => match[1] ?? '').sort()
 }
 
 /**
- * Compares the two runs step by step. A refusal is compared as a refusal:
- * the texts of the messages are for a person, outside the parity rule.
+ * True when two refusals have the same reason: the Rust message holds the
+ * TypeScript message. The refusal of rule 10 of the edits of the guards has
+ * other words in each implementation, so its quoted paths are compared.
+ */
+function sameRefusal(ours: string, theirs: string): boolean {
+    if (theirs.includes(ours)) {
+        return true
+    }
+    const ruleTen = 'accept does not name'
+    return (
+        ours.includes(ruleTen) &&
+        theirs.includes(ruleTen) &&
+        JSON.stringify(quoted(ours)) === JSON.stringify(quoted(theirs))
+    )
+}
+
+/** True when two outcomes agree: the same data, or refusals with the same reason. A crash never agrees. */
+function sameOutcome(ours: Outcome | undefined, theirs: Outcome | undefined): boolean {
+    if (ours !== undefined && theirs !== undefined && 'refused' in ours && 'refused' in theirs) {
+        return sameRefusal(ours.refused, theirs.refused)
+    }
+    if (theirs !== undefined && 'crashed' in theirs) {
+        return false
+    }
+    return JSON.stringify(ours) === JSON.stringify(theirs)
+}
+
+/**
+ * Compares the two runs step by step: each outcome whole (a report with the
+ * reasons of its items, a refusal by its reason), then what each run left
+ * behind.
  */
 export function compareRuns(typescript: StepResult[], rust: StepResult[]): Difference | undefined {
     const show = (value: unknown) =>
@@ -438,7 +535,7 @@ export function compareRuns(typescript: StepResult[], rust: StepResult[]): Diffe
             return { step: index, part: 'the step', typescript: 'ran', rust: 'did not run' }
         }
         for (const part of ['plan', 'outcome'] as const) {
-            if (show(withoutMessage(ours[part])) !== show(withoutMessage(theirs[part]))) {
+            if (!sameOutcome(ours[part], theirs[part])) {
                 return {
                     step: index,
                     part: `the ${part}`,
@@ -447,7 +544,7 @@ export function compareRuns(typescript: StepResult[], rust: StepResult[]): Diffe
                 }
             }
         }
-        for (const part of ['vault', 'store', 'storage', 'plans'] as const) {
+        for (const part of ['vault', 'store', 'storage', 'plans', 'device'] as const) {
             if (show(ours.files[part]) !== show(theirs.files[part])) {
                 return {
                     step: index,

@@ -1,5 +1,5 @@
 import type { Case } from './case.ts'
-import type { Outcome, StepResult } from './run.ts'
+import { reportLists, type Outcome, type StepResult } from './run.ts'
 
 // A random case as a scenario of the shared queue scenarios
 // (`fixtures/canonical/queue.json`), so that a case that found a difference
@@ -134,7 +134,7 @@ export function sharedScenario(
                 steps.push(
                     refused(ours.outcome)
                         ? { ...run, refused: true, ...says(ours.outcome, theirs?.outcome) }
-                        : { ...run, report: valueOf(ours.outcome) }
+                        : { ...run, report: reportLists(valueOf(ours.outcome)) }
                 )
                 break
             }
@@ -147,7 +147,7 @@ export function sharedScenario(
                 } else if (step.do === 'edit') {
                     steps.push({ ...run, event: valueOf(ours.outcome) })
                 } else {
-                    steps.push({ ...run, report: valueOf(ours.outcome) })
+                    steps.push({ ...run, report: reportLists(valueOf(ours.outcome)) })
                 }
                 break
             }

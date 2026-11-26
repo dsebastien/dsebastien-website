@@ -23,7 +23,7 @@ const SEEDS = Array.from({ length: process.env['CI'] ? 200 : 60 }, (_, index) =>
 /** The cases that run at the same time. Each one runs its own git processes. */
 const PARALLEL = Math.min(16, Math.max(4, availableParallelism()))
 
-let runner: Runner
+let runner: Runner | undefined
 let runs: CaseRun[] = []
 
 beforeAll(async () => {
@@ -32,7 +32,7 @@ beforeAll(async () => {
 }, 600_000)
 
 afterAll(async () => {
-    await runner[Symbol.asyncDispose]()
+    await runner?.[Symbol.asyncDispose]()
 })
 
 /** The texts of the results of the TypeScript runs, one per step, to count what the cases did. */
