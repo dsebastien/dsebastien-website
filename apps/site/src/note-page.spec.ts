@@ -246,6 +246,7 @@ describe('build of a content store with one published note', () => {
             },
             files: {
                 '/robots.txt': { file: 'robots.txt', type: 'text' },
+                '/favicon.ico': { file: 'favicon.ico', type: 'icon' },
                 [`/-/md${NOTE_URL}.md`]: { file: `-/md/${NOTE_ID}.md`, type: 'markdown' }
             },
             attachments: {},
