@@ -5,6 +5,7 @@ import { fromHtml } from 'hast-util-from-html'
 import { toText } from 'hast-util-to-text'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
+import { isDroppedInline } from './rendering/dropped.ts'
 import { SITE_NAME } from './site.ts'
 
 // The description of a page (IDX-05, IDX-04, IDX-06, decision R61): the
@@ -63,8 +64,10 @@ const PARSER = unified().use(remarkParse).use(remarkObsidian)
 function shownOf(node: TextNode): string {
     switch (node.type) {
         case 'text':
-        case 'inlineCode':
             return node.value ?? ''
+        case 'inlineCode':
+            // Meta Bind and Dataview inline code are dropped, as the markup drops them.
+            return isDroppedInline(node.value ?? '') ? '' : (node.value ?? '')
         case 'tag':
             return `#${node.value ?? ''}`
         case 'wikilink': {
@@ -79,6 +82,7 @@ function shownOf(node: TextNode): string {
         case 'html':
         case 'footnoteReference':
         case 'footnote':
+        case 'comment':
             return ''
         case 'break':
             return ' '
@@ -91,7 +95,9 @@ function shownOf(node: TextNode): string {
  * A text as a reader sees it, read by the parser of the notes (issue 98):
  * `[[Compost basics|compost]]` gives `compost`, `[[Soil#Layers]]` gives
  * `Soil`, `[[#Layers]]` gives `Layers`, `[the guide](https://…)` gives `the
- * guide`, an embed and the tags of raw HTML give nothing, code its text.
+ * guide`, an embed and the tags of raw HTML give nothing, code its text. A
+ * comment, Meta Bind code and Dataview inline code give nothing, as the markup
+ * drops them.
  */
 function linkTexts(text: string): string {
     const tree = PARSER.runSync(PARSER.parse(text)) as unknown as TextNode

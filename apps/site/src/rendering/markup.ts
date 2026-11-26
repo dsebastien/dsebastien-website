@@ -11,6 +11,7 @@ import rehypeSanitize from 'rehype-sanitize'
 import temml from 'temml'
 import { linkPathOfDestination, wikilinksOf } from '../../../plugin/src/publishing/links.ts'
 import { allowList } from './allow-list.ts'
+import { isDroppedBlock, isDroppedInline } from './dropped.ts'
 import { FRAME_IDS, freeId, noteIds, type IdOfNote } from './anchors.ts'
 import { tagOfText } from '../tags.ts'
 import { encode, MARK } from './mark.ts'
@@ -136,23 +137,6 @@ function destinationOf(url: string): { linkPath: string; fragment: string } | un
         // kept as written
     }
     return { linkPath, fragment }
-}
-
-/** Code blocks that are live queries or widgets: never shown (REN-03, REN-14). */
-function isDroppedBlock(lang: unknown): boolean {
-    if (typeof lang !== 'string') {
-        return false
-    }
-    const name = lang.toLowerCase()
-    return (
-        ['dataview', 'dataviewjs', 'base', 'bases', 'query'].includes(name) ||
-        name.startsWith('meta-bind')
-    )
-}
-
-/** Inline code that is Meta Bind (`INPUT[…]`, `VIEW[…]`, `BUTTON[…]`) or an inline Dataview query (`= …`, `$= …`). */
-function isDroppedInline(value: string): boolean {
-    return /^(?:INPUT|VIEW|BUTTON)\[/u.test(value) || /^\$?=\s/u.test(value)
 }
 
 const FROZEN_START = /^<!--\s*SerializedQuery:/u

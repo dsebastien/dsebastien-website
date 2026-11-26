@@ -56,6 +56,12 @@ describe('the description of a note', () => {
             'Read [a](https://x.example/f_(b)) first.',
             'Read a first.'
         ],
+        ['without a comment', 'A %%secret%% note.', 'A note.'],
+        [
+            'without Meta Bind and Dataview inline code',
+            'A `INPUT[text:x]` mint `= this.y` leaf.',
+            'A mint leaf.'
+        ],
         [
             'with the text of raw HTML',
             'A <b>bold</b> #herb and ==bright== mint.',
