@@ -19,6 +19,11 @@ import {
     type ImageVariant,
     type MapHead
 } from '@dsebastien-website/resolver'
+import {
+    ANALYTICS_VARIABLE,
+    analyticsFrom,
+    type AnalyticsSettings
+} from '../src/analytics/analytics.ts'
 import { readPublishedNotes } from '../src/content-store.ts'
 
 /** Where a release goes. */
@@ -39,11 +44,16 @@ export interface DeployTarget {
     readonly zone: string
     /** True on a preview host: every answer says `noindex` (IDX-26). */
     readonly noindex: boolean
+    /**
+     * The analytics of the host (AN-01): the site id and the addresses of the
+     * proxy. Without them, the site of the target has no analytics.
+     */
+    readonly analytics?: AnalyticsSettings
 }
 
 const HOST_NAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u
 
-const CHECKS: Record<keyof DeployTarget, (value: unknown) => boolean> = {
+const CHECKS: Record<Exclude<keyof DeployTarget, 'analytics'>, (value: unknown) => boolean> = {
     accountId: (value) => typeof value === 'string' && /^[0-9a-f]{32}$/u.test(value),
     worker: (value) =>
         typeof value === 'string' && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(value),
@@ -61,7 +71,7 @@ export function targetFrom(value: unknown): DeployTarget {
     }
     const fields: Record<string, unknown> = { ...value }
     for (const key of Object.keys(fields)) {
-        if (!Object.hasOwn(CHECKS, key)) {
+        if (!Object.hasOwn(CHECKS, key) && key !== 'analytics') {
             throw new Error(`the target of a deployment has an unknown field: ${key}`)
         }
     }
@@ -76,7 +86,21 @@ export function targetFrom(value: unknown): DeployTarget {
         bucket: String(fields['bucket']),
         host: String(fields['host']),
         zone: String(fields['zone']),
-        noindex: fields['noindex'] === true
+        noindex: fields['noindex'] === true,
+        ...(Object.hasOwn(fields, 'analytics')
+            ? { analytics: analyticsFrom(fields['analytics']) }
+            : {})
+    }
+}
+
+/**
+ * The variable of the analytics for the build of a target (AN-01): the
+ * settings of the target, or an empty value, so that a variable of the shell
+ * never gives a build analytics that its target does not have.
+ */
+export function analyticsVariable(target: DeployTarget): Record<string, string> {
+    return {
+        [ANALYTICS_VARIABLE]: target.analytics === undefined ? '' : JSON.stringify(target.analytics)
     }
 }
 

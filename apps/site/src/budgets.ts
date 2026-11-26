@@ -7,6 +7,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { brotliCompressSync, constants } from 'node:zlib'
+import type { AnalyticsSettings } from './analytics/analytics.ts'
 
 // The budgets of the default note page (PERF-20 to PERF-25, R57,
 // `documentation/research/2026-11-20-note-page-budgets.md`). A KB of the
@@ -35,6 +36,14 @@ export const PAGE_BUDGET = {
     /** The requests before the page shows: the page, its style sheet, its font. */
     requests: 3
 } as const
+
+/**
+ * The size with Brotli of the script of the analytics (`script.manual.js` of
+ * the proxy, AN-01), measured on 2026-11-26: 989 bytes, with a margin. The check
+ * counts it in the script of a page that loads it, as the test cannot read a
+ * file of another host. Measure it again when the script of the proxy changes.
+ */
+export const ANALYTICS_SCRIPT_BROTLI = 1_100
 
 /**
  * The budget of the first search of a reader (R57, PERF-21): what the title
@@ -113,10 +122,15 @@ const encoder = new TextEncoder()
  */
 export async function checkNotePage(
     html: string,
-    read: (address: string) => Promise<Uint8Array>
+    read: (address: string) => Promise<Uint8Array>,
+    options: { readonly analytics?: AnalyticsSettings } = {}
 ): Promise<PageCheck> {
     const elements = elementsOf(fromHtml(html))
     const failures: string[] = []
+    // The script of the analytics is the one file of another host that a page
+    // may load (the proxy of the author, AN-01): it counts with its measured size.
+    const analyticsScript = options.analytics?.script
+    const allowed = (address: string): boolean => onHost(address) || address === analyticsScript
     // A file of another host is not read: it fails on its own (see below).
     const readFile = (address: string): Promise<Uint8Array> =>
         onHost(address) ? read(withoutQuery(address)) : Promise.resolve(new Uint8Array(0))
@@ -139,14 +153,16 @@ export async function checkNotePage(
     const inline = scripts
         .filter((script) => typeof script.properties['src'] !== 'string')
         .map((script) => toText(script))
+    const sources = scripts
+        .map((script) => script.properties['src'])
+        .filter((src) => typeof src === 'string')
     const scriptFiles = await Promise.all(
-        scripts
-            .filter((script) => typeof script.properties['src'] === 'string')
-            .map((script) => readFile(String(script.properties['src'])))
+        sources.filter((src) => src !== analyticsScript).map((src) => readFile(src))
     )
     const script =
         (inline.length === 0 ? 0 : brotliSize(encoder.encode(inline.join('\n')))) +
-        scriptFiles.reduce((total, bytes) => total + brotliSize(bytes), 0)
+        scriptFiles.reduce((total, bytes) => total + brotliSize(bytes), 0) +
+        (sources.some((src) => src === analyticsScript) ? ANALYTICS_SCRIPT_BROTLI : 0)
 
     const fontLinks = elements.filter(
         (element) => relOf(element).includes('preload') && element.properties['as'] === 'font'
@@ -266,7 +282,7 @@ export async function checkNotePage(
             .filter((src) => typeof src === 'string')
     ])
     for (const address of addresses) {
-        if (!onHost(address)) {
+        if (!allowed(address)) {
             failures.push(`files: ${address} is not on the host of the notes`)
         }
     }

@@ -5,3 +5,8 @@
 // The name is SITE_CHECKS_MODE of site-checks.ts, which this preload does not
 // import: a test there checks that both say the same.
 process.env['SITE_CHECKS'] = 'strict'
+
+// A build that a test starts has no analytics (AN-01), also when the shell
+// names settings: a test that needs them gives its own invented ones. The name
+// is ANALYTICS_VARIABLE of apps/site/src/analytics/analytics.ts.
+process.env['SITE_ANALYTICS'] = ''

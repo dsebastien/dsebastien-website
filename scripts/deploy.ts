@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { MAP_HEAD_FILE, mapHeadFrom, SITE_ORIGIN } from '@dsebastien-website/resolver'
 import {
+    analyticsVariable,
     deployToken,
     headersFile,
     releaseImages,
@@ -375,7 +376,9 @@ async function deploy(
                         CONTENT_STORE: store,
                         STORE_CATALOG:
                             catalog === undefined || catalog === '' ? STORE_CATALOG_URL : catalog,
-                        STORE_CATALOG_REPORT: catalogReport
+                        STORE_CATALOG_REPORT: catalogReport,
+                        // The analytics of the target, or none (AN-01).
+                        ...analyticsVariable(target)
                     }
                 })
                 return join(SITE, 'dist')

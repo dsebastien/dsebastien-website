@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     ASSETS_IGNORE,
+    analyticsVariable,
     checkOutput,
     checkOutputLimits,
     deploymentRecordFrom,
@@ -34,6 +35,11 @@ const PREVIEW = {
 
 /** The head of a resolver map in two parts. */
 const HEAD = JSON.stringify({ version: 1, parts: 2, records: ['pages'], map: {} })
+const ANALYTICS = {
+    siteId: 'analytics-test.invalid',
+    script: 'https://proxy.example/content/script.manual.js',
+    event: 'https://proxy.example/api/v1/event'
+}
 
 const PATHS = { main: '/clone/apps/site/worker/worker.ts', dist: '/clone/apps/site/dist' }
 
@@ -68,6 +74,43 @@ describe('the target of a deployment', () => {
 
     test('refuses a target that is not an object', () => {
         expect(() => targetFrom([])).toThrow('target')
+    })
+
+    // AN-01: the site id and the proxy are settings of the target. A target
+    // without them deploys a site without analytics.
+    test('reads the analytics settings of a target', () => {
+        expect(targetFrom({ ...PREVIEW, analytics: ANALYTICS })).toEqual({
+            ...PREVIEW,
+            analytics: ANALYTICS
+        })
+        expect(targetFrom(PREVIEW)).not.toHaveProperty('analytics')
+    })
+
+    test.each([
+        ['siteId', 'Preview Notes'],
+        ['script', 'https://proxy.example/content/script.js'],
+        ['event', 'https://elsewhere.example/api/v1/event']
+    ])('refuses analytics settings whose %s is %p', (key, value) => {
+        expect(() => targetFrom({ ...PREVIEW, analytics: { ...ANALYTICS, [key]: value } })).toThrow(
+            key
+        )
+    })
+
+    test('refuses analytics settings that are not an object', () => {
+        expect(() => targetFrom({ ...PREVIEW, analytics: null })).toThrow('analytics')
+    })
+})
+
+describe('the analytics of the build of a target', () => {
+    test('gives the settings of the target to the build', () => {
+        expect(analyticsVariable({ ...PREVIEW, analytics: ANALYTICS })).toEqual({
+            SITE_ANALYTICS: JSON.stringify(ANALYTICS)
+        })
+    })
+
+    // An empty value, so that a variable of the shell of the author never reaches the build.
+    test('gives an empty value without settings: the build has no analytics', () => {
+        expect(analyticsVariable(PREVIEW)).toEqual({ SITE_ANALYTICS: '' })
     })
 })
 

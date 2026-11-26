@@ -6,8 +6,9 @@
 // selector and the values of the current site (`publish.js`).
 //
 // The script sends through `window.plausible`, the call of the analytics
-// script (issue 57 adds it). Before that script loads, the call is the queue
-// of the current site (`publish.js`), which the script sends when it loads.
+// script of the proxy (issue 57, `analytics/analytics.ts`). Before that
+// script loads, the call is the queue of the current site (`publish.js`),
+// which the script sends when it loads.
 // When the call fails, the click goes on: the event never breaks the link.
 
 /** The name of the event of an ad click. */

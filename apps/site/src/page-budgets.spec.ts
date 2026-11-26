@@ -11,6 +11,7 @@ import {
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
+    TEST_ANALYTICS,
     writeBudgetSample,
     type TestStores
 } from '@dsebastien-website/testing'
@@ -143,7 +144,12 @@ beforeAll(async () => {
     outDir = await mkdtemp(join(cache, 'page-budgets-spec-'))
     const child = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
-        env: { ...process.env, CONTENT_STORE: contentStore },
+        // The analytics of a target (AN-01): the budgets measure the page as it ships.
+        env: {
+            ...process.env,
+            CONTENT_STORE: contentStore,
+            SITE_ANALYTICS: JSON.stringify(TEST_ANALYTICS)
+        },
         stdout: 'ignore',
         stderr: 'inherit'
     })
@@ -154,7 +160,7 @@ beforeAll(async () => {
         new Uint8Array(await readFile(join(dist, decodeURIComponent(address))))
     for (const name of await readdir(join(dist, '-', 'note'))) {
         const html = await readFile(join(dist, '-', 'note', name), 'utf8')
-        checks.set(name, await checkNotePage(html, read))
+        checks.set(name, await checkNotePage(html, read, { analytics: TEST_ANALYTICS }))
     }
     for (const entry of await readdir(dist, { recursive: true, withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith('.html')) continue

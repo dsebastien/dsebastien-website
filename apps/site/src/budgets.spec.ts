@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+    ANALYTICS_SCRIPT_BROTLI,
     brotliSize,
     checkNotePage,
     FIRST_REQUEST_BUDGET,
@@ -350,6 +351,42 @@ describe('the files of another host', () => {
         expect(result.failures).toContain(
             'files: https://cdn.example.org/late.css is not on the host of the notes'
         )
+    })
+
+    // AN-01: the script of the analytics comes from the proxy of the author.
+    // It is the one file of another host, deferred, counted with the size that
+    // the proxy serves, so the budget of the script stays honest.
+    const SCRIPT = 'https://proxy.example/content/script.manual.js'
+    const analytics = {
+        siteId: 'analytics-test.invalid',
+        script: SCRIPT,
+        event: 'https://proxy.example/api/v1/event'
+    }
+
+    test('accept the deferred script of the analytics of the target, and count its size', async () => {
+        const html = page({ body: `<script defer src="${SCRIPT}"></script>` })
+
+        const without = await checkNotePage(page(), files())
+        const result = await checkNotePage(html, files(), { analytics })
+
+        expect(result.failures).toEqual([])
+        expect(result.measure.script - without.measure.script).toBe(ANALYTICS_SCRIPT_BROTLI)
+        expect(result.measure.requests).toEqual(['the page', FONT, STYLE])
+    })
+
+    test('refuse the script of the analytics when it stops the page, or with no settings', async () => {
+        const blocking = await checkNotePage(
+            page({ body: `<script src="${SCRIPT}"></script>` }),
+            files(),
+            { analytics }
+        )
+        const unknown = await checkNotePage(
+            page({ body: `<script defer src="${SCRIPT}"></script>` }),
+            files()
+        )
+
+        expect(blocking.failures.join('\n')).toContain('requests before the page shows')
+        expect(unknown.failures).toContain(`files: ${SCRIPT} is not on the host of the notes`)
     })
 })
 

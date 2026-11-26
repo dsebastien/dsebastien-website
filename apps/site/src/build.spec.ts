@@ -100,6 +100,17 @@ describe('build of the empty site', () => {
         expect(modeScript.startsWith('{')).toBe(true)
     })
 
+    // AN-01: the settings come from the deploy target. A build without them
+    // (here: the preload of the tests clears them) sends nothing.
+    test.each([['index.html'], ['404.html'], ['410.html']])(
+        'has no analytics in %s without the settings of a target',
+        async (file) => {
+            const html = await readOutput(file)
+            expect(html).not.toContain('plausible')
+            expect(html).not.toContain('data-domain')
+        }
+    )
+
     // Issue 81: the network behind the hero is decoration, takes no space and is not printed.
     test('has the network layer behind the hero, hidden from assistive technology', async () => {
         const html = await readOutput('index.html')

@@ -8,11 +8,12 @@ import { suggestionScript } from '../search/suggestion.ts'
 
 // The "not found" page (URL-26, NAV-06, decision R62): status 404, never a
 // redirect. It leads to the search, with the words of the missing address in
-// its field (R63), the home page, the recent lists and the type hubs.
+// its field (R63), the home page, the recent lists and the type hubs. Its
+// page view is `/404`, with the missing path as a property (AN-03, R9).
 const site = await publishedSite()
 ---
 
-<Page title={fullTitle('Not found')} noindex>
+<Page title={fullTitle('Not found')} noindex pageView='not-found'>
     <div class='max-w-3xl py-12'>
         <h1 class='text-3xl font-bold'>Not found</h1>
         <p class='mt-4 text-muted'>

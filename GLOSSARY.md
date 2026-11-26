@@ -268,6 +268,13 @@ The list of products that the store publishes for other sites. Ads and the buy b
 A promotion of one of the author's own products or resources on a page.
 _Avoid_: CTA, banner
 
+**Page view**:
+The event that a page sends to the analytics when a reader opens it. The "not found" page sends its own as `/404`.
+
+**Deploy target**:
+The private settings of one host: its names, whether it is a preview, and its analytics. A deployment reads them.
+_Avoid_: environment
+
 **Offer map**:
 The list, set by hand by the author, that says which product and which free resource an ad shows for a topic.
 

@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css'
+import { analyticsOfEnvironment, analyticsTag, pageViewScript } from '../analytics/analytics.ts'
 import Footer from '../components/Footer.astro'
 import Header from '../components/Header.astro'
 import touchIcon from '../icons/apple-touch-icon.png?url&no-inline'
@@ -20,6 +21,9 @@ import { BAR_COLORS } from '../styles/themes/knowii-bar.ts'
 // script of the mode follows, and the facts of a card of a shared page. The
 // server error page loads no other file (NAV-20): no icon there, the
 // browser asks for `/favicon.ico`.
+// The analytics (AN-01, AN-03): with the settings of the deploy target, every
+// page with scripts sends its page view to the proxy, the "not found" page as
+// `/404`. A build without settings has no analytics tag.
 interface Props {
     title: string
     /** The description of the page (IDX-05). Every indexable page has one. */
@@ -37,6 +41,8 @@ interface Props {
      * switch of the mode, and the mode of the system (decision R64).
      */
     scriptless?: boolean
+    /** The page view that the page sends: `not-found` for the "not found" page (AN-03). */
+    pageView?: 'page' | 'not-found'
 }
 
 const {
@@ -46,10 +52,12 @@ const {
     path,
     lang = 'en',
     bare = false,
-    scriptless = false
+    scriptless = false,
+    pageView = 'page'
 } = Astro.props
 const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
 const modes: readonly Mode[] = ['dark', 'light']
+const analytics = scriptless ? undefined : analyticsOfEnvironment(process.env)
 ---
 
 <!doctype html>
@@ -97,6 +105,12 @@ const modes: readonly Mode[] = ['dark', 'light']
             </>
         )}
         <slot name='head' />
+        {analytics !== undefined && (
+            <>
+                <script is:inline set:html={pageViewScript(pageView)} />
+                <script is:inline {...analyticsTag(analytics)} />
+            </>
+        )}
     </head>
     <body class='flex min-h-screen flex-col'>
         <a class='skip-link' href={`#${MAIN_ID}`}>
