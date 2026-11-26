@@ -338,6 +338,8 @@ interface SharedRead {
     readonly deadline: number
     /** Marks the read as past its time limit: it then goes no further. */
     readonly abandon: () => void
+    /** The release, once the read gives it: a request then races no timer (issue 131). */
+    release: OpenedRelease | undefined
 }
 
 /** What the Worker uses of the context of a request of the host. */
@@ -365,8 +367,10 @@ export interface WorkerOptions {
  * that fails for a reason that can be short (a failed fetch, a status 5xx) is
  * done again once, after a short pause. The whole read has a time limit of five
  * seconds: past it, the request answers 500 and the next request reads again
- * at once. A release that it cannot read answers 500, and it reads it again
- * after ten seconds, not at each request: the resolver map is large.
+ * at once; after two time-outs in a row, it waits ten seconds. A read that
+ * settles after its time limit is kept. A release that it cannot read answers
+ * 500, and it reads it again after ten seconds, not at each request: the
+ * resolver map is large.
  */
 export function createWorker(options: WorkerOptions = {}): {
     fetch(request: Request, env: Environment, context?: RequestContext): Promise<Response>
@@ -391,30 +395,38 @@ export function createWorker(options: WorkerOptions = {}): {
         })
     let opened: SharedRead | undefined
     let failedAt: number | undefined
+    /** The time-outs of the shared read in a row. */
+    let timeOuts = 0
     /** Starts the shared read, kept alive by the context of the request that starts it. */
     function startRead(env: Environment, context: RequestContext | undefined): SharedRead {
         const deadline = now() + READ_TIME_LIMIT
         let abandoned = false
         const read = openReleaseWithRetry(env.ASSETS, report, pause, () => abandoned)
-        // A cancelled request may stop its fetches and its timers; this keeps
-        // them going for the requests that wait, within the limits of the host.
-        context?.waitUntil(
-            read.then(
-                () => undefined,
-                () => undefined
-            )
-        )
-        return {
+        const shared: SharedRead = {
             read,
             deadline,
             abandon: () => {
                 abandoned = true
-            }
+            },
+            release: undefined
         }
-    }
-    /** The shared read now: another request can change it while a request waits. */
-    function currentRead(): SharedRead | undefined {
-        return opened
+        const kept = read.then(
+            (release) => {
+                shared.release = release
+                // A read that settles after its time limit is kept when no
+                // newer read is open, also when no request waits for it.
+                if (opened === undefined || opened === shared) {
+                    opened = shared
+                    failedAt = undefined
+                    timeOuts = 0
+                }
+            },
+            () => undefined
+        )
+        // A cancelled request may stop its fetches and its timers; this keeps
+        // them going for the requests that wait, within the limits of the host.
+        context?.waitUntil(kept)
+        return shared
     }
     async function answer(
         request: Request,
@@ -424,38 +436,41 @@ export function createWorker(options: WorkerOptions = {}): {
         if (failedAt !== undefined && now() - failedAt < RETRY_AFTER) {
             return failureResponse(request)
         }
-        let release: OpenedRelease
         opened ??= startRead(env, context)
         const shared = opened
-        try {
-            // Each request has a timer of its own, to the end of the shared
-            // read: the timer of a request that the host cancels may never fire.
-            release = await withinTime(
-                shared.read,
-                shared.deadline - now(),
-                READ_TIME_LIMIT,
-                startTimer
-            )
-        } catch (error) {
-            // Requests that waited for the same read report it one time. A
-            // request of an older read never changes the state of a newer one.
-            if (opened === shared) {
-                opened = undefined
-                if (error instanceof TimeLimitFailure) {
-                    // The next request reads again at once.
-                    shared.abandon()
-                } else {
-                    failedAt = now()
+        let release = shared.release
+        if (release === undefined) {
+            try {
+                // Each request has a timer of its own, to the end of the shared
+                // read: the timer of a request that the host cancels may never fire.
+                release = await withinTime(
+                    shared.read,
+                    shared.deadline - now(),
+                    READ_TIME_LIMIT,
+                    startTimer
+                )
+            } catch (error) {
+                // Requests that waited for the same read report it one time. A
+                // request of an older read never changes the state of a newer one.
+                if (opened === shared) {
+                    opened = undefined
+                    if (error instanceof TimeLimitFailure) {
+                        shared.abandon()
+                        timeOuts += 1
+                        // The next request reads again at once after the first
+                        // time-out, and after ten seconds from the second one in
+                        // a row on: a host that stays hung (issue 131).
+                        if (timeOuts >= 2) {
+                            failedAt = now()
+                        }
+                    } else {
+                        timeOuts = 0
+                        failedAt = now()
+                    }
+                    report(error)
                 }
-                report(error)
+                return failureResponse(request)
             }
-            return failureResponse(request)
-        }
-        // A read that settles after the time limit of another request is kept.
-        const current = currentRead()
-        if (current === undefined || current === shared) {
-            opened = shared
-            failedAt = undefined
         }
         const storage = env.ATTACHMENTS
         // A request that does not need the whole file of an attachment.

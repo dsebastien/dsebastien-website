@@ -680,6 +680,46 @@ describe('the Worker', () => {
         expect(site.reported).toHaveLength(1)
     })
 
+    // Issue 131: a host that stays hung.
+    test('reads the release again after ten seconds, not at once, after two time-outs in a row', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hang', 'hang'] })
+        for (const index of [0, 1]) {
+            const answer = site.get('/Welcome')
+            await Bun.sleep(0)
+            site.wait(5_000)
+            site.timers[index]?.fire()
+            expect((await answer).status).toBe(500)
+        }
+        expect(site.reported).toHaveLength(2)
+        site.wait(9_999)
+        expect((await site.get('/Welcome')).status).toBe(500)
+        expect(mapReads(site)).toBe(2)
+        site.wait(1)
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect(mapReads(site)).toBe(3)
+    })
+
+    test('keeps the result of a read that settles after its time limit when no request waits', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hold'] })
+        const answer = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await answer).status).toBe(500)
+        site.files.settle('answer')
+        await Bun.sleep(0)
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect(mapReads(site)).toBe(1)
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('starts no timer for a request once the read of the release has settled', async () => {
+        const site = host()
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect(site.timers).toHaveLength(1)
+    })
+
     test('does not go on with a read after its time limit', async () => {
         const site = host(SITE, true, {}, { [MAP]: ['hold'] })
         const answer = site.get('/Welcome')
