@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { MAX_ATTACHMENT_SIZE } from '../../plugin/src/publishing/attachments.ts'
 import { DEPLOYMENT_RECORD_FILE, SITE_ORIGIN } from '@dsebastien-website/resolver'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
@@ -192,6 +192,12 @@ export interface DeployRun {
     readonly log: (line: string) => void
     /** The search engines after a release that is seen live (issue 54). Without it, nothing. */
     readonly search?: SearchHost
+    /**
+     * True for the first deployment of the real host (`--switch`, R85): the
+     * build dates the sitemaps for the switch, and IndexNow gets every URL
+     * of the sitemaps, whatever the old host listed.
+     */
+    readonly atSwitch?: boolean
 }
 
 /**
@@ -207,15 +213,31 @@ export interface SearchHost {
      * then no URL is sent, and no sitemap is read.
      */
     readonly submit?: (batch: IndexNowBatch) => Promise<void>
+    /**
+     * The URLs that IndexNow did not take yet, kept on this machine between
+     * two deployments (review of issue 54): the next deployment sends them
+     * first. Without it, they are lost.
+     */
+    readonly pending?: {
+        read(): Promise<readonly string[]>
+        write(urls: readonly string[]): Promise<void>
+    }
 }
 
-/** The URLs of the sitemaps of a host, with their dates: none when it has no sitemap index. */
+/**
+ * The URLs of the sitemaps of a host, with their dates: none when it has no
+ * `/sitemap.xml`. An old host can give a plain sitemap there (`<urlset>`):
+ * it is read as the one sitemap, never as an index.
+ */
 async function sitemapsOf(
     read: (path: string) => Promise<string | null>
 ): Promise<Map<string, string>> {
     const index = await read(SITEMAP_INDEX_PATH)
     if (index === null) {
         return new Map()
+    }
+    if (!/<sitemapindex[\s>]/u.test(index)) {
+        return sitemapDates([index])
     }
     const files: string[] = []
     for (const loc of locsOf(index)) {
@@ -466,7 +488,7 @@ async function tellSearchEngines(
     run: DeployRun,
     search: SearchHost,
     dist: string,
-    before: Map<string, string> | undefined,
+    before: Map<string, string>,
     warnings: string[]
 ): Promise<void> {
     try {
@@ -479,12 +501,23 @@ async function tellSearchEngines(
     } catch (failure) {
         warnings.push(`the live robots.txt cannot be read (${messageOf(failure)})`)
     }
-    if (search.submit === undefined || before === undefined) {
+    if (search.submit === undefined) {
         return
     }
     const origin = new URL(run.url).origin
     const after = await sitemapsOf((path) => outputFile(dist, path))
-    const urls = changedUrls(before, after).filter((url) => new URL(url).origin === origin)
+    // The URLs that a deployment before kept come first, once each.
+    let kept: readonly string[] = []
+    try {
+        kept = (await search.pending?.read()) ?? []
+    } catch (failure) {
+        warnings.push(`the URLs kept for IndexNow cannot be read (${messageOf(failure)})`)
+    }
+    const urls = [
+        ...new Set(
+            [...kept, ...changedUrls(before, after)].filter((url) => new URL(url).origin === origin)
+        )
+    ]
     let sent = 0
     try {
         for (const batch of indexNowBatches(origin, urls)) {
@@ -493,9 +526,15 @@ async function tellSearchEngines(
         }
         run.log(`IndexNow: ${String(sent)} URL(s) sent`)
     } catch (failure) {
+        run.log(`IndexNow: ${messageOf(failure)}`)
         warnings.push(
-            `IndexNow did not take ${String(urls.length - sent)} URL(s) of the release: ${messageOf(failure)}`
+            `IndexNow did not take ${String(urls.length - sent)} URL(s): they wait for the next deployment`
         )
+    }
+    try {
+        await search.pending?.write(urls.slice(sent))
+    } catch (failure) {
+        warnings.push(`the URLs that IndexNow did not take cannot be kept (${messageOf(failure)})`)
     }
 }
 
@@ -973,14 +1012,21 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 )
             }
         }
-        // The live sitemaps, right before the deployment: what IndexNow knows.
-        let before: Map<string, string> | undefined
-        if (run.search?.submit !== undefined && run.dryRun !== true && run.live !== undefined) {
+        // The live sitemaps, right before the deployment: what IndexNow
+        // knows. At the switch, and when they cannot be read, none: every
+        // URL of the sitemaps goes (R85, review of issue 54).
+        let before = new Map<string, string>()
+        if (
+            run.search?.submit !== undefined &&
+            run.dryRun !== true &&
+            run.live !== undefined &&
+            run.atSwitch !== true
+        ) {
             try {
                 before = await sitemapsOf((path) => run.search?.read(path) ?? Promise.resolve(null))
             } catch (failure) {
                 warnings.push(
-                    `the live sitemaps cannot be read (${messageOf(failure)}), so no URL went to IndexNow`
+                    `the live sitemaps cannot be read (${messageOf(failure)}), so every URL of the sitemaps went to IndexNow`
                 )
             }
         }
@@ -997,9 +1043,6 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 .accepted
             if (live) {
                 run.log(`live: ${run.url}`)
-                if (run.search !== undefined) {
-                    await tellSearchEngines(run, run.search, dist, before, warnings)
-                }
             } else {
                 warnings.push(
                     `the host did not give the record of this build yet: check ${new URL(DEPLOYMENT_RECORD_FILE, run.url).href}`
@@ -1032,6 +1075,11 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                     ? 'the release of the takedown was not seen live, so the takedown waits for a deploy that is seen live'
                     : 'the release was not seen live, and it holds a takedown or a forced removal that the live release does not have: deploy again until a release is seen live'
             )
+        }
+        // The search engines come last: a slow one never holds back the
+        // cleanup of a takedown (review of issue 54).
+        if (live && run.search !== undefined) {
+            await tellSearchEngines(run, run.search, dist, before, warnings)
         }
     } catch (failure) {
         error = messageOf(failure)
@@ -1240,6 +1288,39 @@ export async function readHostRecord(
     return (await response.json()) as unknown
 }
 
+/** The time limit of each call to the host or to IndexNow, in milliseconds (review of issue 54). */
+export const SEARCH_TIME_LIMIT = 10_000
+
+/**
+ * The URLs that IndexNow did not take, in a JSON file of this machine (a
+ * list of texts). A file that does not exist holds none; a file that is not
+ * such a list fails, so it is never lost by a write over it.
+ */
+export function pendingUrls(file: string): NonNullable<SearchHost['pending']> {
+    return {
+        read: async () => {
+            let text: string
+            try {
+                text = await readFile(file, 'utf8')
+            } catch (error) {
+                if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+                    return []
+                }
+                throw error
+            }
+            const value: unknown = JSON.parse(text)
+            if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+                throw new Error(`${file} is not a list of URLs`)
+            }
+            return value
+        },
+        write: async (urls) => {
+            await mkdir(dirname(file), { recursive: true })
+            await writeFile(file, `${JSON.stringify(urls, null, 4)}\n`)
+        }
+    }
+}
+
 /**
  * The search engines of a deployment target (issue 54), with `fetch` as a
  * port: the live files are read from the host of the target, and IndexNow
@@ -1249,11 +1330,15 @@ export async function readHostRecord(
 export function searchHostOf(
     target: { readonly host: string; readonly noindex: boolean },
     fetch: (url: URL, init: RequestInit) => Promise<Response> = (address, init) =>
-        globalThis.fetch(address, init)
+        globalThis.fetch(address, init),
+    pendingFile?: string
 ): SearchHost {
     const url = `https://${target.host}/`
     const read = async (path: string): Promise<string | null> => {
-        const response = await fetch(new URL(path, url), { cache: 'no-store' })
+        const response = await fetch(new URL(path, url), {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(SEARCH_TIME_LIMIT)
+        })
         if (response.status === 404) {
             await response.body?.cancel()
             return null
@@ -1269,9 +1354,11 @@ export function searchHostOf(
     }
     return {
         read,
+        ...(pendingFile === undefined ? {} : { pending: pendingUrls(pendingFile) }),
         submit: async (batch) => {
             const response = await fetch(new URL(INDEXNOW_ENDPOINT), {
                 method: 'POST',
+                signal: AbortSignal.timeout(SEARCH_TIME_LIMIT),
                 headers: { 'content-type': 'application/json; charset=utf-8' },
                 body: JSON.stringify(batch)
             })

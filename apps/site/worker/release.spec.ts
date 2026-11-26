@@ -9,6 +9,7 @@ import {
     deployRelease,
     readHostRecord,
     resultLine,
+    pendingUrls,
     revertRelease,
     searchHostOf,
     stoppedResult,
@@ -666,11 +667,19 @@ describe('the search engines after a deployment', () => {
         after?: Record<string, string>
         submit?: (batch: IndexNowBatch) => Promise<void>
         failRead?: boolean
-    }): { run: DeployRun; sent: IndexNowBatch[]; reads: string[] } {
+        pending?: string[]
+    }): {
+        run: DeployRun
+        sent: IndexNowBatch[]
+        reads: string[]
+        pending: { urls: string[] }
+        events: string[]
+    } {
         const sent: IndexNowBatch[] = []
         const reads: string[] = []
+        const pending = { urls: options.pending ?? [] }
         let deployed = false
-        const site = fixture({ stored: [PHOTO.key, PLAN.key] })
+        const site = fixture({ stored: [PHOTO.key, PLAN.key, OLD.key] })
         const build = site.run.build
         const deploy = site.run.deploy
         const run: DeployRun = {
@@ -696,15 +705,24 @@ describe('the search engines after a deployment', () => {
                     const files = deployed ? (options.after ?? options.built) : options.before
                     return Promise.resolve(files[path.slice(1)] ?? null)
                 },
-                submit:
-                    options.submit ??
-                    ((batch) => {
-                        sent.push(batch)
+                submit: (batch) => {
+                    site.events.push('indexnow')
+                    if (options.submit !== undefined) {
+                        return options.submit(batch)
+                    }
+                    sent.push(batch)
+                    return Promise.resolve()
+                },
+                pending: {
+                    read: () => Promise.resolve(pending.urls),
+                    write: (urls) => {
+                        pending.urls = [...urls]
                         return Promise.resolve()
-                    })
+                    }
+                }
             }
         }
-        return { run, sent, reads }
+        return { run, sent, reads, pending, events: site.events }
     }
 
     const BUILT = {
@@ -799,16 +817,66 @@ describe('the search engines after a deployment', () => {
         const result = await deployRelease(refused.run)
         expect(result).toMatchObject({ ...OK, error: null })
         expect(result.warnings).toEqual([
-            'IndexNow did not take 3 URL(s) of the release: IndexNow answers 429'
+            'IndexNow did not take 3 URL(s): they wait for the next deployment'
         ])
+        // Review of issue 54: the URLs that IndexNow did not take are kept.
+        expect(refused.pending.urls).toEqual([`${HOST}/Edited`, `${HOST}/New`, `${HOST}/Removed`])
+        // A host that cannot be read: every URL of the sitemaps goes.
         const unread = searchSite({ built: BUILT, before: BEFORE, failRead: true })
         const second = await deployRelease(unread.run)
         expect(second).toMatchObject({ ...OK, error: null })
         expect(second.warnings).toEqual([
-            'the live sitemaps cannot be read (the host cannot be reached), so no URL went to IndexNow',
+            'the live sitemaps cannot be read (the host cannot be reached), so every URL of the sitemaps went to IndexNow',
             'the live robots.txt cannot be read (the host cannot be reached)'
         ])
-        expect(unread.sent).toEqual([])
+        expect(unread.sent.flatMap((batch) => batch.urlList)).toEqual([
+            `${HOST}/Edited`,
+            `${HOST}/New`,
+            `${HOST}/Same`
+        ])
+    })
+
+    test('sends the URLs that a deployment before kept first, then forgets them', async () => {
+        const { run, sent, pending } = searchSite({
+            built: BUILT,
+            before: BUILT,
+            pending: [`${HOST}/Waiting`, `${HOST}/New`]
+        })
+        expect((await deployRelease(run)).warnings).toEqual([])
+        expect(sent.flatMap((batch) => batch.urlList)).toEqual([`${HOST}/Waiting`, `${HOST}/New`])
+        expect(pending.urls).toEqual([])
+    })
+
+    // Review of issue 54: an old host can give a plain sitemap at /sitemap.xml.
+    test('reads a plain sitemap at /sitemap.xml as the sitemap, not as an index', async () => {
+        const { run, sent, reads } = searchSite({
+            built: BUILT,
+            before: { 'sitemap.xml': BEFORE['sitemap-notes.xml'] }
+        })
+        await deployRelease(run)
+        expect(reads.slice(0, 1)).toEqual(['/sitemap.xml'])
+        expect(reads).toHaveLength(2)
+        expect(sent.flatMap((batch) => batch.urlList)).toEqual([
+            `${HOST}/Edited`,
+            `${HOST}/New`,
+            `${HOST}/Removed`
+        ])
+    })
+
+    // Decision R85: the switch sends every URL, whatever the old host lists.
+    test('at the switch, reads no live sitemap and sends every URL', async () => {
+        const { run, sent, reads } = searchSite({ built: BUILT, before: BUILT })
+        await deployRelease({ ...run, atSwitch: true })
+        expect(reads).toEqual(['/robots.txt'])
+        expect(sent.flatMap((batch) => batch.urlList)).toHaveLength(3)
+    })
+
+    // Review of issue 54: a slow search engine never holds back a cleanup.
+    test('tells the search engines after the cleanup of the storage', async () => {
+        const { run, events } = searchSite({ built: BUILT, before: BEFORE })
+        await deployRelease(run)
+        expect(events.indexOf(`remove ${OLD.key}`)).toBeGreaterThan(-1)
+        expect(events.indexOf('indexnow')).toBeGreaterThan(events.indexOf(`remove ${OLD.key}`))
     })
 
     // AI-06: the managed robots.txt of the host stays off.
@@ -850,6 +918,8 @@ describe('the search engines of a target', () => {
             fake({ 'https://preview.notes.example/robots.txt': 200 })
         )
         expect(await search.read('/robots.txt')).toBe('text of /robots.txt')
+        // Review of issue 54: every call has a time limit.
+        expect(calls.at(-1)?.init.signal).toBeInstanceOf(AbortSignal)
         expect(await search.read('/sitemap.xml')).toBeNull()
         const failing = searchHostOf(
             { host: 'preview.notes.example', noindex: true },
@@ -871,6 +941,7 @@ describe('the search engines of a target', () => {
         )
         await search.submit?.(batch)
         expect(calls).toHaveLength(1)
+        expect(calls[0]?.init.signal).toBeInstanceOf(AbortSignal)
         expect(calls[0]?.url).toBe('https://api.indexnow.org/indexnow')
         expect(calls[0]?.init.method).toBe('POST')
         expect(JSON.parse(calls[0]?.init.body as string)).toEqual(batch)
@@ -879,6 +950,29 @@ describe('the search engines of a target', () => {
             fake({ 'https://api.indexnow.org/indexnow': 422 })
         )
         expect(await rejectionOf(refused.submit?.(batch) ?? Promise.resolve())).toContain('422')
+    })
+})
+
+describe('the URLs kept for IndexNow', () => {
+    test('are none without a file, and the list that the last write gave', async () => {
+        await mkdir(CACHE, { recursive: true })
+        const folder = await mkdtemp(join(CACHE, 'pending-spec-'))
+        folders.push(folder)
+        const pending = pendingUrls(join(folder, 'deploy', 'indexnow-pending.json'))
+        expect(await pending.read()).toEqual([])
+        await pending.write(['https://notes.example/A', 'https://notes.example/B'])
+        expect(await pending.read()).toEqual(['https://notes.example/A', 'https://notes.example/B'])
+        await pending.write([])
+        expect(await pending.read()).toEqual([])
+    })
+
+    test('fail on a file that is not a list of URLs, so that a write never replaces it', async () => {
+        await mkdir(CACHE, { recursive: true })
+        const folder = await mkdtemp(join(CACHE, 'pending-spec-'))
+        folders.push(folder)
+        const file = join(folder, 'indexnow-pending.json')
+        await writeFile(file, '{"urls": 3}')
+        expect(await rejectionOf(pendingUrls(file).read())).toContain('is not a list of URLs')
     })
 })
 

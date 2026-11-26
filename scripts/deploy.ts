@@ -2,6 +2,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { SITE_ORIGIN } from '@dsebastien-website/resolver'
 import {
     ATTACHMENT_KEY,
     deployToken,
@@ -48,7 +49,7 @@ import {
 // in the public CI.
 //
 //     bun run deploy --target <file> --content-store <folder> --attachments <folder>
-//                    [--takedown] [--from-main] [--dry-run]
+//                    [--takedown] [--from-main] [--dry-run] [--switch]
 //                    [--new-content-store <host name>]
 //     bun run deploy --target <file> --dist <folder> [--dry-run]
 //
@@ -67,6 +68,11 @@ import {
 // `--new-content-store` moves the host to another content store, whose copy
 // does not know the live content revision (issue 127): the author gives the
 // host name of the target again, and the tools never pass it.
+// `--switch` is for the one first deployment of the real host (decision R85):
+// the build dates the sitemaps for the switch, and IndexNow gets every URL of
+// the sitemaps. The tools never pass it. The URLs that IndexNow did not take
+// wait in `.cache/deploy/<worker>/indexnow-pending.json` of this machine for
+// the next deployment.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'apps', 'site')
@@ -80,6 +86,7 @@ const OPTIONS = {
     'takedown': { type: 'boolean', default: false },
     'from-main': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
+    'switch': { type: 'boolean', default: false },
     'new-content-store': { type: 'string' }
 } as const
 
@@ -233,6 +240,7 @@ async function deploy(
         'dist'?: string | undefined
         'takedown': boolean
         'dry-run': boolean
+        'switch': boolean
         'new-content-store'?: string | undefined
         'target': string
     }
@@ -252,6 +260,15 @@ async function deploy(
             }
             if (values.takedown) {
                 throw new Error('a takedown cannot move the host to another content store')
+            }
+        }
+        if (values.switch) {
+            // The switch is the first deployment of the real host, with its content.
+            if (target.noindex || target.host !== new URL(SITE_ORIGIN).host) {
+                throw new Error('--switch is only for the canonical host, not marked noindex')
+            }
+            if (values.dist !== undefined || values.takedown) {
+                throw new Error('--switch needs --content-store, and no takedown')
             }
         }
         if ((values['content-store'] === undefined) === (values.dist === undefined)) {
@@ -399,7 +416,12 @@ async function deploy(
                 : {
                       live: { ...LIVE_CHECKS, read: () => readHostRecord(url) },
                       // IndexNow only from the canonical host, never noindex (issue 54).
-                      search: searchHostOf(target)
+                      search: searchHostOf(
+                          target,
+                          undefined,
+                          join(folder, 'indexnow-pending.json')
+                      ),
+                      atSwitch: values.switch
                   }),
             wait: (milliseconds) => Bun.sleep(milliseconds),
             log: (line) => {
