@@ -35,6 +35,14 @@ export default defineConfig({
         resolverMapParts()
     ],
     vite: {
-        plugins: [tailwindcss()]
+        plugins: [tailwindcss()],
+        // A script module of the build is always a file, never put into the
+        // page: the browser keeps it between pages, and the markup holds no
+        // address that only the script needs (the signup service, NEWS-04).
+        // Other assets keep the default limit of Vite.
+        build: {
+            assetsInlineLimit: (file: string): boolean | undefined =>
+                file.endsWith('.js') ? false : undefined
+        }
     }
 })

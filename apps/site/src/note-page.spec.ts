@@ -165,7 +165,8 @@ describe('build of a content store with one published note', () => {
     // The page works without JavaScript (PAGE-01): its only scripts are the
     // two inline scripts of the mode (MODE-01), the one of the properties
     // panel, which is a folding block without it (PAGE-02), and the one that
-    // reads an old heading anchor (URL-14), with no attribute.
+    // reads an old heading anchor (URL-14), with no attribute, and the module
+    // file of the newsletter bar (NEWS-01), which is hidden without it.
     test('makes a page without JavaScript, but for the mode, the properties panel and the old anchors', async () => {
         const html = await readOutput(NOTE_FILE)
         const all = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gu)]
@@ -179,11 +180,13 @@ describe('build of a content store with one published note', () => {
         const [head = '', panel, ...rest] = scripts
         // The script of the panel as the build wrote it (its run is tested in properties-panel.spec.ts).
         expect(panel).toBe(propertiesScript)
-        expect(rest).toHaveLength(2)
-        expect(rest[1]).toBe(modeSwitchScript)
+        expect(rest).toHaveLength(3)
+        expect(rest[0]).toMatch(/^<script type="module" src="\/_astro\/[^"]+\.js"><\/script>$/u)
+        expect(html).toMatch(/<aside class="newsletter-bar"[^>]* hidden>/u)
+        expect(rest[2]).toBe(modeSwitchScript)
         // The script of the old anchors holds a function as the build writes it
         // (its run is tested in rendering/page.spec.ts).
-        expect(rest[0]).toContain('function headingFor(headings, path)')
+        expect(rest[1]).toContain('function headingFor(headings, path)')
         expect(oldAnchorScript).toContain('function headingFor(headings, path)')
         // The script as the build wrote it runs, and reads an old hash.
         let scrolled = ''
@@ -195,7 +198,7 @@ describe('build of a content store with one published note', () => {
                 scrolled = heading.id
             }
         }
-        runInNewContext(rest[0] ?? '', {
+        runInNewContext(rest[1] ?? '', {
             location: { hash: '#panels+a+review' },
             document: {
                 getElementById: (id: string) => (id === heading.id ? heading : null),

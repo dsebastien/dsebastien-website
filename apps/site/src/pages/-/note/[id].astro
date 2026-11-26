@@ -6,6 +6,7 @@ import { ctaScript } from '../../../ads/cta.ts'
 import { BACKLINKS_ON_PAGE } from '../../../backlink-list.ts'
 import Ad from '../../../components/Ad.astro'
 import Backlinks from '../../../components/Backlinks.astro'
+import NewsletterBar from '../../../components/NewsletterBar.astro'
 import Outline from '../../../components/Outline.astro'
 import Properties from '../../../components/Properties.astro'
 import Page from '../../../layouts/Page.astro'
@@ -164,6 +165,8 @@ const ad = site.adOf(note.vaultPath)
         </div>
     </div>
     {body.outline !== undefined && <script is:inline set:html={sectionBarScript} />}
+    {/* The newsletter bar, on note pages only (NEWS-01). */}
+    <NewsletterBar />
     <script is:inline set:html={oldAnchorScript} />
     {ad.length > 0 && <script is:inline set:html={ctaScript} />}
 </Page>

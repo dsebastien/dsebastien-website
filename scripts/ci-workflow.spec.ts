@@ -96,6 +96,20 @@ describe('CI workflow', () => {
         expect(toolchain).toBeLessThan(steps.findIndex((step) => step['run'] === 'bun run test'))
     })
 
+    // The browser tests (issue 57) drive the installed Chrome: the job of the
+    // tests runs on the full Ubuntu image, and names the version of Chrome first.
+    test('runs the tests on a system with Chrome, and shows its version first', async () => {
+        const jobs = readJobs(await readWorkflow())
+        const tests = jobs.find((job) =>
+            readSteps(job).some((step) => step['run'] === 'bun run test')
+        )
+        expect(tests?.['runs-on']).toBe('ubuntu-latest')
+        const steps = tests === undefined ? [] : readSteps(tests)
+        const chrome = steps.findIndex((step) => step['run'] === 'google-chrome --version')
+        expect(chrome).toBeGreaterThanOrEqual(0)
+        expect(chrome).toBeLessThan(steps.findIndex((step) => step['run'] === 'bun run test'))
+    })
+
     // The time budgets of the note page (issue 47, R57): Lighthouse needs
     // Chrome, which the full Ubuntu image of GitHub has.
     test('runs the time budgets of the note page in a job of its own, on a system with Chrome', async () => {

@@ -268,6 +268,10 @@ The list of products that the store publishes for other sites. Ads and the buy b
 A promotion of one of the author's own products or resources on a page.
 _Avoid_: CTA, banner
 
+**Newsletter bar**:
+The signup form of the newsletter of the author, fixed to the bottom of the screen of a note page while the reader is in the note.
+_Avoid_: popup, banner
+
 **Page view**:
 The event that a page sends to the analytics when a reader opens it. The "not found" page sends its own as `/404`.
 

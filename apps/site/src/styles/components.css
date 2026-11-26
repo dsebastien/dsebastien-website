@@ -541,6 +541,58 @@
         @apply space-y-1;
     }
 
+    /* The newsletter bar of a note page (NEWS-01): fixed to the bottom of the
+       screen, one row on a phone (the field and the button), so that it takes
+       a small part of a screen of 360 px. Its script shows it. */
+    .newsletter-bar {
+        @apply fixed inset-x-0 bottom-0 z-40 border-t border-border-strong bg-surface-elevated;
+    }
+
+    .newsletter-inner {
+        @apply mx-auto w-full max-w-xl px-3 pt-2 pb-1 sm:px-4;
+    }
+
+    .newsletter-form {
+        @apply flex items-center gap-2;
+    }
+
+    .newsletter-label {
+        @apply min-w-0 flex-1;
+    }
+
+    .newsletter-field {
+        @apply min-h-11 py-2;
+    }
+
+    .newsletter-submit {
+        @apply min-h-11 shrink-0;
+    }
+
+    .newsletter-message {
+        @apply mt-2 rounded-control border border-border-strong bg-surface px-3 py-2 text-sm font-medium text-primary;
+    }
+
+    .newsletter-message:empty {
+        @apply hidden;
+    }
+
+    .newsletter-message[data-kind='success'] {
+        @apply border-success;
+    }
+
+    .newsletter-message[data-kind='error'] {
+        @apply border-danger;
+    }
+
+    /* A small text button, 24 px high at least for a finger (WCAG 2.5.8). */
+    .newsletter-dismiss {
+        @apply mx-auto block min-h-6 px-2 text-xs text-muted underline-offset-4;
+    }
+
+    .newsletter-dismiss:hover {
+        @apply text-primary underline;
+    }
+
     /* Text for screen readers only. The footnotes of a note have such a heading. */
     .visually-hidden,
     .note-text .sr-only {

@@ -65,6 +65,11 @@ jobs:
             - name: Git version
               run: git --version
 
+            # The browser tests (issue 57) drive the Chrome of the image with
+            # playwright-core: no browser is downloaded. Without Chrome they fail.
+            - name: Chrome version
+              run: google-chrome --version
+
             - name: Test
               run: bun run test
 

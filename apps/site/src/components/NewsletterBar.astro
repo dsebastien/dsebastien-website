@@ -1,0 +1,39 @@
+---
+// The newsletter bar of a note page (NEWS-01, NEWS-04): fixed to the bottom of
+// the screen, with the states of the current site (the form, an error, the
+// success, "already subscribed", and "Don't show this again"). It is hidden
+// in the HTML: its script shows it after 30 percent of the note, takes it
+// away before the footer, and keeps it closed after a signup or a dismissal
+// (`newsletter/bar.ts`). Without a script it never shows: the signup needs
+// one. No inline handler and no inline style; the script is a module of the
+// build, and it is the only part of the page that knows the signup service.
+---
+
+<aside class='newsletter-bar' aria-label='Newsletter' data-newsletter hidden>
+    <div class='newsletter-inner'>
+        <form class='newsletter-form' data-newsletter-form>
+            <label class='newsletter-label'>
+                <span class='visually-hidden'>Your email address</span>
+                <input
+                    class='field newsletter-field'
+                    type='email'
+                    name='email'
+                    autocomplete='email'
+                    placeholder='Your email address'
+                    required
+                />
+            </label>
+            <button class='button newsletter-submit' type='submit'>
+                Subscribe
+            </button>
+        </form>
+        <p class='newsletter-message' role='status' data-newsletter-message></p>
+        <button class='newsletter-dismiss' type='button' data-newsletter-dismiss>
+            Don't show this again
+        </button>
+    </div>
+</aside>
+<script>
+    import { startNewsletterBar } from '../newsletter/newsletter-bar.ts'
+    startNewsletterBar(document, window)
+</script>
