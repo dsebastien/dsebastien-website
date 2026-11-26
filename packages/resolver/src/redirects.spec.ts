@@ -14,6 +14,7 @@ const FILES: SiteFiles = {
     notFound: '404.html',
     gone: '410.html',
     robots: 'robots.txt',
+    icon: 'favicon.ico',
     page: (path) => `page:${path}`,
     markdown: (path) => `markdown:${path}`,
     folder: (path) => `folder:${path}`,
