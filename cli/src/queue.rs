@@ -690,13 +690,7 @@ fn queue_of(
     };
     queue.missing = missing_of(&queue.to_remove, &guards);
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
-    // A note at the new path of a move waits for the publication of the move.
-    let waiting: Vec<String> = queue
-        .missing
-        .iter()
-        .filter(|path| !moves.applied.iter().any(|one| &one.to == *path))
-        .cloned()
-        .collect();
+    let waiting = waiting_for_moves(&queue.missing, &moves.applied);
     queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
     queue.moved_edited = hold_moved_edited(&moves.applied, &queue.changed, &notes, &mut manifest);
     let released = release_held(&moves.applied, &notes, &mut manifest);
@@ -858,11 +852,16 @@ fn without_suffix(path: &str) -> &str {
     path.strip_suffix(".md").unwrap_or(path)
 }
 
-/// The moved notes whose text changed (R67): a note of `changed` at the new
-/// path of a move whose source is not the published source gets the mark of
-/// a held update, which the publication of the move writes, so the hold
-/// lasts until a selection includes the note. The result is the paths of
-/// `changed` whose entry has the mark, in the order of `changed`.
+/// The missing notes that can show as pairings: a note at the new path of a
+/// move waits for the publication of the move.
+fn waiting_for_moves(missing: &[String], applied: &[Move]) -> Vec<String> {
+    missing
+        .iter()
+        .filter(|path| !applied.iter().any(|one| &one.to == *path))
+        .cloned()
+        .collect()
+}
+
 /// A held update whose note has the source of its entry again loses its
 /// mark: the next publication writes the entry without it, so a later edit
 /// is no held update (decision of the author of 2026-11-26, issue 106). The
@@ -890,6 +889,11 @@ fn release_held(
     released
 }
 
+/// The moved notes whose text changed (R67): a note of `changed` at the new
+/// path of a move whose source is not the published source gets the mark of
+/// a held update, which the publication of the move writes, so the hold
+/// lasts until a selection includes the note. The result is the paths of
+/// `changed` whose entry has the mark, in the order of `changed`.
 fn hold_moved_edited(
     applied: &[Move],
     changed: &[String],
