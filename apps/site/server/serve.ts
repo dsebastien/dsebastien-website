@@ -94,8 +94,26 @@ export async function startServer(options: {
     const errorPage = Bun.file(join(dist, SERVER_ERROR_FILE))
     const serverErrorPage = (await errorPage.exists()) ? await errorPage.text() : undefined
 
+    const server = Bun.serve({
+        hostname: '127.0.0.1',
+        port: options.port,
+        // A failure outside a request gives the server error page with no
+        // detail, never the error page of Bun with the paths of the machine
+        // (NAV-20).
+        error(error): Response {
+            console.error(error)
+            return failureResponse(new Request(origin), serverErrorPage, origin)
+        },
+        // The handler exists before the first request: `Bun.serve()` returns first.
+        fetch: (request): Promise<Response> => handle(request)
+    })
+    // The Markdown texts of the errors name the listening address, never the
+    // `Host` header of a request, which the client chooses (issue 102).
+    const origin: string = server.url.origin
+
     const handle = siteHandler({
         map,
+        origin,
         // The name comes from the resolver map, never from the request.
         file: (name) => storedFile(join(dist, name)),
         async asset(path) {
@@ -114,20 +132,8 @@ export async function startServer(options: {
         }
     })
 
-    const server = Bun.serve({
-        hostname: '127.0.0.1',
-        port: options.port,
-        // A failure outside a request gives the server error page with no
-        // detail, never the error page of Bun with the paths of the machine
-        // (NAV-20).
-        error(error) {
-            console.error(error)
-            return failureResponse(new Request(this.url), serverErrorPage)
-        },
-        fetch: handle
-    })
     return {
-        url: `http://127.0.0.1:${String(server.port)}`,
+        url: origin,
         stop: () => server.stop(true)
     }
 }

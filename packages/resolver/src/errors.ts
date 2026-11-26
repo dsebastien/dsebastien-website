@@ -163,7 +163,12 @@ export const SERVER_ERROR_FILE = '500.html'
  * unpublished note and no detail of a failure, and the 500 text says what
  * the server error page says.
  *
- * @param origin the origin of the request, such as `https://notes.dsebastien.net`
+ * @param origin the origin of the site, such as `https://notes.dsebastien.net`:
+ *   the configured origin, or the listening address of the plain server. It
+ *   must never come from a header of the request (`Host`, `X-Forwarded-Host`),
+ *   which a client chooses. At the edge, the origin of the URL of the request
+ *   is allowed only because the host gives the Worker only the requests of
+ *   its own names, so that origin is always one of them (issue 32)
  * @param suggestions the canonical paths of the published notes of a file
  * name or an alias of several notes (404 only, R47)
  */

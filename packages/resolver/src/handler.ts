@@ -58,6 +58,14 @@ export interface Release {
      * (NAV-20).
      */
     readonly serverErrorPage?: string
+    /**
+     * The origin of the absolute addresses of the Markdown texts of the
+     * errors (`errorText()`), such as the listening address of the plain
+     * server. Without it, the origin of the URL of the request, which a
+     * host may give only when the host, not a header of the client, sets
+     * it (see `errorText()`).
+     */
+    readonly origin?: string
     /** Takes the detail of a failure, which never goes into an answer. */
     readonly report?: (error: unknown) => void
 }
@@ -280,10 +288,38 @@ function serverError(
  * the handler, such as a release that it cannot read.
  *
  * @param page the server error page, when the host has it
+ * @param origin the origin of the addresses of the Markdown text (`Release.origin`)
  */
-export function failureResponse(request: Request, page?: string): Response {
-    const { pathname, origin } = new URL(request.url)
-    return serverError(errorFormat(pathname, request.headers.get('accept')), page, origin)
+export function failureResponse(request: Request, page?: string, origin?: string): Response {
+    const url = urlOf(request)
+    if (url === undefined) {
+        return badRequest()
+    }
+    return serverError(
+        errorFormat(url.pathname, request.headers.get('accept')),
+        page,
+        origin ?? url.origin
+    )
+}
+
+/**
+ * The URL of a request. `undefined` when it does not parse: a plain server
+ * builds it from the `Host` header of the client, which can be any text.
+ */
+function urlOf(request: Request): URL | undefined {
+    try {
+        return new URL(request.url)
+    } catch {
+        return undefined
+    }
+}
+
+/** The answer to a request whose URL does not parse: the fault of the client, never kept. */
+function badRequest(): Response {
+    return new Response('Bad request\n', {
+        status: 400,
+        headers: { 'content-type': TEXT, 'cache-control': 'no-store' }
+    })
 }
 
 /** A tag without the mark of its weak form: a 304 compares two tags weakly (RFC 9110, section 13.1.2). */
@@ -447,8 +483,13 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
     }
 
     return async (request) => {
+        const url = urlOf(request)
+        if (url === undefined) {
+            return badRequest()
+        }
         // The path is read as it is requested, with its percent-encoding.
-        const { pathname, search, origin } = new URL(request.url)
+        const { pathname, search } = url
+        const origin = release.origin ?? url.origin
         const format = errorFormat(pathname, request.headers.get('accept'))
         try {
             return (

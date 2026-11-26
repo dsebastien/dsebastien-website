@@ -518,3 +518,53 @@ describe('a failure of the release', () => {
         expect(reported).toEqual([failure])
     })
 })
+
+// Issue 102: the origin of the Markdown texts is the origin of the host,
+// never a header of the request, and a request URL that does not parse is
+// the fault of the client.
+describe('the origin of the error texts', () => {
+    const SITE = 'https://site.example'
+
+    test('is the origin of the release when it has one', async () => {
+        for (const path of ['/Nothing+here', '/10+Garden/Rain+barrel']) {
+            const text = await (
+                await get(path, { accept: 'text/markdown' }, { origin: SITE })
+            ).text()
+            expect(text).toContain(`[${SITE}/](<${SITE}/>)`)
+            expect(text).not.toContain(ORIGIN)
+        }
+        const failure = await (
+            await get(
+                '/Welcome',
+                { accept: 'text/markdown' },
+                { origin: SITE, file: () => Promise.resolve(undefined) }
+            )
+        ).text()
+        expect(failure).toContain(`[${SITE}/](<${SITE}/>)`)
+    })
+
+    test('is the origin of the release for a failure outside of the handler', async () => {
+        const text = await failureResponse(
+            new Request(`${ORIGIN}/-/md/Welcome.md`),
+            undefined,
+            SITE
+        ).text()
+        expect(text).toContain(`[${SITE}/](<${SITE}/>)`)
+        expect(text).not.toContain(ORIGIN)
+    })
+
+    // A plain server builds the URL from the `Host` header: `[bad` gives a
+    // URL that does not parse.
+    test('answers 400 to a request URL that does not parse', async () => {
+        const request = { url: 'http://[bad/Welcome', headers: new Headers() } as Request
+        for (const response of [
+            await siteHandler(release())(request),
+            failureResponse(request, '<h1>Server error</h1>', SITE)
+        ]) {
+            expect(response.status).toBe(400)
+            expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+            expect(response.headers.get('cache-control')).toBe('no-store')
+            expect(await response.text()).toBe('Bad request\n')
+        }
+    })
+})
