@@ -375,24 +375,22 @@ fn takes_a_plugin_folder_with_settings_over_one_without() {
 #[cfg(unix)]
 #[test]
 fn never_asks_the_program_about_a_note_whose_path_holds_a_line_feed() {
+    // Windows cannot hold such a path, so a plan never publishes it (R82): the
+    // refusal comes first, and the note stays a candidate that the program of
+    // the Starter Kit is never asked about (R61, R72).
     let published = Published::new();
     fs::write(published.vault.join("a\nb.md"), "Odd\n").expect("the note can be written");
-    let planned = published
+    let refused = published
         .command("plan")
         .args(["--include", "a\nb.md"])
         .output()
         .expect("the program starts");
-    assert!(planned.status.success(), "{}", errors_of(&planned));
-    let id = json_of(&planned)["id"].as_str().expect("an id").to_owned();
-    let done = published
-        .command("publish")
-        .arg("--attachment-storage")
-        .arg(published.stores.attachment_storage())
-        .arg("--no-deploy")
-        .args(["--plan", &id, "--time", "2031-07-02T08:00:00Z"])
-        .output()
-        .expect("the program starts");
-    assert!(done.status.success(), "{}", errors_of(&done));
+    assert!(!refused.status.success(), "the plan must stop");
+    assert!(
+        errors_of(&refused).contains("Windows cannot hold its path"),
+        "{}",
+        errors_of(&refused)
+    );
     let program = published.stores.root().join("kit").join("osk-cli");
     script(
         &program,
@@ -403,10 +401,8 @@ fn never_asks_the_program_about_a_note_whose_path_holds_a_line_feed() {
     let output = published.status_with(Some(&program));
 
     assert!(output.status.success(), "{}", errors_of(&output));
-    assert_eq!(
-        json_of(&output)["unchanged"],
-        serde_json::json!(["A.md", "a\nb.md"])
-    );
+    assert_eq!(json_of(&output)["unchanged"], serde_json::json!(["A.md"]));
+    assert_eq!(json_of(&output)["new"], serde_json::json!(["a\nb.md"]));
     assert_eq!(
         fs::read_to_string(program.parent().expect("a folder").join("kept.input"))
             .expect("the input was kept"),

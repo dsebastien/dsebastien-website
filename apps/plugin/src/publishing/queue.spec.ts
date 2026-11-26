@@ -665,7 +665,9 @@ describe('status of the fixture vault', () => {
 
     // The program of the Starter Kit reads one path per line, so a note whose
     // path holds a line feed is never asked about and has no type (R61, first
-    // review of issue 49). Windows refuses such a name.
+    // review of issue 49). Windows cannot hold such a path, so a plan never
+    // publishes it either (R82): the refusal comes first, and the note stays a
+    // candidate that nothing asks about. Windows refuses such a name.
     test.skipIf(process.platform === 'win32')(
         'never asks the Starter Kit about a note whose path holds a line feed',
         async () => {
@@ -693,20 +695,26 @@ describe('status of the fixture vault', () => {
                 attachmentStorage: stores.attachmentStorage,
                 noteTypes: fileNoteTypes(answers, asked)
             })
-            const planned = await plan(device, { include: ['A.md', 'a\nb.md'] })
+
+            expect(await rejectionOf(plan(device, { include: ['A.md', 'a\nb.md'] }))).toContain(
+                'Windows cannot hold its path'
+            )
+            const planned = await plan(device, { include: ['A.md'] })
             await publish(device, planned.id, {
                 time: '2031-06-01T08:00:00Z',
                 device: 'garden-shed',
                 face: 'plugin'
             })
 
-            expect((await status(device)).unchanged).toEqual(['A.md', 'a\nb.md'])
-            expect(
-                (await textOf(asked))
-                    ?.split('\n')
-                    .filter((line) => line !== '')
-                    .map((line) => JSON.parse(line) as string[])
-            ).toEqual([[], ['A.md'], [], ['A.md'], ['A.md']])
+            const queue = await status(device)
+            expect(queue.unchanged).toEqual(['A.md'])
+            expect(queue.new).toEqual(['a\nb.md'])
+            const questions = ((await textOf(asked)) ?? '')
+                .split('\n')
+                .filter((line) => line !== '')
+                .flatMap((line) => JSON.parse(line) as string[])
+            expect(questions).toContain('A.md')
+            expect(questions).not.toContain('a\nb.md')
             const entries = await readdir(join(copy, 'manifest'))
             const types = await Promise.all(
                 entries.map(async (name) => {
@@ -719,7 +727,7 @@ describe('status of the fixture vault', () => {
                     return [entry.path, entry.noteType?.name ?? null]
                 })
             )
-            expect(Object.fromEntries(types)).toEqual({ 'A.md': 'letters', 'a\nb.md': null })
+            expect(Object.fromEntries(types)).toEqual({ 'A.md': 'letters' })
         }
     )
 
