@@ -151,38 +151,6 @@ export async function contentStoreHas(store: string, revision: string): Promise<
     )
 }
 
-/** The start of the subject of the commit of a takedown. */
-const TAKEDOWN_SUBJECT = 'Takedown:'
-
-/** The subject of the commit of a publication with at least one forced removal (PUB-84). */
-const FORCED_SUBJECT = /^Publish: .*, [1-9]\d* forced,/u
-
-/** True when the subject is the one of a takedown or of a publication with a forced removal. */
-function removes(subject: string): boolean {
-    return subject.startsWith(TAKEDOWN_SUBJECT) || FORCED_SUBJECT.test(subject)
-}
-
-/**
- * The subjects of the commits after `from` up to `to` that take notes away
- * at once: a takedown (a subject that starts with `Takedown:`) or a
- * publication with a forced removal (`, <n> forced,` with n above 0, issue
- * 120), the newest first. `undefined` when the copy does not know one of
- * the revisions.
- */
-export async function removalsBetween(
-    store: string,
-    from: string,
-    to: string
-): Promise<string[] | undefined> {
-    for (const revision of [from, to]) {
-        if ((await git(store, 'cat-file', '-e', `${revision}^{commit}`)).code !== 0) {
-            return undefined
-        }
-    }
-    const subjects = await gitText(store, 'log', '--format=%s', `${from}..${to}`)
-    return subjects.split('\n').filter(removes)
-}
-
 /** The form of the path of a manifest entry in the content store. */
 const MANIFEST_PATH = /^manifest\/[^/]+\.json$/u
 
@@ -236,75 +204,91 @@ async function objectTexts(store: string, names: readonly string[]): Promise<str
     return texts
 }
 
-/** The keys of the attachments that a manifest entry lists, from its text. */
-function keysOfEntry(name: string, text: string): string[] {
+/** The text fields and the attachments of a manifest entry, as the history can hold it. */
+interface OldEntry {
+    readonly path: string | undefined
+    readonly state: string | undefined
+    readonly keys: readonly string[]
+}
+
+/**
+ * Reads a manifest entry of the history, of any version: an entry of the
+ * first publications has no `attachments`, so it uses no file. The keys are
+ * the hashes of its attachments without `sha256:`. It throws, with the commit
+ * and the file, for a text that is no entry: a file of a takedown could stay
+ * public.
+ */
+function oldEntryOf(text: string, name: string, commit: string): OldEntry {
+    const refuse = (): never => {
+        throw new Error(
+            `${name} of the commit ${commit} of the copy of the content store is not a manifest entry, so the files of its note are not known`
+        )
+    }
     let entry: unknown
     try {
         entry = JSON.parse(text)
     } catch {
-        throw new Error(`${name} of the copy of the content store is not a manifest entry`)
+        return refuse()
     }
-    const attachments =
-        typeof entry === 'object' && entry !== null && 'attachments' in entry
-            ? entry.attachments
-            : undefined
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+        return refuse()
+    }
+    const fields = entry as Record<string, unknown>
+    const textOf = (value: unknown): string | undefined =>
+        typeof value === 'string' ? value : undefined
+    const attachments = fields['attachments']
+    if (attachments === undefined) {
+        return { path: textOf(fields['path']), state: textOf(fields['state']), keys: [] }
+    }
     if (!Array.isArray(attachments)) {
-        throw new Error(`${name} of the copy of the content store is not a manifest entry`)
+        return refuse()
     }
-    return attachments.map((attachment: unknown) => {
+    const keys = attachments.map((attachment: unknown) => {
         const hash =
             typeof attachment === 'object' && attachment !== null && 'hash' in attachment
                 ? attachment.hash
                 : undefined
         if (typeof hash !== 'string' || !/^sha256:[0-9a-f]{64}$/u.test(hash)) {
-            throw new Error(`${name} of the copy of the content store is not a manifest entry`)
+            return refuse()
         }
         return hash.slice('sha256:'.length)
     })
+    return { path: textOf(fields['path']), state: textOf(fields['state']), keys }
 }
 
-/** The path of the note of a manifest entry, from its text, or `undefined`. */
-function pathOfEntry(text: string): string | undefined {
-    return fieldOfEntry(text, 'path')
-}
-
-/** A text field of a manifest entry, from its text, or `undefined`. */
-function fieldOfEntry(text: string, field: 'path' | 'state'): string | undefined {
-    try {
-        const entry: unknown = JSON.parse(text)
-        if (typeof entry !== 'object' || entry === null || !(field in entry)) {
-            return undefined
-        }
-        const value: unknown = (entry as Record<string, unknown>)[field]
-        return typeof value === 'string' ? value : undefined
-    } catch {
-        return undefined
-    }
+/** A commit of the copy that took notes away: its subject, and the keys of the entries that it deleted. */
+interface Removal {
+    readonly subject: string
+    readonly keys: readonly string[]
 }
 
 /**
- * The keys of the attachments of the notes that a takedown or a forced
- * removal took away, in the whole history of the copy up to `HEAD`, each one
- * time, sorted (issue 120): the manifest entries that such a commit deleted,
- * read at its parent. In a publication, an unpublished entry whose path a
- * move of the same commit took is no forced removal (rule 6 of the moves),
- * so it is left out. Business rule 16: these files leave the object storage
- * at once, unless the new release uses them. A copy with no commit gives
- * none.
+ * The commits of the copy in this range that took notes away, the newest
+ * first (issue 120, review round 1): each commit that deleted a manifest
+ * entry, whatever its subject says (a takedown, a forced removal, an edit by
+ * hand), with the keys of the attachments of those entries, read at its
+ * parent. An unpublished entry whose path an entry that the same commit
+ * wrote now holds is left out: a move displaced it (rule 6 of the moves), and
+ * that is no removal.
  */
-export async function removedAttachmentKeys(store: string): Promise<string[]> {
-    if ((await git(store, 'rev-parse', '--verify', '--quiet', 'HEAD')).code !== 0) {
-        return []
-    }
-    const log = await gitText(store, 'log', '--format=%H %s', 'HEAD')
-    const keys = new Set<string>()
+async function removalsIn(store: string, range: string): Promise<Removal[]> {
+    const log = await gitText(
+        store,
+        'log',
+        '--format=%H %s',
+        '--diff-filter=D',
+        '--no-renames',
+        range,
+        '--',
+        'manifest'
+    )
+    const removals: Removal[] = []
     for (const line of log.split('\n')) {
         const space = line.indexOf(' ')
-        const commit = line.slice(0, space)
-        const subject = line.slice(space + 1)
-        if (space < 0 || !removes(subject)) {
+        if (space < 0) {
             continue
         }
+        const commit = line.slice(0, space)
         const changes = (
             await gitText(
                 store,
@@ -324,46 +308,74 @@ export async function removedAttachmentKeys(store: string): Promise<string[]> {
         const deleted: string[] = []
         const written: string[] = []
         for (let index = 0; index + 1 < changes.length; index += 2) {
-            const status = changes[index] ?? ''
             const path = changes[index + 1] ?? ''
-            if (!MANIFEST_PATH.test(path)) {
-                continue
+            if (MANIFEST_PATH.test(path)) {
+                ;(changes[index] === 'D' ? deleted : written).push(path)
             }
-            if (status === 'D') {
-                deleted.push(path)
-            } else {
-                written.push(path)
-            }
+        }
+        if (deleted.length === 0) {
+            continue
         }
         const before = await objectTexts(
             store,
             deleted.map((path) => `${commit}^:${path}`)
         )
+        const after = await objectTexts(
+            store,
+            written.map((path) => `${commit}:${path}`)
+        )
         // The paths that the entries of the commit hold now: a move took them.
-        const taken = subject.startsWith(TAKEDOWN_SUBJECT)
-            ? new Set<string>()
-            : new Set(
-                  (
-                      await objectTexts(
-                          store,
-                          written.map((path) => `${commit}:${path}`)
-                      )
-                  )
-                      .map(pathOfEntry)
-                      .filter((path) => path !== undefined)
-              )
-        deleted.forEach((path, index) => {
-            const text = before[index] ?? ''
-            const notePath = pathOfEntry(text)
-            const unpublished = fieldOfEntry(text, 'state') === 'unpublished'
-            if (unpublished && notePath !== undefined && taken.has(notePath)) {
-                return
-            }
-            for (const key of keysOfEntry(path, text)) {
-                keys.add(key)
-            }
-        })
+        const taken = new Set(
+            written.map((path, index) => oldEntryOf(after[index] ?? '', path, commit).path)
+        )
+        const entries = deleted
+            .map((path, index) => oldEntryOf(before[index] ?? '', path, commit))
+            .filter((entry) => entry.state !== 'unpublished' || !taken.has(entry.path))
+        const keys = entries.flatMap((entry) => entry.keys)
+        if (entries.length > 0) {
+            removals.push({ subject: line.slice(space + 1), keys })
+        }
     }
+    return removals
+}
+
+/**
+ * The subjects of the commits after `from` up to `to` that took notes away
+ * (see `removalsIn()`: a takedown, a forced removal, any commit that deleted
+ * an entry), the newest first. `undefined` when the copy does not know one of
+ * the revisions.
+ */
+export async function removalsBetween(
+    store: string,
+    from: string,
+    to: string
+): Promise<string[] | undefined> {
+    for (const revision of [from, to]) {
+        if ((await git(store, 'cat-file', '-e', `${revision}^{commit}`)).code !== 0) {
+            return undefined
+        }
+    }
+    return (await removalsIn(store, `${from}..${to}`)).map((removal) => removal.subject)
+}
+
+/**
+ * The keys of the attachments of the notes that commits of the whole history
+ * of the copy up to `HEAD` took away (see `removalsIn()`), each one time,
+ * sorted (issue 120). Business rule 16: these files leave the object storage
+ * at once, unless the new release uses them. A copy with no commit gives
+ * none. It throws for a shallow copy: its history is not whole, so a file of
+ * a takedown could stay public.
+ */
+export async function removedAttachmentKeys(store: string): Promise<string[]> {
+    if ((await git(store, 'rev-parse', '--verify', '--quiet', 'HEAD')).code !== 0) {
+        return []
+    }
+    if ((await gitText(store, 'rev-parse', '--is-shallow-repository')) !== 'false') {
+        throw new Error(
+            `the copy of the content store is shallow, so the deployment cannot know the files of its takedowns and forced removals: fetch its whole history (git fetch --unshallow) in ${store}`
+        )
+    }
+    const keys = new Set((await removalsIn(store, 'HEAD')).flatMap((removal) => removal.keys))
     return [...keys].sort()
 }
 
