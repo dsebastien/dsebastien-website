@@ -5249,6 +5249,249 @@
             ]
         },
         {
+            "name": "a plan whose note types changed is refused at its publication (issue 96)",
+            "denyList": [],
+            "noteTypes": {
+                "noteTypes": [
+                    {
+                        "name": "herbs",
+                        "displayName": "Herbs",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    }
+                ],
+                "notes": {
+                    "Basil.md": "herbs",
+                    "Mint.md": "herbs"
+                }
+            },
+            "vault": {
+                "Basil.md": "Basil\n",
+                "Mint.md": "Mint\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication of one note with a type",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Mint.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Mint.md"],
+                        "published": ["Mint.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits the published note",
+                    "files": {
+                        "Mint.md": "---\npublic_note: true\n---\nMint, edited\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan publishes the new note and updates the edited one, with the types that the Starter Kit gives now",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Basil.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": ["Basil.md"],
+                        "remove": [],
+                        "update": ["Mint.md"],
+                        "move": [],
+                        "edits": [],
+                        "guardedAttachments": []
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the Starter Kit gives other types now: in Obsidian its metadata cache was behind an edit of the tags when the plan was made",
+                    "noteTypes": {
+                        "noteTypes": [
+                            {
+                                "name": "herbs",
+                                "displayName": "Herbs",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            },
+                            {
+                                "name": "pages",
+                                "displayName": "Pages",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            }
+                        ],
+                        "notes": {
+                            "Mint.md": "pages"
+                        }
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication reads the types of the notes of the plan again and refuses the plan, with each note whose type changed",
+                    "stored": true,
+                    "time": "2031-06-02T08:00:00Z",
+                    "refused": true,
+                    "says": "is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n- Basil.md: \"herbs\" in the plan, no type now\n- Mint.md: \"herbs\" in the plan, \"pages\" now"
+                },
+                {
+                    "do": "expect",
+                    "why": "a refusal writes nothing: the new note is not in the content store, the published note is as it was, and the vault has no new property",
+                    "vault": {
+                        "Basil.md": "Basil\n",
+                        "Mint.md": "---\npublic_note: true\n---\nMint, edited\n"
+                    },
+                    "store": {
+                        "notes/Basil.md": null,
+                        "notes/Mint.md": "Mint\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a new plan has the new types and is published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Basil.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Basil.md"],
+                        "published": ["Basil.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Mint.md"],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits the note that was just published",
+                    "files": {
+                        "Basil.md": "---\npublic_note: true\n---\nBasil, edited\n"
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the note has a type again",
+                    "noteTypes": {
+                        "noteTypes": [
+                            {
+                                "name": "herbs",
+                                "displayName": "Herbs",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            },
+                            {
+                                "name": "pages",
+                                "displayName": "Pages",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            }
+                        ],
+                        "notes": {
+                            "Basil.md": "herbs",
+                            "Mint.md": "pages"
+                        }
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan updates the edited note",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Basil.md"],
+                        "move": [],
+                        "edits": [],
+                        "guardedAttachments": []
+                    }
+                },
+                {
+                    "do": "noteTypes",
+                    "why": "the type keeps its name and gets another display name",
+                    "noteTypes": {
+                        "noteTypes": [
+                            {
+                                "name": "herbs",
+                                "displayName": "Kitchen herbs",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            },
+                            {
+                                "name": "pages",
+                                "displayName": "Pages",
+                                "prefix": "",
+                                "suffix": "",
+                                "prefixOptional": false,
+                                "suffixOptional": false
+                            }
+                        ],
+                        "notes": {
+                            "Basil.md": "herbs",
+                            "Mint.md": "pages"
+                        }
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a type with another display name, prefix or suffix is a changed type too",
+                    "stored": true,
+                    "time": "2031-06-03T08:00:00Z",
+                    "refused": true,
+                    "says": "Make a new plan\n- Basil.md: \"herbs\" in the plan, \"herbs\" now, with another display name, prefix or suffix"
+                },
+                {
+                    "do": "expect",
+                    "why": "the content store still has the note as it was published",
+                    "vault": {},
+                    "store": {
+                        "notes/Basil.md": "Basil\n"
+                    }
+                }
+            ]
+        },
+        {
             "name": "a takedown removes a note at once, with the files that no other note uses (issue 38)",
             "denyList": ["Locked"],
             "vault": {

@@ -32,6 +32,7 @@ import { inexactNumberOf, parseJson } from './json.ts'
 import type { NoteLink } from './links.ts'
 import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } from './manifest.ts'
 import type { ManifestEntry } from './manifest.ts'
+import { isNoteType, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
 import { foldedForm, obsidianTwins } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
@@ -1940,6 +1941,55 @@ function warningLines(warnings: readonly { path: string; message: string }[]): s
     return `\nThe cleanup of the attachment storage gave these warnings:\n${lines.join('\n')}`
 }
 
+/** The type of a note as a line of a refusal: its name, or `no type`. */
+function typeText(noteType: NoteType | undefined): string {
+    return noteType === undefined ? 'no type' : `"${noteType.name}"`
+}
+
+/** The note types of the notes of a record, by their paths. */
+function recordTypes(record: string): Map<string, NoteType | undefined> {
+    let parsed: unknown
+    try {
+        parsed = parseJson(record)
+    } catch {
+        parsed = undefined
+    }
+    const state = isRecord(parsed) ? parsed['state'] : undefined
+    const notes = isRecord(state) && Array.isArray(state['notes']) ? state['notes'] : []
+    const types = new Map<string, NoteType | undefined>()
+    for (const note of notes) {
+        if (isRecord(note) && typeof note['path'] === 'string') {
+            const noteType = note['noteType']
+            types.set(note['path'], isNoteType(noteType) ? noteType : undefined)
+        }
+    }
+    return types
+}
+
+/**
+ * The notes of both records whose note type is another one in the new record
+ * (issue 96, R83): one line each, `- <path>: <type in the plan> in the plan,
+ * <type now> now`, in the order of the records. A line break of a path is
+ * written `\n`.
+ */
+function noteTypeChanges(stored: string, current: string): string[] {
+    const before = recordTypes(stored)
+    const lines: string[] = []
+    for (const [path, now] of recordTypes(current)) {
+        if (!before.has(path)) continue
+        const was = before.get(path)
+        if (sameNoteType(was, now)) continue
+        const other =
+            was !== undefined && now !== undefined && was.name === now.name
+                ? ', with another display name, prefix or suffix'
+                : ''
+        lines.push(
+            `- ${path.replaceAll('\n', '\\n')}: ${typeText(was)} in the plan, ${typeText(now)} now${other}`
+        )
+    }
+    return lines
+}
+
 /** The publication of a plan, with the lock of the device. */
 async function apply(
     device: Device,
@@ -1969,8 +2019,11 @@ async function apply(
             scan.isGuardedFile,
             keepsGuardedFor(run.face, selection)
         )
+        const types = noteTypeChanges(record, current.record)
         throw new Error(
-            `the plan ${id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
+            types.length > 0
+                ? `the plan ${id} is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n${types.join('\n')}${warningLines(cleanup.warnings)}`
+                : `the plan ${id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
     }
     // Only the author lets an agent take an entry away (rule 10).

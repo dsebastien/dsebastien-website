@@ -31,7 +31,7 @@ use crate::manifest::{
     MANIFEST_FOLDER, ManifestEntry, NOTES_FOLDER, State, manifest_file, note_id, read_manifest,
 };
 use crate::names::folded_form;
-use crate::note_types::{NoteType, StarterKit, note_types_of};
+use crate::note_types::{NoteType, StarterKit, note_type_of_entry, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, forced_removals, plan_with_sizes};
 use crate::queue::{GuardChange, Move, Scan, compute_guard_queues, compute_queue, moved_entry};
@@ -2011,10 +2011,72 @@ fn refuse_stale(
         &device.vault,
         Guarded::of(run, &current.selection),
     );
-    Err(format!(
-        "the plan {id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan{}",
-        warning_lines(&cleanup.warnings)
-    ))
+    let types = note_type_changes(record, &current.record);
+    Err(if types.is_empty() {
+        format!(
+            "the plan {id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan{}",
+            warning_lines(&cleanup.warnings)
+        )
+    } else {
+        format!(
+            "the plan {id} is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n{}{}",
+            types.join("\n"),
+            warning_lines(&cleanup.warnings)
+        )
+    })
+}
+
+/// The note types of the notes of a record, by their paths.
+fn record_types(record: &str) -> BTreeMap<String, Option<NoteType>> {
+    let Ok(value) = parse_json(record) else {
+        return BTreeMap::new();
+    };
+    value["state"]["notes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|note| {
+            let path = note["path"].as_str()?;
+            Some((path.to_owned(), note_type_of_entry(&note["noteType"])))
+        })
+        .collect()
+}
+
+/// The type of a note as a line of a refusal: its name, or `no type`.
+fn type_text(note_type: Option<&NoteType>) -> String {
+    note_type.map_or_else(
+        || "no type".to_owned(),
+        |note_type| format!("\"{}\"", note_type.name),
+    )
+}
+
+/// The notes of both records whose note type is another one in the new
+/// record (issue 96, R83): one line each, `- <path>: <type in the plan> in
+/// the plan, <type now> now`, in the order of the records. A line break of a
+/// path is written `\\n`.
+fn note_type_changes(stored: &str, current: &str) -> Vec<String> {
+    let before = record_types(stored);
+    record_types(current)
+        .into_iter()
+        .filter_map(|(path, now)| {
+            let was = before.get(&path)?;
+            if *was == now {
+                return None;
+            }
+            let other = match (was, &now) {
+                (Some(was), Some(now)) if was.name == now.name => {
+                    ", with another display name, prefix or suffix"
+                }
+                _ => "",
+            };
+            Some(format!(
+                "- {}: {} in the plan, {} now{other}",
+                path.replace('\n', "\\n"),
+                type_text(was.as_ref()),
+                type_text(now.as_ref())
+            ))
+        })
+        .collect()
 }
 
 /// The publication of a plan, with the lock of the device.
