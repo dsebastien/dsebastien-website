@@ -50,6 +50,8 @@ const when = list.key.startsWith('added') ? 'Added' : 'Changed'
 {list.filters.length > 0 && (
     <details class='fold group mt-6' open={list.key.includes('/')} data-filters>
         <summary class='fold-summary'>
+            {/* The spaces keep the words apart in the text of the summary: a screen
+                reader says "Filter by note type 12 types", not "type12 types". */}
             <span>Filter by note type</span>{' '}
             <span class='ml-auto flex items-center gap-3 text-sm font-normal text-muted'>
                 <span>
