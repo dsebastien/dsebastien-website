@@ -1,4 +1,4 @@
-//! The keys that the guards withdrew (issue 120, decision of the author R45),
+//! The keys that the guards withdrew (issue 120, decision of the author R78, after R45),
 //! as `apps/plugin/src/publishing/withdrawn.ts` reads and writes them: a
 //! published entry can still list an attachment whose file came under a
 //! guard. The tool deletes that file from the attachment folder of its device

@@ -2,7 +2,7 @@ import { toCanonicalJson } from './canonical.ts'
 import { parseJson } from './json.ts'
 import { sortByCodePoint } from './order.ts'
 
-// The keys that the guards withdrew (issue 120, decision of the author R45):
+// The keys that the guards withdrew (issue 120, decision of the author R78, after R45):
 // a published entry can still list an attachment whose file came under a
 // guard (its note is held, or the plan of an agent keeps it). The tool deletes
 // that file from the attachment folder of its device, and writes its key

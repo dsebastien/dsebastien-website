@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { parseWithdrawn, WITHDRAWN_FILE, withdrawnKeys, withdrawnText } from './withdrawn.ts'
 
-// The keys that the guards withdrew (issue 120, decision of the author R45):
+// The keys that the guards withdrew (issue 120, decision of the author R78, after R45):
 // `withdrawn.json` of the content store. The shared cases are the list
 // `withdrawn` of `fixtures/canonical/cases.json`, which the Rust tests read
 // too.
