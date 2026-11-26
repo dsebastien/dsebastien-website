@@ -37,6 +37,34 @@ describe('the description of a note', () => {
         ).toBe('On compost, Mulch and Soil, from the guide.')
     })
 
+    // Issue 98: the property is read with the parser of the notes.
+    test.each([
+        [
+            'without an embed',
+            '![[cover.jpg]] A heist ![a frame](frame.png) in dreams.',
+            'A heist in dreams.'
+        ],
+        [
+            'with the heading of a link into the note',
+            'See [[#Layers]] and [[#Layers|the layers]].',
+            'See Layers and the layers.'
+        ],
+        ['with the text of code as written', 'Use `[[Soil]]` here.', 'Use [[Soil]] here.'],
+        ['with the alias of a name in brackets', 'A [[Note [draft]|draft]] note.', 'A draft note.'],
+        [
+            'with an address that holds brackets',
+            'Read [a](https://x.example/f_(b)) first.',
+            'Read a first.'
+        ],
+        [
+            'with the text of raw HTML',
+            'A <b>bold</b> #herb and ==bright== mint.',
+            'A bold #herb and bright mint.'
+        ]
+    ])('is its description property %s', (_name, description, expected) => {
+        expect(noteDescription({ ...MOVIE, properties: { description } })).toBe(expected)
+    })
+
     test('is the facts alone for a media note: its text is often a copied synopsis (IDX-06)', () => {
         expect(noteDescription({ ...MOVIE, media: true })).toBe(
             'Movie, 2010, by Christopher Nolan, rated 8 by Sébastien, watched.'

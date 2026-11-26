@@ -1,7 +1,10 @@
 import { smallLetters } from '@dsebastien-website/resolver'
+import remarkObsidian from '@quartz-community/remark-obsidian'
 import type { Element, Root, RootContent } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { toText } from 'hast-util-to-text'
+import remarkParse from 'remark-parse'
+import { unified } from 'unified'
 import { SITE_NAME } from './site.ts'
 
 // The description of a page (IDX-05, IDX-04, IDX-06, decision R61): the
@@ -41,18 +44,57 @@ function shownText(value: string): string {
     return (link?.[2] ?? link?.[1] ?? value).trim()
 }
 
+/** A node of the Markdown tree of a property, as loose as the parser makes it. */
+interface TextNode {
+    readonly type: string
+    readonly value?: string
+    readonly children?: readonly TextNode[]
+    readonly embedded?: boolean
+    readonly path?: string
+    readonly heading?: string
+    readonly alias?: string
+}
+
+/** The parser of the notes (`remark-obsidian`), for a property that holds Markdown. */
+const PARSER = unified().use(remarkParse).use(remarkObsidian)
+
+/** The text that a reader sees of a node of the tree of a property. */
+function shownOf(node: TextNode): string {
+    switch (node.type) {
+        case 'text':
+        case 'inlineCode':
+            return node.value ?? ''
+        case 'tag':
+            return `#${node.value ?? ''}`
+        case 'wikilink': {
+            // An embed shows no text; a link shows its alias, else its note, else
+            // the last heading of a link into the note (`[[#Layers]]`).
+            if (node.embedded === true) return ''
+            const heading = (node.heading ?? '').split('#').at(-1) ?? ''
+            return (node.alias || node.path || heading.replace(/^\^/u, '')).trim()
+        }
+        case 'image':
+        case 'imageReference':
+        case 'html':
+        case 'footnoteReference':
+        case 'footnote':
+            return ''
+        case 'break':
+            return ' '
+        default:
+            return (node.children ?? []).map(shownOf).join(node.type === 'root' ? ' ' : '')
+    }
+}
+
 /**
- * A text with the shown text of each of its links instead of their Markdown:
+ * A text as a reader sees it, read by the parser of the notes (issue 98):
  * `[[Compost basics|compost]]` gives `compost`, `[[Soil#Layers]]` gives
- * `Soil`, `[the guide](https://…)` gives `the guide`.
+ * `Soil`, `[[#Layers]]` gives `Layers`, `[the guide](https://…)` gives `the
+ * guide`, an embed and the tags of raw HTML give nothing, code its text.
  */
 function linkTexts(text: string): string {
-    return text
-        .replace(
-            /!?\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/gu,
-            (_all, name: string, shown?: string) => (shown ?? name).trim()
-        )
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, (_all, shown: string) => shown.trim())
+    const tree = PARSER.runSync(PARSER.parse(text)) as unknown as TextNode
+    return shownOf(tree).replace(/\s+/gu, ' ').trim()
 }
 
 function textsOf(value: unknown): string[] {
@@ -148,8 +190,9 @@ function cut(text: string): string {
 /** The description of a note page (IDX-05). */
 export function noteDescription(input: DescriptionInput): string {
     const property = input.properties['description']
-    if (typeof property === 'string' && linkTexts(property).trim() !== '') {
-        return linkTexts(property).trim().replace(/\s+/gu, ' ')
+    const written = typeof property === 'string' ? linkTexts(property) : ''
+    if (written !== '') {
+        return written
     }
     const text = [factsOf(input), input.media === true ? undefined : plainTextOf(input.html)]
         .filter((part) => part !== undefined && part !== '')
