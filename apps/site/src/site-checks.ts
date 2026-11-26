@@ -198,8 +198,9 @@ export function fileOfLink(link: string, map: ResolverMap): LinkTarget {
  * The address that a raw link of a note to an address of the site leads to
  * (issue 98): the address as written when a page, a file or an attachment
  * answers it, the canonical path with the rest of the address after a
- * redirect, else `undefined`: no page, the gone page, or the "not found" page
- * that names several notes. The page step makes plain text of such a link.
+ * redirect, else `undefined`: no page, the gone page, the "not found" page
+ * that names several notes, or a redirect to a second redirect (only one is
+ * followed). The page step makes plain text of such a link.
  */
 export function hrefOfAddress(address: string, map: ResolverMap): string | undefined {
     if (!address.startsWith('/') || address.startsWith('//')) {
