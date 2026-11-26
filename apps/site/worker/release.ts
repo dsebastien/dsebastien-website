@@ -71,6 +71,8 @@ export interface RemovedKeys {
     readonly notLive: readonly string[]
     /** The keys of the removals that the live release holds. */
     readonly inLive: readonly string[]
+    /** What the read of the history warns about (a file that is no entry), for the result. */
+    readonly warnings?: readonly string[]
 }
 
 /** What a run of a deployment takes. */
@@ -92,14 +94,25 @@ export interface DeployRun {
      * The keys of the attachments of the notes that a takedown or a forced
      * removal took away, in the whole history of the copy (issue 120), apart
      * by whether the live release of this content revision (`null`: none)
-     * holds the removal. A read that throws stops the run after the
-     * withdrawn files left.
+     * holds the removal. A read that throws fails closed (decision of the
+     * author of 2026-11-26): every file that the new release does not use
+     * leaves at once, as on a first deployment, with a warning that names
+     * the cause, and the run goes on.
      */
     readonly removedKeys?: (live: string | null) => Promise<RemovedKeys>
     /**
+     * Why the copy cannot be built (it has changes, it is behind its content
+     * store), found after the fetch (review round 3). The run deletes the
+     * withdrawn files when that is safe, then refuses with it.
+     */
+    readonly copyRefusal?: string
+    /** True when the commit of the copy is the `main` of the content store, after the fetch. */
+    readonly copyAtMain?: boolean
+    /**
      * The keys that the guards withdrew (`withdrawn.json` of the copy, decision of the author R78, after R45,
      * issue 120): they leave the object storage at once, also when the
-     * release uses them, and are never uploaded.
+     * release uses them (unless the copy does not know the live revision),
+     * and are never uploaded.
      */
     readonly withdrawnKeys?: readonly string[]
     /**
@@ -394,6 +407,10 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     let forced = new Set<string>(withdrawn)
     /** The keys of the removals that the live release holds, that the new release does not use. */
     let earlier: string[] = []
+    /** The cause, when the history of the copy cannot be read: then every file that the new release does not use is forced. */
+    let unknownHistory: string | undefined
+    /** The step that stopped the run before the list of the storage, for the warning of a takedown. */
+    let stoppedAt: string | undefined
     const warnings: string[] = []
     // A takedown, or a run whose copy holds a takedown or a forced removal
     // that the live release does not have yet: its pages must go.
@@ -433,11 +450,22 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     async function readKeys(): Promise<void> {
         const keys = typeof run.usedKeys === 'function' ? await run.usedKeys() : run.usedKeys
         used = new Set(keys.filter((key) => !withdrawn.has(key)))
-        const removed = (await run.removedKeys?.(
-            replaced?.contentRevision === undefined || run.newContentStore === true
-                ? null
-                : replaced.contentRevision
-        )) ?? { notLive: [], inLive: [] }
+        let removed: RemovedKeys
+        try {
+            removed = (await run.removedKeys?.(
+                replaced?.contentRevision === undefined || run.newContentStore === true
+                    ? null
+                    : replaced.contentRevision
+            )) ?? { notLive: [], inLive: [] }
+        } catch (error) {
+            // Decision of the author of 2026-11-26: fail closed.
+            unknownHistory = messageOf(error)
+            warnings.push(
+                `the history of the copy cannot be read (${unknownHistory}), so every file that the new release does not use was deleted from the attachment storage, as on a first deployment`
+            )
+            removed = { notLive: [], inLive: [] }
+        }
+        warnings.push(...(removed.warnings ?? []))
         forced = new Set([...withdrawn, ...removed.notLive.filter((key) => !used.has(key))])
         earlier = removed.inLive.filter((key) => !used.has(key) && !forced.has(key))
     }
@@ -496,8 +524,15 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         storage: AttachmentStorage,
         names: readonly string[]
     ): Promise<string[]> {
-        // The withdrawn files left before the check of the live release.
-        const keys = names.filter((name) => forced.has(name) && !withdrawn.has(name))
+        // The withdrawn files left before the check of the live release. A
+        // history that cannot be read forces every file that the new release
+        // does not use.
+        const keys = names.filter(
+            (name) =>
+                !withdrawn.has(name) &&
+                (forced.has(name) ||
+                    (unknownHistory !== undefined && ATTACHMENT_KEY.test(name) && !used.has(name)))
+        )
         // The files of a removal that the live release holds go when the
         // live release does not use them either: a takedown whose cleanup
         // failed before, also when this run fails.
@@ -539,9 +574,9 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     }
 
     /**
-     * Deletes the withdrawn files first, before the live release is read:
-     * a file under a guard leaves also when the run is refused (review
-     * round 1 of issue 120). A failure goes on as in `removeForced()`.
+     * Deletes the withdrawn files before the check of the live release (a
+     * refused run still deletes them; review rounds 1 to 3 of issue 120). A
+     * failure goes on as in `removeForced()`.
      */
     async function removeWithdrawn(storage: AttachmentStorage): Promise<void> {
         const failed = await remove(storage, [...withdrawn].sort())
@@ -600,8 +635,14 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
      */
     async function keptKeys(): Promise<Set<string> | undefined> {
         // A first deployment has no release before, and a revert across a
-        // move to another content store is refused.
-        if (replaced === null || replaced === undefined || run.newContentStore === true) {
+        // move to another content store is refused. With a history that
+        // cannot be read, only the new release stays.
+        if (
+            replaced === null ||
+            replaced === undefined ||
+            run.newContentStore === true ||
+            unknownHistory !== undefined
+        ) {
             return new Set(used)
         }
         const revision = replaced.contentRevision
@@ -656,6 +697,22 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             unread = failure instanceof Error ? failure : new Error(messageOf(failure))
         }
         const storage = run.storage
+        if (run.copyRefusal !== undefined) {
+            // Review round 3: the copy cannot be built. The withdrawn files
+            // leave when the copy is the main of the content store, or knows
+            // the live revision; then the run is refused.
+            const known =
+                replaced?.contentRevision === undefined || replaced.contentRevision === null
+                    ? false
+                    : (await run
+                          .descendsFrom?.(replaced.contentRevision)
+                          .catch(() => undefined)) !== undefined
+            if (storage !== undefined && (run.copyAtMain === true || known)) {
+                await removeWithdrawn(storage)
+            }
+            stoppedAt = 'the copy of the content store cannot be built'
+            throw new Refusal(run.copyRefusal)
+        }
         const first = storage !== undefined && (await withdrawnGoFirst(unread !== undefined))
         if (first) {
             await removeWithdrawn(storage)
@@ -669,14 +726,27 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         if (!first && storage !== undefined) {
             await removeWithdrawn(storage)
         }
-        // A read of the copy that fails stops the run here: the withdrawn
-        // files are gone already.
-        await readKeys()
+        // A read of the keys of the release that fails stops the run here:
+        // the withdrawn files are gone already. A history that cannot be
+        // read fails closed and goes on.
+        try {
+            await readKeys()
+        } catch (failure) {
+            stoppedAt = `the keys of the release cannot be read (${messageOf(failure)})`
+            throw failure
+        }
         if (!takedown && (await removalsSinceLive(replaced))) {
             takedown = true
         }
         if (run.storage !== undefined) {
-            stored = await removeForced(run.storage, await run.storage.list())
+            let names: string[]
+            try {
+                names = await run.storage.list()
+            } catch (failure) {
+                stoppedAt = 'the attachment storage could not be listed'
+                throw failure
+            }
+            stored = await removeForced(run.storage, names)
             await upload(run, [...used], run.storage, new Set(stored), () => {
                 uploaded += 1
             })
@@ -790,8 +860,9 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 'a file can still be public: the deployment was refused, so no file of the takedown was deleted'
             )
         } else if (takedown && stored === undefined && run.storage !== undefined) {
+            // Review round 3, T7: the warning names the step that stopped the run.
             warnings.push(
-                'a file can still be public: the attachment storage could not be listed, so no file of the takedown was deleted'
+                `a file can still be public: ${stoppedAt ?? `the deployment stopped (${messageOf(failure)})`}, so no file of the takedown was deleted`
             )
         }
     }

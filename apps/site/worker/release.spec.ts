@@ -717,6 +717,19 @@ describe('a revert', () => {
         expect(site.events).not.toContain('rollback')
     })
 
+    test('refuses a history with a merge commit', async () => {
+        const site = host(LIVE, [])
+        const message = await rejectionOf(
+            revertRelease({
+                ...site.run,
+                removalsBetween: () =>
+                    Promise.reject(new Error('the history of the copy has a merge commit'))
+            })
+        )
+        expect(message).toContain('merge commit')
+        expect(site.events).not.toContain('rollback')
+    })
+
     test('refuses when the copy does not know the two revisions', async () => {
         const site = host(LIVE, [])
         const message = await rejectionOf(
@@ -1444,33 +1457,122 @@ describe('the cleanup of the object storage', () => {
 
     // Review round 2, R2: a read of the copy that fails still lets the
     // withdrawn files leave.
-    test.each([
-        [
-            'the keys of the release',
-            { usedKeys: () => Promise.reject(new Error('the manifest is not valid')) }
-        ],
-        [
-            'the history of the copy',
-            {
-                removedKeys: () =>
-                    Promise.reject(new Error('the copy of the content store is shallow'))
+    test('when the keys of the release cannot be read, deletes the withdrawn files, then stops', async () => {
+        const site = overLive({
+            stored: [A_NEW.key, B.key, GONE.key],
+            used: [A_NEW.key],
+            overrides: {
+                withdrawnKeys: [B.key],
+                takedown: true,
+                usedKeys: () => Promise.reject(new Error('the manifest is not valid'))
             }
-        ]
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted: 1 })
+        expect(result.error).toContain('not valid')
+        expect([...site.storage.names].sort()).toEqual([A_NEW.key, GONE.key].sort())
+        expect(site.events).not.toContain('build')
+        // Review round 3, T7: the warning names the real cause.
+        expect(result.warnings.join('\n')).not.toContain('could not be listed')
+        expect(result.warnings.join('\n')).toContain('the manifest is not valid')
+    })
+
+    // Review round 3, decision of the author of 2026-11-26: a history that
+    // cannot be read fails closed, and never stops the run before its forced step.
+    test.each([
+        ['a deployment', false],
+        ['a takedown', true]
     ])(
-        'when %s cannot be read, deletes the withdrawn files, then stops',
-        async (_case, failure: Partial<DeployRun>) => {
+        'when the history of the copy cannot be read, %s deletes every file that the new release does not use, with the cause, and goes on',
+        async (_case, takedown) => {
             const site = overLive({
-                stored: [A_NEW.key, B.key, GONE.key],
+                stored: [A_NEW.key, A_OLD.key, B.key, GONE.key],
                 used: [A_NEW.key],
-                overrides: { withdrawnKeys: [B.key], ...failure }
+                overrides: {
+                    takedown,
+                    withdrawnKeys: [B.key],
+                    releaseKeys: liveUses([A_OLD.key]),
+                    removedKeys: () =>
+                        Promise.reject(new Error('the copy of the content store is shallow'))
+                }
             })
             const result = await deployRelease(site.run)
-            expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted: 1 })
-            expect(result.error).toMatch(/not valid|shallow/u)
-            expect([...site.storage.names].sort()).toEqual([A_NEW.key, GONE.key].sort())
-            expect(site.events).not.toContain('build')
+            expect(result).toMatchObject({ build: 'ok', deploy: 'ok', live: true, error: null })
+            expect([...site.storage.names]).toEqual([A_NEW.key])
+            expect(result.warnings.join('\n')).toContain('the copy of the content store is shallow')
+            // At once, before the build.
+            expect(site.events.indexOf(`remove ${A_OLD.key}`)).toBeLessThan(
+                site.events.indexOf('build')
+            )
         }
     )
+
+    test('gives the warnings of the read of the history', async () => {
+        const site = overLive({
+            stored: [A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                releaseKeys: liveUses([]),
+                removedKeys: () =>
+                    Promise.resolve({
+                        notLive: [],
+                        inLive: [],
+                        warnings: ['manifest/x.json of the commit c is not a manifest entry']
+                    })
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result.warnings).toContain('manifest/x.json of the commit c is not a manifest entry')
+    })
+
+    // Review round 3, T4: a copy that is not clean or behind is refused, after
+    // the withdrawn files left when that is safe.
+    test.each([
+        ['has changes, at the main of the content store', true, true, 1],
+        ['is behind, and knows the live revision', false, true, 1],
+        ['is behind, and does not know the live revision', false, undefined, 0]
+    ])(
+        'refuses a copy that %s, and deletes the withdrawn files as it may',
+        async (_case, atMain, known, deleted) => {
+            const site = overLive({
+                stored: [A_NEW.key, B.key],
+                used: [A_NEW.key],
+                overrides: {
+                    withdrawnKeys: [B.key],
+                    copyRefusal: 'the copy of the content store has changes',
+                    copyAtMain: atMain,
+                    descendsFrom: () => Promise.resolve(known)
+                }
+            })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted })
+            expect(result.error).toContain('has changes')
+            expect(site.storage.names.has(B.key)).toBe(deleted === 0)
+            expect(site.events).not.toContain('list')
+        }
+    )
+
+    // Review round 3, T2: a merge in the range of a revert stays a refusal,
+    // and makes a deployment count as a takedown.
+    test('the deployment counts as a takedown on a merge commit', async () => {
+        const site = overLive({
+            stored: [A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                releaseKeys: liveUses([A_NEW.key]),
+                removalsBetween: () => Promise.reject(new Error('a merge commit')),
+                live: {
+                    read: () => Promise.resolve(LIVE_RELEASE),
+                    checks: 2,
+                    pause: 1000,
+                    inARow: 3
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result.error).toContain('was not seen live')
+        expect(result.warnings.join('\n')).toContain('counts as a takedown')
+    })
 
     // Review round 2, R4: a copy that does not know the live revision can be
     // older than a release of another machine.

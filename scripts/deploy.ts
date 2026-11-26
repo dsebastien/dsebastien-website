@@ -16,6 +16,7 @@ import {
     checkContentCopy,
     contentStoreHas,
     descendsFrom,
+    inspectContentCopy,
     releaseAttachmentKeys,
     removalsBetween,
     removedAttachmentKeys,
@@ -285,7 +286,11 @@ async function deploy(
             return join(attachments, key)
         }
         // The record names this commit, so the keys and the build come from it.
-        const contentRevision = store === undefined ? null : await checkContentCopy(store)
+        // The fetch comes first (a fetch that fails refuses with no deletion);
+        // a copy that cannot be built is refused inside the run, after the
+        // withdrawn files left when that is safe (review round 3 of issue 120).
+        const copy = store === undefined ? undefined : await inspectContentCopy(store)
+        const contentRevision = copy?.head ?? null
         // The files that the guards withdrew are read first: when a later
         // read of the copy fails, the run still deletes them before it stops
         // (issue 120, decision of the author R78, after R45). The keys of the
@@ -302,6 +307,8 @@ async function deploy(
                 ? {}
                 : { removedKeys: (live: string | null) => removedAttachmentKeys(store, live) }),
             withdrawnKeys,
+            ...(copy?.refusal === undefined ? {} : { copyRefusal: copy.refusal }),
+            ...(copy === undefined ? {} : { copyAtMain: copy.atMain }),
             // A dry run reaches no host. `--dist` has no manifest: the
             // storage must not be cleaned by it.
             ...(dryRun || token === undefined || store === undefined
