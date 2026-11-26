@@ -1,5 +1,5 @@
 {
-    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them, and the notes that `removed` lists, which were published and then unpublished (issue 62). A note with `formerPaths` was published at its first former path, then moved by a line of a rename journal (issue 37). Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`), the redirect (`location`, `cacheControl`), the suggestions of the not found page (the canonical paths of the notes, sorted by vault path), or the gone page (410). A case with `accept` sends that `Accept` header, and `format` says the form of an error answer: `html`, or `markdown` (the short text for an agent, NAV-21). A page case also states its canonical path. The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test.",
+    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them, and the notes that `removed` lists, which were published and then unpublished (issue 62). A note with `formerPaths` was published at its first former path, then moved by a line of a rename journal (issue 37). Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`), the redirect (`location`, `cacheControl`), the suggestions of the not found page (the canonical paths of the notes, sorted by vault path), or the gone page (410). A case with `accept` sends that `Accept` header, and `format` says the form of an error answer: `html`, or `markdown` (the short text for an agent, NAV-21). A page case also states its canonical path. The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test. The block `redirects` is the redirect list of the site (issue 44), as the content store holds it in `redirects.json`: its rows lead an old path to a note (301), say that an old path is gone (410), or lead every path under an old folder to one page (301). The build drops a row whose old path a published note, folder or former path has, and a row whose target is not live.",
     "notes": [
         {
             "path": "Welcome.md",
@@ -86,6 +86,58 @@
             "formerPaths": ["Old Beds/Rain butt.md"]
         }
     ],
+    "redirects": {
+        "version": 1,
+        "redirects": [
+            {
+                "from": "20 Library/20.02 Recipes/Sourdough v2",
+                "to": "/20+Library/20.02+Recipes/Sourdough+v2.1+notes"
+            },
+            {
+                "from": "Old Library/Bread notes",
+                "to": "/20+Library/20.02+Recipes/100%25+rye+bread"
+            },
+            {
+                "from": "Home",
+                "to": "/"
+            },
+            {
+                "from": "Publish/Recently added",
+                "to": "/-/recent/added"
+            },
+            {
+                "from": "Old Beds/Known bed",
+                "to": "/10+Garden/Herb+bed/Mint"
+            },
+            {
+                "from": "Water butt",
+                "to": "/10+Garden/Drip+irrigation"
+            },
+            {
+                "from": "10 Garden/Wormery",
+                "to": "/Welcome"
+            },
+            {
+                "from": "Old Garden/Trellis",
+                "to": "/10+Garden/Bean+trellis"
+            },
+            {
+                "from": "Old Shop/Catalog",
+                "to": "https://example.org/catalog"
+            }
+        ],
+        "gone": ["Publish/Stats"],
+        "prefixes": [
+            {
+                "from": "Old Beds/How-to/",
+                "to": "/10+Garden/Herb+bed/Herb+bed"
+            },
+            {
+                "from": "Old Beds/",
+                "to": "/Welcome"
+            }
+        ]
+    },
     "cases": [
         {
             "name": "the home page",
@@ -583,12 +635,6 @@
             "format": "html"
         },
         {
-            "name": "the alias of an unpublished note",
-            "request": "/Water+butt",
-            "status": 410,
-            "format": "html"
-        },
-        {
             "name": "the Markdown of an unpublished note",
             "request": "/-/md/10+Garden/Rain+barrel.md",
             "status": 410,
@@ -709,6 +755,158 @@
             "request": "/-/md/Old+Beds/Rain+butt.md",
             "status": 410,
             "format": "markdown"
+        },
+        {
+            "name": "a name cut at a dot that the redirect list names (RES-01)",
+            "request": "/20+Library/20.02+Recipes/Sourdough+v2",
+            "status": 301,
+            "location": "/20+Library/20.02+Recipes/Sourdough+v2.1+notes",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a name cut at a dot that the redirect list does not name (URL-30)",
+            "request": "/20+Library/Sprout",
+            "status": 404,
+            "suggestions": [],
+            "format": "html"
+        },
+        {
+            "name": "an old path of the redirect list",
+            "request": "/Old+Library/Bread+notes",
+            "status": 301,
+            "location": "/20+Library/20.02+Recipes/100%25+rye+bread",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "an old path of the redirect list, with %20 and .md",
+            "request": "/Old%20Library/Bread%20notes.md",
+            "status": 301,
+            "location": "/20+Library/20.02+Recipes/100%25+rye+bread",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "an old path of the redirect list, in another letter case",
+            "request": "/old+library/BREAD+NOTES",
+            "status": 301,
+            "location": "/20+Library/20.02+Recipes/100%25+rye+bread",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "an old path of the redirect list keeps the query",
+            "request": "/Old+Library/Bread+notes?ref=dsebastien.net",
+            "status": 301,
+            "location": "/20+Library/20.02+Recipes/100%25+rye+bread?ref=dsebastien.net",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "the old home note leads to the home page (URL-07)",
+            "request": "/Home",
+            "status": 301,
+            "location": "/",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "an old generated note leads to its new page (URL-07)",
+            "request": "/Publish/Recently+added",
+            "status": 301,
+            "location": "/-/recent/added",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a gone row of the redirect list",
+            "request": "/Publish/Stats",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "a gone row of the redirect list, in another letter case",
+            "request": "/publish/stats",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "a row of the redirect list whose target is not live is dropped",
+            "request": "/Old+Garden/Trellis",
+            "status": 404,
+            "suggestions": [],
+            "format": "html"
+        },
+        {
+            "name": "a row of the redirect list can lead to another host of the author",
+            "request": "/Old+Shop/Catalog",
+            "status": 301,
+            "location": "https://example.org/catalog",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a row of the redirect list wins over the alias of an unpublished note",
+            "request": "/Water+butt",
+            "status": 301,
+            "location": "/10+Garden/Drip+irrigation",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a prefix rule leads a path under an old folder to its hub (RES-04)",
+            "request": "/Old+Beds/How-to/Prune+roses",
+            "status": 301,
+            "location": "/10+Garden/Herb+bed/Herb+bed",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a prefix rule, in another letter case",
+            "request": "/old+beds/HOW-TO/prune+roses",
+            "status": 301,
+            "location": "/10+Garden/Herb+bed/Herb+bed",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "the longest prefix rule wins",
+            "request": "/Old+Beds/Raised+beds",
+            "status": 301,
+            "location": "/Welcome",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "an exact row wins over a prefix rule",
+            "request": "/Old+Beds/Known+bed",
+            "status": 301,
+            "location": "/10+Garden/Herb+bed/Mint",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a prefix rule needs a path under the folder",
+            "request": "/Old+Beds/",
+            "status": 404,
+            "suggestions": [],
+            "format": "html"
+        },
+        {
+            "name": "a query encoded into the path goes back into a real query (RES-02)",
+            "request": "/10+Garden/Wormery%3Fref%3Dexample.org",
+            "status": 301,
+            "location": "/10+Garden/Wormery?ref=example.org",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a query encoded into the path, with a query of the request",
+            "request": "/10+Garden/Wormery%3Fref%3Dexample.org?utm_source=letter",
+            "status": 301,
+            "location": "/10+Garden/Wormery?ref=example.org&utm_source=letter",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a query encoded into an old path of the redirect list",
+            "request": "/Old+Library/Bread+notes%3Fref%3Dexample.org",
+            "status": 301,
+            "location": "/20+Library/20.02+Recipes/100%25+rye+bread?ref=example.org",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a query encoded into a path that finds nothing",
+            "request": "/Nothing+here%3Fref%3Dexample.org",
+            "status": 404,
+            "suggestions": [],
+            "format": "html"
         }
     ]
 }

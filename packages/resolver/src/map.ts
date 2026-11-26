@@ -37,6 +37,14 @@ const isFormerMap = (value: unknown): boolean =>
     everyValue(value['folded'], isTextList) &&
     everyValue(value['names'], isTextList) &&
     everyValue(value['markdown'], isText)
+const isRedirectMap = (value: unknown): boolean =>
+    isRecord(value) &&
+    everyValue(value['folded'], isText) &&
+    Array.isArray(value['prefixes']) &&
+    value['prefixes'].every(
+        (rule: unknown) =>
+            Array.isArray(rule) && rule.length === 2 && isText(rule[0]) && isText(rule[1])
+    )
 const isSiteFile = (value: unknown): value is SiteFile =>
     isRecord(value) &&
     isText(value['file']) &&
@@ -62,7 +70,8 @@ export function resolverMapFrom(value: unknown): ResolverMap {
         !everyValue(value['choices'] ?? {}, isText) ||
         !(value['notFound'] === undefined || isText(value['notFound'])) ||
         !(value['gone'] === undefined || isGoneMap(value['gone'])) ||
-        !(value['former'] === undefined || isFormerMap(value['former']))
+        !(value['former'] === undefined || isFormerMap(value['former'])) ||
+        !(value['redirects'] === undefined || isRedirectMap(value['redirects']))
     ) {
         throw new Error(`${RESOLVER_MAP_FILE} is not a resolver map`)
     }

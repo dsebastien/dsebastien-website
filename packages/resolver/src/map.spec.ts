@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { resolverMapFrom } from './map.ts'
+import { applyRedirectList } from './redirects.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
 
 const FILES: SiteFiles = {
@@ -17,7 +18,7 @@ const KEY = 'ab'.repeat(32)
 
 /** A map with every part, as a release holds it: JSON text. */
 function written(): Record<string, unknown> {
-    const map = resolverMapOf(
+    const base = resolverMapOf(
         [
             { path: 'Welcome.md', aliases: ['Hello'] },
             { path: '10 Garden/Mint.md', aliases: [], formerPaths: ['10 Garden/Herbs/Mint.md'] }
@@ -27,6 +28,11 @@ function written(): Record<string, unknown> {
         {},
         [{ path: '10 Garden/Rain barrel.md', aliases: [] }]
     )
+    const { map } = applyRedirectList(base, {
+        redirects: [{ from: 'Old/Mint', to: '/10+Garden/Mint' }],
+        gone: ['Old/Stats'],
+        prefixes: [{ from: 'Old docs/', to: '/Welcome' }]
+    })
     // The cast is the boundary of the test: the text of a map is a record.
     return JSON.parse(JSON.stringify(map)) as Record<string, unknown>
 }
@@ -62,7 +68,11 @@ describe('the reader of a resolver map', () => {
         ['gone', { longest: -1, paths: {}, folded: {}, names: {}, aliases: {} }],
         ['gone', { longest: 3, paths: { a: 'yes' }, folded: {}, names: {}, aliases: {} }],
         ['former', { folded: {}, names: {} }],
-        ['former', { folded: { a: '/A' }, names: {}, markdown: {} }]
+        ['former', { folded: { a: '/A' }, names: {}, markdown: {} }],
+        ['redirects', { folded: {} }],
+        ['redirects', { folded: { a: ['/A'] }, prefixes: [] }],
+        ['redirects', { folded: {}, prefixes: [['a/']] }],
+        ['redirects', { folded: {}, prefixes: { 'a/': '/A' } }]
     ])('refuses a map with a wrong part "%s"', (part, value) => {
         expect(() => resolverMapFrom({ ...written(), [part]: value })).toThrow(
             'is not a resolver map'

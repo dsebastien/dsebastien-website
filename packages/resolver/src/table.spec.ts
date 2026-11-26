@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { applyRedirectList, redirectListFrom } from './redirects.ts'
 import { resolve, type Resolution } from './resolver.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
 import { canonicalPath } from './url.ts'
@@ -24,6 +25,7 @@ interface Case {
 interface Table {
     notes: { path: string; aliases: string[]; formerPaths?: string[] }[]
     removed: { path: string; aliases: string[]; formerPaths?: string[] }[]
+    redirects: unknown
     cases: Case[]
 }
 
@@ -44,7 +46,13 @@ const FILES: SiteFiles = {
     choice: (paths) => `choice:${paths.map(canonicalPath).join('|')}`
 }
 
-const map = resolverMapOf(table.notes, FILES, {}, {}, table.removed)
+// The generated pages that a row of the redirect list of the table leads to.
+const GENERATED = { '/-/recent/added': '-/recent/added.html' }
+
+const map = applyRedirectList(
+    resolverMapOf(table.notes, FILES, {}, GENERATED, table.removed),
+    redirectListFrom(table.redirects)
+).map
 
 /** The answer that a case states, as the resolver gives it. */
 function expected(entry: Case): Resolution {
@@ -96,6 +104,10 @@ describe('URL table of the site', () => {
             .map((entry) => [entry.name, entry] as const)
     )('the target of "%s" is a page', (_name, entry) => {
         const location = entry.location ?? ''
+        // A target on another host of the author is checked on that host.
+        if (location.startsWith('https://')) {
+            return
+        }
         const at = location.indexOf('?')
         const resolution = resolve(at < 0 ? location : location.slice(0, at), map)
         expect(resolution.kind).toBe(location.startsWith('/-/md/') ? 'file' : 'page')

@@ -10,10 +10,20 @@ export {
 } from './handler.ts'
 export { RESOLVER_MAP_FILE, resolverMapFrom } from './map.ts'
 export {
+    applyRedirectList,
+    REDIRECT_LIST_FILE,
+    redirectListFrom,
+    type DroppedRows,
+    type RedirectList,
+    type RedirectRow
+} from './redirects.ts'
+export {
     foldedForm,
     goneKey,
+    readingsOf,
     resolve,
     type GoneMap,
+    type RedirectMap,
     type Resolution,
     type ResolverMap,
     type SiteFile

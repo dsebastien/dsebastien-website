@@ -33,6 +33,24 @@ export interface ResolverMap {
     readonly gone?: GoneMap
     /** The former paths of the published notes that moved (URL-06, URL-21). */
     readonly former?: FormerMap
+    /** The rows of the redirect list of the content store (issue 44): old paths and old folders. */
+    readonly redirects?: RedirectMap
+}
+
+/**
+ * The rows of the redirect list that lead somewhere (issue 44, section 10.3
+ * of the spec): the old addresses of the current site that no other rule
+ * finds. The gone rows of the list are in the gone part, as keys.
+ */
+export interface RedirectMap {
+    /** The target of each old path, by its folded form (the old path, decoded, without `.md`). */
+    readonly folded: Readonly<Record<string, string>>
+    /**
+     * The old folders, by the folded form of the folder with a slash at its
+     * end, and their targets: the longest first. A path under one of them
+     * leads to its target, when no other rule finds the path (RES-04).
+     */
+    readonly prefixes: readonly (readonly [string, string])[]
 }
 
 /**
@@ -132,7 +150,7 @@ function own<T>(record: Readonly<Record<string, T>> | undefined, key: string): T
  * no slash at its start. `undefined` for a reading whose percent-encoding is
  * not valid UTF-8.
  */
-function readingsOf(path: string): string[] {
+export function readingsOf(path: string): string[] {
     const decode = (text: string): string | undefined => {
         try {
             return decodeURIComponent(text)
@@ -160,6 +178,14 @@ function formsOf(text: string): string[] {
         forms.push(form.slice(0, -'.md'.length))
     }
     return [...new Set(forms)]
+}
+
+/** A location with the query of the request: after the query of the location, when it has one. */
+function withQuery(location: string, query: string): string {
+    if (query === '') {
+        return location
+    }
+    return location.includes('?') ? `${location}&${query.slice(1)}` : location + query
 }
 
 /** The answer for the notes of a file name or of an alias: one note is a redirect, more are the "not found" page with them. */
@@ -239,16 +265,69 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
         }
         return isGonePath(path, map.gone) ? gone : notFound
     }
-    const published = resolvePublished(path, map, query)
+    const published = resolvePublished(readingsOf(path), map, query)
     if (published !== undefined) {
         return published
     }
-    return isGone(path, map.gone) ? gone : notFound
+    if (isGone(path, map.gone)) {
+        return gone
+    }
+    return underOldFolder(path, map, query) ?? notFound
 }
 
-/** The answer of the published notes and folders for a path outside the prefix, or `undefined` when none has it. */
-function resolvePublished(path: string, map: ResolverMap, query: string): Resolution | undefined {
+/**
+ * The answer of a prefix rule of the redirect list for a path under an old
+ * folder (RES-04): after every exact address and after the gone addresses,
+ * so a row of the list and an unpublished note under the folder win. The
+ * longest prefix wins. The folder itself is no address of the rule.
+ */
+function underOldFolder(path: string, map: ResolverMap, query: string): Resolution | undefined {
+    const prefixes = map.redirects?.prefixes ?? []
+    if (prefixes.length === 0) {
+        return undefined
+    }
     for (const reading of readingsOf(path)) {
+        for (const form of formsOf(reading).map(foldedForm)) {
+            for (const [prefix, location] of prefixes) {
+                if (form.length > prefix.length && form.startsWith(prefix)) {
+                    return {
+                        kind: 'redirect',
+                        status: 301,
+                        location: withQuery(location, query),
+                        cacheControl: CACHE.former
+                    }
+                }
+            }
+        }
+    }
+    return undefined
+}
+
+/**
+ * The query that a path holds in its text, encoded into the path by a site
+ * that linked to the current site (`Note%3Fref%3Dsite`, RES-02), as a real
+ * query, then the query of the request.
+ */
+function encodedQuery(text: string, query: string): string {
+    const encoded = new URLSearchParams(text).toString()
+    const request = query === '' ? '' : query.slice(1)
+    return `?${[encoded, request].filter((part) => part !== '').join('&')}`
+}
+
+/**
+ * The answer of the published notes and folders for the readings of a path
+ * outside the prefix, or `undefined` when none has it.
+ *
+ * @param inner true for the text before a query encoded into the path: it
+ * is read one time, never again for a second query
+ */
+function resolvePublished(
+    readings: readonly string[],
+    map: ResolverMap,
+    query: string,
+    inner = false
+): Resolution | undefined {
+    for (const reading of readings) {
         const forms = formsOf(reading).map(foldedForm)
         for (const form of forms) {
             const target = own(map.folded, form)
@@ -268,6 +347,19 @@ function resolvePublished(path: string, map: ResolverMap, query: string): Resolu
                 return toNotes(notes, 301, CACHE.former, query, map)
             }
         }
+        // An old path of the redirect list (issue 44): it wins over a file
+        // name and an alias, and over an address of an unpublished note.
+        for (const form of forms) {
+            const location = own(map.redirects?.folded, form)
+            if (location !== undefined) {
+                return {
+                    kind: 'redirect',
+                    status: 301,
+                    location: withQuery(location, query),
+                    cacheControl: CACHE.former
+                }
+            }
+        }
         for (const form of forms) {
             const notes = form.includes('/') ? undefined : own(map.names, form)
             if (notes !== undefined) {
@@ -282,11 +374,29 @@ function resolvePublished(path: string, map: ResolverMap, query: string): Resolu
         }
     }
     // A former file name comes after every current address.
-    for (const reading of readingsOf(path)) {
+    for (const reading of readings) {
         for (const form of formsOf(reading).map(foldedForm)) {
             const notes = form.includes('/') ? undefined : own(map.former?.names, form)
             if (notes !== undefined) {
                 return toNotes(notes, 301, CACHE.former, query, map)
+            }
+        }
+    }
+    if (inner) {
+        return undefined
+    }
+    // A query encoded into the path (RES-02): the text before it, read one time.
+    for (const reading of readings) {
+        const at = reading.indexOf('?')
+        if (at > 0) {
+            const found = resolvePublished(
+                [reading.slice(0, at)],
+                map,
+                encodedQuery(reading.slice(at + 1), query),
+                true
+            )
+            if (found?.kind === 'redirect') {
+                return found
             }
         }
     }

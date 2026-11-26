@@ -49,7 +49,7 @@ export interface SiteFiles {
  * (`apps/plugin/src/publishing/order.ts`): never the default order of texts,
  * which compares UTF-16 units.
  */
-function compareCodePoints(one: string, two: string): number {
+export function compareCodePoints(one: string, two: string): number {
     const first = one[Symbol.iterator]()
     const second = two[Symbol.iterator]()
     for (;;) {
