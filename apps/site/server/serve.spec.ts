@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -8,6 +8,7 @@ import {
     variantKey,
     variantPath
 } from '@dsebastien-website/resolver'
+import { writeMapParts } from '../src/map-parts.ts'
 import { startServer, type Server } from './serve.ts'
 
 // The plain server and the header `Host` (issue 102): the Markdown texts of
@@ -31,7 +32,12 @@ beforeAll(async () => {
         choice: (paths) => `${paths.join('+')}.html`
     })
     await Bun.write(join(dist, RESOLVER_MAP_FILE), JSON.stringify(map))
+    // The server reads the map in parts, as the Worker does (issue 121): the
+    // whole map is not in the folder.
+    await writeMapParts(dist, 64)
+    await unlink(join(dist, RESOLVER_MAP_FILE))
     await Bun.write(join(dist, '404.html'), '<h1>Not found</h1>')
+    await Bun.write(join(dist, 'Welcome.md.html'), '<h1>Welcome</h1>')
     server = await startServer({ dist, port: 0 })
 })
 
@@ -98,6 +104,8 @@ describe('the plain server and the variants of an image', () => {
             join(root, 'dist', RESOLVER_MAP_FILE),
             JSON.stringify({ pages: {}, attachments: { [image]: key } })
         )
+        // The server reads the map in parts (issue 121).
+        await writeMapParts(join(root, 'dist'))
         await Bun.write(join(root, 'storage', key), 'png')
         await Bun.write(join(root, 'variants', variantKey(key, 480)), 'webp')
         const site = await startServer({
@@ -119,5 +127,16 @@ describe('the plain server and the variants of an image', () => {
             await site.stop()
             await rm(root, { recursive: true, force: true })
         }
+    })
+})
+
+describe('the plain server and the map in parts (issue 121)', () => {
+    test('answers a page and a variant from the parts of the map', async () => {
+        const page = await fetch(`${server.url}/Welcome`)
+        expect(page.status).toBe(200)
+        expect(await page.text()).toBe('<h1>Welcome</h1>')
+        const variant = await fetch(`${server.url}/welcome`, { redirect: 'manual' })
+        expect(variant.status).toBe(301)
+        expect(variant.headers.get('location')).toBe('/Welcome')
     })
 })

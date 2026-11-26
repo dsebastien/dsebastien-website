@@ -282,6 +282,15 @@ describe('output of the build with a redirect list', () => {
         expect(answer.status).toBe(404)
         expect(await answer.text()).not.toContain('old library')
     })
+
+    // Issue 121: nor a file of the map in parts.
+    test.each(HOSTS)('gives no part of the resolver map on %s', async (host: Host) => {
+        for (const path of ['/-/resolver-map/head.json', '/-/resolver-map/0.json']) {
+            const answer = await get(path, {}, host)
+            expect(answer.status).toBe(404)
+            expect(await answer.text()).not.toContain('"pages"')
+        }
+    })
 })
 
 // URL-18: an unchanged page or Markdown answers 304 to a conditional request.

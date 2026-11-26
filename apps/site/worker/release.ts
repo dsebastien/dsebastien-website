@@ -18,6 +18,7 @@ import {
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     checkOutput,
+    ASSETS_IGNORE,
     checkOutputLimits,
     deploymentRecordFrom,
     HOST_LIMITS,
@@ -1077,6 +1078,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                     : {})
             }
             await writeFile(join(dist, '_headers'), run.headers)
+            await writeFile(join(dist, '.assetsignore'), ASSETS_IGNORE)
             await writeFile(
                 join(dist, DEPLOYMENT_RECORD_FILE),
                 `${JSON.stringify(record, null, 4)}\n`

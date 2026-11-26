@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+    ASSETS_IGNORE,
     checkOutput,
     checkOutputLimits,
     deploymentRecordFrom,
@@ -82,6 +83,14 @@ describe('the configuration of the Worker', () => {
         })
     })
 
+    // Issue 121: the Worker reads the part of the first path while it reads the head.
+    test('gives the Worker the count of the parts of the resolver map of the release', () => {
+        expect(workerConfiguration(PREVIEW, PATHS, 1024).vars).toEqual({
+            NOINDEX: 'true',
+            MAP_PARTS: '1024'
+        })
+    })
+
     // A custom domain lets wrangler replace a DNS record of the zone without a question
     // when it runs with no terminal: a wrong host would take over a live name.
     test('serves a host of its own zone through a route too, never as a custom domain', () => {
@@ -136,12 +145,27 @@ async function withFolder(run: (folder: string) => Promise<void>): Promise<void>
 }
 
 describe('the output that a deployment puts on the host', () => {
-    test('accepts the output of a build: a folder with a resolver map', async () => {
+    test('accepts the output of a build: a folder with the head of its resolver map in parts', async () => {
+        await withFolder(async (folder) => {
+            await mkdir(join(folder, '-', 'resolver-map'), { recursive: true })
+            await writeFile(join(folder, '-', 'resolver-map', 'head.json'), '{}')
+            expect(await checkOutput(folder)).toBeUndefined()
+        })
+    })
+
+    // Issue 121: the hosts read the map in parts; the whole map alone is an old output.
+    test('refuses an output with the whole resolver map and no head', async () => {
         await withFolder(async (folder) => {
             await mkdir(join(folder, '-'))
             await writeFile(join(folder, '-', 'resolver-map.json'), '{}')
-            expect(await checkOutput(folder)).toBeUndefined()
+            expect(await checkOutput(folder)).toContain('-/resolver-map/head.json')
         })
+    })
+
+    // Issue 121: the whole map is read by the checks of the build only, and it
+    // can pass the size limit of a static file.
+    test('the whole resolver map does not go to the host', () => {
+        expect(ASSETS_IGNORE).toBe('/-/resolver-map.json\n')
     })
 
     // An empty `--dist` is the working folder: the whole clone would go to the host.
@@ -187,6 +211,15 @@ describe('the limits of the host', () => {
             expect(problem).toContain('-/note: 2')
             expect(problem).toContain('-/search: 1')
             expect(problem).toContain('_astro: 1')
+        })
+    })
+
+    test('do not count the files that the host does not take: the whole resolver map, the ignore file', async () => {
+        await withFolder(async (folder) => {
+            await output(folder)
+            await writeFile(join(folder, '-', 'resolver-map.json'), '0123456789abc')
+            await writeFile(join(folder, '.assetsignore'), ASSETS_IGNORE)
+            expect(await checkOutputLimits(folder, { files: 5, fileSize: 10 })).toBeUndefined()
         })
     })
 

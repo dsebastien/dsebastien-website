@@ -526,3 +526,59 @@ function median(values: readonly number[]): number {
         ? (sorted[middle] ?? Number.NaN)
         : ((sorted[middle - 1] ?? Number.NaN) + (sorted[middle] ?? Number.NaN)) / 2
 }
+
+/**
+ * The budget of the first request of a new instance of the Worker of the host
+ * (issue 121, PERF-29, decision of the author R94): the time to the first
+ * byte, measured from a client near the edge with a new connection, at the
+ * 95th percentile, on a host with the resolver map of the published notes.
+ * Fewer first requests than `requests` give no verdict.
+ */
+export const FIRST_REQUEST_BUDGET = { percentile: 95, milliseconds: 150, requests: 20 } as const
+
+/** The verdict on the first requests of new instances. */
+export interface FirstRequestVerdict {
+    /** `too few`: fewer first requests than the budget needs. */
+    verdict: 'pass' | 'fail' | 'too few'
+    /** The times in milliseconds, at the 50th and the 95th percentiles (nearest rank), and the longest. */
+    p50: number
+    p95: number
+    max: number
+    count: number
+    failures: string[]
+}
+
+/** The value at a percentile of sorted values, by the nearest rank. */
+export function percentileOf(sorted: readonly number[], percentile: number): number {
+    const rank = Math.max(1, Math.ceil((percentile / 100) * sorted.length))
+    return sorted[rank - 1] ?? Number.NaN
+}
+
+/**
+ * Judges the times to the first byte of first requests of new instances
+ * against `FIRST_REQUEST_BUDGET`, in milliseconds.
+ */
+export function judgeFirstRequests(times: readonly number[]): FirstRequestVerdict {
+    const sorted = [...times].sort((one, two) => one - two)
+    const p50 = percentileOf(sorted, 50)
+    const p95 = percentileOf(sorted, FIRST_REQUEST_BUDGET.percentile)
+    const facts = { p50, p95, max: sorted.at(-1) ?? Number.NaN, count: sorted.length }
+    if (sorted.length < FIRST_REQUEST_BUDGET.requests) {
+        return {
+            verdict: 'too few',
+            ...facts,
+            failures: [
+                `${String(sorted.length)} first requests of an instance, the budget needs ${String(FIRST_REQUEST_BUDGET.requests)}`
+            ]
+        }
+    }
+    return p95 > FIRST_REQUEST_BUDGET.milliseconds
+        ? {
+              verdict: 'fail',
+              ...facts,
+              failures: [
+                  `first request of an instance: p95 ${String(Math.round(p95))} ms, the budget is ${String(FIRST_REQUEST_BUDGET.milliseconds)} ms`
+              ]
+          }
+        : { verdict: 'pass', ...facts, failures: [] }
+}

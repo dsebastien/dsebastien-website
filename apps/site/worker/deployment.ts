@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import {
     hasVariants,
     imageVariants,
+    MAP_HEAD_FILE,
     MAX_VARIANT_PIXELS,
     RESOLVER_MAP_FILE,
     VARIANT_WIDTHS,
@@ -100,7 +101,7 @@ export interface WorkerConfiguration {
     readonly r2_buckets: readonly [
         { readonly binding: 'ATTACHMENTS'; readonly bucket_name: string }
     ]
-    readonly vars: { readonly NOINDEX: 'true' | 'false' }
+    readonly vars: { readonly NOINDEX: 'true' | 'false'; readonly MAP_PARTS?: string }
     readonly observability: { readonly enabled: true }
 }
 
@@ -115,10 +116,14 @@ export interface WorkerConfiguration {
  * host would take over a live name. A route changes no DNS record.
  *
  * @param paths `main`: the entry of the Worker; `dist`: the output of the build.
+ * @param mapParts the count of the parts of the resolver map of the output
+ * (issue 121): the first request of an instance reads the part of its path
+ * while it reads the head of the map.
  */
 export function workerConfiguration(
     target: DeployTarget,
-    paths: { readonly main: string; readonly dist: string }
+    paths: { readonly main: string; readonly dist: string },
+    mapParts?: number
 ): WorkerConfiguration {
     return {
         name: target.worker,
@@ -136,7 +141,10 @@ export function workerConfiguration(
             run_worker_first: ['/*', '!/_astro/*', '!/-/search/*']
         },
         r2_buckets: [{ binding: 'ATTACHMENTS', bucket_name: target.bucket }],
-        vars: { NOINDEX: target.noindex ? 'true' : 'false' },
+        vars: {
+            NOINDEX: target.noindex ? 'true' : 'false',
+            ...(mapParts === undefined ? {} : { MAP_PARTS: String(mapParts) })
+        },
         observability: { enabled: true }
     }
 }
@@ -165,12 +173,24 @@ export async function checkOutput(folder: string): Promise<string | undefined> {
     if (kind?.isDirectory() !== true) {
         return `${folder} is not a folder`
     }
-    const map = await stat(join(folder, RESOLVER_MAP_FILE)).catch(() => undefined)
+    const map = await stat(join(folder, MAP_HEAD_FILE)).catch(() => undefined)
     if (map?.isFile() !== true) {
-        return `${folder} is not the output of a build: it has no resolver map (${RESOLVER_MAP_FILE})`
+        return `${folder} is not the output of a build: it has no resolver map (${MAP_HEAD_FILE})`
     }
     return undefined
 }
+
+/**
+ * The whole `.assetsignore` file of the static files (issue 121): the files
+ * of the output that the deployment does not upload. The whole resolver map
+ * is for the checks of the build; the hosts read the map in parts, and the
+ * whole map of the published notes comes near the size limit of a static file.
+ */
+export const ASSETS_IGNORE = `/${RESOLVER_MAP_FILE}
+`
+
+/** The files of the output that the host never gets, by their names in the output. */
+const NOT_UPLOADED = new Set([RESOLVER_MAP_FILE, '.assetsignore'])
 
 /** The limits of the host for one release: a Worker version and its static files (BUILD-08). */
 export interface HostLimits {
@@ -214,6 +234,9 @@ export async function checkOutputLimits(
         const name = join(entry.parentPath, entry.name)
             .slice(folder.length + 1)
             .replaceAll('\\', '/')
+        if (NOT_UPLOADED.has(name)) {
+            continue
+        }
         files += 1
         counts.set(classOf(name), (counts.get(classOf(name)) ?? 0) + 1)
         if ((await stat(join(folder, name))).size > limits.fileSize) {

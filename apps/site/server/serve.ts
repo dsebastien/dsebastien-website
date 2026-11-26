@@ -6,8 +6,11 @@ import {
     ASSET_FOLDERS,
     failureResponse,
     imageKeyOf,
-    RESOLVER_MAP_FILE,
-    resolverMapFrom,
+    MAP_HEAD_FILE,
+    mapHeadFrom,
+    mapPartFile,
+    mapPartFrom,
+    partedResolver,
     SERVER_ERROR_FILE,
     siteHandler,
     type StoredFile
@@ -28,6 +31,9 @@ import {
 // `--variants`, it gives the variants of their images from that folder
 // (issue 87, `writeVariants()` of `apps/site/worker/image-variants.ts`):
 // the attachment folder of the publishing tool holds no variant.
+//
+// It reads the resolver map in parts, as the Worker does (issue 121): the
+// head at the start, and a part when a request needs it.
 
 /**
  * A file of a folder of this machine. Its tag is its size and its time.
@@ -95,7 +101,10 @@ export async function startServer(options: {
     const dist = resolvePath(options.dist)
     const storage = options.attachments === undefined ? undefined : resolvePath(options.attachments)
     const variants = options.variants === undefined ? undefined : resolvePath(options.variants)
-    const map = resolverMapFrom(await Bun.file(join(dist, RESOLVER_MAP_FILE)).json())
+    const head = mapHeadFrom(await Bun.file(join(dist, MAP_HEAD_FILE)).json())
+    const map = partedResolver(head, async (index) =>
+        mapPartFrom(await Bun.file(join(dist, mapPartFile(index))).json(), head, index)
+    )
     const assets = await readAssets(dist)
     // Read one time at the start: a failure never depends on a file of the
     // release, which can be the missing file (NAV-20).

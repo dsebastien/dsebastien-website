@@ -5,10 +5,26 @@ export {
     failureResponse,
     siteHandler,
     type ByteRange,
+    type MapLookup,
     type Release,
     type StoredFile
 } from './handler.ts'
 export { RESOLVER_MAP_FILE, resolverMapFrom } from './map.ts'
+export {
+    MAP_HEAD_FILE,
+    MAP_PARTS_FOLDER,
+    mapHeadFrom,
+    mapOfParts,
+    mapPartFile,
+    mapPartFrom,
+    mapPartsOf,
+    PART_BYTES,
+    partedResolver,
+    partOfKey,
+    type MapHead,
+    type MapPart,
+    type PartedResolverOptions
+} from './parts.ts'
 export {
     applyRedirectList,
     REDIRECT_LIST_FILE,

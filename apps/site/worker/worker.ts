@@ -1,11 +1,17 @@
 import {
     ASSET_FOLDERS,
     failureResponse,
-    RESOLVER_MAP_FILE,
-    resolverMapFrom,
+    MAP_HEAD_FILE,
+    mapHeadFrom,
+    mapPartFile,
+    mapPartFrom,
+    partedResolver,
+    partOfKey,
     SERVER_ERROR_FILE,
     siteHandler,
-    type ResolverMap,
+    type MapHead,
+    type MapLookup,
+    type MapPart,
     type StoredFile
 } from '@dsebastien-website/resolver'
 
@@ -58,6 +64,28 @@ export interface Environment {
      * noindex`. The deployment sets it; any other value marks nothing.
      */
     readonly NOINDEX?: string
+    /**
+     * The count of the parts of the resolver map of the release (issue 121).
+     * The deployment sets it, so the first request of an instance reads the
+     * part of its path while it reads the head. A value that is not the count
+     * of the head is not used.
+     */
+    readonly MAP_PARTS?: string
+}
+
+/**
+ * The `Server-Timing` entry of the first answer of an instance of the Worker
+ * (issue 121): the check of the first request (`scripts/first-request.ts`)
+ * tells by it which requests met a new instance. It says nothing of the
+ * release.
+ */
+export const NEW_INSTANCE_TIMING = 'instance;desc=new'
+
+/** The first answer of an instance, with the entry that says so. */
+function markedNewInstance(response: Response): Response {
+    const marked = new Response(response.body, response)
+    marked.headers.append('server-timing', NEW_INSTANCE_TIMING)
+    return marked
 }
 
 /** An answer with the header that keeps it out of the search engines. */
@@ -159,9 +187,13 @@ async function storedObject(
     }
 }
 
-/** What the Worker reads of a release one time: its resolver map and its server error page. */
+/**
+ * What the Worker reads of a release one time: the head of its resolver map
+ * in parts, with the lookup that reads the parts that a request needs (issue
+ * 121), and its server error page.
+ */
 interface OpenedRelease {
-    readonly map: ResolverMap
+    readonly map: MapLookup
     readonly serverErrorPage: string | undefined
 }
 
@@ -199,9 +231,93 @@ async function bodyText(response: Response, file: string): Promise<string> {
     }
 }
 
-async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
+/**
+ * A part of the resolver map, from the static files. A read that fails for a
+ * reason that can be short is done again one time, after a short pause; a
+ * part that fails then fails its request, and the next request reads it
+ * again (`partedResolver()`).
+ */
+async function readPart(
+    files: StaticFiles,
+    head: MapHead,
+    index: number,
+    report: (error: unknown) => void,
+    pause: (milliseconds: number) => Promise<void>,
+    early?: Promise<unknown>
+): Promise<MapPart> {
+    const file = mapPartFile(index)
+    const read = async (value: Promise<unknown> = partValue(files, index)): Promise<MapPart> =>
+        mapPartFrom(await value, head, index)
+    try {
+        return await read(early)
+    } catch (error) {
+        if (!(error instanceof ShortFailure)) {
+            throw error
+        }
+        report(new Error(`first read of ${file} failed, reading it again`, { cause: error }))
+    }
+    await pause(PAUSE_BEFORE_SECOND_READ)
+    return await read()
+}
+
+/** The value of the JSON text of a part of the resolver map, from the static files. */
+async function partValue(files: StaticFiles, index: number): Promise<unknown> {
+    const file = mapPartFile(index)
+    let response: Response
+    try {
+        response = await files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(file)}`))
+    } catch (error) {
+        throw new ShortFailure(`the host fails to give ${file}`, { cause: error })
+    }
+    if (response.status !== 200) {
+        await discard(response)
+        throw statusFailure(response.status, file)
+    }
+    return JSON.parse(await bodyText(response, file)) as unknown
+}
+
+/** The read of the part of the first path of an instance, started with the read of the head. */
+interface EarlyPart {
+    /** The count of the parts that the deployment gave. */
+    readonly count: number
+    readonly index: number
+    readonly value: Promise<unknown>
+}
+
+/**
+ * Starts the read of the part of a path, when the variable `MAP_PARTS` gives
+ * a count of parts (a power of two). `undefined` without one.
+ */
+function earlyPart(
+    files: StaticFiles,
+    count: string | undefined,
+    path: string
+): EarlyPart | undefined {
+    const parts = Number(count)
+    if (
+        count === undefined ||
+        !Number.isInteger(parts) ||
+        parts < 1 ||
+        Math.log2(parts) % 1 !== 0
+    ) {
+        return undefined
+    }
+    const index = partOfKey(path, parts)
+    const value = partValue(files, index)
+    // A read that no request takes (a count that is not the one of the head)
+    // must not fail as a rejection that nobody handles.
+    value.catch(() => undefined)
+    return { count: parts, index, value }
+}
+
+async function openRelease(
+    files: StaticFiles,
+    report: (error: unknown) => void,
+    pause: (milliseconds: number) => Promise<void>,
+    early?: EarlyPart
+): Promise<OpenedRelease> {
     const [mapRead, pageRead] = await Promise.allSettled([
-        files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(RESOLVER_MAP_FILE)}`)),
+        files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(MAP_HEAD_FILE)}`)),
         files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(SERVER_ERROR_FILE)}`))
     ])
     if (mapRead.status === 'rejected' || pageRead.status === 'rejected') {
@@ -241,12 +357,23 @@ async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
     if (map.status !== 200) {
         await discard(map)
         if (map.status === 404) {
-            throw new Error(`the release has no ${RESOLVER_MAP_FILE}`)
+            throw new Error(`the release has no ${MAP_HEAD_FILE}`)
         }
-        throw statusFailure(map.status, RESOLVER_MAP_FILE)
+        throw statusFailure(map.status, MAP_HEAD_FILE)
     }
-    const text = await bodyText(map, RESOLVER_MAP_FILE)
-    return { map: resolverMapFrom(JSON.parse(text)), serverErrorPage }
+    const head = mapHeadFrom(JSON.parse(await bodyText(map, MAP_HEAD_FILE)))
+    return {
+        map: partedResolver(head, (index) => {
+            // The early read serves one read of its part, with the count of the head only.
+            const value =
+                early?.count === head.parts && early.index === index ? early.value : undefined
+            if (value !== undefined) {
+                early = undefined
+            }
+            return readPart(files, head, index, report, pause, value)
+        }),
+        serverErrorPage
+    }
 }
 
 /** How long the Worker waits before its second read of the release, in milliseconds. */
@@ -269,10 +396,11 @@ async function openReleaseWithRetry(
     files: StaticFiles,
     report: (error: unknown) => void,
     pause: (milliseconds: number) => Promise<void>,
-    abandoned: () => boolean
+    abandoned: () => boolean,
+    early?: EarlyPart
 ): Promise<OpenedRelease> {
     try {
-        return await openRelease(files)
+        return await openRelease(files, report, pause, early)
     } catch (error) {
         if (!(error instanceof ShortFailure) || abandoned()) {
             throw error
@@ -283,7 +411,7 @@ async function openReleaseWithRetry(
     if (abandoned()) {
         throw new Error(ABANDONED)
     }
-    return await openRelease(files)
+    return await openRelease(files, report, pause, early)
 }
 
 /**
@@ -361,16 +489,17 @@ export interface WorkerOptions {
 }
 
 /**
- * A Worker: one per isolate of the host. It reads the resolver map and the
- * server error page of its release at its first request, and keeps them. A
+ * A Worker: one per isolate of the host. It reads the head of the resolver
+ * map in parts and the server error page of its release at its first request,
+ * and keeps them; it reads a part of the map when a request needs it (issue
+ * 121). Its first answer says so (`NEW_INSTANCE_TIMING`). A
  * new release is a new Worker version, so a new isolate. A read of the release
  * that fails for a reason that can be short (a failed fetch, a status 5xx, a
  * body that breaks while it is read) is done again once, after a short pause. The whole read has a time limit of five
  * seconds: past it, the request answers 500 and the next request reads again
  * at once; after two time-outs in a row, it waits ten seconds. A read that
  * settles after its time limit is kept. A release that it cannot read answers
- * 500, and it reads it again after ten seconds, not at each request: the
- * resolver map is large.
+ * 500, and it reads it again after ten seconds, not at each request.
  */
 export function createWorker(options: WorkerOptions = {}): {
     fetch(request: Request, env: Environment, context?: RequestContext): Promise<Response>
@@ -398,10 +527,16 @@ export function createWorker(options: WorkerOptions = {}): {
     /** The time-outs of the shared read in a row. */
     let timeOuts = 0
     /** Starts the shared read, kept alive by the context of the request that starts it. */
-    function startRead(env: Environment, context: RequestContext | undefined): SharedRead {
+    function startRead(
+        env: Environment,
+        context: RequestContext | undefined,
+        path: string
+    ): SharedRead {
         const deadline = now() + READ_TIME_LIMIT
         let abandoned = false
-        const read = openReleaseWithRetry(env.ASSETS, report, pause, () => abandoned)
+        // The part of the first path is read with the head (issue 121).
+        const early = earlyPart(env.ASSETS, env.MAP_PARTS, path)
+        const read = openReleaseWithRetry(env.ASSETS, report, pause, () => abandoned, early)
         const shared: SharedRead = {
             read,
             deadline,
@@ -436,7 +571,7 @@ export function createWorker(options: WorkerOptions = {}): {
         if (failedAt !== undefined && now() - failedAt < RETRY_AFTER) {
             return failureResponse(request)
         }
-        opened ??= startRead(env, context)
+        opened ??= startRead(env, context, new URL(request.url).pathname)
         const shared = opened
         let release = shared.release
         if (release === undefined) {
@@ -494,9 +629,15 @@ export function createWorker(options: WorkerOptions = {}): {
         })
         return await handle(request)
     }
+    /** True once the instance gave its first answer. */
+    let answered = false
     return {
         async fetch(request, env, context) {
-            const response = await answer(request, env, context)
+            let response = await answer(request, env, context)
+            if (!answered) {
+                answered = true
+                response = markedNewInstance(response)
+            }
             return env.NOINDEX === 'true' ? markedNoindex(response) : response
         }
     }

@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 import {
     brotliSize,
     checkNotePage,
+    FIRST_REQUEST_BUDGET,
+    judgeFirstRequests,
     judgeTimes,
     notePageBudget,
     oversizedPages,
@@ -624,5 +626,53 @@ describe('the warning of the build', () => {
         } finally {
             await rm(dist, { recursive: true, force: true })
         }
+    })
+})
+
+describe('the first request of a new instance of the Worker (issue 121, PERF-29)', () => {
+    const times = (count: number, value: number): number[] =>
+        Array.from({ length: count }, () => value)
+
+    test('the budget is 150 ms at the 95th percentile, with 20 requests at least', () => {
+        expect(FIRST_REQUEST_BUDGET).toEqual({ percentile: 95, milliseconds: 150, requests: 20 })
+    })
+
+    test('passes when 95 percent of the first requests are within the budget', () => {
+        // 19 of 20 within the budget: the 95th percentile (nearest rank) is the 19th.
+        const verdict = judgeFirstRequests([...times(19, 90), 400])
+        expect(verdict).toEqual({
+            verdict: 'pass',
+            p50: 90,
+            p95: 90,
+            max: 400,
+            count: 20,
+            failures: []
+        })
+    })
+
+    test('fails when more than 5 percent are above the budget', () => {
+        const verdict = judgeFirstRequests([...times(18, 90), 151, 400])
+        expect(verdict.verdict).toBe('fail')
+        expect(verdict.p95).toBe(151)
+        expect(verdict.failures).toEqual([
+            'first request of an instance: p95 151 ms, the budget is 150 ms'
+        ])
+    })
+
+    test('a time on the budget passes', () => {
+        expect(judgeFirstRequests(times(20, 150)).verdict).toBe('pass')
+    })
+
+    test('gives no verdict with fewer requests than the budget needs', () => {
+        const verdict = judgeFirstRequests(times(19, 90))
+        expect(verdict.verdict).toBe('too few')
+        expect(verdict.failures).toEqual(['19 first requests of an instance, the budget needs 20'])
+    })
+
+    test('the order of the times does not count', () => {
+        const sorted = [...times(18, 80), 120, 300]
+        expect(judgeFirstRequests([300, ...sorted.slice(0, 19).reverse()])).toEqual(
+            judgeFirstRequests(sorted)
+        )
     })
 })

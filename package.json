@@ -39,6 +39,7 @@
         "serve": "bun run --cwd apps/site serve",
         "site:fixture": "bun scripts/site-fixture.ts",
         "urls": "bun scripts/url-table.ts",
+        "first-request": "bun scripts/first-request.ts",
         "deploy": "bun scripts/deploy.ts",
         "deploy:revert": "bun scripts/deploy-revert.ts",
         "variants": "bun scripts/variants.ts",

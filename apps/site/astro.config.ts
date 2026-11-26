@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { SITE_ORIGIN } from '@dsebastien-website/resolver'
 import { defineConfig } from 'astro/config'
 import { notePageBudget } from './src/budgets.ts'
+import { resolverMapParts } from './src/map-parts.ts'
 import { markdownProcessor } from './src/rendering/markup.ts'
 import { searchIndex } from './src/search/search-index.ts'
 import { selfContainedPages } from './src/self-contained.ts'
@@ -24,8 +25,15 @@ export default defineConfig({
     // A shared title or description, or a note too far from the home page,
     // stops the build (IDX-04, IDX-05, NAV-07, R61). Then the full-text index
     // of the note pages is written (SRCH-01, R63), and the server error page
-    // gets its style inside it (NAV-20, R64).
-    integrations: [notePageBudget(), siteChecks(), searchIndex(), selfContainedPages()],
+    // gets its style inside it (NAV-20, R64). The resolver map is cut into
+    // parts, which the hosts read (issue 121, R94).
+    integrations: [
+        notePageBudget(),
+        siteChecks(),
+        searchIndex(),
+        selfContainedPages(),
+        resolverMapParts()
+    ],
     vite: {
         plugins: [tailwindcss()]
     }

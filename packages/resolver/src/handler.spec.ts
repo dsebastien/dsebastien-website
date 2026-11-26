@@ -676,3 +676,37 @@ describe('the origin of the error texts', () => {
         }
     })
 })
+
+describe('a release with its map in parts (issue 121)', () => {
+    test('answers through the lookup of the release, with the query of the request', async () => {
+        const asked: string[] = []
+        const response = await get(
+            '/welcome?ref=site',
+            {},
+            {
+                map: (path, query) => {
+                    asked.push(`${path}${query}`)
+                    return Promise.resolve({ kind: 'page', file: 'page/Welcome.md.html' })
+                }
+            }
+        )
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('file page/Welcome.md.html')
+        expect(asked).toEqual(['/welcome?ref=site'])
+    })
+
+    test('a lookup that fails gives the server error page', async () => {
+        const reported: unknown[] = []
+        const response = await get(
+            '/Welcome',
+            {},
+            {
+                map: () => Promise.reject(new Error('a part of the map fails to load')),
+                report: (error) => reported.push(error)
+            }
+        )
+        expect(response.status).toBe(500)
+        expect(await response.text()).toBe('<h1>Server error</h1>')
+        expect(reported).toHaveLength(1)
+    })
+})

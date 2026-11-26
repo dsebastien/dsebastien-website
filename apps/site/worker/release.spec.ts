@@ -147,8 +147,9 @@ function fixture(
             await mkdir(CACHE, { recursive: true })
             dist = await mkdtemp(join(CACHE, 'release-spec-'))
             folders.push(dist)
-            await mkdir(join(dist, '-'))
+            await mkdir(join(dist, '-', 'resolver-map'), { recursive: true })
             await writeFile(join(dist, '-', 'resolver-map.json'), '{}')
+            await writeFile(join(dist, '-', 'resolver-map', 'head.json'), '{}')
             await writeFile(join(dist, 'index.html'), 'home')
             return dist
         },
@@ -279,6 +280,10 @@ describe('a deployment', () => {
         })
         expect(await readFile(join(site.dist(), '_headers'), 'utf8')).toBe(
             '/*\n  X-Robots-Tag: noindex\n'
+        )
+        // Issue 121: the whole resolver map stays on the machine.
+        expect(await readFile(join(site.dist(), '.assetsignore'), 'utf8')).toBe(
+            '/-/resolver-map.json\n'
         )
     })
 

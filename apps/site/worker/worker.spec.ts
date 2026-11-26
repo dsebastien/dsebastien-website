@@ -1,11 +1,21 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    MAP_HEAD_FILE,
+    mapPartFile,
+    mapPartsOf,
+    partOfKey,
     resolverMapOf,
     variantKey,
     variantPath,
     type SiteFiles
 } from '@dsebastien-website/resolver'
-import { createWorker, type Environment, type ObjectStorage, type StaticFiles } from './worker.ts'
+import {
+    createWorker,
+    NEW_INSTANCE_TIMING,
+    type Environment,
+    type ObjectStorage,
+    type StaticFiles
+} from './worker.ts'
 
 // The Worker of the host (HOST-01, HOST-03, issue 21): an adapter of the
 // handler of the site. These tests give it static files and an object
@@ -197,8 +207,21 @@ function objectStorage(objects: Record<string, string>): AskedStorage {
     }
 }
 
-const SITE = {
-    '/-/resolver-map.json': JSON.stringify(map),
+/** The static files of the resolver map in parts (issue 121), by their paths. */
+function partFiles(bytes?: number): Record<string, string> {
+    const { head, parts } = mapPartsOf(map, bytes)
+    const files: Record<string, string> = { [`/${MAP_HEAD_FILE}`]: JSON.stringify(head) }
+    for (const [index, part] of parts.entries()) {
+        files[`/${mapPartFile(index)}`] = JSON.stringify(part)
+    }
+    return files
+}
+
+/** The one part of the map of the site: the map is small. */
+const PART = `/${mapPartFile(0)}`
+
+const SITE: Record<string, string> = {
+    ...partFiles(),
     '/500.html': '<h1>Server error</h1>',
     '/404.html': '<h1>Not found</h1>',
     '/-/note/10.html': '<h1>Welcome</h1>',
@@ -206,7 +229,7 @@ const SITE = {
     '/_astro/site.abc.css': 'body{}'
 }
 
-const MAP = '/-/resolver-map.json'
+const MAP = `/${MAP_HEAD_FILE}`
 
 /** A timer that the Worker started. The test fires it. */
 interface Timer {
@@ -240,7 +263,7 @@ function mapReads(site: Host): number {
 function host(
     files: Record<string, string> = SITE,
     withStorage = true,
-    variables: Pick<Environment, 'NOINDEX'> = {},
+    variables: Pick<Environment, 'NOINDEX' | 'MAP_PARTS'> = {},
     failures: Record<string, Failure[]> = {},
     /** True for a pause that never ends. */
     hangingPause = false
@@ -311,7 +334,7 @@ describe('the Worker', () => {
     })
 
     test('marks noindex the answer of a release that it cannot read', async () => {
-        const { '/-/resolver-map.json': _map, ...rest } = SITE
+        const { [MAP]: _map, ...rest } = SITE
         const response = await host(rest, true, { NOINDEX: 'true' }).get('/Welcome')
         expect(response.status).toBe(500)
         expect(response.headers.get('x-robots-tag')).toBe('noindex')
@@ -351,7 +374,8 @@ describe('the Worker', () => {
         expect(site.files.asked.toSorted()).toEqual([
             '/-/note/10.html',
             '/-/note/10.html',
-            '/-/resolver-map.json',
+            PART,
+            MAP,
             '/500.html'
         ])
     })
@@ -447,7 +471,7 @@ describe('the Worker', () => {
         expect(await response.text()).toBe('<h1>Not found</h1>')
         expect(
             site.files.asked.filter(
-                (asked) => !['/-/resolver-map.json', '/500.html', '/404.html'].includes(asked)
+                (asked) => ![MAP, PART, '/500.html', '/404.html'].includes(asked)
             )
         ).toEqual([])
     })
@@ -503,7 +527,7 @@ describe('the Worker', () => {
     })
 
     test('answers 500 with a short text when the release has no resolver map', async () => {
-        const { '/-/resolver-map.json': _map, ...rest } = SITE
+        const { [MAP]: _map, ...rest } = SITE
         const response = await host(rest).get('/Welcome')
         expect(response.status).toBe(500)
         expect(response.headers.get('cache-control')).toBe('no-store')
@@ -512,15 +536,13 @@ describe('the Worker', () => {
     })
 
     test('answers 500 when the resolver map of the release is not a resolver map', async () => {
-        const response = await host({ ...SITE, '/-/resolver-map.json': '{"pages":[1]}' }).get(
-            '/Welcome'
-        )
+        const response = await host({ ...SITE, [MAP]: '{"pages":[1]}' }).get('/Welcome')
         expect(response.status).toBe(500)
     })
 
     // NAV-21: also when the Worker cannot read its release.
     test('answers a short Markdown text to an agent when the release has no resolver map', async () => {
-        const { '/-/resolver-map.json': _map, ...rest } = SITE
+        const { [MAP]: _map, ...rest } = SITE
         const response = await host(rest).get('/-/md/Welcome.md')
         expect(response.status).toBe(500)
         expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
@@ -889,5 +911,142 @@ describe('the Worker', () => {
             true,
             true
         ])
+    })
+})
+
+describe('the first request of an instance (issue 121)', () => {
+    test('the first answer says that it comes from a new instance, and no later one', async () => {
+        const site = host(SITE, true, { NOINDEX: 'true' })
+        const first = await site.get('/Welcome')
+        const second = await site.get('/Welcome')
+        expect(first.headers.get('server-timing')).toBe(NEW_INSTANCE_TIMING)
+        expect(first.headers.get('x-robots-tag')).toBe('noindex')
+        expect(second.headers.get('server-timing')).toBeNull()
+    })
+
+    test('also an answer 500 of a release that it cannot read', async () => {
+        const { [MAP]: _map, ...rest } = SITE
+        const response = await host(rest).get('/Welcome')
+        expect(response.status).toBe(500)
+        expect(response.headers.get('server-timing')).toBe(NEW_INSTANCE_TIMING)
+    })
+})
+
+describe('the resolver map in parts (issue 121)', () => {
+    /** The site with its map in many small parts. */
+    const MANY = { ...SITE, ...partFiles(64) }
+    const parts = Object.keys(MANY).filter(
+        (path) => path.startsWith('/-/resolver-map/') && path !== MAP
+    )
+
+    test('the map of the test has several parts', () => {
+        expect(parts.length).toBeGreaterThan(4)
+    })
+
+    test('a page reads the head and the one part of its path', async () => {
+        const site = host(MANY)
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(200)
+        const count = parts.length
+        expect(site.files.asked.filter((path) => path.startsWith('/-/resolver-map/'))).toEqual([
+            MAP,
+            `/${mapPartFile(partOfKey('/Welcome', count))}`
+        ])
+    })
+
+    test('a part is read one time for many requests', async () => {
+        const site = host(MANY)
+        await site.get('/Welcome')
+        await site.get('/Welcome')
+        await site.get('/welcome')
+        const asked = site.files.asked.filter((path) => parts.includes(path))
+        expect(asked.length).toBe(new Set(asked).size)
+    })
+
+    test('a variant reads the parts that it needs, and gives the answer of the whole map', async () => {
+        const response = await host(MANY).get('/welcome?ref=site')
+        expect(response.status).toBe(301)
+        expect(response.headers.get('location')).toBe('/Welcome?ref=site')
+    })
+
+    test('a part that the host fails to give is read again after a short pause', async () => {
+        const part = `/${mapPartFile(partOfKey('/Welcome', parts.length))}`
+        const site = host(MANY, true, {}, { [part]: ['reject'] })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(200)
+        expect(site.paused).toEqual([50])
+        expect((site.reported[0] as Error).message).toBe(
+            `first read of ${part.slice(1)} failed, reading it again`
+        )
+    })
+
+    test('a part that fails twice answers 500, and the next request reads it again', async () => {
+        const part = `/${mapPartFile(partOfKey('/Welcome', parts.length))}`
+        const site = host(MANY, true, {}, { [part]: [503, 503] })
+        const failed = await site.get('/Welcome')
+        expect(failed.status).toBe(500)
+        expect(await failed.text()).toBe('<h1>Server error</h1>')
+        const again = await site.get('/Welcome')
+        expect(again.status).toBe(200)
+        expect(site.files.asked.filter((path) => path === part)).toHaveLength(3)
+        // The head is read one time: a failed part is not a failed release.
+        expect(mapReads(site)).toBe(1)
+    })
+
+    test('a part that is not right answers 500 and is not read again after a pause', async () => {
+        const part = `/${mapPartFile(partOfKey('/Welcome', parts.length))}`
+        const site = host({ ...MANY, [part]: '{"pages":{"/Welcome":1}}' })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(500)
+        expect(site.paused).toEqual([])
+        expect((site.reported[0] as Error).message).toBe(
+            `${part.slice(1)} is not a part of the resolver map`
+        )
+    })
+})
+
+describe('the part of the first request (issue 121)', () => {
+    const MANY = { ...SITE, ...partFiles(64) }
+    const count = Object.keys(MANY).filter(
+        (path) => path.startsWith('/-/resolver-map/') && path !== MAP
+    ).length
+    const part = `/${mapPartFile(partOfKey('/Welcome', count))}`
+
+    test('is read while the head is read, when the Worker knows the count of the parts', async () => {
+        const site = host(MANY, true, { MAP_PARTS: String(count) }, { [MAP]: ['hold'] })
+        const answer = site.get('/Welcome')
+        await Promise.resolve()
+        expect(site.files.asked).toContain(part)
+        site.files.settle('answer')
+        const response = await answer
+        expect(response.status).toBe(200)
+        expect(site.files.asked.filter((path) => path === part)).toHaveLength(1)
+    })
+
+    test('does not use an early read with a count that is not the one of the head', async () => {
+        const site = host(MANY, true, { MAP_PARTS: String(count * 2) })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('<h1>Welcome</h1>')
+        // The part of the head is read for the request, whatever the early read asked.
+        expect(site.files.asked.filter((path) => path === part).length).toBeGreaterThanOrEqual(1)
+    })
+
+    test.each(['', '3', 'many', '0'])('is not read early with the count %p', async (value) => {
+        const site = host(MANY, true, { MAP_PARTS: value }, { [MAP]: ['hold'] })
+        const answer = site.get('/Welcome')
+        await Promise.resolve()
+        expect(
+            site.files.asked.some((path) => path.startsWith('/-/resolver-map/') && path !== MAP)
+        ).toBe(false)
+        site.files.settle('answer')
+        expect((await answer).status).toBe(200)
+    })
+
+    test('an early read that fails is read again, as any part', async () => {
+        const site = host(MANY, true, { MAP_PARTS: String(count) }, { [part]: ['reject'] })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(200)
+        expect(site.files.asked.filter((path) => path === part)).toHaveLength(2)
     })
 })

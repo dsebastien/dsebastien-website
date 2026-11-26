@@ -1,5 +1,5 @@
 import { errorFormat, errorText, type ErrorStatus } from './errors.ts'
-import { resolve, type ResolverMap, type SiteFile } from './resolver.ts'
+import { resolve, type Resolution, type ResolverMap, type SiteFile } from './resolver.ts'
 import { SITE_ORIGIN } from './url.ts'
 
 // The answer of a request (MOD-09 and HOST-02 of the spec): the URL contract
@@ -32,10 +32,17 @@ export interface StoredFile {
     readonly discard?: () => void | Promise<void>
 }
 
+/** The answer of a map in parts for a requested path and its query (`partedResolver()`). */
+export type MapLookup = (path: string, query: string) => Promise<Resolution>
+
 /** The files of one release of the site, as a host gives them. */
 export interface Release {
-    /** The resolver map of the release. */
-    readonly map: ResolverMap
+    /**
+     * The resolver map of the release: the whole map, or the lookup of a map
+     * in parts (`partedResolver()`, issue 121), which reads the parts that a
+     * request needs. A lookup that fails gives the server error page.
+     */
+    readonly map: ResolverMap | MapLookup
     /**
      * A file of the output of the build, by its name in the resolver map.
      * `undefined` when the release lacks it.
@@ -459,7 +466,10 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                 })
             }
         }
-        const resolution = resolve(pathname, release.map, search)
+        const resolution =
+            typeof release.map === 'function'
+                ? await release.map(pathname, search)
+                : resolve(pathname, release.map, search)
         /** A file of the release as an answer. `undefined` when the release lacks it. */
         const fileOf = async (
             name: string,

@@ -2,7 +2,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { SITE_ORIGIN } from '@dsebastien-website/resolver'
+import { MAP_HEAD_FILE, mapHeadFrom, SITE_ORIGIN } from '@dsebastien-website/resolver'
 import {
     deployToken,
     headersFile,
@@ -388,10 +388,12 @@ async function deploy(
                 await mkdir(folder, { recursive: true })
                 const configuration = join(folder, 'wrangler.json')
                 const main = join(SITE, 'worker', 'worker.ts')
-                await writeFile(
-                    configuration,
-                    `${JSON.stringify(workerConfiguration(target, { main, dist }), null, 4)}\n`
+                // The count of the parts of the map goes to the Worker (issue 121).
+                const head = mapHeadFrom(
+                    JSON.parse(await readFile(join(dist, MAP_HEAD_FILE), 'utf8')) as unknown
                 )
+                const worker = workerConfiguration(target, { main, dist }, head.parts)
+                await writeFile(configuration, `${JSON.stringify(worker, null, 4)}\n`)
                 await run(
                     [
                         WRANGLER,
