@@ -66,6 +66,38 @@ describe('links that the tool does not read', () => {
     })
 })
 
+describe('raw links with an address of the site (issue 98)', () => {
+    test('a raw link to a root-relative address is a mark that the page step resolves', async () => {
+        expect(
+            await html('See <a href="/wiki/Compost#Layers" title="x">the <em>heap</em></a>.')
+        ).toBe(
+            '<p>See <note-link data-address="%2Fwiki%2FCompost%23Layers">the <em>heap</em></note-link>.</p>'
+        )
+    })
+
+    test('a raw link with the class of a tag is no tag link: it is a mark too', async () => {
+        expect(await html('<div><a class="tag" href="/-/tags/foo">#bar</a></div>')).toBe(
+            '<div><note-link data-address="%2F-%2Ftags%2Ffoo">#bar</note-link></div>'
+        )
+    })
+
+    test('a raw link to another site, to a place of the note or with no address stays a link', async () => {
+        expect(
+            await html(
+                '<a href="https://garden.example/">a</a> <a href="//garden.example/">b</a> <a href="#top">c</a> <a>d</a> <a href="/\\garden.example/">e</a>'
+            )
+        ).toBe(
+            '<p><a href="https://garden.example/">a</a> <a href="//garden.example/">b</a> <a href="#top">c</a> <a>d</a> <a href="/\\garden.example/">e</a></p>'
+        )
+    })
+
+    test('a tag link of the text stays a tag link', async () => {
+        expect(await html('#Topic/Water and <a href="/x">x</a>')).toBe(
+            '<p><a class="tag" href="/-/tags/topic/water">#Topic/Water</a> and <note-link data-address="%2Fx">x</note-link></p>'
+        )
+    })
+})
+
 describe('tags of the text (NAV-04)', () => {
     test('a tag that has a tag page is a link to it', async () => {
         expect(await html('#Topic/Water x')).toBe(

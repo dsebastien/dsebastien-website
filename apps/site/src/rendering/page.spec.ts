@@ -91,6 +91,43 @@ describe('links of a page', () => {
     })
 })
 
+// A raw link of a note to an address of the site (issue 98): the markup makes
+// it a mark with the address, and the page step asks the build where it leads.
+describe('raw links to an address of the site', () => {
+    const marks =
+        '<p><note-link data-address="%2Fwiki%2FCompost%23Layers">heap</note-link> <note-link data-address="%2FGone">gone</note-link></p>'
+
+    test('lead where the build says, or are plain text in the style', () => {
+        const asked: string[] = []
+        const pages = new SitePages([note('Self.md', marks)], {
+            addressOf: (address) => {
+                asked.push(address)
+                return address.startsWith('/wiki/') ? '/Compost#Layers' : undefined
+            }
+        })
+        expect(pages.render('Self.md')).toBe(
+            '<p><a href="/Compost#Layers">heap</a> <span class="not-published">gone</span></p>'
+        )
+        expect(asked).toEqual(['/wiki/Compost#Layers', '/Gone'])
+    })
+
+    test('lead to the page of a published note with no other answer of the build', () => {
+        expect(
+            page(
+                '<note-link data-address="%2FRain%2Bbarrel%23x">a</note-link> <note-link data-address="%2FCompost">b</note-link>',
+                {},
+                BARREL
+            )
+        ).toBe('<a href="/Rain+barrel#x">a</a> <span class="not-published">b</span>')
+    })
+
+    test('with an address that cannot be decoded are plain text', () => {
+        expect(page('<note-link data-address="%E0">raw</note-link>', {}, BARREL)).toBe(
+            '<span class="not-published">raw</span>'
+        )
+    })
+})
+
 describe('anchors of a page (URL-14)', () => {
     const GUIDE = note(
         'Guide.md',

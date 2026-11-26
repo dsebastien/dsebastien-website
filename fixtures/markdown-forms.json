@@ -1029,9 +1029,21 @@
         {
             "id": "raw-html",
             "note": "50 Field guide/Text/Raw HTML.md",
-            "covers": "Raw HTML passes through an allow list of elements: details stays, a script and an event attribute do not (REN-15).",
-            "source": "<details><summary>More about bees</summary>[\\s\\S]*onclick=[\\s\\S]*<script>",
+            "covers": "Raw HTML passes through an allow list of elements: details stays, a script and an event attribute do not (REN-15). A raw link to an address of the site leads where the site answers it, else it is plain text (issue 98).",
+            "source": "<details><summary>More about bees</summary>[\\s\\S]*onclick=[\\s\\S]*<a href=\"/10\\+Garden/No\\+such\\+note\">[\\s\\S]*<script>",
             "checks": [
+                {
+                    "has": "a[href='/10+Garden/Drip+irrigation']",
+                    "text": "the drip guide"
+                },
+                {
+                    "has": "a[href='/10+Garden/Drip+irrigation#x']",
+                    "text": "the same in small letters"
+                },
+                {
+                    "has": ".not-published",
+                    "text": "a lost page"
+                },
                 {
                     "has": "details summary",
                     "text": "More about bees"

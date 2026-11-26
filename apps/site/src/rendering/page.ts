@@ -21,6 +21,9 @@ import { decode, MARK } from './mark.ts'
 //   cycle check: past them, it is a link.
 // - A link or an embed of an attachment leads to its hashed URL: an image, the
 //   player of the browser for a video and a sound, a link for every other file.
+// - A raw link of a note to an address of the site (`<a href="/wiki/Compost">`)
+//   leads where the build says that address leads, else it is plain text in
+//   the same style (issue 98).
 // - A block of link cards keeps the cards that can show (CARD-01 to CARD-09).
 //
 // The pages of a build are also its link index (MOD-06, BUILD-05): they say
@@ -425,19 +428,34 @@ function hostOf(url: string): string {
     }
 }
 
+/** What the build gives the page step. */
+export interface SitePagesOptions {
+    /**
+     * Where a raw link of a note to an address of the site leads (issue 98):
+     * the address to write, or `undefined` when no page answers it. Without
+     * it, only the canonical path of a published note of the build leads.
+     */
+    readonly addressOf?: (address: string) => string | undefined
+}
+
 /** The pages of the notes of one build. */
 export class SitePages {
     readonly #notes = new Map<string, SiteNote>()
+    readonly #addressOf: (address: string) => string | undefined
     readonly #read = new Map<string, ReadNote>()
     /** The backlinks of each note of the build by its vault path, made at the first question. */
     #backlinks: Map<string, Backlink[]> | undefined
     /** The number of embeds of the page being made: the prefix of the ids of a diagram in one. */
     #embeds = 0
 
-    constructor(notes: Iterable<SiteNote>) {
+    constructor(notes: Iterable<SiteNote>, options: SitePagesOptions = {}) {
         for (const note of notes) {
             this.#notes.set(note.vaultPath, note)
         }
+        const paths = new Set([...this.#notes.values()].map((note) => note.path))
+        this.#addressOf =
+            options.addressOf ??
+            ((address) => (paths.has(address.split('#')[0] ?? '') ? address : undefined))
     }
 
     /** The HTML of the body of a published note, as the page step gives it. */
@@ -645,6 +663,12 @@ export class SitePages {
     #link(mark: Element, note: ReadNote, stack: readonly string[]): ElementContent[] {
         const shown = toText(mark)
         const inner = this.#transform(mark.children, note, stack)
+        if (mark.properties['dataAddress'] !== undefined) {
+            // A raw link of the note to an address of the site (issue 98).
+            const address = decode(mark.properties['dataAddress'])
+            const href = address === undefined ? undefined : this.#addressOf(address)
+            return [href === undefined ? notPublished(inner) : make('a', { href }, inner)]
+        }
         const linkPath = decode(mark.properties['dataLink'])
         const fragment = decode(mark.properties['dataFragment']) ?? ''
         const embed = mark.properties['dataEmbed'] !== undefined

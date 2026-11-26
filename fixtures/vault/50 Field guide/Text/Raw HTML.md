@@ -11,4 +11,6 @@ updated: 2031-04-06T08:05
 
 <span onclick="alert(1)">Click the bee</span>
 
+<p>Raw links: <a href="/10+Garden/Drip+irrigation">the drip guide</a>, <a href="/10+garden/drip+irrigation#x">the same in small letters</a> and <a href="/10+Garden/No+such+note">a lost page</a>.</p>
+
 <script>document.title = "garden"</script>

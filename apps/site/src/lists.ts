@@ -1,3 +1,4 @@
+import { tagPath } from '@dsebastien-website/resolver'
 import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
 import { tagLevels, tagOfText } from './tags.ts'
 
@@ -51,12 +52,13 @@ export function pagesOf<T>(items: readonly T[], size = LIST_PAGE_SIZE): T[][] {
 
 /**
  * The tags of the text of a note, from the texts of the tag links that its
- * markup writes. A tag has no character that HTML writes as an entity.
+ * markup writes. A tag has no character that HTML writes as an entity. A link
+ * whose address is not the page of its text is no tag link (issue 98).
  */
 function tagsOfMarkup(markup: string): string[] {
-    return [...markup.matchAll(/<a class="tag" href="\/-\/tags\/[^"]*">#([^<]+)<\/a>/gu)].map(
-        (match) => match[1] ?? ''
-    )
+    return [...markup.matchAll(/<a class="tag" href="(\/-\/tags\/[^"]*)">#([^<]+)<\/a>/gu)]
+        .filter((match) => match[1] === tagPath(match[2] ?? ''))
+        .map((match) => match[2] ?? '')
 }
 
 /**

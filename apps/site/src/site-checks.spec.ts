@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { goneKey, type ResolverMap } from '@dsebastien-website/resolver'
 import {
     fileOfLink,
+    hrefOfAddress,
     judgeFindings,
     readBuiltPage,
     SITE_CHECKS_MODE,
@@ -205,5 +206,63 @@ describe('the target of a link of a built page', () => {
         }
         expect(fileOfLink('/Basil', withGone)).toEqual({ kind: 'missing' })
         expect(fileOfLink('/basil', withGone)).toEqual({ kind: 'missing' })
+    })
+
+    test('is missing for a name of two notes: the "not found" page that names them', () => {
+        const withChoice: ResolverMap = {
+            ...map,
+            names: { basil: ['/A/Basil', '/B/Basil'] },
+            choices: { '/A/Basil\n/B/Basil': '-/choice/basil.html' }
+        }
+        expect(fileOfLink('/Basil', withChoice)).toEqual({ kind: 'missing' })
+    })
+
+    // The resolver never redirects to a redirect: a location is a canonical path.
+    test('is no page after a second redirect', () => {
+        const chain: ResolverMap = { ...map, folded: { mint: '/Mint2', mint2: '/Mint' } }
+        expect(fileOfLink('/mint', chain)).toEqual({ kind: 'other' })
+    })
+})
+
+describe('the address that a raw link of a note leads to (issue 98)', () => {
+    const map: ResolverMap = {
+        pages: { '/': 'index.html', '/Mint': '-/note/m.html', '/-/library': '-/library.html' },
+        files: { '/-/md/Mint.md': { file: '-/md/m.md', type: 'markdown' } },
+        attachments: { '/-/attachments/abc/mint.png': 'abc' },
+        folded: { mint: '/Mint' },
+        names: { basil: ['/A/Basil', '/B/Basil'] },
+        choices: { '/A/Basil\n/B/Basil': '-/choice/basil.html' },
+        notFound: '404.html',
+        gone: {
+            file: '410.html',
+            longest: 6,
+            paths: { [goneKey('/Sage')]: true },
+            folded: { [goneKey('sage')]: true },
+            names: {},
+            aliases: {}
+        }
+    }
+
+    test('is the address as written when a page or a file answers it', () => {
+        for (const address of [
+            '/',
+            '/Mint#Uses',
+            '/Mint?x=1',
+            '/-/library',
+            '/-/md/Mint.md',
+            '/-/attachments/abc/mint.png'
+        ]) {
+            expect(hrefOfAddress(address, map), address).toBe(address)
+        }
+    })
+
+    test('is the canonical path, with the rest of the address, after a redirect', () => {
+        expect(hrefOfAddress('/mint#Uses', map)).toBe('/Mint#Uses')
+    })
+
+    test('is nothing for no page, the gone page, a name of two notes and another host', () => {
+        for (const address of ['/Thyme', '/Sage', '/Basil', '//garden.example/', 'Mint']) {
+            expect(hrefOfAddress(address, map), address).toBeUndefined()
+        }
     })
 })

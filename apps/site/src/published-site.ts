@@ -1,3 +1,4 @@
+import type { ResolverMap } from '@dsebastien-website/resolver'
 import { getCollection } from 'astro:content'
 import { backlinkList, BACKLINKS_ON_PAGE, type ShownBacklink } from './backlink-list.ts'
 import {
@@ -24,6 +25,8 @@ import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
 import { recentListsOf } from './recent.ts'
 import { SitePages } from './rendering/page.ts'
+import { hrefOfAddress } from './site-checks.ts'
+import { resolverMapFor } from './site-files.ts'
 import { titleIndexOf, type TitleIndex } from './search/titles.ts'
 
 // The published notes of one build, read one time: the manifest, the cleaned
@@ -96,6 +99,16 @@ async function read(): Promise<PublishedSite> {
             )
         }
     }
+    // The resolver map of this build, for the raw links of the notes to an
+    // address of the site (issue 98). It is made from the first lists, before
+    // the page step runs: the titles of the notes do not change its paths.
+    const made: { map?: ResolverMap } = {}
+    const addressOf = (address: string): string | undefined => {
+        if (made.map === undefined) {
+            throw new Error('a raw link of a note was resolved before the resolver map was made')
+        }
+        return hrefOfAddress(address, made.map)
+    }
     const pages = new SitePages(
         notes.map((note) => {
             const entry = entries.get(note.vaultPath)
@@ -116,7 +129,8 @@ async function read(): Promise<PublishedSite> {
                 files: new Map(note.attachments.map((file) => [file.link, file])),
                 propertyLinks: propertyLinksOf(properties.get(note.vaultPath) ?? {})
             }
-        })
+        }),
+        { addressOf }
     )
     const noteOf = (vaultPath: string): PublishedNote => {
         const note = byPath.get(vaultPath)
@@ -175,12 +189,19 @@ async function read(): Promise<PublishedSite> {
     }
     const draft = listsOf((note) => raw.get(note.vaultPath)?.title ?? note.title)
     refuseTagsThatTakePagePaths(draft.tagLists.map((list) => list.key))
-    const taken = generatedTexts([
+    const draftLists = [
         ...draft.typeHubs,
         ...(draft.otherNotes === undefined ? [] : [draft.otherNotes]),
         ...draft.tagLists,
         ...draft.recentLists
-    ])
+    ]
+    const taken = generatedTexts(draftLists)
+    made.map = resolverMapFor(
+        notes,
+        notes.filter((note) => pages.backlinks(note.vaultPath).length > BACKLINKS_ON_PAGE),
+        draftLists,
+        removed
+    )
     const titles = uniqueTitles(
         notes.map((note) => {
             const header = raw.get(note.vaultPath)

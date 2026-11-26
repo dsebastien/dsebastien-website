@@ -35,7 +35,7 @@ import { encode, MARK } from './mark.ts'
  * (`wikilinksOf`, `linkPathOfDestination`) and of the reader of the tags
  * (`tagOfText` in `tags.ts`).
  */
-export const MARKUP_VERSION = 10
+export const MARKUP_VERSION = 11
 
 /**
  * The packages that write the markup, with their versions from the site
@@ -609,14 +609,23 @@ function allElements(nodes: readonly ElementContent[]): Element[] {
     )
 }
 
-/** The property that marks the footnotes that the build writes (issue 124). */
+/**
+ * True for a root-relative address: an address of the site. `//host` and
+ * `/\host` lead to another host in a browser, so they are not.
+ */
+function isSiteAddress(href: string): boolean {
+    return href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/\\')
+}
+
+/** The property that marks the footnotes and the links that the build writes (issue 124). */
 const BUILT_MARK = 'dataBuiltMark'
 
 /**
  * The step of the HTML tree before the raw HTML is read: every element is
  * ours, so it marks the footnotes (their section and the references to them)
- * with a random value of this render. `rehypeNote` gives their ids priority
- * and drops the mark; raw HTML cannot know the value.
+ * and the links (the tag links) with a random value of this render.
+ * `rehypeNote` gives their ids priority and drops the mark; raw HTML cannot
+ * know the value.
  */
 export function rehypeBuiltMark() {
     return (tree: HastRoot, file: { data: Record<string, unknown> }): void => {
@@ -625,7 +634,7 @@ export function rehypeBuiltMark() {
         for (const { node } of elementsOf(tree)) {
             if (
                 (isElement(node, 'section') && node.properties['dataFootnotes'] !== undefined) ||
-                (isElement(node, 'a') && node.properties['dataFootnoteRef'] !== undefined)
+                isElement(node, 'a')
             ) {
                 for (const element of allElements([node])) element.properties[BUILT_MARK] = mark
             }
@@ -675,6 +684,22 @@ export function rehypeNote() {
         for (const node of all) {
             if (mark !== undefined && node.properties[BUILT_MARK] === mark) built.add(node)
             delete node.properties['dataBuiltMark']
+        }
+        // A raw link of the note to an address of the site (`<a href="/wiki/Compost">`)
+        // is a mark: the page step resolves it at each build, so it never leads to
+        // no page (issue 98). A link of the build, a link to another site and a
+        // link into the note stay.
+        for (const node of all) {
+            const href = node.properties['href']
+            if (
+                !built.has(node) &&
+                node.tagName === 'a' &&
+                typeof href === 'string' &&
+                isSiteAddress(href)
+            ) {
+                node.tagName = MARK.link
+                node.properties = { dataAddress: encode(href) }
+            }
         }
         // The ids that the build writes keep clear of the frame and of each other.
         const taken = new Set<string>()

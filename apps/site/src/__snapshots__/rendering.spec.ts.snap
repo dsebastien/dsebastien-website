@@ -360,9 +360,10 @@ exports[`rendering of the Markdown forms on the site code-block: A code block ke
 </code></pre>"
 `;
 
-exports[`rendering of the Markdown forms on the site raw-html: Raw HTML passes through an allow list of elements: details stays, a script and an event attribute do not (REN-15). 1`] = `
+exports[`rendering of the Markdown forms on the site raw-html: Raw HTML passes through an allow list of elements: details stays, a script and an event attribute do not (REN-15). A raw link to an address of the site leads where the site answers it, else it is plain text (issue 98). 1`] = `
 "
 <details><summary>More about bees</summary>Bees like borage.</details>
 <p><span>Click the bee</span></p>
+<p>Raw links: <a href="/10+Garden/Drip+irrigation">the drip guide</a>, <a href="/10+Garden/Drip+irrigation#x">the same in small letters</a> and <span class="not-published">a lost page</span>.</p>
 "
 `;

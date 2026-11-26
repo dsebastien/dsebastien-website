@@ -133,6 +133,14 @@ describe('the tags of a note', () => {
         ])
     })
 
+    // A raw link of a note with the class of a tag is not a tag of the note
+    // (issue 98): only a link that the markup writes for a tag leads to its page.
+    test('are never read from a link whose address is not the page of its tag', () => {
+        expect([
+            ...tagsOfNote([], '<div><a class="tag" href="/-/tags/foo">#bar</a></div>')
+        ]).toEqual([])
+    })
+
     test('read a tags property of one text', () => {
         expect([...tagsOfNote('compost', '')]).toEqual([['compost', 'compost']])
     })
