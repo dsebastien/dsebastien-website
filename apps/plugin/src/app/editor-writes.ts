@@ -49,3 +49,30 @@ export function editorWrites<File>(vault: Vault, editor: EditorVault<File>): Vau
         forRun: () => editorWrites(vault.forRun(), editor)
     }
 }
+
+/** What a save needs of an open editor of Obsidian (`MarkdownView`). */
+export interface OpenEditor<File> {
+    readonly file: File | null
+    /** The text of the note as the editor last loaded or saved it. */
+    readonly data: string
+    /** The text in the editor now. */
+    getViewData(): string
+    save(): Promise<void>
+}
+
+/**
+ * Saves each open editor of the note whose text is not saved yet, so that
+ * what the author typed is in the note before a write of the tool. An
+ * editor with no change is not saved: its buffer can be older than the note
+ * (another program wrote it), and a save would write it over the newer text.
+ */
+export async function saveUnsavedEditors<File>(
+    editors: readonly OpenEditor<File>[],
+    file: File
+): Promise<void> {
+    for (const editor of editors) {
+        if (editor.file === file && editor.getViewData() !== editor.data) {
+            await editor.save()
+        }
+    }
+}

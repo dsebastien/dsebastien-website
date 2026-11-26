@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Vault } from '../publishing/ports.ts'
-import { editorWrites } from './editor-writes.ts'
+import { editorWrites, saveUnsavedEditors } from './editor-writes.ts'
 import type { EditorVault } from './editor-writes.ts'
 
 // The writes of the tool into the notes, through the vault of Obsidian (issue
@@ -15,6 +15,7 @@ function logicVault(notes: Map<string, string>, writes: string[]): Vault {
         list: () => Promise.resolve([]),
         read: (path) => Promise.resolve(notes.get(path)),
         readBytes: () => Promise.resolve(undefined),
+        size: () => Promise.resolve(undefined),
         hasFolder: () => Promise.resolve(false),
         write(path, text, before) {
             if (notes.get(path) !== before) {
@@ -112,5 +113,46 @@ describe('the writes of the tool through the vault of Obsidian', () => {
 
         expect(writes).toEqual(['B.md'])
         expect(notes.get('B.md')).toBe('After\n')
+    })
+})
+
+describe('the open editors that a write saves first', () => {
+    interface FakeView {
+        file: Note
+        data: string
+        typed: string
+        saves: number
+        getViewData(): string
+        save(): Promise<void>
+    }
+    const view = (file: Note, data: string, typed: string): FakeView => ({
+        file,
+        data,
+        typed,
+        saves: 0,
+        getViewData() {
+            return this.typed
+        },
+        save() {
+            this.saves += 1
+            this.file.text = this.typed
+            this.data = this.typed
+            return Promise.resolve()
+        }
+    })
+
+    test('only an editor of the note with unsaved text is saved: a clean one never writes its old buffer', async () => {
+        const note: Note = { text: 'Newer, from another program\n' }
+        const other: Note = { text: 'Other\n' }
+        const clean = view(note, 'Older\n', 'Older\n')
+        const typed = view(note, 'Older\n', 'Older, and typed\n')
+        const elsewhere = view(other, 'Other\n', 'Other, typed\n')
+
+        await saveUnsavedEditors([clean, typed, elsewhere], note)
+
+        expect(clean.saves).toBe(0)
+        expect(typed.saves).toBe(1)
+        expect(elsewhere.saves).toBe(0)
+        expect(note.text).toBe('Older, and typed\n')
     })
 })

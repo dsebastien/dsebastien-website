@@ -19,7 +19,7 @@ import { lockHolderOf, processRuns, pullContentStore, SYSTEM } from '../publishi
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
 import type { FileStat } from './center.ts'
-import { editorWrites } from './editor-writes.ts'
+import { editorWrites, saveUnsavedEditors } from './editor-writes.ts'
 import { isolateNames, lockState } from './messages.ts'
 import { childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
 import { Measures } from './measures.ts'
@@ -436,14 +436,13 @@ export class VaultPublishPlugin extends Plugin {
     /** Updates the status bar item: the state of the open note. */
     #updateStatus: () => void = () => undefined
 
-    /** Saves each open editor of the note: what the author typed reaches the note before a write of the tool. */
+    /** Saves each open editor of the note with unsaved text: what the author typed reaches the note before a write of the tool. */
     async #saveOpenEditors(file: TFile): Promise<void> {
-        for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
-            const { view } = leaf
-            if (view instanceof MarkdownView && view.file === file) {
-                await view.save()
-            }
-        }
+        const editors = this.app.workspace
+            .getLeavesOfType('markdown')
+            .map((leaf) => leaf.view)
+            .filter((view) => view instanceof MarkdownView)
+        await saveUnsavedEditors(editors, file)
     }
 
     /** The size and the time of the last change of a note, from the adapter of Obsidian. */
