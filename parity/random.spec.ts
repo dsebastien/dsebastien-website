@@ -13,8 +13,12 @@ import { buildRustProgram } from './harness.ts'
 // --seed <seed> --count 1` runs it again, and `--print` gives it as a shared
 // queue scenario. A failure here blocks a release.
 
-/** The seeds of the short run. */
-const SEEDS = Array.from({ length: 200 }, (_, index) => index + 1)
+/**
+ * The seeds of the short run: 1 to 200 in CI (the variable `CI` is set), 1 to
+ * 60 elsewhere. A case starts many git processes, which cost much more time on
+ * Windows than on Linux, so a local run stays near a minute.
+ */
+const SEEDS = Array.from({ length: process.env['CI'] ? 200 : 60 }, (_, index) => index + 1)
 
 /** The cases that run at the same time. Each one runs its own git processes. */
 const PARALLEL = Math.min(16, Math.max(4, availableParallelism()))
