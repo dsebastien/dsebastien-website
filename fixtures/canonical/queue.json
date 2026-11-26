@@ -1071,11 +1071,11 @@
                 },
                 {
                     "do": "expect",
-                    "why": "the same id and the same first date",
+                    "why": "the same id, the same first date and the same last date: its text did not change",
                     "vault": {},
                     "store": {
                         "notes/Other.md": "Other\n",
-                        "manifest/d84b8094d90ad681.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-04T11:00:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/d84b8094d90ad681.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-02T09:30:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"d84b8094d90ad681\",\n  \"lastPublished\": \"2031-05-02T09:30:00Z\",\n  \"links\": [],\n  \"path\": \"Other.md\",\n  \"sourceHash\": \"sha256:293d60a9b6868ba1a3faca165ec84c3a676a191cfa3a04cd2875511214c887bc\",\n  \"state\": \"published\"\n}\n"
                     }
                 }
             ]
@@ -1207,6 +1207,106 @@
                         "renamed": [],
                         "movedEdited": [],
                         "proposals": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a note published again keeps its last date when its text did not change (issue 99)",
+            "denyList": [],
+            "vault": {
+                "Note.md": "Text\n",
+                "Edited.md": "One\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Edited.md", "Note.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Edited.md", "Note.md"],
+                        "published": ["Edited.md", "Note.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "both notes are unpublished",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Edited.md", "Note.md"]
+                    },
+                    "time": "2031-05-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Edited.md", "Note.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Edited.md", "Note.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits one of them",
+                    "files": {
+                        "Edited.md": "Two\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "both are published again",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Edited.md", "Note.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Edited.md", "Note.md"],
+                        "published": ["Edited.md", "Note.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "only the edited note has a new date: the other one did not change (PUB-71)",
+                    "vault": {},
+                    "store": {
+                        "notes/Note.md": "Text\n",
+                        "notes/Edited.md": "Two\n",
+                        "manifest/c0567c932f8a8769.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"c0567c932f8a8769\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Note.md\",\n  \"sourceHash\": \"sha256:533bfd360a1274c99f13658e6c774d9dc3c4518cd1d31231e6503876509157db\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/9ae7ed34618de0b5.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"9ae7ed34618de0b5\",\n  \"lastPublished\": \"2031-05-03T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Edited.md\",\n  \"sourceHash\": \"sha256:6bfcb6c5681d9f6419de309da99bd826b8558d25e42a98511e85aad92a9b1d88\",\n  \"state\": \"published\"\n}\n"
                     }
                 }
             ]

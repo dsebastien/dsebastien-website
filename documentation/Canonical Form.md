@@ -745,7 +745,7 @@ One file per published note, as data in the canonical form.
 | `firstPublished`  | The time of the run of the first publication                                                                                                                                                             |
 | `formerPaths`     | The vault paths that the note had before, in the order in which they were added                                                                                                                          |
 | `id`              | The identity of the note: 16 hexadecimal digits of the SHA-256 of its vault path, a line feed and the time of its first publication                                                                      |
-| `lastPublished`   | The time of the run of the last publication                                                                                                                                                              |
+| `lastPublished`   | The time of the run of the last publication that changed the hash of the source (rules 2 and 3 below)                                                                                                    |
 | `links`           | The links of the note that lead to a note: for each one its `link` and the `path` of its target, sorted by `link` (see below)                                                                            |
 | `noteType`        | The note type of the note (see "The note type of a note"). An entry of a note with no type has no such key                                                                                               |
 | `path`            | The vault path of the note                                                                                                                                                                               |
@@ -756,7 +756,7 @@ One file per published note, as data in the canonical form.
 The entry of a note at a publication:
 
 1. A note that is published for the first time gets a new entry. `firstPublished` and `lastPublished` are the time of the run.
-2. A note that was unpublished and is published again keeps its entry: its `id`, its `firstPublished` and its `formerPaths` stay. Its state is `published` again, `lastPublished` is the time of the run, and the publication writes `aliases`, `cleanedHash`, `cleaningVersion`, `links`, `attachments`, `noteType` and `sourceHash`.
+2. A note that was unpublished and is published again keeps its entry: its `id`, its `firstPublished` and its `formerPaths` stay. Its state is `published` again, `lastPublished` is the time of the run only when the hash of the source changed (a text that did not change is no edit, PUB-71 of the spec, issue 99), and the publication writes `aliases`, `cleanedHash`, `cleaningVersion`, `links`, `attachments`, `noteType` and `sourceHash`.
 3. An update writes `aliases`, `cleanedHash`, `cleaningVersion`, `links`, `attachments`, `noteType` and `sourceHash`, and removes `updateHeld`. A publication of a note that was unpublished removes it too. `lastPublished` is the time of the run when the hash of the source changed. A technical update does not move it (PUB-24 of the spec).
 4. An unpublish changes the state only. The entry keeps its `attachments`, but an unpublished note uses no file of the attachment storage.
 5. A forced removal removes the entry, also the entry of an unpublished note (decision R64).

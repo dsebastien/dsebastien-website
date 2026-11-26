@@ -791,8 +791,9 @@ function entryOf(
         }
     }
     // The identity and the first date stay. A technical update does not move
-    // the last date: the author did not edit the note (PUB-24).
-    const edited = before.state !== 'published' || before.sourceHash !== hashes.sourceHash
+    // the last date, nor a publication again of a text that did not change:
+    // the author did not edit the note (PUB-24, PUB-71).
+    const edited = before.sourceHash !== hashes.sourceHash
     // A note that has no type now loses the type of its entry, and an update
     // ends a held update (R67).
     const { noteType: _before, updateHeld: _held, ...kept } = before

@@ -924,8 +924,9 @@ fn entry_of(
         };
     };
     // The identity and the first date stay. A technical update does not move
-    // the last date: the author did not edit the note (PUB-24).
-    let edited = before.state != State::Published || before.source_hash != source_hash;
+    // the last date, nor a publication again of a text that did not change:
+    // the author did not edit the note (PUB-24, PUB-71).
+    let edited = before.source_hash != source_hash;
     ManifestEntry {
         aliases: texts.aliases.aliases.clone(),
         attachments: texts.attachments.clone(),
