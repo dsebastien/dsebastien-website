@@ -70,6 +70,8 @@ describe('the reader of a resolver map', () => {
         ['former', { folded: {}, names: {} }],
         ['former', { folded: { a: '/A' }, names: {}, markdown: {} }],
         ['redirects', { longest: 1, folded: {} }],
+        ['redirects', { longest: 1, folded: {}, prefixes: {}, prefixLengths: ['3'] }],
+        ['redirects', { longest: 1, folded: {}, prefixes: {} }],
         ['redirects', { folded: {}, prefixes: {} }],
         ['redirects', { longest: -1, folded: {}, prefixes: {} }],
         ['redirects', { longest: 1, folded: { a: ['/A'] }, prefixes: {} }],

@@ -14,6 +14,7 @@ export {
     REDIRECT_LIST_FILE,
     redirectListFrom,
     type DroppedRows,
+    type KeptRows,
     type RedirectList,
     type RedirectRow
 } from './redirects.ts'

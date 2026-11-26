@@ -21,10 +21,19 @@ export const GET: APIRoute = async () => {
         ],
         site.removed
     )
-    const { map, dropped, hidesNameOrAlias } = applyRedirectList(base, await readRedirectList())
-    if (dropped.shadowed > 0 || dropped.deadTarget > 0 || hidesNameOrAlias > 0) {
+    const { map, dropped, kept } = applyRedirectList(base, await readRedirectList())
+    const counts = [
+        [dropped.shadowed, 'rows dropped because a live address has their old path (shadowed)'],
+        [dropped.deadTarget, 'rows dropped because their target leads to no page'],
+        [dropped.loop, 'rows dropped because their target leads round in the list (loop)'],
+        [kept.goneTarget, 'rows gone because their target is gone'],
+        [kept.prefixOnLiveFolder, 'prefix rules kept on a live folder'],
+        [kept.hidesNameOrAlias, 'rows kept that hide a file name or an alias of a live note']
+    ] as const
+    const shown = counts.filter(([count]) => count > 0)
+    if (shown.length > 0) {
         console.warn(
-            `The redirect list: ${String(dropped.shadowed)} rows dropped because a live address has their old path (shadowed), ${String(dropped.deadTarget)} because their target is not live, ${String(hidesNameOrAlias)} rows kept that hide a file name or an alias of a live note`
+            `The redirect list: ${shown.map(([count, what]) => `${String(count)} ${what}`).join(', ')}`
         )
     }
     return new Response(`${JSON.stringify(map, null, 2)}\n`, {

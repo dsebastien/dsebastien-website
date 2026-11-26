@@ -60,6 +60,11 @@ export interface RedirectMap {
      * longest one, when no other rule finds the path (RES-04).
      */
     readonly prefixes: Readonly<Record<string, string>>
+    /**
+     * The lengths of the folded old folders of `prefixes`, the longest first:
+     * the resolver hashes only the folders of a request of these lengths.
+     */
+    readonly prefixLengths: readonly number[]
 }
 
 /**
@@ -109,6 +114,23 @@ export interface GoneMap {
  */
 export function goneKey(text: string): string {
     return sha256Hex(text).slice(0, 32)
+}
+
+/**
+ * The keys of the texts of one request: a text that the gone part, the
+ * redirect list and the prefix rules all look for is hashed one time. The
+ * resolver starts a new one for each request, so the memory stays small.
+ */
+let requestKeys = new Map<string, string>()
+
+/** The key of a text of the request, from the keys of the request when it was hashed already. */
+function keyOf(text: string): string {
+    let key = requestKeys.get(text)
+    if (key === undefined) {
+        key = goneKey(text)
+        requestKeys.set(text, key)
+    }
+    return key
 }
 
 /** What a requested path leads to. */
@@ -234,6 +256,7 @@ function toNotes(
  * redirect keeps it, so that the parameters of analytics survive (URL-12).
  */
 export function resolve(path: string, map: ResolverMap, query = ''): Resolution {
+    requestKeys = new Map()
     const page = own(map.pages, path)
     if (page !== undefined) {
         return { kind: 'page', file: page }
@@ -311,7 +334,7 @@ function withEncodedQuery(path: string, map: ResolverMap, query: string): Resolu
 function redirectOf(form: string, redirects: RedirectMap | undefined): string | undefined {
     return redirects === undefined || form.length > redirects.longest
         ? undefined
-        : own(redirects.folded, goneKey(form))
+        : own(redirects.folded, keyOf(form))
 }
 
 /**
@@ -322,30 +345,44 @@ function redirectOf(form: string, redirects: RedirectMap | undefined): string | 
  */
 function underOldFolder(path: string, map: ResolverMap, query: string): Resolution | undefined {
     const redirects = map.redirects
-    if (redirects === undefined || Object.keys(redirects.prefixes).length === 0) {
+    if (redirects === undefined || redirects.prefixLengths.length === 0) {
         return undefined
     }
-    for (const reading of readingsOf(path)) {
-        for (const form of formsOf(reading).map(foldedForm)) {
-            // Each folder of the form, the longest first, by its key. The form
-            // itself is no folder of it: something must follow the slash.
-            for (
-                let at = form.lastIndexOf('/', form.length - 2);
-                at > 0;
-                at = form.lastIndexOf('/', at - 1)
-            ) {
-                const folder = form.slice(0, at + 1)
-                const location =
-                    folder.length > redirects.longest
-                        ? undefined
-                        : own(redirects.prefixes, goneKey(folder))
-                if (location !== undefined) {
-                    return {
-                        kind: 'redirect',
-                        status: 301,
-                        location: withQuery(location, query),
-                        cacheControl: CACHE.former
-                    }
+    // The text before a query that is encoded into the path (RES-02), with
+    // that query as a real query: as for an exact address.
+    const heads: [string, string][] = readingsOf(path).map((reading) => {
+        const at = reading.indexOf('?')
+        return at > 0
+            ? [reading.slice(0, at), encodedQuery(reading.slice(at + 1), query)]
+            : [reading, query]
+    })
+    const forms: [string, string][] = []
+    for (const [head, kept] of heads) {
+        for (const form of formsOf(head).map(foldedForm)) {
+            forms.push([form, kept])
+        }
+    }
+    // The folders of the request of each length of a prefix, the longest
+    // first, each one time. The form itself is no folder of it: something
+    // must follow the slash.
+    for (const length of redirects.prefixLengths) {
+        const seen = new Set<string>()
+        for (const [form, kept] of forms) {
+            if (form.length <= length || form[length - 1] !== '/') {
+                continue
+            }
+            const folder = form.slice(0, length)
+            if (seen.has(folder)) {
+                continue
+            }
+            seen.add(folder)
+            const location = own(redirects.prefixes, keyOf(folder))
+            if (location !== undefined) {
+                return {
+                    kind: 'redirect',
+                    status: 301,
+                    location: withQuery(location, kept),
+                    cacheControl: CACHE.former
                 }
             }
         }
@@ -445,7 +482,7 @@ function isGone(path: string, gone: GoneMap | undefined): boolean {
         if (form.length > gone.longest) {
             continue
         }
-        const key = goneKey(form)
+        const key = keyOf(form)
         if (
             own(gone.folded, key) !== undefined ||
             (!form.includes('/') && own(gone.names, key) !== undefined) ||
@@ -462,6 +499,6 @@ function isGonePath(path: string, gone: GoneMap | undefined): boolean {
     return (
         gone !== undefined &&
         path.length <= gone.longest &&
-        own(gone.paths, goneKey(path)) !== undefined
+        own(gone.paths, keyOf(path)) !== undefined
     )
 }

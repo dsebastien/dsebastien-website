@@ -1,6 +1,7 @@
 import {
     foldedForm,
     goneKey,
+    readingsOf,
     resolve,
     type RedirectMap,
     type Resolution,
@@ -137,7 +138,8 @@ export function redirectListFrom(value: unknown): RedirectList {
     const known = new Set(['version', 'redirects', 'gone', 'prefixes'])
     const unknown = Object.keys(value).find((key) => !known.has(key))
     if (unknown !== undefined) {
-        return refuse(`the key "${unknown}" is not known`)
+        // The key can be a path that someone wrote in the wrong place.
+        return refuse('a key is not known')
     }
     const gone = value['gone'] ?? []
     if (!Array.isArray(gone)) {
@@ -184,47 +186,137 @@ export function redirectListFrom(value: unknown): RedirectList {
     return list
 }
 
-/** The rows that the build drops: they would hide a live address, or lead to no live page. */
+/** The rows that the build drops: they would hide a live address, or lead nowhere. */
 export interface DroppedRows {
-    /**
-     * Rows whose old path a published note, a folder or a former path has,
-     * and prefix rules of a live folder: the live address wins (business
-     * rule 1).
-     */
+    /** Rows whose old path a published note, a folder or a former path has: the live address wins (business rule 1). */
     readonly shadowed: number
-    /** Rows whose target is no page of the release: an unpublish or a takedown never blocks a build (business rule 16). */
+    /** Rows whose target leads to no page: an unpublish or a takedown never blocks a build (business rule 16). */
     readonly deadTarget: number
+    /** Rows whose target leads through the list back to itself, or through too many rows. */
+    readonly loop: number
+}
+
+/** The rows that the build keeps and counts, for the warning of the build. */
+export interface KeptRows {
+    /** Rows that hide a file name or an alias of a live note: the row wins. */
+    readonly hidesNameOrAlias: number
+    /**
+     * Prefix rules of a folder that is live again: the rule is kept, and it
+     * only leads a path under the folder that no exact address has.
+     */
+    readonly prefixOnLiveFolder: number
+    /** Rows whose target is gone (an unpublished note, a gone row): the old path is gone too (410). */
+    readonly goneTarget: number
 }
 
 /** The answers that a target can be: a page, or a file of the site (the Markdown of a note). */
 const LIVE: readonly Resolution['kind'][] = ['page', 'file']
 
+/** How many steps a target can take through the list before the build calls it a loop. */
+const STEPS = 8
+
+/** Where a target leads, as the build follows it. */
+type Followed =
+    { kind: 'location'; location: string } | { kind: 'gone' } | { kind: 'dead' } | { kind: 'loop' }
+
+/** The origin of the site, in the form that `URL` gives: no slash, small letters, no default port. */
+const SITE = new URL(SITE_ORIGIN).origin
+
+/** The path and the query of a target on the site, or `undefined` for an address of another host. */
+function onSite(to: string): { path: string; query: string } | undefined {
+    if (!to.startsWith('/')) {
+        const url = new URL(to)
+        return url.origin === SITE ? { path: url.pathname, query: url.search } : undefined
+    }
+    const at = to.indexOf('?')
+    return at < 0 ? { path: to, query: '' } : { path: to.slice(0, at), query: to.slice(at) }
+}
+
+/** The folded forms of a requested path, as the resolver reads them: every reading, without a slash at the end or `.md`. */
+function foldedFormsOf(path: string): string[] {
+    const forms = new Set<string>()
+    for (const reading of readingsOf(path)) {
+        let text = reading
+        forms.add(foldedForm(text))
+        if (text.endsWith('/')) {
+            text = text.slice(0, -1)
+            forms.add(foldedForm(text))
+        }
+        if (text.toLowerCase().endsWith('.md')) {
+            forms.add(foldedForm(text.slice(0, -'.md'.length)))
+        }
+    }
+    return [...forms]
+}
+
+/** The rows of the list, by the folded form of their old paths, for the build to follow a target. */
+interface Rows {
+    readonly redirects: ReadonlyMap<string, string>
+    readonly gone: ReadonlySet<string>
+    /** The prefix rules, the longest first. */
+    readonly prefixes: readonly (readonly [string, string])[]
+}
+
 /**
- * The location that a row leads to, as the resolver of the release answers
- * its target (URL-05: a target never redirects): the target when it is a
- * page, the location of its redirect when that redirect leads to a page,
- * else `undefined` (a dead target). An `https://` address of the site is a
- * path of the site; an address of another host is kept as it is.
+ * Where a target leads (URL-05: a target never redirects). The build
+ * follows it as a reader would: the resolver of the release first (a page or
+ * a file is the end, a redirect is followed), then a row of the list with
+ * that old path, then a gone address (of the list, or of an unpublished
+ * note), then a prefix rule, as the resolver orders them. An `https://`
+ * address of the site is a path of the site; an address of another host is
+ * the end.
  */
-function locationOf(to: string, map: ResolverMap): string | undefined {
-    const origin = `${SITE_ORIGIN}/`
-    if (to.startsWith('https://') && !to.startsWith(origin)) {
-        return to
+function follow(to: string, map: ResolverMap, rows: Rows): Followed {
+    const seen = new Set<string>()
+    let next = to
+    for (let step = 0; step < STEPS; step++) {
+        const target = onSite(next)
+        if (target === undefined) {
+            return { kind: 'location', location: next }
+        }
+        const { path, query } = target
+        const forms = foldedFormsOf(path)
+        // The path as written: a redirect of the release leads from a
+        // variant to its canonical form, which is no loop. A loop through
+        // two forms of one old path ends with the limit of the steps.
+        const visit = path + query
+        if (seen.has(visit)) {
+            return { kind: 'loop' }
+        }
+        seen.add(visit)
+        const answer = resolve(path, map, query)
+        if (LIVE.includes(answer.kind)) {
+            return { kind: 'location', location: path + query }
+        }
+        if (answer.kind === 'redirect') {
+            next = answer.location
+            continue
+        }
+        const row = forms.map((form) => rows.redirects.get(form)).find((one) => one !== undefined)
+        if (row !== undefined) {
+            next = withQueryOf(row, query)
+            continue
+        }
+        if (answer.kind === 'gone' || forms.some((form) => rows.gone.has(form))) {
+            return { kind: 'gone' }
+        }
+        const prefix = rows.prefixes.find(([folder]) =>
+            forms.some((form) => form.length > folder.length && form.startsWith(folder))
+        )
+        if (prefix === undefined) {
+            return { kind: 'dead' }
+        }
+        next = withQueryOf(prefix[1], query)
     }
-    const own = to.startsWith(origin) ? to.slice(origin.length - 1) : to
-    const at = own.indexOf('?')
-    const path = at < 0 ? own : own.slice(0, at)
-    const query = at < 0 ? '' : own.slice(at)
-    const answer = resolve(path, map, query)
-    if (LIVE.includes(answer.kind)) {
-        return own
+    return { kind: 'loop' }
+}
+
+/** A location with a query after its own one. */
+function withQueryOf(location: string, query: string): string {
+    if (query === '') {
+        return location
     }
-    if (answer.kind !== 'redirect') {
-        return undefined
-    }
-    const next = answer.location.indexOf('?')
-    const page = resolve(next < 0 ? answer.location : answer.location.slice(0, next), map)
-    return LIVE.includes(page.kind) ? answer.location : undefined
+    return location.includes('?') ? `${location}&${query.slice(1)}` : location + query
 }
 
 /** A record of keys, sorted, so the map has one form for one list. */
@@ -237,66 +329,85 @@ function sortedRecord<T>(entries: Iterable<[string, T]>): Record<string, T> {
  * prefix rule go into `redirects`, by the key of their folded old path
  * (`goneKey()`), with their target as text: the map holds no old path, so a
  * release that leaks it shows no title (as the gone part, decision R64). A
- * gone row goes into the gone part, as a key. Each target is resolved on the
- * map of the release: the map keeps its canonical location. The build counts
- * the rows that it drops and the rows that hide a file name or an alias of a
- * live note, and names none of them: the warning of the build never shows an
- * old path.
+ * gone row, and a row whose target is gone, go into the gone part, as keys.
+ * The build follows each target through the release and through the list
+ * (a chain of rows, a prefix rule), and keeps the canonical location where
+ * it ends. It counts the rows that it drops and the rows that it keeps with
+ * a warning, and names none of them: the warning of the build never shows
+ * an old path.
  */
 export function applyRedirectList(
     map: ResolverMap,
     list: RedirectList
-): { map: ResolverMap; dropped: DroppedRows; hidesNameOrAlias: number } {
+): { map: ResolverMap; dropped: DroppedRows; kept: KeptRows } {
     const own = (record: Readonly<Record<string, unknown>> | undefined, key: string): boolean =>
         record !== undefined && Object.hasOwn(record, key)
     const taken = (folded: string): boolean =>
         own(map.folded, folded) || own(map.former?.folded, folded)
-    let shadowed = 0
-    let deadTarget = 0
-    let hidesNameOrAlias = 0
+    const rows: Rows = {
+        redirects: new Map(list.redirects.map((row) => [foldedForm(row.from), row.to])),
+        gone: new Set(list.gone.map(foldedForm)),
+        prefixes: list.prefixes
+            .map((row): [string, string] => [foldedForm(row.from), row.to])
+            .sort(([one], [two]) => two.length - one.length || compareCodePoints(one, two))
+    }
+    const dropped = { shadowed: 0, deadTarget: 0, loop: 0 }
+    const kept = { hidesNameOrAlias: 0, prefixOnLiveFolder: 0, goneTarget: 0 }
     let longest = 0
     const folded = new Map<string, string>()
+    const goneTexts: string[] = []
     for (const row of list.redirects) {
         const key = foldedForm(row.from)
-        const location = locationOf(row.to, map)
         if (taken(key)) {
-            shadowed++
-        } else if (location === undefined) {
-            deadTarget++
-        } else {
-            if ((!key.includes('/') && own(map.names, key)) || own(map.aliases, key)) {
-                hidesNameOrAlias++
-            }
-            folded.set(goneKey(key), location)
-            longest = Math.max(longest, key.length)
+            dropped.shadowed++
+            continue
         }
+        const end = follow(row.to, map, rows)
+        if (end.kind === 'dead' || end.kind === 'loop') {
+            dropped[end.kind === 'dead' ? 'deadTarget' : 'loop']++
+            continue
+        }
+        if ((!key.includes('/') && own(map.names, key)) || own(map.aliases, key)) {
+            kept.hidesNameOrAlias++
+        }
+        if (end.kind === 'gone') {
+            kept.goneTarget++
+            goneTexts.push(key)
+            continue
+        }
+        folded.set(goneKey(key), end.location)
+        longest = Math.max(longest, key.length)
     }
-    const goneTexts: string[] = []
     for (const path of list.gone) {
         const key = foldedForm(path)
         if (taken(key)) {
-            shadowed++
+            dropped.shadowed++
         } else {
             goneTexts.push(key)
         }
     }
     const prefixes = new Map<string, string>()
-    for (const row of list.prefixes) {
-        const key = foldedForm(row.from)
-        const location = locationOf(row.to, map)
-        if (taken(key.slice(0, -1))) {
-            shadowed++
-        } else if (location === undefined) {
-            deadTarget++
-        } else {
-            prefixes.set(goneKey(key), location)
-            longest = Math.max(longest, key.length)
+    const lengths = new Set<number>()
+    for (const [key, to] of rows.prefixes) {
+        const end = follow(to, map, rows)
+        if (end.kind !== 'location') {
+            // A prefix rule that leads to no page leads nowhere: a gone
+            // target is no answer for every path under a folder.
+            dropped[end.kind === 'loop' ? 'loop' : 'deadTarget']++
+            continue
         }
+        if (taken(key.slice(0, -1))) {
+            kept.prefixOnLiveFolder++
+        }
+        prefixes.set(goneKey(key), end.location)
+        lengths.add(key.length)
+        longest = Math.max(longest, key.length)
     }
     const redirects: RedirectMap = {
         longest,
         folded: sortedRecord(folded),
-        prefixes: sortedRecord(prefixes)
+        prefixes: sortedRecord(prefixes),
+        prefixLengths: [...lengths].sort((one, two) => two - one)
     }
     const gone = map.gone ?? { longest: 0, paths: {}, folded: {}, names: {}, aliases: {} }
     const result: ResolverMap =
@@ -315,5 +426,5 @@ export function applyRedirectList(
                       )
                   }
               }
-    return { map: result, dropped: { shadowed, deadTarget }, hidesNameOrAlias }
+    return { map: result, dropped, kept }
 }

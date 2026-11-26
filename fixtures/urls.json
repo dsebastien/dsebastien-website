@@ -124,6 +124,10 @@
             {
                 "from": "Old Shop/Catalog",
                 "to": "https://example.org/catalog"
+            },
+            {
+                "from": "Old Library/Rye loaf",
+                "to": "/Old+Library/Bread+notes"
             }
         ],
         "gone": ["Generated/Totals"],
@@ -825,10 +829,9 @@
             "format": "html"
         },
         {
-            "name": "a row of the redirect list whose target is not live is dropped",
+            "name": "a row of the redirect list whose target is gone is gone",
             "request": "/Old+Garden/Trellis",
-            "status": 404,
-            "suggestions": [],
+            "status": 410,
             "format": "html"
         },
         {
@@ -907,6 +910,20 @@
             "status": 404,
             "suggestions": [],
             "format": "html"
+        },
+        {
+            "name": "a chain inside the redirect list ends at its page in one redirect",
+            "request": "/Old+Library/Rye+loaf",
+            "status": 301,
+            "location": "/20+Library/20.02+Recipes/100%25+rye+bread",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a prefix rule keeps a query that is encoded into the path",
+            "request": "/Old+Beds/Raised+beds%3Fref%3Dexample.org",
+            "status": 301,
+            "location": "/Welcome?ref=example.org",
+            "cacheControl": "public, max-age=3600"
         }
     ]
 }

@@ -43,7 +43,11 @@ const isRedirectMap = (value: unknown): boolean =>
     Number.isInteger(value['longest']) &&
     value['longest'] >= 0 &&
     everyValue(value['folded'], isText) &&
-    everyValue(value['prefixes'], isText)
+    everyValue(value['prefixes'], isText) &&
+    Array.isArray(value['prefixLengths']) &&
+    value['prefixLengths'].every(
+        (length: unknown) => typeof length === 'number' && Number.isInteger(length) && length > 0
+    )
 const isSiteFile = (value: unknown): value is SiteFile =>
     isRecord(value) &&
     isText(value['file']) &&
