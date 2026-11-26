@@ -29,6 +29,7 @@ import type {
     VaultEntry
 } from '../ports.ts'
 import { JOURNAL_FOLDER } from '../renames.ts'
+import { isRefusedByWindows } from '../names.ts'
 
 // A device whose vault and whose copy of the content store are folders, with
 // the `git` program of the system (TOOL-12 of the spec). The tests and the
@@ -273,28 +274,14 @@ function configurationCode(
     )
 }
 
-/** Names that Windows refuses for a file or a folder, whatever their end. */
-const WINDOWS_NAMES =
-    /^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/iu
-
 /**
  * Why git can fail to write a path of the copy on some system (issue 76), or
  * `undefined`: a name that Windows refuses, or a path longer than the 260
  * characters that Windows allows when git does not use long paths.
  */
 function unwritableCause(path: string, folder: string): string | undefined {
-    const parts = path.split('/')
-    if (
-        parts.some(
-            (part) =>
-                WINDOWS_NAMES.test(part) ||
-                /[<>:"|?*\\]/u.test(part) ||
-                Array.from(part, (letter) => letter.codePointAt(0) ?? 0).some(
-                    (code) => code < 0x20
-                ) ||
-                /[. ]$/u.test(part)
-        )
-    ) {
+    // A content store written before decision R79 can hold such a path.
+    if (isRefusedByWindows(path)) {
         return 'a name that Windows refuses'
     }
     if (`${folder}/${path}`.length >= 260) {

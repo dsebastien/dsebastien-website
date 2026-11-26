@@ -64,6 +64,31 @@ export function isChangedByObsidian(path: string): boolean {
     return obsidianPath(path) !== path
 }
 
+/** Names that Windows refuses for a file or a folder, whatever their end. */
+const WINDOWS_NAMES =
+    /^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/iu
+
+/**
+ * True when Windows cannot hold the path (decision of the author R79): a
+ * part holds one of `<>:"|?*\` or a control character, ends with a dot or a
+ * space, or is a reserved name of Windows (`CON`, `NUL`, `COM1`, with any
+ * end). Git cannot write such a path into a copy on Windows, so such a note
+ * is never published and no move takes a note to it.
+ */
+export function isRefusedByWindows(path: string): boolean {
+    return path
+        .split('/')
+        .some(
+            (part) =>
+                WINDOWS_NAMES.test(part) ||
+                /[<>:"|?*\\]/u.test(part) ||
+                Array.from(part, (letter) => letter.codePointAt(0) ?? 0).some(
+                    (code) => code < 0x20
+                ) ||
+                /[. ]$/u.test(part)
+        )
+}
+
 /**
  * The twins among these paths: each path whose Obsidian path is the Obsidian
  * path of another one, with the first such other path in the order of the

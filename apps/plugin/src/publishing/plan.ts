@@ -8,6 +8,7 @@ import {
     firstPart,
     foldedForm,
     isChangedByObsidian,
+    isRefusedByWindows,
     isReservedRootName,
     obsidianPath,
     obsidianTwins
@@ -320,6 +321,11 @@ function refuseObsidianPaths(scan: Scan, plan: PublicationPlan, pairs: readonly 
         if (isChangedByObsidian(path)) {
             throw new SelectionError(
                 `"${path}" cannot be published: Obsidian reads its path as "${obsidianPath(path)}" (a no-break space, a backslash, a slash too many or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it`
+            )
+        }
+        if (isRefusedByWindows(path)) {
+            throw new SelectionError(
+                `"${path}" cannot be published: Windows cannot hold its path (a part with one of <>:"|?*, a control character, a dot or a space at its end, or a reserved name of Windows such as CON or NUL), so a copy of the content store on Windows could not write it. Give the file another name`
             )
         }
         const twin = twins.get(path)

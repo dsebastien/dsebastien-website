@@ -18,8 +18,8 @@ use crate::hash::content_hash;
 use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
 use crate::names::{
-    first_part, folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path,
-    obsidian_twins,
+    first_part, folded_form, is_changed_by_obsidian, is_refused_by_windows, is_reserved_root_name,
+    obsidian_path, obsidian_twins,
 };
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::renames::{Fold, JournalState, RenameWarning, fold_moves, former_paths_after};
@@ -1031,6 +1031,12 @@ fn refused_target(to: &str) -> Option<String> {
     let name = without_suffix(to.rsplit('/').next().unwrap_or(to));
     if is_reserved_root_name(name) || (to.contains('/') && is_reserved_root_name(first_part(to))) {
         return Some("whose name is a reserved root name of the site: it does not move".to_owned());
+    }
+    if is_refused_by_windows(to) {
+        return Some(
+            "a path that Windows cannot hold: it does not move, and it can show as a pairing"
+                .to_owned(),
+        );
     }
     is_changed_by_obsidian(to).then(|| {
         format!(

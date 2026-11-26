@@ -65,6 +65,30 @@ pub fn obsidian_path(path: &str) -> String {
         .collect()
 }
 
+/// True when Windows cannot hold the path (decision of the author R79): a
+/// part holds one of `<>:"|?*\` or a control character, ends with a dot or
+/// a space, or is a reserved name of Windows (`CON`, `NUL`, `COM1`, with any
+/// end). Git cannot write such a path into a copy on Windows, so such a note
+/// is never published and no move takes a note to it.
+pub fn is_refused_by_windows(path: &str) -> bool {
+    let refused = |part: &str| {
+        let base = part.split('.').next().unwrap_or(part).to_ascii_lowercase();
+        let reserved = ["con", "prn", "aux", "nul"].contains(&base.as_str())
+            || ((base.starts_with("com") || base.starts_with("lpt"))
+                && base.chars().count() == 4
+                && base.chars().last().is_some_and(|last| {
+                    last.is_ascii_digit() || "\u{b9}\u{b2}\u{b3}".contains(last)
+                }));
+        reserved
+            || part
+                .chars()
+                .any(|letter| "<>:\"|?*\\".contains(letter) || u32::from(letter) < 0x20)
+            || part.ends_with('.')
+            || part.ends_with(' ')
+    };
+    path.split('/').any(refused)
+}
+
 /// True when Obsidian gives this vault path another path: any change of the
 /// Obsidian path (a no-break space, a backslash, a slash too many, a name that is
 /// not in the composed Unicode form). Obsidian, its links and the APIs of its
@@ -96,7 +120,8 @@ pub fn obsidian_twins<'a>(paths: impl IntoIterator<Item = &'a String>) -> BTreeM
 #[cfg(test)]
 mod tests {
     use super::{
-        folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path, obsidian_twins,
+        folded_form, is_changed_by_obsidian, is_refused_by_windows, is_reserved_root_name,
+        obsidian_path, obsidian_twins,
     };
     use serde_json::Value;
 
@@ -159,6 +184,22 @@ mod tests {
             assert_eq!(
                 is_changed_by_obsidian(text(case, "text")),
                 path != text(case, "text"),
+                "{}",
+                text(case, "name")
+            );
+        }
+    }
+
+    #[test]
+    fn finds_the_paths_that_windows_cannot_hold_as_the_file_states() {
+        let cases = cases("windows");
+        assert!(cases.len() > 10);
+        for case in &cases {
+            assert_eq!(
+                is_refused_by_windows(text(case, "text")),
+                case["refused"]
+                    .as_bool()
+                    .expect("a case says if it is refused"),
                 "{}",
                 text(case, "name")
             );

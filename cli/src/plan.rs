@@ -14,8 +14,8 @@ use crate::edits::Event;
 use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::manifest::State;
 use crate::names::{
-    first_part, folded_form, is_changed_by_obsidian, is_reserved_root_name, obsidian_path,
-    obsidian_twins,
+    first_part, folded_form, is_changed_by_obsidian, is_refused_by_windows, is_reserved_root_name,
+    obsidian_path, obsidian_twins,
 };
 use crate::order::sort_by_code_point;
 use crate::queue::{Move, Scan};
@@ -522,6 +522,11 @@ fn refuse_obsidian_paths(
             return Err(format!(
                 "\"{path}\" cannot be published: Obsidian reads its path as \"{}\" (a no-break space, a backslash, a slash too many or a name that is not in the composed Unicode form), so its links and its note type would not find it. Give the file another name, in Obsidian or outside it",
                 obsidian_path(path)
+            ));
+        }
+        if is_refused_by_windows(path) {
+            return Err(format!(
+                "\"{path}\" cannot be published: Windows cannot hold its path (a part with one of <>:\"|?*, a control character, a dot or a space at its end, or a reserved name of Windows such as CON or NUL), so a copy of the content store on Windows could not write it. Give the file another name"
             ));
         }
         if let Some(twin) = twins.get(path) {

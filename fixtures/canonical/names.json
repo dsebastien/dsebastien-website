@@ -1,5 +1,5 @@
 {
-    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form, `obsidian` gives a vault path and the path that Obsidian gives it (its `normalizePath`, section \"Paths\"), `twins` gives paths and, for each path whose Obsidian path is the Obsidian path of another one, the first such other path in the order of the code points.",
+    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form, `obsidian` gives a vault path and the path that Obsidian gives it (its `normalizePath`, section \"Paths\"), `twins` gives paths and, for each path whose Obsidian path is the Obsidian path of another one, the first such other path in the order of the code points. `windows` gives a vault path and whether Windows cannot hold it (section \"Paths\", rule 5, decision R79).",
     "reserved": [
         {
             "name": "a plain name",
@@ -263,6 +263,48 @@
             "name": "another letter case is not the same path for Obsidian",
             "paths": ["a.md", "A.md"],
             "twins": {}
+        }
+    ],
+    "windows": [
+        { "name": "a plain path", "text": "Notes/Plan.md", "refused": false },
+        {
+            "name": "a space and a dot inside a name",
+            "text": "Notes/A plan. v2.md",
+            "refused": false
+        },
+        { "name": "a colon", "text": "Notes/Plan: v2.md", "refused": true },
+        { "name": "a question mark", "text": "Notes/Why?.md", "refused": true },
+        { "name": "an asterisk", "text": "Notes/A*.md", "refused": true },
+        { "name": "a quotation mark", "text": "Notes/\"Quoted\".md", "refused": true },
+        { "name": "an angle bracket", "text": "Notes/A<B.md", "refused": true },
+        { "name": "a vertical bar", "text": "Notes/A|B.md", "refused": true },
+        { "name": "a backslash", "text": "Notes\\Plan.md", "refused": true },
+        { "name": "a control character", "text": "Notes/A\u0001B.md", "refused": true },
+        { "name": "a folder that ends with a dot", "text": "Notes./Plan.md", "refused": true },
+        { "name": "a folder that ends with a space", "text": "Notes /Plan.md", "refused": true },
+        {
+            "name": "a reserved name of Windows, with its end",
+            "text": "Notes/CON.md",
+            "refused": true
+        },
+        { "name": "a reserved name in small letters", "text": "Notes/nul.md", "refused": true },
+        { "name": "a reserved name with two ends", "text": "Notes/aux.backup.md", "refused": true },
+        { "name": "a reserved name as a folder", "text": "COM1/Plan.md", "refused": true },
+        {
+            "name": "a reserved name with a digit in superscript",
+            "text": "LPT\u00b9.md",
+            "refused": true
+        },
+        {
+            "name": "a reserved name inside a longer name",
+            "text": "Notes/Console.md",
+            "refused": false
+        },
+        { "name": "COM with two digits", "text": "Notes/COM10.md", "refused": false },
+        {
+            "name": "a name with letters of another script",
+            "text": "Notes/Caf\u00e9 \u6587.md",
+            "refused": false
         }
     ]
 }

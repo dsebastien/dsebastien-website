@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import {
     foldedForm,
     isChangedByObsidian,
+    isRefusedByWindows,
     isReservedRootName,
     obsidianPath,
     obsidianTwins
@@ -17,11 +18,18 @@ interface Cases {
     folded: { name: string; one: string; two: string; equal: boolean }[]
     obsidian: { name: string; text: string; path: string }[]
     twins: { name: string; paths: string[]; twins: Record<string, string> }[]
+    windows: { name: string; text: string; refused: boolean }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
 // shape fails the tests that read it.
 const cases = (await Bun.file(CASES).json()) as Cases
+
+describe('the paths that Windows cannot hold', () => {
+    test.each(cases.windows.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
+        expect(isRefusedByWindows(entry.text)).toBe(entry.refused)
+    })
+})
 
 describe('reserved root names', () => {
     test.each(cases.reserved.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {

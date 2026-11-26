@@ -22,6 +22,7 @@ use crate::deploy::{
     ChildRun, DeployCommand, DeployProcess, DeployRecord, Stop, TakedownEntry, TakedownMarker,
     takedown_entry_of, takedown_entry_text,
 };
+use crate::names::is_refused_by_windows;
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -1493,22 +1494,8 @@ const COMPARE_OPTIONS: &[&str] = &[
 /// or `None`: a name that Windows refuses, or a path longer than the 260
 /// characters that Windows allows when git does not use long paths.
 fn unwritable_cause(path: &str, folder: &Path) -> Option<&'static str> {
-    let refused = |part: &str| {
-        let base = part.split('.').next().unwrap_or(part).to_ascii_lowercase();
-        let reserved = ["con", "prn", "aux", "nul"].contains(&base.as_str())
-            || ((base.starts_with("com") || base.starts_with("lpt"))
-                && base.chars().count() == 4
-                && base.chars().last().is_some_and(|last| {
-                    last.is_ascii_digit() || "\u{b9}\u{b2}\u{b3}".contains(last)
-                }));
-        reserved
-            || part
-                .chars()
-                .any(|letter| "<>:\"|?*\\".contains(letter) || u32::from(letter) < 0x20)
-            || part.ends_with('.')
-            || part.ends_with(' ')
-    };
-    if path.split('/').any(refused) {
+    // A content store written before decision R79 can hold such a path.
+    if is_refused_by_windows(path) {
         return Some("a name that Windows refuses");
     }
     let full = format!("{}/{path}", folder.display());

@@ -12263,6 +12263,73 @@
             ]
         },
         {
+            "name": "a line of a rename journal never moves a note to a path that Windows cannot hold (issue 105, decision R79)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md"],
+                        "published": ["Alpha.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "on a Mac, Obsidian renames the note to a name with a colon; a Windows device never gets that file",
+                    "files": {
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Notes/Alpha: v2.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Alpha.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the move does not happen: a copy on Windows could not write the note at that path, and every publication would stop there; the note is only missing",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "missing": ["Alpha.md"],
+                        "movedEdited": [],
+                        "new": [],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Alpha.md"],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                }
+            ]
+        },
+        {
             "name": "a folder line of a rename journal does not move a published note into a folder whose path Obsidian changes (issue 110)",
             "denyList": [],
             "vault": {

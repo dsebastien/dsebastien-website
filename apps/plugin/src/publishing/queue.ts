@@ -19,6 +19,7 @@ import {
     firstPart,
     foldedForm,
     isChangedByObsidian,
+    isRefusedByWindows,
     isReservedRootName,
     obsidianPath,
     obsidianTwins
@@ -740,6 +741,13 @@ export function applyMoves(
             warnings.push({
                 path: from,
                 message: `the rename journal moves the note to "${to}", whose name is a reserved root name of the site: it does not move`
+            })
+            continue
+        }
+        if (isRefusedByWindows(to)) {
+            warnings.push({
+                path: from,
+                message: `the rename journal moves the note to "${to}", a path that Windows cannot hold: it does not move, and it can show as a pairing`
             })
             continue
         }
