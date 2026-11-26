@@ -26,6 +26,18 @@ export interface UrlCase {
     suggestions?: string[]
     accept?: string
     format?: 'html' | 'markdown'
+    /**
+     * The answer of the edge of a real host, before the Worker runs (R87): a
+     * check of a real host expects this status and no page of the site. The
+     * local server and the Worker in a test give the answer of the case.
+     */
+    realHost?: { status: number }
+}
+
+/** Where a check asks. */
+export interface UrlCheckOptions {
+    /** A real host by its address: its edge answers some requests before the Worker (R87). */
+    readonly realHost?: boolean
 }
 
 /** A note of the table: a note with former paths was published at the first one. */
@@ -54,6 +66,15 @@ export async function readUrlTable(): Promise<UrlTable> {
     return (await Bun.file(TABLE).json()) as UrlTable
 }
 
+/**
+ * Says whether an address is a real host: the plain server and a local
+ * runtime of the host listen on this machine, and no edge stands before them.
+ */
+export function isRealHost(base: string): boolean {
+    const name = new URL(base).hostname
+    return !(name === 'localhost' || name === '[::1]' || /^127\./u.test(name))
+}
+
 /** Asks a host for a path, and follows no redirect. */
 export type Ask = (path: string, headers?: Record<string, string>) => Promise<Response>
 
@@ -77,7 +98,8 @@ function canonicalLinkOf(html: string): string | undefined {
 export async function checkUrlCase(
     entry: UrlCase,
     ask: Ask,
-    site: UrlTableSite
+    site: UrlTableSite,
+    options: UrlCheckOptions = {}
 ): Promise<string[]> {
     const findings: string[] = []
     const same = (what: string, got: unknown, wanted: unknown): void => {
@@ -94,6 +116,15 @@ export async function checkUrlCase(
         entry.request,
         entry.accept === undefined ? {} : { accept: entry.accept }
     )
+    if (options.realHost === true && entry.realHost !== undefined) {
+        // The edge refuses the request before the Worker runs: its own short
+        // page, never the page of the site.
+        same('status', response.status, entry.realHost.status)
+        if ((await response.text()).includes('>Not found</h1>')) {
+            findings.push('body: it is the not found page of the site, not the answer of the edge')
+        }
+        return findings
+    }
     same('status', response.status, entry.status)
     if (entry.location !== undefined) {
         same('location', response.headers.get('location'), entry.location)
@@ -200,12 +231,16 @@ export interface UrlCaseFindings {
  *
  * @returns the cases with a finding: an empty list when the host answers as the table says
  */
-export async function checkUrlTable(ask: Ask, site: UrlTableSite): Promise<UrlCaseFindings[]> {
+export async function checkUrlTable(
+    ask: Ask,
+    site: UrlTableSite,
+    options: UrlCheckOptions = {}
+): Promise<UrlCaseFindings[]> {
     const wrong: UrlCaseFindings[] = []
     for (const entry of site.table.cases) {
         let findings: string[]
         try {
-            findings = await checkUrlCase(entry, ask, site)
+            findings = await checkUrlCase(entry, ask, site, options)
         } catch (error) {
             // A host that cannot be reached is a finding of the case, not the end of the run.
             findings = [`no answer: ${error instanceof Error ? error.message : String(error)}`]

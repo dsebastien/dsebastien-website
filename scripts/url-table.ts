@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util'
 import {
     checkNotModified,
     checkUrlTable,
+    isRealHost,
     readUrlTable,
     type Ask
 } from '../apps/site/src/url-table.ts'
@@ -90,10 +91,13 @@ async function check(base: string, notes: string): Promise<number> {
     const table = await readUrlTable()
     const ask: Ask = (path, headers = {}) =>
         fetch(`${address}${path}`, { redirect: 'manual', headers })
-    const wrong = await checkUrlTable(ask, {
-        table,
-        markdownOf: (path) => readFile(join(notes, path), 'utf8')
-    })
+    // The edge of a real host answers some cases before the Worker (R87);
+    // nothing stands before a server on this machine.
+    const wrong = await checkUrlTable(
+        ask,
+        { table, markdownOf: (path) => readFile(join(notes, path), 'utf8') },
+        { realHost: isRealHost(address) }
+    )
     for (const path of UNCHANGED) {
         const findings = await checkNotModified(path, ask).catch(noAnswer)
         if (findings.length > 0) {

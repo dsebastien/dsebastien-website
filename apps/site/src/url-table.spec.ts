@@ -3,6 +3,8 @@ import {
     checkNotModified,
     checkUrlCase,
     checkUrlTable,
+    isRealHost,
+    readUrlTable,
     type Ask,
     type UrlCase,
     type UrlTableSite
@@ -224,5 +226,68 @@ describe('the check of a file that did not change', () => {
         expect(await checkNotModified('/Welcome', hostOf(true, null))).toEqual([
             '/Welcome: expected 200 with a tag, got 200 and the tag null'
         ])
+    })
+})
+
+describe('the check of an answer of the edge of a real host (R87)', () => {
+    const entry: UrlCase = {
+        name: 'a percent sign that is not encoded',
+        request: '/100%+rye+bread',
+        status: 404,
+        suggestions: [],
+        realHost: { status: 400 }
+    }
+    const edge = host({
+        '/100%+rye+bread': () =>
+            new Response('<center><h1>400 Bad Request</h1></center>', {
+                status: 400,
+                headers: { 'content-type': 'text/html' }
+            })
+    })
+    const notFound = host({
+        '/100%+rye+bread': () => html('<h1>Not found</h1>', 404, NEVER_KEPT)
+    })
+
+    test('accepts the answer of the edge on a real host only', async () => {
+        expect(await checkUrlCase(entry, edge, site, { realHost: true })).toEqual([])
+        expect(await checkUrlCase(entry, edge, site)).toContain('status: expected 404, got 400')
+    })
+
+    test('keeps the not found page of the site on the local server and the Worker', async () => {
+        expect(await checkUrlCase(entry, notFound, site)).toEqual([])
+    })
+
+    test('names the page of the site on a real host: the edge did not answer', async () => {
+        expect(await checkUrlCase(entry, notFound, site, { realHost: true })).toEqual([
+            'status: expected 400, got 404',
+            'body: it is the not found page of the site, not the answer of the edge'
+        ])
+    })
+
+    test('is the one case of the table with an answer of the edge', async () => {
+        const table = await readUrlTable()
+        expect(
+            table.cases
+                .filter((each) => each.realHost !== undefined)
+                .map((each) => [each.request, each.status, each.realHost?.status])
+        ).toEqual([['/100%+rye+bread', 404, 400]])
+    })
+})
+
+describe('a real host by its address', () => {
+    test('is any host that is not on this machine', () => {
+        expect(isRealHost('https://notes-preview.dsebastien.net')).toBe(true)
+        expect(isRealHost('http://192.0.2.10:8080/')).toBe(true)
+    })
+
+    test('is not the plain server or a local runtime of the host', () => {
+        for (const base of [
+            'http://127.0.0.1:4321/',
+            'http://127.8.0.1:9',
+            'http://localhost:8787',
+            'http://[::1]:8787'
+        ]) {
+            expect(isRealHost(base)).toBe(false)
+        }
     })
 })
