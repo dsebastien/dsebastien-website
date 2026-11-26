@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalPath, folderPath } from '@dsebastien-website/resolver'
@@ -375,6 +376,10 @@ describe('the command of the URL parity test', () => {
             join(folder, 'sitemap.xml'),
             `<urlset><url><loc>${ORIGIN}/10+Garden/Wormery</loc></url></urlset>`
         )
+        await Bun.write(
+            join(folder, 'wrong.csv'),
+            'source_url_path,target_path,status_code\n/Old+Library/Bread+notes,/Welcome,301\n'
+        )
     })
 
     afterAll(async () => {
@@ -413,14 +418,51 @@ describe('the command of the URL parity test', () => {
     })
 
     test('names a URL that does not answer as expected, and ends with the code 1', async () => {
-        await Bun.write(
-            join(folder, 'wrong.csv'),
-            'source_url_path,target_path,status_code\n/Old+Library/Bread+notes,/Welcome,301\n'
-        )
-        const { code, output } = await run('--list', join(folder, 'wrong.csv'))
+        const { code, output } = await run('--list', join(folder, 'wrong.csv'), '--show-paths')
         expect(output).toContain('list:wrong.csv: wrong-target 1')
         expect(output).toContain('    wrong-target 301 /Old+Library/Bread+notes -> ')
         expect(code).toBe(1)
+    })
+
+    // The paths of the sources are private: the run prints counts only,
+    // unless it is asked for the paths.
+    test('prints counts only, without --show-paths and without --report', async () => {
+        const { code, output } = await run('--list', join(folder, 'wrong.csv'))
+        expect(output).toContain('list:wrong.csv: wrong-target 1')
+        expect(output).not.toContain('Bread')
+        expect(code).toBe(1)
+    })
+
+    test('writes a report that does not exist yet, and refuses one that exists', async () => {
+        const place = await mkdtemp(join(tmpdir(), 'urls-parity-report-'))
+        try {
+            const report = join(place, 'report.json')
+            const first = await run('--list', join(folder, 'wrong.csv'), '--report', report)
+            expect(await readdir(place)).toEqual(['report.json'])
+            expect(first.code).toBe(1)
+            expect(first.output).not.toContain('Bread')
+            expect(await Bun.file(report).text()).toContain('/Old+Library/Bread+notes')
+            const second = await run('--list', join(folder, 'wrong.csv'), '--report', report)
+            expect(second.output).toContain('The report file exists')
+            expect(second.code).toBe(2)
+        } finally {
+            await rm(place, { recursive: true, force: true })
+        }
+    })
+
+    // The build counts what it did with the redirect list (no path): the
+    // run prints those counts from the resolver map of the build.
+    test('prints the counts of the redirect list of the build', async () => {
+        const { output } = await run(
+            '--list',
+            join(folder, 'wrong.csv'),
+            '--map',
+            join(outDir ?? '', '-', 'resolver-map.json')
+        )
+        expect(output).toContain('the redirect list of the build: ')
+        expect(output).toContain('goneTarget 1')
+        expect(output).toContain('prefixFallback 0')
+        expect(output).toContain('shadowed 1')
     })
 
     test('refuses a report inside the clone, out of its private folder', async () => {

@@ -233,6 +233,22 @@ const PRECISION: Record<Expectation['kind'], number> = {
     'not-found': 2
 }
 
+/**
+ * The decoded forms of a path for the merge of the sources: the strict one
+ * (`+` a space, `%2B` a `+`), and for a path with no `%` (a report that
+ * shows paths decoded) also the one with `+` as itself.
+ */
+function mergeForms(path: string): string[] {
+    const [strict, literal] = readingsOf(requestPathOf(pathOnly(path))).map((text) =>
+        text.normalize('NFC')
+    )
+    const forms = strict === undefined ? [] : [strict]
+    if (!path.includes('%') && literal !== undefined && literal !== strict) {
+        forms.push(literal)
+    }
+    return forms.length === 0 ? [path] : forms
+}
+
 /** The expectations that say a URL does not work. */
 const BROKEN: ReadonlySet<Expectation['kind']> = new Set(['gone', 'not-found'])
 
@@ -271,7 +287,7 @@ export function mergeKnownUrls(lists: readonly (readonly KnownUrl[])[]): KnownUr
     const urls: KnownUrl[] = []
     const byForm = new Map<string, number>()
     for (const url of lists.flat()) {
-        const forms = [...decodedForms(url.path)]
+        const forms = mergeForms(url.path)
         const index = forms.map((form) => byForm.get(form)).find((one) => one !== undefined)
         const known = index === undefined ? undefined : urls[index]
         if (index === undefined || known === undefined) {
@@ -416,10 +432,38 @@ async function checkOne(url: KnownUrl, ask: Ask): Promise<UrlCheck> {
                     verdict: status === 200 ? 'wrong-status' : errorVerdict(status)
                 }
             }
-            return samePath(location, expect.to)
+            return samePath(location, expect.to) ||
+                (await endsOf(expect.to, ask)).some((end) => samePath(location, end))
                 ? await followed()
                 : { ...answer, verdict: 'wrong-target' }
     }
+}
+
+/** How many redirects of an expected target the run follows to find where it ends. */
+const TARGET_HOPS = 3
+
+/**
+ * Where an expected target leads on the host, up to a few redirects: the
+ * list can write a target in another letter case or encoding, and the host
+ * leads it to the same page as the known URL.
+ */
+async function endsOf(target: string, ask: Ask): Promise<string[]> {
+    const ends: string[] = []
+    let next = target
+    for (let hop = 0; hop < TARGET_HOPS && !/^https?:/u.test(next); hop++) {
+        const at = next.indexOf('?')
+        const response = await ask(
+            requestPathOf(at < 0 ? next : next.slice(0, at)) + (at < 0 ? '' : next.slice(at))
+        ).catch(() => undefined)
+        const location = response?.headers.get('location') ?? undefined
+        await response?.arrayBuffer()
+        if (response === undefined || !REDIRECT.has(response.status) || location === undefined) {
+            break
+        }
+        ends.push(location)
+        next = location
+    }
+    return ends
 }
 
 /** The result of a parity run. */

@@ -107,15 +107,20 @@ describe('the sources of known URLs', () => {
         ])
     })
 
-    test('two paths that share any decoded form are one URL', () => {
-        // A literal + and two spaces: the third reading of the first path is
-        // the only form of the second.
+    // An encoded path has one decoded form: `+` is a space and `%2B` a `+`.
+    // Only a path with no `%` (a report that shows paths decoded) can mean a
+    // `+` or a space.
+    test('two paths are one URL on their strict decoded form only', () => {
         const merged = mergeKnownUrls([
-            knownUrlsFromLines('/Salt+%2B+pepper\n', 'crawl'),
-            knownUrlsFromLines('/Salt%20%20%20pepper\n', 'report')
+            knownUrlsFromLines('/Salt+%2B+pepper\n/A%20b\n/C+d\n', 'crawl'),
+            knownUrlsFromLines('/Salt%20%20%20pepper\n/A%2Bb\n/C%2Bd\n', 'report')
         ])
-        expect(merged).toEqual([
-            { path: '/Salt+%2B+pepper', sources: ['crawl', 'report'], expect: { kind: 'works' } }
+        expect(merged.map((url) => [url.path, url.sources])).toEqual([
+            ['/Salt+%2B+pepper', ['crawl']],
+            ['/A%20b', ['crawl']],
+            ['/C+d', ['crawl', 'report']],
+            ['/Salt%20%20%20pepper', ['report']],
+            ['/A%2Bb', ['report']]
         ])
     })
 
@@ -232,6 +237,8 @@ describe('the check of known URLs against a host', () => {
         '/Old/B': MOVED('/New/B'),
         '/New/B': PAGE,
         '/Old/Wrong': MOVED('/New/B'),
+        '/Old/Case': MOVED('/New/B'),
+        '/new/b': MOVED('/New/B'),
         '/Old/Chain': MOVED('/Old/B'),
         '/Gone': () => new Response(null, { status: 410 }),
         '/Shell': () => new Response('<main></main>', { headers: { 'content-type': 'text/html' } }),
@@ -247,6 +254,8 @@ describe('the check of known URLs against a host', () => {
         { path: '/A%20b', sources: ['list'], expect: { kind: 'page' } },
         { path: '/Old/B', sources: ['list'], expect: { kind: 'redirect', to: '/New/B' } },
         { path: '/Old/Wrong', sources: ['list'], expect: { kind: 'redirect', to: '/Other' } },
+        // The list writes the target in another letter case: the host leads it where the URL leads.
+        { path: '/Old/Case', sources: ['list'], expect: { kind: 'redirect', to: '/new/b' } },
         { path: '/Old/Chain', sources: ['crawl'], expect: { kind: 'works' } },
         { path: '/Gone', sources: ['list'], expect: { kind: 'gone' } },
         { path: '/Gone', sources: ['sitemap'], expect: { kind: 'works' } },
@@ -271,6 +280,7 @@ describe('the check of known URLs against a host', () => {
             ['/A%20b', 'ok'],
             ['/Old/B', 'ok'],
             ['/Old/Wrong', 'wrong-target'],
+            ['/Old/Case', 'ok'],
             ['/Old/Chain', 'chain'],
             ['/Gone', 'ok'],
             ['/Gone', 'gone'],
@@ -284,7 +294,7 @@ describe('the check of known URLs against a host', () => {
             ['/-/md/A.md', 'ok']
         ])
         expect(result.counts).toEqual({
-            list: { 'ok': 8, 'wrong-target': 1, 'no-content': 1, 'pending': 1 },
+            list: { 'ok': 9, 'wrong-target': 1, 'no-content': 1, 'pending': 1 },
             crawl: { 'chain': 1, 'server-error': 1 },
             sitemap: { 'gone': 1, 'not-found': 1 }
         })

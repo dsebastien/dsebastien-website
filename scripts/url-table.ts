@@ -8,6 +8,7 @@ import {
     readUrlTable,
     type Ask
 } from '../apps/site/src/url-table.ts'
+import { resolverMapFrom } from '@dsebastien-website/resolver'
 import { buildUrlTableSite } from '../apps/site/src/url-table-site.ts'
 import {
     checkKnownUrls,
@@ -27,7 +28,8 @@ import { prepareOutputFolder, type OutputOptions } from './output-folder.ts'
 //     bun run urls build [--out <folder>]
 //     bun run urls check --base <address> [--notes <folder>]
 //     bun run urls parity --base <address> [--list <csv>]... [--sitemap <xml>]...
-//         [--urls <text>]... [--concurrency <n>] [--gate] [--report <file>]
+//         [--urls <text>]... [--concurrency <n>] [--gate] [--report <file>] [--show-paths]
+//         [--map <file>]
 //
 // `build` publishes the invented notes of the table from a copy of the
 // fixture vault and builds their site into `.cache/url-table-site/`, or into
@@ -45,9 +47,11 @@ import { prepareOutputFolder, type OutputOptions } from './output-folder.ts'
 // class by source. A source is a private file of the author, read where it
 // is: `--list` the redirect list (CSV), `--sitemap` a sitemap of the current
 // site, `--urls` one URL or path per line (a report, a crawl). Each option
-// can come several times. The URLs that do not answer as expected go to the
-// file of `--report` (JSON), which must be outside the clone or in its
-// `.private/` folder, else to the standard error. It ends with the code 1
+// can come several times. It prints counts only. The URLs that do not
+// answer as expected go to the file of `--report` (JSON, a new file outside
+// the clone or in its `.private/` folder), and to the standard error with
+// `--show-paths`. `--map` prints the counts of the redirect list that the
+// resolver map of a build holds (numbers only). It ends with the code 1
 // when a URL does not answer as expected, and with `--gate` also when a row
 // waits for a decision of the author (SW-04).
 
@@ -118,6 +122,8 @@ interface ParityOptions {
     readonly concurrency: number
     readonly gate: boolean
     readonly report: string | undefined
+    readonly showPaths: boolean
+    readonly map: string | undefined
 }
 
 async function parity(base: string, options: ParityOptions): Promise<number> {
@@ -126,6 +132,19 @@ async function parity(base: string, options: ParityOptions): Promise<number> {
             'The report names private paths: write it outside the clone or into .private/'
         )
         return 2
+    }
+    if (options.report !== undefined && (await Bun.file(options.report).exists())) {
+        // A file that exists can be a link that someone put there.
+        console.error('The report file exists: give a new file')
+        return 2
+    }
+    if (options.map !== undefined) {
+        // Numbers only: the map holds no old path.
+        const map = resolverMapFrom(JSON.parse(await readFile(options.map, 'utf8')))
+        const counts = Object.entries(map.redirects?.counts ?? {}).map(
+            ([what, count]) => `${what} ${String(count)}`
+        )
+        console.error(`the redirect list of the build: ${counts.join(', ')}`)
     }
     const address = base.replace(/\/+$/u, '')
     const read = async (
@@ -151,15 +170,17 @@ async function parity(base: string, options: ParityOptions): Promise<number> {
         console.error(`${source}: ${parts.join(', ')}`)
     }
     const wrong = result.checks.filter((check) => check.verdict !== 'ok')
-    if (options.report === undefined) {
+    if (options.report !== undefined) {
+        // `wx`: the file must not exist, so a link put there is never followed.
+        await writeFile(options.report, `${JSON.stringify(wrong, null, 2)}\n`, { flag: 'wx' })
+    }
+    if (options.showPaths) {
         for (const check of wrong) {
             const target = check.location === undefined ? '' : ` -> ${check.location}`
             console.error(
                 `    ${check.verdict} ${String(check.status ?? '')} ${check.url.path}${target}`
             )
         }
-    } else {
-        await writeFile(options.report, `${JSON.stringify(wrong, null, 2)}\n`)
     }
     console.error(
         `${String(urls.length)} known URLs, ${String(result.failed)} that do not answer as expected, ${String(result.pending)} waiting for a decision`
@@ -170,15 +191,17 @@ async function parity(base: string, options: ParityOptions): Promise<number> {
 const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
     options: {
-        base: { type: 'string' },
-        list: { type: 'string', multiple: true, default: [] },
-        sitemap: { type: 'string', multiple: true, default: [] },
-        urls: { type: 'string', multiple: true, default: [] },
-        concurrency: { type: 'string', default: '8' },
-        gate: { type: 'boolean', default: false },
-        report: { type: 'string' },
-        notes: { type: 'string', default: join(FOLDER, 'notes') },
-        out: { type: 'string', default: FOLDER }
+        'base': { type: 'string' },
+        'list': { type: 'string', multiple: true, default: [] },
+        'sitemap': { type: 'string', multiple: true, default: [] },
+        'urls': { type: 'string', multiple: true, default: [] },
+        'concurrency': { type: 'string', default: '8' },
+        'gate': { type: 'boolean', default: false },
+        'report': { type: 'string' },
+        'show-paths': { type: 'boolean', default: false },
+        'map': { type: 'string' },
+        'notes': { type: 'string', default: join(FOLDER, 'notes') },
+        'out': { type: 'string', default: FOLDER }
     },
     allowPositionals: true,
     strict: true
@@ -200,11 +223,13 @@ if (command === 'build' && positionals.length === 1) {
         texts: values.urls.map((file) => resolve(file)),
         concurrency: Number(values.concurrency),
         gate: values.gate,
-        report: values.report === undefined ? undefined : resolve(values.report)
+        report: values.report === undefined ? undefined : resolve(values.report),
+        showPaths: values['show-paths'],
+        map: values.map === undefined ? undefined : resolve(values.map)
     })
 } else {
     console.error(
-        'Usage: bun run urls build [--out <folder>] | bun run urls check --base <address> [--notes <folder>] | bun run urls parity --base <address> [--list <csv>]... [--sitemap <xml>]... [--urls <text>]... [--concurrency <n>] [--gate] [--report <file>]'
+        'Usage: bun run urls build [--out <folder>] | bun run urls check --base <address> [--notes <folder>] | bun run urls parity --base <address> [--list <csv>]... [--sitemap <xml>]... [--urls <text>]... [--concurrency <n>] [--gate] [--report <file>] [--show-paths] [--map <file>]'
     )
     process.exitCode = 2
 }
