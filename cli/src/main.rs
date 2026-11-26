@@ -66,8 +66,10 @@ struct Folders {
     content_store: PathBuf,
 
     /// The folder of the rename journals that the plugin writes in the vault
-    /// (one file per device). The default is
-    /// `.obsidian/plugins/dsebastien-vault-publish/renames` in the vault.
+    /// (one file per device). By default, the folder
+    /// `plugins/dsebastien-vault-publish/renames` of every configuration
+    /// folder of the vault (each folder at its root whose name starts with a
+    /// dot).
     #[arg(long, value_name = "FOLDER")]
     renames: Option<PathBuf>,
 }
@@ -526,14 +528,15 @@ fn device_at(
         }
     }
     let program = osk_cli.map_or_else(|| note_types::default_program(vault), Path::to_path_buf);
+    // Without a folder, the journals of every configuration folder (R79).
     let renames = renames.map_or_else(
-        || vault.join(".obsidian").join(renames::JOURNAL_FOLDER),
-        Path::to_path_buf,
+        || renames::RenameJournals::of_vault(vault.to_path_buf()),
+        |folder| renames::RenameJournals::new(folder.to_path_buf()),
     );
     Ok(Device {
         vault: Vault::new(vault),
         store: ContentStore::new(content_store),
-        renames: renames::RenameJournals::new(renames),
+        renames,
         note_types: note_types::StarterKit::new(&program, vault),
     })
 }

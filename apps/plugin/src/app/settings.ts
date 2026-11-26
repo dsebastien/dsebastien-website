@@ -1,7 +1,6 @@
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute } from 'node:path'
 import { nodeDevice } from '../publishing/node/device.ts'
 import type { Device, ListRefresh, NoteTypes, Vault } from '../publishing/ports.ts'
-import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import type { DeviceStorage } from './rename-journal.ts'
 
 // The settings of a device (decision R67, ST6a of the tool study): the folder
@@ -87,14 +86,13 @@ function folderOf(value: string, name: string): string {
  * The device of the settings, for the vault of Obsidian. It throws with a
  * message that names the setting to change.
  *
- * @param vault the folder of the vault
- * @param configDir the configuration folder of Obsidian, relative to the vault
+ * @param vault the folder of the vault; the rename journals of each of its
+ * configuration folders are read (decision of the author R79)
  * @param writes makes the vault whose writes into the notes go through Obsidian
  */
 export function deviceOf(
     settings: DeviceSettings,
     vault: string,
-    configDir: string,
     noteTypes: NoteTypes,
     lists?: ListRefresh,
     writes?: (vault: Vault) => Vault
@@ -106,7 +104,6 @@ export function deviceOf(
         contentStore,
         attachmentStorage,
         noteTypes,
-        renames: join(vault, configDir, JOURNAL_FOLDER),
         ...(git === undefined ? {} : { git })
     })
     // The writes into the notes go through the vault of Obsidian (`editorWrites`).

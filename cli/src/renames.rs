@@ -92,15 +92,103 @@ pub struct JournalState {
 
 /// The rename journals of a folder: its files, as they are. A folder that does
 /// not exist has none. A folder below it and a symbolic link are no journal.
+/// Or the journals of every configuration folder of a vault (decision of the
+/// author R79): each folder at the root of the vault whose name starts with a
+/// dot, with `plugins/dsebastien-vault-publish/renames` in it. A name in more
+/// than one folder is the file with the most bytes, then the one of the first
+/// folder in the order of the code points: a copy of a configuration folder
+/// holds an older journal of the same device.
 pub struct RenameJournals {
-    folder: PathBuf,
+    folders: Source,
+}
+
+/// Where the journals are.
+enum Source {
+    Folder(PathBuf),
+    Vault(PathBuf),
 }
 
 impl RenameJournals {
     pub fn new(folder: PathBuf) -> Self {
-        Self { folder }
+        Self {
+            folders: Source::Folder(folder),
+        }
     }
 
+    /// The journals of every configuration folder of the vault.
+    pub fn of_vault(vault: PathBuf) -> Self {
+        Self {
+            folders: Source::Vault(vault),
+        }
+    }
+
+    /// The folders of the journals, in the order of the code points of the
+    /// names of the configuration folders.
+    fn folders(&self) -> Result<Vec<Folder>, String> {
+        match &self.folders {
+            Source::Folder(folder) => Ok(vec![Folder {
+                folder: folder.clone(),
+            }]),
+            Source::Vault(vault) => {
+                let failed = |error: std::io::Error| {
+                    format!(
+                        "the vault \"{}\" cannot be listed for the rename journals: {error}",
+                        vault.display()
+                    )
+                };
+                let mut names = Vec::new();
+                for entry in fs::read_dir(vault).map_err(failed)? {
+                    let entry = entry.map_err(failed)?;
+                    if !entry.file_type().map_err(failed)?.is_dir() {
+                        continue;
+                    }
+                    if let Some(name) = entry.file_name().to_str()
+                        && name.starts_with('.')
+                    {
+                        names.push(name.to_owned());
+                    }
+                }
+                names.sort();
+                Ok(names
+                    .into_iter()
+                    .map(|name| Folder {
+                        folder: vault.join(name).join(JOURNAL_FOLDER),
+                    })
+                    .collect())
+            }
+        }
+    }
+
+    /// The names of the journals of every folder, in any order.
+    fn list(&self) -> Result<Vec<String>, String> {
+        let mut names = BTreeSet::new();
+        for folder in self.folders()? {
+            names.extend(folder.list()?);
+        }
+        Ok(names.into_iter().collect())
+    }
+
+    /// The bytes of a journal: of a name in more than one folder, the file
+    /// with the most bytes, then the one of the first folder.
+    fn read(&self, name: &str) -> Result<Option<Vec<u8>>, String> {
+        let mut best: Option<Vec<u8>> = None;
+        for folder in self.folders()? {
+            if let Some(bytes) = folder.read(name)?
+                && best.as_ref().is_none_or(|kept| bytes.len() > kept.len())
+            {
+                best = Some(bytes);
+            }
+        }
+        Ok(best)
+    }
+}
+
+/// One folder of rename journals.
+struct Folder {
+    folder: PathBuf,
+}
+
+impl Folder {
     /// The names of the files of the folder, in any order.
     fn list(&self) -> Result<Vec<String>, String> {
         let failed = |error: std::io::Error| {

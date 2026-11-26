@@ -7342,6 +7342,87 @@
             ]
         },
         {
+            "name": "the journals of every configuration folder of the vault are read, and of one name in two folders the longer file (issue 105, decision R79)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n",
+                "Beta.md": "Beta\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md", "Beta.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md", "Beta.md"],
+                        "published": ["Alpha.md", "Beta.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a phone with another configuration folder renames Alpha; a stale copy of the journal of the phone sits in .obsidian, and the phone renames Beta two times",
+                    "files": {
+                        "Notes/Alpha.md": "---\npublic_note: true\n---\nAlpha\n",
+                        "Notes/Beta.md": "---\npublic_note: true\n---\nBeta\n",
+                        ".obsidian-phone/plugins/dsebastien-vault-publish/renames/00000000000000bb.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Notes/Alpha.md\"}\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000cc.jsonl": "{\"from\":\"Beta.md\",\"kind\":\"note\",\"time\":\"2031-06-02T09:00:00Z\",\"to\":\"Draft.md\"}\n",
+                        ".obsidian-phone/plugins/dsebastien-vault-publish/renames/00000000000000cc.jsonl": "{\"from\":\"Beta.md\",\"kind\":\"note\",\"time\":\"2031-06-02T09:00:00Z\",\"to\":\"Draft.md\"}\n{\"from\":\"Draft.md\",\"kind\":\"note\",\"time\":\"2031-06-02T09:01:00Z\",\"to\":\"Notes/Beta.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old files are gone",
+                    "paths": ["Alpha.md", "Beta.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "both journals of the phone are read: the longer file of the name that is in two folders gives the whole chain",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 2
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": [],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [
+                            {
+                                "from": "Alpha.md",
+                                "to": "Notes/Alpha.md"
+                            },
+                            {
+                                "from": "Beta.md",
+                                "to": "Notes/Beta.md"
+                            }
+                        ],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Notes/Alpha.md", "Notes/Beta.md"],
+                        "unpublishedUnderGuard": []
+                    }
+                }
+            ]
+        },
+        {
             "name": "a folder rename moves every note below it, and a device publishes the renames of another one (issue 37)",
             "denyList": [],
             "vault": {

@@ -126,7 +126,6 @@ export class VaultPublishPlugin extends Plugin {
                 deviceOf(
                     loadSettings(this.app),
                     vaultFolder(this.app),
-                    this.app.vault.configDir,
                     // `app.plugins` is not in the API of Obsidian: the face
                     // checks every step of it (starter-kit.ts).
                     starterKitNoteTypes(this.app as unknown as PluginHost),

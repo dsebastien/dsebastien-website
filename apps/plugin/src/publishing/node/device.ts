@@ -17,7 +17,7 @@ import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { toCanonicalJson } from '../canonical.ts'
-import { compareCodePoints } from '../order.ts'
+import { compareCodePoints, sortByCodePoint } from '../order.ts'
 import type {
     AttachmentStorage,
     ContentStore,
@@ -1446,6 +1446,55 @@ export function folderRenameJournals(folder: string): RenameJournals {
     }
 }
 
+/**
+ * The rename journals of every configuration folder of a vault (decision of
+ * the author R79): each folder at the root of the vault whose name starts
+ * with a dot, with `plugins/dsebastien-vault-publish/renames` in it, so a
+ * device whose configuration folder of Obsidian has another name is read too.
+ * A name in more than one folder is the file with the most bytes, then the
+ * one of the first folder in the order of the code points: a copy of a
+ * configuration folder holds an older journal of the same device.
+ */
+export function vaultRenameJournals(vault: string): RenameJournals {
+    const folders = async (): Promise<RenameJournals[]> => {
+        let entries
+        try {
+            entries = await readdir(vault, { withFileTypes: true })
+        } catch (error) {
+            throw new Error(
+                `the vault "${vault}" cannot be listed for the rename journals: ${error instanceof Error ? error.message : 'it failed'}`,
+                { cause: error }
+            )
+        }
+        return sortByCodePoint(
+            entries
+                .filter((entry) => entry.isDirectory() && entry.name.startsWith('.'))
+                .map((entry) => entry.name)
+        ).map((name) => folderRenameJournals(join(vault, name, JOURNAL_FOLDER)))
+    }
+    return {
+        async list() {
+            const names = new Set<string>()
+            for (const folder of await folders()) {
+                for (const name of await folder.list()) {
+                    names.add(name)
+                }
+            }
+            return [...names]
+        },
+        async read(name) {
+            let best: Uint8Array | undefined
+            for (const folder of await folders()) {
+                const bytes = await folder.read(name)
+                if (bytes !== undefined && (best === undefined || bytes.length > best.length)) {
+                    best = bytes
+                }
+            }
+            return best
+        }
+    }
+}
+
 /** No note has a type: the answer of a Starter Kit with no note type. */
 export const NO_NOTE_TYPES: NoteTypes = {
     recognize: (paths) =>
@@ -1506,7 +1555,7 @@ export function fileNoteTypes(file: string, asked?: string): NoteTypes {
  * @param options.contentStore the folder of the copy of the content store: a git clone whose `origin` is the content store
  * @param options.attachmentStorage the folder of the attachment storage
  * @param options.noteTypes the Starter Kit of the device; by default no note has a type
- * @param options.renames the folder of the rename journals; by default the one of the plugin in the vault
+ * @param options.renames the folder of the rename journals; by default those of every configuration folder of the vault
  * @param options.git the git program; by default `git` of the path of the system
  */
 export function nodeDevice(options: {
@@ -1519,9 +1568,10 @@ export function nodeDevice(options: {
 }): Device {
     return {
         vault: folderVault(options.vault),
-        renames: folderRenameJournals(
-            options.renames ?? join(options.vault, '.obsidian', JOURNAL_FOLDER)
-        ),
+        renames:
+            options.renames === undefined
+                ? vaultRenameJournals(options.vault)
+                : folderRenameJournals(options.renames),
         store: gitContentStore(options.contentStore, options.git),
         attachments: folderAttachmentStorage(options.attachmentStorage),
         local: folderLocalStore(options.contentStore),

@@ -118,7 +118,6 @@ describe('the device of the settings', () => {
             deviceOf(
                 { contentStore: '', attachmentStorage: '/a', git: '', ...NO_DEPLOY },
                 vault,
-                '.obsidian',
                 NO_TYPES
             )
         ).toThrow(
@@ -128,7 +127,6 @@ describe('the device of the settings', () => {
             deviceOf(
                 { contentStore: '/c', attachmentStorage: '', git: '', ...NO_DEPLOY },
                 vault,
-                '.obsidian',
                 NO_TYPES
             )
         ).toThrow('Set the folder of the attachment storage in the settings of Vault Publish')
@@ -139,7 +137,6 @@ describe('the device of the settings', () => {
             deviceOf(
                 { contentStore: 'copy', attachmentStorage: '/a', git: '', ...NO_DEPLOY },
                 vault,
-                '.obsidian',
                 NO_TYPES
             )
         ).toThrow('The folder of the copy of the content store must be an absolute path: "copy"')
@@ -147,13 +144,12 @@ describe('the device of the settings', () => {
             deviceOf(
                 { contentStore: '/c', attachmentStorage: '/a', git: 'bin/git', ...NO_DEPLOY },
                 vault,
-                '.obsidian',
                 NO_TYPES
             )
         ).toThrow('The git program must be an absolute path: "bin/git"')
     })
 
-    test('reads the rename journals of the configuration folder of Obsidian', async () => {
+    test('reads the rename journals of every configuration folder of the vault', async () => {
         const cache = join(import.meta.dir, '..', '..', '.cache')
         await mkdir(cache, { recursive: true })
         const folder = await mkdtemp(join(cache, 'settings-spec-'))
@@ -167,13 +163,24 @@ describe('the device of the settings', () => {
             )
             await mkdir(journals, { recursive: true })
             await writeFile(join(journals, '00000000000000aa.jsonl'), '')
+            const other = join(
+                folder,
+                '.obsidian',
+                'plugins',
+                'dsebastien-vault-publish',
+                'renames'
+            )
+            await mkdir(other, { recursive: true })
+            await writeFile(join(other, '00000000000000bb.jsonl'), '')
             const device = deviceOf(
                 { contentStore: '/c', attachmentStorage: '/a', git: '', ...NO_DEPLOY },
                 folder,
-                '.config-of-obsidian',
                 NO_TYPES
             )
-            expect(await device.renames.list()).toEqual(['00000000000000aa.jsonl'])
+            expect((await device.renames.list()).sort()).toEqual([
+                '00000000000000aa.jsonl',
+                '00000000000000bb.jsonl'
+            ])
         } finally {
             // Remove only the folder that this test made.
             await rm(folder, { recursive: true, force: true })
