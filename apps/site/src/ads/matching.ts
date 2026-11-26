@@ -18,11 +18,14 @@ import { ALIASES, TITLE_PHRASES } from './vocabulary.ts'
 //   commercial rank (best value 500, bestseller 250, featured 100, plus its
 //   priority), each part rounded. A product with no matching tag is out. The
 //   two best scores show, in the order of the catalog when two are equal.
-// - No ad on person and quote notes, by their note type or by a `type/` tag
-//   with the level `person`, `persons`, `quote` or `quotes`, as today (AD-11).
+// - No ad on person and quote notes (`persons`, `quotes`, `own-quotes`), by
+//   their note type or by a `type/` tag with the level `person`, `persons`,
+//   `quote` or `quotes`, and none on the paths of `NO_AD_PATHS`, as today (AD-11).
 
 /** What the matching reads of a note. */
 export interface NoteForAds {
+    /** The vault path of the note. */
+    readonly vaultPath?: string
     /** The file name of the note, without `.md`: the title of today. */
     readonly fileName: string
     /** The canonical name of the note type, when the note has one. */
@@ -37,7 +40,12 @@ export interface NoteForAds {
 export type AliasMap = Readonly<Record<string, readonly string[]>>
 
 /** The note types that get no ad. */
-export const NO_AD_TYPES: ReadonlySet<string> = new Set(['persons', 'quotes'])
+export const NO_AD_TYPES: ReadonlySet<string> = new Set(['persons', 'quotes', 'own-quotes'])
+
+/** The notes that get no ad by their vault path, as today. */
+export const NO_AD_PATHS: ReadonlySet<string> = new Set([
+    '50 Resources/55 Obsidian Publish/README.md'
+])
 
 /** The levels of a `type/` tag that mark a note with no ad. */
 const NO_AD_TYPE_LEVELS: ReadonlySet<string> = new Set(['person', 'persons', 'quote', 'quotes'])
@@ -70,6 +78,9 @@ function topicTexts(topic: string): string[] {
 
 /** True when a note gets no ad: a person or a quote note. */
 export function hasNoAd(note: NoteForAds): boolean {
+    if (note.vaultPath !== undefined && NO_AD_PATHS.has(note.vaultPath)) {
+        return true
+    }
     if (note.noteType !== undefined && NO_AD_TYPES.has(note.noteType)) {
         return true
     }

@@ -320,6 +320,7 @@ async function read(): Promise<PublishedSite> {
             const noteProperties = properties.get(vaultPath) ?? {}
             return adProductsOf(
                 {
+                    vaultPath,
                     fileName: (vaultPath.split('/').pop() ?? '').replace(/\.md$/iu, ''),
                     ...(note.noteType === undefined ? {} : { noteType: note.noteType.name }),
                     tags: noteProperties['tags'],

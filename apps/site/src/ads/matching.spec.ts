@@ -151,12 +151,17 @@ describe('the products of the ad of a note', () => {
     })
 
     test('person and quote notes get no ad, by their type or by a type tag, as today', () => {
-        for (const noteType of ['persons', 'quotes']) {
+        for (const noteType of ['persons', 'quotes', 'own-quotes']) {
             expect(adProductsOf(note({ noteType, tags: ['water'] }), products)).toEqual([])
         }
         for (const tag of ['type/person', 'type/quote', 'Type/Quotes']) {
             expect(hasNoAd(note({ noteType: 'permanent-notes', tags: [tag, 'water'] }))).toBe(true)
         }
         expect(hasNoAd(note({ tags: ['type/note', 'person'] }))).toBe(false)
+        // The paths that today excludes.
+        expect(hasNoAd(note({ vaultPath: '50 Resources/55 Obsidian Publish/README.md' }))).toBe(
+            true
+        )
+        expect(hasNoAd(note({ vaultPath: '50 Resources/README.md' }))).toBe(false)
     })
 })
