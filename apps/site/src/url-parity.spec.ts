@@ -1,6 +1,10 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
     checkKnownUrls,
+    isPrivatePlace,
     knownUrlsFromLines,
     knownUrlsFromList,
     knownUrlsFromSitemap,
@@ -101,6 +105,69 @@ describe('the sources of known URLs', () => {
             { path: '/A', sources: ['crawl', 'list'], expect: { kind: 'redirect', to: '/C' } },
             { path: '/B', sources: ['crawl'], expect: { kind: 'works' } }
         ])
+    })
+
+    test('two encodings of one decoded path are one URL', () => {
+        const merged = mergeKnownUrls([
+            knownUrlsFromLines('/Old+notes/A+b\n', 'crawl'),
+            [{ path: '/Old%20notes/A%20b', sources: ['list'], expect: { kind: 'page' } }],
+            knownUrlsFromSitemap('<loc>https://notes.example.org/Old notes/A b</loc>', 'sitemap')
+        ])
+        expect(merged).toEqual([
+            {
+                path: '/Old+notes/A+b',
+                sources: ['crawl', 'list', 'sitemap'],
+                expect: { kind: 'page' }
+            }
+        ])
+    })
+
+    // A source says that a URL works and the list says that it is gone or
+    // not found: one of them is wrong, and the run says so.
+    test('a URL that must work and that the list says is gone is a conflict', async () => {
+        const merged = mergeKnownUrls([
+            knownUrlsFromLines('/Old/A\n/Old/B\n', 'crawl'),
+            [
+                { path: '/Old/A', sources: ['list'], expect: { kind: 'gone' } },
+                { path: '/Old/B', sources: ['list'], expect: { kind: 'not-found' } }
+            ]
+        ])
+        const result = await checkKnownUrls(merged, hostOf({}), { concurrency: 1 })
+        expect(result.checks.map((check) => check.verdict)).toEqual(['conflict', 'conflict'])
+        expect(result.failed).toBe(2)
+    })
+})
+
+describe('the place of a report', () => {
+    const root = join(fileURLToPath(new URL('..', import.meta.url)), '.cache')
+    let clone = ''
+    let outside = ''
+
+    beforeAll(async () => {
+        await mkdir(root, { recursive: true })
+        clone = await mkdtemp(join(root, 'report-place-spec-'))
+        outside = await mkdtemp(join(root, 'report-place-outside-'))
+        await mkdir(join(clone, '.private'))
+        await mkdir(join(clone, '..dots'))
+    })
+
+    afterAll(async () => {
+        await rm(clone, { recursive: true, force: true })
+        await rm(outside, { recursive: true, force: true })
+    })
+
+    test.each([
+        ['outside the clone', () => join(outside, 'report.json'), true],
+        ['in the private folder of the clone', () => join(clone, '.private', 'report.json'), true],
+        ['in the clone', () => join(clone, 'report.json'), false],
+        [
+            'in a folder of the clone whose name starts with two dots',
+            () => join(clone, '..dots', 'report.json'),
+            false
+        ],
+        ['in a folder that does not exist', () => join(clone, 'missing', 'report.json'), false]
+    ])('%s', async (_name, file, allowed) => {
+        expect(await isPrivatePlace(file(), clone)).toBe(allowed)
     })
 })
 

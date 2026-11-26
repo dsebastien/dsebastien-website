@@ -1,5 +1,5 @@
 import { cp, readFile, writeFile } from 'node:fs/promises'
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import {
@@ -11,6 +11,7 @@ import {
 import { buildUrlTableSite } from '../apps/site/src/url-table-site.ts'
 import {
     checkKnownUrls,
+    isPrivatePlace,
     knownUrlsFromLines,
     knownUrlsFromList,
     knownUrlsFromSitemap,
@@ -110,12 +111,6 @@ async function check(base: string, notes: string): Promise<number> {
 /** The root of the clone. */
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
-/** True when a file is outside the clone, or inside its private folder: a report names private paths. */
-function isPrivatePlace(file: string): boolean {
-    const inside = relative(ROOT, file)
-    return inside.startsWith('..') || inside.split(sep)[0] === '.private'
-}
-
 interface ParityOptions {
     readonly lists: readonly string[]
     readonly sitemaps: readonly string[]
@@ -126,7 +121,7 @@ interface ParityOptions {
 }
 
 async function parity(base: string, options: ParityOptions): Promise<number> {
-    if (options.report !== undefined && !isPrivatePlace(options.report)) {
+    if (options.report !== undefined && !(await isPrivatePlace(options.report, ROOT))) {
         console.error(
             'The report names private paths: write it outside the clone or into .private/'
         )

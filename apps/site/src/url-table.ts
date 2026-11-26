@@ -96,7 +96,7 @@ export async function checkUrlCase(
     if (entry.location !== undefined) {
         same('location', response.headers.get('location'), entry.location)
         same('cache-control', response.headers.get('cache-control'), entry.cacheControl ?? '')
-        // A target on another host of the author is checked on that host.
+        // A target on another host of the author is not asked: the run counts it as ok.
         if (/^https?:/u.test(entry.location)) {
             return findings
         }

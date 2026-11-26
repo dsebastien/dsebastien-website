@@ -1,3 +1,5 @@
+import { realpath } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { readingsOf } from '@dsebastien-website/resolver'
 import type { Ask } from './url-table.ts'
 
@@ -30,6 +32,8 @@ export interface KnownUrl {
     readonly path: string
     readonly sources: readonly string[]
     readonly expect: Expectation
+    /** True when a source says that the URL must work and another that it is gone or not found. */
+    readonly conflict?: true
 }
 
 /** The class of the answer for a known URL. */
@@ -44,6 +48,7 @@ export type Verdict =
     | 'no-content'
     | 'server-error'
     | 'no-answer'
+    | 'conflict'
 
 /** The answer for one known URL. */
 export interface UrlCheck {
@@ -228,21 +233,67 @@ const PRECISION: Record<Expectation['kind'], number> = {
     'not-found': 2
 }
 
-/** The known URLs of several sources, one time each path, in the order where they come first. */
+/** The key of a path for the merge of the sources: its first decoded form (RES-06). */
+function mergeKey(path: string): string {
+    const [first] = decodedForms(path)
+    return first ?? path
+}
+
+/** The expectations that say a URL does not work. */
+const BROKEN: ReadonlySet<Expectation['kind']> = new Set(['gone', 'not-found'])
+
+/**
+ * The known URLs of several sources, one time each decoded path (RES-06), in
+ * the order where they come first, asked in the form where they come first.
+ * A URL that one source says must work and another says is gone or not
+ * found is a conflict.
+ */
 export function mergeKnownUrls(lists: readonly (readonly KnownUrl[])[]): KnownUrl[] {
-    const byPath = new Map<string, KnownUrl>()
+    const byKey = new Map<string, KnownUrl>()
     for (const url of lists.flat()) {
-        const known = byPath.get(url.path)
+        const key = mergeKey(url.path)
+        const known = byKey.get(key)
         if (known === undefined) {
-            byPath.set(url.path, url)
+            byKey.set(key, url)
             continue
         }
         const sources = [...new Set([...known.sources, ...url.sources])]
         const expect =
             PRECISION[url.expect.kind] > PRECISION[known.expect.kind] ? url.expect : known.expect
-        byPath.set(url.path, { path: url.path, sources, expect })
+        const kinds = [known.expect.kind, url.expect.kind]
+        const conflict =
+            known.conflict === true ||
+            url.conflict === true ||
+            (kinds.includes('works') && kinds.some((kind) => BROKEN.has(kind)))
+        byKey.set(key, { path: known.path, sources, expect, ...(conflict ? { conflict } : {}) })
     }
-    return [...byPath.values()]
+    return [...byKey.values()]
+}
+
+/**
+ * True when a file can hold a report of the parity run: outside the clone,
+ * or in its private folder. A report names private paths. The folders are
+ * compared after their links are followed; a file in a folder that does not
+ * exist is refused.
+ *
+ * @param root the folder of the clone
+ */
+export async function isPrivatePlace(file: string, root: string): Promise<boolean> {
+    let folder: string
+    let clone: string
+    try {
+        folder = await realpath(dirname(file))
+        clone = await realpath(root)
+    } catch {
+        return false
+    }
+    const inside = relative(clone, join(folder, basename(file)))
+    return (
+        inside === '..' ||
+        inside.startsWith(`..${sep}`) ||
+        isAbsolute(inside) ||
+        inside.split(sep)[0] === '.private'
+    )
 }
 
 /** True when an HTML page holds the content of a note: a heading in its main part (RES-03). */
@@ -266,7 +317,7 @@ const REDIRECT = new Set([301, 302, 307, 308])
 /** The answer of a page that a redirect leads to: it must answer 200 (URL-05). */
 async function targetVerdict(location: string, ask: Ask): Promise<Verdict> {
     if (/^https?:/u.test(location)) {
-        // A target on another host of the author is checked on that host.
+        // A target on another host of the author is not asked: the run counts it as ok.
         return 'ok'
     }
     // The location is a URL: its query stays a query.
@@ -282,6 +333,9 @@ async function targetVerdict(location: string, ask: Ask): Promise<Verdict> {
 
 /** The check of one known URL. */
 async function checkOne(url: KnownUrl, ask: Ask): Promise<UrlCheck> {
+    if (url.conflict === true) {
+        return { url, verdict: 'conflict' }
+    }
     if (url.expect.kind === 'pending') {
         return { url, verdict: 'pending' }
     }
