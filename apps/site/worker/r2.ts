@@ -61,6 +61,20 @@ function errorsOf(body: unknown): string {
 }
 
 /** The JSON body of an answer, or `undefined` when it has none. */
+/** The code of the API for a key that the bucket does not have. */
+const NO_SUCH_KEY = 10007
+
+/** True when the answer of the API says that the key is not in the bucket. */
+function isMissingKey(body: unknown): boolean {
+    return (
+        isRecord(body) &&
+        body['success'] !== true &&
+        Array.isArray(body['errors']) &&
+        body['errors'].length > 0 &&
+        body['errors'].every((error) => isRecord(error) && error['code'] === NO_SUCH_KEY)
+    )
+}
+
 async function bodyOf(response: Response): Promise<unknown> {
     try {
         return await response.json()
@@ -147,6 +161,10 @@ export function r2Storage(access: R2Access): AttachmentStorage {
                 return false
             }
             const body = await bodyOf(response)
+            // The API also answers 200 with the error 10007 for a key that is not there.
+            if (isMissingKey(body)) {
+                return false
+            }
             if (!response.ok || !isRecord(body) || body['success'] !== true) {
                 throw new Error(
                     `the object storage refused to delete ${name} (${String(response.status)})${errorsOf(body)}`

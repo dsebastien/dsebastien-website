@@ -140,6 +140,17 @@ describe('the object storage through the API', () => {
         expect(await storage(fake.fetch).remove(KEY)).toBe(false)
     })
 
+    // The API also answers 200 with the error 10007 for a key that is not there.
+    test('says that a file it deletes was not there when the API answers 200 with the error 10007', async () => {
+        const fake = api([
+            json({
+                success: false,
+                errors: [{ code: 10007, message: 'The specified key does not exist.' }]
+            })
+        ])
+        expect(await storage(fake.fetch).remove(KEY)).toBe(false)
+    })
+
     test('fails with the status and the messages of the API, never with the token', async () => {
         const fake = api([
             json(
