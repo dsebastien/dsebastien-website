@@ -21,7 +21,10 @@ import { SITE_NAME } from './site.ts'
 //   import keeps the dates of the vault.
 // - Updated: the date of the last publication that changed the note (a
 //   technical update does not move it). A note that has not changed since the
-//   import takes its `updated` property instead.
+//   import takes its `updated` property instead, or its `created` property
+//   when `updated` holds no valid date.
+// - A note of the import with no valid property has no date: it goes to the
+//   end of the list, from A to Z, and its row shows no date.
 //
 // Each list holds the 1,000 newest notes, 100 per page; only page 1 is
 // indexed. The filter of a note type is one page with its 100 newest notes,
@@ -48,17 +51,25 @@ export interface RecentSource {
 
 /** A date of a recent list: what the page shows, and a key that orders it. */
 interface Dated {
-    readonly date: NoteDate
+    /** What the page shows: nothing for a note whose date is not known. */
+    readonly date: NoteDate | undefined
     /**
      * `yyyy-mm-ddThh:mm:ss`: the time of a run in UTC, or the time of a
      * property as the vault writes it (an offset is not applied), so that the
-     * order of a list is the order of the days that it shows.
+     * order of a list is the order of the days that it shows. Empty for a
+     * note whose date is not known: it goes to the end.
      */
     readonly key: string
 }
 
+/** A date that is known. */
+type KnownDate = Dated & { readonly date: NoteDate }
+
+/** The date of a note whose date is not known. */
+const UNDATED: Dated = { date: undefined, key: '' }
+
 /** The date of a run of the tool. */
-function runDate(time: string): Dated {
+function runDate(time: string): KnownDate {
     return {
         date: { datetime: time.slice(0, 10), shown: time.slice(0, 10) },
         key: time.slice(0, 19)
@@ -66,7 +77,7 @@ function runDate(time: string): Dated {
 }
 
 /** The date of a property, or `undefined` when it holds no valid date. */
-function propertyDated(value: unknown): Dated | undefined {
+function propertyDated(value: unknown): KnownDate | undefined {
     const date = propertyDate(value)
     if (date === undefined) {
         return undefined
@@ -101,19 +112,21 @@ function dayAfter(day: string): string {
 }
 
 /**
- * The date of a note of the import: its property. A note with no valid
- * property, or with one more than one day after the import (a typo such as
- * `2041`), shows the day of the import and goes to the end of the list: its
- * real date is not known. One day of margin, because the import ran in UTC
- * and the vault writes local times.
+ * The date of a note of the import: the first of its properties that holds
+ * a valid date. A property more than one day after the import (a typo such
+ * as `2041`) holds no valid date. One day of margin, because the import ran
+ * in UTC and the vault writes local times. With no valid property, the note
+ * has no date: its real date is not known.
  */
-function importDate(property: unknown, importRun: string): Dated {
-    const run = runDate(importRun)
-    const dated = propertyDated(property)
-    return dated === undefined ||
-        compareCodePoints(dated.date.datetime, dayAfter(run.date.datetime)) > 0
-        ? { date: run.date, key: '' }
-        : dated
+function importDate(properties: readonly unknown[], importRun: string): Dated {
+    const latest = dayAfter(runDate(importRun).date.datetime)
+    for (const property of properties) {
+        const dated = propertyDated(property)
+        if (dated !== undefined && compareCodePoints(dated.date.datetime, latest) <= 0) {
+            return dated
+        }
+    }
+    return UNDATED
 }
 
 /** What the recent lists need of the whole site. */
@@ -135,11 +148,11 @@ export function recentListsOf(
     const datesOf: Record<RecentKind, (source: RecentSource) => Dated> = {
         added: (source) =>
             importRun !== undefined && source.firstPublished === importRun
-                ? importDate(source.created, importRun)
+                ? importDate([source.created], importRun)
                 : runDate(source.firstPublished),
         updated: (source) =>
             importRun !== undefined && source.lastPublished === importRun
-                ? importDate(source.updated, importRun)
+                ? importDate([source.updated, source.created], importRun)
                 : runDate(source.lastPublished)
     }
     const types = new Map<string, string>()

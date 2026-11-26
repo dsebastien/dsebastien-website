@@ -78,10 +78,11 @@ describe('the notes most recently added (PUB-70, R62)', () => {
         ])
     })
 
-    test('a note of the import with no valid created date keeps the date of the import', () => {
-        expect(shown([source('Alder', { created: '2031-02-30' })], 'added')).toEqual([
-            'Alder 2031-05-01'
-        ])
+    test('a note of the import with no valid created date has no date', () => {
+        const [row] =
+            list([source('Alder', { created: '2031-02-30' })], 'added').pages[0]?.notes ?? []
+        expect(row?.title).toBe('Alder')
+        expect(row?.date).toBeUndefined()
     })
 
     test('the import is the run that the content store names, not the earliest published note', () => {
@@ -109,17 +110,27 @@ describe('the notes most recently added (PUB-70, R62)', () => {
         ])
     })
 
-    test('a created date after the import is never newer than the import', () => {
+    test('a created date after the import is never newer than the import: the note has no date', () => {
         const sources = [
             source('Typo', { created: '2041-01-01' }),
             source('Later', { firstPublished: '2031-06-01T00:00:00Z' })
         ]
-        expect(shown(sources, 'added')).toEqual(['Later 2031-06-01', 'Typo 2031-05-01'])
+        expect(shown(sources, 'added')).toEqual(['Later 2031-06-01', 'Typo '])
     })
 
-    test('a note of the import with no valid created date goes to the end', () => {
+    test('a note of the import with no valid created date goes to the end, with no date', () => {
         const sources = [source('Undated'), source('Dated', { created: '2024-01-01' })]
-        expect(shown(sources, 'added')).toEqual(['Dated 2024-01-01', 'Undated 2031-05-01'])
+        expect(shown(sources, 'added')).toEqual(['Dated 2024-01-01', 'Undated '])
+    })
+
+    test('the notes with no date are in the order of their titles, a typo date among them', () => {
+        const sources = [
+            source('Cedar'),
+            source('alder', { created: '2041-01-01' }),
+            source('Birch', { created: 'soon' }),
+            source('Dated', { created: '2024-01-01' })
+        ]
+        expect(shown(sources, 'added')).toEqual(['Dated 2024-01-01', 'alder ', 'Birch ', 'Cedar '])
     })
 
     test('the same date gives the order of the titles from A to Z', () => {
@@ -182,6 +193,21 @@ describe('the notes most recently updated (PUB-71, R62)', () => {
         ).toBe(false)
     })
 
+    test('a note of the import with no valid updated date takes its created date, or no date', () => {
+        const sources = [
+            source('Alder', { created: '2024-03-02T10:00' }),
+            source('Birch', { updated: '2041-01-01', created: '2025-01-01' }),
+            source('Cedar', { updated: 'later' }),
+            source('Dogwood', { updated: '2024-05-01' })
+        ]
+        expect(shown(sources, 'updated')).toEqual([
+            'Birch 2025-01-01',
+            'Dogwood 2024-05-01',
+            'Alder 2024-03-02',
+            'Cedar '
+        ])
+    })
+
     test('an updated date on the day after the import stays: the import ran in UTC', () => {
         const run = {
             firstPublished: '2031-04-30T23:45:00Z',
@@ -218,6 +244,23 @@ describe('the pages of a recent list (NAV-05, IDX-22, IDX-23)', () => {
         ])
         expect(added.pages[1]?.path).toBe('/-/recent/added/page/2')
         expect(added.label).toBe('Recently added notes')
+    })
+
+    test('drop the notes with no date first at the cut of 1,000', () => {
+        const undated = Array.from({ length: 3 }, (_item, index) =>
+            source(`Undated ${String(index)}`)
+        )
+        const added = list([...undated, ...many], 'added')
+        expect([added.count, added.total]).toEqual([1000, 1008])
+        const titles = added.pages.flatMap((page) => page.notes.map((note) => note.title))
+        expect(titles.some((title) => title.startsWith('Undated'))).toBe(false)
+        expect(titles.at(-1)).toBe('Note 0005')
+        const all = list([...undated, ...many.slice(0, 10)], 'added')
+        expect(all.pages[0]?.notes.slice(-3).map((note) => [note.title, note.date])).toEqual([
+            ['Undated 0', undefined],
+            ['Undated 1', undefined],
+            ['Undated 2', undefined]
+        ])
     })
 
     test('have their titles and descriptions', () => {
