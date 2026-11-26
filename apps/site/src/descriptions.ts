@@ -13,7 +13,8 @@ import { SITE_NAME } from './site.ts'
 // this site has first (the rating and the status of the author), then the
 // first sentences of its text, cut at a word end. A note of a media type
 // gets the sentence alone: its text often starts with a copied synopsis
-// (IDX-06). It is never empty. No two indexable pages share one: when they
+// (IDX-06). It is never empty, and never the type alone: a note with nothing
+// more gets its title, its type and the name of the site. No two indexable pages share one: when they
 // would, each note of them gets its title in front, and is cut again.
 
 /** The longest description that the build writes, in characters, the end mark included. */
@@ -197,7 +198,14 @@ export function noteDescription(input: DescriptionInput): string {
     const text = [factsOf(input), input.media === true ? undefined : plainTextOf(input.html)]
         .filter((part) => part !== undefined && part !== '')
         .join(' ')
-    return text === '' ? `${input.title}, a note of ${SITE_NAME}.` : cut(text)
+    if (text === '') {
+        return `${input.title}, a note of ${SITE_NAME}.`
+    }
+    // The type alone (`Movie.`) says too little: the title and the site go with it (issue 98).
+    if (input.typeLabel !== undefined && text === `${input.typeLabel}.`) {
+        return cut(`${input.title}: ${input.typeLabel}, a note of ${SITE_NAME}.`)
+    }
+    return cut(text)
 }
 
 /**

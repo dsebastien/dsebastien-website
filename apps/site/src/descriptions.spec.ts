@@ -128,6 +128,16 @@ describe('the description of a note', () => {
         expect(cut).toBe(`${character.repeat(DESCRIPTION_LENGTH - 1)}…`)
     })
 
+    // Issue 98: the type alone (`Movie.`) is a thin description.
+    test('names the title and the type when the note has nothing more', () => {
+        expect(noteDescription({ ...MOVIE, properties: {}, media: true })).toBe(
+            'Inception: Movie, a note of Sébastien’s Notes.'
+        )
+        expect(
+            noteDescription({ ...MOVIE, typeLabel: 'Permanent note', properties: {}, html: '' })
+        ).toBe('Inception: Permanent note, a note of Sébastien’s Notes.')
+    })
+
     test('is never empty', () => {
         expect(noteDescription({ title: 'Mint', properties: {}, html: '' })).toBe(
             'Mint, a note of Sébastien’s Notes.'
