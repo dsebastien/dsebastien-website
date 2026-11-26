@@ -179,6 +179,19 @@ _Avoid_: unpublish, takedown (those remove notes)
 **Resolver map**:
 What the build writes for the resolver: which canonical path leads to which page, and which addresses are gone.
 
+**Redirect list**:
+The list of the old addresses of the current site that no other rule finds, with what each one leads to: a note, a page, "gone", or, for an old folder, the hub of its section. It is private, in the content store.
+_Avoid_: redirect table
+
+**Prefix rule**:
+A row of the redirect list that leads every other path under an old folder to one page.
+
+**Pending row**:
+A row of the redirect list that waits for a decision of the author: a target, or "gone".
+
+**URL parity test**:
+The check that every known URL of the current site answers on a host as expected: a page, one redirect to a page, "gone" or "not found", with paths compared decoded.
+
 **Alias**:
 Another name of a note, from its `aliases` property. A URL with the alias leads to the note.
 

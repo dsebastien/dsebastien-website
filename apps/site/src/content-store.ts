@@ -1,11 +1,18 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { attachmentPath, canonicalPath } from '@dsebastien-website/resolver'
+import {
+    attachmentPath,
+    canonicalPath,
+    REDIRECT_LIST_FILE,
+    redirectListFrom,
+    type RedirectList
+} from '@dsebastien-website/resolver'
 import { isNoteType, type NoteType } from '../../plugin/src/publishing/note-types.ts'
 
 // The content store as the build reads it (BUILD-01 of the spec). The build
 // never reads the vault: the content store holds the cleaned notes and the
-// manifest, and nothing else is published.
+// manifest, and nothing else is published. It also holds the redirect list
+// (`redirects.json`, issue 44), which only the resolver map uses.
 //
 // The variable CONTENT_STORE names the folder of a copy of the content store.
 // Without it the site has no note, which is the state of the public CI: the
@@ -319,4 +326,39 @@ function manifestOf(files: readonly { readonly file: string; readonly text: stri
 /** The text of the cleaned note of a published note, as the content store holds it. */
 export async function readCleanedNote(vaultPath: string): Promise<string> {
     return await readFile(join(notesFolder(), vaultPath), 'utf8')
+}
+
+/**
+ * The redirect list of the content store (`redirects.json`, issue 44): an
+ * empty list when the build has no content store or the store has no list.
+ *
+ * @throws when the file cannot be read as a redirect list: the build stops
+ */
+export async function readRedirectList(
+    store: string | undefined = contentStoreFolder()
+): Promise<RedirectList> {
+    const empty: RedirectList = { redirects: [], gone: [], prefixes: [] }
+    if (store === undefined) {
+        return empty
+    }
+    // The build runs in Node: no API of Bun here.
+    let text: string
+    try {
+        text = await readFile(join(store, REDIRECT_LIST_FILE), 'utf8')
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return empty
+        }
+        throw new Error(`${REDIRECT_LIST_FILE} of the content store cannot be read`, {
+            cause: error
+        })
+    }
+    let value: unknown
+    try {
+        value = JSON.parse(text)
+    } catch {
+        // The message of the parser can quote the file: it names only the file.
+        throw new Error(`${REDIRECT_LIST_FILE} of the content store is not JSON`)
+    }
+    return redirectListFrom(value)
 }

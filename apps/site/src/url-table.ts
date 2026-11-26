@@ -35,10 +35,12 @@ export interface UrlTableNote {
     formerPaths?: string[]
 }
 
-/** The URL table: its published notes, its unpublished notes and its cases. */
+/** The URL table: its published notes, its unpublished notes, its redirect list and its cases. */
 export interface UrlTable {
     notes: UrlTableNote[]
     removed: UrlTableNote[]
+    /** The redirect list of the content store of the table site, as `redirects.json` holds it (issue 44). */
+    redirects?: unknown
     cases: UrlCase[]
 }
 
@@ -94,6 +96,10 @@ export async function checkUrlCase(
     if (entry.location !== undefined) {
         same('location', response.headers.get('location'), entry.location)
         same('cache-control', response.headers.get('cache-control'), entry.cacheControl ?? '')
+        // A target on another host of the author is checked on that host.
+        if (/^https?:/u.test(entry.location)) {
+            return findings
+        }
         // URL-05: the target is a page, reached in one hop, with a clean
         // canonical link.
         const target = await ask(entry.location)

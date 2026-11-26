@@ -97,6 +97,14 @@ export async function buildUrlTableSite(
             device: 'garden-shed',
             face: 'plugin'
         })
+        // The redirect list of the table, as the author writes it into the
+        // content store (issue 44). The build reads the file as it is.
+        if (table.redirects !== undefined) {
+            await writeFile(
+                join(contentStore, 'redirects.json'),
+                `${JSON.stringify(table.redirects, null, 4)}\n`
+            )
+        }
         const child = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
             cwd: SITE,
             env: { ...process.env, CONTENT_STORE: contentStore },

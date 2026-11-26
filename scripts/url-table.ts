@@ -1,5 +1,5 @@
-import { cp, readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { cp, readFile, writeFile } from 'node:fs/promises'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import {
@@ -9,6 +9,14 @@ import {
     type Ask
 } from '../apps/site/src/url-table.ts'
 import { buildUrlTableSite } from '../apps/site/src/url-table-site.ts'
+import {
+    checkKnownUrls,
+    knownUrlsFromLines,
+    knownUrlsFromList,
+    knownUrlsFromSitemap,
+    mergeKnownUrls,
+    type KnownUrl
+} from '../apps/site/src/url-parity.ts'
 import { prepareOutputFolder, type OutputOptions } from './output-folder.ts'
 
 // The URL table on a host (SEAM-04 and HOST-02 of the spec, issue 21): the
@@ -17,6 +25,8 @@ import { prepareOutputFolder, type OutputOptions } from './output-folder.ts'
 //
 //     bun run urls build [--out <folder>]
 //     bun run urls check --base <address> [--notes <folder>]
+//     bun run urls parity --base <address> [--list <csv>]... [--sitemap <xml>]...
+//         [--urls <text>]... [--concurrency <n>] [--gate] [--report <file>]
 //
 // `build` publishes the invented notes of the table from a copy of the
 // fixture vault and builds their site into `.cache/url-table-site/`, or into
@@ -27,6 +37,18 @@ import { prepareOutputFolder, type OutputOptions } from './output-folder.ts'
 // host for each case and for two files that did not change (304, URL-18),
 // prints what has a finding, and ends with the code 1 when there is one. It
 // never reads the real vault.
+//
+// `parity` is the URL parity test (story 161, RES-06; issue 60 runs it before
+// the switch): it asks the host for every URL that its sources know, follows
+// one redirect at most, compares paths decoded, and prints the count of each
+// class by source. A source is a private file of the author, read where it
+// is: `--list` the redirect list (CSV), `--sitemap` a sitemap of the current
+// site, `--urls` one URL or path per line (a report, a crawl). Each option
+// can come several times. The URLs that do not answer as expected go to the
+// file of `--report` (JSON), which must be outside the clone or in its
+// `.private/` folder, else to the standard error. It ends with the code 1
+// when a URL does not answer as expected, and with `--gate` also when a row
+// waits for a decision of the author (SW-04).
 
 const FOLDER = fileURLToPath(new URL('../.cache/url-table-site', import.meta.url))
 
@@ -85,10 +107,81 @@ async function check(base: string, notes: string): Promise<number> {
     return wrong.length === 0 ? 0 : 1
 }
 
+/** The root of the clone. */
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
+
+/** True when a file is outside the clone, or inside its private folder: a report names private paths. */
+function isPrivatePlace(file: string): boolean {
+    const inside = relative(ROOT, file)
+    return inside.startsWith('..') || inside.split(sep)[0] === '.private'
+}
+
+interface ParityOptions {
+    readonly lists: readonly string[]
+    readonly sitemaps: readonly string[]
+    readonly texts: readonly string[]
+    readonly concurrency: number
+    readonly gate: boolean
+    readonly report: string | undefined
+}
+
+async function parity(base: string, options: ParityOptions): Promise<number> {
+    if (options.report !== undefined && !isPrivatePlace(options.report)) {
+        console.error(
+            'The report names private paths: write it outside the clone or into .private/'
+        )
+        return 2
+    }
+    const address = base.replace(/\/+$/u, '')
+    const read = async (
+        files: readonly string[],
+        kind: string,
+        of: (text: string, source: string) => KnownUrl[]
+    ): Promise<KnownUrl[][]> =>
+        await Promise.all(
+            files.map(async (file) => of(await readFile(file, 'utf8'), `${kind}:${basename(file)}`))
+        )
+    const urls = mergeKnownUrls([
+        ...(await read(options.lists, 'list', knownUrlsFromList)),
+        ...(await read(options.sitemaps, 'sitemap', knownUrlsFromSitemap)),
+        ...(await read(options.texts, 'urls', knownUrlsFromLines))
+    ])
+    const ask: Ask = (path, headers = {}) =>
+        fetch(`${address}${path}`, { redirect: 'manual', headers })
+    const result = await checkKnownUrls(urls, ask, { concurrency: options.concurrency })
+    for (const [source, counts] of Object.entries(result.counts)) {
+        const parts = Object.entries(counts).map(
+            ([verdict, count]) => `${verdict} ${String(count)}`
+        )
+        console.error(`${source}: ${parts.join(', ')}`)
+    }
+    const wrong = result.checks.filter((check) => check.verdict !== 'ok')
+    if (options.report === undefined) {
+        for (const check of wrong) {
+            const target = check.location === undefined ? '' : ` -> ${check.location}`
+            console.error(
+                `    ${check.verdict} ${String(check.status ?? '')} ${check.url.path}${target}`
+            )
+        }
+    } else {
+        await writeFile(options.report, `${JSON.stringify(wrong, null, 2)}\n`)
+    }
+    console.error(
+        `${String(urls.length)} known URLs, ${String(result.failed)} that do not answer as expected, ${String(result.pending)} waiting for a decision`
+    )
+    return result.failed > 0 || (options.gate && result.pending > 0) ? 1 : 0
+}
+
 const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
     options: {
         base: { type: 'string' },
+        list: { type: 'string', multiple: true, default: [] },
+        sitemap: { type: 'string', multiple: true, default: [] },
+        urls: { type: 'string', multiple: true, default: [] },
+        concurrency: { type: 'string', default: '8' },
+        gate: { type: 'boolean', default: false },
+        report: { type: 'string' },
         notes: { type: 'string', default: join(FOLDER, 'notes') },
         out: { type: 'string', default: FOLDER }
     },
@@ -100,9 +193,23 @@ if (command === 'build' && positionals.length === 1) {
     await build(resolve(values.out))
 } else if (command === 'check' && positionals.length === 1 && values.base !== undefined) {
     process.exitCode = await check(values.base, resolve(values.notes))
+} else if (
+    command === 'parity' &&
+    positionals.length === 1 &&
+    values.base !== undefined &&
+    /^[1-9][0-9]*$/u.test(values.concurrency)
+) {
+    process.exitCode = await parity(values.base, {
+        lists: values.list.map((file) => resolve(file)),
+        sitemaps: values.sitemap.map((file) => resolve(file)),
+        texts: values.urls.map((file) => resolve(file)),
+        concurrency: Number(values.concurrency),
+        gate: values.gate,
+        report: values.report === undefined ? undefined : resolve(values.report)
+    })
 } else {
     console.error(
-        'Usage: bun run urls build [--out <folder>] | bun run urls check --base <address> [--notes <folder>]'
+        'Usage: bun run urls build [--out <folder>] | bun run urls check --base <address> [--notes <folder>] | bun run urls parity --base <address> [--list <csv>]... [--sitemap <xml>]... [--urls <text>]... [--concurrency <n>] [--gate] [--report <file>]'
     )
     process.exitCode = 2
 }

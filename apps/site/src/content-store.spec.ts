@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rejectionOf } from '@dsebastien-website/testing'
-import { readImportRun, readPublication, readPublishedNotes } from './content-store.ts'
+import {
+    readImportRun,
+    readPublication,
+    readPublishedNotes,
+    readRedirectList
+} from './content-store.ts'
 
 // How the build reads the content store. A content store that cannot be
 // trusted stops the build: a site with a part of the notes must never go out
@@ -273,5 +278,37 @@ describe('unpublished notes of a content store', () => {
             'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Odd.md', state: 'hidden' }
         })
         expect(await rejectionOf(readPublication())).toContain('manifest/a.json')
+    })
+})
+
+// The redirect list (issue 44): a private file of the content store that only
+// the build reads. A list that cannot be read stops the build, with the name
+// of the file and no old path of it.
+describe('the redirect list of a content store', () => {
+    test('is the list of redirects.json', async () => {
+        await contentStore({})
+        await Bun.write(
+            join(folder ?? '', 'redirects.json'),
+            JSON.stringify({ version: 1, gone: ['Old/Stats'] })
+        )
+        expect(await readRedirectList()).toEqual({
+            redirects: [],
+            gone: ['Old/Stats'],
+            prefixes: []
+        })
+    })
+
+    test('is empty without the file, and without a content store', async () => {
+        expect(await readRedirectList()).toEqual({ redirects: [], gone: [], prefixes: [] })
+        await contentStore({})
+        expect(await readRedirectList()).toEqual({ redirects: [], gone: [], prefixes: [] })
+    })
+
+    test('stops the build when the file is not JSON or not a redirect list', async () => {
+        await contentStore({})
+        await Bun.write(join(folder ?? '', 'redirects.json'), '{ not json')
+        expect(await rejectionOf(readRedirectList())).toContain('redirects.json')
+        await Bun.write(join(folder ?? '', 'redirects.json'), JSON.stringify({ version: 2 }))
+        expect(await rejectionOf(readRedirectList())).toContain('redirects.json')
     })
 })

@@ -206,7 +206,13 @@ describe('output of the build after an unpublication', () => {
             'bean trellis',
             'Rain butt',
             'Rain+butt',
-            'Rain%20butt'
+            'Rain%20butt',
+            // A gone row of the redirect list is a key of the map only (issue 44).
+            'Publish/Stats',
+            'Publish+Stats',
+            // A dropped row of the redirect list leaves nothing in the map.
+            'Old Garden',
+            'Old+Garden'
         ]
         const found: string[] = []
         for (const entry of files) {
@@ -219,6 +225,32 @@ describe('output of the build after an unpublication', () => {
             }
         }
         expect(found).toEqual([])
+    })
+})
+
+// The redirect list of the content store (issue 44) is private: an old path
+// of a row is in the resolver map only, and the map is no address of the
+// site on either host.
+describe('output of the build with a redirect list', () => {
+    test('holds the old paths of the list in the resolver map only', async () => {
+        const folder = outDir ?? ''
+        const files = (await readdir(folder, { recursive: true, withFileTypes: true })).filter(
+            (entry) => entry.isFile()
+        )
+        const holders: string[] = []
+        for (const entry of files) {
+            const text = (await readFile(join(entry.parentPath, entry.name))).toString('utf8')
+            if (text.toLowerCase().includes('old library/bread notes')) {
+                holders.push(entry.name)
+            }
+        }
+        expect(holders).toEqual(['resolver-map.json'])
+    })
+
+    test.each(HOSTS)('gives no resolver map on %s', async (host: Host) => {
+        const answer = await get('/-/resolver-map.json', {}, host)
+        expect(answer.status).toBe(404)
+        expect(await answer.text()).not.toContain('old library')
     })
 })
 
@@ -276,6 +308,101 @@ describe('the command that checks a host', () => {
             `${String(table.cases.length)} cases and 2 files that did not change, ${String(table.cases.length + 2)} with a finding\n`
         )
         expect(code).toBe(1)
+    })
+})
+
+// The URL parity test (story 161, RES-06, issue 60): the cases of the table
+// as an invented redirect list, a list of lines and a sitemap, asked of the
+// plain local server by the command.
+describe('the command of the URL parity test', () => {
+    const root = join(SITE, '..', '..')
+    let folder = ''
+
+    beforeAll(async () => {
+        await mkdir(join(root, '.cache'), { recursive: true })
+        folder = await mkdtemp(join(root, '.cache', 'urls-parity-spec-'))
+        const rows = table.cases
+            // A query of the request, a header, and a `%` that starts no
+            // encoding: the command reads a `%` of a known path as a decoded one.
+            .filter(
+                (entry) =>
+                    !entry.request.includes('?') &&
+                    entry.accept === undefined &&
+                    !/%(?![0-9A-Fa-f]{2})/u.test(entry.request)
+            )
+            .map((entry) =>
+                [entry.request, 'table', '', entry.location ?? '', String(entry.status)].join(',')
+            )
+        await Bun.write(
+            join(folder, 'list.csv'),
+            [
+                'source_url_path,source,class,target_path,status_code',
+                ...rows,
+                '/Waiting,t,dead,,'
+            ].join('\n')
+        )
+        await Bun.write(join(folder, 'crawl.txt'), '/Welcome\n/welcome\n/Old Library/Bread notes\n')
+        await Bun.write(
+            join(folder, 'sitemap.xml'),
+            `<urlset><url><loc>${ORIGIN}/10+Garden/Wormery</loc></url></urlset>`
+        )
+    })
+
+    afterAll(async () => {
+        await rm(folder, { recursive: true, force: true })
+    })
+
+    async function run(...options: string[]): Promise<{ code: number; output: string }> {
+        const child = Bun.spawn(
+            ['bun', 'scripts/url-table.ts', 'parity', '--base', serverUrl(), ...options],
+            { cwd: root, stdout: 'ignore', stderr: 'pipe' }
+        )
+        const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()])
+        return { code, output }
+    }
+
+    test('finds every known URL as expected, with one row waiting for a decision', async () => {
+        const { code, output } = await run(
+            '--list',
+            join(folder, 'list.csv'),
+            '--urls',
+            join(folder, 'crawl.txt'),
+            '--sitemap',
+            join(folder, 'sitemap.xml')
+        )
+        expect(output).toContain('list:list.csv: ok ')
+        expect(output).toContain(', pending 1')
+        expect(output).toContain('urls:crawl.txt: ok 3')
+        expect(output).toContain('sitemap:sitemap.xml: ok 1')
+        expect(output).toEndWith(' that do not answer as expected, 1 waiting for a decision\n')
+        expect(output).toContain(' 0 that do not answer as expected')
+        expect(code).toBe(0)
+    })
+
+    test('fails the gate of the switch on a row that waits for a decision', async () => {
+        expect((await run('--list', join(folder, 'list.csv'), '--gate')).code).toBe(1)
+    })
+
+    test('names a URL that does not answer as expected, and ends with the code 1', async () => {
+        await Bun.write(
+            join(folder, 'wrong.csv'),
+            'source_url_path,target_path,status_code\n/Old+Library/Bread+notes,/Welcome,301\n'
+        )
+        const { code, output } = await run('--list', join(folder, 'wrong.csv'))
+        expect(output).toContain('list:wrong.csv: wrong-target 1')
+        expect(output).toContain('    wrong-target 301 /Old+Library/Bread+notes -> ')
+        expect(code).toBe(1)
+    })
+
+    test('refuses a report inside the clone, out of its private folder', async () => {
+        const { code, output } = await run(
+            '--list',
+            join(folder, 'wrong.csv'),
+            '--report',
+            join(folder, 'report.json')
+        )
+        expect(output).toContain('write it outside the clone or into .private/')
+        expect(code).toBe(2)
     })
 })
 

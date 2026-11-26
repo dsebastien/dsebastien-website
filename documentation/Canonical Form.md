@@ -90,14 +90,15 @@ The table is the one of Bun, a JavaScript engine (JavaScriptCore). Obsidian runs
 
 ## The content store
 
-| Path                 | What it holds                                                             |
-| -------------------- | ------------------------------------------------------------------------- |
-| `configuration.json` | The configuration of the tool: `denyList`, the list of the denied folders |
-| `notes/<vault path>` | The cleaned note of a published note, at its vault path                   |
-| `manifest/<id>.json` | The manifest entry of a published note, as data in the canonical form     |
-| `renames.json`       | How many lines of each rename journal the publications read (see below)   |
-| `edits.json`         | The log of the edits of the guards, and their proposals (see below)       |
-| `withdrawn.json`     | The keys of the attachments that the guards withdrew (see below)          |
+| Path                 | What it holds                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `configuration.json` | The configuration of the tool: `denyList`, the list of the denied folders                                            |
+| `notes/<vault path>` | The cleaned note of a published note, at its vault path                                                              |
+| `manifest/<id>.json` | The manifest entry of a published note, as data in the canonical form                                                |
+| `renames.json`       | How many lines of each rename journal the publications read (see below)                                              |
+| `edits.json`         | The log of the edits of the guards, and their proposals (see below)                                                  |
+| `withdrawn.json`     | The keys of the attachments that the guards withdrew (see below)                                                     |
+| `redirects.json`     | The redirect list: written by the author, read only by the build (issue 44). The tools never read, write or check it |
 
 The configuration is read strictly. The tool stops, and publishes nothing, in each of these cases:
 

@@ -4,8 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { createHash } from 'node:crypto'
 import {
+    applyRedirectList,
     canonicalPath,
+    redirectListFrom,
     resolve,
+    resolverMapFrom,
     resolverMapOf,
     type SiteFiles,
     type SiteNote
@@ -17,9 +20,16 @@ import { aliasesOf } from '../apps/plugin/src/publishing/frontmatter.ts'
 // (issue 43, which holds the measure of the prototype of issue 20): its size,
 // its size with gzip, the time to read it, and the time of one resolution.
 //
-//   bun scripts/measure-resolver-map.ts [--vault <folder>]
+//   bun scripts/measure-resolver-map.ts [--vault <folder> | --paths <file>]
+//       [--redirects <file>]
 //
-// The default vault is the invented corpus of `bun run corpus`. The script
+// The default vault is the invented corpus of `bun run corpus`. `--paths`
+// reads the vault paths of the notes from a file, one per line, with no
+// alias (the list of the notes that are published today). `--redirects`
+// adds a redirect list (`redirects.json` of a content store, issue 44) and
+// measures the map with it, and the cost of the first request of a host
+// that reads it: the read of the text, the check of its shape, and one
+// resolution of an old path of the list. The script
 // prints numbers only, never a name of a note: it can run on the export of the
 // published notes of the author (`.cache/published/vault`), whose numbers stay
 // out of this repository.
@@ -54,15 +64,25 @@ function median(runs: number, work: () => void): number {
 async function main(): Promise<void> {
     const { values } = parseArgs({
         args: Bun.argv.slice(2),
-        options: { vault: { type: 'string', default: join(ROOT, '.cache', 'corpus', 'vault') } },
+        options: {
+            vault: { type: 'string', default: join(ROOT, '.cache', 'corpus', 'vault') },
+            paths: { type: 'string' },
+            redirects: { type: 'string' }
+        },
         strict: true
     })
-    const vault = resolvePath(values.vault)
-    const paths = await notePaths(vault)
     const notes: SiteNote[] = []
-    for (const path of paths) {
-        const text = await readFile(join(vault, path), 'utf8')
-        notes.push({ path, aliases: aliasesOf(sourceOf(text)).aliases })
+    if (values.paths === undefined) {
+        const vault = resolvePath(values.vault)
+        for (const path of await notePaths(vault)) {
+            const text = await readFile(join(vault, path), 'utf8')
+            notes.push({ path, aliases: aliasesOf(sourceOf(text)).aliases })
+        }
+    } else {
+        const lines = (await readFile(resolvePath(values.paths), 'utf8')).split(/\r?\n/u)
+        for (const path of lines.filter((line) => line.endsWith('.md'))) {
+            notes.push({ path, aliases: [] })
+        }
     }
     // File names of the same length as the ones of the build.
     const files: SiteFiles = {
@@ -76,8 +96,15 @@ async function main(): Promise<void> {
         choice: (list) => `-/choice/${shortHash(list.join('\n'))}.html`
     }
     const built = performance.now()
-    const map = resolverMapOf(notes, files)
+    const base = resolverMapOf(notes, files)
+    const list =
+        values.redirects === undefined
+            ? undefined
+            : redirectListFrom(JSON.parse(await readFile(resolvePath(values.redirects), 'utf8')))
+    const applied = list === undefined ? undefined : applyRedirectList(base, list)
+    const map = applied?.map ?? base
     const buildTime = performance.now() - built
+    const baseBytes = Buffer.byteLength(`${JSON.stringify(base)}\n`)
     const text = `${JSON.stringify(map)}\n`
     const bytes = Buffer.byteLength(text)
     const gzip = Bun.gzipSync(Buffer.from(text)).byteLength
@@ -101,6 +128,21 @@ async function main(): Promise<void> {
             resolve(request, map)
         }
     })
+    // The first request of a host: the read of the text, the check of its
+    // shape and one resolution of an old path of the list, with no warm-up.
+    const old = list?.redirects[0]?.from ?? ''
+    const first = performance.now()
+    const read = resolverMapFrom(JSON.parse(text))
+    resolve(`/${old.split('/').map(encodeURIComponent).join('/')}`, read)
+    const firstRequestTime = performance.now() - first
+    const oldRequests = (list?.redirects ?? [])
+        .slice(0, 1000)
+        .map((row) => `/${row.from.split('/').map(encodeURIComponent).join('/')}`)
+    const oldTime = median(5, () => {
+        for (const request of oldRequests) {
+            resolve(request, map)
+        }
+    })
     const count = (record: object | undefined): number => Object.keys(record ?? {}).length
     process.stdout.write(
         `${JSON.stringify(
@@ -115,6 +157,22 @@ async function main(): Promise<void> {
                 choices: count(map.choices),
                 bytes,
                 gzipBytes: gzip,
+                ...(list === undefined
+                    ? {}
+                    : {
+                          bytesWithoutRedirects: baseBytes,
+                          redirectRows: list.redirects.length,
+                          goneRows: list.gone.length,
+                          prefixRules: list.prefixes.length,
+                          redirectsInMap: count(map.redirects?.folded),
+                          droppedShadowed: applied?.dropped.shadowed ?? 0,
+                          droppedDeadTarget: applied?.dropped.deadTarget ?? 0,
+                          firstRequestMilliseconds: Math.round(firstRequestTime * 10) / 10,
+                          microsecondsPerOldPath:
+                              Math.round(
+                                  ((oldTime * 1000) / Math.max(oldRequests.length, 1)) * 10
+                              ) / 10
+                      }),
                 buildMilliseconds: Math.round(buildTime),
                 readMilliseconds: Math.round(readTime * 10) / 10,
                 requests: requests.length,
