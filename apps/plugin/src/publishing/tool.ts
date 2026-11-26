@@ -2022,7 +2022,7 @@ async function apply(
         const types = noteTypeChanges(record, current.record)
         throw new Error(
             types.length > 0
-                ? `the plan ${id} is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n${types.join('\n')}${warningLines(cleanup.warnings)}`
+                ? `the plan ${id} is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n${types.join('\n')}\nOther changes can also make the plan stale.${warningLines(cleanup.warnings)}`
                 : `the plan ${id} is stale: a note of the plan, the publication queue, a rename journal, the configuration or the content store changed. Make a new plan${warningLines(cleanup.warnings)}`
         )
     }

@@ -5354,7 +5354,7 @@
                     "stored": true,
                     "time": "2031-06-02T08:00:00Z",
                     "refused": true,
-                    "says": "is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n- Basil.md: \"herbs\" in the plan, no type now\n- Mint.md: \"herbs\" in the plan, \"pages\" now"
+                    "says": "is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n- Basil.md: \"herbs\" in the plan, no type now\n- Mint.md: \"herbs\" in the plan, \"pages\" now\nOther changes can also make the plan stale."
                 },
                 {
                     "do": "expect",
@@ -5479,7 +5479,7 @@
                     "stored": true,
                     "time": "2031-06-03T08:00:00Z",
                     "refused": true,
-                    "says": "Make a new plan\n- Basil.md: \"herbs\" in the plan, \"herbs\" now, with another display name, prefix or suffix"
+                    "says": "Make a new plan\n- Basil.md: \"herbs\" in the plan, \"herbs\" now, with another display name, prefix or suffix\nOther changes can also make the plan stale."
                 },
                 {
                     "do": "expect",

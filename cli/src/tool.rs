@@ -2019,7 +2019,7 @@ fn refuse_stale(
         )
     } else {
         format!(
-            "the plan {id} is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n{}{}",
+            "the plan {id} is stale: the note type of a note of the plan changed since the plan was made. Make a new plan\n{}\nOther changes can also make the plan stale.{}",
             types.join("\n"),
             warning_lines(&cleanup.warnings)
         )
@@ -2053,7 +2053,7 @@ fn type_text(note_type: Option<&NoteType>) -> String {
 /// The notes of both records whose note type is another one in the new
 /// record (issue 96, R83): one line each, `- <path>: <type in the plan> in
 /// the plan, <type now> now`, in the order of the records. A line break of a
-/// path is written `\\n`.
+/// path is written `\n`.
 fn note_type_changes(stored: &str, current: &str) -> Vec<String> {
     let before = record_types(stored);
     record_types(current)
