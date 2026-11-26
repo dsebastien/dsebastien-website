@@ -282,7 +282,7 @@ export function resolverMapOf(
 
 /**
  * The former folders whose notes all moved to one folder (decision of the
- * author R79): for each folder of a former path of a published note, by its
+ * author R82): for each folder of a former path of a published note, by its
  * folded form, the address of the one folder where those notes are now, as
  * the map gives it (its folder note or its folder page). A folder that is an
  * address now (a note, a folder) keeps it, and a folder whose notes moved to

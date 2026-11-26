@@ -87,7 +87,7 @@ function folderOf(value: string, name: string): string {
  * message that names the setting to change.
  *
  * @param vault the folder of the vault; the rename journals of each of its
- * configuration folders are read (decision of the author R79)
+ * configuration folders are read (decision of the author R82)
  * @param writes makes the vault whose writes into the notes go through Obsidian
  */
 export function deviceOf(

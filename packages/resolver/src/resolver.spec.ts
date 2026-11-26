@@ -377,7 +377,7 @@ describe('resolver of former paths', () => {
         expect(resolve('/Worm+bin', mapOf([NOTE]))).toEqual(moved('/Garden/Wormery'))
     })
 
-    // Decision R79: a former folder whose notes all moved to one folder.
+    // Decision R82: a former folder whose notes all moved to one folder.
     test('the old folder leads to the folder that all its notes moved to', () => {
         const map = mapOf([
             NOTE,
@@ -465,7 +465,7 @@ describe('resolver of former paths', () => {
         expect(JSON.stringify(map)).not.toContain('Rain butt')
     })
 
-    // Decision R79: a published note had the name, so it is a reading of it.
+    // Decision R82: a published note had the name, so it is a reading of it.
     test('a former file name of a published note wins over the file name of an unpublished note', () => {
         const map = mapOf(
             [{ path: 'Garden/Mint.md', aliases: [], formerPaths: ['Herbs/Basil.md'] }],

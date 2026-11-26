@@ -1303,7 +1303,7 @@ fn delete_unused(
     let present: BTreeSet<String> = names.iter().cloned().collect();
     for name in names {
         // The files that macOS and Windows put into a folder by themselves
-        // stay with no warning (decision of the author R79).
+        // stay with no warning (decision of the author R82).
         if used.contains(&name) || SYSTEM_FILES.contains(&name.as_str()) {
             continue;
         }
@@ -2791,7 +2791,7 @@ fn moves_to(device: &Device, path: &str, manifest: &BTreeMap<String, ManifestEnt
 
 /// The files that macOS and Windows put into a folder by themselves: a
 /// cleanup of the attachment storage leaves them with no warning (decision of
-/// the author R79). Only these exact names.
+/// the author R82). Only these exact names.
 const SYSTEM_FILES: [&str; 3] = [".DS_Store", "Thumbs.db", "desktop.ini"];
 
 /// The most lines of a list in the message of a refusal.

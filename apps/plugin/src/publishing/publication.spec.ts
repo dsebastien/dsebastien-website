@@ -1466,7 +1466,7 @@ describe('failure cases after the first review', () => {
         expect(await rejectionOf(status(setup.device))).toContain('--no-skip-worktree')
     })
 
-    // Decision R79: a path that Windows cannot hold is never published, so
+    // Decision R82: a path that Windows cannot hold is never published, so
     // every device can hold the copy. Windows cannot make such a file, so
     // this test fails there.
     test('a note whose path Windows cannot hold is not published', async () => {

@@ -280,7 +280,7 @@ function configurationCode(
  * characters that Windows allows when git does not use long paths.
  */
 function unwritableCause(path: string, folder: string): string | undefined {
-    // A content store written before decision R79 can hold such a path.
+    // A content store written before decision R82 can hold such a path.
     if (isRefusedByWindows(path)) {
         return 'a name that Windows refuses'
     }
@@ -1448,7 +1448,7 @@ export function folderRenameJournals(folder: string): RenameJournals {
 
 /**
  * The rename journals of every configuration folder of a vault (decision of
- * the author R79): each folder at the root of the vault whose name starts
+ * the author R82): each folder at the root of the vault whose name starts
  * with a dot, with `plugins/dsebastien-vault-publish/renames` in it, so a
  * device whose configuration folder of Obsidian has another name is read too.
  * A name in more than one folder is the file with the most bytes, then the

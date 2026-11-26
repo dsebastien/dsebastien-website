@@ -69,7 +69,7 @@ const WINDOWS_NAMES =
     /^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/iu
 
 /**
- * True when Windows cannot hold the path (decision of the author R79): a
+ * True when Windows cannot hold the path (decision of the author R82): a
  * part holds one of `<>:"|?*\` or a control character, ends with a dot or a
  * space, or is a reserved name of Windows (`CON`, `NUL`, `COM1`, with any
  * end). Git cannot write such a path into a copy on Windows, so such a note

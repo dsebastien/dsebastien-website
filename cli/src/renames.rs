@@ -93,7 +93,7 @@ pub struct JournalState {
 /// The rename journals of a folder: its files, as they are. A folder that does
 /// not exist has none. A folder below it and a symbolic link are no journal.
 /// Or the journals of every configuration folder of a vault (decision of the
-/// author R79): each folder at the root of the vault whose name starts with a
+/// author R82): each folder at the root of the vault whose name starts with a
 /// dot, with `plugins/dsebastien-vault-publish/renames` in it. A name in more
 /// than one folder is the file with the most bytes, then the one of the first
 /// folder in the order of the code points: a copy of a configuration folder

@@ -5811,7 +5811,7 @@
             ]
         },
         {
-            "name": "the cleanups of the attachment storage leave the files of the systems with no warning (issue 104, decision R79)",
+            "name": "the cleanups of the attachment storage leave the files of the systems with no warning (issue 104, decision R82)",
             "denyList": [],
             "vault": {
                 "Notes/Plan.md": "# Plan\n"
@@ -7342,7 +7342,7 @@
             ]
         },
         {
-            "name": "the journals of every configuration folder of the vault are read, and of one name in two folders the longer file (issue 105, decision R79)",
+            "name": "the journals of every configuration folder of the vault are read, and of one name in two folders the longer file (issue 105, decision R82)",
             "denyList": [],
             "vault": {
                 "Alpha.md": "Alpha\n",
@@ -12344,7 +12344,7 @@
             ]
         },
         {
-            "name": "a line of a rename journal never moves a note to a path that Windows cannot hold (issue 105, decision R79)",
+            "name": "a line of a rename journal never moves a note to a path that Windows cannot hold (issue 105, decision R82)",
             "denyList": [],
             "vault": {
                 "Alpha.md": "Alpha\n"

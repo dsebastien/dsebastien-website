@@ -995,7 +995,7 @@ const STORAGE_NAME = /^(?:[0-9a-f]{64}|\.[0-9a-f]{64}\.part)$/
 
 /**
  * The files that macOS and Windows put into a folder by themselves: a cleanup
- * leaves them with no warning (decision of the author R79). Only these exact
+ * leaves them with no warning (decision of the author R82). Only these exact
  * names: any other name that is not a key still gives a warning.
  */
 const SYSTEM_FILES: ReadonlySet<string> = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini'])

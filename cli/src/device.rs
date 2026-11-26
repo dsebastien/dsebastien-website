@@ -1494,7 +1494,7 @@ const COMPARE_OPTIONS: &[&str] = &[
 /// or `None`: a name that Windows refuses, or a path longer than the 260
 /// characters that Windows allows when git does not use long paths.
 fn unwritable_cause(path: &str, folder: &Path) -> Option<&'static str> {
-    // A content store written before decision R79 can hold such a path.
+    // A content store written before decision R82 can hold such a path.
     if is_refused_by_windows(path) {
         return Some("a name that Windows refuses");
     }

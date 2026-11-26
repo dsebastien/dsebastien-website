@@ -746,7 +746,7 @@
             "cacheControl": "public, max-age=3600"
         },
         {
-            "name": "the former folder whose published notes all moved to one folder leads to that folder (R79)",
+            "name": "the former folder whose published notes all moved to one folder leads to that folder (R82)",
             "request": "/Old+Beds",
             "status": 301,
             "location": "/10+Garden/Herb+bed/Herb+bed",

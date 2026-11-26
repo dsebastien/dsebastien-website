@@ -528,7 +528,7 @@ fn device_at(
         }
     }
     let program = osk_cli.map_or_else(|| note_types::default_program(vault), Path::to_path_buf);
-    // Without a folder, the journals of every configuration folder (R79).
+    // Without a folder, the journals of every configuration folder (R82).
     let renames = renames.map_or_else(
         || renames::RenameJournals::of_vault(vault.to_path_buf()),
         |folder| renames::RenameJournals::new(folder.to_path_buf()),

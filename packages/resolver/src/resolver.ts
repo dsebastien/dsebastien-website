@@ -93,7 +93,7 @@ export interface FormerMap {
     readonly markdown: Readonly<Record<string, string>>
     /**
      * The target of each former folder whose notes all moved to one folder,
-     * by its folded form (decision of the author R79): the folder note of
+     * by its folded form (decision of the author R82): the folder note of
      * that folder, or its folder page.
      */
     readonly folders?: Readonly<Record<string, string>>
@@ -489,7 +489,7 @@ function resolvePublished(
             }
         }
         // A row of the redirect list wins over a former folder: the author wrote it.
-        // A former folder whose notes all moved to one folder (R79).
+        // A former folder whose notes all moved to one folder (R82).
         for (const form of forms) {
             const target = own(map.former?.folders, form)
             if (target !== undefined) {

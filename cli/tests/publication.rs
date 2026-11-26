@@ -1352,7 +1352,7 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
     );
 }
 
-/// Decision R79: a path that Windows cannot hold is never published, so
+/// Decision R82: a path that Windows cannot hold is never published, so
 /// every device can hold the copy.
 // Windows refuses to make the file `CON.md` that the test writes.
 #[cfg(not(windows))]
