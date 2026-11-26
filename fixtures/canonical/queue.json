@@ -10961,6 +10961,40 @@
                             "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
                         }
                     }
+                },
+                {
+                    "do": "publish",
+                    "why": "an agent publication that names the note in accept updates it: the image leaves the storage, and the guard alone puts its key into withdrawn.json (issue 120, decision of the author of 2026-11-26)",
+                    "selection": {
+                        "accept": ["Notes/Plan.md"]
+                    },
+                    "time": "2031-10-01T11:00:00Z",
+                    "face": "mcp-server",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e"
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Notes/Plan.md"],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry lists no file under a guard any more, and the key of the old image is withdrawn, so the deployment deletes it from the host",
+                    "vault": {},
+                    "store": {
+                        "withdrawn.json": "{\n  \"keys\": [\n    \"6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e\"\n  ]\n}\n"
+                    },
+                    "attachmentStorage": {}
                 }
             ]
         },

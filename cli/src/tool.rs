@@ -1062,15 +1062,17 @@ fn used_keys(
 /// `after`, or `None` for no file (issue 120, rule 8 of a publication): the
 /// earlier withdrawn keys and the keys that the guards withdraw from the
 /// manifest before and after the run, less the keys that a published entry
-/// after the run lists from a file under no guard.
+/// after the run lists from a file under no guard. The guard alone decides
+/// (decision of the author of 2026-11-26): a run of an agent face keeps such
+/// a file in the folder of its device (rule 10), but its key is withdrawn
+/// all the same, so it leaves the object storage of the host.
 fn withdrawn_after(
     device: &Device,
     scan: &Scan,
     after: &BTreeMap<String, ManifestEntry>,
-    guarded: Guarded,
 ) -> Result<Option<String>, String> {
     let withdrawn_of = |manifest: &BTreeMap<String, ManifestEntry>| -> BTreeSet<String> {
-        let used = used_keys(manifest, scan, &device.vault, guarded);
+        let used = used_keys(manifest, scan, &device.vault, Guarded::Deleted);
         published_keys(manifest)
             .into_iter()
             .filter(|key| !used.contains(key))
@@ -1093,16 +1095,10 @@ fn write_withdrawn(
     journal: &mut Backup,
     computed: &Computed,
     after: &BTreeMap<String, ManifestEntry>,
-    run: &Run,
 ) -> Result<Option<String>, String> {
     let file = StoreFile {
         path: WITHDRAWN_FILE.to_owned(),
-        text: withdrawn_after(
-            device,
-            &computed.scan,
-            after,
-            Guarded::of(run, &computed.selection),
-        )?,
+        text: withdrawn_after(device, &computed.scan, after)?,
     };
     Ok(journal.apply(&file)?.then_some(file.path))
 }
@@ -1114,12 +1110,8 @@ fn write_withdrawn(
 fn journal_paths(device: &Device, current: &Computed, run: &Run) -> Result<Vec<String>, String> {
     let mut paths = store_paths_of(&current.plan, &current.scan, run.time);
     if !paths.is_empty()
-        || withdrawn_after(
-            device,
-            &current.scan,
-            &current.scan.manifest,
-            Guarded::of(run, &current.selection),
-        )? != device.store.read(WITHDRAWN_FILE)?
+        || withdrawn_after(device, &current.scan, &current.scan.manifest)?
+            != device.store.read(WITHDRAWN_FILE)?
     {
         paths.push(WITHDRAWN_FILE.to_owned());
         paths.sort();
@@ -1827,7 +1819,7 @@ fn write_all(
         }
     }
     paths.extend(write_markers(journal, plan, scan)?);
-    paths.extend(write_withdrawn(device, journal, computed, &manifest, run)?);
+    paths.extend(write_withdrawn(device, journal, computed, &manifest)?);
     // Each path one time, in the order of the writes.
     let mut seen = BTreeSet::new();
     paths.retain(|path| seen.insert(path.clone()));

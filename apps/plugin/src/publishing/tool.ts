@@ -1034,16 +1034,18 @@ const NEVER_KEEPS: KeepsGuarded = () => false
  * `after`, or `undefined` for no file (issue 120, rule 8 of a publication):
  * the earlier withdrawn keys and the keys that the guards withdraw from the
  * manifest before and after the run, less the keys that a published entry
- * after the run lists from a file under no guard.
+ * after the run lists from a file under no guard. The guard alone decides
+ * (decision of the author of 2026-11-26): a run of an agent face keeps such
+ * a file in the folder of its device (rule 10), but its key is withdrawn
+ * all the same, so it leaves the object storage of the host.
  */
 async function withdrawnAfter(
     device: Device,
     scan: Scan,
-    after: ReadonlyMap<string, ManifestEntry>,
-    keepsGuarded: KeepsGuarded
+    after: ReadonlyMap<string, ManifestEntry>
 ): Promise<string | undefined> {
     const guarded = async (manifest: ReadonlyMap<string, ManifestEntry>): Promise<string[]> => {
-        const used = await usedKeys(manifest, scan.isGuardedFile, keepsGuarded)
+        const used = await usedKeys(manifest, scan.isGuardedFile)
         return [...publishedKeys(manifest)].filter((key) => !used.has(key))
     }
     return withdrawnText(
@@ -1297,8 +1299,6 @@ async function writeAll(
         readonly plan: string
         /** Throws when the lock of the run is not its own any more. */
         readonly ownLock: () => Promise<void>
-        /** What the cleanups of the run keep (rule 10). */
-        readonly keepsGuarded: KeepsGuarded
     }
 ): Promise<Written> {
     const { scan, texts } = computed
@@ -1511,7 +1511,7 @@ async function writeAll(
     }
     // The keys that the guards withdrew, in the same commit (issue 120): every
     // deployment deletes them from the object storage of the host.
-    const withdrawn = await withdrawnAfter(device, scan, manifest, run.keepsGuarded)
+    const withdrawn = await withdrawnAfter(device, scan, manifest)
     if (await journal.apply({ path: WITHDRAWN_FILE, text: withdrawn })) {
         written.push(WITHDRAWN_FILE)
     }
@@ -1967,12 +1967,8 @@ async function applyCurrent(
     const planned = storePathsOf(current.plan, scan, run.time)
     const paths =
         planned.length > 0 ||
-        (await withdrawnAfter(
-            device,
-            scan,
-            scan.manifest,
-            keepsGuardedFor(run.face, current.selection)
-        )) !== (await device.store.read(WITHDRAWN_FILE))
+        (await withdrawnAfter(device, scan, scan.manifest)) !==
+            (await device.store.read(WITHDRAWN_FILE))
             ? sortByCodePoint([...planned, WITHDRAWN_FILE])
             : planned
     const head = await device.store.head()
@@ -1994,12 +1990,7 @@ async function applyCurrent(
     const uploads = new Uploads(device)
     let outcome: Written
     try {
-        outcome = await writeAll(device, journal, uploads, current, {
-            ...run,
-            plan: id,
-            ownLock,
-            keepsGuarded: keepsGuardedFor(run.face, current.selection)
-        })
+        outcome = await writeAll(device, journal, uploads, current, { ...run, plan: id, ownLock })
     } catch (error) {
         // Another run took the copy: this run touches nothing of it any more,
         // or it would put its files back over the work of the other run.
