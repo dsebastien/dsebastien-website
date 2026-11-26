@@ -18,12 +18,40 @@ const FONT_FACE = /@font-face\{[^}]*\}/gu
 const STYLE = /<style\b[^>]*>([\s\S]*?)<\/style>/giu
 /** What loads a file in CSS: an address, an import, a set of images, a source. */
 const CSS_LOAD = /url\(|@import|image-set\(|(?<![\w-])src\(/iu
-/** A meta element that loads another address after a time. */
-const REFRESH = /<meta\b[^>]*http-equiv\s*=\s*["']?refresh/iu
+/** The start of a meta element, in any letter case. */
+const META = /<meta(?=[\s/>])/giu
+/** An attribute of an element (its name, and its value in double, single or no quotes), or a slash. */
+const ATTRIBUTE = /\s*(?:([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?|\/)/uy
 const LOADING_ELEMENT =
     /<(?:img|picture|source|video|audio|track|iframe|frame|object|embed|image)\b/iu
 const SOURCE = /\s(?:src|srcset|data|poster|background)\s*=/iu
 const ADDRESS = /<([a-z][\w:-]*)\b[^>]*\s(?:xlink:)?href\s*=/giu
+
+/**
+ * True when a meta element of the markup has an `http-equiv` other than
+ * `content-type`: a refresh loads another address after a time, and no other
+ * value has a use on this page. The attributes are read with their quotes,
+ * so a `>` of a quoted value does not end the element, and a value is
+ * compared as it is written, so a value with a character reference is
+ * refused too.
+ */
+function hasHttpEquiv(markup: string): boolean {
+    for (const meta of markup.matchAll(META)) {
+        ATTRIBUTE.lastIndex = meta.index + meta[0].length
+        for (
+            let attribute = ATTRIBUTE.exec(markup);
+            attribute !== null && attribute[0] !== '';
+            attribute = ATTRIBUTE.exec(markup)
+        ) {
+            const [, name = '', double, single, bare] = attribute
+            const value = (double ?? single ?? bare ?? '').trim().toLowerCase()
+            if (name.toLowerCase() === 'http-equiv' && value !== 'content-type') {
+                return true
+            }
+        }
+    }
+    return false
+}
 
 function refuse(reason: string): never {
     throw new Error(`The server error page must be one file: ${reason}`)
@@ -70,7 +98,7 @@ export async function selfContained(
         LOADING_ELEMENT.test(markup) ||
         SOURCE.test(markup) ||
         CSS_LOAD.test(markup) ||
-        REFRESH.test(markup)
+        hasHttpEquiv(markup)
     ) {
         refuse('it loads another file')
     }

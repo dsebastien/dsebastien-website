@@ -51,9 +51,35 @@ describe('self-contained page', () => {
         [
             'a refresh to another address',
             '<html><head><meta http-equiv="refresh" content="0;url=/x"></head></html>'
+        ],
+        [
+            'a refresh written with character references',
+            '<html><head><meta http-equiv="&#114;efresh" content="0;url=/x"></head></html>'
+        ],
+        [
+            'a refresh after a quoted attribute with a >',
+            '<html><head><meta name="a>b" http-equiv="refresh" content="0;url=/x"></head></html>'
+        ],
+        [
+            'a refresh in capital letters, without quotes',
+            '<html><head><META HTTP-EQUIV=Refresh CONTENT="0;url=/x"></head></html>'
+        ],
+        [
+            'another http-equiv',
+            "<html><head><meta http-equiv='set-cookie' content='a=b'></head></html>"
+        ],
+        [
+            'an http-equiv of the character set and one more',
+            '<html><head><meta http-equiv="content-type" http-equiv="refresh"></head></html>'
         ]
     ])('refuses a page with %s', async (_name, html) => {
         expect(await rejectionOf(selfContained(html, read))).toContain('server error page')
+    })
+
+    test('lets the meta elements of the character set and of the page pass', async () => {
+        const html =
+            '<html><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="http-equiv=refresh"></head></html>'
+        expect(await selfContained(html, read)).toBe(html)
     })
 
     test('lets links, an inline SVG and a form pass', async () => {
