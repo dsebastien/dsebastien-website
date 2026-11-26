@@ -16,9 +16,10 @@ import { LIVE_CHECKS, readHostRecord, revertRelease } from '../apps/site/worker/
 //     bun run deploy:revert --target <file> --content-store <folder>
 //
 // The live record names the release that it replaced. The command refuses a
-// live release that names none, and a revert across a takedown: a commit of
-// the copy of the content store whose subject starts with `Takedown:`, between
-// the release before and the live one, would bring a removed note back. It
+// live release that names none, and a revert across a takedown or a forced
+// removal: a commit of the copy of the content store, between the release
+// before and the live one, that deleted a manifest entry (whatever its subject
+// says, issue 120), would bring a removed note back. It
 // also refuses a live release that moved the host to another content store
 // (`newContentStore`): the release before has other content.
 // Then a new release is the way (`bun run deploy`).
