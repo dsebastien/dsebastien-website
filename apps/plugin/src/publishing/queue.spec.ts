@@ -114,12 +114,20 @@ type Step = { why: string } & (
           refused: true
           says?: string
       }
-    | { do: 'takedown'; paths: string[]; time: string; report: TakedownLists; refused?: never }
-    | { do: 'takedown'; paths: string[]; time: string; refused: true; says?: string }
+    | {
+          do: 'takedown'
+          paths: string[]
+          time: string
+          face?: Face
+          report: TakedownLists
+          refused?: never
+      }
+    | { do: 'takedown'; paths: string[]; time: string; face?: Face; refused: true; says?: string }
     | {
           do: 'unpublish'
           paths: string[]
           time: string
+          face?: Face
           accept?: string[]
           report: ReportLists
           refused?: never
@@ -128,6 +136,7 @@ type Step = { why: string } & (
           do: 'unpublish'
           paths: string[]
           time: string
+          face?: Face
           accept?: string[]
           refused: true
           says?: string
@@ -297,7 +306,12 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
             let stoppedPlan = ''
             // The plan of the last `plan` step, for a publish step with `stored`.
             let storedPlan = ''
-            const runAt = (time: string): Run => ({ time, device: 'garden-shed', face: 'plugin' })
+            // A run from the face of its step: the plugin by default.
+            const runAt = (time: string, face: Face = 'plugin'): Run => ({
+                time,
+                device: 'garden-shed',
+                face
+            })
             for (const [index, step] of scenario.steps.entries()) {
                 const label = `step ${String(index + 1)}: ${step.why}`
                 if (step.do === 'write') {
@@ -430,11 +444,13 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     ).toContain(step.says ?? '')
                 } else if (step.do === 'takedown' && step.refused === true) {
                     expect(
-                        await rejectionOf(takedown(device, step.paths, runAt(step.time))),
+                        await rejectionOf(
+                            takedown(device, step.paths, runAt(step.time, step.face))
+                        ),
                         label
                     ).toContain(step.says ?? '')
                 } else if (step.do === 'takedown') {
-                    const report = await takedown(device, step.paths, runAt(step.time))
+                    const report = await takedown(device, step.paths, runAt(step.time, step.face))
                     const lists: TakedownLists = {
                         ...report,
                         storageWarnings: report.storageWarnings.map((entry) => entry.path),
@@ -444,7 +460,12 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                 } else if (step.do === 'unpublish' && step.refused === true) {
                     expect(
                         await rejectionOf(
-                            unpublish(device, step.paths, runAt(step.time), step.accept ?? [])
+                            unpublish(
+                                device,
+                                step.paths,
+                                runAt(step.time, step.face),
+                                step.accept ?? []
+                            )
                         ),
                         label
                     ).toContain(step.says ?? '')
@@ -452,7 +473,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     const report = await unpublish(
                         device,
                         step.paths,
-                        runAt(step.time),
+                        runAt(step.time, step.face),
                         step.accept ?? []
                     )
                     const lists: ReportLists = {

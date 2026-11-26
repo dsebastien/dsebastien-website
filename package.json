@@ -46,7 +46,8 @@
         "budgets:search": "bun scripts/search-budget.ts",
         "commit:lint": "commitlint --edit",
         "corpus": "bun scripts/generate-corpus.ts",
-        "corpus:published": "bun scripts/export-published.ts"
+        "corpus:published": "bun scripts/export-published.ts",
+        "parity:random": "bun scripts/random-parity.ts"
     },
     "devDependencies": {
         "@commitlint/cli": "21.2.4",

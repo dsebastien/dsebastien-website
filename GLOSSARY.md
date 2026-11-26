@@ -139,6 +139,9 @@ The rule that the two implementations of the publishing logic give the same resu
 **Canonical form**:
 The exact written form of the output of the publishing logic, byte for byte. The parity rule compares outputs in that form.
 
+**Random parity test**:
+The check of the parity rule on cases that a seed makes: a small vault, a deny list and steps of the author, of the plugin and of another device. The same seed gives the same case again, and a case can join the shared cases.
+
 ### Site
 
 **Canonical URL**:

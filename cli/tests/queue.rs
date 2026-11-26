@@ -302,6 +302,11 @@ impl Setup {
     /// Runs a command on the paths of a step, at the time of the step.
     fn run_on_paths(&self, command: &str, step: &Value, crash: Option<&str>) -> Output {
         let time = step["time"].as_str().expect("a run has a time");
+        // The program is the face of the command line: a step names that face or none.
+        assert!(
+            step["face"].is_null() || step["face"] == "command-line",
+            "a step on paths runs from the command line"
+        );
         let key = if step["do"] == "crash" {
             "takedown"
         } else {
