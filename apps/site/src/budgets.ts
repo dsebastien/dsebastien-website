@@ -42,6 +42,14 @@ export const PAGE_BUDGET = {
  */
 export const FIRST_SEARCH_BROTLI = 350_000
 
+/**
+ * The budget of the first opening of the command palette (issue 122, R93):
+ * its code and its style, with Brotli. A page loads only its loader before;
+ * the title index and the full text come after, in the budget of the first
+ * search.
+ */
+export const FIRST_PALETTE_BROTLI = 10_000
+
 /** A budget of the times of Lighthouse, for one preset. */
 export interface TimeBudget {
     /** Largest Contentful Paint, in milliseconds. */

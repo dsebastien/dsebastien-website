@@ -59,6 +59,9 @@ function scriptsOf(html: string): string[] {
     )
 }
 
+/** The loader of the command palette of the header (issue 122): a module file, deferred. */
+const PALETTE_LOADER = /^<script type="module" src="\/_astro\/PaletteLoader[^"]*\.js"><\/script>$/u
+
 /** The text of each class attribute of a page, cut in classes. */
 function classesOf(html: string): Set<string> {
     return new Set(
@@ -78,15 +81,19 @@ describe('build of the empty site', () => {
         expect(exitCode).toBe(0)
     })
 
-    test('writes the home page as plain HTML, with the scripts of the mode and of the network', async () => {
+    test('writes the home page as plain HTML, with the scripts of the mode, of the palette and of the network', async () => {
         const html = await readOutput('index.html')
         expect(html).toContain('<html lang="en"')
         expect(html).toContain('<h1')
         // The head script holds the function as the build writes it: the
-        // tests below run it. The switch script is the same text. The script
-        // of the network is a module file: deferred, after the first paint.
-        const [head = '', network = '', ...rest] = scriptsOf(html)
-        expect(network).toMatch(/^<script type="module" src="\/_astro\/[^"]+\.js"><\/script>$/u)
+        // tests below run it. The switch script is the same text. The loader
+        // of the palette and the script of the network are module files:
+        // deferred, after the first paint.
+        const [head = '', palette = '', network = '', ...rest] = scriptsOf(html)
+        expect(palette).toMatch(PALETTE_LOADER)
+        expect(network).toMatch(
+            /^<script type="module" src="\/_astro\/NetworkBackground[^"]+\.js"><\/script>$/u
+        )
         expect(rest).toEqual([modeSwitchScript])
         expect(head).toContain('localStorage.getItem("mode")')
         expect(head.startsWith('{')).toBe(true)
@@ -103,7 +110,9 @@ describe('build of the empty site', () => {
         const hero = /<section\b[^>]*data-network-scope[^>]*>[\s\S]*?<\/section>/u.exec(html)?.[0]
         expect(hero).toMatch(/<h1\b[^>]*data-network-quiet/u)
         expect(hero).toContain('class="relative')
-        const script = /<script type="module" src="(\/_astro\/[^"]+\.js)"/u.exec(html)?.[1] ?? ''
+        const script =
+            /<script type="module" src="(\/_astro\/NetworkBackground[^"]+\.js)"/u.exec(html)?.[1] ??
+            ''
         const code = await readOutput(script)
         expect(code).toContain('prefers-reduced-motion: reduce')
         expect(code).toContain('visibilitychange')
@@ -249,13 +258,16 @@ describe('error pages', () => {
         expect(html).toMatch(/<title>[^<]*Sébastien’s Notes<\/title>/u)
     })
 
-    test('the gone page offers the search with an empty field, and runs only the scripts of the mode', async () => {
+    test('the gone page offers the search with an empty field, and runs only the scripts of the mode and of the palette', async () => {
         const html = await readOutput('410.html')
         const form = /<form role="search"[^>]*action="\/-\/search"[\s\S]*?<\/form>/u.exec(html)
         expect(form).not.toBeNull()
         expect(form?.[0] ?? '').toMatch(/<input[^>]*name="q"/u)
         expect(form?.[0] ?? '').not.toMatch(/<input[^>]*\svalue=/u)
-        expect(scriptsOf(html).slice(1)).toEqual([modeSwitchScript])
+        // The loader of the palette names nothing of a note (issue 122).
+        const [palette = '', ...rest] = scriptsOf(html).slice(1)
+        expect(palette).toMatch(PALETTE_LOADER)
+        expect(rest).toEqual([modeSwitchScript])
     })
 
     // Only the page with no script needs the mode of the system.

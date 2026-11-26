@@ -243,6 +243,13 @@ The index of the search that holds the display titles and the aliases of the pub
 **Full-text index**:
 The index of the search that holds the text of the published notes.
 
+**Command palette**:
+The dialog that the search control of the header, `/` and `Ctrl+K` open on any page: the search first, then the commands.
+_Avoid_: search panel, quick switcher
+
+**Command**:
+An action of the command palette, such as going to the home page or switching the mode. The command registry lists them.
+
 **Link card**:
 A link that shows as a card with the title, the source and a small image of its target.
 _Avoid_: bookmark, embed

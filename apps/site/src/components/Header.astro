@@ -1,13 +1,17 @@
 ---
 import { SEARCH_PATH } from '@dsebastien-website/resolver'
 import ModeSwitch from './ModeSwitch.astro'
+import PaletteLoader from './PaletteLoader.astro'
 import logo from '../icons/icon.svg?raw'
 import { SITE_NAME } from '../site.ts'
 
 // The header of every page, from variant B of the mockups (R49): the site
-// name leads home, the link to the search page (SRCH-01, R63: a plain link,
-// so a page loads nothing of the search), and the switch of the mode (NAV-01,
-// MODE-01). On a small screen the link shows its icon, and its name stays.
+// name leads home, the search control, and the switch of the mode (NAV-01,
+// MODE-01). The search control is a link to the search page (SRCH-08): with
+// its script, it opens the command palette on the same page, which loads at
+// its first opening (issue 122, R57). On a small screen the link shows its
+// icon, and its name stays. On a phone the controls are 44 px high, for a
+// finger; from the small breakpoint 36 px (issue 100, point 3).
 // The switch comes first: it is hidden until its script runs, and it shows in
 // the free space at the left, so nothing moves (CLS, R57). On a very small
 // screen the site name gives way with an ellipsis, so nothing goes past the edge.
@@ -16,7 +20,7 @@ import { SITE_NAME } from '../site.ts'
 // and the server error page keeps it (NAV-20). It has its own background, so
 // it shows the same in both modes. The site name is the name of the link.
 interface Props {
-    /** False on a page with no script: the switch needs its script (NAV-20). */
+    /** False on a page with no script: the switch and the palette need their scripts (NAV-20). */
     modeSwitch?: boolean
 }
 
@@ -37,10 +41,11 @@ const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '
         <div class='ml-auto flex shrink-0 items-center gap-2'>
             {modeSwitch && <ModeSwitch />}
             <a
-                class='button-quiet h-9 min-w-9 px-2 sm:px-3'
+                class='button-quiet h-11 min-w-11 px-2 sm:h-9 sm:min-w-9 sm:px-3'
                 href={SEARCH_PATH}
                 aria-current={searching ? 'page' : undefined}
                 data-search-link
+                data-palette
             >
                 <svg
                     class='h-5 w-5'
@@ -57,4 +62,5 @@ const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '
             </a>
         </div>
     </div>
+    {modeSwitch && <PaletteLoader />}
 </header>

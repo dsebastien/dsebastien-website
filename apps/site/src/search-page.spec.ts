@@ -19,7 +19,7 @@ import {
 import { canonicalPath, resolve, type ResolverMap } from '@dsebastien-website/resolver'
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
-import { brotliSize, PAGE_BUDGET } from './budgets.ts'
+import { brotliSize, FIRST_PALETTE_BROTLI, PAGE_BUDGET } from './budgets.ts'
 import { createSearch } from './search/engine.ts'
 import { pagefindEngine } from './search/full-text.ts'
 import { foldedWords, partFile, type TitleRow } from './search/titles.ts'
@@ -194,13 +194,14 @@ describe('the search page (SRCH-01)', () => {
         expect(select('[data-search-status][aria-live="polite"]', page)).toBeDefined()
     })
 
-    test('loads its own script only, within the script budget of a page', async () => {
+    test('loads its own script and the loader of the palette only, within the script budget of a page', async () => {
         const { dir } = built()
         const page = await served('/-/search')
         const scripts = selectAll('script[src]', page).map((script) =>
             String(script.properties['src'])
         )
-        expect(scripts).toHaveLength(1)
+        expect(scripts).toHaveLength(2)
+        expect(scripts.filter((src) => src.includes('PaletteLoader'))).toHaveLength(1)
         let bytes = 0
         for (const src of scripts) {
             bytes += brotliSize(await readFile(join(dir, src)))
@@ -292,6 +293,72 @@ describe('the ways to the search page', () => {
             expect(text).not.toContain('data-search')
             expect(text).not.toContain('/-/search')
         }
+    })
+})
+
+/** The files that a module file imports with a static import: they load with it. */
+function staticImports(code: string): string[] {
+    return [...code.matchAll(/\b(?:from|import)\s*"\.\/([^"]+\.js)"/gu)].map(
+        ([, file = '']) => file
+    )
+}
+
+// The command palette (issue 122, SRCH-05 to SRCH-08, R93): a page holds its
+// loader only; the palette, its style and the code of the search load at the
+// first opening, within their budget, and the indexes after.
+describe('the command palette', () => {
+    test('a note page loads its loader alone, with a link to the search page for a reader with no script', async () => {
+        const { dir } = built()
+        const page = await served(canonicalPath(BARREL))
+        const control = select('header a[data-palette]', page)
+        expect(control?.properties['href']).toBe('/-/search')
+        const loaders = selectAll('script[src]', page)
+            .map((script) => String(script.properties['src']))
+            .filter((src) => src.includes('PaletteLoader'))
+        expect(loaders).toHaveLength(1)
+        const loader = await readFile(join(dir, loaders[0] ?? ''), 'utf8')
+        // What loads with the loader holds nothing of the palette or of the search.
+        for (const file of staticImports(loader)) {
+            const code = await readFile(join(dir, '_astro', file), 'utf8')
+            expect(code, file).not.toContain('combobox')
+            expect(code, file).not.toContain('pagefind')
+        }
+        expect(loader).not.toContain('combobox')
+        expect(brotliSize(new TextEncoder().encode(loader))).toBeLessThan(1_500)
+    })
+
+    test('loads at its first opening, within its budget, and the indexes only after', async () => {
+        const { dir } = built()
+        const page = await served(canonicalPath(BARREL))
+        const src = selectAll('script[src]', page)
+            .map((script) => String(script.properties['src']))
+            .find((file) => file.includes('PaletteLoader'))
+        const loader = await readFile(join(dir, src ?? ''), 'utf8')
+        // The files of the dynamic import, as the build lists them for the first opening.
+        const listed = /m\.f=\[([^\]]*)\]/u.exec(loader)?.[1] ?? ''
+        const withPage = new Set(staticImports(loader).map((file) => `_astro/${file}`))
+        const files = [...listed.matchAll(/"([^"]+)"/gu)]
+            .map(([, file = '']) => file)
+            .filter((file) => !withPage.has(file))
+        const palette = files.find((file) => file.includes('palette-bundle')) ?? ''
+        // The style of the palette is in its module: no page links a style sheet of it.
+        expect(files.filter((file) => file.endsWith('.css'))).toEqual([])
+        expect(await readFile(join(dir, palette), 'utf8')).toContain('.palette-option')
+        expect(selectAll('link[rel="stylesheet"]', page)).toHaveLength(1)
+        let bytes = 0
+        for (const file of files) {
+            expect(file, file).not.toContain('pagefind')
+            expect(file, file).not.toContain('titles')
+            bytes += brotliSize(await readFile(join(dir, file)))
+        }
+        expect(bytes).toBeGreaterThan(2_000)
+        expect(bytes).toBeLessThanOrEqual(FIRST_PALETTE_BROTLI)
+    })
+
+    test('the server error page has no loader: it runs no script (NAV-20)', async () => {
+        const html = await readFile(join(built().dir, '500.html'), 'utf8')
+        expect(html).not.toContain('<script')
+        expect(html).toContain('href="/-/search"')
     })
 })
 

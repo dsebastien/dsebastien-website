@@ -1,0 +1,10 @@
+---
+// The loader of the command palette (SRCH-06, SRCH-08, issue 122): the
+// control of the header and the keys `/` and `Ctrl+K` open the palette,
+// which loads at its first opening. A page with no script leaves it out.
+---
+
+<script>
+    import { startPaletteLoader } from '../palette/loader.ts'
+    startPaletteLoader(document)
+</script>

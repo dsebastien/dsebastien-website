@@ -1,0 +1,104 @@
+/* The command palette (issue 122). It loads with the palette, at its first
+   opening, not with the page (R57). On a phone it fills the screen, with the
+   field at the top, so the keyboard never hides it; from the small
+   breakpoint it is a panel under the header. Every row is 44 px high at
+   least, for a finger. */
+@reference '../styles/global.css';
+
+/* The page under the open palette does not scroll. */
+html.palette-open {
+    overflow: hidden;
+}
+
+.palette {
+    @apply m-0 h-dvh max-h-none w-full max-w-none border-0 bg-transparent p-0 text-primary;
+}
+
+.palette::backdrop {
+    @apply bg-overlay;
+}
+
+.palette-panel {
+    @apply flex h-full flex-col bg-surface;
+}
+
+.palette-bar {
+    @apply flex shrink-0 items-center gap-2 border-b border-border px-3 py-2;
+}
+
+.palette-icon {
+    @apply h-5 w-5 shrink-0 text-muted;
+}
+
+/* 16 px at least: a smaller text makes a phone zoom into the field. */
+.palette-field {
+    @apply min-h-11 min-w-0 flex-1 bg-transparent px-1 text-base text-primary placeholder:text-muted;
+}
+
+.palette-field:focus-visible {
+    @apply outline-none;
+}
+
+.palette-bar:focus-within {
+    @apply border-b-focus;
+}
+
+.palette-close {
+    @apply min-h-11 shrink-0;
+}
+
+.palette-status {
+    @apply min-h-6 shrink-0 px-4 pt-2 text-sm text-muted;
+}
+
+.palette-list {
+    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3;
+}
+
+.palette-group-label {
+    @apply px-2 pt-3 pb-1 text-xs font-semibold tracking-widest text-muted uppercase;
+}
+
+.palette-option {
+    @apply flex min-h-11 cursor-pointer flex-col justify-center rounded-control px-3 py-2;
+}
+
+/* The selected row: a raised surface and the ring of the focus, as the focus is in the field. */
+.palette-option[aria-selected='true'] {
+    @apply bg-surface-elevated outline-2 -outline-offset-2 outline-focus;
+}
+
+.palette-option-head {
+    @apply flex flex-wrap items-baseline gap-x-3 gap-y-1;
+}
+
+.palette-option-title {
+    @apply font-semibold break-words;
+}
+
+.palette-option-under {
+    @apply mt-1 line-clamp-2 text-sm break-words text-muted;
+}
+
+.palette-option-under mark {
+    @apply bg-transparent font-semibold text-primary;
+}
+
+/* The keys of the keyboard: a phone has none of them. */
+.palette-hints {
+    @apply hidden shrink-0 flex-wrap gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-xs text-muted;
+}
+
+@variant sm {
+    .palette {
+        @apply bottom-auto mx-auto mt-[12vh] h-auto max-h-[76vh] max-w-2xl;
+    }
+
+    .palette-panel {
+        @apply max-h-[76vh] rounded-card border border-border-strong shadow-raised;
+    }
+
+    .palette-hints {
+        @apply flex;
+    }
+}
