@@ -16,7 +16,7 @@
         {
             "path": "10 Garden/Drip irrigation.md",
             "aliases": ["Watering"],
-            "formerPaths": ["10 Garden/Bean trellis/Drip irrigation.md"]
+            "formerPaths": ["10 Garden/Pea frame/Drip irrigation.md"]
         },
         {
             "path": "10 Garden/Watering schedule.md",
@@ -77,6 +77,11 @@
         }
     ],
     "removed": [
+        {
+            "path": "10 Garden/Pea frame.md",
+            "aliases": [],
+            "text": "# Pea frame\n\nAn invented old note whose path is the former folder of a live note: the former path of that note is public, so this name is public too.\n"
+        },
         {
             "path": "10 Garden/Bean trellis.md",
             "aliases": []
@@ -759,7 +764,7 @@
         },
         {
             "name": "a former folder whose text is the text of an unpublished note is gone (R82)",
-            "request": "/10+Garden/Bean+trellis/",
+            "request": "/10+Garden/Pea+frame/",
             "status": 410,
             "format": "html"
         },
