@@ -82,10 +82,14 @@ const when = list.key.startsWith('added') ? 'Added' : 'Changed'
 <List
     class='mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
     start={List === 'ol' ? page.start : undefined}
+    role={List === 'ol' ? 'list' : undefined}
     data-list
 >
-    {page.notes.map((note) => (
-        <li>
+    {page.notes.map((note, index) => (
+        <li
+            aria-posinset={List === 'ol' ? page.start + index : undefined}
+            aria-setsize={List === 'ol' ? list.count : undefined}
+        >
             <a class='card-link h-full' href={note.path} data-listed-note>
                 <span class='font-semibold break-words'>{note.title}</span>
                 {(list.kind === 'tag' || list.kind === 'recent') &&

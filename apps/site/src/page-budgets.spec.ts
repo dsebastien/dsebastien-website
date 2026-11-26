@@ -18,6 +18,7 @@ import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/devi
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 import { checkNotePage, PAGE_BUDGET, type PageCheck } from './budgets.ts'
 import { FRAME_IDS } from './rendering/anchors.ts'
+import { listPageFile } from './site-files.ts'
 
 // The budgets of the note page in CI (issue 47, PERF-20, PERF-22, R57): the
 // tool publishes every note of a copy of the fixture vault, which holds a
@@ -245,6 +246,26 @@ describe('budgets of the note page', () => {
             pages: Record<string, string>
         }
         expect(map.pages[`/-/backlinks/${id}`]).toBe(`-/backlinks/${file}`)
+    })
+})
+
+// The sample makes a recent list of more than one page (NAV-05, issue 99).
+// The site removes the markers of a list, so a screen reader takes the place
+// of a row from its position in the page: each row says its place in the
+// whole list, and note 101 is not "1 of 100".
+describe('the later pages of a recent list', () => {
+    test('give each row its place in the whole list', async () => {
+        const file = listPageFile({ kind: 'recent', key: 'added' }, 2)
+        const page = await readFile(join(outDir ?? '', file), 'utf8')
+        const list = /<ol\b[^>]*\sdata-list\b[^>]*>/u.exec(page)?.[0] ?? ''
+        expect(list).toContain('role="list"')
+        const start = page.indexOf(list)
+        const rows = page.slice(start, page.indexOf('</ol>', start)).match(/<li\b[^>]*>/gu) ?? []
+        const total = Object.keys(sampleFiles).length
+        expect(rows).toHaveLength(100)
+        expect(rows[0]).toContain('aria-posinset="101"')
+        expect(rows[0]).toContain(`aria-setsize="${String(total)}"`)
+        expect(rows.at(-1)).toContain('aria-posinset="200"')
     })
 })
 
