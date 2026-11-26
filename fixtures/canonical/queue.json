@@ -13410,6 +13410,7 @@
                         "toRemove": [],
                         "unchanged": ["C.md"],
                         "behind": 0,
+                        "unpublished": ["C.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [
