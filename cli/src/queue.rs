@@ -1021,9 +1021,6 @@ struct Moves {
     /// The entries that moved under a guard: they stay, and are forced
     /// removals.
     under_guard: BTreeSet<String>,
-    /// The unpublished entries that stay at their paths, moved away by a line
-    /// or not.
-    left_behind: BTreeSet<String>,
     /// The unpublished entries that a line moved to a path with no guard
     /// where the vault has a file.
     moved_elsewhere: BTreeSet<String>,
@@ -1055,6 +1052,13 @@ fn refused_target(to: &str) -> Option<String> {
     })
 }
 
+/// True when the entry at this path is not a published entry.
+fn is_unpublished(entries: &BTreeMap<String, ManifestEntry>, path: &str) -> bool {
+    entries
+        .get(path)
+        .is_none_or(|entry| entry.state != State::Published)
+}
+
 /// The moves of the rename journals (`documentation/Canonical Form.md`, "The
 /// rename journal"): the entries at their last paths, the moves, the entries
 /// that moved under a guard, and the warnings of the moves that do not happen.
@@ -1076,9 +1080,7 @@ fn apply_moves(
     // or not: they do not count at their paths for the collisions when the
     // published note really moved in (rules 5 and 6).
     let mut left_behind = BTreeSet::new();
-    // The unpublished entries that a line moved to a path with no guard where
-    // the vault has a file: the exact move, so the name rule of the forced
-    // removals does not apply to them (issue 105).
+    // The exact moves of unpublished entries, out of the name rule (issue 105).
     let mut moved_elsewhere = BTreeSet::new();
     let not_moved = |to: &str, why: &str| -> String {
         format!("the rename journal moves the note to \"{to}\", {why}")
@@ -1089,10 +1091,7 @@ fn apply_moves(
         if &to == from {
             // An unpublished entry that no line moved gives its path too
             // (decision of the author of 2026-11-26, issue 106).
-            if entries
-                .get(from)
-                .is_some_and(|entry| entry.state != State::Published)
-            {
+            if is_unpublished(entries, from) {
                 left_behind.insert(from.clone());
             }
             continue;
@@ -1126,13 +1125,8 @@ fn apply_moves(
         // An unpublished entry does not move: its old address stays gone
         // (R64), and a path that it had only while it was unpublished never
         // becomes a public former path. The guard rule above still applies.
-        if entries
-            .get(from)
-            .is_none_or(|entry| entry.state != State::Published)
-        {
-            // The line counts as the exact move only when the vault has a
-            // file at its new path: a stale line proves nothing, so the name
-            // rule of the forced removals still applies (fails closed).
+        if is_unpublished(entries, from) {
+            // A line to a path with no file proves nothing (fails closed).
             left_behind.insert(from.clone());
             if in_vault(&to) {
                 moved_elsewhere.insert(from.clone());
@@ -1193,7 +1187,6 @@ fn apply_moves(
         manifest,
         applied: moves,
         under_guard,
-        left_behind,
         moved_elsewhere,
         displaced,
         warnings,

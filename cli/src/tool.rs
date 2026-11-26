@@ -1641,7 +1641,7 @@ fn write_state(
     // face does (issue 106): a note that changed since the read is not
     // written.
     if device.vault.read(path)?.as_deref() != Some(text) {
-        return Ok(Some(changed_during_run()));
+        return Ok(StateWrite::Left(changed_during_run()));
     }
     device.vault.write(path, &wanted)?;
     Ok(StateWrite::Written)
@@ -2776,7 +2776,8 @@ fn moves_to(device: &Device, path: &str, manifest: &BTreeMap<String, ManifestEnt
     };
     let forms = near_forms(path);
     // The map gives its keys in the order of the code points.
-    fold_moves(manifest.keys().cloned(), &journals.lines)
+    // No unpublished paths, as the TypeScript face.
+    fold_moves(manifest.keys().cloned(), &journals.lines, &BTreeSet::new())
         .positions
         .iter()
         .filter(|(from, to)| from != to && forms.contains(&folded_form(to)))
