@@ -78,6 +78,8 @@ function memoryStorage(
 interface Fixture {
     readonly run: DeployRun
     readonly events: string[]
+    /** The keys of the files of the folder that the run read. */
+    readonly reads: string[]
     readonly storage: AttachmentStorage & { names: Set<string> }
     /** The output of the fake build, once it ran. */
     dist(): string
@@ -92,12 +94,15 @@ function fixture(
         stored?: string[]
         folder?: { key: string; bytes: Uint8Array }[]
         used?: string[]
+        /** The sizes of files of the folder that are not the sizes of their bytes. */
+        sizes?: Record<string, number>
         overrides?: Partial<DeployRun>
     } = {}
 ): Fixture {
     const events: string[] = []
     const storage = memoryStorage(options.stored ?? [], events)
     const local = new Map((options.folder ?? []).map((item) => [item.key, item.bytes]))
+    const reads: string[] = []
     let dist: string | undefined
     let deployed: unknown
     const run: DeployRun = {
@@ -109,7 +114,9 @@ function fixture(
         storage,
         attachments: {
             exists: (key) => Promise.resolve(local.has(key)),
+            size: (key) => Promise.resolve(options.sizes?.[key] ?? local.get(key)?.length ?? 0),
             read: (key) => {
+                reads.push(key)
                 const bytes = local.get(key)
                 return bytes === undefined
                     ? Promise.reject(new Error(`no file ${key}`))
@@ -153,6 +160,7 @@ function fixture(
     return {
         run,
         events,
+        reads,
         storage,
         dist: () => {
             if (dist === undefined) {
@@ -280,6 +288,18 @@ describe('a deployment', () => {
         expect(result.error).toContain(PLAN.key)
         expect(site.events).not.toContain(`put ${PLAN.key}`)
         expect(site.events).not.toContain('build')
+    })
+
+    // Issue 72: a file above the size limit of an attachment is never read.
+    test('stops before the build when a file of the folder is above the size limit, and reads none', async () => {
+        const site = fixture({ folder: [PHOTO, PLAN], sizes: { [PLAN.key]: 101 * 1024 * 1024 } })
+        const result = await deployRelease(site.run)
+        expect(result.build).toBe('skipped')
+        expect(result.uploaded).toBe(0)
+        expect(result.error).toContain(PLAN.key)
+        expect(result.error).toContain('above the size limit')
+        expect(site.reads).toEqual([])
+        expect(site.events.filter((event) => event.startsWith('put '))).toEqual([])
     })
 
     test('stops before the build when an upload fails, after the uploads that run end, and counts them', async () => {

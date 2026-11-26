@@ -323,6 +323,7 @@ async function deploy(
             attachments: {
                 exists: async (key) =>
                     (await stat(keyPath(key)).catch(() => undefined))?.isFile() === true,
+                size: async (key) => (await stat(keyPath(key))).size,
                 read: async (key) => new Uint8Array(await readFile(keyPath(key)))
             },
             takedown: values.takedown,

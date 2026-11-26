@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { MAX_ATTACHMENT_SIZE } from '../../plugin/src/publishing/attachments.ts'
 import { DEPLOYMENT_RECORD_FILE } from '@dsebastien-website/resolver'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
@@ -37,6 +38,8 @@ import {
 /** The files of the attachment folder of the machine, by their keys. */
 export interface AttachmentFolder {
     exists(key: string): Promise<boolean>
+    /** The number of bytes of the file of the key, from the file system: no byte is read. */
+    size(key: string): Promise<number>
     read(key: string): Promise<Uint8Array>
 }
 
@@ -973,6 +976,19 @@ async function upload(
     if (missing.length > 0) {
         throw new Error(
             `the attachments of these keys are neither in the attachment folder nor in the attachment storage: ${missing.join(', ')}`
+        )
+    }
+    // A file above the size limit is never read and never uploaded (issue 72).
+    const tooLarge: string[] = []
+    for (const key of wanted) {
+        const size = await run.attachments.size(key)
+        if (size > MAX_ATTACHMENT_SIZE) {
+            tooLarge.push(`${key} (${String(size)} bytes)`)
+        }
+    }
+    if (tooLarge.length > 0) {
+        throw new Error(
+            `the attachments of these keys are above the size limit of ${String(MAX_ATTACHMENT_SIZE)} bytes, and none is uploaded: ${tooLarge.join(', ')}`
         )
     }
     await eachItem(wanted, async (key) => {
