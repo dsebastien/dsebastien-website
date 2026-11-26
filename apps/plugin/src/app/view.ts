@@ -1041,6 +1041,9 @@ export class PublicationCenterView extends ItemView {
         // note that it wrote is a changed note for the next plan. Nothing
         // was published from these lists.
         const after = report.lists
+        if (after === undefined && center.state.activity === 'refreshing the lists') {
+            panel.createDiv({ text: 'Refreshing the lists…' })
+        }
         if (after !== undefined) {
             lines.push(
                 [

@@ -159,6 +159,7 @@ export type Activity =
     | 'answering'
     | 'editing'
     | 'reviewing'
+    | 'refreshing the lists'
 
 /** The name of an activity in a message. */
 const ACTIVITY_NAMES: Record<Activity, string> = {
@@ -171,7 +172,8 @@ const ACTIVITY_NAMES: Record<Activity, string> = {
     'unlocking': 'unlock',
     'answering': 'request of an agent',
     'editing': 'edit of the guards',
-    'reviewing': 'review of a proposal'
+    'reviewing': 'review of a proposal',
+    'refreshing the lists': 'refresh of the lists after a run'
 }
 
 /**
@@ -577,7 +579,11 @@ export class PublicationCenter {
     }
 
     /** Records that the run wrote the state property of these notes: the refresh after the run is owed (R84). */
-    #oweRefresh(set: readonly string[], removed: readonly string[]): void {
+    #oweRefresh(device: Device, set: readonly string[], removed: readonly string[]): void {
+        // Without a serializer, no refresh is owed.
+        if (device.lists === undefined) {
+            return
+        }
         this.#owed = [
             ...set.map((path) => ({ path, published: true })),
             ...removed.map((path) => ({ path, published: false }))
@@ -598,6 +604,28 @@ export class PublicationCenter {
         written: readonly PropertyWrite[],
         seen: SeenNotes | undefined
     ): Promise<void> {
+        try {
+            await this.#refreshOnce(written, seen)
+        } catch (error) {
+            // Nothing of the refresh fails the run, which is done.
+            const message = `the refresh after the run failed: ${messageOf(error)}`
+            this.#log(`Lists not refreshed after the run: ${message}`)
+            const { report } = this.#state
+            if (report !== undefined) {
+                this.#set({
+                    report: {
+                        ...report,
+                        lists: { listsRefreshed: [], refreshProblems: [{ path: '', message }] }
+                    }
+                })
+            }
+        }
+    }
+
+    async #refreshOnce(
+        written: readonly PropertyWrite[],
+        seen: SeenNotes | undefined
+    ): Promise<void> {
         let device: Device
         try {
             device = this.#device()
@@ -610,9 +638,7 @@ export class PublicationCenter {
         }
         const indexed = this.host.indexed?.bind(this.host)
         const late =
-            written.length > 0 && indexed !== undefined
-                ? await indexed(written, INDEX_LIMIT).catch(() => written.map((one) => one.path))
-                : []
+            written.length > 0 && indexed !== undefined ? await indexed(written, INDEX_LIMIT) : []
         const found = await refreshAfterRun(device, seen)
         const lists: ListsAfterRun = {
             listsRefreshed: found.listsRefreshed,
@@ -885,7 +911,8 @@ export class PublicationCenter {
         // author: only its own failure replaces it. The failure of a
         // publication or a takedown stays until the next one starts.
         const pushes = activity === 'publishing' || activity === 'taking down'
-        if (activity !== 'answering') {
+        // The refresh after a run keeps the error of its run too (R84).
+        if (activity !== 'answering' && activity !== 'refreshing the lists') {
             const { error: _old, failure: kept, ...rest } = this.#state
             this.#state = pushes || kept === undefined ? rest : { ...rest, failure: kept }
         }
@@ -895,6 +922,10 @@ export class PublicationCenter {
         // notes: the events of their writes wait for the end of the work,
         // when the writes are recorded (review of issue 106).
         const waiting: NoteEvent[] | undefined = pushes || activity === 'editing' ? [] : undefined
+        // A run that wrote the state property owes the refresh of the lists
+        // that read it (R84), after the check, which reads the notes.
+        let owed: readonly PropertyWrite[] | undefined
+        let seen: SeenNotes | undefined
         this.#duringRun = waiting
         const running = (async () => {
             try {
@@ -918,12 +949,8 @@ export class PublicationCenter {
                 if (outcome !== undefined) {
                     this.#set({ outcome })
                 }
-                // A run that wrote the state property owes the refresh of the
-                // lists that read it (R84): after the check, which reads the
-                // notes that it needs.
-                const owed = this.#owed
+                owed = this.#owed
                 this.#owed = undefined
-                let seen: SeenNotes | undefined
                 if (after !== 'none') {
                     this.#seen = owed === undefined ? undefined : new SeenNotes()
                     try {
@@ -939,11 +966,16 @@ export class PublicationCenter {
                         this.#seen = undefined
                     }
                 }
-                if (owed !== undefined) {
-                    await this.#refreshAfter(owed, seen)
-                }
             } finally {
                 this.#set({ activity: 'idle' })
+            }
+            // The refresh after the run is its own activity: the deploy and
+            // the answer of an agent do not wait for it.
+            const written = owed
+            if (written !== undefined) {
+                void this.#run('refreshing the lists', 'Refresh of the lists after the run', () =>
+                    this.#refreshAfter(written, seen)
+                )
             }
         })()
         this.#current = running
@@ -1115,7 +1147,7 @@ export class PublicationCenter {
                     report: { kind: 'publication', report, addresses: addressesOf(report) }
                 })
                 this.#log(`Publication done: ${countsOf(report)}`)
-                this.#oweRefresh(report.propertySet, report.propertyRemoved)
+                this.#oweRefresh(device, report.propertySet, report.propertyRemoved)
             },
             'author'
         )
@@ -1183,7 +1215,7 @@ export class PublicationCenter {
                 await this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
-                this.#oweRefresh([], report.propertyRemoved)
+                this.#oweRefresh(device, [], report.propertyRemoved)
                 if (report.storageWarnings.length > 0) {
                     // A file that stays in the storage can still be public (issue 38).
                     throw new Error(
@@ -1335,7 +1367,7 @@ export class PublicationCenter {
                     report: { kind: 'publication', report, addresses: addressesOf(report) }
                 })
                 this.#log(`Agent publication done: ${countsOf(report)}`)
-                this.#oweRefresh(report.propertySet, report.propertyRemoved)
+                this.#oweRefresh(device, report.propertySet, report.propertyRemoved)
                 return outcomeOfPublication(report)
             }
             case 'takedown': {
@@ -1353,7 +1385,7 @@ export class PublicationCenter {
                 )
                 await this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
-                this.#oweRefresh([], report.propertyRemoved)
+                this.#oweRefresh(device, [], report.propertyRemoved)
                 this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)
                 return outcomeOfTakedown(report)
             }

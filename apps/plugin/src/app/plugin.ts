@@ -448,7 +448,6 @@ export class VaultPublishPlugin extends Plugin {
         await saveUnsavedEditors(editors, file)
     }
 
-    /** The size and the time of the last change of a note, from the adapter of Obsidian. */
     /**
      * Waits until the metadata cache of Obsidian holds the state property of
      * each note as the run left it (`true`, or no property), at most `limit`
@@ -456,7 +455,8 @@ export class VaultPublishPlugin extends Plugin {
      * indexes from the same events; the serializer says itself when its
      * index is still busy.
      */
-    #indexed(written: readonly PropertyWrite[], limit: number): Promise<readonly string[]> {
+    async #indexed(written: readonly PropertyWrite[], limit: number): Promise<readonly string[]> {
+        // Async: an error of Obsidian becomes a rejection, which the center reports.
         const { metadataCache, vault } = this.app
         const isRead = (one: PropertyWrite): boolean => {
             const file = vault.getFileByPath(one.path)
@@ -468,9 +468,9 @@ export class VaultPublishPlugin extends Plugin {
         }
         let waiting = written.filter((one) => !isRead(one))
         if (waiting.length === 0) {
-            return Promise.resolve([])
+            return []
         }
-        return new Promise((resolve) => {
+        return await new Promise((resolve) => {
             const done = (): void => {
                 window.clearTimeout(timer)
                 metadataCache.offref(ref)
@@ -486,6 +486,7 @@ export class VaultPublishPlugin extends Plugin {
         })
     }
 
+    /** The size and the time of the last change of a note, from the adapter of Obsidian. */
     async #statOf(path: string): Promise<FileStat | undefined> {
         try {
             const stat = await this.app.vault.adapter.stat(path)

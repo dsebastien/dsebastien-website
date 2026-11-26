@@ -1501,8 +1501,15 @@ describe('the refresh of the frozen lists after a run in the publication center 
      */
     async function setUpAfter(
         stores: TestStores,
-        late: readonly string[] = []
-    ): Promise<AfterSetup> {
+        late: readonly string[] = [],
+        options: {
+            /** The refresh after a run waits for this before it answers. */
+            hold?: Promise<void>
+            /** The metadata cache throws at once. */
+            indexThrows?: boolean
+        } = {}
+    ): Promise<AfterSetup & { deploys: DeployKind[] }> {
+        const deploys: DeployKind[] = []
         const vault = await copyFixtureVault(stores)
         const copy = await makeContentStoreCopy(stores)
         await writeFile(
@@ -1531,6 +1538,7 @@ describe('the refresh of the frozen lists after a run in the publication center 
                             }
                         }
                         asked.push([...paths])
+                        await options.hold
                         events.push(
                             `refresh: report ${center.state.report?.kind ?? 'none'}, ${center.state.log.at(-1)?.text ?? ''}`
                         )
@@ -1552,7 +1560,17 @@ describe('the refresh of the frozen lists after a run in the publication center 
             now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
             deviceName: 'garden-shed',
             stat: (path) => statOf(vault, path),
+            deploy: (kind) => {
+                deploys.push(kind)
+                return Promise.resolve({
+                    report: reportOfRun(0, `${LIVE_LINE}\n`, kind),
+                    output: `${LIVE_LINE}\n`
+                })
+            },
             indexed: (written) => {
+                if (options.indexThrows === true) {
+                    throw new Error('the metadata cache stopped')
+                }
                 events.push(
                     `indexed: ${written.map((one) => `${one.path} ${String(one.published)}`).join(', ')}`
                 )
@@ -1561,7 +1579,14 @@ describe('the refresh of the frozen lists after a run in the publication center 
                 )
             }
         })
-        return { center, asked, events }
+        return { center, asked, events, deploys }
+    }
+
+    /** Waits for the end of the refresh after a run, its own activity. */
+    async function idle(center: PublicationCenter): Promise<void> {
+        while (center.state.activity !== 'idle') {
+            await Bun.sleep(10)
+        }
     }
 
     /** What the report of the last run says about the refresh after it. */
@@ -1576,6 +1601,7 @@ describe('the refresh of the frozen lists after a run in the publication center 
         center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
 
         await center.publish()
+        await idle(center)
 
         expect(center.state.error).toBeUndefined()
         expect(asked).toEqual([[PUBLIC_LIST]])
@@ -1591,9 +1617,11 @@ describe('the refresh of the frozen lists after a run in the publication center 
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
         await center.publish()
+        await idle(center)
         asked.length = 0
 
         await center.serve({ tool: 'unpublish', paths: [NOTE] })
+        await idle(center)
 
         expect(center.state.error).toBeUndefined()
         expect(asked).toEqual([[PUBLIC_LIST]])
@@ -1606,9 +1634,11 @@ describe('the refresh of the frozen lists after a run in the publication center 
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
         await center.publish()
+        await idle(center)
         asked.length = 0
 
         await center.takedown([NOTE])
+        await idle(center)
 
         expect(center.state.error).toBeUndefined()
         expect(asked).toEqual([[PUBLIC_LIST]])
@@ -1622,11 +1652,11 @@ describe('the refresh of the frozen lists after a run in the publication center 
         center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
 
         await center.publish()
+        await idle(center)
 
-        // The check after the run ends before the refresh.
         expect(events).toEqual([
             expect.stringContaining(`indexed: ${NOTE} true`) as string,
-            expect.stringMatching(/^refresh: report publication, Check done/u) as string
+            expect.stringMatching(/^refresh: report publication, /u) as string
         ])
         const log = center.state.log.map((line) => line.text)
         expect(log.findIndex((text) => text.startsWith('Publication done'))).toBeLessThan(
@@ -1641,6 +1671,7 @@ describe('the refresh of the frozen lists after a run in the publication center 
         center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
 
         await center.publish()
+        await idle(center)
 
         expect(asked).toEqual([[PUBLIC_LIST]])
         expect(center.state.report?.lists?.refreshProblems).toEqual([
@@ -1661,6 +1692,7 @@ describe('the refresh of the frozen lists after a run in the publication center 
             toggleRow(queue, toggleRow(queue, choices, NOTE), PUBLIC_LIST)
         )
         await center.publish()
+        await idle(center)
         expect(refreshedOf(center)).toEqual([PUBLIC_LIST])
         expect(center.state.log.map((line) => line.text)).toContain(
             `Lists refreshed by the Dataview Serializer: "${PUBLIC_LIST}"`
@@ -1669,5 +1701,49 @@ describe('the refresh of the frozen lists after a run in the publication center 
         await center.check()
 
         expect(center.state.queue?.changed).toContain(PUBLIC_LIST)
+    }, 60_000)
+
+    test('the deploy and the answer of an agent do not wait for the refresh after the run', async () => {
+        await using stores = await makeTestStores()
+        let release = (): void => undefined
+        const hold = new Promise<void>((resolve) => {
+            release = resolve
+        })
+        const { center, asked, deploys } = await setUpAfter(stores, [], { hold })
+        await center.check()
+        const planned = JSON.parse(
+            (await center.serve({ tool: 'plan', include: [NOTE], hold: [], remove: [], pair: [] }))
+                .output
+        ) as { id: string }
+
+        const outcome = await center.serve({ tool: 'publish', plan: planned.id })
+
+        expect(outcome.deploy).toBeDefined()
+        expect(deploys).toEqual([{ push: 'ok', takedown: false }])
+        expect(center.state.report?.lists).toBeUndefined()
+        expect(center.state.activity).toBe('refreshing the lists')
+        release()
+        while (center.state.activity !== 'idle') {
+            await Bun.sleep(10)
+        }
+        expect(asked).toEqual([[PUBLIC_LIST]])
+        expect(center.state.report?.lists?.listsRefreshed).toEqual([PUBLIC_LIST])
+    }, 60_000)
+
+    test('a refresh that throws is reported, and the deploy starts', async () => {
+        await using stores = await makeTestStores()
+        const { center, deploys } = await setUpAfter(stores, [], { indexThrows: true })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+        await idle(center)
+
+        expect(deploys).toEqual([{ push: 'ok', takedown: false }])
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.report?.lists?.refreshProblems).toContainEqual({
+            path: '',
+            message: 'the refresh after the run failed: the metadata cache stopped'
+        })
     }, 60_000)
 })
