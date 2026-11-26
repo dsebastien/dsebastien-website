@@ -33,16 +33,14 @@ function readsPublication(text: string): boolean {
 }
 
 /**
- * What a scan of the vault read, for the refresh after a run: every note
- * that it read, and the text of the rare notes whose list reads a property
- * of the publication. So the refresh reads the vault no second time.
+ * What a scan of the vault read, for the refresh after a run: the text of
+ * the rare notes whose list reads a property of the publication. So the
+ * refresh reads the texts of the vault no second time.
  */
 export class SeenNotes {
-    readonly paths = new Set<string>()
     readonly candidates = new Map<string, string>()
 
     note(path: string, text: string): void {
-        this.paths.add(path)
         if (readsPublication(text)) {
             this.candidates.set(path, text)
         }
@@ -72,8 +70,9 @@ export function seeingVault(vault: Vault, seen: SeenNotes): Vault {
  * The notes to refresh after a run: the notes outside the guards with a list
  * to refresh (rule 4 of "The frozen lists of a note") whose query names a
  * property of `PUBLICATION_PROPERTIES`, sorted by path. With `seen`, the
- * notes that the check after the run read; without it, one read of each
- * note outside the folders of the deny list. A note with a twin is not
+ * texts that the check after the run read; without it, one read of each
+ * note outside the folders of the deny list. The notes are always listed
+ * again, which reads no file, for the twins. A note with a twin is not
  * asked (R72), also a twin of a file of the deny list, and the serializer
  * face does not ask a path that Obsidian changes (issue 110). Each note is
  * read again just before the call, and its guards are checked on that text.
@@ -88,12 +87,13 @@ export async function notesToRefreshAfter(
     const vault = device.vault.forRun()
     const configuration = parseConfiguration(await device.store.read(CONFIGURATION_FILE))
     const problems: { path: string; message: string }[] = []
-    let notes: Iterable<string>
+    // The listing reads no file: the twins are computed over every note of
+    // now, whatever the check read (R72).
+    const notes = (await scanVault(vault, configuration)).notes
     let candidates: Iterable<string>
     if (seen === undefined) {
-        const scanned = (await scanVault(vault, configuration)).notes
         const found: string[] = []
-        for (const path of scanned) {
+        for (const path of notes) {
             try {
                 const text = await vault.read(path)
                 if (text !== undefined && readsPublication(text)) {
@@ -106,10 +106,8 @@ export async function notesToRefreshAfter(
                 })
             }
         }
-        notes = scanned
         candidates = found
     } else {
-        notes = seen.paths
         candidates = seen.candidates.keys()
     }
     const { files: denied } = await scanDenied(vault, configuration)

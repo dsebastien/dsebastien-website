@@ -318,6 +318,18 @@ describe('the refresh after a run reads little and fails closed (R84 review)', (
         expect(calls).toEqual([[PUBLIC_LIST]])
     }, 60_000)
 
+    test('the twins come from a listing of the vault, not from what the check read', async () => {
+        await using stores = await makeTestStores()
+        const { device, vault, calls } = await setUp(stores)
+        await note(vault, PUBLIC_LIST.replace('Public notes', 'Public notes'), PUBLIC_QUERY)
+        const seen = new SeenNotes()
+        seen.note(PUBLIC_LIST, PUBLIC_QUERY)
+
+        await refreshAfterRun(device, seen)
+
+        expect(calls).toEqual([])
+    }, 60_000)
+
     test('a note that cannot be read is reported', async () => {
         await using stores = await makeTestStores()
         const { device: plain } = await setUp(stores)
