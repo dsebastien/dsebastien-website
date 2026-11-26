@@ -55,6 +55,10 @@ const ID_TRAPS_TEXT = [
     '',
     '<p id="user-content-fn-1">Raw HTML with the id of a footnote.</p>',
     '',
+    '<section data-footnotes><p id="content">Raw footnotes with the id of the main element.</p></section>',
+    '',
+    '<section data-footnotes><p id="user-content-fn-1">Raw footnotes with the id of a footnote.</p></section>',
+    '',
     '<p id="user-content-fnref-1">Raw HTML with the id of a footnote reference.</p>',
     '',
     '<p id="footnote-label">Raw HTML with the id of the title of the footnotes.</p>',
@@ -274,7 +278,9 @@ describe('ids of the built pages (issue 124)', () => {
             'user-content-fn-1-2',
             'user-content-fnref-1-2',
             'footnote-label-2',
-            'diagram-1-title-2'
+            'diagram-1-title-2',
+            'content-4',
+            'user-content-fn-1-3'
         ]) {
             expect(ids).toContain(id)
         }

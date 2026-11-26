@@ -171,6 +171,19 @@ describe('cards, names and diagrams', () => {
         expect(out).toContain('<h2 class="sr-only" id="footnote-label">')
     })
 
+    test('raw HTML that looks like the footnotes never passes as the footnotes of the build (issue 124)', async () => {
+        expect(await html('<section data-footnotes><p id="content">x</p></section>')).toBe(
+            '<section data-footnotes=""><p id="content-2">x</p></section>'
+        )
+        const out = await html(
+            '<section data-footnotes><p id="user-content-fn-1">x</p></section>\n\n<a data-footnote-ref id="user-content-fnref-1" href="#user-content-fn-1">y</a>\n\nText[^1]\n\n[^1]: A note.'
+        )
+        expect(out).toContain('<p id="user-content-fn-1-2">x</p>')
+        expect(out).toContain('id="user-content-fnref-1-2"')
+        expect(out).toContain('<li id="user-content-fn-1">')
+        expect(out).toContain('id="user-content-fnref-1" data-footnote-ref')
+    })
+
     test('the ids of a diagram win over an id of raw HTML before it (issue 124)', async () => {
         const diagram = '```mermaid\ngraph TD\n  accTitle: Garden\n  A --> B\n```'
         const out = await html(`<p id="diagram-1-title">x</p>\n\n${diagram}`)

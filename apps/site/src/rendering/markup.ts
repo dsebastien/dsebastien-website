@@ -11,7 +11,7 @@ import rehypeSanitize from 'rehype-sanitize'
 import temml from 'temml'
 import { linkPathOfDestination, wikilinksOf } from '../../../plugin/src/publishing/links.ts'
 import { allowList } from './allow-list.ts'
-import { noteIds, type IdOfNote } from './anchors.ts'
+import { FRAME_IDS, freeId, noteIds, type IdOfNote } from './anchors.ts'
 import { tagOfText } from '../tags.ts'
 import { encode, MARK } from './mark.ts'
 
@@ -609,6 +609,30 @@ function allElements(nodes: readonly ElementContent[]): Element[] {
     )
 }
 
+/** The property that marks the footnotes that the build writes (issue 124). */
+const BUILT_MARK = 'dataBuiltMark'
+
+/**
+ * The step of the HTML tree before the raw HTML is read: every element is
+ * ours, so it marks the footnotes (their section and the references to them)
+ * with a random value of this render. `rehypeNote` gives their ids priority
+ * and drops the mark; raw HTML cannot know the value.
+ */
+export function rehypeBuiltMark() {
+    return (tree: HastRoot, file: { data: Record<string, unknown> }): void => {
+        const mark = crypto.randomUUID()
+        file.data[BUILT_MARK] = mark
+        for (const { node } of elementsOf(tree)) {
+            if (
+                (isElement(node, 'section') && node.properties['dataFootnotes'] !== undefined) ||
+                (isElement(node, 'a') && node.properties['dataFootnoteRef'] !== undefined)
+            ) {
+                for (const element of allElements([node])) element.properties[BUILT_MARK] = mark
+            }
+        }
+    }
+}
+
 /**
  * The step of the HTML tree after the allow list: math, Mermaid diagrams,
  * then the ids (URL-14, issue 124): the ids that the build writes (the
@@ -617,7 +641,7 @@ function allElements(nodes: readonly ElementContent[]): Element[] {
  * allow list, because what it writes is ours.
  */
 export function rehypeNote() {
-    return (tree: HastRoot): void => {
+    return (tree: HastRoot, file: { data: Record<string, unknown> }): void => {
         let diagrams = 0
         /** The elements that the build writes, whose ids win over an id of the note. */
         const built = new Set<Element>()
@@ -644,20 +668,24 @@ export function rehypeNote() {
             }
         }
         const all = elementsOf(tree).map(({ node }) => node)
-        // The footnotes: their section and the references to them.
+        // The footnotes of the build: the elements that `rehypeBuiltMark` marked
+        // before the raw HTML was read. Raw HTML may write the same `data-footnote*`
+        // marks (the allow list keeps `data*`), never the mark of this render.
+        const mark = file.data[BUILT_MARK]
         for (const node of all) {
-            if (isElement(node, 'section') && node.properties['dataFootnotes'] !== undefined) {
-                keep([node])
-            } else if (isElement(node, 'a') && node.properties['dataFootnoteRef'] !== undefined) {
-                built.add(node)
-            }
+            if (mark !== undefined && node.properties[BUILT_MARK] === mark) built.add(node)
+            delete node.properties['dataBuiltMark']
         }
+        // The ids that the build writes keep clear of the frame and of each other.
         const taken = new Set<string>()
         const ofNote: { node: Element; item: IdOfNote }[] = []
         for (const node of all) {
             const id = node.properties['id']
             if (built.has(node)) {
-                if (typeof id === 'string') taken.add(id)
+                if (typeof id !== 'string') continue
+                const free = freeId(id, new Set([...FRAME_IDS, ...taken]))
+                node.properties['id'] = free
+                taken.add(free)
             } else if (typeof id === 'string') {
                 ofNote.push({ node, item: { id } })
             } else if (/^h[1-6]$/u.test(node.tagName)) {
@@ -692,6 +720,12 @@ export function markdownProcessor(): ReturnType<typeof astroUnified> {
             remarkObsidian,
             [remarkNote, { version: MARKUP_VERSION, packages: RENDERING_PACKAGES }]
         ],
-        rehypePlugins: [rehypeRaw, [rehypeSanitize, allowList], rehypeNote, [rehypePrism, []]]
+        rehypePlugins: [
+            rehypeBuiltMark,
+            rehypeRaw,
+            [rehypeSanitize, allowList],
+            rehypeNote,
+            [rehypePrism, []]
+        ]
     })
 }
