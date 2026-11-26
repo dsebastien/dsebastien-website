@@ -605,6 +605,17 @@ pub fn compute_guard_queues(
     Ok((base, after))
 }
 
+/// The paths of the unpublished entries of the manifest, as the content store
+/// has them: the exact paths that a takedown takes (issue 104). The map gives
+/// its paths in the order of the code points.
+fn unpublished_of(entries: &BTreeMap<String, ManifestEntry>) -> Vec<String> {
+    entries
+        .iter()
+        .filter(|(_, entry)| entry.state == State::Unpublished)
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
 /// Computes the queue from one read of the vault.
 fn queue_of(
     vault: &Vault,
@@ -705,12 +716,7 @@ fn queue_of(
     };
     queue.missing = missing_of(&queue.to_remove, &guards);
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
-    // The map gives its paths in the order of the code points.
-    queue.unpublished = entries
-        .iter()
-        .filter(|(_, entry)| entry.state == State::Unpublished)
-        .map(|(path, _)| path.clone())
-        .collect();
+    queue.unpublished = unpublished_of(entries);
     let waiting = waiting_for_moves(&queue.missing, &moves.applied);
     queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
     queue.moved_edited = hold_moved_edited(&moves.applied, &queue.changed, &notes, &mut manifest);
