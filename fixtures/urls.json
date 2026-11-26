@@ -894,11 +894,11 @@
             "cacheControl": "public, max-age=3600"
         },
         {
-            "name": "a prefix rule needs a path under the folder",
+            "name": "a prefix rule needs a path under the folder: the folder itself is a former folder (R82)",
             "request": "/Old+Beds/",
-            "status": 404,
-            "suggestions": [],
-            "format": "html"
+            "status": 301,
+            "location": "/10+Garden/Herb+bed/Herb+bed",
+            "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a query encoded into the path goes back into a real query (RES-02)",
