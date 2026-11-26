@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FIXTURE_STORE_CATALOG } from '@dsebastien-website/testing'
-import { readStoreCatalog, storeCatalogFrom } from './catalog.ts'
+import { readCatalog, readStoreCatalog, storeCatalogFrom, type CatalogSource } from './catalog.ts'
 
 // The store catalog is a contract (CAT-02, business rule 8): the schema of the
 // fields that the site reads. The shape test (TEST-04, SEAM-06) runs it on the
@@ -111,7 +111,38 @@ describe('the shape of the store catalog (TEST-04)', () => {
     })
 })
 
+describe('the catalog as the build reads it, as the current site does', () => {
+    test('leaves out a product with a broken id, name, address or tags, and keeps the others', async () => {
+        const catalog = readCatalog(
+            await withFirstProduct((product) => (product['href'] = 'javascript:alert(1)'))
+        )
+        expect(catalog.products.map((product) => product.id)).toEqual([
+            'barrel-workshop',
+            'rain-garden-kit'
+        ])
+        expect(catalog.problems).toEqual(['products[0].href is not an https address'])
+    })
+
+    test('keeps a product without a short description, a price tier or a category', async () => {
+        const catalog = readCatalog(
+            await withFirstProduct((product) => {
+                delete product['shortDescription']
+                delete product['priceTier']
+                product['mainCategory'] = 3
+            })
+        )
+        expect(catalog.products[0]?.id).toBe('water-wise-garden')
+        expect(catalog.products[0]?.shortDescription).toBeUndefined()
+        expect(catalog.products[0]?.priceTier).toBeUndefined()
+        expect(catalog.products[0]?.mainCategory).toBeUndefined()
+        expect(catalog.problems).toEqual(['products[0].mainCategory is not a text'])
+    })
+})
+
 describe('the reading of the store catalog by the build (BUILD-06)', () => {
+    const LIVE = 'https://store.example/products-light.json'
+    // Two days after the recorded catalog was generated.
+    const NOW = new Date('2031-03-03T06:00:00Z')
     let folder = ''
     beforeEach(async () => {
         folder = await mkdtemp(join(tmpdir(), 'store-catalog-'))
@@ -120,58 +151,103 @@ describe('the reading of the store catalog by the build (BUILD-06)', () => {
         await rm(folder, { recursive: true, force: true })
     })
 
+    function where(change: Partial<CatalogSource>): CatalogSource {
+        return { source: LIVE, copy: join(folder, 'copy.json'), live: LIVE, now: NOW, ...change }
+    }
+
+    function serve(body: string): NonNullable<CatalogSource['fetch']> {
+        return () => Promise.resolve(new Response(body))
+    }
+
+    async function keepCopy(): Promise<void> {
+        const body = await readFile(FIXTURE_STORE_CATALOG, 'utf8')
+        await readStoreCatalog(where({ fetch: serve(body) }))
+    }
+
     test('reads no catalog when the build names none', async () => {
-        const read = await readStoreCatalog({ source: undefined, copy: join(folder, 'copy.json') })
-        expect(read).toEqual({ products: [], warnings: [] })
+        expect(await readStoreCatalog(where({ source: undefined }))).toEqual({
+            products: [],
+            warnings: []
+        })
     })
 
-    test('reads a file, and keeps it as the last valid copy', async () => {
-        const copy = join(folder, 'copy.json')
-        const read = await readStoreCatalog({ source: FIXTURE_STORE_CATALOG, copy })
+    test('reads a file, and never keeps it as the last valid copy', async () => {
+        const read = await readStoreCatalog(where({ source: FIXTURE_STORE_CATALOG }))
         expect(read.products).toHaveLength(3)
         expect(read.warnings).toEqual([])
-        expect(storeCatalogFrom(JSON.parse(await readFile(copy, 'utf8'))).products).toHaveLength(3)
+        expect(await readFile(join(folder, 'copy.json'), 'utf8').catch(() => 'none')).toBe('none')
     })
 
-    test('reads an address with one request', async () => {
+    test('reads the live address with one request and a time limit, and keeps its copy', async () => {
         const asked: string[] = []
         const body = await readFile(FIXTURE_STORE_CATALOG, 'utf8')
-        const read = await readStoreCatalog({
-            source: 'https://store.example/products-light.json',
-            copy: join(folder, 'copy.json'),
-            fetch: (address) => {
-                asked.push(address)
-                return Promise.resolve(new Response(body))
-            }
-        })
-        expect(asked).toEqual(['https://store.example/products-light.json'])
+        const read = await readStoreCatalog(
+            where({
+                fetch: (address, init) => {
+                    asked.push(address)
+                    expect(init.signal).toBeInstanceOf(AbortSignal)
+                    return Promise.resolve(new Response(body))
+                }
+            })
+        )
+        expect(asked).toEqual([LIVE])
         expect(read.products).toHaveLength(3)
+        expect(await readFile(join(folder, 'copy.json'), 'utf8')).toBe(body)
     })
 
-    test('uses the last valid copy when the catalog breaks the schema, and says so', async () => {
-        const copy = join(folder, 'copy.json')
-        await readStoreCatalog({ source: FIXTURE_STORE_CATALOG, copy })
-        const broken = join(folder, 'broken.json')
-        await writeFile(broken, JSON.stringify(await withFirstProduct((p) => delete p['href'])))
-        const read = await readStoreCatalog({ source: broken, copy })
-        expect(read.products).toHaveLength(3)
-        expect(read.warnings).toEqual([
-            expect.stringContaining('products[0].href') as unknown as string,
-            'the build uses the last valid copy of the store catalog'
+    test('refuses an address that is not https', async () => {
+        const read = await readStoreCatalog(
+            where({ source: 'http://store.example/products-light.json' })
+        )
+        expect(read.products).toEqual([])
+        expect(read.warnings[0]).toContain('must have an https address')
+    })
+
+    test('uses the products that pass, says why, and keeps no copy of a broken catalog', async () => {
+        const broken = JSON.stringify(await withFirstProduct((p) => delete p['href']))
+        const read = await readStoreCatalog(where({ fetch: serve(broken) }))
+        expect(read.products.map((product) => product.id)).toEqual([
+            'barrel-workshop',
+            'rain-garden-kit'
         ])
-        // The broken catalog never replaces the valid copy.
-        expect(storeCatalogFrom(JSON.parse(await readFile(copy, 'utf8'))).products).toHaveLength(3)
+        expect(read.warnings).toEqual([
+            'the store catalog breaks its schema: products[0].href is not a text',
+            'the build uses the 2 products that pass it'
+        ])
+        expect(await readFile(join(folder, 'copy.json'), 'utf8').catch(() => 'none')).toBe('none')
+    })
+
+    test('uses the last valid copy when the catalog cannot be read, and says so', async () => {
+        await keepCopy()
+        const read = await readStoreCatalog(where({ fetch: serve('<html>') }))
+        expect(read.products).toHaveLength(3)
+        expect(read.warnings[1]).toBe(
+            'the build uses the last valid copy of the store catalog, of 2031-03-01T06:00:00.000Z'
+        )
+    })
+
+    test('shows no product ad when the last valid copy is older than 7 days', async () => {
+        await keepCopy()
+        const read = await readStoreCatalog(
+            where({
+                now: new Date('2031-03-08T06:00:01Z'),
+                fetch: () => Promise.resolve(new Response('down', { status: 503 }))
+            })
+        )
+        expect(read.products).toEqual([])
+        expect(read.warnings).toEqual([
+            'the store catalog answers 503',
+            'the last valid copy of the store catalog is older than 7 days (2031-03-01T06:00:00.000Z): the build shows no product ad'
+        ])
     })
 
     test('shows no product ad when the catalog cannot be read and no valid copy exists', async () => {
-        const read = await readStoreCatalog({
-            source: 'https://store.example/products-light.json',
-            copy: join(folder, 'copy.json'),
-            fetch: () => Promise.resolve(new Response('down', { status: 503 }))
-        })
+        const read = await readStoreCatalog(
+            where({ fetch: () => Promise.resolve(new Response('down', { status: 503 })) })
+        )
         expect(read.products).toEqual([])
         expect(read.warnings).toEqual([
-            expect.stringContaining('503') as unknown as string,
+            'the store catalog answers 503',
             'no valid copy of the store catalog exists: the build shows no product ad'
         ])
     })

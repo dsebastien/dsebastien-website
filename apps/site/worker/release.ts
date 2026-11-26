@@ -162,6 +162,8 @@ export interface DeployRun {
     readonly headers: string
     /** Builds the site and gives the folder of its output. It throws when the build fails. */
     readonly build: () => Promise<string>
+    /** What the build warns about after it succeeded (the store catalog it could not use, issue 56), for the result. */
+    readonly buildWarnings?: () => Promise<readonly string[]>
     /** The limits of the host. By default `HOST_LIMITS`. */
     readonly limits?: HostLimits
     /**
@@ -826,6 +828,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         let record: DeploymentRecord
         try {
             dist = await run.build()
+            warnings.push(...((await run.buildWarnings?.()) ?? []))
             // A wrong folder gets no file: the check comes before the writes.
             const output = await checkOutput(dist)
             if (output !== undefined) {

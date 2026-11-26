@@ -36,7 +36,9 @@ const { products, page } = Astro.props
                     )}
                     <span class='ad-kicker'>{kickerOf(product)}</span>
                     <span class='ad-name'>{product.name}</span>
-                    <span class='ad-line'>{product.shortDescription}</span>
+                    {product.shortDescription !== undefined && (
+                        <span class='ad-line'>{product.shortDescription}</span>
+                    )}
                     <span class='ad-more'>Learn more →</span>
                 </a>
             </li>

@@ -20,7 +20,6 @@ export function titleCase(text: string): string {
 
 /** The line above the name of a product: the label of its tier and its category. */
 export function kickerOf(product: Product): string {
-    return [TIER_LABELS[product.priceTier] ?? '', titleCase(product.mainCategory)]
-        .filter((part) => part !== '')
-        .join(' · ')
+    const tier = product.priceTier === undefined ? '' : (TIER_LABELS[product.priceTier] ?? '')
+    return [tier, titleCase(product.mainCategory ?? '')].filter((part) => part !== '').join(' · ')
 }

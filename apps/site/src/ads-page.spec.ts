@@ -94,11 +94,17 @@ beforeAll(async () => {
     for (const [path, html] of good.pages) {
         pages.set(path, html)
     }
-    // A catalog that breaks the schema, with no valid copy before it.
+    // A catalog that breaks the schema: a product with a `javascript:` address,
+    // and a name with the characters of HTML.
     const catalog = JSON.parse(await readFile(FIXTURE_STORE_CATALOG, 'utf8')) as {
         products: Record<string, unknown>[]
     }
-    delete catalog.products[0]?.['href']
+    const [first, , third] = catalog.products
+    if (first === undefined || third === undefined) {
+        throw new Error('the recorded catalog has fewer than three products')
+    }
+    first['href'] = 'javascript:alert(1)'
+    third['name'] = 'Rain <"&> Kit'
     const brokenFile = join(outDir, 'broken-catalog.json')
     await writeFile(brokenFile, JSON.stringify(catalog))
     Object.assign(broken, await build(contentStore, join(outDir, 'broken'), brokenFile))
@@ -175,14 +181,24 @@ describe('the ads of the built site', () => {
 })
 
 describe('the build with a store catalog that breaks its schema', () => {
-    test('completes, says why, and ships no ad', () => {
+    test('completes, says why, and shows the products that pass', () => {
         expect(broken.exitCode).toBe(0)
-        expect(broken.output).toContain('products[0].href')
         expect(broken.output).toContain(
-            'no valid copy of the store catalog exists: the build shows no product ad'
+            '[store-catalog] the store catalog breaks its schema: products[0].href is not an https address'
         )
         const html = broken.pages.get('/10 Garden/Drip irrigation') ?? ''
-        expect(html).toContain('data-note-body')
-        expect(html).not.toContain('data-cta-product')
+        expect(productsOf(adOf(html))).toEqual(['rain-garden-kit'])
+    })
+
+    test('a javascript: address never reaches a page', () => {
+        for (const html of broken.pages.values()) {
+            expect(html).not.toContain('javascript:')
+        }
+    })
+
+    test('a name with the characters of HTML is escaped', () => {
+        const ad = adOf(broken.pages.get('/10 Garden/Drip irrigation') ?? '') ?? ''
+        expect(ad).not.toContain('Rain <"&> Kit')
+        expect(ad).toMatch(/Rain &lt;(&quot;|")&amp;&gt; Kit/u)
     })
 })

@@ -212,6 +212,21 @@ describe('a deployment that stops before its first step', () => {
 })
 
 describe('a deployment', () => {
+    // Issue 56: the build reports a catalog that it could not use in the result line.
+    test('gives the warnings of the build in its result', async () => {
+        const site = fixture({
+            stored: [PHOTO.key, OLD.key],
+            folder: [PHOTO, PLAN],
+            overrides: {
+                buildWarnings: () =>
+                    Promise.resolve(['[store-catalog] the store catalog answers 503'])
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result.warnings).toEqual(['[store-catalog] the store catalog answers 503'])
+        expect(result.deploy).toBe('ok')
+    })
+
     test('uploads the used files that the storage lacks before the build, then cleans the storage once live', async () => {
         const site = fixture({ stored: [PHOTO.key, OLD.key], folder: [PHOTO, PLAN] })
         const result = await deployRelease(site.run)

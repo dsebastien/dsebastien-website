@@ -280,6 +280,8 @@ async function deploy(
         }
         const url = `https://${target.host}/`
         const folder = join(ROOT, '.cache', 'deploy', target.worker)
+        // The warnings of the store catalog of the build (issue 56).
+        const catalogReport = join(folder, 'store-catalog-warnings.txt')
         const keyPath = (key: string): string => {
             if (attachments === undefined || !ATTACHMENT_KEY.test(key)) {
                 throw new Error(`"${key}" is not a key of the attachment storage`)
@@ -354,16 +356,24 @@ async function deploy(
                 }
                 // The ads read the live store catalog, unless STORE_CATALOG names
                 // another source (BUILD-06, CAT-01).
+                // Its warnings go into the result line.
                 const catalog = process.env['STORE_CATALOG']
+                await mkdir(folder, { recursive: true })
+                await writeFile(catalogReport, '')
                 await run(['bun', 'run', 'build:site'], {
                     environment: {
                         CONTENT_STORE: store,
                         STORE_CATALOG:
-                            catalog === undefined || catalog === '' ? STORE_CATALOG_URL : catalog
+                            catalog === undefined || catalog === '' ? STORE_CATALOG_URL : catalog,
+                        STORE_CATALOG_REPORT: catalogReport
                     }
                 })
                 return join(SITE, 'dist')
             },
+            buildWarnings: async () =>
+                (await readFile(catalogReport, 'utf8').catch(() => ''))
+                    .split('\n')
+                    .filter((line) => line !== ''),
             deploy: async (dist) => {
                 await mkdir(folder, { recursive: true })
                 const configuration = join(folder, 'wrangler.json')
