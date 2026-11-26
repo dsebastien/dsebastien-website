@@ -1273,7 +1273,8 @@ export function isLockOfThisComputer(holder: LockHolder): boolean {
 /**
  * True for the lock of a check or a pull of this computer whose process no
  * longer runs: such a run writes nothing that a later run must put back, so
- * its lock goes away by itself (R46 as the author amended it, R81). The lock
+ * its lock goes away by itself (R46 as the author amended it, R81), unless
+ * git left a lock file in the copy (`gitLeftLock`). The lock
  * of a publication, a takedown, an edit or a plan always waits for the
  * author, and so does a lock of another computer or of WSL.
  */
@@ -1285,6 +1286,25 @@ function isStaleLock(text: string): boolean {
         isLockOfThisComputer(holder) &&
         !processRuns(holder.process)
     )
+}
+
+/**
+ * True when git left a lock file in the copy (`.git/index.lock`, or a
+ * `*.lock` file below `.git/refs`): a git that was stopped in the middle of
+ * a check or a pull leaves one, so the lock of the device waits for the
+ * author then. A folder that cannot be read counts as a lock.
+ */
+async function gitLeftLock(contentStore: string): Promise<boolean> {
+    const git = join(contentStore, '.git')
+    if ((await lstat(join(git, 'index.lock')).catch(() => undefined)) !== undefined) {
+        return true
+    }
+    try {
+        const entries = await readdir(join(git, 'refs'), { recursive: true, withFileTypes: true })
+        return entries.some((entry) => entry.name.endsWith('.lock'))
+    } catch (error) {
+        return codeOf(error) !== 'ENOENT'
+    }
 }
 
 /**
@@ -1362,6 +1382,7 @@ function folderLocalStore(contentStore: string): LocalStore {
                     held === undefined ||
                     tries > 0 ||
                     !isStaleLock(held) ||
+                    (await gitLeftLock(contentStore)) ||
                     !(await removeStale(held))
                 ) {
                     return { taken: false, text: held ?? 'a lock that went away' }

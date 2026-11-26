@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -201,6 +201,26 @@ describe('the lock of a check or a pull whose process ended (R81)', () => {
 
             expect(lock.taken, command).toBe(true)
             await device.local.release(lock.text)
+        }
+    }, 60_000)
+
+    // A git that was stopped in the middle leaves its own lock files: the lock
+    // of the device then waits for the author too.
+    test('stays while git left a lock file in the copy', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUpLock(stores)
+        for (const file of [
+            join('.git', 'index.lock'),
+            join('.git', 'refs', 'remotes', 'origin', 'main.lock')
+        ]) {
+            await mkdir(join(copy, file, '..'), { recursive: true })
+            await writeFile(join(copy, file), '')
+            const text = `{"command":"pull",${here},"process":${String(await endedProcess())},"token":"x"}\n`
+            await writeFile(lockOf(copy), text)
+
+            expect((await device.local.lock({ command: 'plan' })).taken, file).toBe(false)
+            expect(await Bun.file(lockOf(copy)).text()).toBe(text)
+            await rm(join(copy, file))
         }
     }, 60_000)
 
