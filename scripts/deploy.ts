@@ -35,6 +35,7 @@ import {
     deployRelease,
     LIVE_CHECKS,
     readHostRecord,
+    searchHostOf,
     RESULT_MARK,
     resultLine,
     stoppedResult,
@@ -396,7 +397,9 @@ async function deploy(
             ...(dryRun
                 ? {}
                 : {
-                      live: { ...LIVE_CHECKS, read: () => readHostRecord(url) }
+                      live: { ...LIVE_CHECKS, read: () => readHostRecord(url) },
+                      // IndexNow only from the canonical host, never noindex (issue 54).
+                      search: searchHostOf(target)
                   }),
             wait: (milliseconds) => Bun.sleep(milliseconds),
             log: (line) => {

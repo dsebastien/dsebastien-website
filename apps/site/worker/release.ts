@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MAX_ATTACHMENT_SIZE } from '../../plugin/src/publishing/attachments.ts'
-import { DEPLOYMENT_RECORD_FILE } from '@dsebastien-website/resolver'
+import { DEPLOYMENT_RECORD_FILE, SITE_ORIGIN } from '@dsebastien-website/resolver'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     checkOutput,
@@ -14,6 +14,14 @@ import {
     type HostLimits,
     type ReleaseBuild
 } from './deployment.ts'
+import {
+    changedUrls,
+    INDEXNOW_ENDPOINT,
+    indexNowBatches,
+    sitemapDates,
+    type IndexNowBatch
+} from '../src/indexnow.ts'
+import { locsOf, SITEMAP_INDEX_PATH } from '../src/sitemaps.ts'
 
 // The run of a deployment (issue 32, BUILD-07, BUILD-08, STORE-08, PUB-42):
 //
@@ -27,7 +35,11 @@ import {
 //    limits of the host;
 // 4. the deployment (one new Worker version, one switch);
 // 5. the host is read until it gives the record of this build: live;
-// 6. the object storage loses each key that neither the new release nor
+// 6. the search engines (issue 54): the live `robots.txt` is compared with
+//    the build output (AI-06), and IndexNow gets the URLs of the sitemaps
+//    that are new, changed or removed since the live sitemaps, which are
+//    read right before the deployment (IDX-35);
+// 7. the object storage loses each key that neither the new release nor
 //    the release before it uses, so one revert keeps its files.
 //
 // A failure deletes no other file than the ones of step 1 (decision F4 of
@@ -178,6 +190,46 @@ export interface DeployRun {
     readonly wait: (milliseconds: number) => Promise<void>
     /** Takes a line of progress for the author. */
     readonly log: (line: string) => void
+    /** The search engines after a release that is seen live (issue 54). Without it, nothing. */
+    readonly search?: SearchHost
+}
+
+/**
+ * The live host as a search engine reads it, and IndexNow (issue 54). Only
+ * a deployment that is seen live uses it, never a dry run.
+ */
+export interface SearchHost {
+    /** The text of a file of the live host, by its path; `null` when it answers 404. It throws on another failure. */
+    read(path: string): Promise<string | null>
+    /**
+     * Sends one batch to IndexNow. It throws when IndexNow does not take it.
+     * Absent for a host marked noindex or that is not the canonical host:
+     * then no URL is sent, and no sitemap is read.
+     */
+    readonly submit?: (batch: IndexNowBatch) => Promise<void>
+}
+
+/** The URLs of the sitemaps of a host, with their dates: none when it has no sitemap index. */
+async function sitemapsOf(
+    read: (path: string) => Promise<string | null>
+): Promise<Map<string, string>> {
+    const index = await read(SITEMAP_INDEX_PATH)
+    if (index === null) {
+        return new Map()
+    }
+    const files: string[] = []
+    for (const loc of locsOf(index)) {
+        const text = await read(new URL(loc).pathname)
+        if (text !== null) {
+            files.push(text)
+        }
+    }
+    return sitemapDates(files)
+}
+
+/** A file of the output of a build, or `null` when it has none. */
+async function outputFile(dist: string, path: string): Promise<string | null> {
+    return await readFile(join(dist, ...path.slice(1).split('/')), 'utf8').catch(() => null)
 }
 
 /** The result of a step of a deployment. */
@@ -402,6 +454,49 @@ function buildOf(record: DeploymentRecord): ReleaseBuild {
 /** The time of a build, in UTC, to the second. */
 function timeOf(date: Date): string {
     return `${date.toISOString().slice(0, 19)}Z`
+}
+
+/**
+ * After a release that is seen live: the check of `robots.txt` (AI-06), then
+ * the URLs that changed since the sitemaps of `before` go to IndexNow, only
+ * the URLs of the host of the release. A failure is a warning: the release
+ * is live, and the next deployment sends its own changes.
+ */
+async function tellSearchEngines(
+    run: DeployRun,
+    search: SearchHost,
+    dist: string,
+    before: Map<string, string> | undefined,
+    warnings: string[]
+): Promise<void> {
+    try {
+        const robots = await search.read('/robots.txt')
+        if (robots !== (await outputFile(dist, '/robots.txt'))) {
+            warnings.push(
+                'the live robots.txt is not the one of the build: check that the managed robots.txt of the host is off (AI-06)'
+            )
+        }
+    } catch (failure) {
+        warnings.push(`the live robots.txt cannot be read (${messageOf(failure)})`)
+    }
+    if (search.submit === undefined || before === undefined) {
+        return
+    }
+    const origin = new URL(run.url).origin
+    const after = await sitemapsOf((path) => outputFile(dist, path))
+    const urls = changedUrls(before, after).filter((url) => new URL(url).origin === origin)
+    let sent = 0
+    try {
+        for (const batch of indexNowBatches(origin, urls)) {
+            await search.submit(batch)
+            sent += batch.urlList.length
+        }
+        run.log(`IndexNow: ${String(sent)} URL(s) sent`)
+    } catch (failure) {
+        warnings.push(
+            `IndexNow did not take ${String(urls.length - sent)} URL(s) of the release: ${messageOf(failure)}`
+        )
+    }
 }
 
 /** Runs a deployment. It never throws: a failure is in the result. */
@@ -878,6 +973,17 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 )
             }
         }
+        // The live sitemaps, right before the deployment: what IndexNow knows.
+        let before: Map<string, string> | undefined
+        if (run.search?.submit !== undefined && run.dryRun !== true && run.live !== undefined) {
+            try {
+                before = await sitemapsOf((path) => run.search?.read(path) ?? Promise.resolve(null))
+            } catch (failure) {
+                warnings.push(
+                    `the live sitemaps cannot be read (${messageOf(failure)}), so no URL went to IndexNow`
+                )
+            }
+        }
         try {
             await run.deploy(dist)
             deploy = run.dryRun === true ? 'skipped' : 'ok'
@@ -891,6 +997,9 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 .accepted
             if (live) {
                 run.log(`live: ${run.url}`)
+                if (run.search !== undefined) {
+                    await tellSearchEngines(run, run.search, dist, before, warnings)
+                }
             } else {
                 warnings.push(
                     `the host did not give the record of this build yet: check ${new URL(DEPLOYMENT_RECORD_FILE, run.url).href}`
@@ -1129,4 +1238,47 @@ export async function readHostRecord(
         throw new Error(`the host answers ${String(response.status)} for ${DEPLOYMENT_RECORD_FILE}`)
     }
     return (await response.json()) as unknown
+}
+
+/**
+ * The search engines of a deployment target (issue 54), with `fetch` as a
+ * port: the live files are read from the host of the target, and IndexNow
+ * gets batches only for the canonical host of the site, when the target is
+ * not marked noindex (IDX-26): never from a preview host.
+ */
+export function searchHostOf(
+    target: { readonly host: string; readonly noindex: boolean },
+    fetch: (url: URL, init: RequestInit) => Promise<Response> = (address, init) =>
+        globalThis.fetch(address, init)
+): SearchHost {
+    const url = `https://${target.host}/`
+    const read = async (path: string): Promise<string | null> => {
+        const response = await fetch(new URL(path, url), { cache: 'no-store' })
+        if (response.status === 404) {
+            await response.body?.cancel()
+            return null
+        }
+        if (!response.ok) {
+            await response.body?.cancel()
+            throw new Error(`the host answers ${String(response.status)} for ${path}`)
+        }
+        return await response.text()
+    }
+    if (target.noindex || target.host !== new URL(SITE_ORIGIN).host) {
+        return { read }
+    }
+    return {
+        read,
+        submit: async (batch) => {
+            const response = await fetch(new URL(INDEXNOW_ENDPOINT), {
+                method: 'POST',
+                headers: { 'content-type': 'application/json; charset=utf-8' },
+                body: JSON.stringify(batch)
+            })
+            await response.body?.cancel()
+            if (response.status !== 200 && response.status !== 202) {
+                throw new Error(`IndexNow answers ${String(response.status)}`)
+            }
+        }
+    }
 }

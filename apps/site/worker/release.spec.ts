@@ -10,11 +10,14 @@ import {
     readHostRecord,
     resultLine,
     revertRelease,
+    searchHostOf,
     stoppedResult,
     type DeployResult,
     type DeployRun,
     type RevertRun
 } from './release.ts'
+import { INDEXNOW_KEY, type IndexNowBatch } from '../src/indexnow.ts'
+import { sitemapIndexXml, sitemapXml } from '../src/sitemaps.ts'
 
 // The run of a deployment (issue 32, BUILD-07, BUILD-08, STORE-08, PUB-42):
 // the attachments go to the object storage before the build, the build
@@ -644,6 +647,238 @@ describe('a deployment', () => {
         const result = await deployRelease({ ...run, dryRun: true })
         expect(result).toMatchObject({ build: 'ok', deploy: 'skipped', live: false, error: null })
         expect(site.events).toEqual(['build', 'deploy'])
+    })
+})
+
+// Issue 54 (IDX-35, AI-06): after a release that is seen live, the deploy
+// command compares the live robots.txt with the build output, and sends the
+// URLs that changed since the live sitemaps to IndexNow. Both are fakes.
+describe('the search engines after a deployment', () => {
+    const HOST = 'https://preview.notes.example'
+    const ROBOTS = 'User-agent: *\nAllow: /\n'
+    const index = (...groups: string[]): string =>
+        sitemapIndexXml(new Map(groups.map((group) => [group, []])), HOST)
+
+    /** A run whose build writes these files, and a host that answers these files before and after the deployment. */
+    function searchSite(options: {
+        built: Record<string, string>
+        before: Record<string, string>
+        after?: Record<string, string>
+        submit?: (batch: IndexNowBatch) => Promise<void>
+        failRead?: boolean
+    }): { run: DeployRun; sent: IndexNowBatch[]; reads: string[] } {
+        const sent: IndexNowBatch[] = []
+        const reads: string[] = []
+        let deployed = false
+        const site = fixture({ stored: [PHOTO.key, PLAN.key] })
+        const build = site.run.build
+        const deploy = site.run.deploy
+        const run: DeployRun = {
+            ...site.run,
+            build: async () => {
+                const dist = await build()
+                for (const [name, text] of Object.entries(options.built)) {
+                    await writeFile(join(dist, name), text)
+                }
+                return dist
+            },
+            limits: { files: 20, fileSize: 1000 },
+            deploy: async (output) => {
+                await deploy(output)
+                deployed = true
+            },
+            search: {
+                read: (path) => {
+                    reads.push(path)
+                    if (options.failRead === true) {
+                        return Promise.reject(new Error('the host cannot be reached'))
+                    }
+                    const files = deployed ? (options.after ?? options.built) : options.before
+                    return Promise.resolve(files[path.slice(1)] ?? null)
+                },
+                submit:
+                    options.submit ??
+                    ((batch) => {
+                        sent.push(batch)
+                        return Promise.resolve()
+                    })
+            }
+        }
+        return { run, sent, reads }
+    }
+
+    const BUILT = {
+        'robots.txt': ROBOTS,
+        'sitemap.xml': index('notes'),
+        'sitemap-notes.xml': sitemapXml(
+            [
+                { path: '/Same', lastmod: '2031-01-01T00:00:00Z' },
+                { path: '/Edited', lastmod: '2031-02-01T00:00:00Z' },
+                { path: '/New', lastmod: '2031-02-01T00:00:00Z' }
+            ],
+            HOST
+        )
+    }
+    const BEFORE = {
+        'sitemap.xml': index('notes'),
+        'sitemap-notes.xml': sitemapXml(
+            [
+                { path: '/Same', lastmod: '2031-01-01T00:00:00Z' },
+                { path: '/Edited', lastmod: '2031-01-01T00:00:00Z' },
+                { path: '/Removed', lastmod: '2031-01-01T00:00:00Z' }
+            ],
+            HOST
+        )
+    }
+
+    test('sends the new, the changed and the removed URLs once the release is live', async () => {
+        const { run, sent } = searchSite({ built: BUILT, before: BEFORE })
+        const result = await deployRelease(run)
+        expect(result).toMatchObject({ ...OK, warnings: [] })
+        expect(sent).toEqual([
+            {
+                host: 'preview.notes.example',
+                key: INDEXNOW_KEY,
+                keyLocation: `${HOST}/${INDEXNOW_KEY}.txt`,
+                urlList: [`${HOST}/Edited`, `${HOST}/New`, `${HOST}/Removed`]
+            }
+        ])
+    })
+
+    test('sends every URL when the host had no sitemap (the switch)', async () => {
+        const { run, sent } = searchSite({ built: BUILT, before: {} })
+        await deployRelease(run)
+        expect(sent.flatMap((batch) => batch.urlList)).toEqual([
+            `${HOST}/Edited`,
+            `${HOST}/New`,
+            `${HOST}/Same`
+        ])
+    })
+
+    test('sends nothing when no URL changed', async () => {
+        const { run, sent } = searchSite({ built: BUILT, before: BUILT })
+        expect((await deployRelease(run)).warnings).toEqual([])
+        expect(sent).toEqual([])
+    })
+
+    test('reads no sitemap and sends nothing without the port to IndexNow (a host marked noindex)', async () => {
+        const { run, reads } = searchSite({ built: BUILT, before: BEFORE })
+        const search = run.search
+        const result = await deployRelease({
+            ...run,
+            search: { read: (path) => search?.read(path) ?? Promise.resolve(null) }
+        })
+        expect(result).toMatchObject({ ...OK, warnings: [] })
+        expect(reads).toEqual(['/robots.txt'])
+    })
+
+    test('sends nothing when the release is not seen live', async () => {
+        const { run, sent } = searchSite({ built: BUILT, before: BEFORE })
+        const result = await deployRelease({
+            ...run,
+            live: { read: () => Promise.resolve(null), checks: 2, pause: 1, inARow: 1 }
+        })
+        expect(result.live).toBe(false)
+        expect(sent).toEqual([])
+    })
+
+    test('reads nothing and sends nothing in a dry run', async () => {
+        const { run: full, sent, reads } = searchSite({ built: BUILT, before: BEFORE })
+        const { storage: _storage, live: _live, ...run } = full
+        await deployRelease({ ...run, dryRun: true })
+        expect(sent).toEqual([])
+        expect(reads).toEqual([])
+    })
+
+    test('warns, and stays a success, when IndexNow refuses a batch or the host cannot be read', async () => {
+        const refused = searchSite({
+            built: BUILT,
+            before: BEFORE,
+            submit: () => Promise.reject(new Error('IndexNow answers 429'))
+        })
+        const result = await deployRelease(refused.run)
+        expect(result).toMatchObject({ ...OK, error: null })
+        expect(result.warnings).toEqual([
+            'IndexNow did not take 3 URL(s) of the release: IndexNow answers 429'
+        ])
+        const unread = searchSite({ built: BUILT, before: BEFORE, failRead: true })
+        const second = await deployRelease(unread.run)
+        expect(second).toMatchObject({ ...OK, error: null })
+        expect(second.warnings).toEqual([
+            'the live sitemaps cannot be read (the host cannot be reached), so no URL went to IndexNow',
+            'the live robots.txt cannot be read (the host cannot be reached)'
+        ])
+        expect(unread.sent).toEqual([])
+    })
+
+    // AI-06: the managed robots.txt of the host stays off.
+    test('warns when the live robots.txt is not the one of the build', async () => {
+        const { run } = searchSite({
+            built: BUILT,
+            before: BEFORE,
+            after: { ...BUILT, 'robots.txt': `User-agent: GPTBot\nDisallow: /\n\n${ROBOTS}` }
+        })
+        const result = await deployRelease(run)
+        expect(result).toMatchObject({ ...OK, error: null })
+        expect(result.warnings).toEqual([
+            'the live robots.txt is not the one of the build: check that the managed robots.txt of the host is off (AI-06)'
+        ])
+    })
+})
+
+describe('the search engines of a target', () => {
+    const calls: { url: string; init: RequestInit }[] = []
+    const fake =
+        (answers: Record<string, number>) =>
+        (url: URL, init: RequestInit): Promise<Response> => {
+            calls.push({ url: url.href, init })
+            const status = answers[url.href] ?? 404
+            return Promise.resolve(
+                new Response(status === 200 ? `text of ${url.pathname}` : null, { status })
+            )
+        }
+    const batch = {
+        host: 'notes.dsebastien.net',
+        key: INDEXNOW_KEY,
+        keyLocation: 'x',
+        urlList: ['u']
+    }
+
+    test('read the files of the host of the target, and say null for a 404', async () => {
+        const search = searchHostOf(
+            { host: 'preview.notes.example', noindex: true },
+            fake({ 'https://preview.notes.example/robots.txt': 200 })
+        )
+        expect(await search.read('/robots.txt')).toBe('text of /robots.txt')
+        expect(await search.read('/sitemap.xml')).toBeNull()
+        const failing = searchHostOf(
+            { host: 'preview.notes.example', noindex: true },
+            fake({ 'https://preview.notes.example/sitemap.xml': 503 })
+        )
+        expect(await rejectionOf(failing.read('/sitemap.xml'))).toContain('503')
+    })
+
+    // IDX-26: nothing goes to IndexNow from a preview host, or another host.
+    test('send to IndexNow only from the canonical host when it is not marked noindex', async () => {
+        expect(searchHostOf({ host: 'notes.dsebastien.net', noindex: true }).submit).toBeUndefined()
+        expect(
+            searchHostOf({ host: 'preview.notes.example', noindex: false }).submit
+        ).toBeUndefined()
+        calls.length = 0
+        const search = searchHostOf(
+            { host: 'notes.dsebastien.net', noindex: false },
+            fake({ 'https://api.indexnow.org/indexnow': 202 })
+        )
+        await search.submit?.(batch)
+        expect(calls).toHaveLength(1)
+        expect(calls[0]?.url).toBe('https://api.indexnow.org/indexnow')
+        expect(calls[0]?.init.method).toBe('POST')
+        expect(JSON.parse(calls[0]?.init.body as string)).toEqual(batch)
+        const refused = searchHostOf(
+            { host: 'notes.dsebastien.net', noindex: false },
+            fake({ 'https://api.indexnow.org/indexnow': 422 })
+        )
+        expect(await rejectionOf(refused.submit?.(batch) ?? Promise.resolve())).toContain('422')
     })
 })
 
