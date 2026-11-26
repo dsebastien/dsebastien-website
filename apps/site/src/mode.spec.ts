@@ -43,12 +43,30 @@ describe('mode of a page', () => {
     )
 })
 
+/**
+ * A `theme-color` element of the head. Its media query reads the attribute
+ * that the page writes; an assignment to `media` changes nothing.
+ */
+interface Bar {
+    readonly media: string
+    dataset: Record<string, string>
+    setAttribute: (name: string, value: string) => void
+}
+
 /** The two `theme-color` elements of the head, with the media query that the page writes. */
-function barsOfThePage(): { media: string; dataset: Record<string, string> }[] {
-    return [
-        { media: BAR_MEDIA.dark, dataset: { mode: 'dark' } },
-        { media: BAR_MEDIA.light, dataset: { mode: 'light' } }
-    ]
+function barsOfThePage(): Bar[] {
+    return (['dark', 'light'] as const).map((mode) => {
+        const attributes: Record<string, string> = { media: BAR_MEDIA[mode] }
+        return {
+            get media(): string {
+                return attributes['media'] ?? ''
+            },
+            dataset: { mode },
+            setAttribute: (name, value) => {
+                attributes[name] = value
+            }
+        }
+    })
 }
 
 /** A document with the attributes of its root and its `theme-color` elements. */

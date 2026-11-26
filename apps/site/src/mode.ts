@@ -43,7 +43,7 @@ export const BAR_MEDIA: Readonly<Record<Mode, string>> = {
 export const SHOW_MODE = `(mode, page) => {
         page.documentElement.dataset.theme = mode
         for (const meta of page.querySelectorAll('meta[name="theme-color"]')) {
-            meta.media = meta.dataset.mode === mode ? 'all' : 'not all'
+            meta.setAttribute('media', meta.dataset.mode === mode ? 'all' : 'not all')
         }
     }`
 
