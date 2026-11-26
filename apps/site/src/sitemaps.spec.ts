@@ -98,7 +98,9 @@ describe('the entries of the sitemaps', () => {
         const groups = sitemapEntriesOf({
             notes: [
                 { path: '/Alien', noteType: 'movies', lastmod: '2031-01-01T00:00:00Z' },
-                { path: '/Loose+note', lastmod: undefined }
+                { path: '/Loose+note', lastmod: undefined },
+                // R85: a note with publish_noindex is in no sitemap.
+                { path: '/Hidden', noteType: 'movies', indexable: false }
             ],
             lists: [
                 {

@@ -11,6 +11,12 @@ import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
 // the date of the last update of a note (IDX-32); a generated page has none.
 // No `priority`, no `changefreq`, no image sitemap (seo items 38 and 40).
 
+/**
+ * The variable of the environment of a build that says that it is the build
+ * of the switch (`--switch` of the deploy command, decision R85): `true`.
+ */
+export const SWITCH_VARIABLE = 'SITE_SWITCH'
+
 /** The path of the sitemap index. */
 export const SITEMAP_INDEX_PATH = '/sitemap.xml'
 
@@ -146,6 +152,8 @@ export interface SitemapSource {
         readonly path: string
         readonly noteType?: string | undefined
         readonly lastmod?: string | undefined
+        /** False when the page of the note says noindex (R85): it is in no sitemap. */
+        readonly indexable?: boolean
     }[]
     /** The generated lists, with the pages that are indexed (IDX-22). */
     readonly lists: readonly { readonly pages: readonly { path: string; indexed: boolean }[] }[]
@@ -155,14 +163,17 @@ export interface SitemapSource {
 
 /**
  * The entries of each group, in the order of `sitemapGroupsOf()`: every
- * note (IDX-20: no note type is out of the index), and the home page, the
+ * note that is indexed (IDX-20: no note type is out of the index; a note
+ * with `publish_noindex` is, R85; its group keeps its file, which the
+ * resolver map names from the note types alone), and the home page, the
  * library and the pages of the lists that are indexed.
  */
 export function sitemapEntriesOf(source: SitemapSource): Map<string, SitemapEntry[]> {
     const groups = new Map<string, SitemapEntry[]>(
         sitemapGroupsOf(source.notes.map((note) => note.noteType)).map((group) => [group, []])
     )
-    for (const note of source.notes) {
+    const notes = source.notes.filter((note) => note.indexable !== false)
+    for (const note of notes) {
         groups.get(sitemapGroupOf(note.noteType))?.push({ path: note.path, lastmod: note.lastmod })
     }
     const generated = groups.get(GENERATED_GROUP) ?? []

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ListedNote } from './generated-pages.ts'
-import { recentListsOf, type RecentSource } from './recent.ts'
+import { lastUpdateOf, recentListsOf, type RecentSource } from './recent.ts'
 
 const MOVIE = { name: 'movies', one: 'Movie', many: 'Movies', media: true }
 const NOTE = {
@@ -336,5 +336,60 @@ describe('the filter of a recent list by note type (NAV-05, R62)', () => {
             'All',
             'Movies'
         ])
+    })
+})
+
+// IDX-32: the `lastmod` of the sitemaps.
+describe('the date of the last update of a note', () => {
+    const IMPORT = '2031-01-10T08:00:00Z'
+    const LATER = '2031-03-01T09:00:00Z'
+    const EDIT = '2031-04-02T10:00:00Z'
+
+    test('is the last publication that changed the note, or a property for a note of the import', () => {
+        const changed = {
+            firstPublished: LATER,
+            lastPublished: EDIT,
+            created: undefined,
+            updated: '2031-04-01'
+        }
+        expect(lastUpdateOf(changed, IMPORT)).toBe(EDIT)
+        const imported = {
+            firstPublished: IMPORT,
+            lastPublished: IMPORT,
+            created: '2020-01-01',
+            updated: '2024-05-06'
+        }
+        expect(lastUpdateOf(imported, IMPORT)).toBe('2024-05-06')
+        const unchanged = {
+            firstPublished: LATER,
+            lastPublished: LATER,
+            created: undefined,
+            updated: '2030-12-24'
+        }
+        expect(lastUpdateOf(unchanged, IMPORT)).toBe(LATER)
+    })
+
+    // Decision R85: at the switch, a note that did not change since its first
+    // publication keeps its real last edit, the `updated` property.
+    test('at the switch, is the updated property of a note that did not change since its first publication', () => {
+        const unchanged = {
+            firstPublished: LATER,
+            lastPublished: LATER,
+            created: '2020-01-01',
+            updated: '2030-12-24'
+        }
+        expect(lastUpdateOf(unchanged, IMPORT, { atSwitch: true })).toBe('2030-12-24')
+        const onlyCreated = { ...unchanged, updated: 'soon' }
+        expect(lastUpdateOf(onlyCreated, IMPORT, { atSwitch: true })).toBe('2020-01-01')
+        // A property after the publication (a typo) holds no valid date.
+        const typo = { ...unchanged, updated: '2041-01-01', created: undefined }
+        expect(lastUpdateOf(typo, IMPORT, { atSwitch: true })).toBe(LATER)
+        const changed = {
+            firstPublished: LATER,
+            lastPublished: EDIT,
+            created: undefined,
+            updated: '2031-04-01'
+        }
+        expect(lastUpdateOf(changed, IMPORT, { atSwitch: true })).toBe(EDIT)
     })
 })

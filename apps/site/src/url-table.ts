@@ -144,11 +144,15 @@ export async function checkUrlCase(
         const target = await ask(entry.location)
         same('status of the target', target.status, 200)
         // The Markdown of a note has no canonical link.
+        // A page that says noindex (a folder list) has none (R85).
         if (!entry.location.startsWith('/-/md/')) {
+            const html = await target.text()
             same(
                 'canonical link of the target',
-                canonicalLinkOf(await target.text()),
-                `${ORIGIN}${entry.location.split('?')[0] ?? ''}`
+                canonicalLinkOf(html),
+                html.includes('<meta name="robots" content="noindex')
+                    ? undefined
+                    : `${ORIGIN}${entry.location.split('?')[0] ?? ''}`
             )
         }
         return findings
@@ -220,8 +224,13 @@ export async function checkUrlCase(
         return findings
     }
     same('content-type', response.headers.get('content-type'), 'text/html; charset=utf-8')
-    // A query gives the same page, with a clean canonical link (URL-12).
-    same('canonical link', canonicalLinkOf(body), `${ORIGIN}${entry.canonical ?? ''}`)
+    // A query gives the same page, with a clean canonical link (URL-12). A
+    // folder list says noindex and has no canonical link (R85).
+    same(
+        'canonical link',
+        canonicalLinkOf(body),
+        entry.canonical === undefined ? undefined : `${ORIGIN}${entry.canonical}`
+    )
     return findings
 }
 

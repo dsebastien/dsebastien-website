@@ -12,6 +12,7 @@ import Page from '../../../layouts/Page.astro'
 import { propertiesOf } from '../../../properties.ts'
 import { publishedSite } from '../../../published-site.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
+import { isNoindexNote } from '../../../noindex.ts'
 import { languageOf } from '../../../rendering/language.ts'
 
 // The page of a published note, in variant B of the mockups (R49): a title
@@ -49,6 +50,7 @@ const ad = site.adOf(note.vaultPath)
     title={site.titleOf(note.vaultPath)}
     description={site.descriptionOf(note.vaultPath)}
     path={note.path}
+    noindex={isNoindexNote(site.propertiesOf(note.vaultPath))}
     lang={languageOf(data)}
     bare
 >

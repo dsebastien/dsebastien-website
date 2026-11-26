@@ -133,16 +133,32 @@ function importDate(properties: readonly unknown[], importRun: string): Dated {
  * The date of the last update of a note, as the list `updated` dates it, for
  * the `lastmod` of the sitemaps (IDX-32): the time of the last publication
  * that changed it, in UTC, or for a note of the import the day of its
- * `updated` or `created` property. `undefined` when it is not known.
+ * `updated` or `created` property. At the switch (decision R85, the one
+ * deployment with `--switch`), a note that did not change since its first
+ * publication takes its `updated` property too, else its `created`
+ * property: its real last edit, not the day of its first publication. A
+ * property more than one day after that publication holds no valid date.
+ * `undefined` when the date is not known.
  */
 export function lastUpdateOf(
-    source: Pick<RecentSource, 'lastPublished' | 'created' | 'updated'>,
-    importRun: string | undefined
+    source: Pick<RecentSource, 'lastPublished' | 'created' | 'updated'> &
+        Partial<Pick<RecentSource, 'firstPublished'>>,
+    importRun: string | undefined,
+    options: { readonly atSwitch?: boolean } = {}
 ): string | undefined {
     if (importRun !== undefined && source.lastPublished === importRun) {
         return importDate([source.updated, source.created], importRun).date?.datetime
     }
-    return source.lastPublished === '' ? undefined : source.lastPublished
+    if (source.lastPublished === '') {
+        return undefined
+    }
+    if (options.atSwitch === true && source.firstPublished === source.lastPublished) {
+        return (
+            importDate([source.updated, source.created], source.lastPublished).date?.datetime ??
+            source.lastPublished
+        )
+    }
+    return source.lastPublished
 }
 
 /** What the recent lists need of the whole site. */
