@@ -39,3 +39,5 @@ A test checks rules 2, 4 and 5 (`packages/testing/src/fixture-vault.spec.ts`). 6
 - Rust: `fixture_vault()`, `fixture_configuration()` and `TestStores` of `cli/tests/support/mod.rs`.
 
 `configuration.json` has one field for now, `denyList`. The first slice that reads the configuration settles its shape.
+
+- `urls.json`: the URL table (issue 43): invented notes, an invented redirect list (`redirects`, issue 44) and the cases that the resolver, the plain server, the Worker and `bun run urls check` all run.

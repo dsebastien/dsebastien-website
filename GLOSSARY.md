@@ -85,7 +85,7 @@ _Avoid_: unpublish (which waits for a publication)
 The removal of a published note that came under a guard. Every publication does it, whatever the author selects, and it removes everything as a takedown does.
 
 **Content store**:
-The private snapshot of everything that is published: cleaned notes, attachments and the manifest. The site is built from it.
+The private snapshot of everything that is published: cleaned notes, attachments and the manifest, and the redirect list. The site is built from it.
 _Avoid_: export, public repository
 
 **Attachment storage**:
@@ -177,7 +177,7 @@ The act that makes the release before the live one live again.
 _Avoid_: unpublish, takedown (those remove notes)
 
 **Resolver map**:
-What the build writes for the resolver: which canonical path leads to which page, and which addresses are gone.
+What the build writes for the resolver: which canonical path leads to which page, which addresses are gone, and which old addresses lead where (the redirect list).
 
 **Redirect list**:
 The list of the old addresses of the current site that no other rule finds, with what each one leads to: a note, a page, "gone", or, for an old folder, the hub of its section. It is private, in the content store.
@@ -190,7 +190,7 @@ A row of the redirect list that leads every other path under an old folder to on
 A row of the redirect list that waits for a decision of the author: a target, or "gone".
 
 **URL parity test**:
-The check that every known URL of the current site answers on a host as expected: a page, one redirect to a page, "gone" or "not found", with paths compared decoded.
+The check that every known URL of the current site answers on a host as expected: a page, one redirect to a page, "gone" or "not found", with paths compared decoded. Not the parity of the two publishing implementations.
 
 **Alias**:
 Another name of a note, from its `aliases` property. A URL with the alias leads to the note.
