@@ -26,7 +26,7 @@ import {
 import type { EditAction, EditEvent } from './edits.ts'
 import { fileNoteTypes, nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
-import type { Device } from './ports.ts'
+import type { Device, Vault } from './ports.ts'
 import type { TooLarge } from './attachments.ts'
 import type { PublicationQueue } from './queue.ts'
 import { edit, guards, plan, publish, status, takedown, unlock, unpublish } from './tool.ts'
@@ -1842,6 +1842,42 @@ describe('correction of the state property', () => {
         const next = await publishNotes(setup, { include: [SECOND] }, { ...RUN, time: LATER })
         expect(next.propertyRemoved).toEqual([wrong])
         expect(next.warnings).toEqual([])
+    })
+
+    // Issue 106: the vault writes a note only while it holds the text that
+    // the tool read; the author can type between the read and the write.
+    test('skips a note that changes between its read and its write, and reports it', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const typed = 'A line that the author types now.\n'
+        const inner = setup.device.vault
+        const typing = (vault: Vault): Vault => ({
+            ...vault,
+            async write(path, text, before) {
+                if (path === NOTE) {
+                    await append(join(setup.vault, NOTE), typed)
+                }
+                return await vault.write(path, text, before)
+            },
+            forRun: () => typing(vault.forRun())
+        })
+        const device: Device = { ...setup.device, vault: typing(inner) }
+        const planned = await plan(device, { include: [NOTE] })
+
+        const report = await publish(device, planned.id, RUN)
+
+        expect(report.published).toEqual([NOTE])
+        expect(report.propertySet).toEqual([])
+        expect(report.warnings).toEqual([
+            {
+                path: NOTE,
+                message:
+                    'the note changed during the publication: its public_note property is corrected at the next publication'
+            }
+        ])
+        const text = await Bun.file(join(setup.vault, NOTE)).text()
+        expect(text).not.toContain('public_note')
+        expect(text).toContain(typed)
     })
 
     test.skipIf(process.platform === 'win32')(

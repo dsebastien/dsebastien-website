@@ -8,7 +8,7 @@ import {
     makeTestStores,
     rejectionOf
 } from '@dsebastien-website/testing'
-import { nodeDevice, pullContentStore } from './device.ts'
+import { lockHolderOf, nodeDevice, processRuns, pullContentStore } from './device.ts'
 
 // The pull of the copy of the content store (decision R67): the view of the
 // plugin offers it when another device published first. It runs exactly
@@ -122,4 +122,24 @@ describe('the pull of the copy, after a run that stopped halfway', () => {
         expect(await Bun.file(join(copy, 'renames.json')).text()).toBe('{}\n')
         expect(await Bun.file(join(copy, '.git', 'vault-publish', 'lock')).exists()).toBe(false)
     }, 60_000)
+})
+
+describe('the run that holds the lock, for the confirmation of its removal (issue 106)', () => {
+    test('the lock names its command and its process', () => {
+        expect(lockHolderOf('{"command":"publish","process":41,"token":"x"}\n')).toEqual({
+            command: 'publish',
+            process: 41
+        })
+        expect(lockHolderOf('{"command":"plan"}\n')).toEqual({ command: 'plan' })
+        expect(lockHolderOf('{"process":"41"}')).toEqual({})
+        expect(lockHolderOf('not a lock')).toEqual({})
+    })
+
+    test('a process that runs, and a process that ended', async () => {
+        const child = Bun.spawn(['git', '--version'], { stdout: 'ignore' })
+        await child.exited
+
+        expect(processRuns(process.pid)).toBe(true)
+        expect(processRuns(child.pid)).toBe(false)
+    })
 })

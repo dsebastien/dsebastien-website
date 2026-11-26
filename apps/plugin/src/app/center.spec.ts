@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, rename, rm, truncate, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, stat, truncate, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -27,7 +27,7 @@ import type {
     TakedownMarker
 } from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
-import type { CenterHost } from './center.ts'
+import type { CenterHost, FileStat } from './center.ts'
 import type { Device } from '../publishing/ports.ts'
 
 // The controller of the publication center (issue 39, R67): what the view
@@ -46,6 +46,16 @@ async function git(...args: string[]): Promise<string> {
         throw new Error(`git ${args.join(' ')} failed`)
     }
     return out.trim()
+}
+
+/** The size and the time of a note of the vault, as the plugin reads them for an event. */
+async function statOf(vault: string, path: string): Promise<FileStat | undefined> {
+    try {
+        const facts = await stat(join(vault, path))
+        return { size: facts.size, mtime: facts.mtimeMs }
+    } catch {
+        return undefined
+    }
 }
 
 interface Setup {
@@ -82,6 +92,7 @@ async function setUp(
         // A clock that the test drives: one minute per question.
         now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
         deviceName: 'garden-shed',
+        stat: (path) => statOf(vault, path),
         started: (label) => {
             started.push(label)
         },
@@ -524,6 +535,52 @@ describe('the publication center', () => {
         expect(center.stateOf(NOTE).label).toBe('Not published')
     }, 60_000)
 
+    test('the failure of a publication stays after a check, until the author closes it or the next publication starts', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        center.noteChanged(NOTE)
+        await center.publish()
+        const failure = center.state.error
+        expect(failure).toContain('A new note changed after the check')
+
+        await center.check()
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.failure).toBe(failure)
+        center.closeFailure()
+        expect(center.state.failure).toBeUndefined()
+
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        center.noteChanged(NOTE)
+        await center.publish()
+        expect(center.state.failure).toBe(failure)
+        // The next publication starts with no failure.
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        const publishing = center.publish()
+        expect(center.state.failure).toBeUndefined()
+        await publishing
+        expect(center.state.failure).toBeUndefined()
+        expect(center.state.report?.kind).toBe('publication')
+    }, 60_000)
+
+    test('a check that another activity refuses says so in its result, and leaves the error as it was', async () => {
+        await using stores = await makeTestStores()
+        const { center } = await setUp(stores)
+        await center.dryRun()
+        expect(center.state.error).toBe('check the vault first')
+
+        const checking = center.check()
+        const refused = await center.check()
+        const checked = await checking
+
+        expect(refused).toEqual({ refused: 'Check refused: a check runs already' })
+        expect(checked).toEqual({})
+        expect(center.state.error).toBeUndefined()
+        expect(await center.dryRun()).toEqual({})
+    }, 60_000)
+
     test('says that a publication started only when its plan is the plan of the label', async () => {
         await using stores = await makeTestStores()
         const { center, started } = await setUp(stores)
@@ -535,17 +592,36 @@ describe('the publication center', () => {
         expect(started).toEqual(['Publish: 1 new'])
     }, 60_000)
 
-    test('the corrections of the property after a publication are no edits', async () => {
+    test('the corrections of the property after a publication are no edits, however many events they give', async () => {
+        await using stores = await makeTestStores()
+        const { vault, center } = await setUp(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+
+        // Obsidian reports the write of the property after the check, two times.
+        center.noteChanged(NOTE, await statOf(vault, NOTE))
+        center.noteChanged(NOTE, await statOf(vault, NOTE))
+        expect(center.stateOf(NOTE).label).toBe('Live')
+        // An edit of the author, of the same size: its time is another one.
+        const file = join(vault, NOTE)
+        const text = await Bun.file(file).text()
+        await writeFile(file, text.replace('frost', 'Frost'))
+        const later = new Date(Date.now() + 5_000)
+        await utimes(file, later, later)
+        center.noteChanged(NOTE, await statOf(vault, NOTE))
+        expect(center.stateOf(NOTE).label).toBe('Live (edited since the check)')
+    }, 60_000)
+
+    test('an event of a note written by a run whose size and time cannot be read is an edit', async () => {
         await using stores = await makeTestStores()
         const { center } = await setUp(stores)
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
         await center.publish()
 
-        // Obsidian reports the write of the property after the check.
         center.noteChanged(NOTE)
-        expect(center.stateOf(NOTE).label).toBe('Live')
-        center.noteChanged(NOTE)
+
         expect(center.stateOf(NOTE).label).toBe('Live (edited since the check)')
     }, 60_000)
 
@@ -752,6 +828,7 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
     ): Promise<{
         center: PublicationCenter
         copy: string
+        vault: string
         asked: string[][]
         /** The events that Obsidian reports after the refresh returned. */
         late: string[]
@@ -795,14 +872,16 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
                                 if (lateEvent) {
                                     late.push(FROZEN)
                                 } else {
-                                    center.noteChanged(FROZEN)
+                                    center.noteChanged(FROZEN, await statOf(vault, FROZEN))
                                 }
                             }
                             wrote = true
                         }
                         if (editedDuring !== undefined) {
                             await writeFile(join(vault, editedDuring), 'Another version\n')
-                            center.noteChanged(editedDuring)
+                            // Its size and time after the edit are the ones
+                            // that the refresh leaves: still an edit.
+                            center.noteChanged(editedDuring, await statOf(vault, editedDuring))
                         }
                         if (throws) {
                             throw new Error('the serializer stopped')
@@ -820,9 +899,10 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
             }),
             pull: () => pullContentStore({ contentStore: copy }),
             now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
-            deviceName: 'garden-shed'
+            deviceName: 'garden-shed',
+            stat: (path) => statOf(vault, path)
         })
-        return { center, copy, asked, late }
+        return { center, copy, vault, asked, late }
     }
 
     test('a dry run refreshes the lists and names the notes whose lists were not refreshed', async () => {
@@ -885,12 +965,12 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
 
     test('a write whose event comes after the refresh returned is no edit either', async () => {
         await using stores = await makeTestStores()
-        const { center, copy, late } = await setUpWithLists(stores, { lateEvent: true })
+        const { center, copy, vault, late } = await setUpWithLists(stores, { lateEvent: true })
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
         await center.dryRun()
         for (const path of late.splice(0)) {
-            center.noteChanged(path)
+            center.noteChanged(path, await statOf(vault, path))
         }
 
         await center.publish()
@@ -937,12 +1017,15 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
 
     test('the late events of a note written in two passes are no edit either', async () => {
         await using stores = await makeTestStores()
-        const { center, late } = await setUpWithLists(stores, { writes: 2, lateEvent: true })
+        const { center, vault, late } = await setUpWithLists(stores, {
+            writes: 2,
+            lateEvent: true
+        })
         await center.check()
         center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
         await center.dryRun()
         for (const path of late.splice(0)) {
-            center.noteChanged(path)
+            center.noteChanged(path, await statOf(vault, path))
         }
 
         await center.publish()

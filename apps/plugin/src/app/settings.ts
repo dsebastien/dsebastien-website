@@ -1,6 +1,6 @@
 import { isAbsolute, join } from 'node:path'
 import { nodeDevice } from '../publishing/node/device.ts'
-import type { Device, ListRefresh, NoteTypes } from '../publishing/ports.ts'
+import type { Device, ListRefresh, NoteTypes, Vault } from '../publishing/ports.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import type { DeviceStorage } from './rename-journal.ts'
 
@@ -89,17 +89,19 @@ function folderOf(value: string, name: string): string {
  *
  * @param vault the folder of the vault
  * @param configDir the configuration folder of Obsidian, relative to the vault
+ * @param writes makes the vault whose writes into the notes go through Obsidian
  */
 export function deviceOf(
     settings: DeviceSettings,
     vault: string,
     configDir: string,
     noteTypes: NoteTypes,
-    lists?: ListRefresh
+    lists?: ListRefresh,
+    writes?: (vault: Vault) => Vault
 ): Device {
     const { contentStore, git } = pullOptionsOf(settings)
     const attachmentStorage = folderOf(settings.attachmentStorage, 'the attachment storage')
-    const device = nodeDevice({
+    const made = nodeDevice({
         vault,
         contentStore,
         attachmentStorage,
@@ -107,6 +109,8 @@ export function deviceOf(
         renames: join(vault, configDir, JOURNAL_FOLDER),
         ...(git === undefined ? {} : { git })
     })
+    // The writes into the notes go through the vault of Obsidian (`editorWrites`).
+    const device = writes === undefined ? made : { ...made, vault: writes(made.vault) }
     return lists === undefined ? device : { ...device, lists }
 }
 

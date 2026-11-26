@@ -14,9 +14,12 @@ import { markUnpublish } from '../publishing/center.ts'
 import type { NoteStateKind } from '../publishing/center.ts'
 import { runDeploy, succeeded } from '../publishing/deploy.ts'
 import type { DeployReport } from '../publishing/deploy.ts'
-import { pullContentStore } from '../publishing/node/device.ts'
+import { lockHolderOf, processRuns, pullContentStore } from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
+import type { FileStat } from './center.ts'
+import { editorWrites } from './editor-writes.ts'
+import { isolateNames, lockState } from './messages.ts'
 import { childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
 import { Measures } from './measures.ts'
 import { LocalMcpServer, MCP_HOST } from './mcp-server.ts'
@@ -80,6 +83,11 @@ function vaultFolder(app: App): string {
     return folder
 }
 
+/** A notice whose names are isolated from the text around them (issue 106). */
+function notify(text: string): void {
+    new Notice(isolateNames(text))
+}
+
 function isNote(file: TAbstractFile): boolean {
     return !(file instanceof TFolder) && file.path.endsWith('.md')
 }
@@ -118,8 +126,13 @@ export class VaultPublishPlugin extends Plugin {
                     // checks every step of it (starter-kit.ts).
                     starterKitNoteTypes(this.app as unknown as PluginHost),
                     // The refresh of the frozen lists before a plan (PUB-35, R71).
-                    serializerLists(this.app as unknown as PluginHost, normalizePath)
+                    serializerLists(this.app as unknown as PluginHost, normalizePath),
+                    // The writes into the notes, as edits of Obsidian (issue 106).
+                    (vault) => editorWrites(vault, this.app.vault)
                 ),
+            // The size and the time of a note, read the same way for an
+            // event and for a write of a run (issue 106).
+            stat: (path) => this.#statOf(path),
             pull: () => pullContentStore(pullOptionsOf(loadSettings(this.app))),
             // The deploy of the site after a push (issue 32), as a child
             // process in the clean clone of the site code of this device.
@@ -158,7 +171,7 @@ export class VaultPublishPlugin extends Plugin {
                 recorder.record(kind, oldPath, file.path, new Date()).catch((error: unknown) => {
                     // A rename that is not recorded loses its redirect: the
                     // author must know, and can confirm the pairing later.
-                    new Notice(
+                    notify(
                         `Vault Publish could not record the rename of "${oldPath}" in its journal: ${error instanceof Error ? error.message : 'it failed'}. At the next publication, confirm the pairing, or pair the two notes by hand.`
                     )
                 })
@@ -172,7 +185,11 @@ export class VaultPublishPlugin extends Plugin {
         this.app.workspace.onLayoutReady(() => {
             const changed = (file: TAbstractFile): void => {
                 if (isNote(file)) {
-                    this.#noteChanged(file.path)
+                    // With its size and time after the event: an event of a
+                    // write of a run is no edit (issue 106).
+                    void this.#statOf(file.path).then((stat) => {
+                        this.#noteChanged(file.path, stat)
+                    })
                 }
             }
             this.registerEvent(this.app.vault.on('modify', changed))
@@ -203,7 +220,7 @@ export class VaultPublishPlugin extends Plugin {
                         this.#openSettings()
                     },
                     confirmUnlock: () => {
-                        this.#confirmUnlock()
+                        void this.#confirmUnlock()
                     }
                 })
         )
@@ -346,7 +363,7 @@ export class VaultPublishPlugin extends Plugin {
                 if (!checking) {
                     const before = this.center.state.choices
                     this.center.choose((queue, choices) => markUnpublish(queue, choices, path))
-                    new Notice(
+                    notify(
                         this.center.state.choices === before
                             ? `"${path}" was already marked for its unpublish`
                             : `"${path}" is marked: the next publication of the publication center unpublishes it. Obsidian does not keep the mark when it closes.`
@@ -398,7 +415,7 @@ export class VaultPublishPlugin extends Plugin {
             id: 'remove-lock',
             name: 'Remove the lock of this device, after a run that stopped',
             callback: () => {
-                this.#confirmUnlock()
+                void this.#confirmUnlock()
             }
         })
         this.addCommand({
@@ -413,20 +430,35 @@ export class VaultPublishPlugin extends Plugin {
     /** Updates the status bar item: the state of the open note. */
     #updateStatus: () => void = () => undefined
 
+    /** The size and the time of the last change of a note, from the adapter of Obsidian. */
+    async #statOf(path: string): Promise<FileStat | undefined> {
+        try {
+            const stat = await this.app.vault.adapter.stat(path)
+            return stat === null ? undefined : { size: stat.size, mtime: stat.mtime }
+        } catch {
+            return undefined
+        }
+    }
+
     /** A note changed in the vault: a mark for the status bar, with no render of the view. */
-    #noteChanged(path: string): void {
-        this.center.noteChanged(path)
+    #noteChanged(path: string, stat?: FileStat): void {
+        this.center.noteChanged(path, stat)
         if (this.#openNote() === path) {
             this.#updateStatus()
         }
     }
 
-    #confirmUnlock(): void {
+    /** The confirmation of the removal of the lock, with whether its process still runs (issue 106). */
+    async #confirmUnlock(): Promise<void> {
         const { error } = this.center.state
+        const text = await this.center.lockText()
+        const holder = lockState(text === undefined ? undefined : lockHolderOf(text), processRuns)
         new ConfirmModal(
             this.app,
             'Remove the lock of this device?',
-            `Remove the lock only when no publication runs on this device: not in Obsidian, and not in the command line program. The tool does not check it. A run that stopped halfway (a crash, Obsidian closed during a run) left it. The next dry run, publication or takedown then puts the copy of the content store back.${error === undefined ? '' : ` The last message: ${error}`}`,
+            isolateNames(
+                `${holder} Remove the lock only when no publication runs on this device: not in Obsidian, and not in the command line program. A run that stopped halfway (a crash, Obsidian closed during a run) left it. The next dry run, publication or takedown then puts the copy of the content store back.${error === undefined ? '' : ` The last message: ${error}`}`
+            ),
             'Remove the lock',
             () => {
                 void this.center.unlock()
@@ -472,7 +504,7 @@ export class VaultPublishPlugin extends Plugin {
             this.center.subscribe(() => {
                 const { deployment } = this.center.state
                 if (deploying && deployment?.running === false) {
-                    new Notice(`Vault Publish: ${deployNotice(deployment.report)}`)
+                    notify(`Vault Publish: ${deployNotice(deployment.report)}`)
                 }
                 deploying = deployment?.running === true
             })
@@ -486,7 +518,7 @@ export class VaultPublishPlugin extends Plugin {
                     before !== 'answering' &&
                     activity === 'idle'
                 ) {
-                    new Notice(`Vault Publish: ${error ?? outcome ?? 'done'}`)
+                    notify(`Vault Publish: ${error ?? outcome ?? 'done'}`)
                 }
                 before = activity
             })
@@ -596,9 +628,11 @@ class DeviceSettingTab extends PluginSettingTab {
             .setDesc('Runs a check of the vault and of the copy with these settings.')
             .addButton((button) =>
                 button.setButtonText('Check').onClick(() => {
-                    void this.plugin.center.check().then(() => {
-                        new Notice(
-                            `Vault Publish: ${this.plugin.center.state.error ?? this.plugin.center.state.log.at(-1)?.text ?? 'done'}`
+                    // The result of this check, never an older error: a
+                    // check that another activity refuses says so.
+                    void this.plugin.center.check().then((result) => {
+                        notify(
+                            `Vault Publish: ${result.refused ?? result.failure ?? this.plugin.center.state.log.at(-1)?.text ?? 'done'}`
                         )
                     })
                 })

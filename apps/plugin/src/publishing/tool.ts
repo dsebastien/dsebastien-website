@@ -835,6 +835,9 @@ function liveQueryWarnings(
     )
 }
 
+/** The warning of a note that changed between the read of the tool and its write. */
+const CHANGED_DURING_RUN = `the note changed during the publication: its ${STATE_PROPERTY} property is corrected at the next publication`
+
 /**
  * Corrects the state property of the notes of the scan, after a push that
  * succeeded (PUB-13): a published note has it with the value true, and every
@@ -857,10 +860,7 @@ async function correctState(
         try {
             const text = await device.vault.read(path)
             if (text === undefined || contentHash(text) !== note.textHash) {
-                warnings.push({
-                    path,
-                    message: `the note changed during the publication: its ${STATE_PROPERTY} property is corrected at the next publication`
-                })
+                warnings.push({ path, message: CHANGED_DURING_RUN })
                 continue
             }
             const warning = await writeState(device, path, text, isPublished)
@@ -905,7 +905,9 @@ async function writeState(
     if (namesInProperties(wanted, IGNORE_PROPERTY) !== namesInProperties(text, IGNORE_PROPERTY)) {
         return `the ${STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand`
     }
-    await device.vault.write(path, wanted)
+    if (!(await device.vault.write(path, wanted, text))) {
+        return CHANGED_DURING_RUN
+    }
     return undefined
 }
 
@@ -2582,10 +2584,12 @@ async function writeIgnore(
     path: string,
     note: { readonly before: string; readonly after: string }
 ): Promise<void> {
-    if ((await device.vault.read(path)) !== note.before) {
+    if (
+        (await device.vault.read(path)) !== note.before ||
+        !(await device.vault.write(path, note.after, note.before))
+    ) {
         throw new Error(`"${path}" changed since the check of the edit, and it is not written`)
     }
-    await device.vault.write(path, note.after)
 }
 
 /** The journal after an edit: `correct` while a correction of the property is owed, else none. */

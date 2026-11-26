@@ -94,7 +94,30 @@ export interface CenterHost {
     takedowns?(): TakedownMarker
     /** The record of the deploys of this device: whether one runs, and the last report. */
     record?(): DeployRecord
+    /**
+     * The size and the time of the last change of a note of the vault, read
+     * as the face reads them for an event of Obsidian, or `undefined` when
+     * the note cannot be read. Without it, every event is an edit.
+     */
+    stat?(path: string): Promise<FileStat | undefined>
 }
+
+/** The size and the time of the last change of a file, as the face reads them. */
+export interface FileStat {
+    readonly size: number
+    readonly mtime: number
+}
+
+/** An event of a note: its path, and its size and time after the event when the face could read them. */
+interface NoteEvent {
+    readonly path: string
+    readonly stat: FileStat | undefined
+}
+
+/** The result of one activity: refused, failed, or done. */
+export type RunResult =
+    | { readonly refused: string; readonly failure?: never }
+    | { readonly refused?: never; readonly failure?: string }
 
 /**
  * The deploy after the last push (PUB-42): it runs, or its report with the
@@ -153,9 +176,6 @@ const TOOL_ACTIVITIES: Record<Exclude<ToolCall['tool'], 'deploy'>, Activity> = {
     unlock: 'unlocking'
 }
 
-/** How long a write of the state property by a run is no edit, in milliseconds. */
-const OWN_WRITES = 10_000
-
 export interface LogLine {
     /** The time, in the canonical form. */
     readonly time: string
@@ -197,6 +217,12 @@ export interface CenterState {
     readonly activity: Activity
     /** The message of the last failure, until the next activity. */
     readonly error?: string
+    /**
+     * The message of the last publication, unpublish or takedown that
+     * failed, until the author closes it or the next one starts: another
+     * activity never takes it away (the run log keeps it too).
+     */
+    readonly failure?: string
     /** The plan of the last dry run, or of a publication that stopped because its plan changed. */
     readonly dryRun?: StoredPlan
     readonly report?: Report
@@ -280,10 +306,15 @@ export class PublicationCenter {
     readonly #listeners = new Set<() => void>()
     /** The notes that changed after the last check began. */
     #changed = new Set<string>()
-    /** The writes of the tool that are no edit: each slot holds paths until its time ends. */
-    #ownWrites: { paths: Set<string>; until: number }[] = []
-    /** The paths of the edits that Obsidian reports while a refresh of the lists runs (R71). */
-    #duringRefresh: string[] | undefined
+    /**
+     * The writes of the tool that are no edit: the size and the time of each
+     * note after the last write of a run. An event of the note with that
+     * size and time is that write, however many events it gives and however
+     * late they come; any other event is an edit.
+     */
+    readonly #ownWrites = new Map<string, FileStat>()
+    /** The edits that Obsidian reports while a refresh of the lists runs (R71). */
+    #duringRefresh: NoteEvent[] | undefined
     /** The activity that runs now, so that a takedown can wait for its end. */
     #current: Promise<void> = Promise.resolve()
     /** False after a run changed the copy, until the next check: the queue is old then. */
@@ -370,29 +401,40 @@ export class PublicationCenter {
     }
 
     /**
-     * A note was edited, made or renamed in the vault after the check. It
-     * calls no listener: Obsidian reports every file at its start, and every
-     * write of the state property after a publication. The write of the state
-     * property by the last run is no edit (one event per note, for a short time).
+     * A note was edited, made or renamed in the vault after the check, with
+     * its size and its time after the event (as `stat` of the host reads
+     * them). It calls no listener: Obsidian reports every file at its start,
+     * and every write of the state property after a publication. An event
+     * whose note has the size and the time of the last write of a run is
+     * that write, no edit.
      */
-    noteChanged(path: string): void {
-        // A monotonic clock of the face, not a time of the logic.
+    noteChanged(path: string, stat?: FileStat): void {
         // While the lists are refreshed, the events wait: after the refresh,
-        // only one event of each note that it wrote is its own write.
+        // one event of each write that it reports is that write.
         if (this.#duringRefresh !== undefined) {
-            this.#duringRefresh.push(path)
+            this.#duringRefresh.push({ path, stat })
             return
         }
-        if (!this.#isOwnWrite(path)) {
+        if (!this.#isOwnWrite(path, stat)) {
             this.#changed.add(path)
         }
     }
 
-    /** True when an open slot holds the path: the event is the write of a run, and it takes the path out. */
-    #isOwnWrite(path: string): boolean {
-        const now = performance.now()
-        this.#ownWrites = this.#ownWrites.filter((slot) => now < slot.until)
-        return this.#ownWrites.some((slot) => slot.paths.delete(path))
+    /**
+     * True when the note has the size and the time of the last write of a
+     * run: the event is that write. Another size or time is an edit, and the
+     * write is forgotten.
+     */
+    #isOwnWrite(path: string, stat: FileStat | undefined): boolean {
+        const own = this.#ownWrites.get(path)
+        if (own === undefined) {
+            return false
+        }
+        if (stat !== undefined && stat.size === own.size && stat.mtime === own.mtime) {
+            return true
+        }
+        this.#ownWrites.delete(path)
+        return false
     }
 
     /** The path of a note in the content store: a note that a move of the queue moved is there at its old path. */
@@ -401,13 +443,15 @@ export class PublicationCenter {
         return moves.find((move) => move.to === path)?.from ?? path
     }
 
-    #wrote(paths: readonly string[]): void {
-        // A new slot does not drop the slot of an earlier run: the events of
-        // its writes can come later.
-        const now = performance.now()
-        this.#ownWrites = this.#ownWrites.filter((slot) => now < slot.until)
-        if (paths.length > 0) {
-            this.#ownWrites.push({ paths: new Set(paths), until: now + OWN_WRITES })
+    /** Records the size and the time of each note that a run wrote, before the check after the run. */
+    async #wrote(paths: Iterable<string>): Promise<void> {
+        for (const path of paths) {
+            const stat = await this.host.stat?.(path).catch(() => undefined)
+            if (stat === undefined) {
+                this.#ownWrites.delete(path)
+            } else {
+                this.#ownWrites.set(path, stat)
+            }
         }
     }
 
@@ -415,10 +459,10 @@ export class PublicationCenter {
      * The device of the host, whose refresh of the frozen lists (PUB-35, R71)
      * counts its writes as writes of the tool, not as edits: else a new note
      * with a list would be refused as "changed after the check". The events
-     * of a refresh wait for its end: then one event of each note that it
-     * wrote is its write, an event that an open slot of an earlier run holds
-     * is that write, and every other event is an edit. A write whose event
-     * comes later gets a slot.
+     * of a refresh wait for its end: then the size and the time of each note
+     * that it wrote are recorded, one event of each write that it reports is
+     * that write, an event of a note as the last write of a run left it is
+     * that write too, and every other event is an edit.
      */
     #device(): Device {
         const device = this.host.device()
@@ -430,31 +474,35 @@ export class PublicationCenter {
             ...device,
             lists: {
                 refresh: async (paths) => {
-                    this.#duringRefresh = []
+                    const waiting: NoteEvent[] = []
+                    this.#duringRefresh = waiting
                     let result: RefreshResult | undefined
                     try {
                         result = await lists.refresh(paths)
                         return result
                     } finally {
-                        const events = this.#duringRefresh
-                        this.#duringRefresh = undefined
                         const writes = new Map(result?.written ?? [])
-                        for (const path of events) {
-                            // One event for each write of the refresh is that
-                            // write; any other event is an edit.
-                            const left = writes.get(path) ?? 0
-                            if (left > 0) {
-                                writes.set(path, left - 1)
-                            } else if (!this.#isOwnWrite(path)) {
-                                this.#changed.add(path)
+                        // One event for each write of the refresh is that
+                        // write; any other event is an edit, unless the note
+                        // is as the last write of a run left it.
+                        const settle = (events: readonly NoteEvent[]): void => {
+                            for (const { path, stat } of events) {
+                                const left = writes.get(path) ?? 0
+                                if (left > 0) {
+                                    writes.set(path, left - 1)
+                                } else if (!this.#isOwnWrite(path, stat)) {
+                                    this.#changed.add(path)
+                                }
                             }
                         }
-                        // The writes whose events have not come yet: one slot each.
-                        for (const [path, left] of writes) {
-                            for (let count = 0; count < left; count += 1) {
-                                this.#wrote([path])
-                            }
-                        }
+                        // The events of the refresh are judged before its
+                        // writes are recorded: an edit during the refresh is
+                        // never taken for its write.
+                        settle(waiting.splice(0))
+                        await this.#wrote(writes.keys())
+                        // The events that came while the notes were read.
+                        settle(waiting.splice(0))
+                        this.#duringRefresh = undefined
                         if (result !== undefined && result.written.size > 0) {
                             this.#log(
                                 `Lists refreshed by the Dataview Serializer: ${[...result.written.keys()].map((path) => `"${path}"`).join(', ')}`
@@ -723,7 +771,7 @@ export class PublicationCenter {
         name: string,
         work: () => Promise<void>,
         after: 'none' | 'author' | 'agent' = 'none'
-    ): Promise<void> {
+    ): Promise<RunResult> {
         while (this.#state.activity === 'answering' && activity !== 'answering') {
             await this.#current
         }
@@ -735,22 +783,26 @@ export class PublicationCenter {
             if (activity !== 'checking') {
                 this.#set({ error: `${text}. Try again when it ends.` })
             }
-            return
+            return { refused: text }
         }
         // A request of an agent that only reads leaves the error of the
-        // author: only its own failure replaces it.
+        // author: only its own failure replaces it. The failure of a
+        // publication or a takedown stays until the next one starts.
+        const pushes = activity === 'publishing' || activity === 'taking down'
         if (activity !== 'answering') {
-            const { error: _old, ...rest } = this.#state
-            this.#state = rest
+            const { error: _old, failure: kept, ...rest } = this.#state
+            this.#state = pushes || kept === undefined ? rest : { ...rest, failure: kept }
         }
         this.#set({ activity: activity })
+        let failure: string | undefined
         const running = (async () => {
             try {
                 try {
                     await work()
                 } catch (error) {
-                    this.#log(`${name} failed: ${messageOf(error)}`)
-                    this.#set({ error: messageOf(error) })
+                    failure = messageOf(error)
+                    this.#log(`${name} failed: ${failure}`)
+                    this.#set(pushes ? { error: failure, failure } : { error: failure })
                 }
                 const outcome = this.#state.log.at(-1)?.text
                 if (outcome !== undefined) {
@@ -761,6 +813,7 @@ export class PublicationCenter {
                         await this.#check(after === 'agent')
                     } catch (error) {
                         this.#log(`Check failed: ${messageOf(error)}`)
+                        failure ??= messageOf(error)
                         if (this.#state.error === undefined) {
                             this.#set({ error: messageOf(error) })
                         }
@@ -772,6 +825,14 @@ export class PublicationCenter {
         })()
         this.#current = running
         await running
+        return failure === undefined ? {} : { failure }
+    }
+
+    /** Closes the message of the last publication or takedown that failed. */
+    closeFailure(): void {
+        const { failure: _closed, ...rest } = this.#state
+        this.#state = rest
+        this.#set({})
     }
 
     /**
@@ -841,8 +902,8 @@ export class PublicationCenter {
         )
     }
 
-    /** Checks the vault (PUB-30, PUB-31). */
-    check(): Promise<void> {
+    /** Checks the vault (PUB-30, PUB-31). The result says when another activity refused it, or why it failed. */
+    check(): Promise<RunResult> {
         return this.#run('checking', 'Check', () => this.#check())
     }
 
@@ -851,7 +912,7 @@ export class PublicationCenter {
      * but the frozen lists that the refresh before the plan updates (PUB-33,
      * R71).
      */
-    dryRun(): Promise<void> {
+    dryRun(): Promise<RunResult> {
         return this.#run('planning', 'Dry run', async () => {
             const { queue, choices } = this.#state
             if (queue === undefined) {
@@ -926,7 +987,7 @@ export class PublicationCenter {
                     }
                 )
                 done.pushed = true
-                this.#wrote([...report.propertySet, ...report.propertyRemoved])
+                await this.#wrote([...report.propertySet, ...report.propertyRemoved])
                 this.#set({
                     report: { kind: 'publication', report, addresses: addressesOf(report) }
                 })
@@ -995,7 +1056,7 @@ export class PublicationCenter {
                     true
                 )
                 done.pushed = true
-                this.#wrote(report.propertyRemoved)
+                await this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
                 if (report.storageWarnings.length > 0) {
@@ -1144,7 +1205,7 @@ export class PublicationCenter {
                         this.#served.pushed = true
                     }
                 )
-                this.#wrote([...report.propertySet, ...report.propertyRemoved])
+                await this.#wrote([...report.propertySet, ...report.propertyRemoved])
                 this.#set({
                     report: {
                         kind: 'publication',
@@ -1168,7 +1229,7 @@ export class PublicationCenter {
                     },
                     true
                 )
-                this.#wrote(report.propertyRemoved)
+                await this.#wrote(report.propertyRemoved)
                 this.#set({ report: { kind: 'takedown', report, addresses: [] } })
                 this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)
                 return outcomeOfTakedown(report)
@@ -1185,7 +1246,7 @@ export class PublicationCenter {
                 this.#fresh = false
                 const event = await edit(device, { action: call.tool, path: call.path }, run)
                 if (event.state === 'applied' && call.tool === 'ignore') {
-                    this.#wrote([call.path])
+                    await this.#wrote([call.path])
                 }
                 this.#log(`Agent edit done: ${call.tool} "${call.path}" (${event.state})`)
                 return outcomeOfEdit(event)
@@ -1262,7 +1323,7 @@ export class PublicationCenter {
                     face: 'plugin'
                 })
                 if (event.state === 'confirmed' && isNoteEdit(event.action)) {
-                    this.#wrote([event.path])
+                    await this.#wrote([event.path])
                 }
                 this.#log(`${name} done: ${event.action} "${event.path}" (${event.state})`)
             },
@@ -1318,6 +1379,19 @@ export class PublicationCenter {
         throw new Error(
             `A new note changed after the check, so nothing was published and its tick is gone: ${fresh.map((path) => `"${path}"`).join(', ')}. The lists are checked again: check them, tick again and publish.`
         )
+    }
+
+    /**
+     * The text of the lock of the device, for the confirmation of its
+     * removal: `undefined` when there is none, or when the settings name no
+     * device.
+     */
+    async lockText(): Promise<string | undefined> {
+        try {
+            return await this.host.device().local.readLock()
+        } catch {
+            return undefined
+        }
     }
 
     /**

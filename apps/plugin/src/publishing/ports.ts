@@ -39,11 +39,16 @@ export interface Vault {
     /** True when the vault has a folder with exactly this vault path, which is not a symbolic link. */
     hasFolder(path: string): Promise<boolean>
     /**
-     * Writes the text of a note. A stop of the process during the write never
-     * leaves the note empty or half written: the text goes into a hidden file
-     * of the same folder first, which is then renamed.
+     * Writes the text of a note, only while the note still holds `before`,
+     * the text that the tool read. False when it holds another text now (it
+     * changed during the run): nothing is written. In a folder, a stop of the
+     * process during the write never leaves the note empty or half written:
+     * the text goes into a hidden file of the same folder first, which is
+     * then renamed. In Obsidian, the plugin writes through the vault of
+     * Obsidian, as an edit in its editor, so a write never races with a save
+     * of the editor.
      */
-    write(path: string, text: string): Promise<void>
+    write(path: string, text: string, before: string): Promise<boolean>
     /**
      * The vault for one run of the tool (`status`, `plan`, `publish`). It lists
      * each folder one time per run and keeps the listing until the end of the

@@ -207,7 +207,22 @@ function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): 
         readBytes: bytesOf,
         size: sizeOf,
         hasFolder: async (path) => (await exactEntry(path)) === 'folder',
-        write: (path, text) => writeWhole(join(folder, path), text),
+        async write(path, text, before) {
+            // The note is read again right before the write: a note that
+            // changed since the tool read it is not written.
+            const bytes = await bytesOf(path)
+            let now: string | undefined
+            try {
+                now = bytes === undefined ? undefined : decode(bytes)
+            } catch {
+                now = undefined
+            }
+            if (now !== before) {
+                return false
+            }
+            await writeWhole(join(folder, path), text)
+            return true
+        },
         forRun: () => folderVault(folder, new Map())
     }
 }
@@ -1189,6 +1204,39 @@ async function textOrNothing(path: string): Promise<string | undefined> {
             return undefined
         }
         throw error
+    }
+}
+
+/**
+ * True when a process with this number runs on this computer. A number that
+ * the system gave again to another process counts as running: the lock then
+ * stays, the safe way.
+ */
+export function processRuns(id: number): boolean {
+    try {
+        process.kill(id, 0)
+        return true
+    } catch (error) {
+        // EPERM: the process runs, as another user.
+        return codeOf(error) === 'EPERM'
+    }
+}
+
+/** What the text of a lock says of its run: its command and the number of its process, when it names them. */
+export function lockHolderOf(text: string): { command?: string; process?: number } {
+    let value: unknown
+    try {
+        value = JSON.parse(text)
+    } catch {
+        return {}
+    }
+    if (typeof value !== 'object' || value === null) {
+        return {}
+    }
+    const { command, process: id } = value as { command?: unknown; process?: unknown }
+    return {
+        ...(typeof command === 'string' ? { command } : {}),
+        ...(typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? { process: id } : {})
     }
 }
 

@@ -20,6 +20,7 @@ import { FolderSuggest } from './folder-suggest.ts'
 import { addressOf } from './center.ts'
 import type { PublicationCenter, Report } from './center.ts'
 import type { Measures } from './measures.ts'
+import { isolateNames, waysOut } from './messages.ts'
 
 // The view of the publication center (TOOL-20 to TOOL-22, TOOL-25, decision
 // R67): a tab in the main area that shows the state of the controller and the
@@ -368,23 +369,45 @@ export class PublicationCenterView extends ItemView {
         const rows = this.#allRows()
         this.#renderHeader()
         this.#message.empty()
+        // The failure of a publication or a takedown stays until the author
+        // closes it, also after the check that follows it (issue 106).
+        if (state.failure !== undefined && state.failure !== state.error) {
+            this.#message.createDiv({
+                cls: 'vault-publish-error',
+                text: `The last publication or takedown failed: ${isolateNames(state.failure)}`
+            })
+            const close = this.#message.createEl('button', { text: 'Close' })
+            close.addEventListener('click', () => {
+                center.closeFailure()
+            })
+        }
         if (state.error !== undefined) {
-            this.#message.createDiv({ cls: 'vault-publish-error', text: state.error })
-            if (
-                state.error.includes('settings of Vault Publish') ||
-                state.error.includes('must be an absolute path') ||
-                state.error.includes('copy of the content store')
-            ) {
+            this.#message.createDiv({ cls: 'vault-publish-error', text: isolateNames(state.error) })
+            const ways = waysOut(state.error)
+            if (ways.settings) {
                 const open = this.#message.createEl('button', { text: 'Open the settings' })
                 open.addEventListener('click', () => {
                     this.host.openSettings()
                 })
             }
-            if (state.error.includes('a publication runs on this device, or one stopped halfway')) {
+            if (ways.pull) {
+                const pull = this.#message.createEl('button', { text: 'Pull' })
+                pull.disabled = state.activity !== 'idle'
+                pull.addEventListener('click', () => {
+                    void center.pull()
+                })
+            }
+            if (ways.unlock) {
                 const unlock = this.#message.createEl('button', { text: 'Remove the lock…' })
                 unlock.disabled = state.activity !== 'idle'
                 unlock.addEventListener('click', () => {
                     this.host.confirmUnlock()
+                })
+            }
+            if (state.failure === state.error) {
+                const close = this.#message.createEl('button', { text: 'Close' })
+                close.addEventListener('click', () => {
+                    center.closeFailure()
                 })
             }
         }
@@ -1089,7 +1112,7 @@ export class PublicationCenterView extends ItemView {
             )
         }
         if (report.error !== undefined) {
-            panel.createDiv({ cls: 'vault-publish-error', text: report.error })
+            panel.createDiv({ cls: 'vault-publish-error', text: isolateNames(report.error) })
         }
         if (report.warnings.length > 0) {
             const part = panel.createEl('details', { attr: { open: '' } })
@@ -1117,10 +1140,10 @@ export class PublicationCenterView extends ItemView {
         const { log } = this.host.center.state
         const last = log.at(-1)
         this.#log.createEl('summary', {
-            text: last === undefined ? 'Run log: empty' : `Run log: ${last.text}`
+            text: last === undefined ? 'Run log: empty' : `Run log: ${isolateNames(last.text)}`
         })
         for (const line of [...log].reverse()) {
-            this.#log.createDiv({ text: `${line.time} ${line.text}` })
+            this.#log.createDiv({ text: `${line.time} ${isolateNames(line.text)}` })
         }
     }
 }
