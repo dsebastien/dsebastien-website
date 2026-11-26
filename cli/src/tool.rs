@@ -36,7 +36,8 @@ use crate::order::sort_by_code_point;
 use crate::plan::{PublicationPlan, Selection, forced_removals, plan_with_sizes};
 use crate::queue::{GuardChange, Move, Scan, compute_guard_queues, compute_queue, moved_entry};
 use crate::renames::{
-    JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
+    JournalState, RENAMES_FILE, RenameJournals, fold_moves, moved_folder, parse_markers,
+    read_journals,
 };
 use crate::withdrawn::{WITHDRAWN_FILE, parse_withdrawn, withdrawn_keys, withdrawn_text};
 
@@ -2544,8 +2545,9 @@ fn take_down_locked(
     for path in named {
         let entry = manifest.get(path).ok_or_else(|| {
             format!(
-                "\"{path}\" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down{}{}",
+                "\"{path}\" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down{}{}{}",
                 near_paths(path, &manifest),
+                moves_to(device, path, &manifest),
                 cleanup_lines(&early)
             )
         })?;
@@ -2753,6 +2755,36 @@ fn near_paths(path: &str, manifest: &BTreeMap<String, ManifestEntry>) -> String 
     } else {
         format!(". The manifest names: {}", near.join(", "))
     }
+}
+
+/// The moves of the new lines of the rename journals whose new path a path
+/// names, also in another letter case or Unicode form or without its end
+/// `.md`, as the end of the message of a refusal (issue 105): until a
+/// publication applies the move, the manifest has the note at its old path.
+/// A journal or a marker that cannot be read gives nothing: the refusal
+/// stays a refusal.
+fn moves_to(device: &Device, path: &str, manifest: &BTreeMap<String, ManifestEntry>) -> String {
+    let journals = device
+        .store
+        .read(RENAMES_FILE)
+        .and_then(|text| parse_markers(text.as_deref()))
+        .and_then(|markers| read_journals(&device.renames, &markers));
+    let Ok(journals) = journals else {
+        return String::new();
+    };
+    let forms = near_forms(path);
+    // The map gives its keys in the order of the code points.
+    fold_moves(manifest.keys().cloned(), &journals.lines)
+        .positions
+        .iter()
+        .filter(|(from, to)| from != to && forms.contains(&folded_form(to)))
+        .map(|(from, to)| {
+            format!(
+                ". A rename journal moves \"{from}\" to \"{to}\", and the next publication applies the move: until then, a takedown names \"{from}\""
+            )
+        })
+        .collect::<Vec<_>>()
+        .concat()
 }
 
 /// The most lines of a list in the message of a refusal.

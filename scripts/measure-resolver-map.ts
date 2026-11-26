@@ -21,7 +21,7 @@ import { aliasesOf } from '../apps/plugin/src/publishing/frontmatter.ts'
 // its size with gzip, the time to read it, and the time of one resolution.
 //
 //   bun scripts/measure-resolver-map.ts [--vault <folder> | --paths <file>]
-//       [--redirects <file>]
+//       [--redirects <file>] [--former-paths <count>]
 //
 // The default vault is the invented corpus of `bun run corpus`. `--paths`
 // reads the vault paths of the notes from a file, one per line, with no
@@ -29,7 +29,11 @@ import { aliasesOf } from '../apps/plugin/src/publishing/frontmatter.ts'
 // adds a redirect list (`redirects.json` of a content store, issue 44) and
 // measures the map with it, and the cost of the first request of a host
 // that reads it: the read of the text, the check of its shape, and one
-// resolution of an old path of the list. The script
+// resolution of an old path of the list. A vault has no former path:
+// `--former-paths <count>` gives every note that many invented former paths
+// (`<folder>/Former <n> of <name>.md`), so the measure counts the part
+// `former` of the map, which grows with every move and never loses a path
+// (issue 105, URL rule 1 of the business rules). The script
 // prints numbers only, never a name of a note: it can run on the export of the
 // published notes of the author (`.cache/published/vault`), whose numbers stay
 // out of this repository.
@@ -65,23 +69,40 @@ async function main(): Promise<void> {
     const { values } = parseArgs({
         args: Bun.argv.slice(2),
         options: {
-            vault: { type: 'string', default: join(ROOT, '.cache', 'corpus', 'vault') },
-            paths: { type: 'string' },
-            redirects: { type: 'string' }
+            'vault': { type: 'string', default: join(ROOT, '.cache', 'corpus', 'vault') },
+            'paths': { type: 'string' },
+            'redirects': { type: 'string' },
+            'former-paths': { type: 'string', default: '0' }
         },
         strict: true
     })
+    const formerCount = Number(values['former-paths'])
+    if (!Number.isInteger(formerCount) || formerCount < 0) {
+        throw new Error('--former-paths takes a whole number, 0 or more')
+    }
     const notes: SiteNote[] = []
+    const formerPathsOf = (path: string): string[] => {
+        const slash = path.lastIndexOf('/') + 1
+        return Array.from(
+            { length: formerCount },
+            (_, index) =>
+                `${path.slice(0, slash)}Former ${String(index + 1)} of ${path.slice(slash)}`
+        )
+    }
     if (values.paths === undefined) {
         const vault = resolvePath(values.vault)
         for (const path of await notePaths(vault)) {
             const text = await readFile(join(vault, path), 'utf8')
-            notes.push({ path, aliases: aliasesOf(sourceOf(text)).aliases })
+            notes.push({
+                path,
+                aliases: aliasesOf(sourceOf(text)).aliases,
+                formerPaths: formerPathsOf(path)
+            })
         }
     } else {
         const lines = (await readFile(resolvePath(values.paths), 'utf8')).split(/\r?\n/u)
         for (const path of lines.filter((line) => line.endsWith('.md'))) {
-            notes.push({ path, aliases: [] })
+            notes.push({ path, aliases: [], formerPaths: formerPathsOf(path) })
         }
     }
     // File names of the same length as the ones of the build.
@@ -156,6 +177,10 @@ async function main(): Promise<void> {
                 names: count(map.names),
                 aliases: count(map.aliases),
                 choices: count(map.choices),
+                formerPaths: notes.reduce((sum, note) => sum + (note.formerPaths?.length ?? 0), 0),
+                formerTexts: count(map.former?.folded),
+                formerNames: count(map.former?.names),
+                formerMarkdown: count(map.former?.markdown),
                 bytes,
                 gzipBytes: gzip,
                 ...(list === undefined

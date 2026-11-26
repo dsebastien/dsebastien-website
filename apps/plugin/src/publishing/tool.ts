@@ -42,7 +42,7 @@ import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
 import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult } from './ports.ts'
 import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
 import type { Move, PublicationQueue, Scan } from './queue.ts'
-import { movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
+import { foldMoves, movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
 import { parseWithdrawn, WITHDRAWN_FILE, withdrawnKeys, withdrawnText } from './withdrawn.ts'
 import type { JournalState } from './renames.ts'
 import { FACES, isCanonicalTime, isOneLine } from './run.ts'
@@ -1754,7 +1754,7 @@ async function takeDownLocked(
     const unknown = named.find((path) => !manifest.has(path))
     if (unknown !== undefined) {
         throw new Error(
-            `"${unknown}" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down${nearPaths(unknown, manifest)}${cleanupLines(early)}`
+            `"${unknown}" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down${nearPaths(unknown, manifest)}${await movesTo(device, unknown, manifest)}${cleanupLines(early)}`
         )
     }
     const entries = named.flatMap((path) => manifest.get(path) ?? [])
@@ -1864,43 +1864,6 @@ function mergeWarnings(
 }
 
 /**
- * The paths of the manifest that a path names in another letter case or
- * Unicode form, or without its end `.md`, as the end of the message of a
- * refusal. The site resolves such an address to the note, so the refusal
- * must never read as "already gone". A folded form names one published note
- * at most (URL contract, rule 9), but unpublished entries can share it.
- */
-function nearPaths(path: string, manifest: ReadonlyMap<string, ManifestEntry>): string {
-    const forms = nearForms(path)
-    const near = sortByCodePoint([...manifest.keys()].filter((key) => forms.has(foldedForm(key))))
-    return near.length === 0
-        ? ''
-        : `. The manifest names: ${near.map((key) => `"${key}"`).join(', ')}`
-}
-
-/** The most lines of a list in the message of a refusal. */
-const MOST_LINES = 20
-
-/** What the first cleanup of a takedown did, as the end of the message of a refusal. */
-function cleanupLines(early: {
-    readonly deleted: readonly string[]
-    readonly warnings: readonly { path: string; message: string }[]
-}): string {
-    const more = (count: number): string =>
-        count > MOST_LINES ? `, and ${String(count - MOST_LINES)} more` : ''
-    const deleted =
-        early.deleted.length === 0
-            ? ''
-            : `\nThe takedown deleted ${String(early.deleted.length)} file(s) of the attachment storage that no published note uses: ${early.deleted.slice(0, MOST_LINES).join(', ')}${more(early.deleted.length)}`
-    const warnings = warningLines(early.warnings.slice(0, MOST_LINES))
-    const hidden =
-        early.warnings.length > MOST_LINES
-            ? `\n- and ${String(early.warnings.length - MOST_LINES)} more warnings`
-            : ''
-    return `${deleted}${warnings}${hidden}`
-}
-
-/**
  * The characters that the refusal of a takedown removes at the two ends of a
  * named path before it looks for the paths near it: the code points of the
  * Unicode property White_Space, and U+FEFF. `trim()` is not used: it removes
@@ -1925,6 +1888,78 @@ function withoutSpacesAtTheEnds(text: string): string {
 function nearForms(path: string): Set<string> {
     const typed = withoutSpacesAtTheEnds(path)
     return new Set([foldedForm(typed), foldedForm(`${typed}.md`)])
+}
+
+/**
+ * The paths of the manifest that a path names in another letter case or
+ * Unicode form, or without its end `.md`, as the end of the message of a
+ * refusal. The site resolves such an address to the note, so the refusal
+ * must never read as "already gone". A folded form names one published note
+ * at most (URL contract, rule 9), but unpublished entries can share it.
+ */
+function nearPaths(path: string, manifest: ReadonlyMap<string, ManifestEntry>): string {
+    const forms = nearForms(path)
+    const near = sortByCodePoint([...manifest.keys()].filter((key) => forms.has(foldedForm(key))))
+    return near.length === 0
+        ? ''
+        : `. The manifest names: ${near.map((key) => `"${key}"`).join(', ')}`
+}
+
+/**
+ * The moves of the new lines of the rename journals whose new path a path
+ * names, also in another letter case or Unicode form or without its end
+ * `.md`, as the end of the message of a refusal (issue 105): until a
+ * publication applies the move, the manifest has the note at its old path.
+ * A journal or a marker that cannot be read gives nothing: the refusal
+ * stays a refusal.
+ */
+async function movesTo(
+    device: Device,
+    path: string,
+    manifest: ReadonlyMap<string, ManifestEntry>
+): Promise<string> {
+    let positions: ReadonlyMap<string, string>
+    try {
+        const journals = await readJournals(
+            device.renames,
+            parseMarkers(await device.store.read(RENAMES_FILE))
+        )
+        positions = foldMoves(manifest.keys(), journals.lines).positions
+    } catch {
+        return ''
+    }
+    const forms = nearForms(path)
+    const moves = sortByCodePoint([...positions.keys()])
+        .map((from) => ({ from, to: positions.get(from) ?? from }))
+        .filter(({ from, to }) => from !== to && forms.has(foldedForm(to)))
+    return moves
+        .map(
+            ({ from, to }) =>
+                `. A rename journal moves "${from}" to "${to}", and the next publication applies the move: until then, a takedown names "${from}"`
+        )
+        .join('')
+}
+
+/** The most lines of a list in the message of a refusal. */
+const MOST_LINES = 20
+
+/** What the first cleanup of a takedown did, as the end of the message of a refusal. */
+function cleanupLines(early: {
+    readonly deleted: readonly string[]
+    readonly warnings: readonly { path: string; message: string }[]
+}): string {
+    const more = (count: number): string =>
+        count > MOST_LINES ? `, and ${String(count - MOST_LINES)} more` : ''
+    const deleted =
+        early.deleted.length === 0
+            ? ''
+            : `\nThe takedown deleted ${String(early.deleted.length)} file(s) of the attachment storage that no published note uses: ${early.deleted.slice(0, MOST_LINES).join(', ')}${more(early.deleted.length)}`
+    const warnings = warningLines(early.warnings.slice(0, MOST_LINES))
+    const hidden =
+        early.warnings.length > MOST_LINES
+            ? `\n- and ${String(early.warnings.length - MOST_LINES)} more warnings`
+            : ''
+    return `${deleted}${warnings}${hidden}`
 }
 
 /**

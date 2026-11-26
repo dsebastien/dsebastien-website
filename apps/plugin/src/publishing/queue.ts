@@ -442,7 +442,8 @@ export async function computeQueue(input: {
             !movedUnderGuard(path)
     )
     // An unpublished note under a guard, in the same three cases; for the
-    // third, the scan did not find its file (decision R64).
+    // third, the scan did not find its file (decision R64), and no line of a
+    // journal moved it elsewhere: the line gives the exact move (issue 105).
     const unpublishedUnderGuard = [...manifest]
         .filter(
             ([path, entry]) =>
@@ -450,7 +451,7 @@ export async function computeQueue(input: {
                 (guardOfPath(path, input.configuration) !== undefined ||
                     ignored.has(path) ||
                     moves.underGuard.has(path) ||
-                    (!notes.has(path) && movedUnderGuard(path)))
+                    (!notes.has(path) && !moves.leftBehind.has(path) && movedUnderGuard(path)))
         )
         .map(([path]) => path)
     const changedPaths = new Set(lists.changed)
@@ -673,6 +674,8 @@ export function applyMoves(
     readonly manifest: Map<string, ManifestEntry>
     readonly moves: Move[]
     readonly underGuard: Set<string>
+    /** The unpublished entries that a line moved to a path with no guard: they stay at their paths. */
+    readonly leftBehind: ReadonlySet<string>
     /** The unpublished entries that leave the manifest: another entry moved into the path that their note left (rule 6 of the moves). */
     readonly displaced: ManifestEntry[]
     readonly warnings: RenameWarning[]
@@ -826,7 +829,7 @@ export function applyMoves(
             moves.push({ from, to })
         }
     }
-    return { manifest, moves, underGuard, displaced, warnings }
+    return { manifest, moves, underGuard, leftBehind, displaced, warnings }
 }
 
 /** The entry of a note that moves: its new path, and its former paths (rule 4 of the moves). */

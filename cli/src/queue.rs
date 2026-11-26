@@ -375,6 +375,9 @@ struct Guards<'a> {
     denied_file_names: &'a BTreeSet<String>,
     /// The entries that a line of a journal moved under a guard: the exact move.
     moved_under: &'a BTreeSet<String>,
+    /// The unpublished entries that a line of a journal moved to a path with
+    /// no guard: the exact move, so no note of their name moved under a guard.
+    moved_elsewhere: &'a BTreeSet<String>,
 }
 
 /// The paths of `to_remove` that are only missing from this vault: no
@@ -385,6 +388,7 @@ fn missing_of(to_remove: &[String], guards: &Guards) -> Vec<String> {
         ignored,
         denied_file_names,
         moved_under,
+        moved_elsewhere: _,
     } = guards;
     // A published note waits for its removal under a guard when its path is
     // in a folder of the deny list, it has the ignore property, or its file is
@@ -415,7 +419,8 @@ fn moved_under_guard(path: &str, denied_file_names: &BTreeSet<String>) -> bool {
 
 /// The unpublished notes that a guard excludes, in the three cases of a
 /// published note; for the third, the scan did not find the file (decision
-/// R64). The map gives its paths in the order of the code points.
+/// R64), and no line of a journal moved the note elsewhere (issue 105). The
+/// map gives its paths in the order of the code points.
 fn unpublished_under_guard(
     manifest: &BTreeMap<String, ManifestEntry>,
     notes: &BTreeMap<String, ScannedNote>,
@@ -426,6 +431,7 @@ fn unpublished_under_guard(
         ignored,
         denied_file_names,
         moved_under,
+        moved_elsewhere,
     } = guards;
     manifest
         .iter()
@@ -434,7 +440,9 @@ fn unpublished_under_guard(
                 && (in_deny_list(path, configuration)
                     || ignored.contains(*path)
                     || moved_under.contains(*path)
-                    || (!notes.contains_key(*path) && moved_under_guard(path, denied_file_names)))
+                    || (!notes.contains_key(*path)
+                        && !moved_elsewhere.contains(*path)
+                        && moved_under_guard(path, denied_file_names)))
         })
         .map(|(path, _)| path.clone())
         .collect()
@@ -693,6 +701,7 @@ fn queue_of(
         ignored: &ignored,
         denied_file_names: &denied_file_names,
         moved_under: &moves.under_guard,
+        moved_elsewhere: &moves.left_behind,
     };
     queue.missing = missing_of(&queue.to_remove, &guards);
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
@@ -1006,6 +1015,9 @@ struct Moves {
     /// The entries that moved under a guard: they stay, and are forced
     /// removals.
     under_guard: BTreeSet<String>,
+    /// The unpublished entries that a line moved to a path with no guard:
+    /// they stay at their paths.
+    left_behind: BTreeSet<String>,
     /// The unpublished entries that leave the manifest: another entry moved
     /// into the path that their note left (rule 6 of the moves).
     displaced: Vec<ManifestEntry>,
@@ -1156,6 +1168,7 @@ fn apply_moves(
         manifest,
         applied: moves,
         under_guard,
+        left_behind,
         displaced,
         warnings,
     }

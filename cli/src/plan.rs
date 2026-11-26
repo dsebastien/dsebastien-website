@@ -272,11 +272,7 @@ pub fn compute_plan(
             );
         }
     }
-    for path in &selection.remove {
-        if !scan.is_published(path) {
-            return refuse(path, "is not published: there is nothing to remove");
-        }
-    }
+    refuse_removals(scan, selection)?;
     refuse_pairings(scan, selection)?;
 
     // A guard wins over an unpublish: the note leaves the manifest.
@@ -452,6 +448,25 @@ fn refuse_paths(selection: &Selection) -> Result<(), String> {
 
 /// `Err` when a pairing of the selection does not pair a published note that
 /// is missing from this vault with a candidate that has no manifest entry.
+/// Refuses a path of `remove` that is not the path of a published note. The
+/// queue has a moved note at its new path, so the message of an old path
+/// names the new one (issue 105).
+fn refuse_removals(scan: &Scan, selection: &Selection) -> Result<(), String> {
+    for path in &selection.remove {
+        if !scan.is_published(path) {
+            let reason = match scan.queue.renamed.iter().find(|one| &one.from == path) {
+                None => "is not published: there is nothing to remove".to_owned(),
+                Some(one) => format!(
+                    "is not published at this path: a rename journal moves the note to \"{}\", and the plan names it there",
+                    one.to
+                ),
+            };
+            return Err(format!("\"{path}\" {reason}"));
+        }
+    }
+    Ok(())
+}
+
 fn refuse_pairings(scan: &Scan, selection: &Selection) -> Result<(), String> {
     let queue = &scan.queue;
     let within = |list: &[String], path: &String| list.binary_search(path).is_ok();

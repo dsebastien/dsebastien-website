@@ -38,6 +38,11 @@ export function journalName(storage: DeviceStorage, random: () => Uint8Array): s
     if (typeof kept === 'string' && JOURNAL_NAME.test(kept)) {
         return kept
     }
+    return newJournalName(storage, random)
+}
+
+/** A new name of the journal of this device, kept in the local storage. */
+function newJournalName(storage: DeviceStorage, random: () => Uint8Array): string {
     const digits = [...random().subarray(0, 8)]
         .map((byte) => byte.toString(16).padStart(2, '0'))
         .join('')
@@ -47,6 +52,24 @@ export function journalName(storage: DeviceStorage, random: () => Uint8Array): s
     const name = `${digits}.jsonl`
     storage.saveLocalStorage(JOURNAL_KEY, name)
     return name
+}
+
+/**
+ * The key of the lines that this device wrote into its journal, in the local
+ * storage: `{ name, lines }`, the line feeds of the file after the last write.
+ */
+export const JOURNAL_LINES_KEY = 'dsebastien-vault-publish-journal-lines'
+
+/** The number of line feeds of the bytes of a journal. */
+function lineFeeds(bytes: Uint8Array): number {
+    return bytes.reduce((count, byte) => (byte === 0x0a ? count + 1 : count), 0)
+}
+
+/** What a recorder needs to give its journal a new name (issue 105). */
+export interface JournalRenewal {
+    readonly storage: DeviceStorage
+    /** 8 random bytes. */
+    readonly random: () => Uint8Array
 }
 
 /** A moment as a time in the canonical form: UTC, cut to the second. */
@@ -62,7 +85,10 @@ export function canonicalTime(moment: Date): string {
 export class RenameRecorder {
     readonly #adapter: JournalAdapter
     readonly #folder: string
-    readonly #name: string
+    #name: string
+    readonly #renewal: JournalRenewal | undefined
+    /** The line feeds of the journal after the last write of this recorder. */
+    #lines = 0
     #last: Promise<void> = Promise.resolve()
     /** True when this recorder wrote the last line: the file then ends with a line feed. */
     #wrote = false
@@ -70,11 +96,42 @@ export class RenameRecorder {
     /**
      * @param folder the folder of the journals, as a path of the adapter
      * @param name the name of the journal of this device
+     * @param renewal with it, the recorder counts the lines that it writes in
+     * the local storage, and gives the journal a new name when the file has
+     * fewer lines than it wrote: the file was deleted, cut, or written again
+     * by a restore or a synchronization. The content store counts the lines
+     * that the publications read, so a line that such a file gets below that
+     * count would never be applied. A new name has only new lines.
      */
-    constructor(adapter: JournalAdapter, folder: string, name: string) {
+    constructor(adapter: JournalAdapter, folder: string, name: string, renewal?: JournalRenewal) {
         this.#adapter = adapter
         this.#folder = folder
         this.#name = name
+        this.#renewal = renewal
+    }
+
+    /** The line feeds that this device wrote into the journal of this name, by the local storage. */
+    #written(): number {
+        const kept = this.#renewal?.storage.loadLocalStorage(JOURNAL_LINES_KEY)
+        if (typeof kept !== 'object' || kept === null) {
+            return 0
+        }
+        const { name, lines } = kept as { name?: unknown; lines?: unknown }
+        return name === this.#name && typeof lines === 'number' ? lines : 0
+    }
+
+    /** Keeps the line feeds of the journal after a write. */
+    #keep(text: string): void {
+        this.#lines += lineFeeds(new TextEncoder().encode(text))
+        this.#renewal?.storage.saveLocalStorage(JOURNAL_LINES_KEY, {
+            name: this.#name,
+            lines: this.#lines
+        })
+    }
+
+    /** The bytes of the journal at a path, empty when it does not exist. */
+    async #bytes(path: string, exists: boolean): Promise<Uint8Array> {
+        return exists ? new Uint8Array(await this.#adapter.readBinary(path)) : new Uint8Array()
     }
 
     /**
@@ -103,24 +160,37 @@ export class RenameRecorder {
         if (!(await this.#adapter.exists(this.#folder))) {
             await this.#adapter.mkdir(this.#folder)
         }
-        const path = `${this.#folder}/${this.#name}`
-        if (!(await this.#adapter.exists(path))) {
-            this.#wrote = false
-            await this.#adapter.write(path, text)
-            this.#wrote = true
-            return
-        }
-        // A line that was cut (a crash during a write) stays one line: the
-        // new line starts on a line of its own. Only this device writes its
-        // journal, so the file is read one time per session, not for each
-        // line: a folder rename gives one event per note.
+        let path = `${this.#folder}/${this.#name}`
+        let exists = await this.#adapter.exists(path)
+        // Only this device writes its journal, so the file is read one time
+        // per session, not for each line: a folder rename gives one event
+        // per note.
         let cut = false
-        if (!this.#wrote) {
-            const bytes = new Uint8Array(await this.#adapter.readBinary(path))
+        // A file that is gone during the session is checked too.
+        if (!this.#wrote || !exists) {
+            let bytes = await this.#bytes(path, exists)
+            this.#lines = lineFeeds(bytes)
+            if (this.#renewal !== undefined && this.#lines < this.#written()) {
+                this.#name = newJournalName(this.#renewal.storage, this.#renewal.random)
+                path = `${this.#folder}/${this.#name}`
+                exists = await this.#adapter.exists(path)
+                bytes = await this.#bytes(path, exists)
+                this.#lines = lineFeeds(bytes)
+            }
+            // A line that was cut (a crash during a write) stays one line:
+            // the new line starts on a line of its own.
             cut = bytes.length > 0 && bytes[bytes.length - 1] !== 0x0a
         }
         this.#wrote = false
-        await this.#adapter.append(path, cut ? `\n${text}` : text)
+        if (exists) {
+            const added = cut ? `\n${text}` : text
+            await this.#adapter.append(path, added)
+            this.#keep(added)
+        } else {
+            this.#lines = 0
+            await this.#adapter.write(path, text)
+            this.#keep(text)
+        }
         this.#wrote = true
     }
 }

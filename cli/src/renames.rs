@@ -252,9 +252,12 @@ fn prefix_of<'a>(bytes: &'a [u8], lines: &[&[u8]], count: usize) -> &'a [u8] {
     &bytes[..end]
 }
 
-/// Reads the journals against the read marker. A journal that was cut or
-/// edited applies none of its lines, and its marker becomes all its lines. A
-/// line that is not valid is counted, not applied, and gives a warning.
+/// Reads the journals against the read marker. A journal with fewer lines
+/// than its count applies none of its lines, and its count stays: the vault
+/// can be behind. A journal whose first lines do not have the hash of its
+/// count (it was edited, or written again under the same name) applies none
+/// of its lines, and its count becomes all its lines. A line that is not
+/// valid is counted, not applied, and gives a warning.
 ///
 /// # Errors
 ///
@@ -294,14 +297,14 @@ pub fn read_journals(
             if lines.len() < counted {
                 warnings.push(RenameWarning {
                     path: name.clone(),
-                    message: "the journal has fewer lines than the publications read: the vault of this device may be behind. None of its lines is applied, and its count stays".to_owned(),
+                    message: "the journal has fewer lines than the publications read: the vault of this device may be behind, or the journal was cut or written again under the same name. None of its lines is applied, and its count stays".to_owned(),
                 });
                 first = lines.len();
                 keep = true;
             } else if bytes_hash(prefix_of(&bytes, &lines, counted)) != marker.hash {
                 warnings.push(RenameWarning {
                     path: name.clone(),
-                    message: "the journal was cut or edited since the last publication: none of its lines is applied, and its notes can show as pairings".to_owned(),
+                    message: "the first lines of the journal are not the lines that the publications read: it was edited, or written again under the same name. None of its lines is applied, its count becomes all its lines, and its notes can show as pairings".to_owned(),
                 });
                 first = lines.len();
             } else {

@@ -324,7 +324,8 @@ enum Command {
     /// After the push, it deploys the site with `--takedown` and writes the
     /// deploy report. In the vault, it reads only the named notes, to remove
     /// their `public_note` property (on a device with no copy of the vault,
-    /// an empty folder works).
+    /// an empty folder works), and the rename journals, to name the old path
+    /// of a note whose move waits for a publication when it refuses a path.
     Takedown {
         #[command(flatten)]
         folders: Folders,

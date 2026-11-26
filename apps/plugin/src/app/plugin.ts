@@ -113,10 +113,13 @@ export class VaultPublishPlugin extends Plugin {
         // The rename journal of this device (PUB-60, decision R66): each
         // rename that Obsidian reports, so that the next publication keeps the
         // old URL as a redirect.
+        const random = (): Uint8Array => crypto.getRandomValues(new Uint8Array(8))
         const recorder = new RenameRecorder(
             this.app.vault.adapter,
             `${this.app.vault.configDir}/${JOURNAL_FOLDER}`,
-            journalName(this.app, () => crypto.getRandomValues(new Uint8Array(8)))
+            journalName(this.app, random),
+            // A journal that lost lines that this device wrote gets a new name (issue 105).
+            { storage: this.app, random }
         )
         this.center = new PublicationCenter({
             device: () =>

@@ -9264,6 +9264,214 @@
             ]
         },
         {
+            "name": "a takedown and an unpublish that name the wrong path of a move that waits for a publication say which path to name (issue 105)",
+            "denyList": [],
+            "vault": {
+                "Alpha.md": "Alpha\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Alpha.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Alpha.md"],
+                        "published": ["Alpha.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian renames the note",
+                    "files": {
+                        "Renamed.md": "---\npublic_note: true\n---\nAlpha\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Alpha.md\",\"kind\":\"note\",\"time\":\"2031-06-02T08:00:00Z\",\"to\":\"Renamed.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Alpha.md"]
+                },
+                {
+                    "do": "takedown",
+                    "why": "the manifest has the note at its old path until a publication applies the move: the refusal of the new path names the old one",
+                    "paths": ["Renamed.md"],
+                    "time": "2031-06-03T08:00:00Z",
+                    "refused": true,
+                    "says": "A rename journal moves \"Alpha.md\" to \"Renamed.md\", and the next publication applies the move: until then, a takedown names \"Alpha.md\""
+                },
+                {
+                    "do": "takedown",
+                    "why": "also when the path names the new path in other letters and without the end .md",
+                    "paths": ["renamed"],
+                    "time": "2031-06-03T08:00:00Z",
+                    "refused": true,
+                    "says": "A rename journal moves \"Alpha.md\" to \"Renamed.md\""
+                },
+                {
+                    "do": "unpublish",
+                    "why": "an unpublish reads the queue after the moves: the refusal of the old path names the new one",
+                    "paths": ["Alpha.md"],
+                    "time": "2031-06-03T08:00:00Z",
+                    "refused": true,
+                    "says": "\"Alpha.md\" is not published at this path: a rename journal moves the note to \"Renamed.md\", and the plan names it there"
+                },
+                {
+                    "do": "takedown",
+                    "why": "the takedown of the old path takes the note down",
+                    "paths": ["Alpha.md"],
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "propertyRemoved": [],
+                        "storageWarnings": [],
+                        "takenDown": ["Alpha.md"],
+                        "warnings": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "an unpublished note that a line moved elsewhere is no forced removal when a note of its name is in a folder of the deny list (issue 105)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Locked/Plan.md": "A private plan\n",
+                "Notes/Plan.md": "Plan\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-06-01T08:00:00Z",
+                    "selection": {
+                        "include": ["Notes/Plan.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Plan.md"],
+                        "published": ["Notes/Plan.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the note is unpublished",
+                    "paths": ["Notes/Plan.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Notes/Plan.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Notes/Plan.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian moves the note to a folder with no guard; a private note of the same name is in a folder of the deny list",
+                    "files": {
+                        "Elsewhere/Plan.md": "Plan\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Notes/Plan.md\",\"kind\":\"note\",\"time\":\"2031-06-03T08:00:00Z\",\"to\":\"Elsewhere/Plan.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Notes/Plan.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the journal gives the exact move: the note moved elsewhere, so the private note of its name does not make it a forced removal; the entry keeps its path, and the moved note is a candidate",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": ["Elsewhere/Plan.md"],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublished": ["Notes/Plan.md"],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author deletes the moved note and the journal",
+                    "files": {
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": ""
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "without the line, the tool cannot tell where the note went",
+                    "paths": ["Elsewhere/Plan.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "with no line, a note of its name in a folder of the deny list makes it a forced removal: the tool fails closed",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": [],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublished": ["Notes/Plan.md"],
+                        "unpublishedUnderGuard": ["Notes/Plan.md"]
+                    }
+                }
+            ]
+        },
+        {
             "name": "a published note that moves into the path that an unpublished note left takes it, and the unpublished entry leaves the manifest (issue 105)",
             "denyList": [],
             "vault": {
@@ -9344,6 +9552,7 @@
                         "toRemove": [],
                         "unchanged": ["A.md"],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [
@@ -9496,6 +9705,7 @@
                         "toRemove": [],
                         "unchanged": ["C.md"],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -9935,6 +10145,7 @@
                         "toRemove": [],
                         "unchanged": ["A.md"],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [
@@ -10029,6 +10240,7 @@
                         "toRemove": ["C.md"],
                         "unchanged": [],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],

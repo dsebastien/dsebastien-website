@@ -161,6 +161,84 @@ describe('the rename journal after a restart of Obsidian', () => {
     })
 })
 
+// Issue 105: the content store counts the lines of each journal that a
+// publication read. A journal with fewer lines than its count applies none of
+// them, so the plugin never appends to a journal that lost lines that it
+// wrote: it takes a new name, whose lines are all new.
+describe('the rename journal that lost lines', () => {
+    const random = (): Uint8Array => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8])
+    const OLD = '0102030405060708.jsonl'
+    const NEW = '0909090909090909.jsonl'
+
+    async function recordTwo(
+        files: Map<string, string>,
+        values: Map<string, unknown>
+    ): Promise<void> {
+        const storage = memoryStorage(values)
+        const first = new RenameRecorder(
+            memoryAdapter(files),
+            FOLDER,
+            journalName(storage, random),
+            {
+                storage,
+                random
+            }
+        )
+        await first.record('file', 'A.md', 'B.md', MOMENT)
+        await first.record('file', 'B.md', 'C.md', MOMENT)
+    }
+
+    function nextSession(files: Map<string, string>, values: Map<string, unknown>): RenameRecorder {
+        const storage = memoryStorage(values)
+        const again = (): Uint8Array => new Uint8Array(8).fill(9)
+        return new RenameRecorder(
+            memoryAdapter(files, new Set([FOLDER])),
+            FOLDER,
+            journalName(storage, again),
+            { storage, random: again }
+        )
+    }
+
+    test('a journal that was deleted is written again under a new name', async () => {
+        const files = new Map<string, string>()
+        const values = new Map<string, unknown>()
+        await recordTwo(files, values)
+        files.delete(`${FOLDER}/${OLD}`)
+
+        await nextSession(files, values).record('file', 'C.md', 'D.md', MOMENT)
+
+        expect(files.has(`${FOLDER}/${OLD}`)).toBe(false)
+        expect(files.get(`${FOLDER}/${NEW}`)).toBe(
+            '{"from":"C.md","kind":"note","time":"2031-05-02T08:00:00Z","to":"D.md"}\n'
+        )
+        expect(values.get(JOURNAL_KEY)).toBe(NEW)
+    })
+
+    test('a journal with fewer lines than the plugin wrote gets no new line', async () => {
+        const files = new Map<string, string>()
+        const values = new Map<string, unknown>()
+        await recordTwo(files, values)
+        const cut = (files.get(`${FOLDER}/${OLD}`) ?? '').split('\n')[0] ?? ''
+        files.set(`${FOLDER}/${OLD}`, `${cut}\n`)
+
+        await nextSession(files, values).record('file', 'C.md', 'D.md', MOMENT)
+
+        expect(files.get(`${FOLDER}/${OLD}`)).toBe(`${cut}\n`)
+        expect(files.get(`${FOLDER}/${NEW}`)).toContain('"to":"D.md"')
+    })
+
+    test('a journal with every line that the plugin wrote keeps its name', async () => {
+        const files = new Map<string, string>()
+        const values = new Map<string, unknown>()
+        await recordTwo(files, values)
+
+        await nextSession(files, values).record('file', 'C.md', 'D.md', MOMENT)
+
+        expect((files.get(`${FOLDER}/${OLD}`) ?? '').split('\n').filter(Boolean)).toHaveLength(3)
+        expect(files.has(`${FOLDER}/${NEW}`)).toBe(false)
+    })
+})
+
 describe('the name of the journal of the device', () => {
     test('is made one time from random bytes, then kept in the local storage', () => {
         const values = new Map<string, unknown>()

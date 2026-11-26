@@ -252,7 +252,14 @@ export function computePlan(
     }
     for (const path of selection.remove) {
         if (scan.manifest.get(path)?.state !== 'published') {
-            refuse(path, 'is not published: there is nothing to remove')
+            // The queue has a moved note at its new path (issue 105).
+            const move = queue.renamed.find((one) => one.from === path)
+            refuse(
+                path,
+                move === undefined
+                    ? 'is not published: there is nothing to remove'
+                    : `is not published at this path: a rename journal moves the note to "${move.to}", and the plan names it there`
+            )
         }
     }
     const pairedTo = new Set<string>()
