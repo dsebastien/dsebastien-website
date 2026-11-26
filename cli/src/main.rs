@@ -1203,13 +1203,17 @@ fn main() -> ExitCode {
         // The report is written. The exit code says that it names a failure.
         ran.outcome.failure.map_or(Ok(()), Err)
     });
-    match written {
+    let code = match written {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
         }
-    }
+    };
+    // After its report, a program that a Ctrl-C reached stops as Ctrl-C
+    // stops a program (issue 126).
+    device::stop_after_ctrl_c();
+    code
 }
 
 #[cfg(test)]

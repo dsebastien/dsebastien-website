@@ -8,7 +8,7 @@ use std::env;
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
@@ -1705,19 +1705,27 @@ pub struct ChildProcess {
     interrupt: Option<Interrupt>,
 }
 
-/// The exit code of a program that Ctrl-C stopped: 128 and the number of
-/// SIGINT, as a shell gives it.
+/// The exit code of a program that Ctrl-C stopped on Windows: 128 and the
+/// number of SIGINT, as a shell gives it.
+#[cfg(windows)]
 const CTRL_C_EXIT: i32 = 130;
+
+/// The watch of SIGINT of this process, once a deploy in a terminal set it,
+/// or `None` when the system refused the handler.
+static TERMINAL: OnceLock<Option<Interrupt>> = OnceLock::new();
 
 /// Ctrl-C in a terminal while the program waits for a deploy (issue 126).
 /// The child leads a process group of its own, so the Ctrl-C reaches only
 /// the program: the program then stops the deploy with the programs that it
-/// started, and its report says that the author stopped it. Outside a deploy,
-/// and at a second Ctrl-C, the program stops at once, as with no watch.
+/// started, and its report says that the author stopped it. A second Ctrl-C
+/// during the stop kills them at once. Outside a deploy, a Ctrl-C stops the
+/// program at once, as with no watch.
 #[derive(Clone)]
 struct Interrupt {
-    /// True after a Ctrl-C during the deploy.
+    /// True after a Ctrl-C that the watch of the deploy did not see yet.
     pressed: Arc<AtomicBool>,
+    /// True after a Ctrl-C during the deploy.
+    interrupted: Arc<AtomicBool>,
     /// True while no deploy runs: a Ctrl-C then stops the program.
     idle: Arc<AtomicBool>,
 }
@@ -1727,37 +1735,34 @@ impl Interrupt {
     fn new() -> Self {
         Self {
             pressed: Arc::new(AtomicBool::new(false)),
+            interrupted: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(AtomicBool::new(true)),
         }
     }
 
-    /// The watch of SIGINT of this process, the same one for each deploy,
-    /// or `None` when the system refuses the handler.
+    /// The watch of SIGINT of this process, the same one for each deploy.
     fn of_terminal() -> Option<Self> {
-        static TERMINAL: OnceLock<Option<Interrupt>> = OnceLock::new();
         TERMINAL
             .get_or_init(|| {
                 use signal_hook::consts::SIGINT;
                 use signal_hook::flag;
 
                 let interrupt = Self::new();
-                // In this order: a Ctrl-C outside a deploy, then a second one,
-                // stop the program; the first one of a deploy sets the flag.
-                flag::register_conditional_shutdown(
+                // In this order: a Ctrl-C outside a deploy stops the program,
+                // as it does with no watch; one during a deploy sets the flag.
+                #[cfg(unix)]
+                let outside =
+                    flag::register_conditional_default(SIGINT, Arc::clone(&interrupt.idle));
+                #[cfg(windows)]
+                let outside = flag::register_conditional_shutdown(
                     SIGINT,
                     CTRL_C_EXIT,
                     Arc::clone(&interrupt.idle),
-                )
-                .and_then(|_| {
-                    flag::register_conditional_shutdown(
-                        SIGINT,
-                        CTRL_C_EXIT,
-                        Arc::clone(&interrupt.pressed),
-                    )
-                })
-                .and_then(|_| flag::register(SIGINT, Arc::clone(&interrupt.pressed)))
-                .ok()
-                .map(|_| interrupt)
+                );
+                outside
+                    .and_then(|_| flag::register(SIGINT, Arc::clone(&interrupt.pressed)))
+                    .ok()
+                    .map(|_| interrupt)
             })
             .clone()
     }
@@ -1765,11 +1770,15 @@ impl Interrupt {
     /// The deploy starts: a Ctrl-C stops it, not the program.
     fn arm(&self) {
         self.pressed.store(false, Ordering::SeqCst);
+        self.interrupted.store(false, Ordering::SeqCst);
         self.idle.store(false, Ordering::SeqCst);
     }
 
     /// The deploy ended: a Ctrl-C stops the program again.
     fn disarm(&self) {
+        // A Ctrl-C at the end of the deploy, which the watch did not see,
+        // counts too.
+        let _ = self.take_press();
         self.idle.store(true, Ordering::SeqCst);
     }
 
@@ -1778,9 +1787,43 @@ impl Interrupt {
         self.pressed.store(true, Ordering::SeqCst);
     }
 
-    fn pressed(&self) -> bool {
-        self.pressed.load(Ordering::SeqCst)
+    /// True when a Ctrl-C came since the last look; it then counts as an
+    /// interruption of the deploy.
+    fn take_press(&self) -> bool {
+        let pressed = self.pressed.swap(false, Ordering::SeqCst);
+        if pressed {
+            self.interrupted.store(true, Ordering::SeqCst);
+        }
+        pressed
     }
+
+    /// True when a Ctrl-C came during the deploy.
+    fn interrupted(&self) -> bool {
+        self.interrupted.load(Ordering::SeqCst)
+    }
+}
+
+/// After the report of a deploy that a Ctrl-C reached, the program stops as
+/// Ctrl-C stops a program, so that a loop of the shell stops too: on Unix
+/// by the default action of SIGINT, on Windows with the exit code 130. It
+/// does nothing when no Ctrl-C came.
+pub fn stop_after_ctrl_c() {
+    if !TERMINAL
+        .get()
+        .and_then(Option::as_ref)
+        .is_some_and(Interrupt::interrupted)
+    {
+        return;
+    }
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    #[cfg(unix)]
+    {
+        let _ = signal_hook::low_level::emulate_default_handler(signal_hook::consts::SIGINT);
+        std::process::exit(130);
+    }
+    #[cfg(windows)]
+    std::process::exit(CTRL_C_EXIT);
 }
 
 impl ChildProcess {
@@ -1846,14 +1889,17 @@ fn watch_deploy(
         ) {
             return None;
         }
-        let stop = if interrupt.is_some_and(Interrupt::pressed) {
+        let stop = if interrupt.is_some_and(Interrupt::take_press) {
             Stop::Author
         } else if deadline.is_some_and(|at| Instant::now() >= at) {
             Stop::Time
         } else {
             continue;
         };
-        stop_tree(pid, grace, ended);
+        // A Ctrl-C during the stop kills the deploy at once.
+        stop_tree(pid, grace, ended, &|| {
+            interrupt.is_some_and(Interrupt::take_press)
+        });
         return Some(stop);
     }
 }
@@ -1893,8 +1939,9 @@ fn tree_of(pid: u32) -> Vec<u32> {
 /// Stops a deploy with the programs that it started: on Unix its process
 /// group (the child leads a group of its own) and every process of its tree
 /// (a program can leave the group), first with TERM, then with KILL after the
-/// grace, unless it ended; on Windows its tree, with `taskkill`.
-fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>) {
+/// grace, unless it ended, or at once when `hurry` says so; on Windows its
+/// tree, with `taskkill`, at once.
+fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>, hurry: &dyn Fn() -> bool) {
     #[cfg(unix)]
     {
         let tree = tree_of(pid);
@@ -1909,7 +1956,18 @@ fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>) {
                 .status();
         };
         signal("-TERM", &tree);
-        if ended.recv_timeout(grace).is_err() {
+        let until = Instant::now().checked_add(grace);
+        let end = loop {
+            let left = until.map_or(Duration::MAX, |at| {
+                at.saturating_duration_since(Instant::now())
+            });
+            match ended.recv_timeout(left.min(WATCH_TICK)) {
+                Err(mpsc::RecvTimeoutError::Timeout) if left.is_zero() || hurry() => break false,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                _ => break true,
+            }
+        };
+        if !end {
             // The programs that the tree started meanwhile go too.
             let mut all = tree_of(pid);
             all.extend(tree);
@@ -1918,7 +1976,7 @@ fn stop_tree(pid: u32, grace: Duration, ended: &mpsc::Receiver<()>) {
     }
     #[cfg(windows)]
     {
-        let _ = (grace, ended);
+        let _ = (grace, ended, hurry);
         let _ = Command::new("taskkill")
             .args(["/pid", &pid.to_string(), "/T", "/F"])
             .stdout(Stdio::null())
@@ -1957,6 +2015,54 @@ fn read_pipe(
     ended
 }
 
+/// The command of the child: the program with its arguments, in the folder
+/// of the site code, in a process group of its own, with its environment.
+fn command_of(command: &DeployCommand) -> Command {
+    let mut child = Command::new(&command.program);
+    child
+        .args(&command.args)
+        .current_dir(&command.folder)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // A group of its own, so that a stop reaches every program that the
+    // deploy started (on Unix, as in the plugin), and a Ctrl-C in a
+    // terminal reaches only the program, which then stops the deploy
+    // itself and says so in its report.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        child.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        child.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    }
+    // Inside a git hook, these variables point git to another repository:
+    // the deploy runs git in the clone of the site code.
+    for (name, _) in env::vars_os() {
+        if name.to_string_lossy().starts_with("GIT_") {
+            child.env_remove(name);
+        }
+    }
+    // The folder of the bun of the settings comes first in the `PATH`.
+    if let Some(folder) = command
+        .program
+        .parent()
+        .filter(|_| command.program.is_absolute())
+    {
+        let rest = env::var_os("PATH").unwrap_or_default();
+        if let Ok(path) =
+            env::join_paths(std::iter::once(folder.to_path_buf()).chain(env::split_paths(&rest)))
+        {
+            child.env("PATH", path);
+        }
+    }
+    child
+}
+
 impl DeployProcess for ChildProcess {
     fn run(&self, command: &DeployCommand, on_start: &dyn Fn(u32)) -> Result<ChildRun, String> {
         if !command.folder.is_dir() {
@@ -1965,48 +2071,7 @@ impl DeployProcess for ChildProcess {
                 command.folder.display()
             ));
         }
-        let mut child = Command::new(&command.program);
-        child
-            .args(&command.args)
-            .current_dir(&command.folder)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        // A group of its own, so that a stop reaches every program that the
-        // deploy started (on Unix, as in the plugin), and a Ctrl-C in a
-        // terminal reaches only the program, which then stops the deploy
-        // itself and says so in its report.
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            child.process_group(0);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-            child.creation_flags(CREATE_NEW_PROCESS_GROUP);
-        }
-        // Inside a git hook, these variables point git to another repository:
-        // the deploy runs git in the clone of the site code.
-        for (name, _) in env::vars_os() {
-            if name.to_string_lossy().starts_with("GIT_") {
-                child.env_remove(name);
-            }
-        }
-        // The folder of the bun of the settings comes first in the `PATH`.
-        if let Some(folder) = command
-            .program
-            .parent()
-            .filter(|_| command.program.is_absolute())
-        {
-            let rest = env::var_os("PATH").unwrap_or_default();
-            if let Ok(path) = env::join_paths(
-                std::iter::once(folder.to_path_buf()).chain(env::split_paths(&rest)),
-            ) {
-                child.env("PATH", path);
-            }
-        }
+        let mut child = command_of(command);
         let interrupt = self.interrupt.clone();
         if let Some(interrupt) = &interrupt {
             interrupt.arm();
@@ -2047,9 +2112,14 @@ impl DeployProcess for ChildProcess {
         let status = child.wait();
         // The watch ends with the child.
         let _ = end.send(());
-        let stopped = watch.join().ok().flatten();
+        let mut stopped = watch.join().ok().flatten();
         if let Some(interrupt) = &interrupt {
             interrupt.disarm();
+        }
+        // A deploy that ended with 0 before the stop reached it is read by
+        // its result.
+        if status.as_ref().is_ok_and(ExitStatus::success) {
+            stopped = None;
         }
         // The readers end with the pipes; an orphan that keeps one open gets
         // a short grace, then its output is not waited for.
@@ -2287,5 +2357,88 @@ mod tests {
 
         assert_eq!(run.stopped, None);
         assert_eq!(run.code, Some(3));
+    }
+
+    /// A program that ignores TERM, with a program that it started: only
+    /// KILL stops them.
+    #[cfg(unix)]
+    fn stubborn_command() -> DeployCommand {
+        DeployCommand {
+            args: vec!["-c".into(), "trap '' TERM; sleep 30 & wait".into()],
+            ..long_command()
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_second_ctrl_c_during_the_stop_kills_the_deploy_at_once() {
+        let interrupt = Interrupt::new();
+        let child = ChildProcess {
+            minute: Duration::from_secs(60),
+            grace: Duration::from_secs(20),
+            interrupt: Some(interrupt.clone()),
+        };
+        let started = Instant::now();
+
+        let run = child
+            .run(&stubborn_command(), &|_| {
+                interrupt.press();
+                let again = interrupt.clone();
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_millis(500));
+                    again.press();
+                });
+            })
+            .expect("the program runs");
+
+        assert_eq!(run.stopped, Some(Stop::Author));
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(interrupt.interrupted());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_deploy_that_ends_with_0_at_the_stop_counts_no_stop() {
+        let interrupt = Interrupt::new();
+        let child = ChildProcess {
+            minute: Duration::from_secs(60),
+            grace: Duration::from_secs(5),
+            interrupt: Some(interrupt.clone()),
+        };
+        let command = DeployCommand {
+            args: vec!["-c".into(), "trap 'exit 0' TERM; sleep 30 & wait".into()],
+            ..long_command()
+        };
+
+        let run = child
+            .run(&command, &|_| {
+                // The shell sets its trap first.
+                thread::sleep(Duration::from_millis(300));
+                interrupt.press();
+            })
+            .expect("the program runs");
+
+        assert_eq!(run.code, Some(0));
+        assert_eq!(run.stopped, None);
+    }
+
+    #[test]
+    fn a_deploy_with_no_ctrl_c_leaves_the_program_running() {
+        let interrupt = Interrupt::new();
+        let child = ChildProcess {
+            minute: Duration::from_secs(60),
+            grace: Duration::from_millis(200),
+            interrupt: Some(interrupt.clone()),
+        };
+        let mut command = long_command();
+        command.args = if cfg!(windows) {
+            vec!["/c".into(), "exit 0".into()]
+        } else {
+            vec!["-c".into(), "exit 0".into()]
+        };
+
+        child.run(&command, &|_| {}).expect("the program runs");
+
+        assert!(!interrupt.interrupted());
     }
 }

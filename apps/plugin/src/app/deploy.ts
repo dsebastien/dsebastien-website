@@ -152,7 +152,9 @@ export function childProcess(times: ChildTimes = {}): DeployProcess {
                         code,
                         stdout: Buffer.concat(stdout).toString('utf8'),
                         output: Buffer.concat(output).toString('utf8'),
-                        ...(stopped === undefined ? {} : { stopped })
+                        // A deploy that ended with 0 before the stop reached
+                        // it is read by its result (issue 126).
+                        ...(stopped === undefined || code === 0 ? {} : { stopped })
                     })
                 })
             })

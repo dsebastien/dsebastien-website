@@ -405,6 +405,21 @@ export function reportOfStop(
     )
 }
 
+/**
+ * The deploy report of a run of the child: a stop of the tool counts only
+ * when the exit code is not 0, as a deploy that ended with 0 before its stop
+ * reached it is read by its result.
+ */
+export function reportOfChildRun(
+    run: ChildRun,
+    timeoutMinutes: number,
+    kind: DeployKind
+): DeployReport {
+    return run.stopped === undefined || run.code === 0
+        ? reportOfRun(run.code, run.stdout, kind)
+        : reportOfStop(run.stopped, timeoutMinutes, kind)
+}
+
 function failed(error: string, kind: DeployKind): DeployReport {
     return withTakedown({ ...bare(error, kind), build: 'failed', deploy: 'failed' })
 }
@@ -650,10 +665,7 @@ async function deployWith(
         const message = error instanceof Error ? error.message : 'it failed'
         return { report: reportOfStartError(message, kind), output: '' }
     }
-    const report =
-        run.stopped === undefined
-            ? reportOfRun(run.code, run.stdout, kind)
-            : reportOfStop(run.stopped, made.command.timeoutMinutes, kind)
+    const report = reportOfChildRun(run, made.command.timeoutMinutes, kind)
     if (report.takedown && succeeded(report)) {
         const warnings = await settleTakedowns(marker, report.contentRevision ?? null)
         return {

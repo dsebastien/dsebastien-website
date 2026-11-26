@@ -587,8 +587,10 @@ fn a_deploy_stops_with_the_programs_that_it_started_after_its_time_limit() {
     assert!(setup.deploy_log().contains("Building the site"));
 }
 
-#[test]
-fn ctrl_c_stops_the_deploy_with_the_programs_that_it_started_and_the_report_says_so() {
+/// Runs `deploy` with a fake bun that starts a grandchild and waits, sends
+/// it `presses` times Ctrl-C, and gives its output, its time and the
+/// grandchild. `trap` is the first line of the script after its shell.
+fn deploy_with_ctrl_c(trap: &str, presses: u8) -> (Output, std::time::Duration, String, Setup) {
     use std::os::unix::fs::PermissionsExt;
     use std::time::{Duration, Instant};
 
@@ -597,7 +599,7 @@ fn ctrl_c_stops_the_deploy_with_the_programs_that_it_started_and_the_report_says
     fs::write(
         &setup.bun,
         format!(
-            "#!/bin/sh\necho 'Building the site'\nsleep 30 &\necho $! > '{}'\nwait\n",
+            "#!/bin/sh\n{trap}\necho 'Building the site'\nsleep 30 &\necho $! > '{}'\nwait\n",
             pid_file.display()
         ),
     )
@@ -626,27 +628,67 @@ fn ctrl_c_stops_the_deploy_with_the_programs_that_it_started_and_the_report_says
 
     // Ctrl-C in a terminal: SIGINT to the foreground process group, where
     // the program is and the deploy, in a group of its own, is not.
-    Command::new("kill")
-        .args(["-INT", &program.id().to_string()])
-        .status()
-        .expect("kill runs");
+    for _ in 0..presses {
+        Command::new("kill")
+            .args(["-INT", &program.id().to_string()])
+            .status()
+            .expect("kill runs");
+        std::thread::sleep(Duration::from_millis(500));
+    }
     let output = program.wait_with_output().expect("the program ends");
-
-    assert!(started.elapsed() < Duration::from_secs(15));
-    assert_eq!(output.status.code(), Some(1), "{}", errors_of(&output));
-    assert_eq!(
-        objects_of(&output)[0]["deployment"]["error"],
-        "the deploy was stopped by the author, with the programs that it started: read the output of the deploy"
-    );
-    let grandchild = fs::read_to_string(&pid_file).expect("the grandchild started");
+    let elapsed = started.elapsed();
+    let grandchild = fs::read_to_string(&pid_file)
+        .expect("the grandchild started")
+        .trim()
+        .to_owned();
     std::thread::sleep(Duration::from_millis(300));
-    let alive = Command::new("kill")
-        .args(["-0", grandchild.trim()])
+    (output, elapsed, grandchild, setup)
+}
+
+fn is_alive(pid: &str) -> bool {
+    Command::new("kill")
+        .args(["-0", pid])
         .stderr(Stdio::null())
         .status()
-        .expect("kill runs");
-    assert!(!alive.success(), "the grandchild still runs");
+        .expect("kill runs")
+        .success()
+}
+
+const STOPPED_BY_THE_AUTHOR: &str = "the deploy was stopped by the author, with the programs that it started: read the output of the deploy";
+
+#[test]
+fn ctrl_c_stops_the_deploy_with_the_programs_that_it_started_and_the_report_says_so() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let (output, elapsed, grandchild, setup) = deploy_with_ctrl_c("", 1);
+
+    assert!(elapsed < std::time::Duration::from_secs(15));
+    assert_eq!(
+        objects_of(&output)[0]["deployment"]["error"],
+        STOPPED_BY_THE_AUTHOR
+    );
+    // After its report, the program stops as Ctrl-C stops a program, so
+    // that a loop of the shell stops too.
+    assert_eq!(output.status.signal(), Some(2), "{}", errors_of(&output));
+    assert!(!is_alive(&grandchild), "the grandchild still runs");
     assert!(setup.deploy_log().contains("Building the site"));
+}
+
+#[test]
+fn a_second_ctrl_c_kills_the_deploy_at_once_and_the_report_is_still_written() {
+    use std::os::unix::process::ExitStatusExt;
+
+    // The deploy and its grandchild ignore TERM: only KILL stops them, after
+    // the grace of 5 seconds, or at once at a second Ctrl-C.
+    let (output, elapsed, grandchild, _setup) = deploy_with_ctrl_c("trap '' TERM", 2);
+
+    assert!(elapsed < std::time::Duration::from_secs(4), "{elapsed:?}");
+    assert_eq!(
+        objects_of(&output)[0]["deployment"]["error"],
+        STOPPED_BY_THE_AUTHOR
+    );
+    assert_eq!(output.status.signal(), Some(2), "{}", errors_of(&output));
+    assert!(!is_alive(&grandchild), "the grandchild still runs");
 }
 
 #[test]

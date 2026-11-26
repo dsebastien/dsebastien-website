@@ -170,6 +170,37 @@ describe.skipIf(process.platform === 'win32')('the stop of the deploy (issue 32)
         expect(run.stopped).toBe('author')
         expect(alive(grandchild)).toBe(false)
     }, 20_000)
+
+    // A deploy that ends with the exit code 0 is read by its result, also
+    // when the stop came first (issue 126).
+    test('counts no stop when the deploy ends with the exit code 0', async () => {
+        await using stores = await makeTestStores()
+        const file = join(stores.root, 'ends-well.ts')
+        const ready = join(stores.root, 'ready')
+        await writeFile(
+            file,
+            [
+                "import { writeFileSync } from 'node:fs'",
+                "process.on('SIGTERM', () => process.exit(0))",
+                `writeFileSync(${JSON.stringify(ready)}, 'ready')`,
+                'setInterval(() => undefined, 1000)'
+            ].join('\n')
+        )
+        const stop = new AbortController()
+
+        const running = childProcess({ graceMs: 5_000 }).run(
+            { program: process.execPath, args: [file], folder: stores.root, timeoutMinutes: 30 },
+            stop.signal
+        )
+        while (!(await Bun.file(ready).exists())) {
+            await Bun.sleep(20)
+        }
+        stop.abort()
+        const run = await running
+
+        expect(run.code).toBe(0)
+        expect(run.stopped).toBeUndefined()
+    }, 20_000)
 })
 
 describe('the environment of the deploy', () => {

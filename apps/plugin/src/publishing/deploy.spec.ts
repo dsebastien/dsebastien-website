@@ -10,9 +10,8 @@ import {
     takedownWaitsText,
     startedText,
     deploymentText,
-    reportOfRun,
     reportOfStartError,
-    reportOfStop,
+    reportOfChildRun,
     runDeploy
 } from './deploy.ts'
 import type {
@@ -99,12 +98,16 @@ describe('the report of a deploy', () => {
     for (const one of CASES.results) {
         test(one.name, () => {
             const kind = { push: one.push, takedown: one.takedown === true }
+            const run = {
+                code: one.code ?? null,
+                stdout: one.stdout ?? '',
+                output: '',
+                ...(one.stopped === undefined ? {} : { stopped: one.stopped })
+            }
             const report =
-                one.stopped !== undefined
-                    ? reportOfStop(one.stopped, one.timeoutMinutes ?? 30, kind)
-                    : one.startError === undefined
-                      ? reportOfRun(one.code ?? null, one.stdout ?? '', kind)
-                      : reportOfStartError(one.startError, kind)
+                one.startError === undefined
+                    ? reportOfChildRun(run, one.timeoutMinutes ?? 30, kind)
+                    : reportOfStartError(one.startError, kind)
 
             expect(JSON.parse(deploymentText(report))).toEqual({ deployment: one.report })
         })

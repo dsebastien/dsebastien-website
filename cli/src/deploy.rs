@@ -496,6 +496,16 @@ pub fn report_of_stop(stop: Stop, timeout_minutes: u64, kind: DeployKind) -> Dep
     ))
 }
 
+/// The deploy report of a run of the child: a stop of the tool counts only
+/// when the exit code is not 0, as a deploy that ended with 0 before its stop
+/// reached it is read by its result.
+pub fn report_of_child_run(run: &ChildRun, timeout_minutes: u64, kind: DeployKind) -> DeployReport {
+    match run.stopped {
+        Some(stop) if run.code != Some(0) => report_of_stop(stop, timeout_minutes, kind),
+        _ => report_of_run(run.code, &run.stdout, kind),
+    }
+}
+
 fn failed(error: String, kind: DeployKind) -> DeployReport {
     DeployReport {
         build: "failed",
@@ -707,10 +717,7 @@ fn deploy_with(
     };
     match child.run(&command, on_start) {
         Ok(run) => {
-            let mut report = match run.stopped {
-                Some(stop) => report_of_stop(stop, command.timeout_minutes, kind),
-                None => report_of_run(run.code, &run.stdout, kind),
-            };
+            let mut report = report_of_child_run(&run, command.timeout_minutes, kind);
             if report.takedown && report.succeeded() {
                 let warnings = settle_takedowns(marker, report.content_revision.as_deref());
                 report.warnings.extend(warnings);
@@ -887,14 +894,18 @@ mod tests {
                 _ => None,
             };
             let limit = case["timeoutMinutes"].as_u64().unwrap_or(30);
-            let report = match (stop, case["startError"].as_str()) {
-                (Some(stop), _) => report_of_stop(stop, limit, kind),
-                (None, Some(message)) => report_of_start_error(message, kind),
-                (None, None) => report_of_run(
-                    case["code"]
-                        .as_i64()
-                        .map(|code| i32::try_from(code).expect("a small code")),
-                    case["stdout"].as_str().expect("stdout"),
+            let report = match case["startError"].as_str() {
+                Some(message) => report_of_start_error(message, kind),
+                None => report_of_child_run(
+                    &ChildRun {
+                        code: case["code"]
+                            .as_i64()
+                            .map(|code| i32::try_from(code).expect("a small code")),
+                        stdout: case["stdout"].as_str().unwrap_or_default().to_owned(),
+                        output: String::new(),
+                        stopped: stop,
+                    },
+                    limit,
                     kind,
                 ),
             };
