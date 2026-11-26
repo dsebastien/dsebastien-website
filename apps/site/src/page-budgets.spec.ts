@@ -29,8 +29,11 @@ import { FRAME_IDS } from './rendering/anchors.ts'
 //
 // The same build checks the ids of every page (issue 124): no page has two
 // elements with one id, and the frame of a note page has only the ids of
-// `FRAME_IDS`, which no id of a note takes. A note of traps writes ids of the
-// frame and repeated ids in its headings, its blocks and its raw HTML.
+// `FRAME_IDS`, which no id of a note takes, and each link and label of a note
+// body leads to the element that the build meant (a footnote reference to its
+// footnote, a back link to its reference, a label of a diagram into its
+// diagram). A note of traps writes ids of the frame, repeated ids, and the ids
+// that the build writes for a footnote and a diagram, in its raw HTML.
 const SITE = fileURLToPath(new URL('..', import.meta.url))
 
 let stores: TestStores | undefined
@@ -41,10 +44,30 @@ let sampleFiles: Record<string, string> = {}
 /** The parsed pages of the build, by their path in the output folder. */
 const pages = new Map<string, Root>()
 
-/** The note of traps of the ids: ids of the frame and repeated ids (issue 124). */
+/**
+ * The note of traps of the ids (issue 124): ids of the frame, repeated ids,
+ * and raw HTML with the ids that the build writes for a footnote and a
+ * diagram, before them.
+ */
 const ID_TRAPS = '96 Id traps/Ids of the frame.md'
 const ID_TRAPS_TEXT = [
     '# Content',
+    '',
+    '<p id="user-content-fn-1">Raw HTML with the id of a footnote.</p>',
+    '',
+    '<p id="user-content-fnref-1">Raw HTML with the id of a footnote reference.</p>',
+    '',
+    '<p id="footnote-label">Raw HTML with the id of the title of the footnotes.</p>',
+    '',
+    '<p id="diagram-1-title">Raw HTML with the id of the title of a diagram.</p>',
+    '',
+    'A text with a footnote.[^1]',
+    '',
+    '```mermaid',
+    'graph TD',
+    '  accTitle: Garden',
+    '  A --> B',
+    '```',
     '',
     'A block named as the main element. ^content',
     '',
@@ -59,6 +82,8 @@ const ID_TRAPS_TEXT = [
     '<p id="notes">Raw HTML with the same id.</p>',
     '',
     '## Notes',
+    '',
+    '[^1]: The footnote.',
     ''
 ].join('\n')
 
@@ -231,19 +256,80 @@ describe('ids of the built pages (issue 124)', () => {
         expect(repeated).toEqual({})
     })
 
-    test('the page of the note of traps keeps a target for each id that the note names', () => {
+    test('the note of traps gives each id that it names to its first element, and a number to a repeat', () => {
         const page = pages.get(join('-', 'note', sampleFiles[ID_TRAPS] ?? ''))
         const ids = [...elementsOf(page ?? { type: 'root', children: [] })]
             .map(({ element }) => element.properties['id'])
             .filter((id) => typeof id === 'string')
 
-        expect(ids).toContain('content')
-        expect(ids).toContain('^content')
-        expect(ids).toContain('^twice')
-        expect(ids).toContain('notes')
+        for (const id of [
+            'content',
+            'content-2',
+            'content-3',
+            '^content',
+            '^twice',
+            '^twice-2',
+            'notes',
+            'notes-2',
+            'user-content-fn-1-2',
+            'user-content-fnref-1-2',
+            'footnote-label-2',
+            'diagram-1-title-2'
+        ]) {
+            expect(ids).toContain(id)
+        }
         expect(ids.filter((id) => id === 'content')).toHaveLength(1)
     })
 
+    test('each link and label of a note body leads to the element that the build meant', () => {
+        const wrong: string[] = []
+        const inFootnotes = (above: readonly Element[]): boolean =>
+            above.some((node) => node.properties['dataFootnotes'] !== undefined)
+        const figureOf = (above: readonly Element[]): Element | undefined =>
+            above.findLast((node) => node.tagName === 'figure')
+        for (const [path, page] of pages) {
+            if (!path.startsWith(join('-', 'note'))) continue
+            const byId = new Map<string, { element: Element; above: readonly Element[] }>()
+            for (const found of elementsOf(page)) {
+                const id = found.element.properties['id']
+                if (typeof id === 'string') byId.set(id, found)
+            }
+            for (const { element, above } of elementsOf(page)) {
+                if (!above.some((node) => node.properties['dataNoteBody'] !== undefined)) continue
+                const href = element.properties['href']
+                if (element.tagName === 'a' && typeof href === 'string' && href.startsWith('#')) {
+                    // A footnote reference leads to its footnote, a back link to its reference.
+                    const target = byId.get(decodeURIComponent(href.slice(1)))
+                    const ok =
+                        target !== undefined &&
+                        (element.properties['dataFootnoteRef'] === undefined ||
+                            (target.element.tagName === 'li' && inFootnotes(target.above))) &&
+                        (element.properties['dataFootnoteBackref'] === undefined ||
+                            target.element.properties['dataFootnoteRef'] !== undefined)
+                    if (!ok) wrong.push(`${path}: ${href}`)
+                }
+                // A label of a diagram is in its diagram; a footnote reference is described by the footnotes.
+                for (const name of ['ariaLabelledBy', 'ariaDescribedBy']) {
+                    const value = element.properties[name]
+                    const list = Array.isArray(value) ? value : value === undefined ? [] : [value]
+                    for (const id of list.map(String)) {
+                        const target = byId.get(id)
+                        const ok =
+                            target !== undefined &&
+                            (element.properties['dataFootnoteRef'] === undefined
+                                ? figureOf([...above, element]) === figureOf(target.above)
+                                : inFootnotes([...target.above, target.element]))
+                        if (!ok) wrong.push(`${path}: ${name} ${id}`)
+                    }
+                }
+            }
+        }
+
+        expect(wrong).toEqual([])
+    })
+
+    // `FRAME_IDS` is one set for every page; this check reads the note pages
+    // only, the one kind of page that shows the text of a note.
     test('the frame of every note page has only the ids of FRAME_IDS, which no id of a note takes', () => {
         const outside = new Set<string>()
         for (const [path, page] of pages) {

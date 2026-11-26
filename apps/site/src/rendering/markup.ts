@@ -11,7 +11,7 @@ import rehypeSanitize from 'rehype-sanitize'
 import temml from 'temml'
 import { linkPathOfDestination, wikilinksOf } from '../../../plugin/src/publishing/links.ts'
 import { allowList } from './allow-list.ts'
-import { FRAME_IDS, freeId, headingIds } from './anchors.ts'
+import { noteIds, type IdOfNote } from './anchors.ts'
 import { tagOfText } from '../tags.ts'
 import { encode, MARK } from './mark.ts'
 
@@ -602,54 +602,76 @@ function diagramOf(source: string, prefix: string): ElementContent[] | undefined
     }
 }
 
+/** Every element of some nodes, the nodes included. */
+function allElements(nodes: readonly ElementContent[]): Element[] {
+    return nodes.flatMap((node) =>
+        node.type === 'element' ? [node, ...elementsOf(node).map(({ node: inner }) => inner)] : []
+    )
+}
+
 /**
  * The step of the HTML tree after the allow list: math, Mermaid diagrams,
- * then one id per element: an id of the frame of the page or a repeated id
- * takes a number (issue 124), and the headings get ids (URL-14) that keep
- * clear of every other id. It runs after the allow list, because what it writes is ours.
+ * then the ids (URL-14, issue 124): the ids that the build writes (the
+ * footnotes, the diagrams, the math) are taken first, then the ids of the
+ * note and the slugs of its headings go through `noteIds`. It runs after the
+ * allow list, because what it writes is ours.
  */
 export function rehypeNote() {
     return (tree: HastRoot): void => {
         let diagrams = 0
+        /** The elements that the build writes, whose ids win over an id of the note. */
+        const built = new Set<Element>()
+        const keep = (nodes: ElementContent[]): ElementContent[] => {
+            for (const element of allElements(nodes)) built.add(element)
+            return nodes
+        }
         // From the end, so a change of a node does not move the place of one still to come.
         for (const { node, parent, index } of elementsOf(tree).toReversed()) {
             const [code] = node.children
             const inPre = parent.type === 'element' && parent.tagName === 'pre'
             if (isElement(node, 'code', 'language-math') && !inPre) {
                 const math = mathOf(rawText(node), false)
-                if (math !== undefined) parent.children.splice(index, 1, ...math)
+                if (math !== undefined) parent.children.splice(index, 1, ...keep(math))
             } else if (isElement(node, 'pre') && isElement(code, 'code', 'language-math')) {
                 const math = mathOf(rawText(code), true)
-                if (math !== undefined) parent.children[index] = make('div', ['math-block'], math)
+                if (math !== undefined)
+                    parent.children[index] = make('div', ['math-block'], keep(math))
             } else if (isElement(node, 'pre') && isElement(code, 'code', 'language-mermaid')) {
                 diagrams += 1
                 const svg = diagramOf(rawText(code), `diagram-${String(diagrams)}`)
-                if (svg !== undefined) parent.children[index] = make('figure', ['diagram'], svg)
+                if (svg !== undefined)
+                    parent.children[index] = make('figure', ['diagram'], keep(svg))
             }
         }
-        const all = elementsOf(tree)
-        const headings = all.filter(
-            ({ node }) => /^h[1-6]$/u.test(node.tagName) && node.properties['id'] === undefined
-        )
-        // The ids that the note already has (block ids, raw HTML, footnotes,
-        // diagrams), in their order: an id of the frame or an id of an earlier
-        // element takes a number, as a heading does (issue 124).
-        const taken = new Set(FRAME_IDS)
-        for (const { node } of all) {
-            const id = node.properties['id']
-            if (typeof id !== 'string') continue
-            const free = freeId(id, taken)
-            node.properties['id'] = free
-            taken.add(free)
+        const all = elementsOf(tree).map(({ node }) => node)
+        // The footnotes: their section and the references to them.
+        for (const node of all) {
+            if (isElement(node, 'section') && node.properties['dataFootnotes'] !== undefined) {
+                keep([node])
+            } else if (isElement(node, 'a') && node.properties['dataFootnoteRef'] !== undefined) {
+                built.add(node)
+            }
         }
-        const ids = headingIds(
-            headings.map(({ node }) => ({
-                depth: Number(node.tagName.slice(1)),
-                text: toText(node)
-            })),
+        const taken = new Set<string>()
+        const ofNote: { node: Element; item: IdOfNote }[] = []
+        for (const node of all) {
+            const id = node.properties['id']
+            if (built.has(node)) {
+                if (typeof id === 'string') taken.add(id)
+            } else if (typeof id === 'string') {
+                ofNote.push({ node, item: { id } })
+            } else if (/^h[1-6]$/u.test(node.tagName)) {
+                ofNote.push({
+                    node,
+                    item: { depth: Number(node.tagName.slice(1)), text: toText(node) }
+                })
+            }
+        }
+        const ids = noteIds(
+            ofNote.map(({ item }) => item),
             taken
         )
-        headings.forEach(({ node }, index) => {
+        ofNote.forEach(({ node }, index) => {
             const id = ids[index]
             if (id !== undefined) node.properties['id'] = id
         })

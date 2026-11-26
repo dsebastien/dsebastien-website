@@ -120,7 +120,7 @@ describe('cards, names and diagrams', () => {
         )
     })
 
-    test('a block id never takes an id of the frame of the page (issue 124)', async () => {
+    test('a block id never is an id of the frame of the page (it keeps its ^) (issue 124)', async () => {
         expect(await html('A block. ^content')).toBe('<p id="^content">A block.</p>')
     })
 
@@ -139,9 +139,44 @@ describe('cards, names and diagrams', () => {
             '<p id="a">1</p>\n<p id="a-2">2</p>'
         )
         expect(await html('A ^b\n\n<p id="^b">x</p>')).toBe('<p id="^b">A</p>\n<p id="^b-2">x</p>')
-        expect(await html('# Notes\n\n<p id="notes">x</p>')).toBe(
-            '<h1 id="notes-2">Notes</h1>\n<p id="notes">x</p>'
+        expect(await html('<p id="notes">x</p>\n\n# Notes')).toBe(
+            '<p id="notes">x</p>\n<h1 id="notes-2">Notes</h1>'
         )
+    })
+
+    test('a heading takes its slug before an id of raw HTML after it (issue 124)', async () => {
+        expect(await html('# Notes\n\n<p id="notes">x</p>')).toBe(
+            '<h1 id="notes">Notes</h1>\n<p id="notes-2">x</p>'
+        )
+    })
+
+    test('a number never takes an id that the note writes later (issue 124)', async () => {
+        expect(await html('A ^x\n\nB ^x\n\nC ^x-2')).toBe(
+            '<p id="^x">A</p>\n<p id="^x-3">B</p>\n<p id="^x-2">C</p>'
+        )
+        expect(await html('## Notes\n\n## Notes\n\n<p id="notes-2">x</p>')).toBe(
+            '<h2 id="notes">Notes</h2>\n<h2 id="notes-3">Notes</h2>\n<p id="notes-2">x</p>'
+        )
+    })
+
+    test('the ids of the footnotes win over an id of raw HTML before them (issue 124)', async () => {
+        const out = await html(
+            '<p id="user-content-fn-1">a</p>\n\n<p id="user-content-fnref-1">b</p>\n\n<p id="footnote-label">c</p>\n\nText[^1]\n\n[^1]: A note.'
+        )
+        expect(out).toContain('<p id="user-content-fn-1-2">a</p>')
+        expect(out).toContain('<p id="user-content-fnref-1-2">b</p>')
+        expect(out).toContain('<p id="footnote-label-2">c</p>')
+        expect(out).toContain('<li id="user-content-fn-1">')
+        expect(out).toContain('id="user-content-fnref-1" data-footnote-ref')
+        expect(out).toContain('<h2 class="sr-only" id="footnote-label">')
+    })
+
+    test('the ids of a diagram win over an id of raw HTML before it (issue 124)', async () => {
+        const diagram = '```mermaid\ngraph TD\n  accTitle: Garden\n  A --> B\n```'
+        const out = await html(`<p id="diagram-1-title">x</p>\n\n${diagram}`)
+        expect(out).toContain('<p id="diagram-1-title-2">x</p>')
+        expect(out).toContain('aria-labelledby="diagram-1-title"')
+        expect(out).toMatch(/<figure class="diagram">[\s\S]* id="diagram-1-title"/u)
     })
 })
 
