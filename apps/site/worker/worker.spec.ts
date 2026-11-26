@@ -37,8 +37,11 @@ const map = resolverMapOf(
 type AskedFiles = StaticFiles & {
     asked: string[]
     cancelled: string[]
-    /** Settles the reads that wait (`'hold'`): with their file, or with a failed fetch. */
-    settle(outcome: 'answer' | 'reject'): void
+    /**
+     * Settles the reads that wait (`'hold'`): with their file, or with a failed
+     * fetch. With `count`, only the first ones, in the order of their start.
+     */
+    settle(outcome: 'answer' | 'reject', count?: number): void
 }
 type AskedStorage = ObjectStorage & { asked: string[] }
 
@@ -109,8 +112,8 @@ function staticFiles(
     return {
         asked,
         cancelled,
-        settle(outcome) {
-            for (const settle of held.splice(0)) {
+        settle(outcome, count) {
+            for (const settle of held.splice(0, count ?? held.length)) {
                 settle(outcome)
             }
         },
@@ -450,7 +453,7 @@ describe('the Worker', () => {
         expect(await response.text()).toBe('<h1>Server error</h1>')
     })
 
-    test('does not start, and does not read again at once, when the static files redirect the server error page', async () => {
+    test('does not start, and does not read again after 50 ms, when the static files redirect the server error page', async () => {
         const site = host(SITE, true, {}, { '/500.html': [308] })
         const response = await site.get('/Welcome')
         expect(response.status).toBe(500)
@@ -731,6 +734,48 @@ describe('the Worker', () => {
         expect((await site.get('/Welcome')).status).toBe(200)
         expect(mapReads(site)).toBe(1)
         expect(site.reported).toHaveLength(1)
+    })
+
+    test('keeps a read that settles after its time limit while a newer read is still open', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hold', 'hold'] })
+        const first = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await first).status).toBe(500)
+        void site.get('/Welcome')
+        await Bun.sleep(0)
+        expect(mapReads(site)).toBe(2)
+        site.files.settle('answer', 1)
+        await Bun.sleep(0)
+        let status: number | undefined
+        void site.get('/Welcome').then((response) => {
+            status = response.status
+        })
+        await Bun.sleep(0)
+        expect(status).toBe(200)
+        expect(mapReads(site)).toBe(2)
+        expect(site.timers).toHaveLength(2)
+        site.files.settle('answer')
+    })
+
+    test('reads again at once after a time-out that follows a lasting failure', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hang', 404, 'hang'] })
+        const first = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await first).status).toBe(500)
+        // A missing resolver map: a lasting failure, which resets the count of time-outs.
+        expect((await site.get('/Welcome')).status).toBe(500)
+        site.wait(10_000)
+        const third = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[2]?.fire()
+        expect((await third).status).toBe(500)
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect(mapReads(site)).toBe(4)
     })
 
     test('starts no timer for a request once the read of the release has settled', async () => {

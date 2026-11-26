@@ -116,6 +116,15 @@ describe('a page', () => {
         }
     )
 
+    // A header that is not a list of quoted tags names no tag; `*` counts only as the whole header.
+    test.each(['foo*bar', '"x"*', 'x"abc"', 'w/"abc"', '"x", *', '"abc" x'])(
+        'does not answer 304 for a header that is not a list of tags: %s',
+        async (wanted) => {
+            const plain = { file: () => Promise.resolve(stored('page', '"abc"')) }
+            expect((await get('/Welcome', { 'if-none-match': wanted }, plain)).status).toBe(200)
+        }
+    )
+
     test('has no tag and never answers 304 when the host gives none', async () => {
         const untagged = {
             file: () => {

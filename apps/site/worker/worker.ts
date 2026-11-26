@@ -167,8 +167,8 @@ interface OpenedRelease {
 
 /**
  * A failure of a read of the release that can be short: a fetch that fails,
- * a status 5xx of the host, or a body that breaks while it is read. A missing file or a file that is not right
- * stays so for the life of the release.
+ * a status 5xx of the host, or a body that breaks while it is read. A missing
+ * file or a file that is not right stays so for the life of the release.
  */
 class ShortFailure extends Error {}
 
@@ -364,8 +364,8 @@ export interface WorkerOptions {
  * A Worker: one per isolate of the host. It reads the resolver map and the
  * server error page of its release at its first request, and keeps them. A
  * new release is a new Worker version, so a new isolate. A read of the release
- * that fails for a reason that can be short (a failed fetch, a status 5xx) is
- * done again once, after a short pause. The whole read has a time limit of five
+ * that fails for a reason that can be short (a failed fetch, a status 5xx, a
+ * body that breaks while it is read) is done again once, after a short pause. The whole read has a time limit of five
  * seconds: past it, the request answers 500 and the next request reads again
  * at once; after two time-outs in a row, it waits ten seconds. A read that
  * settles after its time limit is kept. A release that it cannot read answers
@@ -413,9 +413,9 @@ export function createWorker(options: WorkerOptions = {}): {
         const kept = read.then(
             (release) => {
                 shared.release = release
-                // A read that settles after its time limit is kept when no
-                // newer read is open, also when no request waits for it.
-                if (opened === undefined || opened === shared) {
+                // A read that settles after its time limit is kept, also when
+                // no request waits for it and while a newer read is still open.
+                if (opened === undefined || opened === shared || opened.release === undefined) {
                     opened = shared
                     failedAt = undefined
                     timeOuts = 0

@@ -292,18 +292,33 @@ function strongForm(tag: string): string {
 }
 
 /**
- * A tag of an `If-None-Match` header, in its strong or its weak form, or `*`.
- * A tag is read whole by its quotes, so a tag that holds a comma is one tag
- * (RFC 9110, section 8.8.3; issue 117).
+ * One step of the list of tags of an `If-None-Match` header: a tag in its
+ * strong or its weak form, and the comma after it. A tag is read whole by its
+ * quotes, so a tag that holds a comma is one tag (RFC 9110, section 8.8.3;
+ * issue 117).
  */
-const WANTED_TAG = /\*|(?:W\/)?"[^"]*"/gu
+const WANTED_TAG = /\s*(W\/"[^"]*"|"[^"]*")\s*(?:,|$)/uy
 
-/** True when an `If-None-Match` header names the tag, or any version of the file. */
+/**
+ * True when an `If-None-Match` header names the tag, or any version of the
+ * file (`*`, only as the whole header). A header that is not a list of
+ * quoted tags names no tag.
+ */
 function namesTag(wanted: string, tag: string): boolean {
+    if (wanted.trim() === '*') {
+        return true
+    }
     const strong = strongForm(tag)
-    return Array.from(wanted.matchAll(WANTED_TAG), ([item]) => item).some(
-        (item) => item === '*' || strongForm(item) === strong
-    )
+    const step = new RegExp(WANTED_TAG)
+    let named = false
+    while (step.lastIndex < wanted.length) {
+        const match = step.exec(wanted)
+        if (match?.[1] === undefined) {
+            return false
+        }
+        named ||= strongForm(match[1]) === strong
+    }
+    return named
 }
 
 /**
