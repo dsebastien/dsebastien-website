@@ -13,6 +13,8 @@ import { SelectionError } from '../publishing/plan.ts'
 import type { PublicationPlan } from '../publishing/plan.ts'
 import { isNoteEdit } from '../publishing/edits.ts'
 import type { EditEvent } from '../publishing/edits.ts'
+import { refreshAfterRun } from '../publishing/after.ts'
+import type { ListsAfterRun } from '../publishing/after.ts'
 import type { Device, RefreshResult } from '../publishing/ports.ts'
 import {
     lastText,
@@ -194,11 +196,15 @@ export type Report =
           readonly kind: 'publication'
           readonly report: PublicationReport
           readonly addresses: readonly Address[]
+          /** The refresh of the frozen lists after the run (R84). */
+          readonly lists: ListsAfterRun
       }
     | {
           readonly kind: 'takedown'
           readonly report: TakedownReport
           readonly addresses: readonly Address[]
+          /** The refresh of the frozen lists after the run (R84). */
+          readonly lists: ListsAfterRun
       }
 
 export interface CenterState {
@@ -545,6 +551,23 @@ export class PublicationCenter {
                 `Held, above the size limit of an attachment: "${item.path}" links "${item.file}" (${String(item.size)} bytes)`
             )
         }
+    }
+
+    /**
+     * Refreshes the frozen lists that read the state property, after the
+     * correction of the property of a publication, an unpublish or a takedown
+     * (R84). The run is done: a refresh that fails is logged and reported,
+     * and fails nothing. The device is the one of `#device`, so the writes of
+     * the refresh are no edits and the log names them.
+     */
+    async #refreshAfter(device: Device): Promise<ListsAfterRun> {
+        const lists = await refreshAfterRun(device)
+        if (lists.refreshProblems.length > 0) {
+            this.#log(
+                `Lists not refreshed after the run: ${lists.refreshProblems.map((one) => (one.path === '' ? one.message : `"${one.path}": ${one.message}`)).join('; ')}`
+            )
+        }
+        return lists
     }
 
     /** The state of a note at the last check (TOOL-23). */
@@ -1010,8 +1033,9 @@ export class PublicationCenter {
                 )
                 done.pushed = true
                 await this.#wrote([...report.propertySet, ...report.propertyRemoved])
+                const lists = await this.#refreshAfter(device)
                 this.#set({
-                    report: { kind: 'publication', report, addresses: addressesOf(report) }
+                    report: { kind: 'publication', report, addresses: addressesOf(report), lists }
                 })
                 this.#log(`Publication done: ${countsOf(report)}`)
             },
@@ -1079,7 +1103,8 @@ export class PublicationCenter {
                 )
                 done.pushed = true
                 await this.#wrote(report.propertyRemoved)
-                this.#set({ report: { kind: 'takedown', report, addresses: [] } })
+                const lists = await this.#refreshAfter(device)
+                this.#set({ report: { kind: 'takedown', report, addresses: [], lists } })
                 this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
                 if (report.storageWarnings.length > 0) {
                     // A file that stays in the storage can still be public (issue 38).
@@ -1228,11 +1253,13 @@ export class PublicationCenter {
                     }
                 )
                 await this.#wrote([...report.propertySet, ...report.propertyRemoved])
+                const lists = await this.#refreshAfter(device)
                 this.#set({
                     report: {
                         kind: 'publication',
                         report,
-                        addresses: addressesOf(report)
+                        addresses: addressesOf(report),
+                        lists
                     }
                 })
                 this.#log(`Agent publication done: ${countsOf(report)}`)
@@ -1252,7 +1279,8 @@ export class PublicationCenter {
                     true
                 )
                 await this.#wrote(report.propertyRemoved)
-                this.#set({ report: { kind: 'takedown', report, addresses: [] } })
+                const lists = await this.#refreshAfter(device)
+                this.#set({ report: { kind: 'takedown', report, addresses: [], lists } })
                 this.#log(`Agent takedown done: ${String(report.takenDown.length)} taken down`)
                 return outcomeOfTakedown(report)
             }

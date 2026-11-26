@@ -1481,3 +1481,105 @@ describe('the size limit of an attachment in the publication center (issue 72)',
         )
     }, 60_000)
 })
+
+describe('the refresh of the frozen lists after a run in the publication center (R84)', () => {
+    const PUBLIC_LIST = '50 Field guide/Queries/Public notes.md'
+    const QUERY = '<!-- QueryToSerialize: LIST FROM "10 Garden" WHERE public_note -->'
+
+    /** A center whose stand-in serializer writes a line into each note that it is asked. */
+    async function setUpAfter(stores: TestStores): Promise<{
+        center: PublicationCenter
+        asked: string[][]
+    }> {
+        const vault = await copyFixtureVault(stores)
+        const copy = await makeContentStoreCopy(stores)
+        await writeFile(
+            join(vault, PUBLIC_LIST),
+            `# Public notes\n\n${QUERY}\n<!-- SerializedQuery: x -->\n\n<!-- SerializedQuery END -->\n`
+        )
+        const asked: string[][] = []
+        let minute = 0
+        const center: PublicationCenter = new PublicationCenter({
+            device: () => ({
+                ...nodeDevice({
+                    vault,
+                    contentStore: copy,
+                    attachmentStorage: stores.attachmentStorage,
+                    noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES)
+                }),
+                lists: {
+                    async refresh(paths) {
+                        asked.push([...paths])
+                        for (const path of paths) {
+                            const file = join(vault, path)
+                            await writeFile(file, `${await Bun.file(file).text()}- refreshed\n`)
+                            center.noteChanged(path, await statOf(vault, path))
+                        }
+                        return {
+                            refreshed: new Set(paths),
+                            written: new Map(paths.map((path) => [path, 1])),
+                            wrote: paths.length > 0,
+                            problems: []
+                        }
+                    }
+                }
+            }),
+            pull: () => pullContentStore({ contentStore: copy }),
+            now: () => new Date(Date.UTC(2031, 3, 1, 8, minute++)),
+            deviceName: 'garden-shed',
+            stat: (path) => statOf(vault, path)
+        })
+        return { center, asked }
+    }
+
+    /** What the report of the last run says about the refresh after it. */
+    function refreshedOf(center: PublicationCenter): readonly string[] | undefined {
+        return center.state.report?.lists.listsRefreshed
+    }
+
+    test('after a publication, the notes whose query reads public_note are refreshed', async () => {
+        await using stores = await makeTestStores()
+        const { center, asked } = await setUpAfter(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
+        expect(asked).toEqual([[PUBLIC_LIST]])
+        expect(refreshedOf(center)).toEqual([PUBLIC_LIST])
+        expect(center.state.log.map((line) => line.text)).toContain(
+            `Lists refreshed by the Dataview Serializer: "${PUBLIC_LIST}"`
+        )
+    }, 60_000)
+
+    test('after an unpublish, the notes whose query reads public_note are refreshed', async () => {
+        await using stores = await makeTestStores()
+        const { center, asked } = await setUpAfter(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        asked.length = 0
+
+        await center.serve({ tool: 'unpublish', paths: [NOTE] })
+
+        expect(center.state.error).toBeUndefined()
+        expect(asked).toEqual([[PUBLIC_LIST]])
+        expect(refreshedOf(center)).toEqual([PUBLIC_LIST])
+    }, 60_000)
+
+    test('after a takedown, the notes whose query reads public_note are refreshed', async () => {
+        await using stores = await makeTestStores()
+        const { center, asked } = await setUpAfter(stores)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        asked.length = 0
+
+        await center.takedown([NOTE])
+
+        expect(center.state.error).toBeUndefined()
+        expect(asked).toEqual([[PUBLIC_LIST]])
+        expect(refreshedOf(center)).toEqual([PUBLIC_LIST])
+    }, 60_000)
+})

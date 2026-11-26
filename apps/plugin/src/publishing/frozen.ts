@@ -99,6 +99,42 @@ export function hasListToRefresh(source: string): boolean {
     )
 }
 
+/** The text of a name as a pattern: every character that a pattern reads in another way is escaped. */
+function patternOf(name: string): string {
+    return name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+}
+
+/**
+ * True when a line of rule 4 names one of these properties after its marker
+ * (decision R84): the query of that line can give another output after a
+ * publication that writes them. The name is read whole, in any letter case: a
+ * letter, a digit, `_` or `-` before or after it makes another name. A query
+ * that reads a property in an indirect way (a JS query that builds its name)
+ * is not seen.
+ */
+export function queryNamesProperty(source: string, names: readonly string[]): boolean {
+    if (names.length === 0) {
+        return false
+    }
+    const pattern = new RegExp(
+        `(?<![\\p{L}\\p{N}_-])(?:${names.map(patternOf).join('|')})(?![\\p{L}\\p{N}_-])`,
+        'iu'
+    )
+    // Most notes name no such property: they are not read line by line.
+    if (!pattern.test(source)) {
+        return false
+    }
+    return linesOf(source).some((line) => {
+        if (line.fenced) {
+            return false
+        }
+        return REFRESH_MARKERS.some((marker) => {
+            const at = line.text.indexOf(marker)
+            return at !== -1 && pattern.test(line.text.slice(at + marker.length))
+        })
+    })
+}
+
 /** `liveQueries` (rule 5): the paths of the notes with a live query, sorted by path. */
 export function liveQueries(
     paths: readonly string[],

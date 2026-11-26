@@ -1037,6 +1037,20 @@ export class PublicationCenterView extends ItemView {
                           report.report.warnings.map((one) => `${one.path}: ${one.message}`)
                       ]
                   ]
+        // The refresh of the frozen lists after the run (R84): a published
+        // note that it wrote is a changed note for the next plan.
+        lines.push(
+            [
+                'Lists refreshed by the Dataview Serializer after the run (a published note among them waits for the next plan)',
+                report.lists.listsRefreshed
+            ],
+            [
+                'Lists not refreshed after the run',
+                report.lists.refreshProblems.map((one) =>
+                    one.path === '' ? one.message : `${one.path}: ${one.message}`
+                )
+            ]
+        )
         if (report.addresses.length > 0) {
             const live = panel.createEl('details', { attr: { open: '' } })
             live.createEl('summary', {
