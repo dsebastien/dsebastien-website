@@ -75,6 +75,35 @@ describe('the checks of the signals', () => {
         ])
     })
 
+    // Issue 55 (IDX-11, IDX-14): a note page that names its post on the main
+    // site as its original is indexable there, and no sitemap lists it.
+    test('take a note page that names its post on the main site, out of the sitemaps', () => {
+        const post = 'https://www.dsebastien.net/a-post/'
+        const pages = new Map([
+            ['index.html', signals(`${ORIGIN}/`)],
+            [NOTE, signals(post)]
+        ])
+        expect(
+            signalFindings(pages, ORIGIN, map, new Map([['sitemap-generated.xml', [`${ORIGIN}/`]]]))
+        ).toEqual([])
+        expect(signalFindings(pages, ORIGIN, map, SITEMAPS)).toEqual([
+            `sitemap-notes.xml lists "${URL_OF_NOTE}", which is not an indexable page that names itself`
+        ])
+    })
+
+    test('stop a page other than a note page that names the main site, and a post with a wrong og:url', () => {
+        const post = 'https://www.dsebastien.net/a-post/'
+        const pages = new Map([
+            ['index.html', signals(post)],
+            [NOTE, signals(post, { ogUrl: URL_OF_NOTE })]
+        ])
+        expect(signalFindings(pages, ORIGIN, map, new Map())).toEqual([
+            `the canonical link "${post}" of index.html is not a URL of ${ORIGIN} without a query and a fragment`,
+            `${NOTE} has the og:url "${URL_OF_NOTE}", not its canonical link`,
+            'index.html is an indexable page that no sitemap lists'
+        ])
+    })
+
     // AC6: every URL that the build writes answers 200 with no redirect.
     test('stop a canonical link that redirects, leads elsewhere or names another host', () => {
         for (const [canonical, why] of [

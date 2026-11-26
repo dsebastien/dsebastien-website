@@ -3,7 +3,7 @@ import type { Element, Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
 import { toText } from 'hast-util-to-text'
-import { appendFile, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -13,8 +13,8 @@ import {
     makeTestStores,
     type TestStores
 } from '@dsebastien-website/testing'
-import { resolve, type ResolverMap } from '@dsebastien-website/resolver'
-import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { canonicalPath, resolve, SITE_ORIGIN, type ResolverMap } from '@dsebastien-website/resolver'
+import { fileMainSite, fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 import { SITE_NAME } from './site.ts'
 
@@ -42,6 +42,13 @@ const LATE = '10 Garden/Wormery.md'
 const READING_LIST = '40 Writing/Reading list.md'
 /** Imported, then edited and published again by the second run. */
 const EDITED = '10 Garden/Seed swap day.md'
+/** An article with the URL of its post on the main site, which names itself (issue 55). */
+const JOURNAL = '40 Writing/Why I keep a garden journal.md'
+const POST = 'https://www.dsebastien.net/why-i-keep-a-garden-journal/'
+/** A news post without the URL of its post. */
+const NEWS = '40 Writing/Garden news, week 12.md'
+/** The notes of the first publication whose original is not verified (IDX-13). */
+let notVerified: string[] = []
 
 let stores: TestStores | undefined
 let outDir: string | undefined
@@ -88,21 +95,37 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     const contentStore = await makeContentStoreCopy(stores)
+    // The main site of the test: the post of the article names itself.
+    const posts = join(stores.root, 'main-site.json')
+    await writeFile(
+        posts,
+        JSON.stringify({
+            answers: {
+                [POST]: {
+                    status: 200,
+                    url: POST,
+                    body: `<html><head><link rel="canonical" href="${POST}"></head></html>`
+                }
+            }
+        })
+    )
     const device = nodeDevice({
         noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
         vault,
         contentStore,
-        attachmentStorage: stores.attachmentStorage
+        attachmentStorage: stores.attachmentStorage,
+        mainSite: fileMainSite(posts)
     })
     // Two runs (R62): the import holds every note but one; the second run
     // publishes that note for the first time and a real edit of another one.
     const queue = await status(device)
     const planned = await plan(device, { include: queue.new.filter((path) => path !== LATE) })
-    await publish(device, planned.id, {
+    const first = await publish(device, planned.id, {
         time: '2031-05-01T00:00:00Z',
         device: 'garden-shed',
         face: 'command-line'
     })
+    notVerified = first.originalsNotVerified.map((entry) => entry.path)
     await appendFile(join(vault, EDITED), '\nBring a pencil too.\n')
     const second = await plan(device, { include: [LATE, EDITED] })
     await publish(device, second.id, {
@@ -151,6 +174,46 @@ describe('build of the fixture vault with note types', () => {
             /\d+ pages: titles and descriptions unique, every indexable note within 4 links of the home page/u
         )
         expect(notes.size).toBeGreaterThan(80)
+    })
+})
+
+// Issue 55 (ADR 0010, IDX-11 to IDX-14, PUB-100): a note of a type that the
+// main site also publishes names the post there, once the tool verified it.
+describe('the notes that also exist on the main site', () => {
+    function canonicalOf(page: Root): unknown {
+        return select('link[rel="canonical"]', page)?.properties['href']
+    }
+
+    test('name the verified post in their canonical link and their card, and stay indexable', () => {
+        const page = noteOf(JOURNAL)
+        expect(canonicalOf(page)).toBe(POST)
+        expect(select('meta[property="og:url"]', page)?.properties['content']).toBe(POST)
+        expect(metaOf(page, 'robots')).toBeUndefined()
+    })
+
+    test('are still served under their own path', async () => {
+        expect(canonicalOf(await served(canonicalPath(JOURNAL)))).toBe(POST)
+    })
+
+    test('without a verified post are noindex, and the publication report lists them', () => {
+        expect(metaOf(noteOf(NEWS), 'robots')).toBe('noindex, follow')
+        expect(canonicalOf(noteOf(NEWS))).toBe(new URL(canonicalPath(NEWS), SITE_ORIGIN).href)
+        expect(notVerified).toContain(NEWS)
+        expect(notVerified).not.toContain(JOURNAL)
+    })
+
+    test('are in no sitemap', async () => {
+        const built = outDir ?? ''
+        const sitemaps = (await readdir(built)).filter((file) => file.startsWith('sitemap'))
+        expect(sitemaps.length).toBeGreaterThan(1)
+        const text = (
+            await Promise.all(sitemaps.map((file) => readFile(join(built, file), 'utf8')))
+        ).join(' ')
+        for (const path of [JOURNAL, NEWS]) {
+            expect(text, path).not.toContain(new URL(canonicalPath(path), SITE_ORIGIN).href)
+        }
+        expect(text).not.toContain(POST)
+        expect(text).toContain(new URL(canonicalPath(WELCOME), SITE_ORIGIN).href)
     })
 })
 

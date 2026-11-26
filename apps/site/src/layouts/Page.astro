@@ -19,6 +19,8 @@ import { BAR_COLORS } from '../styles/themes/knowii-bar.ts'
 // The frame of every page of the site, from variant B of the mockups (R49).
 // The canonical link names the canonical URL of the page, so a URL with a
 // query shows the same page with a clean canonical link (URL-12 of the spec).
+// A note that also exists on the main site names the post there instead, its
+// original (IDX-11): the page and the `og:url` of its card name it.
 // The mode is set before any style (MODE-01): dark until the script runs.
 // Issue 133: the head names the icon of the site (the mark of the main site:
 // `/favicon.ico` for an old client, the vector icon, the icon of a home
@@ -38,6 +40,11 @@ interface Props {
     noindex?: boolean
     /** The canonical path of the page. The "not found" page has none. */
     path?: string
+    /**
+     * The URL that the canonical link names in place of the page: the post on
+     * the main site of a note that also exists there (IDX-11, ADR 0010).
+     */
+    original?: string
     /** The language of the page (REN-09). English when it is not given. */
     lang?: string
     /** True when the page lays out the width of its own parts (the note page and its title band). */
@@ -56,12 +63,13 @@ const {
     description,
     noindex = false,
     path,
+    original,
     lang = 'en',
     bare = false,
     scriptless = false,
     pageView = 'page'
 } = Astro.props
-const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
+const canonical = path === undefined ? undefined : (original ?? new URL(path, Astro.site).href)
 const modes: readonly Mode[] = ['dark', 'light']
 const analytics = scriptless ? undefined : analyticsOfEnvironment(process.env)
 ---

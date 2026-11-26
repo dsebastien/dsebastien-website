@@ -155,6 +155,43 @@ describe('published notes of a content store', () => {
         expect((await readPublication()).removed.map((note) => note.vaultPath)).toEqual(['Gone.md'])
     })
 
+    test('read the post that the tool verified as the original of a note (issue 55)', async () => {
+        const original = {
+            checked: '2031-04-01T08:00:00Z',
+            url: 'https://www.dsebastien.net/a-post/'
+        }
+        await contentStore({
+            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Article.md', original },
+            'b.json': { ...ENTRY, id: 'bbbbbbbbbbbbbbbb', path: 'Other.md' }
+        })
+
+        const notes = await readPublishedNotes()
+
+        expect(notes.map((note) => note.original)).toEqual([original.url, undefined])
+    })
+
+    // The canonical link of the page names the original: it must be a post
+    // of the main site, as the tool records it.
+    const wrongOriginals: [string, unknown][] = [
+        ['an original that is a text', 'https://www.dsebastien.net/a-post/'],
+        ['an original without a time', { url: 'https://www.dsebastien.net/a-post/' }],
+        [
+            'an original on another host',
+            { checked: ENTRY.firstPublished, url: 'https://example.net/a/' }
+        ],
+        [
+            'an original not in its comparison form',
+            { checked: ENTRY.firstPublished, url: 'https://www.dsebastien.net/A-Post' }
+        ]
+    ]
+    test.each(wrongOriginals)('stop the build when an entry has %s', async (_name, original) => {
+        await contentStore({
+            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Article.md', original }
+        })
+
+        expect(await rejectionOf(readPublishedNotes())).toContain('manifest entry')
+    })
+
     test('are none when the build has no content store', async () => {
         expect(await readPublishedNotes()).toEqual([])
     })

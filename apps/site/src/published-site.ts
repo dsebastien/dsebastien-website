@@ -27,7 +27,7 @@ import { NoteProperties } from './note-properties.ts'
 import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
 import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
-import { isNoindexNote } from './noindex.ts'
+import { signalsOf, type NoteSignals } from './noindex.ts'
 import { lastUpdateOf, recentListsOf } from './recent.ts'
 import { sitemapEntriesOf, type SitemapEntry } from './sitemaps.ts'
 import { SitePages } from './rendering/page.ts'
@@ -68,6 +68,12 @@ export interface PublishedSite {
     titleOf(vaultPath: string): string
     /** The description of the page of a published note (IDX-05). */
     descriptionOf(vaultPath: string): string
+    /**
+     * The signals of a published note for search engines: its noindex, the
+     * post on the main site that its canonical link names (IDX-11), and
+     * whether the sitemaps list it (IDX-14, R85).
+     */
+    signalsOf(vaultPath: string): NoteSignals
     /** The type hub of each note type, by the plural label of the type (NAV-03). */
     readonly typeHubs: readonly NoteList[]
     /** The page of each tag, in the order of the code points of the tags (NAV-04). */
@@ -281,6 +287,7 @@ async function read(): Promise<PublishedSite> {
             noteOf(vaultPath)
             return descriptions.get(vaultPath) ?? ''
         },
+        signalsOf: (vaultPath) => signalsOf(noteOf(vaultPath), properties.get(vaultPath) ?? {}),
         typeHubs: lists.typeHubs,
         tagLists: lists.tagLists,
         library: libraryOf(lists.typeHubs),
@@ -315,7 +322,7 @@ async function read(): Promise<PublishedSite> {
             })
         ),
         noindexPaths: notes
-            .filter((note) => isNoindexNote(properties.get(note.vaultPath) ?? {}))
+            .filter((note) => signalsOf(note, properties.get(note.vaultPath) ?? {}).noindex)
             .map((note) => note.path)
             .sort(compareCodePoints),
         backlinksOf,
@@ -341,7 +348,7 @@ async function read(): Promise<PublishedSite> {
                 return {
                     path: note.path,
                     noteType: note.noteType?.name,
-                    indexable: !isNoindexNote(noteProperties),
+                    indexable: signalsOf(note, noteProperties).inSitemaps,
                     lastmod: lastUpdateOf({
                         lastPublished: note.lastPublished,
                         updated: noteProperties['updated']

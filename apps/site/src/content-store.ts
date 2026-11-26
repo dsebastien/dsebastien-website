@@ -8,6 +8,7 @@ import {
     type RedirectList
 } from '@dsebastien-website/resolver'
 import { isNoteType, type NoteType } from '../../plugin/src/publishing/note-types.ts'
+import { comparisonForm, MAIN_SITE_ORIGIN } from '../../plugin/src/publishing/originals.ts'
 
 // The content store as the build reads it (BUILD-01 of the spec). The build
 // never reads the vault: the content store holds the cleaned notes and the
@@ -61,6 +62,11 @@ export interface PublishedNote {
     attachments: PublishedAttachment[]
     /** The note type of the note, as the Starter Kit gave it at the publication (decision R61). */
     noteType?: NoteType
+    /**
+     * The post on the main site that the tool verified as the original of
+     * the note at its last publication (PUB-100, IDX-12).
+     */
+    original?: string
 }
 
 /** A link of a published note to an attachment. */
@@ -122,6 +128,22 @@ function isAttachmentList(
 
 /** The form of the hash of an attachment. Its digits name a file of the attachment storage. */
 const ATTACHMENT_HASH = /^sha256:[0-9a-f]{64}$/
+
+/**
+ * True when the value is the `original` of an entry, as the build reads it:
+ * a time of the check and a post URL of the main site in its comparison form.
+ * The canonical link of the page names that URL, so a URL of another host
+ * stops the build.
+ */
+function isOriginal(value: unknown): value is { checked: string; url: string } {
+    return (
+        isRecord(value) &&
+        isTime(value['checked']) &&
+        typeof value['url'] === 'string' &&
+        value['url'].startsWith(`${MAIN_SITE_ORIGIN}/`) &&
+        comparisonForm(value['url']) === value['url']
+    )
+}
 
 /** The form of a time of the manifest: UTC, to the second (canonical form, rule 9). */
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
@@ -270,6 +292,7 @@ function manifestOf(files: readonly { readonly file: string; readonly text: stri
             !isTime(entry['lastPublished']) ||
             !isAttachmentList(entry['attachments']) ||
             (entry['noteType'] !== undefined && !isNoteType(entry['noteType'])) ||
+            (entry['original'] !== undefined && !isOriginal(entry['original'])) ||
             (entry['state'] !== 'published' && entry['state'] !== 'unpublished')
         ) {
             throw new Error(`manifest/${file} is not a manifest entry`)
@@ -288,6 +311,7 @@ function manifestOf(files: readonly { readonly file: string; readonly text: stri
             continue
         }
         const noteType = entry['noteType']
+        const original = entry['original']
         notes.set(vaultPath, {
             id: entry['id'],
             vaultPath,
@@ -309,7 +333,8 @@ function manifestOf(files: readonly { readonly file: string; readonly text: stri
                     ? {}
                     : { width: item.width, height: item.height })
             })),
-            ...(isNoteType(noteType) ? { noteType } : {})
+            ...(isNoteType(noteType) ? { noteType } : {}),
+            ...(isOriginal(original) ? { original: original.url } : {})
         })
     }
     // In the order of the paths, so that two builds of one content store give

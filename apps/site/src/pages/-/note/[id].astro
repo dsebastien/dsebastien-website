@@ -13,7 +13,6 @@ import Page from '../../../layouts/Page.astro'
 import { propertiesOf } from '../../../properties.ts'
 import { publishedSite } from '../../../published-site.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
-import { isNoindexNote } from '../../../noindex.ts'
 import { languageOf } from '../../../rendering/language.ts'
 import { sectionBarScript } from '../../../section-bar.ts'
 
@@ -47,13 +46,17 @@ const backlinks = site.backlinksOf(note.vaultPath)
 const shown = backlinks.slice(0, BACKLINKS_ON_PAGE)
 // The ad at the end of the note, from the store catalog (AD-01).
 const ad = site.adOf(note.vaultPath)
+// A note that also exists on the main site names the post there as its
+// original, or is noindex without a verified post (issue 55, ADR 0010).
+const signals = site.signalsOf(note.vaultPath)
 ---
 
 <Page
     title={site.titleOf(note.vaultPath)}
     description={site.descriptionOf(note.vaultPath)}
     path={note.path}
-    noindex={isNoindexNote(site.propertiesOf(note.vaultPath))}
+    {...(signals.original === undefined ? {} : { original: signals.original })}
+    noindex={signals.noindex}
     lang={languageOf(data)}
     bare
 >

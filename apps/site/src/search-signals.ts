@@ -1,4 +1,5 @@
 import { resolve, type ResolverMap } from '@dsebastien-website/resolver'
+import { MAIN_SITE_ORIGIN } from '../../plugin/src/publishing/originals.ts'
 
 // The signals of a built site for search engines (IDX-10, IDX-30, story 126,
 // issue 54): every indexable page has one absolute canonical link, with the
@@ -7,7 +8,9 @@ import { resolve, type ResolverMap } from '@dsebastien-website/resolver'
 // through the resolver straight to its page: 200, no redirect (seo item 18).
 // A URL of a sitemap is the URL of an indexable page that names itself
 // (IDX-14, IDX-30). Each finding stops the build: a takedown or an
-// unpublish cannot cause one, because the build writes all these URLs.
+// unpublish cannot cause one, because the build writes all these URLs. A note
+// page can name its post on the main site as its original (IDX-11, issue 55):
+// then no sitemap lists it.
 
 /** What the checks read of the head of a built page. */
 export interface PageSignals {
@@ -56,6 +59,15 @@ function pageOf(url: string, origin: string, map: ResolverMap): string {
     return resolution.kind === 'page' ? `=${resolution.file}` : `answers ${resolution.kind}`
 }
 
+/** True when the file is a note page and the URL is a page of the main site: the original of the note (IDX-11). */
+function namesOriginal(file: string, canonical: string | undefined): boolean {
+    return (
+        file.startsWith('-/note/') &&
+        canonical !== undefined &&
+        canonical.startsWith(`${MAIN_SITE_ORIGIN}/`)
+    )
+}
+
 /**
  * The findings of the signals of a built site.
  *
@@ -82,6 +94,9 @@ export function signalFindings(
         }
         if (page.ogTitle === undefined || page.twitterCard === undefined) {
             stops.push(`${file} has no og:title or no twitter:card`)
+        }
+        if (namesOriginal(file, canonical)) {
+            continue
         }
         const target = pageOf(canonical, origin, map)
         if (target !== `=${file}`) {
@@ -114,7 +129,12 @@ export function signalFindings(
     // Every indexable page is in a sitemap (IDX-30).
     for (const [file, page] of pages) {
         const [canonical] = page.canonicals
-        if (page.indexable && canonical !== undefined && !listed.has(canonical)) {
+        if (
+            page.indexable &&
+            canonical !== undefined &&
+            !listed.has(canonical) &&
+            !namesOriginal(file, canonical)
+        ) {
             stops.push(`${file} is an indexable page that no sitemap lists`)
         }
     }
