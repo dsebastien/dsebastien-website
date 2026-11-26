@@ -15,8 +15,9 @@ import { SITE_NAME } from './site.ts'
 // first sentences of its text, cut at a word end. A note of a media type
 // gets the sentence alone: its text often starts with a copied synopsis
 // (IDX-06). It is never empty, and never the type alone: a note with nothing
-// more gets its title, its type and the name of the site. No two indexable pages share one: when they
-// would, each note of them gets its title in front, and is cut again.
+// more gets its title, its type and the name of the site. No two indexable
+// pages share one: when they would, each note of them gets its title in
+// front, and is cut again.
 
 /** The longest description that the build writes, in characters, the end mark included. */
 export const DESCRIPTION_LENGTH = 155
