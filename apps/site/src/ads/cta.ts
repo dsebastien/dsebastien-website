@@ -2,7 +2,8 @@
 // name and its five properties, `product`, `position`, `slot`, `page` and
 // `href`, so that ad clicks stay comparable with the baseline. Each link of an
 // ad carries the first four in data attributes; `href` is the address of the
-// link. One listener in the capture phase reads them (AN-04).
+// link. One listener in the capture phase reads them (AN-04), with the
+// selector and the values of the current site (`publish.js`).
 //
 // The script sends through `window.plausible`, the call of the analytics
 // script, when the page has it (issue 57 adds it). Without it, or when the
@@ -32,7 +33,7 @@ export function ctaAttributes(
 /** The script of the ad clicks. It is one block, so it declares no global name. */
 export const ctaScript = `{
     addEventListener('click', (event) => {
-        const link = event.target?.closest?.('a[data-cta-product]')
+        const link = event.target?.closest?.('a[data-cta-position]')
         if (!link) return
         try {
             const data = link.dataset

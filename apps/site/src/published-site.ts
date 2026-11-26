@@ -320,12 +320,9 @@ async function read(): Promise<PublishedSite> {
             const noteProperties = properties.get(vaultPath) ?? {}
             return adProductsOf(
                 {
-                    title: headers.get(vaultPath)?.heading ?? note.title,
+                    fileName: (vaultPath.split('/').pop() ?? '').replace(/\.md$/iu, ''),
                     ...(note.noteType === undefined ? {} : { noteType: note.noteType.name }),
-                    tags: tagsOfNote(
-                        noteProperties['tags'],
-                        entries.get(vaultPath)?.rendered?.html ?? ''
-                    ).keys(),
+                    tags: noteProperties['tags'],
                     topics: noteProperties['topics']
                 },
                 catalog

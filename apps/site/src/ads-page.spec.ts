@@ -136,9 +136,11 @@ describe('the ads of the built site', () => {
     test('a note about a topic of a product ends with an ad for it, from the store catalog', () => {
         const html = pageOf('/10 Garden/Drip irrigation')
         const ad = adOf(html)
-        expect(productsOf(ad)).toEqual(['water-wise-garden', 'rain-garden-kit'])
+        expect(productsOf(ad)).toEqual(['rain-garden-kit', 'water-wise-garden'])
         expect(ad).toContain('Water-Wise Garden Course')
         expect(ad).toContain('Water less and grow more')
+        expect(ad).toContain('Related resources I created:')
+        expect(ad).toContain('Learn more →')
         // At the end of the note: after its text.
         expect(html.indexOf('data-ad ')).toBeGreaterThan(html.indexOf('data-note-body'))
     })
@@ -151,9 +153,11 @@ describe('the ads of the built site', () => {
     test('each link of the ad carries the properties of cta_clicked, and the page runs the script', () => {
         const html = pageOf('/10 Garden/Drip irrigation')
         expect(adOf(html)).toContain(
-            '<a class="card-link ad-card" href="https://store.example/product/water-wise-garden" target="_blank" rel="noopener" data-cta-product="water-wise-garden" data-cta-position="end" data-cta-slot="0" data-cta-page="10 Garden/Drip irrigation.md">'
+            '<a class="card-link ad-card" href="https://store.example/product/water-wise-garden" target="_blank" rel="noopener" data-cta-product="water-wise-garden" data-cta-position="end" data-cta-slot="1" data-cta-page="10 Garden/Drip irrigation.md">'
         )
-        expect(adOf(html)).toContain('data-cta-slot="1"')
+        expect(adOf(html)).toContain(
+            'data-cta-product="rain-garden-kit" data-cta-position="end" data-cta-slot="0"'
+        )
         expect(html).toContain(`<script>${ctaScript}</script>`)
     })
 

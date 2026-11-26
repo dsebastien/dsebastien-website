@@ -36,7 +36,7 @@ function adLink(): unknown {
     }
     const link = { dataset, href: 'https://store.example/product/water-wise-garden' }
     return {
-        closest: (selector: string) => (selector === 'a[data-cta-product]' ? link : null)
+        closest: (selector: string) => (selector === 'a[data-cta-position]' ? link : null)
     }
 }
 

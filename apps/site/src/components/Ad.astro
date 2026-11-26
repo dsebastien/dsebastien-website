@@ -1,4 +1,5 @@
 ---
+import { kickerOf, titleCase } from '../ads/card.ts'
 import type { Product } from '../ads/catalog.ts'
 import { ctaAttributes, END_POSITION } from '../ads/cta.ts'
 
@@ -19,6 +20,7 @@ const { products, page } = Astro.props
 
 <aside class='note-ad' aria-label='From the store' data-ad data-ad-position={END_POSITION}>
     <h2 class='section-title'>Go deeper</h2>
+    <p class='ad-tagline'>Related resources I created:</p>
     <ul class='ad-cards'>
         {products.map((product, slot) => (
             <li>
@@ -29,14 +31,13 @@ const { products, page } = Astro.props
                     rel='noopener'
                     {...ctaAttributes(product.id, END_POSITION, slot, page)}
                 >
-                    <span class='ad-kicker'>
-                        {[product.badge, product.priceTier, product.mainCategory]
-                            .filter((part) => part !== undefined)
-                            .join(' · ')}
-                    </span>
+                    {product.badge !== undefined && (
+                        <span class='badge'>{titleCase(product.badge)}</span>
+                    )}
+                    <span class='ad-kicker'>{kickerOf(product)}</span>
                     <span class='ad-name'>{product.name}</span>
                     <span class='ad-line'>{product.shortDescription}</span>
-                    <span class='ad-more'>Learn more</span>
+                    <span class='ad-more'>Learn more →</span>
                 </a>
             </li>
         ))}
