@@ -26,7 +26,8 @@ import { noteHeader, type NoteHeader } from './note-header.ts'
 import { readProperties } from './note-properties.ts'
 import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
-import { recentListsOf } from './recent.ts'
+import { lastUpdateOf, recentListsOf } from './recent.ts'
+import { sitemapEntriesOf, type SitemapEntry } from './sitemaps.ts'
 import { SitePages } from './rendering/page.ts'
 import { hrefOfAddress } from './site-checks.ts'
 import { resolverMapFor } from './site-files.ts'
@@ -87,6 +88,8 @@ export interface PublishedSite {
     notesWithBacklinksPage(): readonly PublishedNote[]
     /** The products of the ad at the end of a published note, from the store catalog: none for no ad (AD-01). */
     adOf(vaultPath: string): readonly Product[]
+    /** The entries of each sitemap file, by group (IDX-30, issue 54). */
+    readonly sitemaps: ReadonlyMap<string, readonly SitemapEntry[]>
 }
 
 async function read(): Promise<PublishedSite> {
@@ -328,7 +331,31 @@ async function read(): Promise<PublishedSite> {
                 },
                 catalog
             )
-        }
+        },
+        sitemaps: sitemapEntriesOf({
+            notes: notes.map((note) => {
+                const noteProperties = properties.get(note.vaultPath) ?? {}
+                return {
+                    path: note.path,
+                    noteType: note.noteType?.name,
+                    lastmod: lastUpdateOf(
+                        {
+                            lastPublished: note.lastPublished,
+                            created: noteProperties['created'],
+                            updated: noteProperties['updated']
+                        },
+                        importRun
+                    )
+                }
+            }),
+            lists: [
+                ...lists.typeHubs,
+                ...(lists.otherNotes === undefined ? [] : [lists.otherNotes]),
+                ...lists.tagLists,
+                ...lists.recentLists
+            ],
+            library: libraryOf(lists.typeHubs)
+        })
     }
 }
 

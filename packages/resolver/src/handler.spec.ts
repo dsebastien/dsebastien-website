@@ -216,6 +216,23 @@ describe('a file of the site that is not a page', () => {
         expect(head.headers.get('x-robots-tag')).toBe('noindex')
     })
 
+    test('is XML for a sitemap, and plain text for the IndexNow key file', async () => {
+        const root = resolverMapOf([], {
+            ...FILES,
+            root: {
+                '/sitemap.xml': { file: 'sitemap.xml', type: 'xml' },
+                '/0123abcd.txt': { file: '0123abcd.txt', type: 'text' }
+            }
+        })
+        const sitemap = await get('/sitemap.xml', {}, { map: root })
+        expect(sitemap.status).toBe(200)
+        expect(sitemap.headers.get('content-type')).toBe('application/xml; charset=utf-8')
+        expect(sitemap.headers.get('x-robots-tag')).toBeNull()
+        const key = await get('/0123abcd.txt', {}, { map: root })
+        expect(key.status).toBe(200)
+        expect(key.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+    })
+
     test('says nothing of the index for robots.txt and the icon', async () => {
         for (const path of ['/robots.txt', '/favicon.ico']) {
             const response = await get(path)

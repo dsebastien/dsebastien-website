@@ -9,11 +9,14 @@ import {
     resolverMapOf,
     SEARCH_PATH,
     type ResolverMap,
+    type SiteFile,
     type SiteFiles,
     type SiteFolder
 } from '@dsebastien-website/resolver'
 import type { PublishedNote, RemovedNote } from './content-store.ts'
 import type { NoteList } from './generated-pages.ts'
+import { INDEXNOW_KEY_PATH } from './indexnow.ts'
+import { SITEMAP_INDEX_PATH, sitemapGroupsOf, sitemapPath } from './sitemaps.ts'
 
 // The files of the build, by what they are, and the resolver map that leads
 // each path of the site to one of them. A generated file lives under `-/`
@@ -50,11 +53,24 @@ export function siteFilesOf(notes: readonly PublishedNote[]): SiteFiles {
         gone: '410.html',
         robots: 'robots.txt',
         icon: 'favicon.ico',
+        root: rootFilesOf(notes),
         page: (path) => noteOf(path).file,
         markdown: (path) => noteOf(path).markdownFile,
         folder: (path) => `-/folder/${folderId(path)}.html`,
         choice: (paths) => `-/choice/${choiceId(paths)}.html`
     }
+}
+
+/** The other files at the root of the site (issue 54): the sitemaps and the IndexNow key file. */
+export function rootFilesOf(notes: readonly PublishedNote[]): Record<string, SiteFile> {
+    const files: Record<string, SiteFile> = {
+        [SITEMAP_INDEX_PATH]: { file: SITEMAP_INDEX_PATH.slice(1), type: 'xml' },
+        [INDEXNOW_KEY_PATH]: { file: INDEXNOW_KEY_PATH.slice(1), type: 'text' }
+    }
+    for (const group of sitemapGroupsOf(notes.map((note) => note.noteType?.name))) {
+        files[sitemapPath(group)] = { file: sitemapPath(group).slice(1), type: 'xml' }
+    }
+    return files
 }
 
 /** The site notes of the resolver: the vault path and the aliases of each published note. */

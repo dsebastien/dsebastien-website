@@ -13,6 +13,7 @@ import {
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
+import { INDEXNOW_KEY_PATH } from './indexnow.ts'
 import { modeScript, modeSwitchScript } from './mode.ts'
 import { propertiesScript } from './properties-panel.ts'
 import { oldAnchorScript } from './rendering/anchors.ts'
@@ -247,6 +248,11 @@ describe('build of a content store with one published note', () => {
             files: {
                 '/robots.txt': { file: 'robots.txt', type: 'text' },
                 '/favicon.ico': { file: 'favicon.ico', type: 'icon' },
+                // The sitemaps and the IndexNow key file (issue 54).
+                '/sitemap.xml': { file: 'sitemap.xml', type: 'xml' },
+                '/sitemap-permanent.xml': { file: 'sitemap-permanent.xml', type: 'xml' },
+                '/sitemap-generated.xml': { file: 'sitemap-generated.xml', type: 'xml' },
+                [INDEXNOW_KEY_PATH]: { file: INDEXNOW_KEY_PATH.slice(1), type: 'text' },
                 [`/-/md${NOTE_URL}.md`]: { file: `-/md/${NOTE_ID}.md`, type: 'markdown' }
             },
             attachments: {},

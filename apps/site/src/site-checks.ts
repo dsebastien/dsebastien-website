@@ -1,10 +1,13 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resolve, type ResolverMap } from '@dsebastien-website/resolver'
+import { resolve, SITE_ORIGIN, type ResolverMap } from '@dsebastien-website/resolver'
 import type { AstroIntegration } from 'astro'
+import { readPageSignals, signalFindings, type PageSignals } from './search-signals.ts'
+import { locsOf, SITEMAP_INDEX_PATH } from './sitemaps.ts'
 
-// The checks of a built site (IDX-04, IDX-05, NAV-07, decision R61): every
+// The checks of a built site (IDX-04, IDX-05, NAV-07, decision R61; the
+// signals for search engines of `search-signals.ts`, issue 54): every
 // indexable page has a title and a description, no two indexable pages share
 // a title or a description, every indexable note is reachable from the home
 // page in at most four plain links, and no internal link of a page leads to
@@ -166,7 +169,7 @@ export function judgeFindings(
     const stops = strict ? [...findings.stops, ...findings.warnings] : findings.stops
     if (stops.length > 0) {
         throw new Error(
-            `the built site breaks ${String(stops.length)} rule(s) of IDX-04, IDX-05, NAV-07 and its links:\n${stops.slice(0, 20).join('\n')}`
+            `the built site breaks ${String(stops.length)} rule(s) of IDX-04, IDX-05, IDX-10, IDX-30, NAV-07 and its links:\n${stops.slice(0, 20).join('\n')}`
         )
     }
     for (const warning of findings.warnings) {
@@ -228,8 +231,27 @@ export function siteChecks(): AstroIntegration {
                     await readFile(join(output, '-', 'resolver-map.json'), 'utf8')
                 ) as ResolverMap
                 const pages = new Map<string, BuiltPage>()
+                const signals = new Map<string, PageSignals>()
                 for (const file of new Set(Object.values(map.pages))) {
-                    pages.set(file, readBuiltPage(await readFile(join(output, file), 'utf8')))
+                    const html = await readFile(join(output, file), 'utf8')
+                    pages.set(file, readBuiltPage(html))
+                    signals.set(file, readPageSignals(html))
+                }
+                // The sitemap index names each sitemap file of the map (issue 54).
+                const sitemaps = new Map<string, string[]>()
+                const index = locsOf(
+                    await readFile(join(output, SITEMAP_INDEX_PATH.slice(1)), 'utf8')
+                )
+                const files = Object.entries(map.files ?? {})
+                    .filter(([path, file]) => file.type === 'xml' && path !== SITEMAP_INDEX_PATH)
+                    .map(([path]) => new URL(path, SITE_ORIGIN).href)
+                const sitemapStops =
+                    index.join(' ') === files.join(' ')
+                        ? []
+                        : [`the sitemap index names ${index.join(', ')}, not ${files.join(', ')}`]
+                for (const url of files) {
+                    const name = new URL(url).pathname.slice(1)
+                    sitemaps.set(name, locsOf(await readFile(join(output, name), 'utf8')))
                 }
                 // The "not found" page is no path of the map, but a reader follows its links.
                 if (map.notFound !== undefined) {
@@ -241,12 +263,17 @@ export function siteChecks(): AstroIntegration {
                 const notes = new Set(
                     [...pages.keys()].filter((file) => file.startsWith('-/note/'))
                 )
-                const findings = siteFindings(
-                    pages,
-                    map.pages['/'] ?? 'index.html',
-                    notes,
-                    (link) => fileOfLink(link, map)
+                const found = siteFindings(pages, map.pages['/'] ?? 'index.html', notes, (link) =>
+                    fileOfLink(link, map)
                 )
+                const findings: Findings = {
+                    stops: [
+                        ...found.stops,
+                        ...sitemapStops,
+                        ...signalFindings(signals, new URL(SITE_ORIGIN).origin, map, sitemaps)
+                    ],
+                    warnings: found.warnings
+                }
                 judgeFindings(findings, process.env[SITE_CHECKS_MODE] === 'strict', logger)
                 logger.info(
                     findings.warnings.length === 0

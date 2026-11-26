@@ -183,6 +183,35 @@ describe('resolver map with generated pages', () => {
         )
         expect(() => resolverMapOf(notes, files, {}, { '/': 'x.html' })).toThrow('generated page')
     })
+
+    // Issue 54: the sitemaps and the IndexNow key file live at the root.
+    test('a file at the root of the site is found at its path only', () => {
+        const map = resolverMapOf(notes, {
+            ...files,
+            root: {
+                '/sitemap.xml': { file: 'sitemap.xml', type: 'xml' },
+                '/0123abcd.txt': { file: '0123abcd.txt', type: 'text' }
+            }
+        })
+        expect(resolve('/sitemap.xml', map)).toEqual({
+            kind: 'file',
+            file: 'sitemap.xml',
+            type: 'xml'
+        })
+        expect(resolve('/0123abcd.txt', map)).toEqual({
+            kind: 'file',
+            file: '0123abcd.txt',
+            type: 'text'
+        })
+    })
+
+    test('a file at the root outside the root, or over robots.txt, is refused', () => {
+        for (const path of ['/a/sitemap.xml', 'sitemap.xml', '/robots.txt']) {
+            expect(() =>
+                resolverMapOf(notes, { ...files, root: { [path]: { file: 'x', type: 'xml' } } })
+            ).toThrow('another file at the root')
+        }
+    })
 })
 
 // The addresses of an unpublished note are gone (410), but a published note,

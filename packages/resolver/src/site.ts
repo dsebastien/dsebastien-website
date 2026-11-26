@@ -43,6 +43,12 @@ export interface SiteFiles {
     readonly robots: string
     /** The icon of the site at `/favicon.ico`, for a client that asks for it without a link (issue 133). */
     readonly icon: string
+    /**
+     * The other files at the root of the site, by their paths (issue 54): the
+     * sitemap index, the sitemap files and the IndexNow key file. Each path
+     * is one reserved root name (URL-09).
+     */
+    readonly root?: Readonly<Record<string, SiteFile>>
     /** The file of the page of a note, from its vault path. */
     page(path: string): string
     /** The file of the Markdown of a note, from its vault path. */
@@ -234,6 +240,12 @@ export function resolverMapOf(
     const siteFiles: Record<string, SiteFile> = {
         '/robots.txt': { file: files.robots, type: 'text' },
         '/favicon.ico': { file: files.icon, type: 'icon' }
+    }
+    for (const [path, file] of Object.entries(files.root ?? {})) {
+        if (!/^\/[^/]+$/u.test(path) || path in siteFiles) {
+            throw new Error(`"${path}" is not the path of another file at the root of the site`)
+        }
+        siteFiles[path] = file
     }
     // A map, not an object: a text such as "constructor" or "__proto__" is a
     // key like any other.

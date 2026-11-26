@@ -129,6 +129,22 @@ function importDate(properties: readonly unknown[], importRun: string): Dated {
     return UNDATED
 }
 
+/**
+ * The date of the last update of a note, as the list `updated` dates it, for
+ * the `lastmod` of the sitemaps (IDX-32): the time of the last publication
+ * that changed it, in UTC, or for a note of the import the day of its
+ * `updated` or `created` property. `undefined` when it is not known.
+ */
+export function lastUpdateOf(
+    source: Pick<RecentSource, 'lastPublished' | 'created' | 'updated'>,
+    importRun: string | undefined
+): string | undefined {
+    if (importRun !== undefined && source.lastPublished === importRun) {
+        return importDate([source.updated, source.created], importRun).date?.datetime
+    }
+    return source.lastPublished === '' ? undefined : source.lastPublished
+}
+
 /** What the recent lists need of the whole site. */
 export interface RecentOptions {
     /** The run of the first publication of the content store, from every manifest entry (`readImportRun()`). */

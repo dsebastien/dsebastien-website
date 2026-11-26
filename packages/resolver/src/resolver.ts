@@ -6,9 +6,9 @@ import { smallLetters } from './small-letters.ts'
 // are in `documentation/Configuration.md`, section "The URL contract".
 
 /** The kinds of the files of the site that are not pages. */
-export type SiteFileType = 'markdown' | 'text' | 'icon'
+export type SiteFileType = 'markdown' | 'text' | 'icon' | 'xml'
 
-/** A file of the site that is not a page: the Markdown of a note, a text file, or the icon of the site. */
+/** A file of the site that is not a page: the Markdown of a note, a text file, the icon of the site, or a sitemap (XML). */
 export interface SiteFile {
     readonly file: string
     readonly type: SiteFileType
@@ -18,7 +18,7 @@ export interface SiteFile {
 export interface ResolverMap {
     /** The file of the page of each canonical path, relative to the output of the build. */
     readonly pages: Readonly<Record<string, string>>
-    /** The files of the site that are not pages, by their path: `/robots.txt`, `/favicon.ico`, the Markdown of each note. */
+    /** The files of the site that are not pages, by their path: `/robots.txt`, `/favicon.ico`, the sitemaps, the IndexNow key file, the Markdown of each note. */
     readonly files?: Readonly<Record<string, SiteFile>>
     /** The key in the attachment storage of each hashed path of an attachment that a page uses. */
     readonly attachments?: Readonly<Record<string, string>>

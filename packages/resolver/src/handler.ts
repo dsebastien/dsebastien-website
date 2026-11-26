@@ -134,7 +134,8 @@ const ATTACHMENT_TYPES = new Map(
 const FILE_TYPES: Record<SiteFile['type'], string> = {
     markdown: 'text/markdown; charset=utf-8',
     text: TEXT,
-    icon: 'image/x-icon'
+    icon: 'image/x-icon',
+    xml: 'application/xml; charset=utf-8'
 }
 
 /**
