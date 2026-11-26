@@ -92,6 +92,12 @@ function shownOf(node: TextNode): string {
             return ''
         case 'break':
             return ' '
+        case 'paragraph':
+            // A block id at the end of a paragraph (`^block-id`) is no text of it.
+            return (node.children ?? [])
+                .map(shownOf)
+                .join('')
+                .replace(/\s+\^[A-Za-z0-9-]+\s*$/u, '')
         default:
             return (node.children ?? []).map(shownOf).join(BLOCKS.has(node.type) ? ' ' : '')
     }
