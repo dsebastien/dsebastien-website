@@ -63,6 +63,7 @@ describe('the description of a note', () => {
             'A mint leaf.'
         ],
         ['with a space between its blocks', 'One.\n\n- a\n- b', 'One. a b'],
+        ['without a footnote', 'A[^1] text.\n\n[^1]: the foot', 'A text.'],
         ['with the text of math', 'A $x^2$ formula.', 'A x^2 formula.'],
         [
             'with the text of raw HTML',

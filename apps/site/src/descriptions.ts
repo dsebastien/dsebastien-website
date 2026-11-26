@@ -87,6 +87,7 @@ function shownOf(node: TextNode): string {
         case 'html':
         case 'footnoteReference':
         case 'footnote':
+        case 'footnoteDefinition':
         case 'comment':
             return ''
         case 'break':
