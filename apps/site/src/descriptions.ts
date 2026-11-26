@@ -60,10 +60,14 @@ interface TextNode {
 /** The parser of the notes (`remark-obsidian`), for a property that holds Markdown. */
 const PARSER = unified().use(remarkParse).use(remarkObsidian)
 
+/** The nodes whose children are blocks: a space is put between them (`One` and a list). */
+const BLOCKS = new Set(['root', 'blockquote', 'list', 'listItem', 'table', 'tableRow'])
+
 /** The text that a reader sees of a node of the tree of a property. */
 function shownOf(node: TextNode): string {
     switch (node.type) {
         case 'text':
+        case 'inlineMath':
             return node.value ?? ''
         case 'inlineCode':
             // Meta Bind and Dataview inline code are dropped, as the markup drops them.
@@ -87,7 +91,7 @@ function shownOf(node: TextNode): string {
         case 'break':
             return ' '
         default:
-            return (node.children ?? []).map(shownOf).join(node.type === 'root' ? ' ' : '')
+            return (node.children ?? []).map(shownOf).join(BLOCKS.has(node.type) ? ' ' : '')
     }
 }
 
@@ -95,7 +99,8 @@ function shownOf(node: TextNode): string {
  * A text as a reader sees it, read by the parser of the notes (issue 98):
  * `[[Compost basics|compost]]` gives `compost`, `[[Soil#Layers]]` gives
  * `Soil`, `[[#Layers]]` gives `Layers`, `[the guide](https://…)` gives `the
- * guide`, an embed and the tags of raw HTML give nothing, code its text. A
+ * guide`, an embed and the tags of raw HTML give nothing, code and math their
+ * text, and two blocks a space between them. A
  * comment, Meta Bind code and Dataview inline code give nothing, as the markup
  * drops them.
  */

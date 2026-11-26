@@ -62,6 +62,8 @@ describe('the description of a note', () => {
             'A `INPUT[text:x]` mint `= this.y` leaf.',
             'A mint leaf.'
         ],
+        ['with a space between its blocks', 'One.\n\n- a\n- b', 'One. a b'],
+        ['with the text of math', 'A $x^2$ formula.', 'A x^2 formula.'],
         [
             'with the text of raw HTML',
             'A <b>bold</b> #herb and ==bright== mint.',
