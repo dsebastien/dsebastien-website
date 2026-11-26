@@ -11,12 +11,6 @@ import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
 // the date of the last update of a note (IDX-32); a generated page has none.
 // No `priority`, no `changefreq`, no image sitemap (seo items 38 and 40).
 
-/**
- * The variable of the environment of a build that says that it is the build
- * of the switch (`--switch` of the deploy command, decision R85): `true`.
- */
-export const SWITCH_VARIABLE = 'SITE_SWITCH'
-
 /** The path of the sitemap index. */
 export const SITEMAP_INDEX_PATH = '/sitemap.xml'
 

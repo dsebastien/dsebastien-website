@@ -193,9 +193,8 @@ export interface DeployRun {
     /** The search engines after a release that is seen live (issue 54). Without it, nothing. */
     readonly search?: SearchHost
     /**
-     * True for the first deployment of the real host (`--switch`, R85): the
-     * build dates the sitemaps for the switch, and IndexNow gets every URL
-     * of the sitemaps, whatever the old host listed.
+     * True for the first deployment of the real host (`--switch`, R85):
+     * IndexNow gets every URL of the sitemaps, whatever the old host listed.
      */
     readonly atSwitch?: boolean
 }

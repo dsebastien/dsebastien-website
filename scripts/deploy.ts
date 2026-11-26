@@ -69,8 +69,7 @@ import {
 // does not know the live content revision (issue 127): the author gives the
 // host name of the target again, and the tools never pass it.
 // `--switch` is for the one first deployment of the real host (decision R85):
-// the build dates the sitemaps for the switch, and IndexNow gets every URL of
-// the sitemaps. The tools never pass it. The URLs that IndexNow did not take
+// IndexNow gets every URL of the sitemaps, whatever the old host listed. The tools never pass it. The URLs that IndexNow did not take
 // wait in `.cache/deploy/<worker>/indexnow-pending.json` of this machine for
 // the next deployment.
 

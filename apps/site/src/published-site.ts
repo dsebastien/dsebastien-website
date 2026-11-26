@@ -28,7 +28,7 @@ import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
 import { isNoindexNote } from './noindex.ts'
 import { lastUpdateOf, recentListsOf } from './recent.ts'
-import { SWITCH_VARIABLE, sitemapEntriesOf, type SitemapEntry } from './sitemaps.ts'
+import { sitemapEntriesOf, type SitemapEntry } from './sitemaps.ts'
 import { SitePages } from './rendering/page.ts'
 import { hrefOfAddress } from './site-checks.ts'
 import { resolverMapFor } from './site-files.ts'
@@ -340,16 +340,10 @@ async function read(): Promise<PublishedSite> {
                     path: note.path,
                     noteType: note.noteType?.name,
                     indexable: !isNoindexNote(noteProperties),
-                    lastmod: lastUpdateOf(
-                        {
-                            firstPublished: note.firstPublished,
-                            lastPublished: note.lastPublished,
-                            created: noteProperties['created'],
-                            updated: noteProperties['updated']
-                        },
-                        importRun,
-                        { atSwitch: process.env[SWITCH_VARIABLE] === 'true' }
-                    )
+                    lastmod: lastUpdateOf({
+                        lastPublished: note.lastPublished,
+                        updated: noteProperties['updated']
+                    })
                 }
             }),
             lists: [

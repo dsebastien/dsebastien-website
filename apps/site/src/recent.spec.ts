@@ -339,57 +339,30 @@ describe('the filter of a recent list by note type (NAV-05, R62)', () => {
     })
 })
 
-// IDX-32: the `lastmod` of the sitemaps.
+// IDX-32 and decision R85: the `lastmod` of the sitemaps is the `updated`
+// property of the note, which the plugin of the author keeps current, or
+// the time of its last publication when it has no valid date there.
 describe('the date of the last update of a note', () => {
     const IMPORT = '2031-01-10T08:00:00Z'
     const LATER = '2031-03-01T09:00:00Z'
-    const EDIT = '2031-04-02T10:00:00Z'
 
-    test('is the last publication that changed the note, or a property for a note of the import', () => {
-        const changed = {
-            firstPublished: LATER,
-            lastPublished: EDIT,
-            created: undefined,
-            updated: '2031-04-01'
-        }
-        expect(lastUpdateOf(changed, IMPORT)).toBe(EDIT)
-        const imported = {
-            firstPublished: IMPORT,
-            lastPublished: IMPORT,
-            created: '2020-01-01',
-            updated: '2024-05-06'
-        }
-        expect(lastUpdateOf(imported, IMPORT)).toBe('2024-05-06')
-        const unchanged = {
-            firstPublished: LATER,
-            lastPublished: LATER,
-            created: undefined,
-            updated: '2030-12-24'
-        }
-        expect(lastUpdateOf(unchanged, IMPORT)).toBe(LATER)
+    test('is the updated property, for a note of the import and for any other', () => {
+        expect(lastUpdateOf({ lastPublished: LATER, updated: '2030-12-24' })).toBe('2030-12-24')
+        expect(lastUpdateOf({ lastPublished: IMPORT, updated: '2024-05-06' })).toBe('2024-05-06')
+        expect(lastUpdateOf({ lastPublished: LATER, updated: '2031-03-01T08:15' })).toBe(
+            '2031-03-01'
+        )
     })
 
-    // Decision R85: at the switch, a note that did not change since its first
-    // publication keeps its real last edit, the `updated` property.
-    test('at the switch, is the updated property of a note that did not change since its first publication', () => {
-        const unchanged = {
-            firstPublished: LATER,
-            lastPublished: LATER,
-            created: '2020-01-01',
-            updated: '2030-12-24'
+    test('is the time of the last publication without a valid updated property', () => {
+        for (const updated of [undefined, '', 'soon', 42]) {
+            expect(lastUpdateOf({ lastPublished: LATER, updated })).toBe(LATER)
         }
-        expect(lastUpdateOf(unchanged, IMPORT, { atSwitch: true })).toBe('2030-12-24')
-        const onlyCreated = { ...unchanged, updated: 'soon' }
-        expect(lastUpdateOf(onlyCreated, IMPORT, { atSwitch: true })).toBe('2020-01-01')
-        // A property after the publication (a typo) holds no valid date.
-        const typo = { ...unchanged, updated: '2041-01-01', created: undefined }
-        expect(lastUpdateOf(typo, IMPORT, { atSwitch: true })).toBe(LATER)
-        const changed = {
-            firstPublished: LATER,
-            lastPublished: EDIT,
-            created: undefined,
-            updated: '2031-04-01'
-        }
-        expect(lastUpdateOf(changed, IMPORT, { atSwitch: true })).toBe(EDIT)
+        // A date more than one day after the publication is a typo.
+        expect(lastUpdateOf({ lastPublished: LATER, updated: '2041-01-01' })).toBe(LATER)
+    })
+
+    test('is not known for a note with no publication time and no property', () => {
+        expect(lastUpdateOf({ lastPublished: '', updated: undefined })).toBeUndefined()
     })
 })

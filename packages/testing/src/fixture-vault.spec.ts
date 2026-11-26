@@ -232,6 +232,11 @@ describe('first set of notes (spec 18.4)', () => {
     }
 
     const CHECKS: Record<string, Check> = {
+        'noindex-note': (notes) => {
+            for (const note of take(notes, 1)) {
+                expect(note.properties, note.path).toMatch(/^publish_noindex: true$/mu)
+            }
+        },
         'note-type-affixes': async (notes) => {
             // The answers of the invented Starter Kit, by vault path (decision R61).
             const answers = (await Bun.file(FIXTURE_NOTE_TYPES).json()) as {

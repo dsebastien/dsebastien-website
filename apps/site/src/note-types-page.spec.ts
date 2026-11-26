@@ -295,7 +295,9 @@ describe('the type hubs (NAV-03)', () => {
 describe('the list of the notes with no type', () => {
     test('holds them, and the home page links to it', async () => {
         const other = await served('/-/other')
+        // The note with publish_noindex stays in the lists of the site (R85).
         expect(selectAll('[data-listed-note]', other).map((link) => textOf(link))).toEqual([
+            'Seed swap draft',
             'Welcome'
         ])
         expect(titleOf(other)).toBe('Other notes · Sébastien’s Notes')
@@ -523,5 +525,42 @@ describe('the 404 page (NAV-06, URL-26, R62)', () => {
             expect(links, href).toContain(href)
         }
         expect(metaOf(page, 'robots')).toBe('noindex, follow')
+    })
+})
+
+// Decision R85 (issue 54): a note with `publish_noindex: true` stays on the
+// site with noindex, and is in no sitemap; `lastmod` is the `updated`
+// property of a note.
+describe('the sitemaps of the fixture vault', () => {
+    const NOINDEX_URL = 'https://notes.dsebastien.net/10+Garden/Seed+swap+draft'
+
+    async function sitemapTexts(): Promise<string[]> {
+        if (outDir === undefined) {
+            throw new Error('the site was not built')
+        }
+        const folder = outDir
+        const names = (await readdir(folder)).filter((name) => /^sitemap(-.+)?\.xml$/u.test(name))
+        return await Promise.all(names.map((name) => readFile(join(folder, name), 'utf8')))
+    }
+
+    test('keep the page of a note with publish_noindex, which says noindex', async () => {
+        const page = await served('/10+Garden/Seed+swap+draft')
+        expect(select('meta[name="robots"]', page)?.properties['content']).toBe('noindex, follow')
+        expect(select('link[rel="canonical"]', page)?.properties['href']).toBe(NOINDEX_URL)
+    })
+
+    test('do not list a note with publish_noindex', async () => {
+        const texts = await sitemapTexts()
+        expect(texts.length).toBeGreaterThan(1)
+        for (const text of texts) {
+            expect(text).not.toContain('Seed+swap+draft')
+        }
+    })
+
+    test('date a note with its updated property', async () => {
+        const texts = (await sitemapTexts()).join('\n')
+        expect(texts).toContain(
+            '<url><loc>https://notes.dsebastien.net/10+Garden/Bean+trellis</loc><lastmod>2031-03-05</lastmod></url>'
+        )
     })
 })

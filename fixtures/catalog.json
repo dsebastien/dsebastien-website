@@ -281,6 +281,11 @@
                 "40 Writing/Letters/Garden letter 2 (Newsletter).md",
                 "40 Writing/AI Wiki - Mulch.md"
             ]
+        },
+        {
+            "id": "noindex-note",
+            "covers": "A published note with `publish_noindex: true` (decision R85, issue 54): its page says noindex, and it is in no sitemap.",
+            "files": ["10 Garden/Seed swap draft.md"]
         }
     ]
 }
