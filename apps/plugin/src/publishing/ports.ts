@@ -29,6 +29,13 @@ export interface Vault {
      * the vault has no such file. It throws when the file cannot be read.
      */
     readBytes(path: string): Promise<Uint8Array | undefined>
+    /**
+     * The number of bytes of the file with exactly this vault path, from the
+     * file system, without a read of its bytes: the same rules as `read`.
+     * `undefined` when the vault has no such file. It throws when the size
+     * cannot be read.
+     */
+    size(path: string): Promise<number | undefined>
     /** True when the vault has a folder with exactly this vault path, which is not a symbolic link. */
     hasFolder(path: string): Promise<boolean>
     /**

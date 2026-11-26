@@ -55,7 +55,7 @@ fn json_of(output: &Output) -> Value {
 }
 
 /// The bytes of a file of a scenario: a text, or `{"bytes": ...}` with its
-/// bytes in hexadecimal.
+/// bytes in hexadecimal. A `{"sparse": ...}` file is made by `write_files`.
 fn bytes_of(content: &Value) -> Vec<u8> {
     if let Some(text) = content.as_str() {
         return text.as_bytes().to_vec();
@@ -74,6 +74,13 @@ fn write_files(folder: &Path, files: &Value) {
         let file = folder.join(path);
         fs::create_dir_all(file.parent().expect("a file has a folder"))
             .expect("the folder can be made");
+        // A sparse file of zero bytes of that size, made without writing them.
+        if let Some(size) = content["sparse"].as_u64() {
+            fs::File::create(&file)
+                .and_then(|made| made.set_len(size))
+                .expect("the sparse file is made");
+            continue;
+        }
         fs::write(file, bytes_of(content)).expect("the file is written");
     }
 }
@@ -653,7 +660,14 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
         "status" if step["refused"] == json!(true) => {
             assert_refused_saying(&setup.run("status", &[]), step, label);
         }
-        "status" => assert_eq!(setup.status(), step["queue"], "{label}"),
+        "status" => {
+            // A scenario before issue 72 states no list `tooLarge`: it is empty.
+            let mut expected = step["queue"].clone();
+            if expected.get("tooLarge").is_none() {
+                expected["tooLarge"] = json!([]);
+            }
+            assert_eq!(setup.status(), expected, "{label}");
+        }
         "plan" => {
             let output = setup.plan(&step["selection"]);
             if step["refused"] == json!(true) {
@@ -667,7 +681,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
                 assert_eq!(json_of(&output)["plan"], step["plan"], "{label}");
                 let offline = step.get("offline").cloned().unwrap_or(json!(false));
                 assert_eq!(json_of(&output)["offline"], offline, "{label}");
-                for key in ["listsNotRefreshed", "liveQueries"] {
+                for key in ["listsNotRefreshed", "liveQueries", "tooLarge"] {
                     let expected = step.get(key).cloned().unwrap_or(json!([]));
                     assert_eq!(json_of(&output)[key], expected, "{label}: {key}");
                 }
@@ -802,7 +816,7 @@ fn the_status_of_an_empty_vault_is_the_empty_queue() {
     assert_eq!(errors_of(&output), "");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"movedEdited\": [],\n  \"new\": [],\n  \"pairings\": [],\n  \"proposals\": [],\n  \"renamed\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
+        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"movedEdited\": [],\n  \"new\": [],\n  \"pairings\": [],\n  \"proposals\": [],\n  \"renamed\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"tooLarge\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
     );
 }
 

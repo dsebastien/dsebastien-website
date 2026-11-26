@@ -180,6 +180,22 @@ function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): 
         }
     }
 
+    /** The size of the file with exactly this vault path, or `undefined` when there is none. */
+    async function sizeOf(path: string): Promise<number | undefined> {
+        if ((await exactEntry(path)) !== 'file') {
+            return undefined
+        }
+        try {
+            return (await lstat(join(folder, path))).size
+        } catch (error) {
+            // A file that went away during the run is no file.
+            if (codeOf(error) === 'ENOENT') {
+                return undefined
+            }
+            throw error
+        }
+    }
+
     return {
         async list(path) {
             return [...(await listing(path))].map(([name, kind]): VaultEntry => ({ name, kind }))
@@ -189,6 +205,7 @@ function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): 
             return bytes === undefined ? undefined : decode(bytes)
         },
         readBytes: bytesOf,
+        size: sizeOf,
         hasFolder: async (path) => (await exactEntry(path)) === 'folder',
         write: (path, text) => writeWhole(join(folder, path), text),
         forRun: () => folderVault(folder, new Map())

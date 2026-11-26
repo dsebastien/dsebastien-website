@@ -42,6 +42,34 @@ pub struct FileFacts {
     pub width: Option<u64>,
 }
 
+/// The size limit of an attachment, in bytes: 100 MiB (decision of the
+/// author of 2026-11-26, issue 72). A note that links a larger file is held,
+/// and the tool reads no byte of that file: it only asks its size. The
+/// TypeScript twin is `MAX_ATTACHMENT_SIZE` of `attachments.ts`.
+pub const MAX_ATTACHMENT_SIZE: u64 = 100 * 1024 * 1024;
+
+/// A file above the size limit that a note links to: the note is held
+/// (issue 72).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct TooLarge {
+    /// The vault path of the file.
+    pub file: String,
+    /// The vault path of the note.
+    pub path: String,
+    /// The number of bytes of the file.
+    pub size: u64,
+}
+
+/// The items of `tooLarge`, each one time, sorted by path, then by file.
+pub fn sort_too_large(items: &mut Vec<TooLarge>) {
+    items.sort_by(|one, two| {
+        one.path
+            .cmp(&two.path)
+            .then_with(|| one.file.cmp(&two.file))
+    });
+    items.dedup_by(|one, two| one.path == two.path && one.file == two.file);
+}
+
 /// The key of a file in the attachment storage: its hash without `sha256:`.
 pub fn key_of(hash: &str) -> &str {
     hash.strip_prefix("sha256:").unwrap_or(hash)
@@ -72,13 +100,33 @@ pub fn facts_of(bytes: &[u8]) -> FileFacts {
 }
 
 /// The files of the vault that the notes of one run link to. Each file is read
-/// one time per run: two notes that link to one image read it one time.
+/// one time per run: two notes that link to one image read it one time. Its
+/// size is asked first, and a file above the size limit is never read.
 #[derive(Clone, Default)]
 pub struct FileReader {
     facts: RefCell<BTreeMap<String, FileFacts>>,
+    sizes: RefCell<BTreeMap<String, u64>>,
 }
 
 impl FileReader {
+    /// The number of bytes of a file of the vault, from the file system: no
+    /// byte is read.
+    ///
+    /// # Errors
+    ///
+    /// The size cannot be read, or the file went away during the run.
+    pub fn size(&self, vault: &Vault, path: &str) -> Result<u64, String> {
+        if let Some(size) = self.sizes.borrow().get(path) {
+            return Ok(*size);
+        }
+        let size = vault
+            .size(path)
+            .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?
+            .ok_or_else(|| format!("\"{path}\" cannot be read: it went away during the run"))?;
+        self.sizes.borrow_mut().insert(path.to_owned(), size);
+        Ok(size)
+    }
+
     /// The facts of a file of the vault.
     ///
     /// # Errors
@@ -87,6 +135,12 @@ impl FileReader {
     pub fn facts(&self, vault: &Vault, path: &str) -> Result<FileFacts, String> {
         if let Some(facts) = self.facts.borrow().get(path) {
             return Ok(facts.clone());
+        }
+        let size = self.size(vault, path)?;
+        if size > MAX_ATTACHMENT_SIZE {
+            return Err(format!(
+                "\"{path}\" is not read: its {size} bytes are above the size limit"
+            ));
         }
         let bytes = vault
             .read_bytes(path)
@@ -98,6 +152,34 @@ impl FileReader {
             .insert(path.to_owned(), facts.clone());
         Ok(facts)
     }
+}
+
+/// The files above the size limit that these links of the note at `path`
+/// lead to, each one time, sorted by the vault path of the file. Only their
+/// sizes are read.
+///
+/// # Errors
+///
+/// The size of a file cannot be read.
+pub fn too_large_of(
+    path: &str,
+    files: &[NoteLink],
+    vault: &Vault,
+    reader: &FileReader,
+) -> Result<Vec<TooLarge>, String> {
+    let mut found = Vec::new();
+    for file in files {
+        let size = reader.size(vault, &file.path)?;
+        if size > MAX_ATTACHMENT_SIZE {
+            found.push(TooLarge {
+                file: file.path.clone(),
+                path: path.to_owned(),
+                size,
+            });
+        }
+    }
+    sort_too_large(&mut found);
+    Ok(found)
 }
 
 /// The list `attachments` of a note, from the links that lead to a file that

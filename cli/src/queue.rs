@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::attachments::{FileReader, attachments_of};
+use crate::attachments::{FileReader, TooLarge, attachments_of, sort_too_large, too_large_of};
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, source_of};
 use crate::configuration::Configuration;
 use crate::device::{Entry, Vault};
@@ -91,6 +91,11 @@ pub struct PublicationQueue {
     pub technical_updates: Vec<String>,
     /// The published notes that cannot stay published as they are.
     pub to_remove: Vec<String>,
+    /// The published notes of `changed` and `unchanged` that link to a file
+    /// above the size limit of an attachment, each with the file and its size
+    /// (issue 72): their update waits, and no plan updates them. Sorted by
+    /// path, then by file.
+    pub too_large: Vec<TooLarge>,
     pub unchanged: Vec<String>,
     /// The unpublished notes that a guard excludes: forced removals of the
     /// next plan, so that their addresses answer 404 and no more 410
@@ -118,6 +123,7 @@ impl PublicationQueue {
             renamed: Vec::new(),
             technical_updates: Vec::new(),
             to_remove: Vec::new(),
+            too_large: Vec::new(),
             unchanged: Vec::new(),
             unpublished_under_guard: Vec::new(),
         }
@@ -213,6 +219,30 @@ impl Scan {
                 .files
                 .facts(vault, path)
                 .map_or(true, |facts| facts.hash != hash)
+    }
+
+    /// The files above the size limit that the notes at these paths link to
+    /// (`tooLarge` of a plan): for the candidates of a plan, whose links the
+    /// scan does not read. Sorted by path, then by file.
+    ///
+    /// # Errors
+    ///
+    /// A note or the size of a file cannot be read.
+    pub fn too_large_of(&self, vault: &Vault, paths: &[String]) -> Result<Vec<TooLarge>, String> {
+        let mut found = Vec::new();
+        for path in paths {
+            let text = vault
+                .read(path)
+                .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?;
+            if let Some(text) = text {
+                let source = source_of(&text);
+                let targets =
+                    resolve_links(&link_paths_of(&source), path, &self.index, &self.guarded);
+                found.extend(too_large_of(path, &targets.files, vault, &self.files)?);
+            }
+        }
+        sort_too_large(&mut found);
+        Ok(found)
     }
 
     /// True when the note has a manifest entry whose state is `published`.
@@ -588,12 +618,17 @@ fn queue_of(
     // True when the cleaning step gives another result for a published note:
     // it has another version, or a target was made, moved or removed, or a
     // file was added, changed, moved or removed, or a guard now excludes one.
+    // The files above the size limit that a published note links to: only
+    // their sizes are read (issue 72).
+    let targets_of = |path: &String| {
+        let link_paths = link_paths.get(path).map_or(&[][..], Vec::as_slice);
+        resolve_links(link_paths, path, &index, &guarded)
+    };
     let is_technical_update = |path: &String, entry: &ManifestEntry| -> Result<bool, String> {
         if entry.cleaning_version != CLEANING_VERSION {
             return Ok(true);
         }
-        let link_paths = link_paths.get(path).map_or(&[][..], Vec::as_slice);
-        let targets = resolve_links(link_paths, path, &index, &guarded);
+        let targets = targets_of(path);
         Ok(!same_links(&targets.links, &entry.links)
             || attachments_of(&targets.files, vault, &files)? != entry.attachments
             // The Starter Kit gives the note another type, or the type
@@ -617,11 +652,15 @@ fn queue_of(
             Some(_) if ignored.contains(path) || moves.under_guard.contains(path) => {
                 queue.to_remove.push(path.clone());
             }
-            Some(note) if note.source_hash != entry.source_hash => {
-                queue.changed.push(path.clone());
-            }
-            Some(_) => {
-                if is_technical_update(path, entry)? {
+            Some(note) => {
+                let too_large = too_large_of(path, &targets_of(path).files, vault, &files)?;
+                // The attachments cannot be compared without a read of the
+                // file.
+                let held = !too_large.is_empty();
+                queue.too_large.extend(too_large);
+                if note.source_hash != entry.source_hash {
+                    queue.changed.push(path.clone());
+                } else if held || is_technical_update(path, entry)? {
                     queue.changed.push(path.clone());
                     queue.technical_updates.push(path.clone());
                 } else {

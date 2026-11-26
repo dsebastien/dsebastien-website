@@ -1,5 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, readdir, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import {
+    chmod,
+    mkdir,
+    readdir,
+    rename,
+    rm,
+    symlink,
+    truncate,
+    utimes,
+    writeFile
+} from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -17,6 +27,7 @@ import type { EditAction, EditEvent } from './edits.ts'
 import { fileNoteTypes, nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
 import type { Device } from './ports.ts'
+import type { TooLarge } from './attachments.ts'
 import type { PublicationQueue } from './queue.ts'
 import { edit, guards, plan, publish, status, takedown, unlock, unpublish } from './tool.ts'
 import type { Face, GuardsReport, Run } from './tool.ts'
@@ -54,8 +65,11 @@ interface TakedownLists {
     warnings: readonly string[]
 }
 
-/** A file of a scenario: a text, or bytes in hexadecimal. */
-type FileContent = string | { bytes: string }
+/**
+ * A file of a scenario: a text, bytes in hexadecimal, or a sparse file of
+ * zero bytes of that size, which the test makes without writing its bytes.
+ */
+type FileContent = string | { bytes: string } | { sparse: number }
 
 type Files = Record<string, string | null>
 
@@ -63,7 +77,12 @@ type Step = { why: string } & (
     | { do: 'write'; files: Record<string, FileContent> }
     | { do: 'delete'; paths: string[] }
     | { do: 'store'; files: Record<string, string>; message?: string }
-    | { do: 'status'; queue: PublicationQueue; refused?: never }
+    | {
+          do: 'status'
+          // A scenario before issue 72 has no list `tooLarge`.
+          queue: Omit<PublicationQueue, 'tooLarge'> & Partial<Pick<PublicationQueue, 'tooLarge'>>
+          refused?: never
+      }
     | { do: 'status'; refused: true; says?: string }
     | {
           do: 'plan'
@@ -74,6 +93,7 @@ type Step = { why: string } & (
           offline?: true
           listsNotRefreshed?: string[]
           liveQueries?: string[]
+          tooLarge?: TooLarge[]
       }
     | {
           do: 'publish'
@@ -184,6 +204,11 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 async function writeFiles(folder: string, files: Record<string, FileContent>): Promise<void> {
     for (const [path, content] of Object.entries(files)) {
         await mkdir(dirname(join(folder, path)), { recursive: true })
+        if (typeof content !== 'string' && 'sparse' in content) {
+            await writeFile(join(folder, path), '')
+            await truncate(join(folder, path), content.sparse)
+            continue
+        }
         await writeFile(
             join(folder, path),
             typeof content === 'string' ? content : Buffer.from(content.bytes, 'hex')
@@ -290,7 +315,11 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     if (step.refused === true) {
                         expect(await rejectionOf(status(device)), label).toContain(step.says ?? '')
                     } else {
-                        expect(await status(device), label).toEqual(step.queue)
+                        // A scenario before issue 72 states no list `tooLarge`: it is empty.
+                        expect(await status(device), label).toEqual({
+                            tooLarge: [],
+                            ...step.queue
+                        })
                     }
                 } else if (step.do === 'plan') {
                     if (step.refused === true) {
@@ -316,6 +345,7 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                             step.listsNotRefreshed ?? []
                         )
                         expect(planned.liveQueries, label).toEqual(step.liveQueries ?? [])
+                        expect(planned.tooLarge, label).toEqual(step.tooLarge ?? [])
                     }
                 } else if (step.do === 'crash' && step.takedown !== undefined) {
                     const stopped = crashingStore(device.store, copy, step.at)

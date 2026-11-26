@@ -351,3 +351,96 @@ fn a_note_whose_storage_is_missing_is_left_out() {
     assert_eq!(paths(&report["failed"]), [PLAN]);
     assert!(!missing.exists());
 }
+
+/// Keeps a file of the vault from being read while it lives: on Windows a
+/// handle that shares nothing, on Unix no permission. The size of the file
+/// stays readable, so a step that reads the file stops, and one that only
+/// stats it does not. A test that runs as root on Unix can still read the
+/// file: it then checks the results only.
+struct NoRead {
+    #[cfg(windows)]
+    _handle: fs::File,
+}
+
+impl NoRead {
+    fn on(path: &Path) -> Self {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let handle = fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(path)
+                .expect("the file can be opened");
+            Self { _handle: handle }
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o000))
+                .expect("the permissions can be set");
+            Self {}
+        }
+    }
+}
+
+// Issue 72: a file above the size limit of an attachment is never read.
+#[test]
+fn a_note_that_links_a_file_above_the_size_limit_is_held_and_no_step_reads_the_file() {
+    const VIDEO: &str = "Attachments/field-walk.mp4";
+    const SIZE: u64 = 101 * 1024 * 1024;
+    let setup = set_up();
+    // A sparse file: its bytes are not written.
+    fs::File::create(setup.vault.join(VIDEO))
+        .and_then(|file| file.set_len(SIZE))
+        .expect("the sparse file is made");
+    assert_eq!(paths(&setup.publish(&[PLAN], &[])["published"]), [PLAN]);
+    for note in [PLAN, TOUR] {
+        let path = setup.vault.join(note);
+        let text = fs::read_to_string(&path).expect("the note can be read");
+        fs::write(&path, format!("{text}\n![[field-walk.mp4]]\n")).expect("the note is written");
+    }
+    let guard = NoRead::on(&setup.vault.join(VIDEO));
+
+    let status = setup.run(&["status"]);
+    assert!(status.status.success(), "{}", errors_of(&status));
+    let queue: Value = serde_json::from_slice(&status.stdout).expect("the queue is JSON");
+    let output = setup.run(&["plan", &format!("--include={TOUR}")]);
+    assert!(output.status.success(), "{}", errors_of(&output));
+    let planned: Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
+    let id = planned["id"].as_str().expect("the plan has an id");
+    let published = setup.apply(id);
+    assert!(published.status.success(), "{}", errors_of(&published));
+    let report: Value = serde_json::from_slice(&published.stdout).expect("the report is JSON");
+    let down = setup.run(&[
+        "takedown",
+        &format!("--path={PLAN}"),
+        "--time",
+        TIME,
+        "--attachment-storage",
+        text(setup.stores.attachment_storage()),
+        "--no-deploy",
+    ]);
+    assert!(down.status.success(), "{}", errors_of(&down));
+    drop(guard);
+
+    assert_eq!(paths(&queue["changed"]), [PLAN]);
+    assert_eq!(
+        queue["tooLarge"],
+        json!([{ "file": VIDEO, "path": PLAN, "size": SIZE }])
+    );
+    assert_eq!(planned["plan"]["publish"], json!([]));
+    assert_eq!(planned["plan"]["update"], json!([]));
+    assert_eq!(
+        planned["tooLarge"],
+        json!([
+            { "file": VIDEO, "path": PLAN, "size": SIZE },
+            { "file": VIDEO, "path": TOUR, "size": SIZE }
+        ])
+    );
+    assert_eq!(paths(&report["published"]), Vec::<String>::new());
+    assert_eq!(paths(&report["updated"]), Vec::<String>::new());
+    assert_eq!(paths(&report["skipped"]), [PLAN]);
+    let down: Value = serde_json::from_slice(&down.stdout).expect("the report is JSON");
+    assert_eq!(paths(&down["takenDown"]), [PLAN]);
+}

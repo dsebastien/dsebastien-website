@@ -1,3 +1,5 @@
+import { sortTooLarge } from './attachments.ts'
+import type { TooLarge } from './attachments.ts'
 import { isVaultPath } from './configuration.ts'
 import { eventsSince } from './edits.ts'
 import type { EditEvent } from './edits.ts'
@@ -178,8 +180,14 @@ function reasonOutOfQueue(path: string, scan: Scan): string {
  * published or unpublished, leaves the content store at the next publication,
  * whatever is selected, and it cannot be held (PUB-21, R64).
  * A selection that cannot become a plan stops with a `SelectionError`.
+ * A note of `tooLarge` (the candidates of the selection) or of `tooLarge` of
+ * the queue is held: it links to a file above the size limit (issue 72).
  */
-export function computePlan(scan: Scan, selection: NormalSelection): PublicationPlan {
+export function computePlan(
+    scan: Scan,
+    selection: NormalSelection,
+    tooLarge: readonly TooLarge[] = []
+): PublicationPlan {
     const { queue } = scan
     const refuse = (path: string, reason: string): never => {
         throw new SelectionError(`"${path}" ${reason}`)
@@ -270,7 +278,7 @@ export function computePlan(scan: Scan, selection: NormalSelection): Publication
         }
     }
 
-    const plan = planLists(queue, selection, eventsSince(scan.edits), scan.guardedEntries)
+    const plan = planLists(queue, selection, eventsSince(scan.edits), scan.guardedEntries, tooLarge)
     refuseObsidianPaths(scan, plan, selection.pair)
     refuseRootNames(scan, plan, selection.pair)
     // accept only names what an agent face must see named (rule 8).
@@ -385,13 +393,61 @@ function refuseRootNames(scan: Scan, plan: PublicationPlan, pairs: readonly Move
  * edits of the guards since the last publication: what `computePlan` gives
  * for a selection that it does not refuse. A face counts the plan of a
  * selection with it before the author clicks (TOOL-21): the label of the
- * publish button and the plan come from this one function.
+ * publish button and the plan come from this one function. A note of
+ * `tooLarge` of the queue, or of the candidates `tooLarge`, is held (issue 72).
  */
 export function planLists(
     queue: QueueLists,
     selection: NormalSelection,
     edits: readonly EditEvent[],
-    guardedEntries: readonly string[]
+    guardedEntries: readonly string[],
+    tooLarge: readonly TooLarge[] = []
+): PublicationPlan {
+    const tooLargeNotes = new Set([...queue.tooLarge, ...tooLarge].map((item) => item.path))
+    return listsOf(queue, selection, edits, guardedEntries, tooLargeNotes)
+}
+
+/**
+ * The items of `tooLarge` of a plan (issue 72): the items of the queue and of
+ * the candidates whose note the plan would publish or update without the size
+ * limit. Sorted by path, then by file.
+ */
+export function heldForSize(
+    queue: QueueLists,
+    selection: NormalSelection,
+    tooLarge: readonly TooLarge[]
+): TooLarge[] {
+    const unheld = listsOf(queue, selection, [], [], new Set())
+    const planned = new Set([...unheld.publish, ...unheld.update])
+    return sortTooLarge([...queue.tooLarge, ...tooLarge].filter((item) => planned.has(item.path)))
+}
+
+/**
+ * The plan of a selection with the size limit of an attachment (issue 72):
+ * the plan, and its items of `tooLarge`. The files that the candidates of the
+ * selection link to are only stated, never read.
+ */
+export async function planWithSizes(
+    scan: Scan,
+    selection: NormalSelection
+): Promise<{ readonly plan: PublicationPlan; readonly tooLarge: TooLarge[] }> {
+    const candidates = new Set(scan.queue.new)
+    const named = [...selection.include, ...selection.pair.map((pairing) => pairing.to)]
+    const found = await scan.tooLargeOf(
+        sortByCodePoint([...new Set(named.filter((path) => candidates.has(path)))])
+    )
+    return {
+        plan: computePlan(scan, selection, found),
+        tooLarge: heldForSize(scan.queue, selection, found)
+    }
+}
+
+function listsOf(
+    queue: QueueLists,
+    selection: NormalSelection,
+    edits: readonly EditEvent[],
+    guardedEntries: readonly string[],
+    tooLargeNotes: ReadonlySet<string>
 ): PublicationPlan {
     const onlyMissing = new Set(queue.missing)
     const forced = queue.toRemove.filter((path) => !onlyMissing.has(path))
@@ -419,12 +475,19 @@ export function planLists(
         guardedAttachments,
         // Every move of the journals, which no selection holds, and the pairings (R66).
         move: [...queue.renamed, ...selection.pair],
-        publish: selection.include.filter((path) => candidates.has(path)),
+        // A note that links to a file above the size limit is held (issue 72).
+        publish: selection.include.filter(
+            (path) => candidates.has(path) && !tooLargeNotes.has(path)
+        ),
         update: [
             ...queue.changed.filter(
-                (path) => !held.has(path) && !removed.has(path) && !waiting.has(path)
+                (path) =>
+                    !held.has(path) &&
+                    !removed.has(path) &&
+                    !waiting.has(path) &&
+                    !tooLargeNotes.has(path)
             ),
-            ...pairTo.filter((path) => !held.has(path))
+            ...pairTo.filter((path) => !held.has(path) && !tooLargeNotes.has(path))
         ],
         // A guard wins over an unpublish: the note leaves the manifest.
         remove

@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\", a \"publish\", a \"takedown\" or an \"unpublish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum. Steps of issue 38: \"takedown\" takes down the notes of its paths at the time, and states the lists of its report; it must succeed, so its \"storageWarnings\" is empty. \"unpublish\" unpublishes the notes of its paths in one step, and states the lists of the publication report. A \"crash\" with \"takedown\" stops a takedown of those paths in the place of a publication. A \"publish\" with \"stored\" applies the plan of the last \"plan\" step that gave one, not a new plan. Steps of issue 42: \"edit\" runs an edit of the guards (its action, its path, at the time, from the face, on the device garden-shed) and states its event, or with \"refused\" that it stops; \"says\" states a part of its message, which both implementations write. \"guards\" states the output of the guards command. The author confirms and rejects a proposal in the view only, so a scenario writes those events with a \"store\" step. A \"publish\" step with \"face\" runs the publication from that face (by default the plugin in TypeScript and the command line program in Rust). A \"plan\" or \"publish\" selection, and an \"unpublish\" step, can have \"accept\": the forced removals and the notes of guardedAttachments that the request names (rule 10 of the edits of the guards). Steps of issue 40: a \"plan\" states \"listsNotRefreshed\" and \"liveQueries\" (see \"The frozen lists of a note\"); a missing list is empty. No step refreshes a list: the Rust program has no refresh, and the TypeScript tests of the refresh use a stand-in serializer.",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\", a \"publish\", a \"takedown\" or an \"unpublish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum. Steps of issue 38: \"takedown\" takes down the notes of its paths at the time, and states the lists of its report; it must succeed, so its \"storageWarnings\" is empty. \"unpublish\" unpublishes the notes of its paths in one step, and states the lists of the publication report. A \"crash\" with \"takedown\" stops a takedown of those paths in the place of a publication. A \"publish\" with \"stored\" applies the plan of the last \"plan\" step that gave one, not a new plan. Steps of issue 42: \"edit\" runs an edit of the guards (its action, its path, at the time, from the face, on the device garden-shed) and states its event, or with \"refused\" that it stops; \"says\" states a part of its message, which both implementations write. \"guards\" states the output of the guards command. The author confirms and rejects a proposal in the view only, so a scenario writes those events with a \"store\" step. A \"publish\" step with \"face\" runs the publication from that face (by default the plugin in TypeScript and the command line program in Rust). A \"plan\" or \"publish\" selection, and an \"unpublish\" step, can have \"accept\": the forced removals and the notes of guardedAttachments that the request names (rule 10 of the edits of the guards). Steps of issue 40: a \"plan\" states \"listsNotRefreshed\" and \"liveQueries\" (see \"The frozen lists of a note\"); a missing list is empty. No step refreshes a list: the Rust program has no refresh, and the TypeScript tests of the refresh use a stand-in serializer. Issue 72: a file of the vault can be {\"sparse\": <size>}, a file of zero bytes of that size that the test makes without writing them; a \"status\" queue and a \"plan\" can state \"tooLarge\" (the notes held for the size limit of an attachment), and a missing list is empty.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -11583,6 +11583,203 @@
                         "updated": [],
                         "warnings": ["P/One.md"],
                         "moved": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a note that links a file above the size limit of an attachment is held, and no step reads the file (issue 72)",
+            "denyList": [],
+            "vault": {
+                "Note.md": "Note ![[small.txt]]\n",
+                "Clip.md": "Clip ![[small.txt]]\n",
+                "small.txt": "Small\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication, with the small file",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Note.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "8117bed3e6eced5b1685cb8a21329a27c725d6000d9c9805c63d4325be57c560"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Note.md"],
+                        "published": ["Note.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the file grows above the limit: a sparse file of 101 MiB, which no step may read",
+                    "files": {
+                        "small.txt": {
+                            "sparse": 105906176
+                        }
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the published note is changed (its attachments cannot be checked without a read) and held, with the path of the file and its size",
+                    "queue": {
+                        "behind": 0,
+                        "changed": ["Note.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": ["Clip.md"],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": ["Note.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": [],
+                        "tooLarge": [
+                            {
+                                "file": "small.txt",
+                                "path": "Note.md",
+                                "size": 105906176
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan holds the included candidate and the changed note, and names both with the file",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Clip.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    },
+                    "tooLarge": [
+                        {
+                            "file": "small.txt",
+                            "path": "Clip.md",
+                            "size": 105906176
+                        },
+                        {
+                            "file": "small.txt",
+                            "path": "Note.md",
+                            "size": 105906176
+                        }
+                    ]
+                },
+                {
+                    "do": "publish",
+                    "why": "the publication publishes and updates nothing: the changed note is skipped",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Clip.md"],
+                        "remove": []
+                    },
+                    "time": "2031-05-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Note.md"],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "lose",
+                    "why": "the cleanup of another device deletes the published file",
+                    "keys": ["8117bed3e6eced5b1685cb8a21329a27c725d6000d9c9805c63d4325be57c560"]
+                },
+                {
+                    "do": "publish",
+                    "why": "the repair of the storage does not read the file: its size is not the size of the entry, so the vault does not have those bytes",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-05-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": ["Note.md"],
+                        "updated": [],
+                        "warnings": ["small.txt"],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "takedown",
+                    "why": "a takedown of the note works",
+                    "paths": ["Note.md"],
+                    "time": "2031-05-04T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "propertyRemoved": ["Note.md"],
+                        "storageWarnings": [],
+                        "takenDown": ["Note.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "both notes are candidates, and the queue holds no published note above the limit",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": ["Clip.md", "Note.md"],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
                     }
                 }
             ]

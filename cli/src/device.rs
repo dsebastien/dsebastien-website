@@ -256,6 +256,24 @@ impl Vault {
         }
     }
 
+    /// The number of bytes of the file with exactly this vault path, from the
+    /// file system, without a read of its bytes: the same rules as `read`.
+    /// `Ok(None)` when the vault has no such file.
+    ///
+    /// # Errors
+    ///
+    /// The size cannot be read.
+    pub fn size(&self, path: &str) -> Result<Option<u64>, String> {
+        if self.exact_entry(path) != Some(Entry::File) {
+            return Ok(None);
+        }
+        match fs::symlink_metadata(self.folder.join(path)) {
+            Ok(metadata) => Ok(Some(metadata.len())),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.kind().to_string()),
+        }
+    }
+
     /// True when the vault has a folder with exactly this vault path, which is
     /// not a symbolic link.
     pub fn has_folder(&self, path: &str) -> bool {

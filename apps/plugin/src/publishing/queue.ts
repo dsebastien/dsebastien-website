@@ -1,4 +1,11 @@
-import { attachmentsOf, FileReader, sameAttachments } from './attachments.ts'
+import {
+    attachmentsOf,
+    FileReader,
+    sameAttachments,
+    sortTooLarge,
+    tooLargeOf
+} from './attachments.ts'
+import type { TooLarge } from './attachments.ts'
 import { CLEANING_VERSION, sourceOf, STATE_PROPERTY } from './clean.ts'
 import type { Configuration } from './configuration.ts'
 import { openProposals } from './edits.ts'
@@ -78,6 +85,13 @@ export type QueueLists = {
     readonly renamed: readonly Move[]
     /** The notes of `changed` that the author did not edit: the cleaning step gives another result. */
     readonly technicalUpdates: readonly string[]
+    /**
+     * The published notes of `changed` and `unchanged` that link to a file
+     * above the size limit of an attachment, each with the file and its size
+     * (issue 72): their update waits, and no plan updates them. Sorted by
+     * path, then by file.
+     */
+    readonly tooLarge: readonly TooLarge[]
     /** The published notes that cannot stay published as they are. */
     readonly toRemove: readonly string[]
     readonly unchanged: readonly string[]
@@ -117,6 +131,12 @@ export interface Scan {
     readonly guarded: ReadonlySet<string>
     /** The files that the notes link to, each one read one time per run. */
     readonly files: FileReader
+    /**
+     * The files above the size limit that the notes at these paths link to
+     * (`tooLarge` of a plan): for the candidates of a plan, whose links the
+     * scan does not read. Sorted by path, then by file.
+     */
+    readonly tooLargeOf: (paths: readonly string[]) => Promise<TooLarge[]>
     /**
      * True when the file of an attachment of a manifest entry is under a
      * guard now: its path is in a folder of the deny list, or a file of its
@@ -338,6 +358,7 @@ export async function computeQueue(input: {
         changed: [] as string[],
         new: [] as string[],
         technicalUpdates: [] as string[],
+        tooLarge: [] as TooLarge[],
         toRemove: [] as string[],
         unchanged: [] as string[]
     }
@@ -351,24 +372,29 @@ export async function computeQueue(input: {
             // ignore property, or moved under a guard by a line of a journal,
             // also when this device still has the file (the guards win).
             lists.toRemove.push(path)
-        } else if (note.sourceHash !== entry.sourceHash) {
+            continue
+        }
+        const targets = linksOfPaths(linkPaths.get(path) ?? [], path, index, guarded)
+        // Only the sizes: a file above the limit is never read (issue 72).
+        const tooLarge = await tooLargeOf(path, targets.files, files)
+        lists.tooLarge.push(...tooLarge)
+        if (note.sourceHash !== entry.sourceHash) {
             lists.changed.push(path)
+        } else if (
+            // The attachments cannot be compared without a read of the file.
+            tooLarge.length > 0 ||
+            entry.cleaningVersion !== CLEANING_VERSION ||
+            // A target was made, moved or removed, or a guard now excludes it.
+            !sameLinks(targets.links, entry.links) ||
+            // A file was added, changed, moved or removed, or a guard now excludes it.
+            !sameAttachments(await attachmentsOf(targets.files, files), entry.attachments) ||
+            // The Starter Kit gives the note another type, or the type changed.
+            !sameNoteType(noteTypes.get(path), entry.noteType)
+        ) {
+            lists.changed.push(path)
+            lists.technicalUpdates.push(path)
         } else {
-            const targets = linksOfPaths(linkPaths.get(path) ?? [], path, index, guarded)
-            if (
-                entry.cleaningVersion !== CLEANING_VERSION ||
-                // A target was made, moved or removed, or a guard now excludes it.
-                !sameLinks(targets.links, entry.links) ||
-                // A file was added, changed, moved or removed, or a guard now excludes it.
-                !sameAttachments(await attachmentsOf(targets.files, files), entry.attachments) ||
-                // The Starter Kit gives the note another type, or the type changed.
-                !sameNoteType(noteTypes.get(path), entry.noteType)
-            ) {
-                lists.changed.push(path)
-                lists.technicalUpdates.push(path)
-            } else {
-                lists.unchanged.push(path)
-            }
+            lists.unchanged.push(path)
         }
     }
     for (const path of notes.keys()) {
@@ -473,6 +499,7 @@ export async function computeQueue(input: {
         proposals: openProposals(input.edits),
         renamed: moves.moves,
         technicalUpdates: sortByCodePoint(lists.technicalUpdates),
+        tooLarge: sortTooLarge(lists.tooLarge),
         toRemove: sortByCodePoint(lists.toRemove),
         unchanged: sortByCodePoint(lists.unchanged),
         unpublishedUnderGuard: sortByCodePoint(unpublishedUnderGuard)
@@ -484,6 +511,18 @@ export async function computeQueue(input: {
         index,
         guarded,
         files,
+        tooLargeOf: async (paths) => {
+            const found: TooLarge[] = []
+            for (const path of paths) {
+                const text = await input.vault.read(path)
+                if (text !== undefined) {
+                    const source = sourceOf(text)
+                    const targets = linksOfPaths(linkPathsOf(source), path, index, guarded)
+                    found.push(...(await tooLargeOf(path, targets.files, files)))
+                }
+            }
+            return sortTooLarge(found)
+        },
         isGuardedFile,
         guardedEntries: sortByCodePoint(guardedEntries),
         manifest,

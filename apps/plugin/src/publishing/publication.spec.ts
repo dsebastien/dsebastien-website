@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, rm, stat, symlink, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -13,7 +13,7 @@ import {
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
 import { plan, publish, status, takedown, unlock } from './tool.ts'
-import type { Device } from './ports.ts'
+import type { Device, Vault } from './ports.ts'
 
 // The first slice (issue 31): one invented note goes through the plan, the
 // guards, the cleaning step and the content store, and its `public_note`
@@ -1085,7 +1085,66 @@ describe('attachments of a publication', () => {
         expect(report.attachmentsDeleted).toEqual([DENIED_KEY])
         expect(await storage(stores)).toEqual([])
     })
+
+    // Issue 72: a file above the size limit of an attachment is never read.
+    test('a note that links a file above the size limit is held, and no step reads the file', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const VIDEO = 'Attachments/field-walk.mp4'
+        const SIZE = 101 * 1024 * 1024
+        // A sparse file: its bytes are not written, and a read of it would show.
+        await writeFile(join(setup.vault, VIDEO), '')
+        await truncate(join(setup.vault, VIDEO), SIZE)
+        expect((await publishNotes(setup, { include: [PLAN] })).published).toEqual([PLAN])
+        for (const note of [PLAN, TOUR]) {
+            const text = await Bun.file(join(setup.vault, note)).text()
+            await writeFile(
+                join(setup.vault, note),
+                `${text}
+![[field-walk.mp4]]
+`
+            )
+        }
+        const reads: string[] = []
+        const device = spiedDevice(setup.device, reads)
+
+        const queue = await status(device)
+        const planned = await plan(device, { include: [TOUR] })
+        const report = await publish(device, planned.id, RUN)
+        const down = await takedown(device, [PLAN], RUN)
+
+        expect(queue.changed).toEqual([PLAN])
+        expect(queue.tooLarge).toEqual([{ file: VIDEO, path: PLAN, size: SIZE }])
+        expect(planned.plan.publish).toEqual([])
+        expect(planned.plan.update).toEqual([])
+        expect(planned.tooLarge).toEqual([
+            { file: VIDEO, path: PLAN, size: SIZE },
+            { file: VIDEO, path: TOUR, size: SIZE }
+        ])
+        expect(report.published).toEqual([])
+        expect(report.updated).toEqual([])
+        expect(report.skipped).toEqual([PLAN])
+        expect(down.takenDown).toEqual([PLAN])
+        expect(reads.filter((path) => path === VIDEO)).toEqual([])
+    }, 60_000)
 })
+
+/** The device with a vault that records the path of each read of a file, text or bytes. */
+function spiedDevice(device: Device, reads: string[]): Device {
+    const spied = (vault: Vault): Vault => ({
+        ...vault,
+        read: (path) => {
+            reads.push(path)
+            return vault.read(path)
+        },
+        readBytes: (path) => {
+            reads.push(path)
+            return vault.readBytes(path)
+        },
+        forRun: () => spied(vault.forRun())
+    })
+    return { ...device, vault: spied(device.vault) }
+}
 
 // The corrections after the first review of issue 36.
 describe('failure cases after the first review', () => {

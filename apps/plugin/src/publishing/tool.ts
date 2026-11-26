@@ -1,5 +1,5 @@
 import { attachmentsOf, keyOf } from './attachments.ts'
-import type { Attachment } from './attachments.ts'
+import type { Attachment, TooLarge } from './attachments.ts'
 import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
 import { linksOf } from './links.ts'
@@ -35,7 +35,7 @@ import type { ManifestEntry } from './manifest.ts'
 import type { NoteType } from './note-types.ts'
 import { foldedForm, obsidianTwins } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
-import { computePlan, normalSelection } from './plan.ts'
+import { normalSelection, planWithSizes } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
 import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult } from './ports.ts'
@@ -61,6 +61,8 @@ export interface StoredPlan {
     readonly listsNotRefreshed: readonly string[]
     /** The notes of the plan with a live query block, which the page drops (REN-14). */
     readonly liveQueries: readonly string[]
+    /** The notes that the plan holds: they link to a file above the size limit (issue 72). */
+    readonly tooLarge: readonly TooLarge[]
     /** The notes whose text the refresh changed, for the author. Outside the parity rule. */
     readonly listsRefreshed: readonly string[]
     /** Why the refresh did not refresh a note, for the author. Outside the parity rule. */
@@ -457,6 +459,8 @@ interface Computed {
     readonly scan: Scan
     /** The texts of the notes to publish and to update, as the record names them by their hashes. */
     readonly texts: ReadonlyMap<string, NoteTexts>
+    /** The notes that the plan holds for the size limit of an attachment (issue 72). */
+    readonly tooLarge: readonly TooLarge[]
 }
 
 /**
@@ -472,7 +476,7 @@ async function recordFor(
     // An unpublish holds every changed note that it does not name: its
     // selection comes from the queue of the same scan.
     const selection = selectionFor(scan)
-    const plan = computePlan(scan, selection)
+    const { plan, tooLarge } = await planWithSizes(scan, selection)
     // The published notes got their type in the scan. The new ones of the plan
     // get theirs in one more question.
     // The candidates of the pairings get theirs in the same question (R66).
@@ -526,7 +530,7 @@ async function recordFor(
             renames: renamesHash
         }
     })
-    return { plan, reached, record, scan, selection, texts }
+    return { plan, reached, record, scan, selection, texts, tooLarge }
 }
 
 /**
@@ -576,6 +580,7 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
         plan: computed.plan,
         offline: !reached,
         ...listsOfPlan(computed, refresh.refreshed),
+        tooLarge: computed.tooLarge,
         listsRefreshed: sortByCodePoint([...refresh.written.keys()]),
         refreshProblems: refresh.problems
     }
@@ -981,7 +986,9 @@ class Uploads {
             if (present.has(key)) {
                 continue
             }
-            const bytes = await this.#device.vault.readBytes(attachment.path)
+            // A file of another size is not read: it can be above the size limit (issue 72).
+            const sized = (await this.#device.vault.size(attachment.path)) === attachment.size
+            const bytes = sized ? await this.#device.vault.readBytes(attachment.path) : undefined
             if (bytes === undefined || bytesHash(bytes) !== attachment.hash) {
                 throw new Error(
                     `the file "${attachment.path}" changed since the plan, and it is not uploaded`
@@ -1188,7 +1195,10 @@ async function repairStorage(
         for (const attachment of attachments) {
             let bytes: Uint8Array | undefined
             try {
-                bytes = await device.vault.readBytes(attachment.path)
+                // A file of another size is not read: it can be above the size limit (issue 72).
+                if ((await device.vault.size(attachment.path)) === attachment.size) {
+                    bytes = await device.vault.readBytes(attachment.path)
+                }
             } catch {
                 bytes = undefined
             }

@@ -1,6 +1,7 @@
 import { bytesHash } from './hash.ts'
 import { imageSize } from './images.ts'
 import type { NoteLink } from './links.ts'
+import { compareCodePoints, sortByCodePoint } from './order.ts'
 import type { Vault } from './ports.ts'
 import { smallLetters } from '@dsebastien-website/resolver'
 
@@ -28,6 +29,25 @@ export type Attachment = {
 /** What the tool knows of one file of the vault: what an attachment item holds, but its link. */
 export type FileFacts = Omit<Attachment, 'link'>
 
+/**
+ * The size limit of an attachment, in bytes: 100 MiB (decision of the author
+ * of 2026-11-26, issue 72). A note that links a larger file is held, and the
+ * tool reads no byte of that file: it only asks its size. The Rust twin is
+ * `MAX_ATTACHMENT_SIZE` of `cli/src/attachments.rs`.
+ */
+export const MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024
+
+/** A file above the size limit that a note links to: the note is held (issue 72). */
+// A type alias, not an interface: the canonical form takes any object of data.
+export type TooLarge = {
+    /** The vault path of the file. */
+    readonly file: string
+    /** The vault path of the note. */
+    readonly path: string
+    /** The number of bytes of the file. */
+    readonly size: number
+}
+
 /** The form of a hash of an attachment: `sha256:` and 64 small hexadecimal digits. */
 export const ATTACHMENT_HASH = /^sha256:[0-9a-f]{64}$/
 
@@ -50,11 +70,13 @@ export function factsOf(path: string, bytes: Uint8Array): FileFacts {
 
 /**
  * The files of the vault that the notes of one run link to. Each file is read
- * one time per run: two notes that link to one image read it one time.
+ * one time per run: two notes that link to one image read it one time. Its
+ * size is asked first, and a file above the size limit is never read.
  */
 export class FileReader {
     readonly #vault: Vault
     readonly #facts = new Map<string, Promise<FileFacts>>()
+    readonly #sizes = new Map<string, Promise<number>>()
 
     constructor(vault: Vault) {
         this.#vault = vault
@@ -70,7 +92,39 @@ export class FileReader {
         return facts
     }
 
+    /** The number of bytes of a file, from the file system: no byte is read. It throws as `facts`. */
+    size(path: string): Promise<number> {
+        let size = this.#sizes.get(path)
+        if (size === undefined) {
+            size = this.#size(path)
+            this.#sizes.set(path, size)
+        }
+        return size
+    }
+
+    async #size(path: string): Promise<number> {
+        let size: number | undefined
+        try {
+            size = await this.#vault.size(path)
+        } catch (error) {
+            throw new Error(
+                `"${path}" cannot be read: it ${error instanceof Error ? error.message : 'failed'}`,
+                { cause: error }
+            )
+        }
+        if (size === undefined) {
+            throw new Error(`"${path}" cannot be read: it went away during the run`)
+        }
+        return size
+    }
+
     async #read(path: string): Promise<FileFacts> {
+        const size = await this.size(path)
+        if (size > MAX_ATTACHMENT_SIZE) {
+            throw new Error(
+                `"${path}" is not read: its ${String(size)} bytes are above the size limit`
+            )
+        }
         let bytes: Uint8Array | undefined
         try {
             bytes = await this.#vault.readBytes(path)
@@ -101,6 +155,49 @@ export async function attachmentsOf(
         attachments.push({ ...facts, link: file.link })
     }
     return attachments
+}
+
+/**
+ * The files above the size limit that these links of the note at `path` lead
+ * to, each one time, sorted by the vault path of the file. Only their sizes
+ * are read.
+ */
+export async function tooLargeOf(
+    path: string,
+    files: readonly NoteLink[],
+    reader: FileReader
+): Promise<TooLarge[]> {
+    const found = new Map<string, number>()
+    for (const file of files) {
+        const size = await reader.size(file.path)
+        if (size > MAX_ATTACHMENT_SIZE) {
+            found.set(file.path, size)
+        }
+    }
+    return sortByCodePoint([...found.keys()]).map((file) => ({
+        file,
+        path,
+        size: found.get(file) ?? 0
+    }))
+}
+
+/** The items of `tooLarge`, each one time, sorted by path, then by file. */
+export function sortTooLarge(items: readonly TooLarge[]): TooLarge[] {
+    const seen = new Set<string>()
+    return [...items]
+        .sort(
+            (one, two) =>
+                compareCodePoints(one.path, two.path) || compareCodePoints(one.file, two.file)
+        )
+        .filter((item) => {
+            const key = `${item.path}
+${item.file}`
+            if (seen.has(key)) {
+                return false
+            }
+            seen.add(key)
+            return true
+        })
 }
 
 /** True when two lists of attachments say the same: the same items in the same order. */

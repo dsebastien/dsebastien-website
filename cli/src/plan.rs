@@ -7,7 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+use crate::attachments::{TooLarge, sort_too_large};
 use crate::configuration::is_vault_path;
+use crate::device::Vault;
 use crate::edits::Event;
 use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::manifest::State;
@@ -206,10 +208,17 @@ fn reason_out_of_queue(path: &str, scan: &Scan) -> String {
 /// published or unpublished, leaves the content store at the next publication,
 /// whatever is selected, and it cannot be held (PUB-21, R64).
 ///
+/// A note of `too_large` (the candidates of the selection) or of `tooLarge`
+/// of the queue is held: it links to a file above the size limit (issue 72).
+///
 /// # Errors
 ///
 /// The selection cannot become a plan. The message says which path and why.
-pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPlan, String> {
+pub fn compute_plan(
+    scan: &Scan,
+    selection: &Selection,
+    too_large: &[TooLarge],
+) -> Result<PublicationPlan, String> {
     let queue = &scan.queue;
     let refuse = |path: &str, reason: &str| Err(format!("\"{path}\" {reason}"));
     refuse_paths(selection)?;
@@ -277,6 +286,14 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
         .filter(|path| !within(&forced, path))
         .cloned()
         .collect();
+    // A note that links to a file above the size limit is held (issue 72).
+    let held: BTreeSet<&str> = queue
+        .too_large
+        .iter()
+        .chain(too_large)
+        .map(|item| item.path.as_str())
+        .collect();
+    let (publish, update) = planned_notes(scan, selection);
     // An unpublished note under a guard leaves the manifest too (decision R64).
     let plan = PublicationPlan::new(
         forced
@@ -292,27 +309,13 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
             .chain(&selection.pair)
             .cloned()
             .collect(),
-        selection
-            .include
-            .iter()
-            .filter(|path| within(&queue.new, path))
-            .cloned()
+        publish
+            .into_iter()
+            .filter(|path| !held.contains(path.as_str()))
             .collect(),
-        queue
-            .changed
-            .iter()
-            .filter(|path| !within(&selection.hold, path) && !within(&selection.remove, path))
-            // The update of a moved note whose text changed waits for a tick
-            // (R67).
-            .filter(|path| !within(&queue.moved_edited, path) || within(&selection.include, path))
-            .chain(
-                selection
-                    .pair
-                    .iter()
-                    .map(|pairing| &pairing.to)
-                    .filter(|path| !within(&selection.hold, path)),
-            )
-            .cloned()
+        update
+            .into_iter()
+            .filter(|path| !held.contains(path.as_str()))
             .collect(),
         remove,
         scan.edits.since().to_vec(),
@@ -320,6 +323,75 @@ pub fn compute_plan(scan: &Scan, selection: &Selection) -> Result<PublicationPla
     refuse_obsidian_paths(scan, &plan, &selection.pair)?;
     refuse_root_names(scan, &plan, &selection.pair)?;
     Ok(plan)
+}
+
+/// The notes that the plan of a selection publishes and updates, without the
+/// size limit of an attachment.
+fn planned_notes(scan: &Scan, selection: &Selection) -> (Vec<String>, Vec<String>) {
+    let queue = &scan.queue;
+    let within = |list: &[String], path: &String| list.binary_search(path).is_ok();
+    let publish = selection
+        .include
+        .iter()
+        .filter(|path| within(&queue.new, path))
+        .cloned()
+        .collect();
+    let update = queue
+        .changed
+        .iter()
+        .filter(|path| !within(&selection.hold, path) && !within(&selection.remove, path))
+        // The update of a moved note whose text changed waits for a tick
+        // (R67).
+        .filter(|path| !within(&queue.moved_edited, path) || within(&selection.include, path))
+        .chain(
+            selection
+                .pair
+                .iter()
+                .map(|pairing| &pairing.to)
+                .filter(|path| !within(&selection.hold, path)),
+        )
+        .cloned()
+        .collect();
+    (publish, update)
+}
+
+/// The plan of a selection with the size limit of an attachment (issue 72):
+/// the plan, and its items of `tooLarge`, the items of the queue and of the
+/// candidates of the selection whose note the plan would publish or update
+/// without the limit, sorted by path, then by file. The files that the
+/// candidates link to are only stated, never read.
+///
+/// # Errors
+///
+/// As `compute_plan`, or a candidate or the size of a file cannot be read.
+pub fn plan_with_sizes(
+    vault: &Vault,
+    scan: &Scan,
+    selection: &Selection,
+) -> Result<(PublicationPlan, Vec<TooLarge>), String> {
+    let queue = &scan.queue;
+    let mut named: Vec<String> = selection
+        .include
+        .iter()
+        .chain(selection.pair.iter().map(|pairing| &pairing.to))
+        .filter(|path| queue.new.binary_search(path).is_ok())
+        .cloned()
+        .collect();
+    sort_by_code_point(&mut named);
+    named.dedup();
+    let found = scan.too_large_of(vault, &named)?;
+    let plan = compute_plan(scan, selection, &found)?;
+    let (publish, update) = planned_notes(scan, selection);
+    let planned: BTreeSet<&String> = publish.iter().chain(&update).collect();
+    let mut too_large: Vec<TooLarge> = queue
+        .too_large
+        .iter()
+        .chain(&found)
+        .filter(|item| planned.contains(&item.path))
+        .cloned()
+        .collect();
+    sort_too_large(&mut too_large);
+    Ok((plan, too_large))
 }
 
 /// The forced removals of the plan of a scan (rule 3 of the plan): the

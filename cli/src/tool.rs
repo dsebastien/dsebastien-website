@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::attachments::attachments_of;
-use crate::attachments::{Attachment, key_of};
+use crate::attachments::{Attachment, TooLarge, key_of};
 use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
@@ -33,7 +33,7 @@ use crate::manifest::{
 use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::order::sort_by_code_point;
-use crate::plan::{PublicationPlan, Selection, compute_plan, forced_removals};
+use crate::plan::{PublicationPlan, Selection, forced_removals, plan_with_sizes};
 use crate::queue::{GuardChange, Move, Scan, compute_guard_queues, compute_queue, moved_entry};
 use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, moved_folder, parse_markers, read_journals,
@@ -443,6 +443,9 @@ struct Computed {
     texts: BTreeMap<String, NoteTexts>,
     /// The selection that gave the plan.
     selection: Selection,
+    /// The notes that the plan holds for the size limit of an attachment
+    /// (issue 72).
+    too_large: Vec<TooLarge>,
 }
 
 /// Computes the plan of a selection and its record: the plan, the selection,
@@ -461,7 +464,7 @@ fn record_for(
     // An unpublish holds every changed note that it does not name: its
     // selection comes from the queue of the same scan.
     let selection = &selection_of(&scan);
-    let mut plan = compute_plan(&scan, selection)?;
+    let (mut plan, too_large) = plan_with_sizes(&device.vault, &scan, selection)?;
     // Before the question to the Starter Kit: a path of accept that the plan
     // does not name stops the plan (rule 8 of the selection).
     plan.set_guarded_attachments(guarded_attachments(device, &scan, &plan, selection));
@@ -539,6 +542,7 @@ fn record_for(
         scan,
         selection: selection.clone(),
         texts,
+        too_large,
     })
 }
 
@@ -657,6 +661,7 @@ pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
         "liveQueries": live_queries(&computed.texts, paths()),
         "offline": !computed.reached,
         "plan": to_value(&computed.plan)?,
+        "tooLarge": to_value(&computed.too_large)?,
     }))
 }
 
@@ -1171,7 +1176,13 @@ impl<'a> Uploads<'a> {
             {
                 continue;
             }
-            let bytes = self.vault.read_bytes(&attachment.path)?;
+            // A file of another size is not read: it can be above the size
+            // limit (issue 72).
+            let bytes = if self.vault.size(&attachment.path)? == Some(attachment.size) {
+                self.vault.read_bytes(&attachment.path)?
+            } else {
+                None
+            };
             let Some(bytes) = bytes.filter(|bytes| bytes_hash(bytes) == attachment.hash) else {
                 return Err(format!(
                     "the file \"{}\" changed since the plan, and it is not uploaded",
@@ -1313,6 +1324,13 @@ fn repair_storage(
     }
     for (key, attachments) in wanted {
         let found = attachments.iter().find_map(|attachment| {
+            // A file of another size is not read: it can be above the size
+            // limit (issue 72).
+            vault
+                .size(&attachment.path)
+                .ok()
+                .flatten()
+                .filter(|size| *size == attachment.size)?;
             vault
                 .read_bytes(&attachment.path)
                 .ok()

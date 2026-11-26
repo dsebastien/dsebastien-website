@@ -424,10 +424,12 @@ function typescriptTool(vault: string, copy: string): Tool {
             })
             return {
                 plan: toCanonicalJson(planned.plan),
-                // The frozen lists of the plan (R71), compared too.
+                // The frozen lists of the plan (R71) and its notes held for the
+                // size limit of an attachment (issue 72), compared too.
                 lists: toCanonicalJson({
                     listsNotRefreshed: planned.listsNotRefreshed,
-                    liveQueries: planned.liveQueries
+                    liveQueries: planned.liveQueries,
+                    tooLarge: planned.tooLarge
                 }),
                 report: reportLists(report)
             }
@@ -490,6 +492,7 @@ function rustTool(vault: string, copy: string): Tool {
                 plan: Record<string, CanonicalValue>
                 listsNotRefreshed: string[]
                 liveQueries: string[]
+                tooLarge: CanonicalValue
             }
             const report = JSON.parse(
                 await run('publish', [
@@ -506,10 +509,12 @@ function rustTool(vault: string, copy: string): Tool {
             ) as Record<string, unknown>
             return {
                 plan: toCanonicalJson(planned.plan),
-                // The frozen lists of the plan (R71), compared too.
+                // The frozen lists of the plan (R71) and its notes held for the
+                // size limit of an attachment (issue 72), compared too.
                 lists: toCanonicalJson({
                     listsNotRefreshed: planned.listsNotRefreshed,
-                    liveQueries: planned.liveQueries
+                    liveQueries: planned.liveQueries,
+                    tooLarge: planned.tooLarge
                 }),
                 report: reportLists(report)
             }
@@ -1050,7 +1055,7 @@ describe('parity of an empty queue', () => {
 
         expect(await queueOf(rustTool)).toBe(fromTypeScript)
         expect(fromTypeScript).toBe(
-            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "movedEdited": [],\n  "new": [],\n  "pairings": [],\n  "proposals": [],\n  "renamed": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
+            '{\n  "behind": 0,\n  "changed": [],\n  "counts": {\n    "changed": 0,\n    "new": 0,\n    "toRemove": 0,\n    "unchanged": 0\n  },\n  "missing": [],\n  "movedEdited": [],\n  "new": [],\n  "pairings": [],\n  "proposals": [],\n  "renamed": [],\n  "technicalUpdates": [],\n  "toRemove": [],\n  "tooLarge": [],\n  "unchanged": [],\n  "unpublishedUnderGuard": []\n}\n'
         )
     }, 120_000)
 })
