@@ -69,6 +69,23 @@ describe('self-contained page', () => {
             "<html><head><meta http-equiv='set-cookie' content='a=b'></head></html>"
         ],
         [
+            'a refresh after an attribute name that starts with a quote',
+            '<html><head><meta "x http-equiv=refresh content="0;url=/x"></head></html>'
+        ],
+        [
+            'a refresh after an attribute name that starts with =',
+            '<html><head><meta =x http-equiv=refresh content="0;url=/x"></head></html>'
+        ],
+        [
+            'a refresh after an attribute name with a double quote',
+            '<html><head><meta a"b http-equiv=refresh content="0;url=/x"></head></html>'
+        ],
+        [
+            'a refresh after an attribute name with a single quote',
+            "<html><head><meta a'b http-equiv=refresh content='0;url=/x'></head></html>"
+        ],
+        ['a meta element that the text ends', '<html><head><meta name="a'],
+        [
             'an http-equiv of the character set and one more',
             '<html><head><meta http-equiv="content-type" http-equiv="refresh"></head></html>'
         ]

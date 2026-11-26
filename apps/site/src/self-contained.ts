@@ -8,7 +8,8 @@ import type { AstroIntegration } from 'astro'
 // font for example, so the page loads no other file. After each build, its
 // style sheets go into the page as `<style>` elements, without the font
 // faces (the page shows the fonts of the system), and the build stops when
-// the page still names a file of the release or holds a script.
+// the page still names a file of the release, or holds a script or a
+// `meta` element with an `http-equiv` other than `content-type`.
 
 /** The files of the build that must be self-contained. */
 const PAGES = ['500.html']
@@ -20,34 +21,83 @@ const STYLE = /<style\b[^>]*>([\s\S]*?)<\/style>/giu
 const CSS_LOAD = /url\(|@import|image-set\(|(?<![\w-])src\(/iu
 /** The start of a meta element, in any letter case. */
 const META = /<meta(?=[\s/>])/giu
-/** An attribute of an element (its name, and its value in double, single or no quotes), or a slash. */
-const ATTRIBUTE = /\s*(?:([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?|\/)/uy
 const LOADING_ELEMENT =
     /<(?:img|picture|source|video|audio|track|iframe|frame|object|embed|image)\b/iu
 const SOURCE = /\s(?:src|srcset|data|poster|background)\s*=/iu
 const ADDRESS = /<([a-z][\w:-]*)\b[^>]*\s(?:xlink:)?href\s*=/giu
 
+/** The attributes of an element after its name, as names in small letters and values as written. */
+interface StartTag {
+    readonly attributes: readonly (readonly [name: string, value: string])[]
+    /** False when the text ends before the `>` of the element. */
+    readonly closed: boolean
+}
+
+/**
+ * The attributes of the element whose name ends at `start`, read by the
+ * rules of the start tag of HTML: a name runs to a space, a `/`, a `>` or
+ * a `=` (its first character can be any other), a value is in double
+ * quotes, in single quotes, or runs to a space or a `>`.
+ */
+function startTag(markup: string, start: number): StartTag {
+    const attributes: [string, string][] = []
+    const space = (at: number): boolean => /\s/u.test(markup.charAt(at))
+    let at = start
+    for (;;) {
+        while (at < markup.length && (space(at) || markup[at] === '/')) at += 1
+        if (at >= markup.length) {
+            return { attributes, closed: false }
+        }
+        if (markup[at] === '>') {
+            return { attributes, closed: true }
+        }
+        const nameStart = at
+        at += 1
+        while (at < markup.length && !space(at) && !'/>='.includes(markup.charAt(at))) at += 1
+        const name = markup.slice(nameStart, at).toLowerCase()
+        while (at < markup.length && space(at)) at += 1
+        let value = ''
+        if (markup[at] === '=') {
+            at += 1
+            while (at < markup.length && space(at)) at += 1
+            const quote = markup.charAt(at)
+            if (quote === '"' || quote === "'") {
+                const end = markup.indexOf(quote, at + 1)
+                if (end < 0) {
+                    return { attributes, closed: false }
+                }
+                value = markup.slice(at + 1, end)
+                at = end + 1
+            } else {
+                const valueStart = at
+                while (at < markup.length && !space(at) && markup[at] !== '>') at += 1
+                value = markup.slice(valueStart, at)
+            }
+        }
+        attributes.push([name, value])
+    }
+}
+
 /**
  * True when a meta element of the markup has an `http-equiv` other than
- * `content-type`: a refresh loads another address after a time, and no other
- * value has a use on this page. The attributes are read with their quotes,
- * so a `>` of a quoted value does not end the element, and a value is
- * compared as it is written, so a value with a character reference is
- * refused too.
+ * `content-type`, or when the text ends inside a meta element (the check
+ * fails closed): a refresh loads another address after a time, and no other
+ * value has a use on this page. The attributes are read by the rules of
+ * HTML, so a `>` of a quoted value does not end the element and a quote in
+ * a name does not hide the next attribute, and a value is compared as it is
+ * written, so a value with a character reference is refused too.
  */
 function hasHttpEquiv(markup: string): boolean {
     for (const meta of markup.matchAll(META)) {
-        ATTRIBUTE.lastIndex = meta.index + meta[0].length
-        for (
-            let attribute = ATTRIBUTE.exec(markup);
-            attribute !== null && attribute[0] !== '';
-            attribute = ATTRIBUTE.exec(markup)
+        const tag = startTag(markup, meta.index + meta[0].length)
+        if (
+            !tag.closed ||
+            tag.attributes.some(
+                ([name, value]) =>
+                    name === 'http-equiv' && value.trim().toLowerCase() !== 'content-type'
+            )
         ) {
-            const [, name = '', double, single, bare] = attribute
-            const value = (double ?? single ?? bare ?? '').trim().toLowerCase()
-            if (name.toLowerCase() === 'http-equiv' && value !== 'content-type') {
-                return true
-            }
+            return true
         }
     }
     return false
