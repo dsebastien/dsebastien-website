@@ -1707,3 +1707,101 @@ fn a_copy_with_no_origin_stops_every_run() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("has no origin"));
 }
+
+/// A copy of an empty content store where a first publication of an older
+/// build wrote its files and its run journal with no head, and stopped before
+/// its commit or after it (issue 106). A run stops without the configuration
+/// since issue 39, but such a journal can still be on a device. The
+/// TypeScript tests have the same cases (`publication.spec.ts`).
+fn stopped_first_run(stores: &TestStores, commit: bool) -> PathBuf {
+    let copy = stores.root().join("first");
+    git(&[
+        "clone",
+        "--quiet",
+        text(stores.content_store()),
+        text(&copy),
+    ]);
+    let run = |args: &[&str]| {
+        let mut all = vec!["-C", text(&copy)];
+        all.extend_from_slice(args);
+        git(&all)
+    };
+    run(&["config", "user.name", "Test"]);
+    run(&["config", "user.email", "test@example.invalid"]);
+    run(&["config", "commit.gpgsign", "false"]);
+    run(&["checkout", "--quiet", "-B", "main"]);
+    for path in FIRST_RUN_FILES {
+        let file = copy.join(path);
+        fs::create_dir_all(file.parent().expect("a file has a folder"))
+            .expect("the folder can be made");
+        fs::write(file, "written by the run\n").expect("the file is written");
+    }
+    let mut add = vec!["-c", "core.autocrlf=false", "add", "--"];
+    add.extend_from_slice(&FIRST_RUN_FILES);
+    run(&add);
+    if commit {
+        run(&[
+            "commit",
+            "--quiet",
+            "--message",
+            "Publish\n\nPlan: 0123456789abcdef",
+        ]);
+    }
+    let local = copy.join(".git").join("vault-publish");
+    fs::create_dir_all(&local).expect("the folder can be made");
+    fs::write(
+        local.join("journal.json"),
+        format!(
+            "{{\"correctionOwed\":false,\"paths\":[\"{}\",\"{}\"],\"plan\":\"0123456789abcdef\",\"step\":\"write\"}}\n",
+            FIRST_RUN_FILES[0], FIRST_RUN_FILES[1]
+        ),
+    )
+    .expect("the journal is written");
+    copy
+}
+
+const FIRST_RUN_FILES: [&str; 2] = [
+    "manifest/0123456789abcdef.json",
+    "notes/10 Garden/Frost dates explained.md",
+];
+
+#[test]
+fn a_run_journal_with_no_head_is_put_back_before_and_after_the_commit_of_its_run() {
+    for commit in [false, true] {
+        let stores = TestStores::new();
+        let vault = stores.copy_fixture_vault();
+        let copy = stopped_first_run(&stores, commit);
+
+        let output = program()
+            .args([
+                "plan",
+                "--vault",
+                text(&vault),
+                "--content-store",
+                text(&copy),
+            ])
+            .output()
+            .expect("the program runs");
+
+        // The plan puts the copy back, then stops: the copy has no configuration.
+        assert_eq!(output.status.code(), Some(1), "commit {commit}");
+        assert!(
+            errors_of(&output).contains("has no configuration.json in its last commit"),
+            "commit {commit}: {}",
+            errors_of(&output)
+        );
+        for path in FIRST_RUN_FILES {
+            assert!(!copy.join(path).exists(), "commit {commit}: {path}");
+        }
+        assert!(
+            !copy
+                .join(".git")
+                .join("vault-publish")
+                .join("journal.json")
+                .exists()
+        );
+        assert_eq!(git(&["-C", text(&copy), "ls-files"]), "");
+        // The copy has no commit again, so a pull can bring the first one.
+        assert_eq!(git(&["-C", text(&copy), "for-each-ref", "refs/heads"]), "");
+    }
+}

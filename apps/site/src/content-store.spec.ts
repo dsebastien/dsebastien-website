@@ -134,6 +134,27 @@ describe('published notes of a content store', () => {
         ])
     })
 
+    test('read an entry whose update is held (updateHeld) as any other entry, published or not (issue 106)', async () => {
+        await contentStore({
+            'a.json': { ...ENTRY, id: 'aaaaaaaaaaaaaaaa', path: 'Held.md', updateHeld: true },
+            'b.json': {
+                ...ENTRY,
+                id: 'bbbbbbbbbbbbbbbb',
+                path: 'Gone.md',
+                state: 'unpublished',
+                updateHeld: true
+            }
+        })
+
+        const notes = await readPublishedNotes()
+
+        expect(notes.map((note) => [note.vaultPath, note.id])).toEqual([
+            ['Held.md', 'aaaaaaaaaaaaaaaa']
+        ])
+        expect(Object.keys(notes[0] ?? {})).not.toContain('updateHeld')
+        expect((await readPublication()).removed.map((note) => note.vaultPath)).toEqual(['Gone.md'])
+    })
+
     test('are none when the build has no content store', async () => {
         expect(await readPublishedNotes()).toEqual([])
     })

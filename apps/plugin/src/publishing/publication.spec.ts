@@ -1529,6 +1529,64 @@ describe('failure cases after the first review', () => {
 // A wrong folder in the settings of the plugin must never read as a content
 // store with an empty deny list (decision R67): every private folder would
 // show as new.
+// A run journal with no head: a first publication into a content store with
+// no commit, which an older build could start (a run stops without the
+// configuration since issue 39). The recovery still puts such a copy back
+// (issue 106). The Rust tests have the same cases (`cli/tests/publication.rs`).
+describe('a run journal with no head, which an older build left', () => {
+    const PLAN = '0123456789abcdef'
+    const FILES = ['manifest/0123456789abcdef.json', `notes/${NOTE}`]
+
+    /** A copy of an empty content store, where a run wrote its files and its journal. */
+    async function stoppedFirstRun(stores: TestStores, commit: boolean): Promise<string> {
+        const copy = join(stores.root, 'first')
+        await git('clone', '--quiet', stores.contentStore, copy)
+        await git('-C', copy, 'config', 'user.name', 'Test')
+        await git('-C', copy, 'config', 'user.email', 'test@example.invalid')
+        await git('-C', copy, 'config', 'commit.gpgsign', 'false')
+        await git('-C', copy, 'checkout', '--quiet', '-B', 'main')
+        for (const path of FILES) {
+            await mkdir(join(copy, path, '..'), { recursive: true })
+            await writeFile(join(copy, path), 'written by the run\n')
+        }
+        await git('-C', copy, '-c', 'core.autocrlf=false', 'add', '--', ...FILES)
+        if (commit) {
+            await git('-C', copy, 'commit', '--quiet', '--message', `Publish\n\nPlan: ${PLAN}`)
+        }
+        await mkdir(join(copy, '.git', 'vault-publish'), { recursive: true })
+        await writeFile(
+            join(copy, '.git', 'vault-publish', 'journal.json'),
+            `${JSON.stringify({ correctionOwed: false, paths: FILES, plan: PLAN, step: 'write' })}\n`
+        )
+        return copy
+    }
+
+    for (const commit of [false, true]) {
+        test(`the files of a run that stopped ${commit ? 'after its commit, before its push' : 'before its commit'} leave the copy`, async () => {
+            await using stores = await makeTestStores()
+            const copy = await stoppedFirstRun(stores, commit)
+            const device = nodeDevice({
+                vault: await copyFixtureVault(stores),
+                contentStore: copy,
+                attachmentStorage: stores.attachmentStorage
+            })
+
+            // The plan puts the copy back, then stops: the copy has no configuration.
+            expect(await rejectionOf(plan(device, { include: [] }))).toContain(
+                'has no configuration.json in its last commit'
+            )
+
+            for (const path of FILES) {
+                expect(await exists(join(copy, path)), path).toBe(false)
+            }
+            expect(await exists(join(copy, '.git', 'vault-publish', 'journal.json'))).toBe(false)
+            expect(await git('-C', copy, 'ls-files')).toBe('')
+            // The copy has no commit again, so a pull can bring the first one.
+            expect(await git('-C', copy, 'for-each-ref', 'refs/heads')).toBe('')
+        })
+    }
+})
+
 describe('a folder that is not the copy of the content store', () => {
     test('a copy with no configuration stops every run, and names the file', async () => {
         await using stores = await makeTestStores()
