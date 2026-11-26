@@ -439,6 +439,26 @@ describe('the Worker', () => {
         expect(await response.text()).toBe('<h1>Server error</h1>')
     })
 
+    // Issue 117: the static files redirect a path only when the host handles
+    // the HTML paths or the folders by itself. The configuration of the host
+    // sets `html_handling` to `none`; a redirect that still comes is a failure.
+    test('answers 500 and passes no redirect on when the static files redirect a file that the pages load', async () => {
+        const site = host(SITE, true, {}, { '/_astro/sub/': [307] })
+        const response = await site.get('/_astro/sub/')
+        expect(response.status).toBe(500)
+        expect(response.headers.get('location')).toBeNull()
+        expect(await response.text()).toBe('<h1>Server error</h1>')
+    })
+
+    test('does not start, and does not read again at once, when the static files redirect the server error page', async () => {
+        const site = host(SITE, true, {}, { '/500.html': [308] })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(500)
+        expect(response.headers.get('location')).toBeNull()
+        expect((site.reported[0] as Error).message).toBe('the host answers 308 for 500.html')
+        expect(mapReads(site)).toBe(1)
+    })
+
     test('gives a page with no tag when the host gives none, and never 304 for it', async () => {
         const response = await host({ ...SITE, '/-/note/10.html': UNTAGGED }).get('/Welcome', {
             'if-none-match': '""'

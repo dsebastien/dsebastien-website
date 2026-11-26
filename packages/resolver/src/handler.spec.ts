@@ -99,6 +99,23 @@ describe('a page', () => {
         expect((await get('/Welcome', { 'if-none-match': '"abcd"' }, weak)).status).toBe(200)
     })
 
+    // Issue 117: the header is read by its quoted tags, not cut at each comma.
+    test.each(['"a,b"', '"x", "a,b"', 'W/"a,b"', '"x",W/"a,b" , "y"'])(
+        'answers 304 for a tag that holds a comma: %s',
+        async (wanted) => {
+            const comma = { file: () => Promise.resolve(stored('page', '"a,b"')) }
+            expect((await get('/Welcome', { 'if-none-match': wanted }, comma)).status).toBe(304)
+        }
+    )
+
+    test.each(['"a"', '"b"', '"a", "b"', 'a,b'])(
+        'does not answer 304 for a part of a tag that holds a comma: %s',
+        async (wanted) => {
+            const comma = { file: () => Promise.resolve(stored('page', '"a,b"')) }
+            expect((await get('/Welcome', { 'if-none-match': wanted }, comma)).status).toBe(200)
+        }
+    )
+
     test('has no tag and never answers 304 when the host gives none', async () => {
         const untagged = {
             file: () => {

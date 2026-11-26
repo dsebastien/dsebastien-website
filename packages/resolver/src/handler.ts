@@ -291,13 +291,19 @@ function strongForm(tag: string): string {
     return tag.startsWith('W/') ? tag.slice(2) : tag
 }
 
+/**
+ * A tag of an `If-None-Match` header, in its strong or its weak form, or `*`.
+ * A tag is read whole by its quotes, so a tag that holds a comma is one tag
+ * (RFC 9110, section 8.8.3; issue 117).
+ */
+const WANTED_TAG = /\*|(?:W\/)?"[^"]*"/gu
+
 /** True when an `If-None-Match` header names the tag, or any version of the file. */
 function namesTag(wanted: string, tag: string): boolean {
     const strong = strongForm(tag)
-    return wanted
-        .split(',')
-        .map((item) => item.trim())
-        .some((item) => item === '*' || strongForm(item) === strong)
+    return Array.from(wanted.matchAll(WANTED_TAG), ([item]) => item).some(
+        (item) => item === '*' || strongForm(item) === strong
+    )
 }
 
 /**
