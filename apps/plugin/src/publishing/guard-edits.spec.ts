@@ -565,7 +565,7 @@ describe('an agent publication applies a plan only when accept names what it tak
 
     test('a journal line of another device moves a published note into a folder that a deny took alone', async () => {
         await using stores = await makeTestStores()
-        const { vault, device } = await setUp(stores)
+        const { vault, copy, device } = await setUp(stores)
         await publishNotes(device, ['Notes/Public.md', 'Notes/Draft.md'], '2031-06-01T08:00:00Z')
         expect((await edit(device, { action: 'deny', path: 'Private' }, AGENT)).state).toBe(
             'applied'
@@ -578,6 +578,7 @@ describe('an agent publication applies a plan only when accept names what it tak
             [JOURNAL]: journalLine('Notes/Public.md', 'Private/Public.md')
         })
 
+        const plans = join(copy, '.git', 'vault-publish', 'plans')
         for (const run of [MCP, CLI]) {
             const planned = await plan(device, { include: [] })
             expect(planned.plan.forcedRemove).toEqual(['Notes/Public.md'])
@@ -585,9 +586,12 @@ describe('an agent publication applies a plan only when accept names what it tak
             expect(message).toContain('it takes away "Notes/Public.md"')
             expect(message).toContain('accept')
             expect(message).toContain('publication center')
+            const stored = (await readdir(plans)).length
             expect(await rejectionOf(unpublish(device, ['Notes/Draft.md'], run))).toContain(
                 'publication center'
             )
+            // The refused unpublish stores no plan, as in Rust (issue 112).
+            expect((await readdir(plans)).length).toBe(stored)
         }
         expect(await inStore(stores, 'notes/Notes/Public.md')).not.toBeNull()
 

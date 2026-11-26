@@ -953,7 +953,12 @@ fn a_publication_stops_when_a_journal_line_of_another_device_moves_a_note_under_
     write_journal(&setup, NOTE, &format!("{FOLDER}/Frost dates explained.md"));
 
     assert_publication_stops(&setup, &format!("(forcedRemove): \"{NOTE}\""));
-    // An unpublish is a publication: it stops too.
+    // An unpublish is a publication: it stops too, and stores no plan, as in
+    // TypeScript (issue 112).
+    let plans = setup.copy.join(".git").join("vault-publish").join("plans");
+    let stored = fs::read_dir(&plans)
+        .expect("the plans can be listed")
+        .count();
     let output = setup.run(
         "unpublish",
         &[
@@ -965,6 +970,12 @@ fn a_publication_stops_when_a_journal_line_of_another_device_moves_a_note_under_
         ],
     );
     assert_refused(&output, "publication center");
+    assert_eq!(
+        fs::read_dir(&plans)
+            .expect("the plans can be listed")
+            .count(),
+        stored
+    );
     assert!(setup.copy.join("notes").join(NOTE).exists());
     // With the note in accept, the unpublish applies its forced removal.
     let output = setup.run(

@@ -2462,6 +2462,9 @@ pub fn unpublish(
         // One fetch and one scan: the plan is applied as it was computed, so
         // it cannot be stale.
         let computed = record_for(device, &selection, Fetch::Must)?;
+        // Only the author lets an agent take an entry away (rule 10): a
+        // refused unpublish stores no plan.
+        refuse_unaccepted(&computed, run)?;
         let id = store_record(device, &computed)?;
         apply_current(
             device,
