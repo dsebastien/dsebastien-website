@@ -9791,7 +9791,6 @@
                         "toRemove": [],
                         "unchanged": ["C.md"],
                         "behind": 0,
-                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -9893,7 +9892,6 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [
@@ -10325,7 +10323,6 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
-                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [
@@ -10484,7 +10481,6 @@
                         "toRemove": [],
                         "unchanged": ["A.md"],
                         "behind": 0,
-                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
