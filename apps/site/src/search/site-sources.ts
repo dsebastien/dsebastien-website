@@ -18,16 +18,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** The sources of the site: the search, and the notes that search engines must not index. */
+export interface SiteSources extends SearchSources {
+    /** The canonical paths of the notes with `publish_noindex` (R85), from the keys file of the title index. */
+    noindex(): Promise<readonly string[]>
+}
+
 /**
  * The sources of the search over the files of the site.
  *
  * @param titles the folder of the title index (`TITLES_FOLDER`)
  * @param fullText the folder of the full-text index, with a slash at the end (`FULL_TEXT_BASE`)
  */
-export function siteSources(titles: string, fullText: string): SearchSources {
+export function siteSources(titles: string, fullText: string): SiteSources {
+    // The keys file is read one time; a failed read is tried again at the next use.
+    let read: Promise<unknown> | undefined
+    const keysFile = (): Promise<unknown> => {
+        read ??= fetchJson(`${titles}.json`).catch((error: unknown) => {
+            read = undefined
+            throw error
+        })
+        return read
+    }
     return {
+        async noindex() {
+            const index = await keysFile()
+            const paths = isRecord(index) ? index['noindex'] : undefined
+            return Array.isArray(paths)
+                ? paths.filter((path): path is string => typeof path === 'string')
+                : []
+        },
         async keys() {
-            const index = await fetchJson(`${titles}.json`)
+            const index = await keysFile()
             if (!isRecord(index) || !isRecord(index['keys'])) {
                 throw new Error('the title index has no keys')
             }

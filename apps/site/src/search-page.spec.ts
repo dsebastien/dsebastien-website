@@ -363,6 +363,12 @@ describe('the command palette', () => {
 })
 
 describe('the title index (SRCH-02)', () => {
+    // The random note of the palette never opens such a note (issue 122, R85).
+    test('names the notes that search engines must not index, and no other', async () => {
+        const index = (await json('-/search/titles.json')) as { noindex: string[] }
+        expect(index.noindex).toEqual([canonicalPath('10 Garden/Seed swap draft.md')])
+    })
+
     test('answers with the display title, the type and an alias', async () => {
         const search = searchOfOutput()
         expect(await search.titles('lantern keep')).toEqual([

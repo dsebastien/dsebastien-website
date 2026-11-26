@@ -17,13 +17,18 @@ const PARTS: Record<string, readonly TitleRow[]> = {
 }
 const KEYS = { co: true, ra: true, se: false, al: true }
 
-function sources(keys: Record<string, boolean> = KEYS): {
+function sources(
+    keys: Record<string, boolean> = KEYS,
+    noindex: readonly string[] = []
+): {
     keys: () => Promise<Record<string, boolean>>
     part: (key: string) => Promise<readonly TitleRow[]>
+    noindex: () => Promise<readonly string[]>
 } {
     return {
         keys: () => Promise.resolve(keys),
-        part: (key) => Promise.resolve(PARTS[key] ?? [])
+        part: (key) => Promise.resolve(PARTS[key] ?? []),
+        noindex: () => Promise.resolve(noindex)
     }
 }
 
@@ -41,6 +46,14 @@ describe('a random note', () => {
 
     test('is never an alias: a part of aliases alone gives another try', async () => {
         expect(await randomNote(sources(), chances(0.9, 0, 0.4, 0))).toBe('/10+Garden/Rain+barrel')
+    })
+
+    test('is never a note that search engines must not index (publish_noindex)', async () => {
+        const hidden = sources(KEYS, ['/10+Garden/Compost+basics'])
+        expect(await randomNote(hidden, chances(0, 0, 0.4, 0))).toBe('/10+Garden/Rain+barrel')
+        expect(
+            await randomNote(sources({ co: true }, ['/10+Garden/Compost+basics']), chances(0))
+        ).toBeUndefined()
     })
 
     test('is none when the index has no complete part', async () => {

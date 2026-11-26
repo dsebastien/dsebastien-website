@@ -26,6 +26,7 @@ import { noteHeader, type NoteHeader } from './note-header.ts'
 import { readProperties } from './note-properties.ts'
 import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
+import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
 import { isNoindexNote } from './noindex.ts'
 import { lastUpdateOf, recentListsOf } from './recent.ts'
 import { sitemapEntriesOf, type SitemapEntry } from './sitemaps.ts'
@@ -83,6 +84,8 @@ export interface PublishedSite {
     readonly stats: SiteStats
     /** The title index of the search: the display titles and the aliases of the notes (SRCH-02, R63). */
     readonly titleIndex: TitleIndex
+    /** The canonical paths of the notes with `publish_noindex` (R85), in code point order: the random note leaves them out (issue 122). */
+    readonly noindexPaths: readonly string[]
     /** The backlinks of a published note, in the order of a page (R59). */
     backlinksOf(vaultPath: string): readonly ShownBacklink[]
     /** The notes with more backlinks than a note page holds: each has a page with all of them. */
@@ -316,6 +319,10 @@ async function read(): Promise<PublishedSite> {
                 }
             })
         ),
+        noindexPaths: notes
+            .filter((note) => isNoindexNote(properties.get(note.vaultPath) ?? {}))
+            .map((note) => note.path)
+            .sort(compareCodePoints),
         backlinksOf,
         notesWithBacklinksPage: () =>
             notes.filter((note) => pages.backlinks(note.vaultPath).length > BACKLINKS_ON_PAGE),
