@@ -30,6 +30,7 @@ import {
     takeDeployLock
 } from '../apps/site/worker/deploy-lock.ts'
 import { r2Storage } from '../apps/site/worker/r2.ts'
+import { STORE_CATALOG_URL } from '../apps/site/src/site.ts'
 import {
     deployRelease,
     LIVE_CHECKS,
@@ -351,7 +352,16 @@ async function deploy(
                 if (store === undefined) {
                     return resolve(values.dist ?? '')
                 }
-                await run(['bun', 'run', 'build:site'], { environment: { CONTENT_STORE: store } })
+                // The ads read the live store catalog, unless STORE_CATALOG names
+                // another source (BUILD-06, CAT-01).
+                const catalog = process.env['STORE_CATALOG']
+                await run(['bun', 'run', 'build:site'], {
+                    environment: {
+                        CONTENT_STORE: store,
+                        STORE_CATALOG:
+                            catalog === undefined || catalog === '' ? STORE_CATALOG_URL : catalog
+                    }
+                })
                 return join(SITE, 'dist')
             },
             deploy: async (dist) => {

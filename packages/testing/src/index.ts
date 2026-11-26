@@ -3,6 +3,7 @@ export {
     FIXTURE_CATALOG,
     FIXTURE_CONFIGURATION,
     FIXTURE_NOTE_TYPES,
+    FIXTURE_STORE_CATALOG,
     FIXTURE_VAULT,
     listFixtureVaultFiles,
     readFixtureCatalog,

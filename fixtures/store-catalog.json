@@ -1,0 +1,76 @@
+{
+    "$schema": "https://store.example/products-light.schema.json",
+    "generatedAt": "2031-03-01T06:00:00.000Z",
+    "count": 3,
+    "products": [
+        {
+            "id": "water-wise-garden",
+            "name": "Water-Wise Garden Course",
+            "shortDescription": "Water less and grow more",
+            "tags": ["water", "irrigation", "drip-irrigation"],
+            "mainCategory": "course",
+            "priceTier": "paid",
+            "targetExperienceLevel": "beginner",
+            "href": "https://store.example/product/water-wise-garden",
+            "badge": "new",
+            "featured": false,
+            "bestseller": false,
+            "bestValue": false,
+            "priority": 10,
+            "image": "https://store.example/images/water-wise-garden.webp",
+            "imageAlt": "A drip line between rows of beans",
+            "pricing": {
+                "currency": "EUR",
+                "price": 19,
+                "priceDisplay": "€19",
+                "isSubscription": false
+            }
+        },
+        {
+            "id": "barrel-workshop",
+            "name": "The Barrel Workshop",
+            "shortDescription": "Build barrels from old oak",
+            "tags": ["barrel", "woodwork"],
+            "mainCategory": "workshop",
+            "priceTier": "paid",
+            "targetExperienceLevel": "all-levels",
+            "href": "https://store.example/product/barrel-workshop",
+            "badge": null,
+            "featured": true,
+            "bestseller": true,
+            "bestValue": true,
+            "priority": 90,
+            "image": "https://store.example/images/barrel-workshop.webp",
+            "imageAlt": "An oak barrel on a bench",
+            "pricing": {
+                "currency": "EUR",
+                "price": 49,
+                "priceDisplay": "€49",
+                "isSubscription": false
+            }
+        },
+        {
+            "id": "rain-garden-kit",
+            "name": "Rain Garden Kit",
+            "shortDescription": "Plans for a garden that drinks the rain",
+            "tags": ["water", "rain-garden"],
+            "mainCategory": "templates",
+            "priceTier": "free",
+            "targetExperienceLevel": "beginner",
+            "href": "https://store.example/product/rain-garden-kit",
+            "badge": "free",
+            "featured": false,
+            "bestseller": false,
+            "bestValue": false,
+            "priority": 0,
+            "image": "https://store.example/images/rain-garden-kit.webp",
+            "imageAlt": "A small pond in a bed of reeds",
+            "pricing": {
+                "currency": "EUR",
+                "price": 0,
+                "priceDisplay": "Free",
+                "isSubscription": false
+            }
+        }
+    ]
+}

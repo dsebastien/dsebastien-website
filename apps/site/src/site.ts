@@ -11,3 +11,11 @@ export const AUTHOR = 'Sébastien Dubois'
 
 /** The account of the author on X: the cards of a shared page name it. */
 export const X_ACCOUNT = '@dsebastien'
+
+/**
+ * The address of the store catalog (`products-light.json`, CAT-01, business
+ * rule 8). The `www` host answers it; the bare host redirects without a CORS
+ * header (research 1.7). A deployment builds with it unless `STORE_CATALOG`
+ * names another source.
+ */
+export const STORE_CATALOG_URL = 'https://www.store.dsebastien.net/products-light.json'

@@ -25,6 +25,13 @@ export const FIXTURE_CATALOG = join(FIXTURES, 'catalog.json')
  */
 export const FIXTURE_NOTE_TYPES = join(FIXTURES, 'note-types.json')
 
+/**
+ * A recorded store catalog (`products-light.json`) with invented products, in
+ * the shape of the store: the input of the catalog shape test (TEST-04) and of
+ * the ads of the fixture site (SEAM-05, SEAM-06).
+ */
+export const FIXTURE_STORE_CATALOG = join(FIXTURES, 'store-catalog.json')
+
 /** One entry of the catalog: a feature or a trap, and the files that serve it. */
 export interface FixtureCatalogEntry {
     /** A short name, stable, used by the tests. */
