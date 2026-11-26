@@ -315,6 +315,8 @@ export class PublicationCenter {
     readonly #ownWrites = new Map<string, FileStat>()
     /** The edits that Obsidian reports while a refresh of the lists runs (R71). */
     #duringRefresh: NoteEvent[] | undefined
+    /** The edits that Obsidian reports while a run that writes into the notes runs: judged after the run recorded its writes. */
+    #duringRun: NoteEvent[] | undefined
     /** The activity that runs now, so that a takedown can wait for its end. */
     #current: Promise<void> = Promise.resolve()
     /** False after a run changed the copy, until the next check: the queue is old then. */
@@ -413,6 +415,12 @@ export class PublicationCenter {
         // one event of each write that it reports is that write.
         if (this.#duringRefresh !== undefined) {
             this.#duringRefresh.push({ path, stat })
+            return
+        }
+        // While a run that writes into the notes runs, the events wait too:
+        // Obsidian reports a write before the run can record it.
+        if (this.#duringRun !== undefined) {
+            this.#duringRun.push({ path, stat })
             return
         }
         if (!this.#isOwnWrite(path, stat)) {
@@ -795,6 +803,11 @@ export class PublicationCenter {
         }
         this.#set({ activity: activity })
         let failure: string | undefined
+        // A publication, a takedown and an edit of the guards write into the
+        // notes: the events of their writes wait for the end of the work,
+        // when the writes are recorded (review of issue 106).
+        const waiting: NoteEvent[] | undefined = pushes || activity === 'editing' ? [] : undefined
+        this.#duringRun = waiting
         const running = (async () => {
             try {
                 try {
@@ -803,6 +816,15 @@ export class PublicationCenter {
                     failure = messageOf(error)
                     this.#log(`${name} failed: ${failure}`)
                     this.#set(pushes ? { error: failure, failure } : { error: failure })
+                } finally {
+                    if (waiting !== undefined) {
+                        this.#duringRun = undefined
+                        for (const { path, stat } of waiting) {
+                            if (!this.#isOwnWrite(path, stat)) {
+                                this.#changed.add(path)
+                            }
+                        }
+                    }
                 }
                 const outcome = this.#state.log.at(-1)?.text
                 if (outcome !== undefined) {

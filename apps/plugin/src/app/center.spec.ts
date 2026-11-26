@@ -28,7 +28,7 @@ import type {
 } from '../publishing/deploy.ts'
 import { PublicationCenter } from './center.ts'
 import type { CenterHost, FileStat } from './center.ts'
-import type { Device } from '../publishing/ports.ts'
+import type { Device, Vault } from '../publishing/ports.ts'
 
 // The controller of the publication center (issue 39, R67): what the view
 // starts, one activity at a time, with the run log and the report. It runs
@@ -70,7 +70,9 @@ async function setUp(
     stores: TestStores,
     configured = true,
     deploy?: CenterHost['deploy'],
-    takedowns?: CenterHost['takedowns']
+    takedowns?: CenterHost['takedowns'],
+    /** Changes the device, for example to report an event of Obsidian during a write. */
+    wrap: (device: Device, vault: string) => Device = (device) => device
 ): Promise<Setup> {
     const vault = await copyFixtureVault(stores)
     const copy = await makeContentStoreCopy(stores)
@@ -81,12 +83,15 @@ async function setUp(
             if (!configured) {
                 throw new Error('Set the folder of the copy of the content store in the settings')
             }
-            return nodeDevice({
-                vault,
-                contentStore: copy,
-                attachmentStorage: stores.attachmentStorage,
-                noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES)
-            })
+            return wrap(
+                nodeDevice({
+                    vault,
+                    contentStore: copy,
+                    attachmentStorage: stores.attachmentStorage,
+                    noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES)
+                }),
+                vault
+            )
         },
         pull: () => pullContentStore({ contentStore: copy }),
         // A clock that the test drives: one minute per question.
@@ -611,6 +616,48 @@ describe('the publication center', () => {
         await utimes(file, later, later)
         center.noteChanged(NOTE, await statOf(vault, NOTE))
         expect(center.stateOf(NOTE).label).toBe('Live (edited since the check)')
+    }, 60_000)
+
+    // Obsidian reports the write of `app.vault.process` before the write
+    // returns: the event comes before the run records the write (review of
+    // issue 106). A run of an agent keeps the marks of the new notes.
+    test('an event that Obsidian reports during the write of a run is no edit', async () => {
+        await using stores = await makeTestStores()
+        const MISTAKE = '10 Garden/Carried by mistake.md'
+        const ref: { center?: PublicationCenter } = {}
+        const reporting = (vault: Vault, folder: string): Vault => ({
+            ...vault,
+            async write(path, text, before) {
+                const wrote = await vault.write(path, text, before)
+                ref.center?.noteChanged(path, await statOf(folder, path))
+                return wrote
+            },
+            forRun: () => reporting(vault.forRun(), folder)
+        })
+        const { center, vault } = await setUp(
+            stores,
+            true,
+            undefined,
+            undefined,
+            (device, folder) => ({
+                ...device,
+                vault: reporting(device.vault, folder)
+            })
+        )
+        ref.center = center
+        // A new note that carries the state property by mistake: every
+        // publication removes it.
+        await writeFile(join(vault, MISTAKE), '---\npublic_note: true\n---\nA note\n')
+        await center.check()
+        const planned = JSON.parse(
+            (await center.serve({ tool: 'plan', include: [NOTE], hold: [], remove: [], pair: [] }))
+                .output
+        ) as { id: string }
+
+        await center.serve({ tool: 'publish', plan: planned.id })
+
+        expect(center.state.report?.kind).toBe('publication')
+        expect(center.stateOf(MISTAKE).label).toBe('Not published')
     }, 60_000)
 
     test('an event of a note written by a run whose size and time cannot be read is an edit', async () => {

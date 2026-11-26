@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { isolateNames, lockState, waysOut } from './messages.ts'
+import { isolateName, isolateNames, lockState, waysOut } from './messages.ts'
 
 // The messages of the publication center in the view and the notices (issue
 // 106). A right-to-left mark (U+200F) in an invented file name stands for a
@@ -30,6 +30,14 @@ describe('the names of a message', () => {
         expect(isolateNames('a "lone quote')).toBe('a "lone quote')
     })
 
+    test('an isolate or an embedding inside a name cannot end the isolation: it is shown as its code', () => {
+        expect(isolateNames('"A⁩B‮C.md" moved')).toBe('"⁨A<U+2069>B<U+202E>C.md⁩" moved')
+        expect(isolateNames('"⁨A⁩⁩.md⁩" moved')).toBe(
+            '"⁨<U+2068>A<U+2069><U+2069>.md<U+2069>⁩" moved'
+        )
+        expect(isolateName('A⁦B')).toBe('⁨A<U+2066>B⁩')
+    })
+
     test('a quote inside a word opens no name', () => {
         expect(isolateNames('the 12" record and "A.md"')).toBe('the 12" record and "⁨A.md⁩"')
     })
@@ -37,21 +45,38 @@ describe('the names of a message', () => {
 
 describe('the confirmation of the removal of the lock', () => {
     const runs = (id: number): boolean => id === 41
+    const here = { host: 'shed', system: 'windows' }
+    const computer = { host: 'shed', system: 'windows' }
 
-    test('says whether the process of the lock still runs', () => {
-        expect(lockState({ command: 'publish', process: 41 }, runs)).toBe(
-            'The lock was taken by a run of publish in the process 41, and a process with that number still runs on this computer: that run can still hold it. Remove it only when you know that it stopped.'
+    test('says whether the process of the lock still runs here', () => {
+        expect(lockState({ command: 'publish', process: 41, ...here }, runs, computer)).toBe(
+            'The lock was taken by a run of publish in the process 41, and a process with that number still runs here: that run can still hold it. Remove it only when you know that it stopped.'
         )
-        expect(lockState({ command: 'publish', process: 42 }, runs)).toBe(
-            'The lock was taken by a run of publish in the process 42, which no longer runs on this computer: the run stopped.'
+        expect(lockState({ command: 'publish', process: 42, ...here }, runs, computer)).toBe(
+            'The lock was taken by a run of publish in the process 42: no process with that number runs here; a run in WSL or on another computer cannot be seen.'
+        )
+    })
+
+    test('a lock of another computer or system, or that names no computer, says so', () => {
+        expect(
+            lockState(
+                { command: 'plan', process: 41, host: 'barn', system: 'linux' },
+                runs,
+                computer
+            )
+        ).toBe(
+            'The lock was taken by a run of plan in the process 41 on barn (linux), not on this computer: the tool cannot see whether that run still runs.'
+        )
+        expect(lockState({ command: 'plan', process: 42 }, runs, computer)).toBe(
+            'The lock was taken by a run of plan in the process 42: no process with that number runs here; a run in WSL or on another computer cannot be seen.'
         )
     })
 
     test('a lock that names no process, and no lock', () => {
-        expect(lockState({}, runs)).toBe(
+        expect(lockState({}, runs, computer)).toBe(
             'The lock was taken by a run, and it names no process: the tool cannot tell whether that run still runs.'
         )
-        expect(lockState(undefined, runs)).toBe('There is no lock now.')
+        expect(lockState(undefined, runs, computer)).toBe('There is no lock now.')
     })
 })
 

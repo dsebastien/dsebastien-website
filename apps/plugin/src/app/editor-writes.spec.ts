@@ -29,9 +29,27 @@ function logicVault(notes: Map<string, string>, writes: string[]): Vault {
     return vault
 }
 
-function obsidian(files: Map<string, Note>, processed: string[]): EditorVault<Note> {
+/**
+ * A vault of Obsidian. `unsaved` holds the text of an open editor that the
+ * author typed and that the editor did not save yet: a save writes it into
+ * the note.
+ */
+function obsidian(
+    files: Map<string, Note>,
+    processed: string[],
+    unsaved = new Map<string, string>()
+): EditorVault<Note> {
     return {
         getFileByPath: (path) => files.get(path) ?? null,
+        saveOpenEditors(file) {
+            for (const [path, text] of unsaved) {
+                if (files.get(path) === file) {
+                    file.text = text
+                    unsaved.delete(path)
+                }
+            }
+            return Promise.resolve()
+        },
         process(file, change) {
             const path = [...files].find(([, one]) => one === file)?.[0] ?? ''
             processed.push(path)
@@ -69,6 +87,20 @@ describe('the writes of the tool through the vault of Obsidian', () => {
         expect(await vault.write('A.md', 'After\n', 'Before\n')).toBe(false)
 
         expect(note.text).toBe('Before, and typed\n')
+    })
+
+    test('the open editors of the note are saved first: unsaved typing stops the write', async () => {
+        const note: Note = { text: 'Before\n' }
+        const unsaved = new Map([['A.md', 'Before, and typed\n']])
+        const vault = editorWrites(
+            logicVault(new Map(), []),
+            obsidian(new Map([['A.md', note]]), [], unsaved)
+        )
+
+        expect(await vault.write('A.md', 'After\n', 'Before\n')).toBe(false)
+
+        expect(note.text).toBe('Before, and typed\n')
+        expect(unsaved.size).toBe(0)
     })
 
     test('a note that Obsidian does not know is written by the vault of the logic', async () => {

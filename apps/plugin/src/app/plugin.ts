@@ -1,5 +1,6 @@
 import { hostname } from 'node:os'
 import {
+    MarkdownView,
     Modal,
     normalizePath,
     Notice,
@@ -9,12 +10,12 @@ import {
     setIcon,
     TFolder
 } from 'obsidian'
-import type { App, TAbstractFile, WorkspaceLeaf } from 'obsidian'
+import type { App, TAbstractFile, TFile, WorkspaceLeaf } from 'obsidian'
 import { markUnpublish } from '../publishing/center.ts'
 import type { NoteStateKind } from '../publishing/center.ts'
 import { runDeploy, succeeded } from '../publishing/deploy.ts'
 import type { DeployReport } from '../publishing/deploy.ts'
-import { lockHolderOf, processRuns, pullContentStore } from '../publishing/node/device.ts'
+import { lockHolderOf, processRuns, pullContentStore, SYSTEM } from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
 import type { FileStat } from './center.ts'
@@ -128,7 +129,12 @@ export class VaultPublishPlugin extends Plugin {
                     // The refresh of the frozen lists before a plan (PUB-35, R71).
                     serializerLists(this.app as unknown as PluginHost, normalizePath),
                     // The writes into the notes, as edits of Obsidian (issue 106).
-                    (vault) => editorWrites(vault, this.app.vault)
+                    (vault) =>
+                        editorWrites(vault, {
+                            getFileByPath: (path) => this.app.vault.getFileByPath(path),
+                            saveOpenEditors: (file) => this.#saveOpenEditors(file),
+                            process: (file, change) => this.app.vault.process(file, change)
+                        })
                 ),
             // The size and the time of a note, read the same way for an
             // event and for a write of a run (issue 106).
@@ -430,6 +436,16 @@ export class VaultPublishPlugin extends Plugin {
     /** Updates the status bar item: the state of the open note. */
     #updateStatus: () => void = () => undefined
 
+    /** Saves each open editor of the note: what the author typed reaches the note before a write of the tool. */
+    async #saveOpenEditors(file: TFile): Promise<void> {
+        for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+            const { view } = leaf
+            if (view instanceof MarkdownView && view.file === file) {
+                await view.save()
+            }
+        }
+    }
+
     /** The size and the time of the last change of a note, from the adapter of Obsidian. */
     async #statOf(path: string): Promise<FileStat | undefined> {
         try {
@@ -452,7 +468,10 @@ export class VaultPublishPlugin extends Plugin {
     async #confirmUnlock(): Promise<void> {
         const { error } = this.center.state
         const text = await this.center.lockText()
-        const holder = lockState(text === undefined ? undefined : lockHolderOf(text), processRuns)
+        const holder = lockState(text === undefined ? undefined : lockHolderOf(text), processRuns, {
+            host: hostname(),
+            system: SYSTEM
+        })
         new ConfirmModal(
             this.app,
             'Remove the lock of this device?',

@@ -20,7 +20,7 @@ import { FolderSuggest } from './folder-suggest.ts'
 import { addressOf } from './center.ts'
 import type { PublicationCenter, Report } from './center.ts'
 import type { Measures } from './measures.ts'
-import { isolateNames, waysOut } from './messages.ts'
+import { isolateName, isolateNames, waysOut } from './messages.ts'
 
 // The view of the publication center (TOOL-20 to TOOL-22, TOOL-25, decision
 // R67): a tab in the main area that shows the state of the controller and the
@@ -109,9 +109,9 @@ function eventLine(parent: HTMLElement, event: EditEvent): void {
     parent.appendText(`, ${event.time}`)
 }
 
-/** A text isolated from the text around it in an attribute (U+2068 and U+2069): an aria-label has no element of its own. */
+/** A text isolated from the text around it in an attribute (`isolateName`): an aria-label has no element of its own. */
 function isolated(text: string): string {
-    return `\u2068${text}\u2069`
+    return isolateName(text)
 }
 
 /** What the view needs of the plugin. */

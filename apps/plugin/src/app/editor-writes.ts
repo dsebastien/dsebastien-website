@@ -12,6 +12,8 @@ import type { Vault } from '../publishing/ports.ts'
 export interface EditorVault<File> {
     /** The note with exactly this path, or `null` when Obsidian does not know it. */
     getFileByPath(path: string): File | null
+    /** Saves each open editor of the note, so that text that the author typed is in the note. */
+    saveOpenEditors(file: File): Promise<void>
     /** Reads the note, changes its text and saves it, in one step for the editor of Obsidian. */
     process(file: File, change: (text: string) => string): Promise<string>
 }
@@ -28,6 +30,10 @@ export function editorWrites<File>(vault: Vault, editor: EditorVault<File>): Vau
             if (file === null) {
                 return await vault.write(path, text, before)
             }
+            // The typing that an open editor did not save yet goes into the
+            // note first: it makes the note another text than the one that
+            // the tool read, so the write does not happen.
+            await editor.saveOpenEditors(file)
             // The text of the note in Obsidian, at the moment of the write:
             // a note that changed since the tool read it stays as it is.
             let wrote = false
