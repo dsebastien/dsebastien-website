@@ -157,6 +157,7 @@ type Step = { why: string } & (
     | { do: 'offline' }
     | { do: 'online' }
     | { do: 'lose'; keys: string[] }
+    | { do: 'storage'; files: Record<string, string> }
     | { do: 'noteTypes'; noteTypes: NoteTypesFile | null }
     | { do: 'asked'; questions?: string[][] }
     | {
@@ -392,6 +393,8 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     for (const key of step.keys) {
                         await rm(join(stores.attachmentStorage, key))
                     }
+                } else if (step.do === 'storage') {
+                    await writeFiles(stores.attachmentStorage, step.files)
                 } else if (step.do === 'asked') {
                     // The questions to the Starter Kit since the last such step.
                     const asked = (await textOf(`${answers}.asked`)) ?? ''
@@ -509,6 +512,7 @@ describe('shared scenarios of the publication queue', () => {
             'plan',
             'publish',
             'status',
+            'storage',
             'store',
             'takedown',
             'unlock',

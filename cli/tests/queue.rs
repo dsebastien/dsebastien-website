@@ -719,6 +719,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
                 text(setup.stores.content_store()),
             ]);
         }
+        "storage" => write_files(setup.stores.attachment_storage(), &step["files"]),
         "lose" => {
             for key in paths(&step["keys"]) {
                 fs::remove_file(setup.stores.attachment_storage().join(key))
@@ -777,6 +778,7 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
             "plan",
             "publish",
             "status",
+            "storage",
             "store",
             "takedown",
             "unlock",

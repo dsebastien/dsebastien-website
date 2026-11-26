@@ -993,6 +993,13 @@ function publishedKeys(manifest: ReadonlyMap<string, ManifestEntry>): Set<string
 /** The form of the name of a file of the attachment storage: a key, or a key that is being written. */
 const STORAGE_NAME = /^(?:[0-9a-f]{64}|\.[0-9a-f]{64}\.part)$/
 
+/**
+ * The files that macOS and Windows put into a folder by themselves: a cleanup
+ * leaves them with no warning (decision of the author R79). Only these exact
+ * names: any other name that is not a key still gives a warning.
+ */
+const SYSTEM_FILES: ReadonlySet<string> = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini'])
+
 /** The uploads of one publication to the attachment storage (PUB-39). */
 class Uploads {
     readonly #device: Device
@@ -1167,7 +1174,7 @@ async function deleteUnused(
         return { deleted, names: undefined, warnings }
     }
     for (const name of sortByCodePoint(names)) {
-        if (used.has(name)) {
+        if (used.has(name) || SYSTEM_FILES.has(name)) {
             continue
         }
         if (!STORAGE_NAME.test(name)) {
