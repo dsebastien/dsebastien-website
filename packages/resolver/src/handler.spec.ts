@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { failureResponse, siteHandler, type Release, type StoredFile } from './handler.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
+import { SITE_ORIGIN } from './url.ts'
 
 // The answer of a request (HOST-02 of the spec, issue 21): one handler that
 // knows no host, with the files of a release and of the attachment storage
@@ -198,6 +199,29 @@ describe('a file of the site that is not a page', () => {
         expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
         expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate')
         expect(await response.text()).toBe('file -/md/Welcome.md')
+    })
+
+    // IDX-16: the Markdown form stays out of the index and names its page.
+    test('says noindex for the Markdown of a note, with a canonical link to its page', async () => {
+        for (const path of ['/-/md/Welcome.md', '/-/md/10+Garden/Compost+basics.md']) {
+            const response = await get(path)
+            expect(response.headers.get('x-robots-tag')).toBe('noindex')
+            expect(response.headers.get('link')).toBe(
+                `<${new URL(path.slice('/-/md'.length, -'.md'.length), SITE_ORIGIN).href}>; rel="canonical"`
+            )
+        }
+        const head = await siteHandler(release())(
+            new Request(`${ORIGIN}/-/md/Welcome.md`, { method: 'HEAD' })
+        )
+        expect(head.headers.get('x-robots-tag')).toBe('noindex')
+    })
+
+    test('says nothing of the index for robots.txt and the icon', async () => {
+        for (const path of ['/robots.txt', '/favicon.ico']) {
+            const response = await get(path)
+            expect(response.headers.get('x-robots-tag')).toBeNull()
+            expect(response.headers.get('link')).toBeNull()
+        }
     })
 
     test('is plain text for robots.txt', async () => {

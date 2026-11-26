@@ -1,5 +1,6 @@
 import { errorFormat, errorText, type ErrorStatus } from './errors.ts'
 import { resolve, type ResolverMap, type SiteFile } from './resolver.ts'
+import { SITE_ORIGIN } from './url.ts'
 
 // The answer of a request (MOD-09 and HOST-02 of the spec): the URL contract
 // over HTTP, in plain TypeScript with the `Request` and `Response` of the web
@@ -134,6 +135,17 @@ const FILE_TYPES: Record<SiteFile['type'], string> = {
     markdown: 'text/markdown; charset=utf-8',
     text: TEXT,
     icon: 'image/x-icon'
+}
+
+/**
+ * The headers of the Markdown form of a note (IDX-16): it stays out of the
+ * index, and names the page of its note as canonical, at the canonical host
+ * on every host, as the canonical link of the page does. The resolver gives
+ * the Markdown of a note only at its path `/-/md/<canonical path>.md`.
+ */
+function markdownHeaders(pathname: string): Record<string, string> {
+    const page = new URL(pathname.slice('/-/md'.length, -'.md'.length), SITE_ORIGIN).href
+    return { 'x-robots-tag': 'noindex', 'link': `<${page}>; rel="canonical"` }
 }
 
 /**
@@ -381,7 +393,8 @@ async function siteFileResponse(
     request: Request,
     file: StoredFile,
     type: string,
-    status: 200 | 404 | 410 = 200
+    status: 200 | 404 | 410 = 200,
+    extra: Readonly<Record<string, string>> = {}
 ): Promise<Response> {
     if (status !== 200) {
         return await fileResponse(request, file, {
@@ -391,7 +404,8 @@ async function siteFileResponse(
     }
     const headers: Record<string, string> = {
         'content-type': type,
-        'cache-control': 'public, max-age=0, must-revalidate'
+        'cache-control': 'public, max-age=0, must-revalidate',
+        ...extra
     }
     if (file.tag !== undefined) {
         headers['etag'] = file.tag
@@ -448,12 +462,13 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
         const fileOf = async (
             name: string,
             type: string,
-            status: 200 | 404 | 410 = 200
+            status: 200 | 404 | 410 = 200,
+            extra: Readonly<Record<string, string>> = {}
         ): Promise<Response | undefined> => {
             const file = await release.file(name)
             return file === undefined
                 ? undefined
-                : await siteFileResponse(request, file, type, status)
+                : await siteFileResponse(request, file, type, status, extra)
         }
         switch (resolution.kind) {
             case 'not-found':
@@ -491,7 +506,12 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                     }
                 })
             case 'file':
-                return await fileOf(resolution.file, FILE_TYPES[resolution.type])
+                return await fileOf(
+                    resolution.file,
+                    FILE_TYPES[resolution.type],
+                    200,
+                    resolution.type === 'markdown' ? markdownHeaders(pathname) : {}
+                )
             case 'page':
                 return await fileOf(resolution.file, HTML)
         }
