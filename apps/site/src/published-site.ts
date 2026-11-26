@@ -52,7 +52,11 @@ export interface PublishedSite {
     readonly pages: SitePages
     /** The properties of a published note. */
     propertiesOf(vaultPath: string): Readonly<Record<string, unknown>>
-    /** The title band of a published note: its display title, its type badge and its dates. */
+    /**
+     * The title band of a published note: its display title, its type badge
+     * and its dates. When two pages share a title, the fallback of the title
+     * is its `title`, and its `heading` stays the display title (issue 94).
+     */
     headerOf(vaultPath: string): NoteHeader
     /** The title of the page of a published note: the display title, the type word and the site name. */
     titleOf(vaultPath: string): string

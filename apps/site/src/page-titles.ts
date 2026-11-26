@@ -4,7 +4,8 @@ import { SITE_NAME } from './site.ts'
 // label of the note type, then the site name, with a middle dot between them:
 // `Inception · Movie · Sébastien’s Notes`. A note with no type has no type
 // word. No two indexable pages share a title: when they would, each note of
-// them takes its file name without the prefix and the suffix of its type.
+// them takes its file name without the prefix and the suffix of its type. The
+// H1 of the title band keeps the display title (IDX-07, issue 94).
 
 /** The text between the parts of a title. */
 export const TITLE_SEPARATOR = ' · '
@@ -38,7 +39,7 @@ export interface TitleCandidate {
     readonly typeWord?: string | undefined
 }
 
-/** The title of a note: the text of its title band and of its heading, and the title of its page. */
+/** The title of a note: its text in the lists and the backlinks, and the title of its page. */
 export interface NoteTitle {
     readonly title: string
     readonly full: string

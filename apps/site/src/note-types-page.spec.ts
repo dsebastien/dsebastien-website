@@ -190,9 +190,15 @@ describe('the title of a note page (IDX-01, IDX-03, IDX-07)', () => {
         expect(titleOf(noteOf(MULCH))).toBe('Mulch · AI wiki article · Sébastien’s Notes')
     })
 
+    // Issue 94: the H1 keeps the display title, only the title of the page changes.
     test('takes the file name without the suffix when two notes share their first heading', () => {
-        expect(textOf(select('h1', noteOf(LETTER_1)))).toBe('Garden letter 1')
+        expect(titleOf(noteOf(LETTER_1))).toBe('Garden letter 1 · Newsletter · Sébastien’s Notes')
         expect(titleOf(noteOf(LETTER_2))).toBe('Garden letter 2 · Newsletter · Sébastien’s Notes')
+        expect(textOf(select('h1', noteOf(LETTER_1)))).toBe('The garden letter')
+        expect(textOf(select('h1', noteOf(LETTER_2)))).toBe('The garden letter')
+        expect(select('meta[property="og:title"]', noteOf(LETTER_1))?.properties['content']).toBe(
+            'Garden letter 1 · Newsletter'
+        )
     })
 
     test('has no type word for a note with no type', () => {

@@ -52,7 +52,10 @@ export type NoteTypeBadge = TypeLabel & { readonly name: string }
 
 /** The title band of a note page. */
 export interface NoteHeader {
+    /** The title of the note in the lists and the backlinks: the fallback when two pages share a title. */
     title: string
+    /** The text of the H1 of the title band: the display title, also with the fallback (IDX-07, issue 94). */
+    heading: string
     /** The file name of the note without the prefix and the suffix of its note type. */
     bareName: string
     /** The note type of the note, or `undefined` when the note has none. */
@@ -68,8 +71,10 @@ export function noteHeader(input: NoteHeaderInput): NoteHeader {
             ? undefined
             : { name: input.noteType.name, ...typeLabelOf(input.noteType) }
     const bareName = bareNameOf(input.fileName, input.noteType)
+    const title = titleOf(input, bareName)
     return {
-        title: titleOf(input, bareName),
+        title,
+        heading: title,
         bareName,
         ...(type === undefined ? {} : { type }),
         created: propertyDate(input.properties['created']) ?? dateOfTime(input.firstPublished),
