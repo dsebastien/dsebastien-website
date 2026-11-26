@@ -259,7 +259,7 @@ describe('build of a content store with one published note', () => {
             // No note moved (URL-21, R66).
             former: { folded: {}, names: {}, markdown: {} },
             // The content store has no redirect list (issue 44).
-            redirects: { folded: {}, prefixes: [] }
+            redirects: { longest: 0, folded: {}, prefixes: {} }
         })
     })
 })

@@ -167,6 +167,7 @@ async function main(): Promise<void> {
                           redirectsInMap: count(map.redirects?.folded),
                           droppedShadowed: applied?.dropped.shadowed ?? 0,
                           droppedDeadTarget: applied?.dropped.deadTarget ?? 0,
+                          hidesNameOrAlias: applied?.hidesNameOrAlias ?? 0,
                           firstRequestMilliseconds: Math.round(firstRequestTime * 10) / 10,
                           microsecondsPerOldPath:
                               Math.round(

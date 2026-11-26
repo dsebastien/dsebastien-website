@@ -43,14 +43,23 @@ export interface ResolverMap {
  * finds. The gone rows of the list are in the gone part, as keys.
  */
 export interface RedirectMap {
-    /** The target of each old path, by its folded form (the old path, decoded, without `.md`). */
+    /**
+     * The length of the longest folded old path of the parts, in UTF-16
+     * units: a longer text of a request is never hashed.
+     */
+    readonly longest: number
+    /**
+     * The target of each old path, by the key (`goneKey()`) of its folded
+     * form (the old path, decoded, without `.md`): the map holds no old path
+     * as text.
+     */
     readonly folded: Readonly<Record<string, string>>
     /**
-     * The old folders, by the folded form of the folder with a slash at its
-     * end, and their targets: the longest first. A path under one of them
-     * leads to its target, when no other rule finds the path (RES-04).
+     * The target of each old folder, by the key of its folded form with a
+     * slash at its end. A path under one of them leads to the target of the
+     * longest one, when no other rule finds the path (RES-04).
      */
-    readonly prefixes: readonly (readonly [string, string])[]
+    readonly prefixes: Readonly<Record<string, string>>
 }
 
 /**
@@ -272,7 +281,37 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
     if (isGone(path, map.gone)) {
         return gone
     }
-    return underOldFolder(path, map, query) ?? notFound
+    return withEncodedQuery(path, map, query) ?? underOldFolder(path, map, query) ?? notFound
+}
+
+/**
+ * The answer for a query encoded into the path (RES-02): the text before the
+ * first `?` of a reading, looked for one time among the published addresses
+ * and the redirect list. It comes after the gone addresses: a name with a
+ * question mark is a name, so an unpublished note "Why?" stays gone.
+ */
+function withEncodedQuery(path: string, map: ResolverMap, query: string): Resolution | undefined {
+    for (const reading of readingsOf(path)) {
+        const at = reading.indexOf('?')
+        if (at > 0) {
+            const found = resolvePublished(
+                [reading.slice(0, at)],
+                map,
+                encodedQuery(reading.slice(at + 1), query)
+            )
+            if (found?.kind === 'redirect') {
+                return found
+            }
+        }
+    }
+    return undefined
+}
+
+/** The target of an old path of the redirect list, by the key of its folded form. */
+function redirectOf(form: string, redirects: RedirectMap | undefined): string | undefined {
+    return redirects === undefined || form.length > redirects.longest
+        ? undefined
+        : own(redirects.folded, goneKey(form))
 }
 
 /**
@@ -282,14 +321,25 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
  * longest prefix wins. The folder itself is no address of the rule.
  */
 function underOldFolder(path: string, map: ResolverMap, query: string): Resolution | undefined {
-    const prefixes = map.redirects?.prefixes ?? []
-    if (prefixes.length === 0) {
+    const redirects = map.redirects
+    if (redirects === undefined || Object.keys(redirects.prefixes).length === 0) {
         return undefined
     }
     for (const reading of readingsOf(path)) {
         for (const form of formsOf(reading).map(foldedForm)) {
-            for (const [prefix, location] of prefixes) {
-                if (form.length > prefix.length && form.startsWith(prefix)) {
+            // Each folder of the form, the longest first, by its key. The form
+            // itself is no folder of it: something must follow the slash.
+            for (
+                let at = form.lastIndexOf('/', form.length - 2);
+                at > 0;
+                at = form.lastIndexOf('/', at - 1)
+            ) {
+                const folder = form.slice(0, at + 1)
+                const location =
+                    folder.length > redirects.longest
+                        ? undefined
+                        : own(redirects.prefixes, goneKey(folder))
+                if (location !== undefined) {
                     return {
                         kind: 'redirect',
                         status: 301,
@@ -315,17 +365,14 @@ function encodedQuery(text: string, query: string): string {
 }
 
 /**
- * The answer of the published notes and folders for the readings of a path
- * outside the prefix, or `undefined` when none has it.
- *
- * @param inner true for the text before a query encoded into the path: it
- * is read one time, never again for a second query
+ * The answer of the published notes and folders, the former paths and the
+ * redirect list for the readings of a path outside the prefix, or
+ * `undefined` when none has it.
  */
 function resolvePublished(
     readings: readonly string[],
     map: ResolverMap,
-    query: string,
-    inner = false
+    query: string
 ): Resolution | undefined {
     for (const reading of readings) {
         const forms = formsOf(reading).map(foldedForm)
@@ -350,7 +397,7 @@ function resolvePublished(
         // An old path of the redirect list (issue 44): it wins over a file
         // name and an alias, and over an address of an unpublished note.
         for (const form of forms) {
-            const location = own(map.redirects?.folded, form)
+            const location = redirectOf(form, map.redirects)
             if (location !== undefined) {
                 return {
                     kind: 'redirect',
@@ -379,24 +426,6 @@ function resolvePublished(
             const notes = form.includes('/') ? undefined : own(map.former?.names, form)
             if (notes !== undefined) {
                 return toNotes(notes, 301, CACHE.former, query, map)
-            }
-        }
-    }
-    if (inner) {
-        return undefined
-    }
-    // A query encoded into the path (RES-02): the text before it, read one time.
-    for (const reading of readings) {
-        const at = reading.indexOf('?')
-        if (at > 0) {
-            const found = resolvePublished(
-                [reading.slice(0, at)],
-                map,
-                encodedQuery(reading.slice(at + 1), query),
-                true
-            )
-            if (found?.kind === 'redirect') {
-                return found
             }
         }
     }

@@ -98,11 +98,11 @@
                 "to": "/20+Library/20.02+Recipes/100%25+rye+bread"
             },
             {
-                "from": "Home",
+                "from": "Front porch",
                 "to": "/"
             },
             {
-                "from": "Publish/Recently added",
+                "from": "Generated/Recent additions",
                 "to": "/-/recent/added"
             },
             {
@@ -126,7 +126,7 @@
                 "to": "https://example.org/catalog"
             }
         ],
-        "gone": ["Publish/Stats"],
+        "gone": ["Generated/Totals"],
         "prefixes": [
             {
                 "from": "Old Beds/How-to/",
@@ -800,27 +800,27 @@
         },
         {
             "name": "the old home note leads to the home page (URL-07)",
-            "request": "/Home",
+            "request": "/Front+porch",
             "status": 301,
             "location": "/",
             "cacheControl": "public, max-age=3600"
         },
         {
             "name": "an old generated note leads to its new page (URL-07)",
-            "request": "/Publish/Recently+added",
+            "request": "/Generated/Recent+additions",
             "status": 301,
             "location": "/-/recent/added",
             "cacheControl": "public, max-age=3600"
         },
         {
             "name": "a gone row of the redirect list",
-            "request": "/Publish/Stats",
+            "request": "/Generated/Totals",
             "status": 410,
             "format": "html"
         },
         {
             "name": "a gone row of the redirect list, in another letter case",
-            "request": "/publish/stats",
+            "request": "/generated/totals",
             "status": 410,
             "format": "html"
         },
@@ -846,7 +846,7 @@
             "cacheControl": "public, max-age=3600"
         },
         {
-            "name": "a prefix rule leads a path under an old folder to its hub (RES-04)",
+            "name": "the longest prefix wins (RES-04)",
             "request": "/Old+Beds/How-to/Prune+roses",
             "status": 301,
             "location": "/10+Garden/Herb+bed/Herb+bed",
@@ -860,7 +860,7 @@
             "cacheControl": "public, max-age=3600"
         },
         {
-            "name": "the longest prefix rule wins",
+            "name": "a path under the short prefix only leads to its target",
             "request": "/Old+Beds/Raised+beds",
             "status": 301,
             "location": "/Welcome",

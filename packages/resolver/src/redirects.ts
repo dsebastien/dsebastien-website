@@ -1,5 +1,13 @@
-import { foldedForm, goneKey, type RedirectMap, type ResolverMap } from './resolver.ts'
+import {
+    foldedForm,
+    goneKey,
+    resolve,
+    type RedirectMap,
+    type Resolution,
+    type ResolverMap
+} from './resolver.ts'
 import { compareCodePoints } from './site.ts'
+import { SITE_ORIGIN } from './url.ts'
 
 // The redirect list (issue 44, section 10.3 of the spec): the old addresses
 // of the current site that no rule of the resolver finds. The content store
@@ -36,6 +44,10 @@ export interface RedirectList {
     readonly prefixes: readonly RedirectRow[]
 }
 
+/**
+ * A refusal of the reader. Its message names the row and its part, never an
+ * old path: the message of the build can reach a report.
+ */
 function refuse(reason: string): never {
     throw new Error(`${REDIRECT_LIST_FILE} is not a redirect list: ${reason}`)
 }
@@ -44,52 +56,68 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** The old path of a row, checked: decoded, relative, with no empty part, never under `/-/`. */
-function oldPath(value: unknown, prefix: boolean): string {
+/** The place of a row in the file, for a message: `row 2 of redirects`. */
+type Place = string
+
+/**
+ * The old path of a row, checked: decoded (no `%` and two hexadecimal
+ * digits), relative, with no empty part, never under `/-/`, with no `.md`
+ * ending.
+ */
+function oldPath(value: unknown, prefix: boolean, place: Place): string {
     if (typeof value !== 'string' || value === '') {
-        return refuse('an old path is not a text')
+        return refuse(`the old path of ${place} is not a text`)
     }
-    const text = prefix ? value.slice(0, -1) : value
     if (prefix !== value.endsWith('/')) {
         return refuse(
             prefix
-                ? `the prefix "${value}" does not end with a slash`
-                : `the old path "${value}" ends with a slash`
+                ? `the prefix of ${place} does not end with a slash`
+                : `the old path of ${place} ends with a slash`
         )
     }
+    const text = prefix ? value.slice(0, -1) : value
     const parts = text.split('/')
     if (parts.some((part) => part === '') || parts[0] === '-') {
-        return refuse(`the old path "${value}" is not a path of a note`)
+        return refuse(`the old path of ${place} is not a path of a note`)
+    }
+    if (/%[0-9A-Fa-f]{2}/u.test(value)) {
+        return refuse(`the old path of ${place} is still encoded: write it decoded`)
+    }
+    if (!prefix && text.toLowerCase().endsWith('.md')) {
+        return refuse(`the old path of ${place} ends with .md: write it without`)
     }
     return value
 }
 
 /** The target of a row, checked: a path of the site, or an `https://` address, with no fragment. */
-function target(value: unknown): string {
-    if (typeof value !== 'string' || value.includes('#')) {
-        return refuse('a target is not a path of the site or an https address')
+function target(value: unknown, place: Place): string {
+    if (typeof value === 'string' && !value.includes('#')) {
+        if (value.startsWith('/') && !value.startsWith('//')) {
+            return value
+        }
+        if (URL.canParse(value) && new URL(value).protocol === 'https:') {
+            return value
+        }
     }
-    if (value.startsWith('/') && !value.startsWith('//')) {
-        return value
-    }
-    if (URL.canParse(value) && new URL(value).protocol === 'https:') {
-        return value
-    }
-    return refuse(`the target "${value}" is not a path of the site or an https address`)
+    return refuse(`the target of ${place} is not a path of the site or an https address`)
 }
 
-function rowsOf(value: unknown, prefix: boolean): RedirectRow[] {
+function rowsOf(value: unknown, part: 'redirects' | 'prefixes'): RedirectRow[] {
     if (value === undefined) {
         return []
     }
     if (!Array.isArray(value)) {
-        return refuse('a part is not a list')
+        return refuse(`the part ${part} is not a list`)
     }
-    return value.map((row: unknown) => {
+    return value.map((row: unknown, index) => {
+        const place = `row ${String(index + 1)} of ${part}`
         if (!isRecord(row) || Object.keys(row).some((key) => key !== 'from' && key !== 'to')) {
-            return refuse('a row is not an object with "from" and "to"')
+            return refuse(`${place} is not an object with "from" and "to"`)
         }
-        return { from: oldPath(row['from'], prefix), to: target(row['to']) }
+        return {
+            from: oldPath(row['from'], part === 'prefixes', place),
+            to: target(row['to'], place)
+        }
     })
 }
 
@@ -113,92 +141,162 @@ export function redirectListFrom(value: unknown): RedirectList {
     }
     const gone = value['gone'] ?? []
     if (!Array.isArray(gone)) {
-        return refuse('a part is not a list')
+        return refuse('the part gone is not a list')
     }
     const list: RedirectList = {
-        redirects: rowsOf(value['redirects'], false),
-        gone: gone.map((path: unknown) => oldPath(path, false)),
-        prefixes: rowsOf(value['prefixes'], true)
+        redirects: rowsOf(value['redirects'], 'redirects'),
+        gone: gone.map((path: unknown, index) =>
+            oldPath(path, false, `row ${String(index + 1)} of gone`)
+        ),
+        prefixes: rowsOf(value['prefixes'], 'prefixes')
     }
-    const seen = new Set<string>()
-    for (const path of [...list.redirects.map((row) => row.from), ...list.gone]) {
-        const key = foldedForm(path)
-        if (seen.has(key)) {
-            return refuse(`two rows have the old path "${path}"`)
+    const twice = (rows: readonly [string, Place][], what: string): void => {
+        const seen = new Map<string, Place>()
+        for (const [path, place] of rows) {
+            const key = foldedForm(path)
+            const first = seen.get(key)
+            if (first !== undefined) {
+                refuse(`${place} has the ${what} of ${first}`)
+            }
+            seen.set(key, place)
         }
-        seen.add(key)
     }
-    const prefixes = new Set<string>()
-    for (const { from } of list.prefixes) {
-        const key = foldedForm(from)
-        if (prefixes.has(key)) {
-            return refuse(`two prefix rules have the prefix "${from}"`)
-        }
-        prefixes.add(key)
-    }
+    twice(
+        [
+            ...list.redirects.map((row, index): [string, Place] => [
+                row.from,
+                `row ${String(index + 1)} of redirects`
+            ]),
+            ...list.gone.map((path, index): [string, Place] => [
+                path,
+                `row ${String(index + 1)} of gone`
+            ])
+        ],
+        'old path'
+    )
+    twice(
+        list.prefixes.map((row, index): [string, Place] => [
+            row.from,
+            `row ${String(index + 1)} of prefixes`
+        ]),
+        'prefix'
+    )
     return list
 }
 
 /** The rows that the build drops: they would hide a live address, or lead to no live page. */
 export interface DroppedRows {
-    /** Rows whose old path a published note, a folder or a former path has: the live address wins (business rule 1). */
+    /**
+     * Rows whose old path a published note, a folder or a former path has,
+     * and prefix rules of a live folder: the live address wins (business
+     * rule 1).
+     */
     readonly shadowed: number
     /** Rows whose target is no page of the release: an unpublish or a takedown never blocks a build (business rule 16). */
     readonly deadTarget: number
 }
 
+/** The answers that a target can be: a page, or a file of the site (the Markdown of a note). */
+const LIVE: readonly Resolution['kind'][] = ['page', 'file']
+
+/**
+ * The location that a row leads to, as the resolver of the release answers
+ * its target (URL-05: a target never redirects): the target when it is a
+ * page, the location of its redirect when that redirect leads to a page,
+ * else `undefined` (a dead target). An `https://` address of the site is a
+ * path of the site; an address of another host is kept as it is.
+ */
+function locationOf(to: string, map: ResolverMap): string | undefined {
+    const origin = `${SITE_ORIGIN}/`
+    if (to.startsWith('https://') && !to.startsWith(origin)) {
+        return to
+    }
+    const own = to.startsWith(origin) ? to.slice(origin.length - 1) : to
+    const at = own.indexOf('?')
+    const path = at < 0 ? own : own.slice(0, at)
+    const query = at < 0 ? '' : own.slice(at)
+    const answer = resolve(path, map, query)
+    if (LIVE.includes(answer.kind)) {
+        return own
+    }
+    if (answer.kind !== 'redirect') {
+        return undefined
+    }
+    const next = answer.location.indexOf('?')
+    const page = resolve(next < 0 ? answer.location : answer.location.slice(0, next), map)
+    return LIVE.includes(page.kind) ? answer.location : undefined
+}
+
+/** A record of keys, sorted, so the map has one form for one list. */
+function sortedRecord<T>(entries: Iterable<[string, T]>): Record<string, T> {
+    return Object.fromEntries([...entries].sort(([one], [two]) => compareCodePoints(one, two)))
+}
+
 /**
  * The resolver map with the redirect list (issue 44). A redirect and a
- * prefix rule go into `redirects`, as texts: an old path was a public URL,
- * and a target is a live page. A gone row goes into the gone part, as a key
- * only (decision R64). The build counts the rows that it drops, and names
- * none of them: the warning of the build never shows an old path.
+ * prefix rule go into `redirects`, by the key of their folded old path
+ * (`goneKey()`), with their target as text: the map holds no old path, so a
+ * release that leaks it shows no title (as the gone part, decision R64). A
+ * gone row goes into the gone part, as a key. Each target is resolved on the
+ * map of the release: the map keeps its canonical location. The build counts
+ * the rows that it drops and the rows that hide a file name or an alias of a
+ * live note, and names none of them: the warning of the build never shows an
+ * old path.
  */
 export function applyRedirectList(
     map: ResolverMap,
     list: RedirectList
-): { map: ResolverMap; dropped: DroppedRows } {
+): { map: ResolverMap; dropped: DroppedRows; hidesNameOrAlias: number } {
     const own = (record: Readonly<Record<string, unknown>> | undefined, key: string): boolean =>
         record !== undefined && Object.hasOwn(record, key)
-    const live = (to: string): boolean =>
-        to.startsWith('https://') || own(map.pages, to.split('?')[0] ?? '')
-    const taken = (from: string): boolean =>
-        own(map.folded, foldedForm(from)) || own(map.former?.folded, foldedForm(from))
+    const taken = (folded: string): boolean =>
+        own(map.folded, folded) || own(map.former?.folded, folded)
     let shadowed = 0
     let deadTarget = 0
-    const folded: Record<string, string> = {}
+    let hidesNameOrAlias = 0
+    let longest = 0
+    const folded = new Map<string, string>()
     for (const row of list.redirects) {
-        if (taken(row.from)) {
+        const key = foldedForm(row.from)
+        const location = locationOf(row.to, map)
+        if (taken(key)) {
             shadowed++
-        } else if (!live(row.to)) {
+        } else if (location === undefined) {
             deadTarget++
         } else {
-            folded[foldedForm(row.from)] = row.to
+            if ((!key.includes('/') && own(map.names, key)) || own(map.aliases, key)) {
+                hidesNameOrAlias++
+            }
+            folded.set(goneKey(key), location)
+            longest = Math.max(longest, key.length)
         }
     }
     const goneTexts: string[] = []
     for (const path of list.gone) {
-        if (taken(path)) {
+        const key = foldedForm(path)
+        if (taken(key)) {
             shadowed++
         } else {
-            goneTexts.push(foldedForm(path))
+            goneTexts.push(key)
         }
     }
-    const prefixes: [string, string][] = []
+    const prefixes = new Map<string, string>()
     for (const row of list.prefixes) {
-        if (live(row.to)) {
-            prefixes.push([foldedForm(row.from), row.to])
-        } else {
+        const key = foldedForm(row.from)
+        const location = locationOf(row.to, map)
+        if (taken(key.slice(0, -1))) {
+            shadowed++
+        } else if (location === undefined) {
             deadTarget++
+        } else {
+            prefixes.set(goneKey(key), location)
+            longest = Math.max(longest, key.length)
         }
     }
-    // The longest prefix first: the most precise rule wins.
-    prefixes.sort(([one], [two]) => two.length - one.length || compareCodePoints(one, two))
     const redirects: RedirectMap = {
-        folded: Object.fromEntries(
-            Object.entries(folded).sort(([one], [two]) => compareCodePoints(one, two))
-        ),
-        prefixes
+        longest,
+        folded: sortedRecord(folded),
+        prefixes: sortedRecord(prefixes)
     }
     const gone = map.gone ?? { longest: 0, paths: {}, folded: {}, names: {}, aliases: {} }
     const result: ResolverMap =
@@ -210,12 +308,12 @@ export function applyRedirectList(
                   gone: {
                       ...gone,
                       longest: Math.max(gone.longest, ...goneTexts.map((text) => text.length)),
-                      folded: Object.fromEntries(
-                          [...new Set([...Object.keys(gone.folded), ...goneTexts.map(goneKey)])]
-                              .sort(compareCodePoints)
-                              .map((key): [string, true] => [key, true])
+                      folded: sortedRecord(
+                          [
+                              ...new Set([...Object.keys(gone.folded), ...goneTexts.map(goneKey)])
+                          ].map((key): [string, true] => [key, true])
                       )
                   }
               }
-    return { map: result, dropped: { shadowed, deadTarget } }
+    return { map: result, dropped: { shadowed, deadTarget }, hidesNameOrAlias }
 }

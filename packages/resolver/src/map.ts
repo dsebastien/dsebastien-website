@@ -39,12 +39,11 @@ const isFormerMap = (value: unknown): boolean =>
     everyValue(value['markdown'], isText)
 const isRedirectMap = (value: unknown): boolean =>
     isRecord(value) &&
+    typeof value['longest'] === 'number' &&
+    Number.isInteger(value['longest']) &&
+    value['longest'] >= 0 &&
     everyValue(value['folded'], isText) &&
-    Array.isArray(value['prefixes']) &&
-    value['prefixes'].every(
-        (rule: unknown) =>
-            Array.isArray(rule) && rule.length === 2 && isText(rule[0]) && isText(rule[1])
-    )
+    everyValue(value['prefixes'], isText)
 const isSiteFile = (value: unknown): value is SiteFile =>
     isRecord(value) &&
     isText(value['file']) &&

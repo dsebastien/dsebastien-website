@@ -104,7 +104,7 @@ describe('URL table of the site', () => {
             .map((entry) => [entry.name, entry] as const)
     )('the target of "%s" is a page', (_name, entry) => {
         const location = entry.location ?? ''
-        // A target on another host of the author is checked on that host.
+        // A target on another host of the author is not asked: the run counts it as ok.
         if (location.startsWith('https://')) {
             return
         }

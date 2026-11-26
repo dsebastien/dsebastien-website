@@ -69,10 +69,11 @@ describe('the reader of a resolver map', () => {
         ['gone', { longest: 3, paths: { a: 'yes' }, folded: {}, names: {}, aliases: {} }],
         ['former', { folded: {}, names: {} }],
         ['former', { folded: { a: '/A' }, names: {}, markdown: {} }],
-        ['redirects', { folded: {} }],
-        ['redirects', { folded: { a: ['/A'] }, prefixes: [] }],
-        ['redirects', { folded: {}, prefixes: [['a/']] }],
-        ['redirects', { folded: {}, prefixes: { 'a/': '/A' } }]
+        ['redirects', { longest: 1, folded: {} }],
+        ['redirects', { folded: {}, prefixes: {} }],
+        ['redirects', { longest: -1, folded: {}, prefixes: {} }],
+        ['redirects', { longest: 1, folded: { a: ['/A'] }, prefixes: {} }],
+        ['redirects', { longest: 1, folded: {}, prefixes: [['a/', '/A']] }]
     ])('refuses a map with a wrong part "%s"', (part, value) => {
         expect(() => resolverMapFrom({ ...written(), [part]: value })).toThrow(
             'is not a resolver map'

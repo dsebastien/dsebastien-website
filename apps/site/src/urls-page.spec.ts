@@ -208,8 +208,8 @@ describe('output of the build after an unpublication', () => {
             'Rain+butt',
             'Rain%20butt',
             // A gone row of the redirect list is a key of the map only (issue 44).
-            'Publish/Stats',
-            'Publish+Stats',
+            'Generated/Totals',
+            'Generated+Totals',
             // A dropped row of the redirect list leaves nothing in the map.
             'Old Garden',
             'Old+Garden'
@@ -228,23 +228,52 @@ describe('output of the build after an unpublication', () => {
     })
 })
 
-// The redirect list of the content store (issue 44) is private: an old path
-// of a row is in the resolver map only, and the map is no address of the
-// site on either host.
+// The redirect list of the content store (issue 44) is private: no old path
+// of a row is in the output of the build, also not in the resolver map (it
+// holds keys), and the map is no address of the site on either host.
 describe('output of the build with a redirect list', () => {
-    test('holds the old paths of the list in the resolver map only', async () => {
+    test('holds no old path of the list', async () => {
         const folder = outDir ?? ''
         const files = (await readdir(folder, { recursive: true, withFileTypes: true })).filter(
             (entry) => entry.isFile()
         )
+        // The table is test data: the cast is the boundary.
+        const list = table.redirects as {
+            redirects: { from: string }[]
+            gone: string[]
+            prefixes: { from: string }[]
+        }
+        const froms = [
+            ...list.redirects.map((row) => row.from),
+            ...list.gone,
+            ...list.prefixes.map((row) => row.from)
+        ]
+            .map((from) => from.toLowerCase())
+            // A row whose old path starts a path of a note or of a former path
+            // of a note (R66) shows in the pages and the map by that path;
+            // a row with no folder is a word that a page can hold.
+            .filter(
+                (from) =>
+                    from.includes('/') &&
+                    !table.notes.some((note) =>
+                        [note.path, ...(note.formerPaths ?? [])].some((path) =>
+                            path.toLowerCase().startsWith(from)
+                        )
+                    )
+            )
+        expect(froms.length).toBeGreaterThan(5)
         const holders: string[] = []
         for (const entry of files) {
-            const text = (await readFile(join(entry.parentPath, entry.name))).toString('utf8')
-            if (text.toLowerCase().includes('old library/bread notes')) {
-                holders.push(entry.name)
+            const text = (await readFile(join(entry.parentPath, entry.name)))
+                .toString('utf8')
+                .toLowerCase()
+            for (const from of froms) {
+                if (text.includes(from)) {
+                    holders.push(`${entry.name}: ${from}`)
+                }
             }
         }
-        expect(holders).toEqual(['resolver-map.json'])
+        expect(holders).toEqual([])
     })
 
     test.each(HOSTS)('gives no resolver map on %s', async (host: Host) => {
