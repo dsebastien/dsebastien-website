@@ -286,7 +286,7 @@ describe('a path that no note has', () => {
         expect(response.headers.get('vary')).toBe('Accept')
         const text = await response.text()
         expect(text).toStartWith('# Not found\n\n')
-        expect(text).toContain(`[${ORIGIN}/](${ORIGIN}/)`)
+        expect(text).toContain(`[${ORIGIN}/](<${ORIGIN}/>)`)
     })
 
     test('answers plain text when the release has no "not found" page', async () => {

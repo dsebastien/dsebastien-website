@@ -123,18 +123,18 @@ describe('short text of an error answer', () => {
     test('says what happened and where to go on, with absolute addresses', () => {
         expect(errorText(404, ORIGIN)).toBe(
             '# Not found\n\nNo note has this address. It may have moved, or it was never published.\n\n' +
-                'Start at the home page: [https://notes.example.invalid/](https://notes.example.invalid/)\n\n' +
-                'Search the notes in a browser: [https://notes.example.invalid/-/search](https://notes.example.invalid/-/search)\n'
+                'Start at the home page: [https://notes.example.invalid/](<https://notes.example.invalid/>)\n\n' +
+                'Search the notes in a browser: [https://notes.example.invalid/-/search](<https://notes.example.invalid/-/search>)\n'
         )
         expect(errorText(410, ORIGIN)).toBe(
             '# Removed\n\nThe note that had this address was removed. It is no longer published.\n\n' +
-                'Start at the home page: [https://notes.example.invalid/](https://notes.example.invalid/)\n\n' +
-                'Search the notes in a browser: [https://notes.example.invalid/-/search](https://notes.example.invalid/-/search)\n'
+                'Start at the home page: [https://notes.example.invalid/](<https://notes.example.invalid/>)\n\n' +
+                'Search the notes in a browser: [https://notes.example.invalid/-/search](<https://notes.example.invalid/-/search>)\n'
         )
         // The sentence of the server error page.
         expect(errorText(500, ORIGIN)).toBe(
             '# Server error\n\nThe site could not give this page. Try again in a moment.\n\n' +
-                'Start at the home page: [https://notes.example.invalid/](https://notes.example.invalid/)\n'
+                'Start at the home page: [https://notes.example.invalid/](<https://notes.example.invalid/>)\n'
         )
     })
 
@@ -143,10 +143,22 @@ describe('short text of an error answer', () => {
         expect(errorText(404, ORIGIN, ['/Garden/Mint', '/Kitchen/Mint'])).toBe(
             '# Not found\n\nNo note has this address. It may have moved, or it was never published.\n\n' +
                 'These notes have this name:\n\n' +
-                '- [https://notes.example.invalid/Garden/Mint](https://notes.example.invalid/Garden/Mint)\n' +
-                '- [https://notes.example.invalid/Kitchen/Mint](https://notes.example.invalid/Kitchen/Mint)\n\n' +
-                'Start at the home page: [https://notes.example.invalid/](https://notes.example.invalid/)\n\n' +
-                'Search the notes in a browser: [https://notes.example.invalid/-/search](https://notes.example.invalid/-/search)\n'
+                '- [https://notes.example.invalid/Garden/Mint](<https://notes.example.invalid/Garden/Mint>)\n' +
+                '- [https://notes.example.invalid/Kitchen/Mint](<https://notes.example.invalid/Kitchen/Mint>)\n\n' +
+                'Start at the home page: [https://notes.example.invalid/](<https://notes.example.invalid/>)\n\n' +
+                'Search the notes in a browser: [https://notes.example.invalid/-/search](<https://notes.example.invalid/-/search>)\n'
+        )
+    })
+
+    // A note name with a parenthesis or a mark of emphasis (canonicalPath
+    // leaves `(`, `)`, `*` and `_` as they are).
+    test('keeps each link whole and its text plain', () => {
+        const text = errorText(404, ORIGIN, ['/Mint+(fresh', '/Mint)_*bold*'])
+        expect(text).toContain(
+            '- [https://notes.example.invalid/Mint+\\(fresh](<https://notes.example.invalid/Mint+(fresh>)\n'
+        )
+        expect(text).toContain(
+            '- [https://notes.example.invalid/Mint\\)\\_\\*bold\\*](<https://notes.example.invalid/Mint)_*bold*>)\n'
         )
     })
 })

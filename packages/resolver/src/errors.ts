@@ -140,10 +140,19 @@ export function errorFormat(path: string, accept: string | null): 'html' | 'mark
     return markdown > 0 && markdown >= html ? 'markdown' : 'html'
 }
 
-/** An absolute address of the site as a Markdown link: an agent that reads the text has no base address. */
+/**
+ * An absolute address of the site as a Markdown link: an agent that reads
+ * the text has no base address. A canonical path keeps `(`, `)`, `*` and `_`
+ * as they are (`canonicalPath()`), so the destination is written between
+ * angle brackets, where a parenthesis does not end it, and each mark of the
+ * text is escaped, so that it stays plain text (CommonMark, sections 2.4 and
+ * 6.3).
+ */
 function link(origin: string, path: string): string {
     const address = `${origin}${path}`
-    return `[${address}](${address})`
+    const text = address.replaceAll(/[\\`*_[\]()<>!~|]/gu, '\\$&')
+    const destination = address.replaceAll(/[\\<>]/gu, '\\$&')
+    return `[${text}](<${destination}>)`
 }
 
 /** The file of the server error page in the output of the build (NAV-20). */
