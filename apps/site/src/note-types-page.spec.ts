@@ -471,9 +471,18 @@ describe('the recent pages (NAV-05, PUB-70, PUB-71, R62)', () => {
     })
 
     test('have a filter by note type: folded on a list, open on a filter page', async () => {
-        expect(
-            select('details[data-filters]', await served('/-/recent/added'))?.properties['open']
-        ).toBeUndefined()
+        const added = await served('/-/recent/added')
+        expect(select('details[data-filters]', added)?.properties['open']).toBeUndefined()
+        // It looks like the other folds: a chevron that turns, hidden from a
+        // screen reader, and a count that says what it counts.
+        expect(select('details[data-filters]', added)?.properties['className']).toContain('group')
+        const chevron = select('[data-filters] summary [aria-hidden="true"]', added)
+        expect(textOf(chevron)).toBe('▾')
+        expect(chevron?.properties['className']).toContain('group-open:rotate-180')
+        const types = selectAll('[data-filters] nav > *', added).length - 1
+        expect(textOf(select('[data-filters] summary', added))).toBe(
+            `Filter by note type ${String(types)} types ▾`
+        )
         expect(
             select('details[data-filters]', await served('/-/recent/added/movies'))?.properties[
                 'open'
