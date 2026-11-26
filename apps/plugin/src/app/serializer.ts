@@ -1,4 +1,4 @@
-import type { ListRefresh, RefreshResult } from '../publishing/ports.ts'
+import type { ListRefresh, RefreshMoment, RefreshResult } from '../publishing/ports.ts'
 import type { PluginHost } from './starter-kit.ts'
 import { isChangedByObsidian } from '../publishing/names.ts'
 
@@ -166,6 +166,30 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
 }
 
 /**
+ * The words of a problem after a run (R84): no plan follows, so the lists
+ * are not published as saved, they stay as they are in the note.
+ */
+function afterRun(message: string): string {
+    return message
+        .replaceAll('the lists are published as saved', 'the lists stay as they are')
+        .replaceAll('its lists are published as saved', 'its lists stay as they are')
+        .replaceAll(
+            'Make the plan again in a moment',
+            'Publish again later, or run the Dataview Serializer on the note later'
+        )
+}
+
+/** The same result, with the words of `moment`. */
+function worded(result: RefreshResult, moment: RefreshMoment): RefreshResult {
+    return moment === 'after-run'
+        ? {
+              ...result,
+              problems: result.problems.map((one) => ({ ...one, message: afterRun(one.message) }))
+          }
+        : result
+}
+
+/**
  * The Dataview Serializer of a running Obsidian. Each refresh finds the
  * plugin again: it can be turned off, updated or turned on between two runs.
  * It never throws: a plugin that is not enabled, too old, slower than the
@@ -185,29 +209,33 @@ export function serializerLists(
 ): ListRefresh {
     let running: Promise<unknown> = Promise.resolve()
     return {
-        async refresh(given) {
-            const changed = given.filter((path) => changedByObsidian(path, normalize))
-            const paths = given.filter((path) => !changedByObsidian(path, normalize))
-            if ((await settledWithin(running, limit)) === 'late') {
-                return noneRefreshed(
-                    given,
-                    'the Dataview Serializer still runs an earlier refresh: the lists are published as saved',
-                    true
-                )
-            }
-            const { result, call } = await refreshOf(app, paths, limit)
-            running = call
-            return {
-                ...result,
-                problems: [
-                    ...result.problems,
-                    ...changed.map((path) => ({
-                        path,
-                        message:
-                            'Obsidian gives this file name another path (a no-break space, a backslash, a slash too many or a name that is not in the composed Unicode form): its lists are published as saved (issue 110)'
-                    }))
-                ]
-            }
+        async refresh(given, moment = 'before-plan') {
+            return worded(await refreshOnce(given), moment)
+        }
+    }
+
+    async function refreshOnce(given: readonly string[]): Promise<RefreshResult> {
+        const changed = given.filter((path) => changedByObsidian(path, normalize))
+        const paths = given.filter((path) => !changedByObsidian(path, normalize))
+        if ((await settledWithin(running, limit)) === 'late') {
+            return noneRefreshed(
+                given,
+                'the Dataview Serializer still runs an earlier refresh: the lists are published as saved',
+                true
+            )
+        }
+        const { result, call } = await refreshOf(app, paths, limit)
+        running = call
+        return {
+            ...result,
+            problems: [
+                ...result.problems,
+                ...changed.map((path) => ({
+                    path,
+                    message:
+                        'Obsidian gives this file name another path (a no-break space, a backslash, a slash too many or a name that is not in the composed Unicode form): its lists are published as saved (issue 110)'
+                }))
+            ]
         }
     }
 }

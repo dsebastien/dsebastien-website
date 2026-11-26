@@ -465,3 +465,41 @@ describe('the Dataview Serializer in Obsidian', () => {
         expect(result.problems[0]?.message).toContain('answer')
     })
 })
+
+describe('the words of the refresh after a run (R84)', () => {
+    test('a problem after a run says that the lists stay as they are, not that they are published', async () => {
+        const lists = listsOf(
+            host(
+                serializer(() => ({
+                    state: 'dataview-index-not-ready',
+                    notes: [note('A.md', 'not-run')]
+                }))
+            )
+        )
+
+        const result = await lists.refresh(['A.md', 'B b.md'], 'after-run')
+
+        const messages = result.problems.map((one) => one.message)
+        expect(messages).toHaveLength(2)
+        for (const message of messages) {
+            expect(message).not.toContain('published as saved')
+            expect(message).not.toContain('Make the plan again')
+            expect(message).toContain('stay as they are')
+        }
+        expect(messages[0]).toContain('run the Dataview Serializer on the note later')
+    })
+
+    test('a plugin that is not enabled says the same after a run', async () => {
+        const lists = listsOf(host(undefined))
+
+        const result = await lists.refresh(['A.md'], 'after-run')
+
+        expect(result.problems).toEqual([
+            {
+                path: 'A.md',
+                message:
+                    'the Dataview Serializer plugin is not enabled in this vault: the lists stay as they are'
+            }
+        ])
+    })
+})
