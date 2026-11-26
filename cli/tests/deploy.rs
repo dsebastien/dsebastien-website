@@ -588,6 +588,68 @@ fn a_deploy_stops_with_the_programs_that_it_started_after_its_time_limit() {
 }
 
 #[test]
+fn ctrl_c_stops_the_deploy_with_the_programs_that_it_started_and_the_report_says_so() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::{Duration, Instant};
+
+    let setup = Setup::new();
+    let pid_file = setup.stores.root().join("grandchild.pid");
+    fs::write(
+        &setup.bun,
+        format!(
+            "#!/bin/sh\necho 'Building the site'\nsleep 30 &\necho $! > '{}'\nwait\n",
+            pid_file.display()
+        ),
+    )
+    .expect("the script can be written");
+    fs::set_permissions(&setup.bun, fs::Permissions::from_mode(0o755))
+        .expect("the script can be made a program");
+    let mut command = support::program();
+    command
+        .arg("deploy")
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    setup.deploy_options(&mut command);
+    let started = Instant::now();
+    let program = command.spawn().expect("the program starts");
+    while !fs::read_to_string(&pid_file).is_ok_and(|text| !text.trim().is_empty()) {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the deploy never started"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // Ctrl-C in a terminal: SIGINT to the foreground process group, where
+    // the program is and the deploy, in a group of its own, is not.
+    Command::new("kill")
+        .args(["-INT", &program.id().to_string()])
+        .status()
+        .expect("kill runs");
+    let output = program.wait_with_output().expect("the program ends");
+
+    assert!(started.elapsed() < Duration::from_secs(15));
+    assert_eq!(output.status.code(), Some(1), "{}", errors_of(&output));
+    assert_eq!(
+        objects_of(&output)[0]["deployment"]["error"],
+        "the deploy was stopped by the author, with the programs that it started: read the output of the deploy"
+    );
+    let grandchild = fs::read_to_string(&pid_file).expect("the grandchild started");
+    std::thread::sleep(Duration::from_millis(300));
+    let alive = Command::new("kill")
+        .args(["-0", grandchild.trim()])
+        .stderr(Stdio::null())
+        .status()
+        .expect("kill runs");
+    assert!(!alive.success(), "the grandchild still runs");
+    assert!(setup.deploy_log().contains("Building the site"));
+}
+
+#[test]
 fn a_time_limit_of_0_deploys_nothing() {
     let setup = Setup::new();
 

@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Value, json};
 
@@ -1693,12 +1693,94 @@ fn write_text(path: &Path, text: &str) -> Result<(), String> {
 /// `DeployProcess` of `deploy.rs` on this device. It runs the program with a
 /// list of arguments, with no shell, in the folder of the site code, and keeps
 /// the whole output for the author. After the time limit of the command, it
-/// stops the program with the programs that it started.
+/// stops the program with the programs that it started; with a watch of
+/// Ctrl-C, after a Ctrl-C too.
 pub struct ChildProcess {
     /// The length of a minute: a test makes it short.
     minute: Duration,
     /// The time between the soft and the hard stop.
     grace: Duration,
+    /// The Ctrl-C that stops the deploy, or `None`: the deploys of the MCP
+    /// server run in the background, and Ctrl-C stops the server.
+    interrupt: Option<Interrupt>,
+}
+
+/// The exit code of a program that Ctrl-C stopped: 128 and the number of
+/// SIGINT, as a shell gives it.
+const CTRL_C_EXIT: i32 = 130;
+
+/// Ctrl-C in a terminal while the program waits for a deploy (issue 126).
+/// The child leads a process group of its own, so the Ctrl-C reaches only
+/// the program: the program then stops the deploy with the programs that it
+/// started, and its report says that the author stopped it. Outside a deploy,
+/// and at a second Ctrl-C, the program stops at once, as with no watch.
+#[derive(Clone)]
+struct Interrupt {
+    /// True after a Ctrl-C during the deploy.
+    pressed: Arc<AtomicBool>,
+    /// True while no deploy runs: a Ctrl-C then stops the program.
+    idle: Arc<AtomicBool>,
+}
+
+impl Interrupt {
+    /// A watch that no signal sets: a test presses it.
+    fn new() -> Self {
+        Self {
+            pressed: Arc::new(AtomicBool::new(false)),
+            idle: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// The watch of SIGINT of this process, the same one for each deploy,
+    /// or `None` when the system refuses the handler.
+    fn of_terminal() -> Option<Self> {
+        static TERMINAL: OnceLock<Option<Interrupt>> = OnceLock::new();
+        TERMINAL
+            .get_or_init(|| {
+                use signal_hook::consts::SIGINT;
+                use signal_hook::flag;
+
+                let interrupt = Self::new();
+                // In this order: a Ctrl-C outside a deploy, then a second one,
+                // stop the program; the first one of a deploy sets the flag.
+                flag::register_conditional_shutdown(
+                    SIGINT,
+                    CTRL_C_EXIT,
+                    Arc::clone(&interrupt.idle),
+                )
+                .and_then(|_| {
+                    flag::register_conditional_shutdown(
+                        SIGINT,
+                        CTRL_C_EXIT,
+                        Arc::clone(&interrupt.pressed),
+                    )
+                })
+                .and_then(|_| flag::register(SIGINT, Arc::clone(&interrupt.pressed)))
+                .ok()
+                .map(|_| interrupt)
+            })
+            .clone()
+    }
+
+    /// The deploy starts: a Ctrl-C stops it, not the program.
+    fn arm(&self) {
+        self.pressed.store(false, Ordering::SeqCst);
+        self.idle.store(false, Ordering::SeqCst);
+    }
+
+    /// The deploy ended: a Ctrl-C stops the program again.
+    fn disarm(&self) {
+        self.idle.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    fn press(&self) {
+        self.pressed.store(true, Ordering::SeqCst);
+    }
+
+    fn pressed(&self) -> bool {
+        self.pressed.load(Ordering::SeqCst)
+    }
 }
 
 impl ChildProcess {
@@ -1716,12 +1798,63 @@ impl ChildProcess {
             return Self {
                 minute: Duration::from_millis(milliseconds),
                 grace: Duration::from_millis(200),
+                interrupt: None,
             };
         }
         Self {
             minute: Duration::from_secs(60),
             grace: Duration::from_secs(5),
+            interrupt: None,
         }
+    }
+
+    /// The child process of a deploy that the program waits for in a
+    /// terminal: Ctrl-C stops the deploy too.
+    pub fn with_ctrl_c() -> Self {
+        Self {
+            interrupt: Interrupt::of_terminal(),
+            ..Self::new()
+        }
+    }
+}
+
+/// How often the watch of a deploy looks at Ctrl-C.
+const WATCH_TICK: Duration = Duration::from_millis(50);
+
+/// Watches the deploy until it ends: stops it after its time limit or at a
+/// Ctrl-C, and says why.
+fn watch_deploy(
+    pid: u32,
+    limit: Duration,
+    grace: Duration,
+    interrupt: Option<&Interrupt>,
+    ended: &mpsc::Receiver<()>,
+) -> Option<Stop> {
+    let deadline = Instant::now().checked_add(limit);
+    loop {
+        let left = deadline.map_or(Duration::MAX, |at| {
+            at.saturating_duration_since(Instant::now())
+        });
+        let wait = if interrupt.is_some() {
+            left.min(WATCH_TICK)
+        } else {
+            left
+        };
+        if !matches!(
+            ended.recv_timeout(wait),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ) {
+            return None;
+        }
+        let stop = if interrupt.is_some_and(Interrupt::pressed) {
+            Stop::Author
+        } else if deadline.is_some_and(|at| Instant::now() >= at) {
+            Stop::Time
+        } else {
+            continue;
+        };
+        stop_tree(pid, grace, ended);
+        return Some(stop);
     }
 }
 
@@ -1839,13 +1972,20 @@ impl DeployProcess for ChildProcess {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        // A group of its own on Unix, as in the plugin, so that a stop
-        // reaches every program that the deploy started. Ctrl-C in a
-        // terminal then stops the program and not the deploy.
+        // A group of its own, so that a stop reaches every program that the
+        // deploy started (on Unix, as in the plugin), and a Ctrl-C in a
+        // terminal reaches only the program, which then stops the deploy
+        // itself and says so in its report.
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             child.process_group(0);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+            child.creation_flags(CREATE_NEW_PROCESS_GROUP);
         }
         // Inside a git hook, these variables point git to another repository:
         // the deploy runs git in the clone of the site code.
@@ -1867,9 +2007,16 @@ impl DeployProcess for ChildProcess {
                 child.env("PATH", path);
             }
         }
-        let mut child = child
-            .spawn()
-            .map_err(|error| format!("{} cannot start: {error}", command.program.display()))?;
+        let interrupt = self.interrupt.clone();
+        if let Some(interrupt) = &interrupt {
+            interrupt.arm();
+        }
+        let mut child = child.spawn().map_err(|error| {
+            if let Some(interrupt) = &interrupt {
+                interrupt.disarm();
+            }
+            format!("{} cannot start: {error}", command.program.display())
+        })?;
         let limit = self
             .minute
             .saturating_mul(u32::try_from(command.timeout_minutes).unwrap_or(u32::MAX));
@@ -1892,21 +2039,18 @@ impl DeployProcess for ChildProcess {
         .into_iter()
         .flatten()
         .collect();
-        let stopped = Arc::new(AtomicBool::new(false));
         let (end, ended) = mpsc::channel::<()>();
         let watch = {
-            let stopped = Arc::clone(&stopped);
-            thread::spawn(move || {
-                if ended.recv_timeout(limit).is_err() {
-                    stopped.store(true, Ordering::Relaxed);
-                    stop_tree(pid, grace, &ended);
-                }
-            })
+            let interrupt = interrupt.clone();
+            thread::spawn(move || watch_deploy(pid, limit, grace, interrupt.as_ref(), &ended))
         };
         let status = child.wait();
-        // The watch of the time limit ends with the child.
+        // The watch ends with the child.
         let _ = end.send(());
-        let _ = watch.join();
+        let stopped = watch.join().ok().flatten();
+        if let Some(interrupt) = &interrupt {
+            interrupt.disarm();
+        }
         // The readers end with the pipes; an orphan that keeps one open gets
         // a short grace, then its output is not waited for.
         for reader in &readers {
@@ -1923,7 +2067,7 @@ impl DeployProcess for ChildProcess {
             code: status.code(),
             stdout: text(&stdout),
             output: text(&output),
-            stopped: stopped.load(Ordering::Relaxed).then_some(Stop::Time),
+            stopped,
         })
     }
 }
@@ -2079,5 +2223,69 @@ impl DeployRecord for ContentStore {
 
     fn last(&self) -> Option<String> {
         fs::read_to_string(self.local_file("deploy-report.json")).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    /// A program that runs for 30 seconds, with a program that it started.
+    fn long_command() -> DeployCommand {
+        #[cfg(unix)]
+        let (program, args) = ("sh", vec!["-c", "sleep 30 & wait"]);
+        #[cfg(windows)]
+        let (program, args) = ("cmd", vec!["/c", "ping -n 30 127.0.0.1 > nul"]);
+        DeployCommand {
+            program: PathBuf::from(program),
+            args: args.into_iter().map(OsString::from).collect(),
+            folder: env::temp_dir(),
+            timeout_minutes: 30,
+        }
+    }
+
+    #[test]
+    fn a_ctrl_c_stops_the_deploy_for_the_author() {
+        let interrupt = Interrupt::new();
+        let child = ChildProcess {
+            minute: Duration::from_secs(60),
+            grace: Duration::from_millis(200),
+            interrupt: Some(interrupt.clone()),
+        };
+        let started = Instant::now();
+
+        let run = child
+            .run(&long_command(), &|_| {
+                interrupt.press();
+            })
+            .expect("the program runs");
+
+        assert_eq!(run.stopped, Some(Stop::Author));
+        assert!(started.elapsed() < Duration::from_secs(15));
+    }
+
+    #[test]
+    fn a_deploy_with_no_ctrl_c_ends_by_itself() {
+        let interrupt = Interrupt::new();
+        let child = ChildProcess {
+            minute: Duration::from_secs(60),
+            grace: Duration::from_millis(200),
+            interrupt: Some(interrupt),
+        };
+        let mut command = long_command();
+        #[cfg(unix)]
+        {
+            command.args = vec!["-c".into(), "exit 3".into()];
+        }
+        #[cfg(windows)]
+        {
+            command.args = vec!["/c".into(), "exit 3".into()];
+        }
+
+        let run = child.run(&command, &|_| {}).expect("the program runs");
+
+        assert_eq!(run.stopped, None);
+        assert_eq!(run.code, Some(3));
     }
 }

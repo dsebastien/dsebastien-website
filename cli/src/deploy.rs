@@ -60,15 +60,8 @@ pub struct DeployCommand {
 pub enum Stop {
     /// Its time limit.
     Time,
-    /// The author: the publication center of the plugin. In the command
-    /// line program, a stop of the program (Ctrl-C) stops the deploy too.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the shared cases read it; only the plugin stops for the author"
-        )
-    )]
+    /// The author: the publication center of the plugin; in the command
+    /// line program, Ctrl-C in a terminal while it waits for the deploy.
     Author,
 }
 

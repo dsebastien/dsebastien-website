@@ -150,20 +150,19 @@ fn store_of(settings: &DeploySettings) -> Option<ContentStore> {
 
 /// Runs the deploy, and keeps its whole output in the deploy log of the copy:
 /// it can name the address of a removed note, so it goes to no other place.
-/// The deploy report never holds it.
+/// The deploy report never holds it. The program waits for it in a terminal:
+/// Ctrl-C stops it, and its report says so.
 pub fn run_deploy(deploy: &Deploy) -> DeployReport {
+    deploy_by(deploy, &ChildProcess::with_ctrl_c())
+}
+
+fn deploy_by(deploy: &Deploy, child: &ChildProcess) -> DeployReport {
     let store = store_of(&deploy.settings);
     let files: &dyn DeployFiles = match &store {
         Some(store) => store,
         None => &NoFiles,
     };
-    let deployment = deploy::run_deploy(
-        &ChildProcess::new(),
-        files,
-        &deploy.settings,
-        deploy.kind,
-        cfg!(windows),
-    );
+    let deployment = deploy::run_deploy(child, files, &deploy.settings, deploy.kind, cfg!(windows));
     if let (false, Some(store)) = (deployment.output.is_empty(), &store) {
         match store.save_deploy_log(&deployment.output) {
             Ok(()) => eprintln!(
@@ -240,7 +239,8 @@ impl Background {
         let handle = thread::spawn(move || {
             let mut next = Some(deploy);
             while let Some(deploy) = next {
-                run_deploy(&deploy);
+                // In the background: Ctrl-C stops the server, as before.
+                deploy_by(&deploy, &ChildProcess::new());
                 let mut queue = shared.lock().unwrap_or_else(PoisonError::into_inner);
                 next = queue.pending.take();
                 if next.is_none() {
