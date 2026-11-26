@@ -42,8 +42,11 @@ const BROKEN = 'the host fails for this file'
 /** The text of a static file that the host gives with no tag. */
 const UNTAGGED = 'a file with no tag'
 
-/** A failure of the host for one read of a file: a fetch that rejects, or a status. */
-type Failure = 'reject' | number
+/**
+ * A failure of the host for one read of a file: a fetch that rejects, a fetch
+ * that never settles, or a status.
+ */
+type Failure = 'reject' | 'hang' | number
 
 /**
  * Static files in memory, by the path of their URL as the Worker asks it. The
@@ -66,6 +69,9 @@ function staticFiles(
             const failure = left.get(pathname)?.shift()
             if (failure === 'reject') {
                 return Promise.reject(new Error('the host fails for a short time'))
+            }
+            if (failure === 'hang') {
+                return new Promise<Response>(() => undefined)
             }
             if (failure !== undefined) {
                 return Promise.resolve(new Response('upstream detail', { status: failure }))
@@ -151,6 +157,13 @@ const SITE = {
 
 const MAP = '/-/resolver-map.json'
 
+/** A timer that the Worker started. The test fires it. */
+interface Timer {
+    readonly milliseconds: number
+    readonly fire: () => void
+    stopped: boolean
+}
+
 interface Host {
     files: AskedFiles
     storage: AskedStorage
@@ -158,6 +171,8 @@ interface Host {
     reported: unknown[]
     /** The pauses that the Worker asked for, in milliseconds. */
     paused: number[]
+    /** The timers that the Worker started, in the order of their start. */
+    timers: Timer[]
     /** Moves the clock of the Worker forward. */
     wait(milliseconds: number): void
     get(path: string, headers?: Record<string, string>, method?: string): Promise<Response>
@@ -185,12 +200,20 @@ function host(
     const reported: unknown[] = []
     let time = 1_000_000
     const paused: number[] = []
+    const timers: Timer[] = []
     const worker = createWorker({
         report: (error) => reported.push(error),
         now: () => time,
         pause: (milliseconds) => {
             paused.push(milliseconds)
             return Promise.resolve()
+        },
+        startTimer: (milliseconds, expire) => {
+            const timer: Timer = { milliseconds, fire: expire, stopped: false }
+            timers.push(timer)
+            return () => {
+                timer.stopped = true
+            }
         }
     })
     return {
@@ -198,6 +221,7 @@ function host(
         storage,
         reported,
         paused,
+        timers,
         wait: (milliseconds) => {
             time += milliseconds
         },
@@ -531,5 +555,83 @@ describe('the Worker', () => {
         expect(answers.map((answer) => answer.status)).toEqual([500, 500])
         expect(mapReads(site)).toBe(2)
         expect(site.reported).toHaveLength(2)
+    })
+
+    // Issue 129: a read of the release that never settles.
+    test('answers 500 when the read of the release takes more than five seconds', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hang'] })
+        let settled = false
+        const answer = site.get('/Welcome').finally(() => {
+            settled = true
+        })
+        await Bun.sleep(0)
+        expect(settled).toBe(false)
+        expect(site.timers.map((timer) => timer.milliseconds)).toEqual([5_000])
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        const response = await answer
+        expect(response.status).toBe(500)
+        expect(await response.text()).toStartWith('# Server error\n')
+        expect(site.reported).toHaveLength(1)
+        expect((site.reported[0] as Error).message).toBe(
+            'the read of the release takes more than 5000 ms'
+        )
+    })
+
+    test('reads a release whose read never settled again after ten seconds', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hang'] })
+        const answer = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await answer).status).toBe(500)
+        site.wait(9_999)
+        expect((await site.get('/Welcome')).status).toBe(500)
+        expect(mapReads(site)).toBe(1)
+        site.wait(1)
+        expect((await site.get('/Welcome')).status).toBe(200)
+        expect(mapReads(site)).toBe(2)
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('gives requests that wait for the same read one time limit', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['hang'] })
+        const first = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(2_000)
+        const second = site.get('/Welcome')
+        await Bun.sleep(0)
+        // Each request waits until the same end: the later one, for less time.
+        expect(site.timers.map((timer) => timer.milliseconds)).toEqual([5_000, 3_000])
+        site.wait(3_000)
+        for (const timer of site.timers) {
+            timer.fire()
+        }
+        const answers = await Promise.all([first, second])
+        expect(answers.map((answer) => answer.status)).toEqual([500, 500])
+        expect(mapReads(site)).toBe(1)
+        expect(site.reported).toHaveLength(1)
+    })
+
+    test('covers the pause between the two reads with the time limit', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['reject', 'hang'] })
+        const answer = site.get('/Welcome')
+        await Bun.sleep(0)
+        site.wait(5_000)
+        site.timers[0]?.fire()
+        expect((await answer).status).toBe(500)
+        expect(mapReads(site)).toBe(2)
+        expect(site.timers).toHaveLength(1)
+    })
+
+    test('stops the timer of the time limit when the read of the release settles', async () => {
+        const site = host()
+        expect((await site.get('/Welcome')).status).toBe(200)
+        const failed = host({ ...SITE, [MAP]: 'not JSON' })
+        expect((await failed.get('/Welcome')).status).toBe(500)
+        expect([...site.timers, ...failed.timers].map((timer) => timer.stopped)).toEqual([
+            true,
+            true
+        ])
     })
 })

@@ -257,6 +257,47 @@ async function openReleaseWithRetry(
  */
 const RETRY_AFTER = 10_000
 
+/**
+ * The most time that the whole read of the release can take, in milliseconds:
+ * its two reads and the pause between them (issue 129). A read that hangs then
+ * fails as any other, and does not keep every request of the isolate waiting.
+ */
+const READ_TIME_LIMIT = 5_000
+
+/** Starts a timer that calls `expire` after a time in milliseconds. It gives the function that stops it. */
+type StartTimer = (milliseconds: number, expire: () => void) => () => void
+
+/**
+ * The value of `read`, or a failure when it does not settle within the time.
+ * The timer stops when `read` settles.
+ */
+async function withinTime<T>(
+    read: Promise<T>,
+    milliseconds: number,
+    startTimer: StartTimer
+): Promise<T> {
+    let stop = (): void => undefined
+    const expired = new Promise<never>((_resolve, reject) => {
+        stop = startTimer(Math.max(0, milliseconds), () => {
+            reject(
+                new Error(`the read of the release takes more than ${String(READ_TIME_LIMIT)} ms`)
+            )
+        })
+    })
+    try {
+        return await Promise.race([read, expired])
+    } finally {
+        stop()
+    }
+}
+
+/** A read of the release that the requests of an isolate share, and when it must end. */
+interface SharedRead {
+    readonly read: Promise<OpenedRelease>
+    /** The time at which the read fails if it has not settled, in milliseconds. */
+    readonly deadline: number
+}
+
 /** What a Worker takes from its host. */
 export interface WorkerOptions {
     /** Takes the detail of a failure, which never goes into an answer. By default it goes to the log of the host. */
@@ -265,6 +306,8 @@ export interface WorkerOptions {
     readonly now?: () => number
     /** Waits for a time in milliseconds. By default a timer of the host. */
     readonly pause?: (milliseconds: number) => Promise<void>
+    /** Starts the timer of the time limit of a read of the release. By default a timer of the host. */
+    readonly startTimer?: StartTimer
 }
 
 /**
@@ -272,9 +315,9 @@ export interface WorkerOptions {
  * server error page of its release at its first request, and keeps them. A
  * new release is a new Worker version, so a new isolate. A read of the release
  * that fails for a reason that can be short (a failed fetch, a status 5xx) is
- * done again once, after a short pause. A release that it cannot read answers
- * 500, and it reads it again after ten seconds, not at each request: the
- * resolver map is large.
+ * done again once, after a short pause. The whole read has a time limit of five
+ * seconds. A release that it cannot read answers 500, and it reads it again
+ * after ten seconds, not at each request: the resolver map is large.
  */
 export function createWorker(options: WorkerOptions = {}): {
     fetch(request: Request, env: Environment): Promise<Response>
@@ -289,20 +332,34 @@ export function createWorker(options: WorkerOptions = {}): {
         options.pause ??
         ((milliseconds: number): Promise<void> =>
             new Promise((resolve) => setTimeout(resolve, milliseconds)))
-    let opened: Promise<OpenedRelease> | undefined
+    const startTimer =
+        options.startTimer ??
+        ((milliseconds: number, expire: () => void): (() => void) => {
+            const timer = setTimeout(expire, milliseconds)
+            return () => {
+                clearTimeout(timer)
+            }
+        })
+    let opened: SharedRead | undefined
     let failedAt: number | undefined
     async function answer(request: Request, env: Environment): Promise<Response> {
         if (failedAt !== undefined && now() - failedAt < RETRY_AFTER) {
             return failureResponse(request)
         }
         let release: OpenedRelease
+        opened ??= {
+            read: openReleaseWithRetry(env.ASSETS, report, pause),
+            deadline: now() + READ_TIME_LIMIT
+        }
+        const shared = opened
         try {
-            opened ??= openReleaseWithRetry(env.ASSETS, report, pause)
-            release = await opened
+            // Each request has a timer of its own, to the end of the shared
+            // read: the timer of a request that the host cancels may never fire.
+            release = await withinTime(shared.read, shared.deadline - now(), startTimer)
             failedAt = undefined
         } catch (error) {
             // Requests that waited for the same read report it one time.
-            if (opened !== undefined) {
+            if (opened === shared) {
                 opened = undefined
                 failedAt = now()
                 report(error)
