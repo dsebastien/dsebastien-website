@@ -39,6 +39,7 @@ const FILES: SiteFiles = {
     notFound: '404.html',
     gone: '410.html',
     robots: 'robots.txt',
+    icon: 'favicon.ico',
     page: (path) => `page:${path}`,
     markdown: (path) => `markdown:${path}`,
     folder: (path) => `folder:${path}`,
@@ -77,6 +78,9 @@ function expected(entry: Case): Resolution {
     }
     if (entry.file !== undefined) {
         const [kind = '', path = ''] = entry.file.split(/:(.*)/su)
+        if (kind === 'icon') {
+            return { kind: 'file', file: FILES.icon, type: 'icon' }
+        }
         return kind === 'markdown'
             ? { kind: 'file', file: FILES.markdown(path), type: 'markdown' }
             : { kind: 'file', file: FILES.robots, type: 'text' }

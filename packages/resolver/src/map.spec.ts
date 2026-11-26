@@ -8,6 +8,7 @@ const FILES: SiteFiles = {
     notFound: '404.html',
     gone: '410.html',
     robots: 'robots.txt',
+    icon: 'favicon.ico',
     page: (path) => `page/${path}.html`,
     markdown: (path) => `-/md/${path}`,
     folder: (path) => `folder/${path}.html`,
@@ -59,6 +60,7 @@ describe('the reader of a resolver map', () => {
 
     test.each([
         ['files', { '/robots.txt': { file: 'robots.txt', type: 'html' } }],
+        ['files', { '/favicon.ico': { file: 'favicon.ico', type: 'image' } }],
         ['attachments', { '/-/attachments/x/photo.png': '../outside' }],
         ['folded', { welcome: ['/Welcome'] }],
         ['names', { welcome: '/Welcome' }],

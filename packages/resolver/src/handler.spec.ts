@@ -14,6 +14,7 @@ const FILES: SiteFiles = {
     notFound: '404.html',
     gone: '410.html',
     robots: 'robots.txt',
+    icon: 'favicon.ico',
     page: (path) => `page/${path}.html`,
     markdown: (path) => `-/md/${path}`,
     folder: (path) => `folder/${path}.html`,
@@ -203,6 +204,18 @@ describe('a file of the site that is not a page', () => {
         const response = await get('/robots.txt')
         expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
         expect(await response.text()).toBe('file robots.txt')
+    })
+
+    // Issue 133: a client that asks for the icon without a link gets it, and
+    // checks it again at each use, as every file of the release.
+    test('is an icon for favicon.ico, with its tag', async () => {
+        const response = await get('/favicon.ico')
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('image/x-icon')
+        expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate')
+        expect(response.headers.get('etag')).toBe('"10"')
+        expect(await response.text()).toBe('file favicon.ico')
+        expect((await get('/favicon.ico', { 'if-none-match': '"10"' })).status).toBe(304)
     })
 })
 
@@ -417,6 +430,23 @@ describe('a file that the pages load', () => {
         expect(response.status).toBe(200)
         expect(response.headers.get('content-type')).toBe('text/css; charset=utf-8')
         expect(await response.text()).toBe('body{}')
+    })
+
+    // Astro names a file of `/_astro/` with a hash of its bytes; the files of
+    // the search keep their names. The host gives the same headers.
+    test.each([
+        ['/_astro/icon.abc.svg', 'image/svg+xml', 'public, max-age=31536000, immutable'],
+        ['/_astro/touch.abc.png', 'image/png', 'public, max-age=31536000, immutable'],
+        [
+            '/-/search/titles.json',
+            'application/json; charset=utf-8',
+            'public, max-age=0, must-revalidate'
+        ]
+    ])('%s has its type and its cache time', async (path, type, cache) => {
+        const response = await get(path, {}, { asset: () => Promise.resolve(stored('x')) })
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe(type)
+        expect(response.headers.get('cache-control')).toBe(cache)
     })
 })
 

@@ -5,17 +5,20 @@ import { smallLetters } from './small-letters.ts'
 // that it runs in tests, at the edge and on a plain server (HOST-02). The rules
 // are in `documentation/Configuration.md`, section "The URL contract".
 
-/** A file of the site that is not a page: the Markdown of a note, or a text file. */
+/** The kinds of the files of the site that are not pages. */
+export type SiteFileType = 'markdown' | 'text' | 'icon'
+
+/** A file of the site that is not a page: the Markdown of a note, a text file, or the icon of the site. */
 export interface SiteFile {
     readonly file: string
-    readonly type: 'markdown' | 'text'
+    readonly type: SiteFileType
 }
 
 /** What the build knows about the paths of the site. The build writes it, and the resolver reads it. */
 export interface ResolverMap {
     /** The file of the page of each canonical path, relative to the output of the build. */
     readonly pages: Readonly<Record<string, string>>
-    /** The files of the site that are not pages, by their path: `/robots.txt`, the Markdown of each note. */
+    /** The files of the site that are not pages, by their path: `/robots.txt`, `/favicon.ico`, the Markdown of each note. */
     readonly files?: Readonly<Record<string, SiteFile>>
     /** The key in the attachment storage of each hashed path of an attachment that a page uses. */
     readonly attachments?: Readonly<Record<string, string>>
@@ -144,7 +147,7 @@ function keyOf(text: string): string {
 /** What a requested path leads to. */
 export type Resolution =
     | { kind: 'page'; file: string }
-    | { kind: 'file'; file: string; type: 'markdown' | 'text' }
+    | { kind: 'file'; file: string; type: SiteFileType }
     | { kind: 'attachment'; key: string; name: string }
     | { kind: 'redirect'; status: 301 | 302; location: string; cacheControl: string }
     | { kind: 'not-found'; suggestions: string[]; file?: string }

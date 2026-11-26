@@ -53,7 +53,7 @@ const isRedirectMap = (value: unknown): boolean =>
 const isSiteFile = (value: unknown): value is SiteFile =>
     isRecord(value) &&
     isText(value['file']) &&
-    (value['type'] === 'markdown' || value['type'] === 'text')
+    (value['type'] === 'markdown' || value['type'] === 'text' || value['type'] === 'icon')
 
 /**
  * The resolver map that a value read from a release is.

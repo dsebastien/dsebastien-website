@@ -1,4 +1,11 @@
-import { foldedForm, goneKey, type FormerMap, type GoneMap, type ResolverMap } from './resolver.ts'
+import {
+    foldedForm,
+    goneKey,
+    type FormerMap,
+    type GoneMap,
+    type ResolverMap,
+    type SiteFile
+} from './resolver.ts'
 import { canonicalPath, folderPath, markdownPath } from './url.ts'
 
 // What the site has, from its published notes: the folders, the names, the
@@ -34,6 +41,8 @@ export interface SiteFiles {
     /** The gone page (410). */
     readonly gone: string
     readonly robots: string
+    /** The icon of the site at `/favicon.ico`, for a client that asks for it without a link (issue 133). */
+    readonly icon: string
     /** The file of the page of a note, from its vault path. */
     page(path: string): string
     /** The file of the Markdown of a note, from its vault path. */
@@ -222,8 +231,9 @@ export function resolverMapOf(
         }
         pages[path] = file
     }
-    const siteFiles: Record<string, { file: string; type: 'markdown' | 'text' }> = {
-        '/robots.txt': { file: files.robots, type: 'text' }
+    const siteFiles: Record<string, SiteFile> = {
+        '/robots.txt': { file: files.robots, type: 'text' },
+        '/favicon.ico': { file: files.icon, type: 'icon' }
     }
     // A map, not an object: a text such as "constructor" or "__proto__" is a
     // key like any other.

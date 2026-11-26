@@ -166,6 +166,16 @@ export async function checkUrlCase(
                 'text/markdown; charset=utf-8'
             )
             same('body', body, await site.markdownOf(path))
+        } else if (kind === 'icon') {
+            same('content-type', response.headers.get('content-type'), 'image/x-icon')
+            same(
+                'cache-control',
+                response.headers.get('cache-control'),
+                'public, max-age=0, must-revalidate'
+            )
+            if (body === '') {
+                findings.push('body: it is empty')
+            }
         } else {
             same('content-type', response.headers.get('content-type'), 'text/plain; charset=utf-8')
             holds('body', body, 'User-agent: *')

@@ -27,7 +27,8 @@ export {
     type RedirectMap,
     type Resolution,
     type ResolverMap,
-    type SiteFile
+    type SiteFile,
+    type SiteFileType
 } from './resolver.ts'
 export {
     choicesOf,

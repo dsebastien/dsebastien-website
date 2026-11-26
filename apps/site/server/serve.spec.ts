@@ -19,6 +19,7 @@ beforeAll(async () => {
         notFound: '404.html',
         gone: '410.html',
         robots: 'robots.txt',
+        icon: 'favicon.ico',
         page: (path) => `${path}.html`,
         markdown: (path) => `-/md/${path}`,
         folder: (path) => `${path}.html`,

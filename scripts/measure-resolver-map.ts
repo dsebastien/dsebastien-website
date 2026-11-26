@@ -90,6 +90,7 @@ async function main(): Promise<void> {
         notFound: '404.html',
         gone: '410.html',
         robots: 'robots.txt',
+        icon: 'favicon.ico',
         page: (path) => `-/note/${shortHash(path)}.html`,
         markdown: (path) => `-/md/${shortHash(path)}.md`,
         folder: (path) => `-/folder/${shortHash(path)}.html`,

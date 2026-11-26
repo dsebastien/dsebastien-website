@@ -49,6 +49,7 @@ export function siteFilesOf(notes: readonly PublishedNote[]): SiteFiles {
         notFound: '404.html',
         gone: '410.html',
         robots: 'robots.txt',
+        icon: 'favicon.ico',
         page: (path) => noteOf(path).file,
         markdown: (path) => noteOf(path).markdownFile,
         folder: (path) => `-/folder/${folderId(path)}.html`,

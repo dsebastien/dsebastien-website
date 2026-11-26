@@ -132,7 +132,21 @@ const ATTACHMENT_TYPES = new Map(
 /** The kinds of the files of the site that are not pages. */
 const FILE_TYPES: Record<SiteFile['type'], string> = {
     markdown: 'text/markdown; charset=utf-8',
-    text: TEXT
+    text: TEXT,
+    icon: 'image/x-icon'
+}
+
+/**
+ * How long a client keeps a file that the pages load: a year for a file of
+ * `/_astro/`, which Astro names with a hash of its bytes, and a check at
+ * each use for the files of the search, whose names stay. The host gives the
+ * same headers to the files that it serves without the Worker (the
+ * `_headers` file of `apps/site/worker/deployment.ts`).
+ */
+function assetCacheControl(path: string): string {
+    return path.startsWith('/_astro/')
+        ? 'public, max-age=31536000, immutable'
+        : 'public, max-age=0, must-revalidate'
 }
 
 /** The end of a name after its last dot, as written. */
@@ -413,7 +427,8 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
             return await fileResponse(request, asset, {
                 headers: {
                     'content-type':
-                        ASSET_TYPES.get(extensionOf(pathname)) ?? 'application/octet-stream'
+                        ASSET_TYPES.get(extensionOf(pathname)) ?? 'application/octet-stream',
+                    'cache-control': assetCacheControl(pathname)
                 }
             })
         }
