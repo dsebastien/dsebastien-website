@@ -154,9 +154,9 @@ async function endedProcess(): Promise<number> {
     return child.pid
 }
 
-// R46 as the author amended it on 2026-11-26 (R79): a lock of a check or a
+// R46 as the author amended it on 2026-11-26 (R81): a lock of a check or a
 // pull whose process no longer runs on this computer goes away by itself.
-describe('the lock of a check or a pull whose process ended (R79)', () => {
+describe('the lock of a check or a pull whose process ended (R81)', () => {
     const SYSTEM =
         { win32: 'windows', darwin: 'macos' }[process.platform as string] ?? process.platform
     const here = `"host":${JSON.stringify(hostname())},"system":${JSON.stringify(SYSTEM)}`

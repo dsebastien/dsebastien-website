@@ -1808,7 +1808,7 @@ fn a_run_journal_with_no_head_is_put_back_before_and_after_the_commit_of_its_run
 
 /// The lock names the computer and the system of its run, so that a face
 /// removes a stale lock of a check or a pull only on the computer that wrote
-/// it (R79). A publication that stops halfway leaves its lock.
+/// it (R81). A publication that stops halfway leaves its lock.
 #[test]
 fn the_lock_names_the_computer_and_the_system_of_its_run() {
     let setup = set_up();

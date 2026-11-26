@@ -1273,7 +1273,7 @@ export function isLockOfThisComputer(holder: LockHolder): boolean {
 /**
  * True for the lock of a check or a pull of this computer whose process no
  * longer runs: such a run writes nothing that a later run must put back, so
- * its lock goes away by itself (R46 as the author amended it, R79). The lock
+ * its lock goes away by itself (R46 as the author amended it, R81). The lock
  * of a publication, a takedown, an edit or a plan always waits for the
  * author, and so does a lock of another computer or of WSL.
  */

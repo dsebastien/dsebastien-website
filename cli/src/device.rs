@@ -1307,7 +1307,7 @@ impl ContentStore {
         }
         let mut content = holder.clone();
         // The computer and the system of the run: a face removes a stale lock
-        // of a check or a pull only on the computer that wrote it (R79).
+        // of a check or a pull only on the computer that wrote it (R81).
         content["host"] = json!(crate::host_name());
         content["system"] = json!(std::env::consts::OS);
         content["process"] = json!(std::process::id());
