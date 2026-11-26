@@ -203,7 +203,8 @@ export function noteDescription(input: DescriptionInput): string {
 /**
  * The descriptions of the notes, so that no two indexable pages share one:
  * a description that more than one page has gets the title of each note in
- * front, and is cut to the limit. `taken` holds the descriptions of the other indexable pages. It
+ * front, and is cut to the limit, unless the cut would make it the same as
+ * another one. `taken` holds the descriptions of the other indexable pages. It
  * throws when two pages still share one: the build stops and names them.
  */
 export function uniqueDescriptions(
@@ -215,9 +216,24 @@ export function uniqueDescriptions(
         count.set(item.description, (count.get(item.description) ?? 0) + 1)
     }
     const result = new Map<string, string>()
+    const prefixed = new Map<string, string>()
     for (const item of items) {
         const shared = (count.get(item.description) ?? 0) > 1 || taken.has(item.description)
-        result.set(item.key, shared ? cut(`${item.title}: ${item.description}`) : item.description)
+        if (shared) {
+            prefixed.set(item.key, `${item.title}: ${item.description}`)
+        }
+        result.set(item.key, item.description)
+    }
+    // A text with the title in front is cut, unless the cut makes it the same
+    // as another text: two long titles that start alike keep it whole (issue 98).
+    const others = new Map<string, number>()
+    for (const [key, text] of result) {
+        const shown = prefixed.has(key) ? cut(prefixed.get(key) ?? '') : text
+        others.set(shown, (others.get(shown) ?? 0) + 1)
+    }
+    for (const [key, text] of prefixed) {
+        const short = cut(text)
+        result.set(key, (others.get(short) ?? 0) === 1 && !taken.has(short) ? short : text)
     }
     const seen = new Map<string, string>()
     for (const [key, description] of result) {

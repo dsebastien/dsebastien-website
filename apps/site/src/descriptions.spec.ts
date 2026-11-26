@@ -172,6 +172,19 @@ describe('the descriptions of the notes', () => {
         expect(second).not.toBe(first)
     })
 
+    // Issue 98: the cut must not join two descriptions again.
+    test('keep the whole title in front when the cut would make two the same', () => {
+        const start = 'A long letter about the beds of the garden, '.repeat(4)
+        const descriptions = uniqueDescriptions([
+            { key: '1.md', title: `${start}part 1`, description: 'A garden letter.' },
+            { key: '2.md', title: `${start}part 2`, description: 'A garden letter.' },
+            { key: '3.md', title: 'Short', description: 'A garden letter.' }
+        ])
+        expect(descriptions.get('1.md')).toBe(`${start}part 1: A garden letter.`)
+        expect(descriptions.get('2.md')).toBe(`${start}part 2: A garden letter.`)
+        expect(descriptions.get('3.md')).toBe('Short: A garden letter.')
+    })
+
     test('stop the build when two pages still share one', () => {
         expect(() =>
             uniqueDescriptions([
