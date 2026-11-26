@@ -319,11 +319,16 @@ function merged(
  * The path of each manifest path after the lines, by the fold of the moves
  * (rules 1 and 2 of the moves). A note moves when it is at `from`, and a
  * folder moves each path below it. A move to a path that another entry holds
- * does not happen, with a warning.
+ * does not happen, with a warning; but a move into the path of an unpublished
+ * entry that did not move happens, and rules 5 and 6 of the moves decide
+ * (decision of the author of 2026-11-26, issue 106).
+ *
+ * @param unpublished the paths of the unpublished entries
  */
 export function foldMoves(
     paths: Iterable<string>,
-    lines: readonly JournalLine[]
+    lines: readonly JournalLine[],
+    unpublished: ReadonlySet<string> = new Set()
 ): {
     readonly positions: Map<string, string>
     /** The time of the last line that moved each entry that moved. */
@@ -339,6 +344,11 @@ export function foldMoves(
     }
     const times = new Map<string, string>()
     const warnings: RenameWarning[] = []
+    /** True when an entry holds the path, but an unpublished entry that is still at its own path. */
+    const blocks = (path: string): boolean => {
+        const holder = at.get(path)
+        return holder !== undefined && !(unpublished.has(holder) && holder === path)
+    }
     const moveTo = (entry: string, from: string, to: string, time: string): void => {
         at.delete(from)
         at.set(to, entry)
@@ -351,7 +361,7 @@ export function foldMoves(
             if (entry === undefined) {
                 continue
             }
-            if (at.has(line.to)) {
+            if (blocks(line.to)) {
                 warnings.push({
                     path: entry,
                     message: `the journal moves the note from "${line.from}" to "${line.to}", where another note of the manifest is: it does not move`
@@ -369,8 +379,7 @@ export function foldMoves(
         for (const [index, path] of movers.entries()) {
             const target = targets[index] ?? ''
             const entry = at.get(path) ?? ''
-            const holder = at.get(target)
-            if (holder !== undefined && !moving.has(target)) {
+            if (blocks(target) && !moving.has(target)) {
                 warnings.push({
                     path: entry,
                     message: `the journal moves the note from "${path}" to "${target}", where another note of the manifest is: it does not move`

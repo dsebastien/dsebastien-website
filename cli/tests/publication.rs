@@ -1805,3 +1805,36 @@ fn a_run_journal_with_no_head_is_put_back_before_and_after_the_commit_of_its_run
         assert_eq!(git(&["-C", text(&copy), "for-each-ref", "refs/heads"]), "");
     }
 }
+
+/// The lock names the computer and the system of its run, so that a face
+/// removes a stale lock of a check or a pull only on the computer that wrote
+/// it (R79). A publication that stops halfway leaves its lock.
+#[test]
+fn the_lock_names_the_computer_and_the_system_of_its_run() {
+    let setup = set_up();
+    let id = setup.plan(NOTE);
+    let crashed = program()
+        .arg("publish")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .arg("--attachment-storage")
+        .arg(setup.stores.attachment_storage())
+        .arg("--no-deploy")
+        .args(["--plan", &id, "--time", TIME])
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", "write")
+        .output()
+        .expect("the program starts");
+    assert_eq!(crashed.status.code(), Some(99), "{}", errors_of(&crashed));
+
+    let lock: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(setup.copy.join(".git").join("vault-publish").join("lock"))
+            .expect("the lock exists"),
+    )
+    .expect("the lock is data");
+
+    assert_eq!(lock["system"], std::env::consts::OS);
+    assert!(lock["host"].as_str().is_some_and(|host| !host.is_empty()));
+    assert_eq!(lock["command"], "publish");
+}

@@ -1264,7 +1264,7 @@ function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[]
             paths.add(file)
         }
     }
-    for (const entry of scan.displaced) {
+    for (const entry of [...scan.displaced, ...scan.released]) {
         paths.add(manifestFile(entry.id))
     }
     if (scan.journals.read) {
@@ -1412,6 +1412,20 @@ async function writeAll(
         } catch (error) {
             throw new Stop(
                 `the entry of the unpublished note "${entry.path}" could not leave the manifest: ${messageOf(error)}`,
+                { cause: error }
+            )
+        }
+    }
+    // An entry whose held update ended is written without its mark (issue 106).
+    for (const entry of scan.released) {
+        try {
+            const file = { path: manifestFile(entry.id), text: toCanonicalJson(entry) }
+            if (await journal.apply(file)) {
+                written.push(file.path)
+            }
+        } catch (error) {
+            throw new Stop(
+                `the entry of the note "${entry.path}" could not be written without its held update: ${messageOf(error)}`,
                 { cause: error }
             )
         }

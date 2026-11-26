@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
+import { hostname } from 'node:os'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -8,6 +9,8 @@ import {
     makeTestStores,
     rejectionOf
 } from '@dsebastien-website/testing'
+import type { TestStores } from '@dsebastien-website/testing'
+import type { Device } from '../ports.ts'
 import { lockHolderOf, nodeDevice, processRuns, pullContentStore } from './device.ts'
 
 // The pull of the copy of the content store (decision R67): the view of the
@@ -142,4 +145,80 @@ describe('the run that holds the lock, for the confirmation of its removal (issu
         expect(processRuns(process.pid)).toBe(true)
         expect(processRuns(child.pid)).toBe(false)
     })
+})
+
+/** The number of a process that ran and ended: no process has it now. */
+async function endedProcess(): Promise<number> {
+    const child = Bun.spawn(['git', '--version'], { stdout: 'ignore' })
+    await child.exited
+    return child.pid
+}
+
+// R46 as the author amended it on 2026-11-26 (R79): a lock of a check or a
+// pull whose process no longer runs on this computer goes away by itself.
+describe('the lock of a check or a pull whose process ended (R79)', () => {
+    const SYSTEM =
+        { win32: 'windows', darwin: 'macos' }[process.platform as string] ?? process.platform
+    const here = `"host":${JSON.stringify(hostname())},"system":${JSON.stringify(SYSTEM)}`
+
+    async function setUpLock(stores: TestStores): Promise<{ copy: string; device: Device }> {
+        const copy = await makeContentStoreCopy(stores)
+        await mkdir(join(copy, '.git', 'vault-publish'), { recursive: true })
+        const device = nodeDevice({
+            vault: await copyFixtureVault(stores),
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+        return { copy, device }
+    }
+    const lockOf = (copy: string): string => join(copy, '.git', 'vault-publish', 'lock')
+
+    test('a lock names the computer and the system of its run', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUpLock(stores)
+
+        const lock = await device.local.lock({ command: 'plan' })
+
+        expect(lockHolderOf(lock.text)).toEqual({
+            command: 'plan',
+            process: process.pid,
+            host: hostname(),
+            system: SYSTEM
+        })
+        await device.local.release(lock.text)
+    }, 60_000)
+
+    test('goes away by itself, also for a pull', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUpLock(stores)
+        for (const command of ['check', 'pull']) {
+            await writeFile(
+                lockOf(copy),
+                `{"command":"${command}",${here},"process":${String(await endedProcess())},"token":"x"}\n`
+            )
+
+            const lock = await device.local.lock({ command: 'plan' })
+
+            expect(lock.taken, command).toBe(true)
+            await device.local.release(lock.text)
+        }
+    }, 60_000)
+
+    test('stays while its process runs, on another computer or system, with no computer, and for a publication', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUpLock(stores)
+        const ended = String(await endedProcess())
+        for (const text of [
+            `{"command":"check",${here},"process":${String(process.pid)},"token":"x"}\n`,
+            `{"command":"check","host":"another-computer","system":${JSON.stringify(SYSTEM)},"process":${ended},"token":"x"}\n`,
+            `{"command":"check","host":${JSON.stringify(hostname())},"system":"another-system","process":${ended},"token":"x"}\n`,
+            `{"command":"check","process":${ended},"token":"x"}\n`,
+            `{"command":"publish","device":"d","face":"plugin",${here},"process":${ended},"time":"2031-04-01T08:00:00Z","token":"x"}\n`
+        ]) {
+            await writeFile(lockOf(copy), text)
+
+            expect((await device.local.lock({ command: 'plan' })).taken, text).toBe(false)
+            expect(await Bun.file(lockOf(copy)).text()).toBe(text)
+        }
+    }, 60_000)
 })

@@ -179,6 +179,9 @@ pub struct Scan {
     /// The unpublished entries that leave the manifest because another entry
     /// moved into their paths (rule 6 of the moves).
     pub displaced: Vec<ManifestEntry>,
+    /// The entries whose held update ended: their notes have their sources
+    /// again, and the next publication writes them without `updateHeld`.
+    pub released: Vec<ManifestEntry>,
     /// The journals that the scan read: the plan writes their read marker.
     pub journals: JournalState,
     /// The warnings of the journals and of the moves, for the report.
@@ -477,7 +480,11 @@ fn read_vault(
     journals: &JournalState,
     configuration: &Configuration,
 ) -> Result<VaultRead, String> {
-    let folded = fold_moves(entries.keys().cloned(), &journals.lines);
+    let folded = fold_moves(
+        entries.keys().cloned(),
+        &journals.lines,
+        &unpublished_paths(entries),
+    );
     let published_paths = published_paths_of(entries, &folded.positions);
     let (scanned, others) = scan_vault(vault, configuration)?;
     let ScannedNotes {
@@ -602,7 +609,11 @@ fn queue_of(
         denied,
         denied_file_names,
     } = read;
-    let folded = fold_moves(entries.keys().cloned(), &journals.lines);
+    let folded = fold_moves(
+        entries.keys().cloned(),
+        &journals.lines,
+        &unpublished_paths(entries),
+    );
     let moves = apply_moves(
         entries,
         folded,
@@ -688,6 +699,7 @@ fn queue_of(
         .collect();
     queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
     queue.moved_edited = hold_moved_edited(&moves.applied, &queue.changed, &notes, &mut manifest);
+    let released = release_held(&moves.applied, &notes, &mut manifest);
     queue.renamed = moves.applied;
     let mut rename_warnings = journals.warnings.clone();
     rename_warnings.extend(moves.warnings);
@@ -702,6 +714,7 @@ fn queue_of(
         denied_file_names,
         manifest,
         displaced: moves.displaced,
+        released,
         journals,
         rename_warnings,
         configuration,
@@ -850,6 +863,33 @@ fn without_suffix(path: &str) -> &str {
 /// a held update, which the publication of the move writes, so the hold
 /// lasts until a selection includes the note. The result is the paths of
 /// `changed` whose entry has the mark, in the order of `changed`.
+/// A held update whose note has the source of its entry again loses its
+/// mark: the next publication writes the entry without it, so a later edit
+/// is no held update (decision of the author of 2026-11-26, issue 106). The
+/// result is the entries to write, by path; a moved entry is written by its
+/// move.
+fn release_held(
+    applied: &[Move],
+    notes: &BTreeMap<String, ScannedNote>,
+    manifest: &mut BTreeMap<String, ManifestEntry>,
+) -> Vec<ManifestEntry> {
+    let moved: BTreeSet<&String> = applied.iter().map(|one| &one.to).collect();
+    let mut released = Vec::new();
+    for (path, entry) in manifest.iter_mut() {
+        if entry.update_held
+            && notes
+                .get(path)
+                .is_some_and(|note| note.source_hash == entry.source_hash)
+        {
+            entry.update_held = false;
+            if !moved.contains(path) {
+                released.push(entry.clone());
+            }
+        }
+    }
+    released
+}
+
 fn hold_moved_edited(
     applied: &[Move],
     changed: &[String],
@@ -874,8 +914,17 @@ fn hold_moved_edited(
         .collect()
 }
 
-/// True when an unpublished entry that a line moved away gives its path to a
-/// published note that moved into it: exactly one other entry is at its
+/// The paths of the unpublished entries of the manifest.
+fn unpublished_paths(entries: &BTreeMap<String, ManifestEntry>) -> BTreeSet<String> {
+    entries
+        .iter()
+        .filter(|(_, entry)| entry.state != State::Published)
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
+/// True when an unpublished entry that stays at its path, moved away by a
+/// line or not, gives its path to a published note that moved into it: exactly one other entry is at its
 /// path, that entry is published, and the note of the scan at that path has
 /// its source (rules 5 and 6 of the moves).
 fn yields(
@@ -980,8 +1029,9 @@ fn apply_moves(
     let mut warnings = fold_warnings;
     let mut under_guard = BTreeSet::new();
     let mut last: BTreeMap<String, String> = BTreeMap::new();
-    // The unpublished entries that a line moved away and that stay at their
-    // paths: they do not count at their paths for the collisions.
+    // The unpublished entries that stay at their paths, moved away by a line
+    // or not: they do not count at their paths for the collisions when the
+    // published note really moved in (rules 5 and 6).
     let mut left_behind = BTreeSet::new();
     let not_moved = |to: &str, why: &str| -> String {
         format!("the rename journal moves the note to \"{to}\", {why}")
@@ -990,6 +1040,14 @@ fn apply_moves(
         let to = positions.get(from).unwrap_or(from).clone();
         last.insert(from.clone(), from.clone());
         if &to == from {
+            // An unpublished entry that no line moved gives its path too
+            // (decision of the author of 2026-11-26, issue 106).
+            if entries
+                .get(from)
+                .is_some_and(|entry| entry.state != State::Published)
+            {
+                left_behind.insert(from.clone());
+            }
             continue;
         }
         // The line that moved the entry is older than its first publication.

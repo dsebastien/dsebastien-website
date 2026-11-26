@@ -1421,7 +1421,7 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
             .unwrap_or_else(|| note_id(path, time));
         paths.extend(files_of_note(path, &id));
     }
-    for entry in &scan.displaced {
+    for entry in scan.displaced.iter().chain(&scan.released) {
         paths.insert(manifest_file(&entry.id));
     }
     if scan.journals.read {
@@ -1452,6 +1452,28 @@ fn remove_displaced(journal: &mut Backup, scan: &Scan) -> Result<Vec<String>, St
             )
         })? {
             changed.push(removal.path);
+        }
+    }
+    Ok(changed)
+}
+
+/// Writes the entries whose held update ended without their mark (issue
+/// 106). The result is the paths that changed.
+fn write_released(journal: &mut Backup, scan: &Scan) -> Result<Vec<String>, String> {
+    let mut changed = Vec::new();
+    for entry in &scan.released {
+        let fail = |error: String| {
+            format!(
+                "the entry of the note \"{}\" could not be written without its held update: {error}",
+                entry.path
+            )
+        };
+        let file = StoreFile {
+            path: manifest_file(&entry.id),
+            text: Some(canonical(&to_value(entry).map_err(fail)?).map_err(fail)?),
+        };
+        if journal.apply(&file).map_err(fail)? {
+            changed.push(file.path);
         }
     }
     Ok(changed)
@@ -1524,9 +1546,7 @@ fn correct_state(device: &Device, scan: &Scan, published: &BTreeSet<String>) -> 
         let text = match device.vault.read(path) {
             Ok(Some(text)) if content_hash(&text) == note.text_hash => text,
             Ok(_) => {
-                warn(format!(
-                    "the note changed during the publication: its {STATE_PROPERTY} property is corrected at the next publication"
-                ));
+                warn(changed_during_run());
                 continue;
             }
             Err(error) => {
@@ -1578,8 +1598,22 @@ fn write_state(
             "the {STATE_PROPERTY} property cannot be corrected with no change to what the ignore property says: correct it by hand"
         )));
     }
+    // The note is read again right before the write, as the TypeScript
+    // face does (issue 106): a note that changed since the read is not
+    // written.
+    if device.vault.read(path)?.as_deref() != Some(text) {
+        return Ok(Some(changed_during_run()));
+    }
     device.vault.write(path, &wanted)?;
     Ok(None)
+}
+
+/// The warning of a note that changed between the read of the tool and its
+/// write.
+fn changed_during_run() -> String {
+    format!(
+        "the note changed during the publication: its {STATE_PROPERTY} property is corrected at the next publication"
+    )
 }
 
 /// Checks the inputs of a publication: the time, the name of the device, the
@@ -1791,6 +1825,7 @@ fn write_all(
     let mut manifest = scan.manifest.clone();
     let targets = apply_store_moves(device, journal, plan, scan, &mut manifest, &mut paths)?;
     paths.extend(remove_displaced(journal, scan)?);
+    paths.extend(write_released(journal, scan)?);
     paths.extend(remove_forced(journal, plan, &manifest)?);
     for path in plan.forced_remove() {
         manifest.remove(path);

@@ -576,9 +576,9 @@ fn now() -> String {
     )
 }
 
-/// The name of the host: the default name of the device. The program reads it
-/// here. The logic never does.
-fn host_name() -> String {
+/// The name of the host: the default name of the device, and the computer of
+/// the lock of the device. The program reads it here. The logic never does.
+pub(crate) fn host_name() -> String {
     let from_file = || {
         std::fs::read_to_string("/etc/hostname")
             .ok()

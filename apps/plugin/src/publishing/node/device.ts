@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
     appendFile,
+    link,
     lstat,
     mkdir,
     readdir,
@@ -12,6 +13,7 @@ import {
     unlink,
     writeFile
 } from 'node:fs/promises'
+import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { toCanonicalJson } from '../canonical.ts'
@@ -1222,8 +1224,24 @@ export function processRuns(id: number): boolean {
     }
 }
 
-/** What the text of a lock says of its run: its command and the number of its process, when it names them. */
-export function lockHolderOf(text: string): { command?: string; process?: number } {
+/** The system of this computer, as the Rust program names it (`std::env::consts::OS`). */
+export const SYSTEM: string =
+    ({ win32: 'windows', darwin: 'macos' } as Record<string, string>)[process.platform] ??
+    process.platform
+
+/** What the text of a lock says of its run. */
+export interface LockHolder {
+    readonly command?: string
+    /** The number of the process of the run. */
+    readonly process?: number
+    /** The name of the computer of the run. */
+    readonly host?: string
+    /** The system of the run: `windows`, `linux` (WSL too) or `macos`. */
+    readonly system?: string
+}
+
+/** What the text of a lock says of its run: what it names of these, when it names them. */
+export function lockHolderOf(text: string): LockHolder {
     let value: unknown
     try {
         value = JSON.parse(text)
@@ -1233,11 +1251,40 @@ export function lockHolderOf(text: string): { command?: string; process?: number
     if (typeof value !== 'object' || value === null) {
         return {}
     }
-    const { command, process: id } = value as { command?: unknown; process?: unknown }
+    const {
+        command,
+        host,
+        process: id,
+        system
+    } = value as { command?: unknown; host?: unknown; process?: unknown; system?: unknown }
     return {
         ...(typeof command === 'string' ? { command } : {}),
-        ...(typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? { process: id } : {})
+        ...(typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? { process: id } : {}),
+        ...(typeof host === 'string' ? { host } : {}),
+        ...(typeof system === 'string' ? { system } : {})
     }
+}
+
+/** True when the lock names this computer and this system: a process of another one cannot be seen. */
+export function isLockOfThisComputer(holder: LockHolder): boolean {
+    return holder.host?.toLowerCase() === hostname().toLowerCase() && holder.system === SYSTEM
+}
+
+/**
+ * True for the lock of a check or a pull of this computer whose process no
+ * longer runs: such a run writes nothing that a later run must put back, so
+ * its lock goes away by itself (R46 as the author amended it, R79). The lock
+ * of a publication, a takedown, an edit or a plan always waits for the
+ * author, and so does a lock of another computer or of WSL.
+ */
+function isStaleLock(text: string): boolean {
+    const holder = lockHolderOf(text)
+    return (
+        (holder.command === 'check' || holder.command === 'pull') &&
+        holder.process !== undefined &&
+        isLockOfThisComputer(holder) &&
+        !processRuns(holder.process)
+    )
 }
 
 /**
@@ -1249,6 +1296,28 @@ function folderLocalStore(contentStore: string): LocalStore {
     const plans = join(folder, 'plans')
     const lockFile = join(folder, 'lock')
     const journalFile = join(folder, 'journal.json')
+    /**
+     * Removes the lock when it still holds this text. It is renamed first, so
+     * that a lock that another run took meanwhile is never removed: that one
+     * is put back. True when the stale lock is gone.
+     */
+    const removeStale = async (held: string): Promise<boolean> => {
+        const aside = join(folder, `lock.${randomUUID()}.stale`)
+        try {
+            await rename(lockFile, aside)
+        } catch {
+            return false
+        }
+        if ((await textOrNothing(aside)) === held) {
+            await rm(aside, { force: true })
+            return true
+        }
+        // The lock of another run goes back, unless a third run took the lock
+        // meanwhile: the other run then stops at its next check of its lock.
+        await link(aside, lockFile).catch(() => undefined)
+        await rm(aside, { force: true })
+        return false
+    }
     return {
         save: (id, record) => writeText(join(plans, `${id}.json`), record),
         async load(id) {
@@ -1269,19 +1338,33 @@ function folderLocalStore(contentStore: string): LocalStore {
             await mkdir(folder, { recursive: true })
             // A token that no other run has: two runs of one process, in the
             // same second, never hold the same text.
-            const text = toCanonicalJson({ ...holder, process: process.pid, token: randomUUID() })
-            try {
-                // One create, never a test and then a write: two runs that
-                // start at the same moment cannot both take the lock.
-                await writeFile(lockFile, text, { encoding: 'utf8', flag: 'wx' })
-                return { taken: true, text }
-            } catch (error) {
-                if (codeOf(error) !== 'EEXIST') {
-                    throw error
+            const text = toCanonicalJson({
+                ...holder,
+                host: hostname(),
+                process: process.pid,
+                system: SYSTEM,
+                token: randomUUID()
+            })
+            // A stale lock of a check or a pull goes away by itself, one time.
+            for (let tries = 0; ; tries += 1) {
+                try {
+                    // One create, never a test and then a write: two runs that
+                    // start at the same moment cannot both take the lock.
+                    await writeFile(lockFile, text, { encoding: 'utf8', flag: 'wx' })
+                    return { taken: true, text }
+                } catch (error) {
+                    if (codeOf(error) !== 'EEXIST') {
+                        throw error
+                    }
                 }
-                return {
-                    taken: false,
-                    text: (await textOrNothing(lockFile)) ?? 'a lock that went away'
+                const held = await textOrNothing(lockFile)
+                if (
+                    held === undefined ||
+                    tries > 0 ||
+                    !isStaleLock(held) ||
+                    !(await removeStale(held))
+                ) {
+                    return { taken: false, text: held ?? 'a lock that went away' }
                 }
             }
         },

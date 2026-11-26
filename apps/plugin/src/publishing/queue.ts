@@ -157,6 +157,8 @@ export interface Scan {
     readonly manifest: ReadonlyMap<string, ManifestEntry>
     /** The unpublished entries that leave the manifest because another entry moved into their paths (rule 6 of the moves). */
     readonly displaced: readonly ManifestEntry[]
+    /** The entries whose held update ended: their notes have their sources again, and the next publication writes them without `updateHeld`. */
+    readonly released: readonly ManifestEntry[]
     /** The journals that the scan read: the plan writes their read marker. */
     readonly journals: JournalState
     /** The warnings of the journals and of the moves, for the report. */
@@ -281,7 +283,15 @@ export async function computeQueue(input: {
     const notes = new Map<string, ScannedNote>()
     const ignored = new Set<string>()
     // The paths that a published entry can have after the moves.
-    const folded = foldMoves(input.manifest.keys(), input.journals.lines)
+    const folded = foldMoves(
+        input.manifest.keys(),
+        input.journals.lines,
+        new Set(
+            [...input.manifest]
+                .filter(([, entry]) => entry.state === 'unpublished')
+                .map(([path]) => path)
+        )
+    )
     const publishedPaths = new Set<string>()
     for (const [path, entry] of input.manifest) {
         if (entry.state === 'published') {
@@ -444,6 +454,21 @@ export async function computeQueue(input: {
             manifest.set(to, { ...entry, updateHeld: true })
         }
     }
+    // A held update whose note has the source of its entry again loses its
+    // mark: the next publication writes the entry without it, so a later
+    // edit is no held update (decision of the author of 2026-11-26, issue
+    // 106). A moved entry is written by its move.
+    const movedTo = new Set(moves.moves.map((move) => move.to))
+    const released: ManifestEntry[] = []
+    for (const [path, entry] of manifest) {
+        if (entry.updateHeld === true && notes.get(path)?.sourceHash === entry.sourceHash) {
+            const { updateHeld: _held, ...kept } = entry
+            manifest.set(path, kept)
+            if (!movedTo.has(path)) {
+                released.push(kept)
+            }
+        }
+    }
     const isGuardedFile = async (path: string, hash: string): Promise<boolean> => {
         if (input.configuration.denyList.some((folder) => path.startsWith(`${folder}/`))) {
             return true
@@ -527,6 +552,7 @@ export async function computeQueue(input: {
         guardedEntries: sortByCodePoint(guardedEntries),
         manifest,
         displaced: moves.displaced,
+        released,
         journals: input.journals,
         renameWarnings: [...input.journals.warnings, ...moves.warnings],
         configuration: input.configuration,
@@ -635,13 +661,19 @@ export function applyMoves(
     const warnings: RenameWarning[] = [...folded.warnings]
     const underGuard = new Set<string>()
     const final = new Map<string, string>()
-    // The unpublished entries that a line moved away and that stay at their
-    // paths: they do not count at their paths for the collisions.
+    // The unpublished entries that stay at their paths, moved away by a line
+    // or not: they do not count at their paths for the collisions when the
+    // published note really moved in (rules 5 and 6).
     const leftBehind = new Set<string>()
     for (const from of sortByCodePoint([...entries.keys()])) {
         const to = folded.positions.get(from) ?? from
         final.set(from, from)
         if (to === from) {
+            // An unpublished entry that no line moved gives its path too
+            // (decision of the author of 2026-11-26, issue 106).
+            if (entries.get(from)?.state === 'unpublished') {
+                leftBehind.add(from)
+            }
             continue
         }
         if (vault.underGuard(to)) {
@@ -698,9 +730,9 @@ export function applyMoves(
         }
         final.set(from, to)
     }
-    // An unpublished entry that a line moved away gives its path to a
-    // published note that moved into it, only when the note of the scan at
-    // that path has the source of that published entry (rules 5 and 6).
+    // An unpublished entry that stays at its path gives it to a published
+    // note that moved into it, only when the note of the scan at that path
+    // has the source of that published entry (rules 5 and 6).
     const yields = (from: string): boolean => {
         if (!leftBehind.has(from)) {
             return false

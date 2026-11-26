@@ -1306,6 +1306,10 @@ impl ContentStore {
             fs::create_dir_all(folder).map_err(failed)?;
         }
         let mut content = holder.clone();
+        // The computer and the system of the run: a face removes a stale lock
+        // of a check or a pull only on the computer that wrote it (R79).
+        content["host"] = json!(crate::host_name());
+        content["system"] = json!(std::env::consts::OS);
         content["process"] = json!(std::process::id());
         // A token that no other run has: two runs of one process, in the same
         // second, never hold the same text.

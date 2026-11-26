@@ -388,8 +388,15 @@ pub struct Fold {
 /// The path of each manifest path after the lines, by the fold of the moves,
 /// and the warnings. A note moves when it is at `from`, and a folder moves
 /// each path below it. A move to a path that another entry holds does not
-/// happen, with a warning.
-pub fn fold_moves(paths: impl Iterator<Item = String>, lines: &[JournalLine]) -> Fold {
+/// happen, with a warning; but a move into the path of an unpublished entry
+/// that did not move happens, and rules 5 and 6 of the moves decide
+/// (decision of the author of 2026-11-26, issue 106). `unpublished` holds the
+/// paths of the unpublished entries.
+pub fn fold_moves(
+    paths: impl Iterator<Item = String>,
+    lines: &[JournalLine],
+    unpublished: &BTreeSet<String>,
+) -> Fold {
     // The entry at each current path, and the current path of each entry.
     let mut at: BTreeMap<String, String> = BTreeMap::new();
     let mut positions: BTreeMap<String, String> = BTreeMap::new();
@@ -405,12 +412,18 @@ pub fn fold_moves(paths: impl Iterator<Item = String>, lines: &[JournalLine]) ->
             "the journal moves the note from \"{from}\" to \"{to}\", where another note of the manifest is: it does not move"
         ),
     };
+    // True when an entry holds the path, but an unpublished entry that is
+    // still at its own path.
+    let blocks = |at: &BTreeMap<String, String>, path: &String| {
+        at.get(path)
+            .is_some_and(|holder| !(unpublished.contains(holder) && holder == path))
+    };
     for line in lines {
         if !line.folder {
             let Some(entry) = at.get(&line.from).cloned() else {
                 continue;
             };
-            if at.contains_key(&line.to) {
+            if blocks(&at, &line.to) {
                 warnings.push(blocked(&entry, &line.from, &line.to));
                 continue;
             }
@@ -431,7 +444,7 @@ pub fn fold_moves(paths: impl Iterator<Item = String>, lines: &[JournalLine]) ->
         for path in &movers {
             let target = format!("{}/{}", line.to, &path[prefix.len()..]);
             let entry = at.get(path).cloned().unwrap_or_default();
-            if at.contains_key(&target) && !moving.contains(&target) {
+            if blocks(&at, &target) && !moving.contains(&target) {
                 warnings.push(blocked(&entry, path, &target));
                 continue;
             }
