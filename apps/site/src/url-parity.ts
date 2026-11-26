@@ -233,41 +233,69 @@ const PRECISION: Record<Expectation['kind'], number> = {
     'not-found': 2
 }
 
-/** The key of a path for the merge of the sources: its first decoded form (RES-06). */
-function mergeKey(path: string): string {
-    const [first] = decodedForms(path)
-    return first ?? path
-}
-
 /** The expectations that say a URL does not work. */
 const BROKEN: ReadonlySet<Expectation['kind']> = new Set(['gone', 'not-found'])
+
+/** The expectations that say exactly what a URL answers. */
+const EXACT: ReadonlySet<Expectation['kind']> = new Set(['page', 'redirect', 'gone', 'not-found'])
+
+/**
+ * True when two expectations of one URL cannot both hold. A page and a
+ * redirect to that same path, from another form of it, both hold.
+ */
+function conflicts(path: string, one: Expectation, two: Expectation): boolean {
+    const kinds = [one.kind, two.kind]
+    if (kinds.includes('works') && kinds.some((kind) => BROKEN.has(kind))) {
+        return true
+    }
+    if (!EXACT.has(one.kind) || !EXACT.has(two.kind)) {
+        return false
+    }
+    if (one.kind !== two.kind) {
+        const redirect = one.kind === 'redirect' ? one : two.kind === 'redirect' ? two : undefined
+        const page = one.kind === 'page' || two.kind === 'page'
+        return !(page && redirect !== undefined && samePath(redirect.to, path))
+    }
+    return one.kind === 'redirect' && two.kind === 'redirect' && !samePath(one.to, two.to)
+}
 
 /**
  * The known URLs of several sources, one time each decoded path (RES-06), in
  * the order where they come first, asked in the form where they come first.
- * A URL that one source says must work and another says is gone or not
- * found is a conflict.
+ * Two paths are one URL when they share any decoded form. A URL whose
+ * sources say two things that cannot both hold is a conflict: one says it
+ * must work and another that it is gone or not found, or two exact
+ * expectations differ in kind or in target.
  */
 export function mergeKnownUrls(lists: readonly (readonly KnownUrl[])[]): KnownUrl[] {
-    const byKey = new Map<string, KnownUrl>()
+    const urls: KnownUrl[] = []
+    const byForm = new Map<string, number>()
     for (const url of lists.flat()) {
-        const key = mergeKey(url.path)
-        const known = byKey.get(key)
-        if (known === undefined) {
-            byKey.set(key, url)
+        const forms = [...decodedForms(url.path)]
+        const index = forms.map((form) => byForm.get(form)).find((one) => one !== undefined)
+        const known = index === undefined ? undefined : urls[index]
+        if (index === undefined || known === undefined) {
+            for (const form of forms) {
+                byForm.set(form, urls.length)
+            }
+            urls.push(url)
             continue
+        }
+        for (const form of forms) {
+            if (!byForm.has(form)) {
+                byForm.set(form, index)
+            }
         }
         const sources = [...new Set([...known.sources, ...url.sources])]
         const expect =
             PRECISION[url.expect.kind] > PRECISION[known.expect.kind] ? url.expect : known.expect
-        const kinds = [known.expect.kind, url.expect.kind]
         const conflict =
             known.conflict === true ||
             url.conflict === true ||
-            (kinds.includes('works') && kinds.some((kind) => BROKEN.has(kind)))
-        byKey.set(key, { path: known.path, sources, expect, ...(conflict ? { conflict } : {}) })
+            conflicts(known.path, known.expect, url.expect)
+        urls[index] = { path: known.path, sources, expect, ...(conflict ? { conflict } : {}) }
     }
-    return [...byKey.values()]
+    return urls
 }
 
 /**
@@ -292,7 +320,7 @@ export async function isPrivatePlace(file: string, root: string): Promise<boolea
         inside === '..' ||
         inside.startsWith(`..${sep}`) ||
         isAbsolute(inside) ||
-        inside.split(sep)[0] === '.private'
+        (inside.split(sep).length >= 2 && inside.split(sep)[0] === '.private')
     )
 }
 

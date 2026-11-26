@@ -107,6 +107,46 @@ describe('the sources of known URLs', () => {
         ])
     })
 
+    test('two paths that share any decoded form are one URL', () => {
+        // A literal + and two spaces: the third reading of the first path is
+        // the only form of the second.
+        const merged = mergeKnownUrls([
+            knownUrlsFromLines('/Salt+%2B+pepper\n', 'crawl'),
+            knownUrlsFromLines('/Salt%20%20%20pepper\n', 'report')
+        ])
+        expect(merged).toEqual([
+            { path: '/Salt+%2B+pepper', sources: ['crawl', 'report'], expect: { kind: 'works' } }
+        ])
+    })
+
+    test('two exact expectations of one URL that differ are a conflict', () => {
+        const merged = mergeKnownUrls([
+            [
+                { path: '/Old/A', sources: ['list'], expect: { kind: 'redirect', to: '/New/A' } },
+                { path: '/Old/B', sources: ['list'], expect: { kind: 'page' } },
+                { path: '/Old/C', sources: ['list'], expect: { kind: 'redirect', to: '/New/C' } }
+            ],
+            [
+                { path: '/Old/A', sources: ['other'], expect: { kind: 'redirect', to: '/New/Z' } },
+                { path: '/Old/B', sources: ['other'], expect: { kind: 'gone' } },
+                { path: '/Old/C', sources: ['other'], expect: { kind: 'redirect', to: '/New%2FC' } }
+            ]
+        ])
+        expect(merged.map((url) => url.conflict === true)).toEqual([true, true, false])
+    })
+
+    // The canonical form of a URL is a page, and another form of it leads
+    // there: both can hold.
+    test('a page and a redirect of another form of it to the page are no conflict', () => {
+        const merged = mergeKnownUrls([
+            [
+                { path: '/A+b', sources: ['list'], expect: { kind: 'page' } },
+                { path: '/A%20b', sources: ['list'], expect: { kind: 'redirect', to: '/A+b' } }
+            ]
+        ])
+        expect(merged).toEqual([{ path: '/A+b', sources: ['list'], expect: { kind: 'page' } }])
+    })
+
     test('two encodings of one decoded path are one URL', () => {
         const merged = mergeKnownUrls([
             knownUrlsFromLines('/Old+notes/A+b\n', 'crawl'),
@@ -165,7 +205,8 @@ describe('the place of a report', () => {
             () => join(clone, '..dots', 'report.json'),
             false
         ],
-        ['in a folder that does not exist', () => join(clone, 'missing', 'report.json'), false]
+        ['in a folder that does not exist', () => join(clone, 'missing', 'report.json'), false],
+        ['named as the private folder itself', () => join(clone, '.private'), false]
     ])('%s', async (_name, file, allowed) => {
         expect(await isPrivatePlace(file(), clone)).toBe(allowed)
     })
