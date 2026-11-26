@@ -16,6 +16,16 @@ export function fullTitle(...parts: readonly (string | undefined)[]): string {
     )
 }
 
+/**
+ * The title of a shared page (`og:title`, issue 133): the title without the
+ * site name at its end, which the card shows apart (`og:site_name`). A title
+ * that is only the site name stays whole.
+ */
+export function shareTitle(title: string): string {
+    const end = `${TITLE_SEPARATOR}${SITE_NAME}`
+    return title.endsWith(end) && title.length > end.length ? title.slice(0, -end.length) : title
+}
+
 /** What the title of a note can be. */
 export interface TitleCandidate {
     /** The vault path of the note. */

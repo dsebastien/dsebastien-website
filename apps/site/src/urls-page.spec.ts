@@ -288,11 +288,48 @@ describe('output of the build with a redirect list', () => {
 describe.each(HOSTS)('a file that did not change on %s', (host: Host) => {
     test.each([
         ['a page', '/Welcome'],
-        ['the Markdown of a note', '/-/md/Welcome.md']
+        ['the Markdown of a note', '/-/md/Welcome.md'],
+        ['the icon of the site', '/favicon.ico']
     ])('answers 304 for %s', async (_name, path) => {
         expect(
             await checkNotModified(path, (asked, headers = {}) => get(asked, headers, host))
         ).toEqual([])
+    })
+})
+
+// Issue 133: each icon that a page names answers with its type, and a hashed
+// one is kept for a year; `/favicon.ico` is checked again at each use.
+describe.each(HOSTS)('the icons of the site on %s', (host: Host) => {
+    test('answer with their type and their cache time', async () => {
+        const html = await (await get('/Welcome', {}, host)).text()
+        const links = [...html.matchAll(/<link rel="(?:icon|apple-touch-icon)"[^>]*>/gu)].map(
+            ([tag]) => /\shref="([^"]*)"/u.exec(tag)?.[1] ?? ''
+        )
+        expect(links).toHaveLength(3)
+        const answers = await Promise.all(
+            links.map(async (link) => {
+                const response = await get(link, {}, host)
+                const bytes = (await response.arrayBuffer()).byteLength
+                return [
+                    link.replace(/\.[\w-]+\.(svg|png)$/u, '.$1'),
+                    response.status,
+                    response.headers.get('content-type'),
+                    response.headers.get('cache-control'),
+                    bytes > 0
+                ]
+            })
+        )
+        expect(answers).toEqual([
+            ['/favicon.ico', 200, 'image/x-icon', 'public, max-age=0, must-revalidate', true],
+            ['/_astro/icon.svg', 200, 'image/svg+xml', 'public, max-age=31536000, immutable', true],
+            [
+                '/_astro/apple-touch-icon.png',
+                200,
+                'image/png',
+                'public, max-age=31536000, immutable',
+                true
+            ]
+        ])
     })
 })
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fullTitle, uniqueTitles } from './page-titles.ts'
+import { fullTitle, shareTitle, uniqueTitles } from './page-titles.ts'
 
 describe('the title of a page', () => {
     test('is the display title, the type word and the site name', () => {
@@ -12,6 +12,22 @@ describe('the title of a page', () => {
 
     test('is the site name alone for the home page', () => {
         expect(fullTitle()).toBe('Sébastien’s Notes')
+    })
+})
+
+// Issue 133: a card shows the site name apart, so its title leaves it out.
+describe('the title of a shared page', () => {
+    test.each([
+        ['a note', fullTitle('Inception', 'Movie'), 'Inception · Movie'],
+        ['a page with one part', fullTitle('Library'), 'Library'],
+        ['the home page', fullTitle(), 'Sébastien’s Notes'],
+        [
+            'a title that only holds the site name',
+            'Notes of Sébastien’s Notes',
+            'Notes of Sébastien’s Notes'
+        ]
+    ])('of %s', (_name, title, shared) => {
+        expect(shareTitle(title)).toBe(shared)
     })
 })
 

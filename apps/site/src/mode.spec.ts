@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
-import { MODE_KEY, modeOf, modeScript } from './mode.ts'
+import { BAR_MEDIA, MODE_KEY, modeOf, modeScript, SHOW_MODE } from './mode.ts'
 
 // The mode of a page (MODE-01 of the spec): a stored choice of the reader
 // wins, then the mode of the system, and dark when the system states none.
@@ -25,16 +25,62 @@ describe('mode of a page', () => {
         'the script of the page sets the mode from %s',
         (_name, stored, prefersLight, mode) => {
             const dataset: Record<string, string> = {}
+            const bars = barsOfThePage()
             const page = {
                 localStorage: { getItem: (key: string) => (key === MODE_KEY ? stored : null) },
                 matchMedia: (query: string) => ({
                     matches: query === '(prefers-color-scheme: light)' && prefersLight
                 }),
-                document: { documentElement: { dataset } }
+                document: fakeDocument(dataset, bars)
             }
             // The script runs with the globals of a page, as in the head.
             runInNewContext(modeScript, page)
             expect(dataset['theme']).toBe(mode)
+            expect(bars.map((bar) => bar.media)).toEqual(
+                mode === 'dark' ? ['all', 'not all'] : ['not all', 'all']
+            )
         }
     )
+})
+
+/** The two `theme-color` elements of the head, with the media query that the page writes. */
+function barsOfThePage(): { media: string; dataset: Record<string, string> }[] {
+    return [
+        { media: BAR_MEDIA.dark, dataset: { mode: 'dark' } },
+        { media: BAR_MEDIA.light, dataset: { mode: 'light' } }
+    ]
+}
+
+/** A document with the attributes of its root and its `theme-color` elements. */
+function fakeDocument(
+    dataset: Record<string, string>,
+    bars: readonly { media: string }[]
+): { documentElement: { dataset: Record<string, string> }; querySelectorAll: () => unknown } {
+    return {
+        documentElement: { dataset },
+        querySelectorAll: () => bars
+    }
+}
+
+// Issue 133: the bar of the browser takes the color of the mode that the page
+// shows, also when the reader chose a mode that is not the one of the system.
+describe('color of the bar of the browser', () => {
+    test.each(['dark', 'light'] as const)('follows the %s mode', (mode) => {
+        const dataset: Record<string, string> = {}
+        const bars = barsOfThePage()
+        // The text is a function of the page: it runs as the page runs it.
+        runInNewContext(`(${SHOW_MODE})(mode, page)`, {
+            mode,
+            page: fakeDocument(dataset, bars)
+        })
+        expect(dataset['theme']).toBe(mode)
+        expect(bars.find((bar) => bar.dataset['mode'] === mode)?.media).toBe('all')
+        expect(bars.find((bar) => bar.dataset['mode'] !== mode)?.media).toBe('not all')
+    })
+
+    // Before a script runs: the mode of the system, dark when it states none.
+    test('is the color of the mode of the system before a script runs', () => {
+        expect(BAR_MEDIA.light).toBe('(prefers-color-scheme: light)')
+        expect(BAR_MEDIA.dark).toBe('not all and (prefers-color-scheme: light)')
+    })
 })

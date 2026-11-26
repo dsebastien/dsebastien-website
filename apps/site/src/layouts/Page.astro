@@ -2,13 +2,24 @@
 import '../styles/global.css'
 import Footer from '../components/Footer.astro'
 import Header from '../components/Header.astro'
-import { modeScript, modeSwitchScript } from '../mode.ts'
+import touchIcon from '../icons/apple-touch-icon.png?url&no-inline'
+import vectorIcon from '../icons/icon.svg?url&no-inline'
+import { BAR_MEDIA, modeScript, modeSwitchScript, type Mode } from '../mode.ts'
+import { shareTitle } from '../page-titles.ts'
 import { MAIN_ID } from '../rendering/anchors.ts'
+import { AUTHOR, SITE_NAME, X_ACCOUNT } from '../site.ts'
+import { BAR_COLORS } from '../styles/themes/knowii-bar.ts'
 
 // The frame of every page of the site, from variant B of the mockups (R49).
 // The canonical link names the canonical URL of the page, so a URL with a
 // query shows the same page with a clean canonical link (URL-12 of the spec).
 // The mode is set before any style (MODE-01): dark until the script runs.
+// Issue 133: the head names the icon of the site (the mark of the main site:
+// `/favicon.ico` for an old client, the vector icon, the icon of a home
+// screen), the color of the bar of the browser in each mode, which the
+// script of the mode follows, and the facts of a card of a shared page. The
+// server error page loads no other file (NAV-20): no icon there, the
+// browser asks for `/favicon.ico`.
 interface Props {
     title: string
     /** The description of the page (IDX-05). Every indexable page has one. */
@@ -38,6 +49,7 @@ const {
     scriptless = false
 } = Astro.props
 const canonical = path === undefined ? undefined : new URL(path, Astro.site).href
+const modes: readonly Mode[] = ['dark', 'light']
 ---
 
 <!doctype html>
@@ -45,11 +57,42 @@ const canonical = path === undefined ? undefined : new URL(path, Astro.site).hre
     <head>
         <meta charset='utf-8' />
         <meta name='viewport' content='width=device-width, initial-scale=1' />
+        {modes.map((mode) => (
+            <meta
+                name='theme-color'
+                content={BAR_COLORS[mode]}
+                media={BAR_MEDIA[mode]}
+                data-mode={mode}
+            />
+        ))}
         {!scriptless && <script is:inline set:html={modeScript} />}
         <title>{title}</title>
         {description !== undefined && <meta name='description' content={description} />}
         {noindex && <meta name='robots' content='noindex, follow' />}
         {canonical !== undefined && <link rel='canonical' href={canonical} />}
+        <meta name='author' content={AUTHOR} />
+        {!scriptless && (
+            <>
+                <link rel='icon' href='/favicon.ico' sizes='32x32' />
+                <link rel='icon' href={vectorIcon} type='image/svg+xml' />
+                <link rel='apple-touch-icon' href={touchIcon} />
+                <meta name='apple-mobile-web-app-title' content={SITE_NAME} />
+            </>
+        )}
+        {canonical !== undefined && (
+            <>
+                <meta property='og:site_name' content={SITE_NAME} />
+                <meta property='og:type' content='website' />
+                <meta property='og:title' content={shareTitle(title)} />
+                {description !== undefined && (
+                    <meta property='og:description' content={description} />
+                )}
+                <meta property='og:url' content={canonical} />
+                <meta name='twitter:card' content='summary' />
+                <meta name='twitter:site' content={X_ACCOUNT} />
+                <meta name='twitter:creator' content={X_ACCOUNT} />
+            </>
+        )}
         <slot name='head' />
     </head>
     <body class='flex min-h-screen flex-col'>

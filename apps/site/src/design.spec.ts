@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { BAR_COLORS } from './styles/themes/knowii-bar.ts'
 
 // The guards of the design base (issue 46): tokens only (DES-02, DES-12), and
 // the contrast of the theme in both modes (DES-05, DES-11, the gate of DES-04).
@@ -211,6 +212,18 @@ describe('contrast of the theme knowii', () => {
             "@media (prefers-color-scheme: light) {\n    [data-theme='system'] {"
         )
     })
+
+    // Issue 133: the bar of the browser and the header are one band.
+    test.each([
+        ['dark', ":root,\n[data-theme='dark']"],
+        ['light', "[data-theme='light']"]
+    ] as const)(
+        'gives the bar of the browser the surface of the %s mode',
+        async (mode, selector) => {
+            const values = await themeValues(selector)
+            expect(BAR_COLORS[mode]).toBe(values.get('surface') ?? '')
+        }
+    )
 
     test('measures a known pair', () => {
         expect(contrast('#ffffff', '#000000')).toBeCloseTo(21, 5)

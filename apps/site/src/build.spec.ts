@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
-import { modeScript, modeSwitchScript } from './mode.ts'
+import { BAR_MEDIA, modeScript, modeSwitchScript } from './mode.ts'
+import { BAR_COLORS } from './styles/themes/knowii-bar.ts'
 
 // Acceptance criterion of issue 16: an empty Astro and Tailwind site builds.
 // The test runs the build script of the site and reads the files of the output.
@@ -157,7 +158,7 @@ describe('design base', () => {
                 matchMedia: (query: string) => ({
                     matches: query === '(prefers-color-scheme: light)' && prefersLight
                 }),
-                document: { documentElement: { dataset } }
+                document: { documentElement: { dataset }, querySelectorAll: () => [] }
             })
             expect(dataset['theme']).toBe(mode)
         }
@@ -279,5 +280,86 @@ describe('error pages', () => {
         expect(html).toMatch(
             /@media \(prefers-color-scheme:light\)\{\[data-theme=system\]\{color-scheme:light;/u
         )
+    })
+})
+
+/** The value of an attribute of each element of a page that matches a pattern of its start tag. */
+function attributeOf(html: string, element: RegExp, name: string): string[] {
+    return [...html.matchAll(new RegExp(element.source, 'gu'))].map(
+        ([tag]) => new RegExp(`\\s${name}="([^"]*)"`, 'u').exec(tag)?.[1] ?? ''
+    )
+}
+
+// Issue 133: the icon of the site, the color of the bar of the browser in
+// each mode, and the facts of a card of a shared page.
+describe('head of a page', () => {
+    test('names the icon of the site: the old icon, the vector icon and the icon of a home screen', async () => {
+        const html = await readOutput('index.html')
+        expect(html).toContain('<link rel="icon" href="/favicon.ico" sizes="32x32">')
+        const [vector = ''] = attributeOf(
+            html,
+            /<link rel="icon"[^>]*type="image\/svg\+xml"[^>]*>/u,
+            'href'
+        )
+        const [touch = ''] = attributeOf(html, /<link rel="apple-touch-icon"[^>]*>/u, 'href')
+        expect(vector).toMatch(/^\/_astro\/icon\.[\w-]+\.svg$/u)
+        expect(touch).toMatch(/^\/_astro\/apple-touch-icon\.[\w-]+\.png$/u)
+        const svg = await readOutput(vector.slice(1))
+        expect(svg).toStartWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">')
+        expect(svg).not.toMatch(/<script|\son\w+=|href=/iu)
+        const png = new Uint8Array(await Bun.file(join(outputPath(), touch.slice(1))).arrayBuffer())
+        expect([...png.slice(1, 4)]).toEqual([0x50, 0x4e, 0x47])
+        // The width and the height of the PNG: 180 by 180, the size of a home screen.
+        const size = new DataView(png.buffer)
+        expect([size.getUint32(16), size.getUint32(20)]).toEqual([180, 180])
+    })
+
+    test('writes /favicon.ico at the root of the output, with the sizes of a tab', async () => {
+        const icon = new Uint8Array(await Bun.file(join(outputPath(), 'favicon.ico')).arrayBuffer())
+        // An ICO file: reserved 0, type 1, then the number of its images.
+        expect([...icon.slice(0, 4)]).toEqual([0, 0, 1, 0])
+        const count = icon[4] ?? 0
+        const widths = Array.from({ length: count }, (_, index) => icon[6 + index * 16])
+        expect(widths.sort()).toEqual([16, 32])
+    })
+
+    test.each([['index.html'], ['404.html'], ['500.html']])(
+        '%s gives the bar of the browser the color of each mode',
+        async (file) => {
+            const html = await readOutput(file)
+            for (const mode of ['dark', 'light'] as const) {
+                expect(html).toContain(
+                    `<meta name="theme-color" content="${BAR_COLORS[mode]}" media="${BAR_MEDIA[mode]}" data-mode="${mode}">`
+                )
+            }
+            // Before the script of the mode, which follows the mode of the page.
+            const bar = html.indexOf('name="theme-color"')
+            const script = html.indexOf('<script')
+            expect(bar).toBeGreaterThan(0)
+            expect(script === -1 || bar < script).toBe(true)
+        }
+    )
+
+    test('the home page has the facts of a card', async () => {
+        const html = await readOutput('index.html')
+        for (const tag of [
+            '<meta name="author" content="Sébastien Dubois">',
+            '<meta property="og:site_name" content="Sébastien’s Notes">',
+            '<meta property="og:type" content="website">',
+            '<meta property="og:title" content="Sébastien’s Notes">',
+            '<meta property="og:url" content="https://notes.dsebastien.net/">',
+            '<meta name="twitter:card" content="summary">',
+            '<meta name="twitter:site" content="@dsebastien">'
+        ]) {
+            expect(html).toContain(tag)
+        }
+        const [description = ''] = attributeOf(html, /<meta name="description"[^>]*>/u, 'content')
+        expect(description).not.toBe('')
+        expect(html).toContain(`<meta property="og:description" content="${description}">`)
+    })
+
+    // A page with no canonical address is no page to share.
+    test.each([['404.html'], ['410.html'], ['500.html']])('%s has no card', async (file) => {
+        expect(await readOutput(file)).not.toContain('property="og:')
     })
 })
