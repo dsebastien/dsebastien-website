@@ -98,7 +98,7 @@ async function staticFile(
 ): Promise<StoredFile | 'missing' | undefined> {
     const response = await files.fetch(new Request(`${STATIC_ORIGIN}${path}`))
     if (response.status !== 200) {
-        await response.body?.cancel()
+        await discard(response)
         return response.status === 404 ? undefined : 'missing'
     }
     const tag = response.headers.get('etag')
@@ -106,9 +106,7 @@ async function staticFile(
         size: Number(response.headers.get('content-length') ?? 0),
         ...(tag === null ? {} : { tag }),
         read: () => response.body ?? '',
-        discard: async () => {
-            await response.body?.cancel()
-        }
+        discard: () => discard(response)
     }
 }
 
@@ -169,7 +167,7 @@ interface OpenedRelease {
 
 /**
  * A failure of a read of the release that can be short: a fetch that fails,
- * or a status 5xx of the host. A missing file or a file that is not right
+ * a status 5xx of the host, or a body that breaks while it is read. A missing file or a file that is not right
  * stays so for the life of the release.
  */
 class ShortFailure extends Error {}
@@ -180,9 +178,25 @@ function statusFailure(status: number, file: string): Error {
     return status >= 500 ? new ShortFailure(message) : new Error(message)
 }
 
-/** Lets the host free a body that the Worker does not read. */
+/**
+ * Lets the host free a body that the Worker does not read. A cancel that fails
+ * is let go: it must not replace the failure that the Worker reports.
+ */
 async function discard(response: Response): Promise<void> {
-    await response.body?.cancel()
+    await response.body?.cancel().catch(() => undefined)
+}
+
+/**
+ * The text of a body of the release. A body that breaks while the Worker
+ * reads it is a short failure (issue 130); a whole body that is not right is
+ * checked after, and stays so.
+ */
+async function bodyText(response: Response, file: string): Promise<string> {
+    try {
+        return await response.text()
+    } catch (error) {
+        throw new ShortFailure(`the body of ${file} breaks while it is read`, { cause: error })
+    }
 }
 
 async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
@@ -213,7 +227,17 @@ async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
         await discard(page)
         throw statusFailure(page.status, SERVER_ERROR_FILE)
     }
-    const serverErrorPage = page.status === 200 ? await page.text() : undefined
+    let serverErrorPage: string | undefined
+    if (page.status === 200) {
+        try {
+            serverErrorPage = await bodyText(page, SERVER_ERROR_FILE)
+        } catch (error) {
+            await discard(map)
+            throw error
+        }
+    } else {
+        await discard(page)
+    }
     if (map.status !== 200) {
         await discard(map)
         if (map.status === 404) {
@@ -221,7 +245,8 @@ async function openRelease(files: StaticFiles): Promise<OpenedRelease> {
         }
         throw statusFailure(map.status, RESOLVER_MAP_FILE)
     }
-    return { map: resolverMapFrom(await map.json()), serverErrorPage }
+    const text = await bodyText(map, RESOLVER_MAP_FILE)
+    return { map: resolverMapFrom(JSON.parse(text)), serverErrorPage }
 }
 
 /** How long the Worker waits before its second read of the release, in milliseconds. */

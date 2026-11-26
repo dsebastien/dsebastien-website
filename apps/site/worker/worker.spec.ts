@@ -49,9 +49,10 @@ const UNTAGGED = 'a file with no tag'
 
 /**
  * A failure of the host for one read of a file: a fetch that rejects, a fetch
- * that never settles, a fetch that waits until the test settles it, or a status.
+ * that never settles, a fetch that waits until the test settles it, a body
+ * that breaks while it is read, a body whose cancel rejects, or a status.
  */
-type Failure = 'reject' | 'hang' | 'hold' | number
+type Failure = 'reject' | 'hang' | 'hold' | 'break' | 'refuse-cancel' | number
 
 /**
  * Static files in memory, by the path of their URL as the Worker asks it. The
@@ -66,7 +67,7 @@ function staticFiles(
     const cancelled: string[] = []
     const left = new Map(Object.entries(failures).map(([path, list]) => [path, [...list]]))
     const held: ((outcome: 'answer' | 'reject') => void)[] = []
-    function answer(pathname: string): Promise<Response> {
+    function answer(pathname: string, failure?: 'break' | 'refuse-cancel'): Promise<Response> {
         const body = files[pathname]
         if (body === undefined) {
             return Promise.resolve(new Response('', { status: 404 }))
@@ -77,11 +78,23 @@ function staticFiles(
         const bytes = new TextEncoder().encode(body)
         const stream = new ReadableStream<Uint8Array>({
             start(controller) {
+                if (failure === 'break') {
+                    controller.enqueue(bytes.slice(0, 1))
+                    return
+                }
                 controller.enqueue(bytes)
                 controller.close()
             },
+            pull(controller) {
+                if (failure === 'break') {
+                    controller.error(new Error('the body breaks'))
+                }
+            },
             cancel() {
                 cancelled.push(pathname)
+                if (failure === 'refuse-cancel') {
+                    throw new Error('the host refuses the cancel')
+                }
             }
         })
         return Promise.resolve(
@@ -121,6 +134,9 @@ function staticFiles(
                         }
                     })
                 })
+            }
+            if (failure === 'break' || failure === 'refuse-cancel') {
+                return answer(pathname, failure)
             }
             if (failure !== undefined) {
                 return Promise.resolve(new Response('upstream detail', { status: failure }))
@@ -474,7 +490,7 @@ describe('the Worker', () => {
         const response = await site.get('/Welcome')
         expect(response.status).toBe(500)
         expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
-        // The first read and the read again at once.
+        // The first read and the second read.
         expect(site.reported).toHaveLength(2)
     })
 
@@ -491,14 +507,14 @@ describe('the Worker', () => {
         expect(site.reported).toHaveLength(2)
     })
 
-    test('does not read again at once a resolver map that is not JSON', async () => {
+    test('does not read a second time a resolver map that is not JSON', async () => {
         const site = host({ ...SITE, [MAP]: 'not JSON' })
         expect((await site.get('/Welcome')).status).toBe(500)
         expect(mapReads(site)).toBe(1)
         expect(site.reported).toHaveLength(1)
     })
 
-    test('does not read again at once a release with no resolver map', async () => {
+    test('does not read a second time a release with no resolver map', async () => {
         const { [MAP]: _map, ...rest } = SITE
         const site = host(rest)
         expect((await site.get('/Welcome')).status).toBe(500)
@@ -506,7 +522,7 @@ describe('the Worker', () => {
         expect(site.reported).toHaveLength(1)
     })
 
-    test('does not read again at once a resolver map that is not a resolver map', async () => {
+    test('does not read a second time a resolver map that is not a resolver map', async () => {
         const site = host({ ...SITE, [MAP]: '{"pages":[1]}' })
         expect((await site.get('/Welcome')).status).toBe(500)
         expect(mapReads(site)).toBe(1)
@@ -514,7 +530,7 @@ describe('the Worker', () => {
     })
 
     // Issue 128: a short failure of the host at the start of an isolate.
-    test('reads the release again at once when its first read fails, and gives the page', async () => {
+    test('reads the release again after 50 ms when its first read fails, and gives the page', async () => {
         const site = host(SITE, true, {}, { [MAP]: ['reject'] })
         const response = await site.get('/Welcome')
         expect(response.status).toBe(200)
@@ -524,7 +540,7 @@ describe('the Worker', () => {
         expect(site.paused).toEqual([50])
     })
 
-    test('reads the release again at once when the host answers 500 for the resolver map', async () => {
+    test('reads the release again after 50 ms when the host answers 500 for the resolver map', async () => {
         const site = host(SITE, true, {}, { [MAP]: [500] })
         const response = await site.get('/Welcome')
         expect(response.status).toBe(200)
@@ -532,7 +548,7 @@ describe('the Worker', () => {
         expect(mapReads(site)).toBe(2)
     })
 
-    test('reads the release again at once when the host answers 503 for the server error page', async () => {
+    test('reads the release again after 50 ms when the host answers 503 for the server error page', async () => {
         const site = host(SITE, true, {}, { '/500.html': [503] })
         const response = await site.get('/Welcome')
         expect(response.status).toBe(200)
@@ -540,6 +556,28 @@ describe('the Worker', () => {
         expect(site.files.asked.filter((path) => path === '/500.html')).toHaveLength(2)
         // The resolver map of the failed read is not read: its body is cancelled.
         expect(site.files.cancelled).toEqual([MAP])
+    })
+
+    test.each([MAP, '/500.html'])(
+        'reads the release again after 50 ms when the body of %s breaks while it is read',
+        async (path) => {
+            const site = host(SITE, true, {}, { [path]: ['break'] })
+            const response = await site.get('/Welcome')
+            expect(response.status).toBe(200)
+            expect(site.files.asked.filter((asked) => asked === path)).toHaveLength(2)
+            expect(site.reported).toHaveLength(1)
+            expect(site.paused).toEqual([50])
+        }
+    )
+
+    test('keeps the short failure when the cancel of a body that it does not read rejects', async () => {
+        const site = host(SITE, true, {}, { [MAP]: ['refuse-cancel'], '/500.html': [503] })
+        const response = await site.get('/Welcome')
+        expect(response.status).toBe(200)
+        expect(site.files.cancelled).toEqual([MAP])
+        expect(mapReads(site)).toBe(2)
+        const [first] = site.reported
+        expect(((first as Error).cause as Error).message).toBe('the host answers 503 for 500.html')
     })
 
     test('tells the first failure apart and puts no detail into the answer', async () => {
@@ -568,7 +606,7 @@ describe('the Worker', () => {
         expect(site.reported).toHaveLength(2)
     })
 
-    test('gives the read after ten seconds its read again at once too', async () => {
+    test('gives the read after ten seconds its second read after 50 ms too', async () => {
         const site = host(SITE, true, {}, { [MAP]: ['reject', 'reject', 'reject'] })
         expect((await site.get('/Welcome')).status).toBe(500)
         site.wait(10_000)
