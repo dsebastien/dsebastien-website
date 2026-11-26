@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { deflateSync } from 'node:zlib'
+import sharp from 'sharp'
 
 // The budget sample (issue 47, PERF-22): invented notes at the 99th percentile
 // of the published notes of the author, to check the budgets of the note page
@@ -13,11 +14,13 @@ import { deflateSync } from 'node:zlib'
 //   notes, highlights and three images of 80 KB;
 // - a hub note with 489 backlinks, the largest count of the published notes.
 //
-// Every word is invented, and the same seed gives the same bytes. The images
-// are PNG files with their real width and height and a private chunk of
-// random bytes, so that each file has the size of a photo with no tool to
-// make it. The sample goes into a folder of a copy of the fixture vault: it is
-// data of full size, never committed (AGENTS.md, Testing).
+// Every word is invented, and the same seed gives the same bytes (with one
+// version of sharp). The images are invented photos (issue 87): JPEG files
+// of noise at several scales, with the detail of a photo, so that their
+// variants in WebP are as large as the variants of a real photo; a comment
+// gives each file its exact size. The sample goes into a folder of a copy of
+// the fixture vault: it is data of full size, never committed (AGENTS.md,
+// Testing).
 
 /** The folder of the sample in the vault. */
 export const BUDGET_SAMPLE_FOLDER = '95 Budget sample'
@@ -132,7 +135,7 @@ function longNote(random: Random, targets: readonly string[]): string {
             parts.push(`| Name | Kind | Note |\n| --- | --- | --- |\n${rows.join('\n')}`)
         }
         if (section % 3 === 1) {
-            parts.push(`![[long-${String((section - 1) / 3 + 1)}.png]]`)
+            parts.push(`![[long-${String((section - 1) / 3 + 1)}.jpg]]`)
         }
         if (section === 9) {
             parts.push(`> ${paragraph(random)}`)
@@ -146,7 +149,7 @@ function mediaNote(random: Random): string {
     const parts = [
         properties('book', '2025-05-10T20:00', '2026-10-02T21:00'),
         '# Media note',
-        '![[cover.png]]',
+        '![[cover.jpg]]',
         '## My notes',
         paragraph(random),
         paragraph(random),
@@ -157,7 +160,7 @@ function mediaNote(random: Random): string {
     }
     parts.push('## Pictures')
     for (let index = 1; index <= 3; index += 1) {
-        parts.push(`![[media-${String(index)}.png]]`)
+        parts.push(`![[media-${String(index)}.jpg]]`)
     }
     return `${parts.join('\n\n')}\n`
 }
@@ -228,6 +231,104 @@ export function samplePng(width: number, height: number, bytes: number, seed: nu
     return out
 }
 
+/** The scales of the noise of a photo, in pixels, with their weights: large shapes, then finer detail. */
+const PHOTO_SCALES = [
+    [300, 1],
+    [90, 0.5],
+    [30, 0.28],
+    [9, 0.16],
+    [3, 0.1]
+] as const
+
+/** The pixels of an invented photo: smooth noise at several scales, in three channels. */
+async function photoPixels(width: number, height: number, random: Random): Promise<Uint8Array> {
+    const sum = new Float32Array(width * height * 3)
+    let total = 0
+    for (const [cell, weight] of PHOTO_SCALES) {
+        total += weight
+        const columns = Math.ceil(width / cell) + 1
+        const rows = Math.ceil(height / cell) + 1
+        const grid = Uint8Array.from({ length: columns * rows * 3 }, () => random.int(256))
+        const layer = await sharp(grid, { raw: { width: columns, height: rows, channels: 3 } })
+            .resize(columns * cell, rows * cell, { kernel: 'cubic' })
+            .extract({ left: 0, top: 0, width, height })
+            .raw()
+            .toBuffer()
+        for (let index = 0; index < sum.length; index += 1) {
+            sum[index] = (sum[index] ?? 0) + weight * (layer[index] ?? 0)
+        }
+    }
+    const pixels = new Uint8Array(sum.length)
+    for (let index = 0; index < sum.length; index += 1) {
+        const value = ((sum[index] ?? 0) / total - 128) * 2.2 + 128
+        pixels[index] = Math.max(0, Math.min(255, Math.round(value)))
+    }
+    return pixels
+}
+
+/**
+ * An invented photo: a JPEG of this width and height, of exactly `bytes`
+ * bytes. Its image data is the JPEG of the highest quality that fits, and a
+ * comment fills the rest, which a browser downloads and skips.
+ */
+export async function samplePhoto(
+    width: number,
+    height: number,
+    bytes: number,
+    seed: number
+): Promise<Uint8Array> {
+    const pixels = await photoPixels(width, height, new Random(seed))
+    const encode = async (quality: number): Promise<Uint8Array> =>
+        new Uint8Array(
+            await sharp(pixels, { raw: { width, height, channels: 3 } })
+                .jpeg({ quality })
+                .toBuffer()
+        )
+    let low = 1
+    let high = 100
+    let best: Uint8Array | undefined
+    while (low <= high) {
+        const quality = Math.floor((low + high) / 2)
+        const jpeg = await encode(quality)
+        if (jpeg.length <= bytes) {
+            best = jpeg
+            low = quality + 1
+        } else {
+            high = quality - 1
+        }
+    }
+    if (best === undefined) {
+        throw new Error(
+            `no JPEG of ${String(width)} by ${String(height)} pixels fits in ${String(bytes)} bytes`
+        )
+    }
+    // Comment segments (0xFFFE) right after the start of the image.
+    const segments: Uint8Array[] = []
+    let missing = bytes - best.length
+    while (missing > 0) {
+        const length = Math.min(missing, 65_535 + 2)
+        // A segment is at least its marker and its length: 4 bytes.
+        const size = missing - length > 0 && missing - length < 4 ? length - 4 : length
+        const segment = new Uint8Array(Math.max(size, 4))
+        segment.set([0xff, 0xfe, ((segment.length - 2) >> 8) & 0xff, (segment.length - 2) & 0xff])
+        segment.fill(0x20, 4)
+        segments.push(segment)
+        missing -= segment.length
+    }
+    if (missing < 0) {
+        throw new Error('the comment of a photo of the sample cannot have this size')
+    }
+    const out = new Uint8Array(bytes)
+    out.set(best.subarray(0, 2))
+    let at = 2
+    for (const segment of segments) {
+        out.set(segment, at)
+        at += segment.length
+    }
+    out.set(best.subarray(2), at)
+    return out
+}
+
 /** Writes the budget sample into its folder of the vault (a copy of the fixture vault). */
 export async function writeBudgetSample(vault: string, seed = 25): Promise<void> {
     const random = new Random(seed)
@@ -252,14 +353,17 @@ export async function writeBudgetSample(vault: string, seed = 25): Promise<void>
             `${paragraph(random)}\n\n${paragraph(random, ['Hub note'])}\n`
         )
     }
-    await write('Files/cover.png', samplePng(1000, 1500, 142_000, seed))
+    await write('Files/cover.jpg', await samplePhoto(1000, 1500, 142_000, seed))
     for (let index = 1; index <= 3; index += 1) {
-        await write(`Files/media-${String(index)}.png`, samplePng(1200, 800, 80_000, seed + index))
+        await write(
+            `Files/media-${String(index)}.jpg`,
+            await samplePhoto(1200, 800, 80_000, seed + index)
+        )
     }
     for (let index = 1; index <= 4; index += 1) {
         await write(
-            `Files/long-${String(index)}.png`,
-            samplePng(1200, 700, 80_000, seed + 10 + index)
+            `Files/long-${String(index)}.jpg`,
+            await samplePhoto(1200, 700, 80_000, seed + 10 + index)
         )
     }
 }

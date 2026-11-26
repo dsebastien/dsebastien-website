@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { variantKey, variantKeysOf } from '@dsebastien-website/resolver'
 import { rejectionOf } from '@dsebastien-website/testing'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
@@ -17,6 +18,7 @@ import {
     type DeployRun,
     type RevertRun
 } from './release.ts'
+import type { ReleaseImage } from './deployment.ts'
 import { INDEXNOW_KEY, type IndexNowBatch } from '../src/indexnow.ts'
 import { sitemapIndexXml, sitemapXml } from '../src/sitemaps.ts'
 
@@ -2098,5 +2100,256 @@ describe('the cleanup of the object storage', () => {
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ live: true, deleted: 1, error: null })
         expect([...site.storage.names]).toEqual([A_NEW.key])
+    })
+})
+
+// Issue 87, PERF-25: the variants of an image are files derived from it, so
+// they follow every rule of its file.
+describe('the variants of the images of a release', () => {
+    const COVER = file('the cover of a book')
+    const LIVE_RELEASE = {
+        contentRevision: 'a'.repeat(40),
+        siteRevision: SITE,
+        builtAt: '2031-03-01T08:00:00Z'
+    }
+    const VARIANTS = [
+        { step: 480, width: 480, height: 720 },
+        { step: 800, width: 800, height: 1200 }
+    ] as const
+    const imageOf = (key: string): ReleaseImage => ({ key, name: 'cover.jpg', variants: VARIANTS })
+    const variantsOf = (key: string): string[] => [variantKey(key, 480), variantKey(key, 800)]
+    /** An encoder that writes the step into each variant. */
+    const encode = (bytes: Uint8Array, image: ReleaseImage): Promise<Uint8Array[]> =>
+        Promise.resolve(
+            image.variants.map((variant) =>
+                new TextEncoder().encode(`${String(variant.step)} ${String(bytes.length)}`)
+            )
+        )
+
+    /** A run whose host gives the live release until this run deploys its own. */
+    function overLive(options: Parameters<typeof fixture>[0]): Fixture {
+        const site = fixture(options)
+        const checks = site.run.live
+        if (checks === undefined) {
+            throw new Error('the fixture has a host')
+        }
+        return {
+            ...site,
+            run: {
+                ...site.run,
+                live: { ...checks, read: async () => (await checks.read()) ?? LIVE_RELEASE }
+            }
+        }
+    }
+
+    test('are made from the file of the folder and uploaded before the build, when the storage lacks them', async () => {
+        const encoded: string[] = []
+        const site = fixture({
+            stored: [PHOTO.key, variantKey(PHOTO.key, 480)],
+            folder: [PHOTO, COVER],
+            used: [PHOTO.key, COVER.key],
+            overrides: {
+                images: () => Promise.resolve([imageOf(PHOTO.key), imageOf(COVER.key)]),
+                encode: (bytes, image) => {
+                    encoded.push(image.key)
+                    return encode(bytes, image)
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 4, deleted: 0, warnings: [] })
+        expect(encoded.sort()).toEqual([PHOTO.key, COVER.key].sort())
+        const puts = site.events.filter((event) => event.startsWith('put '))
+        expect(puts.sort()).toEqual(
+            [COVER.key, variantKey(PHOTO.key, 800), ...variantsOf(COVER.key)]
+                .map((name) => `put ${name}`)
+                .sort()
+        )
+        expect(site.events.indexOf('build')).toBeGreaterThan(
+            Math.max(...puts.map((put) => site.events.indexOf(put)))
+        )
+    })
+
+    test('are never made again when the storage has them all', async () => {
+        const site = fixture({
+            stored: [COVER.key, ...variantsOf(COVER.key)],
+            used: [COVER.key],
+            overrides: {
+                images: [imageOf(COVER.key)],
+                encode: () => Promise.reject(new Error('no encode'))
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 0, deleted: 0, warnings: [] })
+        expect(site.reads).toEqual([])
+    })
+
+    test('stop the run before the build when one cannot be made, and name its image', async () => {
+        const site = fixture({
+            stored: [COVER.key],
+            folder: [COVER],
+            used: [COVER.key],
+            overrides: {
+                images: [imageOf(COVER.key)],
+                encode: () => Promise.reject(new Error('the file is not an image'))
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', live: false })
+        expect(result.error).toContain(`cover.jpg (${COVER.key}): the file is not an image`)
+        expect(site.events).not.toContain('build')
+    })
+
+    test('stop the run before the build when the file of their image is not in the folder', async () => {
+        const site = fixture({
+            stored: [COVER.key],
+            used: [COVER.key],
+            overrides: { images: [imageOf(COVER.key)], encode }
+        })
+        const result = await deployRelease(site.run)
+        expect(result.error).toContain(COVER.key)
+        expect(result.error).toContain('variants')
+        expect(site.events).not.toContain('build')
+    })
+
+    test('stop the run before the build when the images of the release cannot be read', async () => {
+        const site = fixture({
+            stored: [PHOTO.key, PLAN.key],
+            overrides: {
+                images: () => Promise.reject(new Error('the manifest is not valid')),
+                encode
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result.error).toContain('the manifest is not valid')
+        expect(site.events).not.toContain('build')
+    })
+
+    test('are names of the storage that belong to their image: no warning, and no failure after a takedown', async () => {
+        const site = fixture({
+            stored: [PHOTO.key, PLAN.key, ...variantsOf(PHOTO.key)],
+            overrides: { takedown: true, images: [imageOf(PHOTO.key)], encode }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 0, deleted: 0, warnings: [] })
+    })
+
+    test('leave the storage with their image when no release uses it, and stay for the release before', async () => {
+        const site = overLive({
+            stored: [
+                PHOTO.key,
+                ...variantsOf(PHOTO.key),
+                OLD.key,
+                ...variantsOf(OLD.key),
+                COVER.key,
+                ...variantsOf(COVER.key)
+            ],
+            used: [PHOTO.key],
+            overrides: {
+                images: [imageOf(PHOTO.key)],
+                encode,
+                releaseKeys: (revision) =>
+                    Promise.resolve(
+                        revision === LIVE_RELEASE.contentRevision ? [OLD.key] : undefined
+                    )
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ live: true, deleted: 3, error: null })
+        expect([...site.storage.names].sort()).toEqual(
+            [PHOTO.key, ...variantsOf(PHOTO.key), OLD.key, ...variantsOf(OLD.key)].sort()
+        )
+    })
+
+    test('of a takedown leave at once with their image, also when the build fails', async () => {
+        const site = overLive({
+            stored: [PHOTO.key, COVER.key, ...variantsOf(COVER.key)],
+            used: [PHOTO.key],
+            overrides: {
+                takedown: true,
+                images: [],
+                removedKeys: removedNotLive([COVER.key]),
+                releaseKeys: () => Promise.resolve([COVER.key]),
+                build: () => Promise.reject(new Error('the build failed'))
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'failed', deleted: 3 })
+        expect([...site.storage.names]).toEqual([PHOTO.key])
+    })
+
+    test('of a withdrawn file leave first with it, also when the run is refused, and are never made', async () => {
+        const site = overLive({
+            stored: [PHOTO.key, COVER.key, ...variantsOf(COVER.key)],
+            folder: [COVER],
+            used: [PHOTO.key, COVER.key],
+            overrides: {
+                withdrawnKeys: [COVER.key],
+                images: [imageOf(COVER.key)],
+                encode: () => Promise.reject(new Error('no encode')),
+                releaseKeys: () => Promise.resolve([COVER.key])
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ live: true, uploaded: 0, deleted: 3, error: null })
+        expect([...site.storage.names]).toEqual([PHOTO.key])
+        // Before the check of the live release, without a list of the storage.
+        expect(site.events.slice(0, 2 + variantKeysOf(COVER.key).length)).toEqual([
+            'live?',
+            ...[COVER.key, ...variantKeysOf(COVER.key)].map((name) => `remove ${name}`)
+        ])
+
+        const refused = overLive({
+            stored: [COVER.key, ...variantsOf(COVER.key)],
+            overrides: {
+                withdrawnKeys: [COVER.key],
+                copyRefusal: 'the copy has changes',
+                copyAtMain: true
+            }
+        })
+        const answer = await deployRelease(refused.run)
+        expect(answer.error).toBe('the copy has changes')
+        expect([...refused.storage.names]).toEqual([])
+    })
+
+    test('of an older generation follow their image too, and leave with a forced file after the list', async () => {
+        const older = `${COVER.key}-w1000-1.webp`
+        const site = overLive({
+            stored: [PHOTO.key, COVER.key, older],
+            used: [PHOTO.key],
+            overrides: {
+                withdrawnKeys: [COVER.key],
+                images: [],
+                releaseKeys: () => Promise.resolve([COVER.key])
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ live: true, deleted: 2, error: null, warnings: [] })
+        expect([...site.storage.names]).toEqual([PHOTO.key])
+    })
+
+    test('when the keys of the release cannot be read, leave with the files of every removal', async () => {
+        const site = overLive({
+            stored: [PHOTO.key, COVER.key, ...variantsOf(COVER.key)],
+            overrides: {
+                usedKeys: () => Promise.reject(new Error('the manifest is not valid')),
+                removedKeys: () => Promise.resolve({ notLive: [COVER.key], inLive: [] })
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result.deleted).toBe(3)
+        expect([...site.storage.names]).toEqual([PHOTO.key])
+
+        const blind = overLive({
+            stored: [PHOTO.key, COVER.key, ...variantsOf(COVER.key)],
+            overrides: {
+                usedKeys: () => Promise.reject(new Error('the manifest is not valid')),
+                removedKeys: () => Promise.reject(new Error('the copy is shallow')),
+                releaseKeys: () => Promise.resolve([PHOTO.key])
+            }
+        })
+        const answer = await deployRelease(blind.run)
+        expect(answer.deleted).toBe(3)
+        expect([...blind.storage.names]).toEqual([PHOTO.key])
     })
 })

@@ -1,5 +1,6 @@
 import { sha256Hex } from './sha256.ts'
 import { smallLetters } from './small-letters.ts'
+import { variantAt } from './variants.ts'
 
 // The resolver (MOD-05 of the spec): a pure function, in plain TypeScript, so
 // that it runs in tests, at the edge and on a plain server (HOST-02). The rules
@@ -154,7 +155,8 @@ function keyOf(text: string): string {
 export type Resolution =
     | { kind: 'page'; file: string }
     | { kind: 'file'; file: string; type: SiteFileType }
-    | { kind: 'attachment'; key: string; name: string }
+    /** `variant`: a variant of an image (issue 87), which the storage can lack: then not found. */
+    | { kind: 'attachment'; key: string; name: string; variant?: true }
     | { kind: 'redirect'; status: 301 | 302; location: string; cacheControl: string }
     | { kind: 'not-found'; suggestions: string[]; file?: string }
     | { kind: 'gone'; file?: string }
@@ -291,6 +293,11 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
             key,
             name: decodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
         }
+    }
+    // A variant of an image that a page uses (issue 87): only of an image of the map.
+    const variant = map.attachments === undefined ? undefined : variantAt(path, map.attachments)
+    if (variant !== undefined) {
+        return { kind: 'attachment', key: variant.key, name: variant.name, variant: true }
     }
     const notFound: Resolution = {
         kind: 'not-found',

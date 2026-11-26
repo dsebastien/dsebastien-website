@@ -421,6 +421,49 @@ describe('the images of a note page (PERF-25)', () => {
     })
 })
 
+// Issue 87: an image of a note comes in sizes that fit the screen, in WebP.
+describe('the variants of the images of a note page (PERF-25)', () => {
+    const KEY = 'a9526809f9da4f3a083bceb07247ac2633b41de1ddf9cad8d37e0a518b550a33'
+    const cover = (attributes: string): string =>
+        `<img src="/-/attachments/${KEY}/cover.jpg" alt="" width="1000" height="1500" fetchpriority="high" ${attributes}>`
+    const srcset = `srcset="/-/attachments/${KEY}/w480-1/cover.webp 480w, /-/attachments/${KEY}/w800-1/cover.webp 800w"`
+
+    test('pass with their variants and the size that they take', async () => {
+        const body = cover(`${srcset} sizes="(min-width: 688px) 656px, calc(100vw - 2rem)"`)
+
+        expect((await checkNotePage(page({ body }), files())).failures).toEqual([])
+    })
+
+    test('fail when an image of a note has no variant, or no sizes', async () => {
+        expect((await checkNotePage(page({ body: cover('') }), files())).failures).toEqual([
+            'images: image 1 has no variants in srcset'
+        ])
+        expect((await checkNotePage(page({ body: cover(srcset) }), files())).failures).toEqual([
+            'images: image 1 has a srcset and no sizes'
+        ])
+    })
+
+    test('fail when a variant is not a WebP of the host of the notes', async () => {
+        const body = cover(
+            'srcset="https://cdn.example.com/cover.webp 480w, /-/attachments/a/cover.png 800w" sizes="100vw"'
+        )
+
+        expect((await checkNotePage(page({ body }), files())).failures).toEqual([
+            'images: image 1 has a variant on another host: https://cdn.example.com/cover.webp',
+            'images: image 1 has a variant that is not a WebP: /-/attachments/a/cover.png'
+        ])
+    })
+
+    test('a small image, an SVG and an image of another place need no variant', async () => {
+        const body =
+            `<img src="/-/attachments/${KEY}/icon.png" alt="" width="480" height="480" fetchpriority="high">` +
+            `<img src="/-/attachments/${KEY}/plan.svg" alt="" width="1000" height="800" loading="lazy">` +
+            '<img src="/i.png" alt="" width="1000" height="800" loading="lazy">'
+
+        expect((await checkNotePage(page({ body }), files())).failures).toEqual([])
+    })
+})
+
 describe('the times of a note page in Lighthouse (R57)', () => {
     const run = (lcp: number, tbt = 0, cls = 0): TimeRun => ({ lcp, tbt, cls })
     const budget = TIME_BUDGET.mobile
@@ -479,11 +522,15 @@ describe('the times of a note page in Lighthouse (R57)', () => {
     })
 
     test('the budget of a media note and of the desktop', () => {
-        expect(TIME_BUDGET.mobileMedia.lcp).toBe(2_200)
+        // 2.0 s again with the variants of the cover (issue 87, R92; 2.2 s in R58).
+        expect(TIME_BUDGET.mobileMedia.lcp).toBe(2_000)
         expect(TIME_BUDGET.desktop).toEqual({ lcp: 800, tbt: 50, cls: 0.02 })
         expect(
-            judgeTimes(TIME_BUDGET.mobileMedia, [run(2_050), run(2_100), run(1_950)]).verdict
+            judgeTimes(TIME_BUDGET.mobileMedia, [run(1_990), run(2_100), run(1_950)]).verdict
         ).toBe('pass')
+        expect(
+            judgeTimes(TIME_BUDGET.mobileMedia, [run(2_050), run(2_100), run(1_950)]).verdict
+        ).toBe('again')
     })
 })
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -15,11 +15,14 @@ import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/de
 import { plan, publish, status, takedown, unpublish } from '../apps/plugin/src/publishing/tool.ts'
 import type { Subprocess } from 'bun'
 import { startServer, type Server } from '../apps/site/server/serve.ts'
+import { releaseImages } from '../apps/site/worker/deployment.ts'
+import { writeVariants } from '../apps/site/worker/image-variants.ts'
 
 // The site of the invented fixture vault, to click through on this machine:
 // the publishing tool publishes every new note of a copy of the fixture vault
 // into a local content store, the site is built from it, and the plain local
-// server serves it with its attachments. Everything lives in `.cache/` and is
+// server serves it with its attachments and the variants of its images, made
+// as a deploy makes them (issue 87). Everything lives in `.cache/` and is
 // removed when the command stops. It never reads the real vault.
 //
 //     bun run site:fixture [--port 4322] [--sample]
@@ -61,6 +64,7 @@ const stores = await makeTestStores()
 const cache = join(SITE, '.cache')
 await mkdir(cache, { recursive: true })
 const outDir = await mkdtemp(join(cache, 'site-fixture-'))
+const variants = `${outDir}-variants`
 
 let build: Subprocess | undefined
 let server: Server | undefined
@@ -75,6 +79,7 @@ async function stop(code: number): Promise<never> {
             await server?.stop()
         } finally {
             await rm(outDir, { recursive: true, force: true })
+            await rm(variants, { recursive: true, force: true })
             await stores.remove()
         }
     }
@@ -142,10 +147,16 @@ try {
         throw new Error('the build of the site failed')
     }
 
+    await writeVariants(
+        await releaseImages(contentStore),
+        async (key) => new Uint8Array(await readFile(join(stores.attachmentStorage, key))),
+        variants
+    )
     server = await startServer({
         dist: outDir,
         port: Number(values.port),
-        attachments: stores.attachmentStorage
+        attachments: stores.attachmentStorage,
+        variants
     })
     console.error(`The site of the fixture vault is on ${server.url} (Ctrl+C stops it).`)
     console.error(`  the gone page (410): ${server.url}${canonicalPath(GONE_NOTE)}`)

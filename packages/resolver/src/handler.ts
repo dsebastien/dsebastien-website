@@ -494,9 +494,12 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                 const file = await release.attachment(resolution.key)
                 // The map names the file, so the storage lacks it: a failure
                 // of the release, never "not found" that a cache keeps (URL-33).
-                return file === undefined
-                    ? undefined
-                    : await attachmentResponse(request, file, resolution.name)
+                // An image has the variants of its width only, which the map
+                // does not say: a variant that the storage lacks is not found.
+                if (file === undefined) {
+                    return resolution.variant === true ? errorPlain(404, 'Not found\n') : undefined
+                }
+                return await attachmentResponse(request, file, resolution.name)
             }
             case 'redirect':
                 return new Response(null, {

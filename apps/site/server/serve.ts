@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util'
 import {
     ASSET_FOLDERS,
     failureResponse,
+    imageKeyOf,
     RESOLVER_MAP_FILE,
     resolverMapFrom,
     SERVER_ERROR_FILE,
@@ -20,9 +21,13 @@ import {
 // the tests of the URL contract. It is not a server for production.
 //
 //   bun run serve [--dist <folder>] [--port <number>] [--attachments <folder>]
+//                 [--variants <folder>]
 //
 // With `--attachments`, it also gives the attachments that the pages use,
-// from that folder, which stands for the attachment storage (HOST-05).
+// from that folder, which stands for the attachment storage (HOST-05). With
+// `--variants`, it gives the variants of their images from that folder
+// (issue 87, `writeVariants()` of `apps/site/worker/image-variants.ts`):
+// the attachment folder of the publishing tool holds no variant.
 
 /**
  * A file of a folder of this machine. Its tag is its size and its time.
@@ -79,14 +84,17 @@ export interface Server {
  * @param options.dist the output of the build
  * @param options.port the port. 0 takes a free port
  * @param options.attachments the folder of the attachment storage. Without it, an attachment answers 404
+ * @param options.variants the folder of the variants of the images. Without it, a variant answers 404
  */
 export async function startServer(options: {
     dist: string
     port: number
     attachments?: string
+    variants?: string
 }): Promise<Server> {
     const dist = resolvePath(options.dist)
     const storage = options.attachments === undefined ? undefined : resolvePath(options.attachments)
+    const variants = options.variants === undefined ? undefined : resolvePath(options.variants)
     const map = resolverMapFrom(await Bun.file(join(dist, RESOLVER_MAP_FILE)).json())
     const assets = await readAssets(dist)
     // Read one time at the start: a failure never depends on a file of the
@@ -124,7 +132,15 @@ export async function startServer(options: {
         },
         ...(storage === undefined
             ? {}
-            : { attachment: (key: string) => storedFile(join(storage, key)) }),
+            : {
+                  // A key is a file of the storage; any other name of the resolver is a variant.
+                  attachment: (key: string) =>
+                      imageKeyOf(key) === key
+                          ? storedFile(join(storage, key))
+                          : variants === undefined
+                            ? Promise.resolve(undefined)
+                            : storedFile(join(variants, key))
+              }),
         ...(serverErrorPage === undefined ? {} : { serverErrorPage }),
         // The detail goes to the log of the machine, never to the answer.
         report: (error) => {
@@ -144,14 +160,16 @@ if (import.meta.main) {
         options: {
             dist: { type: 'string', default: 'dist' },
             port: { type: 'string', default: '4322' },
-            attachments: { type: 'string' }
+            attachments: { type: 'string' },
+            variants: { type: 'string' }
         },
         strict: true
     })
     const server = await startServer({
         dist: values.dist,
         port: Number(values.port),
-        ...(values.attachments === undefined ? {} : { attachments: values.attachments })
+        ...(values.attachments === undefined ? {} : { attachments: values.attachments }),
+        ...(values.variants === undefined ? {} : { variants: values.variants })
     })
     console.error(`The built site is on ${server.url}`)
 }

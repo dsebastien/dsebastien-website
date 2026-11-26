@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { variantKey } from '@dsebastien-website/resolver'
 import { rejectionOf } from '@dsebastien-website/testing'
 import { r2Storage, type Fetch } from './r2.ts'
 
@@ -115,6 +116,13 @@ describe('the object storage through the API', () => {
                 body: new Uint8Array([1, 2, 3])
             }
         ])
+    })
+
+    // Issue 87: a variant of an image goes beside its image.
+    test('uploads a variant of an image under its name', async () => {
+        const fake = api([json({ success: true, errors: [], messages: [], result: {} })])
+        await storage(fake.fetch).put(variantKey(KEY, 800), new Uint8Array([1]))
+        expect(fake.asked.map((call) => call.url)).toEqual([`${BASE}/${variantKey(KEY, 800)}`])
     })
 
     test('uploads nothing under a name that is not a key', async () => {

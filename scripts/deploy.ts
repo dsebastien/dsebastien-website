@@ -7,6 +7,7 @@ import {
     ATTACHMENT_KEY,
     deployToken,
     headersFile,
+    releaseImages,
     targetFrom,
     usedAttachmentKeys,
     withoutTokens,
@@ -30,6 +31,7 @@ import {
     processIsAlive,
     takeDeployLock
 } from '../apps/site/worker/deploy-lock.ts'
+import { encodeVariants } from '../apps/site/worker/image-variants.ts'
 import { r2Storage } from '../apps/site/worker/r2.ts'
 import { STORE_CATALOG_URL } from '../apps/site/src/site.ts'
 import {
@@ -322,6 +324,9 @@ async function deploy(
             siteRevision: await git(ROOT, 'rev-parse', 'HEAD'),
             now: () => new Date(),
             usedKeys: () => (store === undefined ? Promise.resolve([]) : usedAttachmentKeys(store)),
+            // The variants of the images (issue 87): made here, from the attachment folder.
+            images: () => (store === undefined ? Promise.resolve([]) : releaseImages(store)),
+            encode: encodeVariants,
             // The files of the takedowns and of the forced removals leave at once (issue 120).
             ...(store === undefined
                 ? {}

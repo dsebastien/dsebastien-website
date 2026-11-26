@@ -204,10 +204,36 @@ describe('budgets of the note page', () => {
         expect(long?.measure.requests).toHaveLength(3)
         // The images are on the pages, so the check of the first image is not empty.
         expect(long?.measure.images.count).toBe(4)
-        expect(long?.measure.images.first).toEndWith('/long-1.png')
+        expect(long?.measure.images.first).toEndWith('/long-1.jpg')
         expect(media?.measure.images.count).toBe(4)
-        expect(media?.measure.images.first).toEndWith('/cover.png')
+        expect(media?.measure.images.first).toEndWith('/cover.jpg')
         expect(hub?.measure.html).toBeGreaterThan(0)
+    })
+
+    // Issue 87, PERF-25: the cover is the largest paint of a media note on a phone.
+    test('the cover of the media note offers its variants in WebP, first and with a high priority', async () => {
+        const file = sampleFiles[BUDGET_SAMPLE.media] ?? ''
+        const page = fromHtml(await readFile(join(outDir ?? '', '-', 'note', file), 'utf8'))
+        const images = [...elementsOf(page)]
+            .map(({ element }) => element)
+            .filter((element) => element.tagName === 'img')
+        const cover = images[0]
+
+        expect(cover?.properties['fetchPriority']).toBe('high')
+        expect(cover?.properties['loading']).toBeUndefined()
+        expect([cover?.properties['width'], cover?.properties['height']]).toEqual([1000, 1500])
+        expect(String(cover?.properties['srcSet'])).toMatch(
+            /^\/-\/attachments\/[0-9a-f]{64}\/w480-1\/cover\.webp 480w,/u
+        )
+        expect(cover?.properties['sizes']).toBe('(min-width: 688px) 656px, calc(100vw - 2rem)')
+        expect(images.slice(1).map((image) => image.properties['loading'])).toEqual([
+            'lazy',
+            'lazy',
+            'lazy'
+        ])
+        expect(images.slice(1).every((image) => image.properties['srcSet'] !== undefined)).toBe(
+            true
+        )
     })
 
     // PAGE-03, PERF-20, PERF-26 (issue 48): the page of a note with very many

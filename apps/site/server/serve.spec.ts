@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { RESOLVER_MAP_FILE, resolverMapOf } from '@dsebastien-website/resolver'
+import {
+    RESOLVER_MAP_FILE,
+    resolverMapOf,
+    variantKey,
+    variantPath
+} from '@dsebastien-website/resolver'
 import { startServer, type Server } from './serve.ts'
 
 // The plain server and the header `Host` (issue 102): the Markdown texts of
@@ -80,5 +85,36 @@ describe('the plain server and the Host header', () => {
         const { status, body } = await withHost('[bad', '/Welcome')
         expect(status).toBe('HTTP/1.1 400 Bad Request')
         expect(body).toBe('Bad request\n')
+    })
+})
+
+// Issue 87: the variants of an image come from a folder of their own.
+describe('the plain server and the variants of an image', () => {
+    test('gives a variant from the folder of the variants, and the image from the storage', async () => {
+        const key = 'a'.repeat(64)
+        const root = await mkdtemp(join(tmpdir(), 'serve-spec-variants-'))
+        const image = `/-/attachments/${key}/cover.png`
+        await Bun.write(
+            join(root, 'dist', RESOLVER_MAP_FILE),
+            JSON.stringify({ pages: {}, attachments: { [image]: key } })
+        )
+        await Bun.write(join(root, 'storage', key), 'png')
+        await Bun.write(join(root, 'variants', variantKey(key, 480)), 'webp')
+        const site = await startServer({
+            dist: join(root, 'dist'),
+            port: 0,
+            attachments: join(root, 'storage'),
+            variants: join(root, 'variants')
+        })
+        try {
+            const variant = await fetch(`${site.url}${variantPath(image, 480)}`)
+            expect(variant.headers.get('content-type')).toBe('image/webp')
+            expect(await variant.text()).toBe('webp')
+            expect(await (await fetch(`${site.url}${image}`)).text()).toBe('png')
+            expect((await fetch(`${site.url}${variantPath(image, 800)}`)).status).toBe(404)
+        } finally {
+            await site.stop()
+            await rm(root, { recursive: true, force: true })
+        }
     })
 })

@@ -6,7 +6,7 @@
 
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { RESOLVER_MAP_FILE } from '@dsebastien-website/resolver'
+import { imageVariants, RESOLVER_MAP_FILE, type ImageVariant } from '@dsebastien-website/resolver'
 import { readPublishedNotes } from '../src/content-store.ts'
 
 /** Where a release goes. */
@@ -358,4 +358,43 @@ export async function usedAttachmentKeys(store: string): Promise<string[]> {
         }
     }
     return [...keys].sort()
+}
+
+/** An image of a release that gets variants (issue 87, PERF-25). */
+export interface ReleaseImage {
+    /** The key of its file. */
+    readonly key: string
+    /** A name of its file, which gives its kind. */
+    readonly name: string
+    /** The variants that the pages of the release offer, from the size of the manifest. */
+    readonly variants: readonly ImageVariant[]
+}
+
+/**
+ * The images of a release whose variants its pages offer: each key one time,
+ * with the variants of the first attachment of that key that has some, by
+ * the order of the keys. The build reads the same manifest with the same
+ * reader and the same rule (`imageVariants()`), so the deploy makes the
+ * variants that the pages name.
+ */
+export async function releaseImages(store: string): Promise<ReleaseImage[]> {
+    const images = new Map<string, ReleaseImage>()
+    for (const note of await readPublishedNotes(store)) {
+        for (const attachment of note.attachments) {
+            if (
+                images.has(attachment.key) ||
+                attachment.width === undefined ||
+                attachment.height === undefined
+            ) {
+                continue
+            }
+            const variants = imageVariants(attachment.name, attachment.width, attachment.height)
+            if (variants.length > 0) {
+                images.set(attachment.key, { key: attachment.key, name: attachment.name, variants })
+            }
+        }
+    }
+    return [...images.values()].sort((one, two) =>
+        one.key < two.key ? -1 : one.key > two.key ? 1 : 0
+    )
 }

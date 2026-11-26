@@ -40,6 +40,18 @@ export {
 } from './site.ts'
 export { guardName, smallLetters } from './small-letters.ts'
 export {
+    hasVariants,
+    imageKeyOf,
+    imageVariants,
+    VARIANT_GENERATION,
+    VARIANT_WIDTHS,
+    variantKey,
+    variantKeysOf,
+    variantPath,
+    type ImageVariant,
+    type VariantStep
+} from './variants.ts'
+export {
     attachmentPath,
     backlinksPath,
     canonicalPath,

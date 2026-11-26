@@ -1,5 +1,5 @@
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
-import { ATTACHMENT_KEY } from './deployment.ts'
+import { imageKeyOf } from '@dsebastien-website/resolver'
 
 // The object storage of the host as the deployment reaches it (issue 32):
 // the REST API of Cloudflare for the objects of a bucket of an account, with
@@ -141,7 +141,8 @@ export function r2Storage(access: R2Access): AttachmentStorage {
             }
         },
         async put(key, bytes) {
-            if (!ATTACHMENT_KEY.test(key)) {
+            // A key, or a variant of the image of a key (issue 87).
+            if (imageKeyOf(key) === undefined) {
                 throw new Error(`"${key}" is not a key of the attachment storage`)
             }
             await call(`store ${key}`, objectUrl(key), {

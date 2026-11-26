@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { foldedForm, resolve, type Resolution, type ResolverMap } from './resolver.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
+import { variantKey, variantPath } from './variants.ts'
 
 // The resolver (MOD-05 of the spec): a pure function that turns a requested
 // path into the page to serve, or "not found". The first slice knows the
@@ -59,6 +60,22 @@ describe('resolver of attachments', () => {
             suggestions: []
         })
         expect(resolve('constructor', WITH)).toEqual({ kind: 'not-found', suggestions: [] })
+    })
+
+    // Issue 87, PERF-25: a variant follows its image.
+    test('gives the variants of an image that a page uses, in WebP', () => {
+        expect(resolve(variantPath(`/-/attachments/${KEY}/garden-plan.png`, 800), WITH)).toEqual({
+            kind: 'attachment',
+            key: variantKey(KEY, 800),
+            name: 'garden-plan.webp',
+            variant: true
+        })
+        expect(resolve(variantPath(`/-/attachments/${KEY}/other.png`, 800), WITH)).toMatchObject({
+            kind: 'not-found'
+        })
+        expect(
+            resolve(variantPath(`/-/attachments/${KEY}/garden-plan.png`, 800), { pages: {} })
+        ).toMatchObject({ kind: 'not-found' })
     })
 })
 

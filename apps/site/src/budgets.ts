@@ -1,3 +1,4 @@
+import { hasVariants, VARIANT_WIDTHS } from '@dsebastien-website/resolver'
 import type { AstroIntegration } from 'astro'
 import type { Element, Root, RootContent } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
@@ -64,10 +65,10 @@ export interface TimeBudget {
 export const TIME_BUDGET = {
     mobile: { lcp: 1_200, tbt: 100, cls: 0.02 },
     /**
-     * A media note: its cover is the largest paint. 2.2 s until the covers get
-     * responsive sizes and a modern format (PERF-25), then 2.0 s again (R58).
+     * A media note: its cover is the largest paint. 2.0 s (R57), with the
+     * variants of the cover in WebP (PERF-25, issue 87, R92; 2.2 s before, R58).
      */
-    mobileMedia: { lcp: 2_200, tbt: 100, cls: 0.02 },
+    mobileMedia: { lcp: 2_000, tbt: 100, cls: 0.02 },
     desktop: { lcp: 800, tbt: 50, cls: 0.02 }
 } as const satisfies Record<string, TimeBudget>
 
@@ -321,7 +322,52 @@ function imageFailures(images: readonly Element[]): string[] {
         if (image.properties['width'] === undefined || image.properties['height'] === undefined) {
             failures.push(`images: image ${String(index + 1)} has no width and height`)
         }
+        failures.push(...variantFailures(image, index + 1))
     })
+    return failures
+}
+
+/**
+ * An image of a note that is wider than the smallest variant comes with its
+ * variants in `srcset` and its size on the page in `sizes`, each a WebP of
+ * the host of the notes (issue 87, PERF-25).
+ */
+function variantFailures(image: Element, number: number): string[] {
+    const failures: string[] = []
+    const src = image.properties['src']
+    const srcset = image.properties['srcSet']
+    const candidates = (
+        Array.isArray(srcset) ? srcset.join(', ') : typeof srcset === 'string' ? srcset : ''
+    )
+        .split(',')
+        .map((candidate) => candidate.trim().split(/\s+/u)[0] ?? '')
+        .filter((address) => address !== '')
+    if (candidates.length === 0) {
+        const width = Number(image.properties['width'])
+        if (
+            typeof src === 'string' &&
+            src.startsWith('/-/attachments/') &&
+            hasVariants(withoutQuery(src)) &&
+            width > VARIANT_WIDTHS[0]
+        ) {
+            failures.push(`images: image ${String(number)} has no variants in srcset`)
+        }
+        return failures
+    }
+    if (image.properties['sizes'] === undefined) {
+        failures.push(`images: image ${String(number)} has a srcset and no sizes`)
+    }
+    for (const address of candidates) {
+        if (!onHost(address)) {
+            failures.push(
+                `images: image ${String(number)} has a variant on another host: ${address}`
+            )
+        } else if (!withoutQuery(address).toLowerCase().endsWith('.webp')) {
+            failures.push(
+                `images: image ${String(number)} has a variant that is not a WebP: ${address}`
+            )
+        }
+    }
     return failures
 }
 

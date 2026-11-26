@@ -1,3 +1,4 @@
+import { imageVariants, variantPath } from '@dsebastien-website/resolver'
 import type { Element, ElementContent, Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { toHtml } from 'hast-util-to-html'
@@ -107,6 +108,42 @@ function notPublished(children: ElementContent[]): Element {
     return make('span', { className: ['not-published'] }, children)
 }
 
+/**
+ * The widest that an image shows in the text of a note, in CSS pixels: the
+ * column of the text, `max-w-[72ch]` of `.note-text` at its size `text-lg`
+ * in Noto Sans, as Chrome lays it out (issue 87).
+ */
+export const TEXT_COLUMN = 656
+
+/** The width of an image on a small screen: the screen less the padding of the page (`px-4`). */
+const SMALL_SCREEN = 'calc(100vw - 2rem)'
+
+/**
+ * The variants of an image in `srcset`, with its size on the page in `sizes`
+ * (issue 87, PERF-25): on a small screen the width of the screen less its
+ * padding, and on a wide one its width, at most the column. Nothing for an
+ * image with no variant.
+ *
+ * @param shown the width that the note gives the image, or its own
+ */
+function variantsOf(file: FileLink, shown: number | undefined): Element['properties'] {
+    if (file.width === undefined || file.height === undefined) {
+        return {}
+    }
+    const variants = imageVariants(file.name, file.width, file.height)
+    if (variants.length === 0) {
+        return {}
+    }
+    const wide = Math.min(shown ?? file.width, TEXT_COLUMN)
+    return {
+        srcSet: variants
+            .map((variant) => `${variantPath(file.url, variant.step)} ${String(variant.width)}w`)
+            .join(', '),
+        // From the screen where the column holds the image whole (2rem of padding).
+        sizes: `(min-width: ${String(wide + 32)}px) ${String(wide)}px, ${SMALL_SCREEN}`
+    }
+}
+
 /** The markup of an embed of a file: an image with its size, a player, or a link. */
 function embedOfFile(file: FileLink, shown: string): Element {
     const kind = endOf(file.name)
@@ -132,6 +169,7 @@ function embedOfFile(file: FileLink, shown: string): Element {
         const dimensions = width !== undefined && height !== undefined ? { width, height } : {}
         return make('img', {
             src: file.url,
+            ...variantsOf(file, width),
             alt,
             ...dimensions,
             loading: 'lazy',

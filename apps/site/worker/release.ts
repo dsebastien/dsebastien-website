@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { MAX_ATTACHMENT_SIZE } from '../../plugin/src/publishing/attachments.ts'
-import { DEPLOYMENT_RECORD_FILE, SITE_ORIGIN } from '@dsebastien-website/resolver'
+import {
+    DEPLOYMENT_RECORD_FILE,
+    imageKeyOf,
+    SITE_ORIGIN,
+    variantKey,
+    variantKeysOf
+} from '@dsebastien-website/resolver'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     checkOutput,
@@ -12,7 +18,8 @@ import {
     HOST_LIMITS,
     type DeploymentRecord,
     type HostLimits,
-    type ReleaseBuild
+    type ReleaseBuild,
+    type ReleaseImage
 } from './deployment.ts'
 import {
     changedUrls,
@@ -30,7 +37,10 @@ import { locsOf, SITEMAP_INDEX_PATH } from '../src/sitemaps.ts'
 //    takedown or of a forced removal that the new release does not use;
 // 2. the attachments: each key that the release uses and that the object
 //    storage lacks goes up from the attachment folder of the machine; a key
-//    in neither place stops the run before the build;
+//    in neither place stops the run before the build; then each variant of
+//    an image of the release that the storage lacks is made from the file of
+//    the folder and goes up (issue 87): the storage is the cache of the
+//    variants, so an image is encoded one time;
 // 3. the build, then its deployment record and its headers file, then the
 //    limits of the host;
 // 4. the deployment (one new Worker version, one switch);
@@ -46,6 +56,12 @@ import { locsOf, SITEMAP_INDEX_PATH } from '../src/sitemaps.ts'
 // the author on issue 120). The steps that reach a host are ports: the
 // command line (`scripts/deploy.ts`) gives the real ones, the tests give
 // fakes.
+//
+// A variant of an image is a file derived from it (issue 87, business rule
+// 16): every step reads a name of the storage as the key of its image
+// (`imageKeyOf()`), so a variant leaves and stays with its image. A step
+// that deletes by key, without a list of the storage, deletes the variants
+// of the key too (`withVariants()`).
 
 /** The files of the attachment folder of the machine, by their keys. */
 export interface AttachmentFolder {
@@ -149,6 +165,18 @@ export interface DeployRun {
     readonly storage?: AttachmentStorage
     /** The attachment folder of the machine. */
     readonly attachments: AttachmentFolder
+    /**
+     * The images of the release whose pages offer variants (issue 87), or
+     * the read of them. A read that throws stops the run before the build.
+     * Without it, the release has none.
+     */
+    readonly images?: readonly ReleaseImage[] | (() => Promise<readonly ReleaseImage[]>)
+    /**
+     * Makes the variants of an image from the bytes of its file, in the
+     * order of its variants. It throws when it cannot. Without it, a variant
+     * that the storage lacks stops the run before the build.
+     */
+    readonly encode?: (bytes: Uint8Array, image: ReleaseImage) => Promise<readonly Uint8Array[]>
     /** True when a takedown started the run. */
     readonly takedown: boolean
     /**
@@ -320,7 +348,11 @@ const PARALLEL = 8
  * Runs the task on each item, a few at a time. After the first failure it
  * starts no new task, waits for the ones that run, then throws that failure.
  */
-async function eachItem<T>(items: readonly T[], task: (item: T) => Promise<void>): Promise<void> {
+async function eachItem<T>(
+    items: readonly T[],
+    task: (item: T) => Promise<void>,
+    parallel = PARALLEL
+): Promise<void> {
     let next = 0
     let failure: { error: unknown } | undefined
     const worker = async (): Promise<void> => {
@@ -337,9 +369,22 @@ async function eachItem<T>(items: readonly T[], task: (item: T) => Promise<void>
             }
         }
     }
-    await Promise.all(Array.from({ length: Math.min(PARALLEL, items.length) }, worker))
+    await Promise.all(Array.from({ length: Math.min(parallel, items.length) }, worker))
     if (failure !== undefined) {
         throw failure.error
+    }
+}
+
+/** The keys, each with every name that a variant of it can have: a deletion without a list of the storage. */
+function withVariants(keys: readonly string[]): string[] {
+    return keys.flatMap((key) => (ATTACHMENT_KEY.test(key) ? [key, ...variantKeysOf(key)] : [key]))
+}
+
+/** True for a name of the storage whose image has one of these keys: the file or a variant of it. */
+function belongsTo(keys: ReadonlySet<string>): (name: string) => boolean {
+    return (name) => {
+        const key = imageKeyOf(name)
+        return key !== undefined && keys.has(key)
     }
 }
 
@@ -636,7 +681,11 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                     : replaced.contentRevision
             )) ?? { notLive: [], inLive: [] }
             warnings.push(...(removed.warnings ?? []))
-            keys = [...removed.notLive, ...removed.inLive]
+            keys = withVariants(
+                [...new Set([...removed.notLive, ...removed.inLive])].filter(
+                    (key) => !withdrawn.has(key)
+                )
+            )
             how = 'the files of every takedown and forced removal were deleted'
         } catch (history) {
             const live = await keysOfLive()
@@ -656,7 +705,10 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 )
                 return
             }
-            keys = names.filter((name) => ATTACHMENT_KEY.test(name) && !inLive.has(name))
+            keys = names.filter((name) => {
+                const key = imageKeyOf(name)
+                return key !== undefined && !inLive.has(key)
+            })
             how = `the history of the copy cannot be read either (${messageOf(history)}), so every file that the live release does not use was deleted`
         }
         const failed = await remove(
@@ -714,7 +766,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
 
     /** How many names of the storage are not keys. Such a name can be a path of the vault. */
     function othersOf(names: readonly string[]): number {
-        return names.filter((name) => !ATTACHMENT_KEY.test(name)).length
+        return names.filter((name) => imageKeyOf(name) === undefined).length
     }
 
     /**
@@ -730,17 +782,18 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         // The withdrawn files left before the check of the live release. A
         // history that cannot be read forces every file that the new release
         // does not use.
-        const keys = names.filter(
-            (name) =>
+        const keys = names.filter((name) => {
+            const key = imageKeyOf(name)
+            return (
                 !withdrawn.has(name) &&
-                (forced.has(name) ||
-                    (unknownHistory !== undefined && ATTACHMENT_KEY.test(name) && !used.has(name)))
-        )
+                key !== undefined &&
+                (forced.has(key) || (unknownHistory !== undefined && !used.has(key)))
+            )
+        })
         // The files of a removal that the live release holds go when the
         // live release does not use them either: a takedown whose cleanup
         // failed before, also when this run fails.
-        const named = new Set(names)
-        const waiting = earlier.filter((key) => named.has(key))
+        const waiting = names.filter(belongsTo(new Set(earlier)))
         if (waiting.length > 0) {
             const live = await keysOfLive()
             if (live === undefined) {
@@ -748,8 +801,8 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                     'a file can still be public: the copy cannot read the files of the live release, so the files of earlier takedowns and forced removals stay until a deployment that can'
                 )
             } else {
-                const inLive = new Set(live)
-                keys.push(...waiting.filter((key) => !inLive.has(key)))
+                const inLive = belongsTo(new Set(live))
+                keys.push(...waiting.filter((name) => !inLive(name)))
             }
         }
         keys.sort()
@@ -782,7 +835,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
      * failure goes on as in `removeForced()`.
      */
     async function removeWithdrawn(storage: AttachmentStorage): Promise<void> {
-        const failed = await remove(storage, [...withdrawn].sort())
+        const failed = await remove(storage, withVariants([...withdrawn].sort()))
         if (failed.length > 0) {
             warnings.push(
                 'a file can still be public: the attachment storage kept files under a guard'
@@ -875,7 +928,8 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 `the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
             )
         }
-        const unused = names.filter((name) => ATTACHMENT_KEY.test(name) && !kept.has(name)).sort()
+        const keep = belongsTo(kept)
+        const unused = names.filter((name) => imageKeyOf(name) !== undefined && !keep(name)).sort()
         const failed = await remove(storage, unused)
         if (failed.length > 0) {
             throw new Error(
@@ -955,6 +1009,16 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             await upload(run, [...used], run.storage, new Set(stored), () => {
                 uploaded += 1
             })
+            const images = typeof run.images === 'function' ? await run.images() : run.images
+            await uploadVariants(
+                run,
+                (images ?? []).filter((image) => used.has(image.key)),
+                run.storage,
+                new Set(stored),
+                () => {
+                    uploaded += 1
+                }
+            )
         }
 
         let dist: string
@@ -1159,6 +1223,82 @@ async function upload(
         uploaded()
     })
     run.log(`uploaded ${String(wanted.length)} attachments to the attachment storage`)
+}
+
+/** How many images are encoded at the same time: each holds its pixels in memory. */
+const PARALLEL_ENCODES = 4
+
+/**
+ * Makes each variant of the images that the storage lacks from the file of
+ * the folder, and uploads it (issue 87). An image whose variants the
+ * storage has is never read. An image whose file is not in the folder, or
+ * whose variants cannot be made, stops the run before the build, with its
+ * name and its key: a page would name a variant that does not exist.
+ */
+async function uploadVariants(
+    run: DeployRun,
+    images: readonly ReleaseImage[],
+    storage: AttachmentStorage,
+    stored: ReadonlySet<string>,
+    uploaded: () => void
+): Promise<void> {
+    const wanted = images.filter((image) =>
+        image.variants.some((variant) => !stored.has(variantKey(image.key, variant.step)))
+    )
+    if (wanted.length === 0) {
+        return
+    }
+    const failed: string[] = []
+    for (const image of wanted) {
+        if (!(await run.attachments.exists(image.key))) {
+            failed.push(`${image.name} (${image.key}): its file is not in the attachment folder`)
+        } else if ((await run.attachments.size(image.key)) > MAX_ATTACHMENT_SIZE) {
+            failed.push(`${image.name} (${image.key}): its file is above the size limit`)
+        }
+    }
+    const encode = run.encode
+    if (encode === undefined) {
+        failed.push('nothing on this machine makes the variants of an image')
+    }
+    if (failed.length > 0 || encode === undefined) {
+        throw new Error(`the variants of these images cannot be made: ${failed.sort().join('; ')}`)
+    }
+    let made = 0
+    await eachItem(
+        wanted,
+        async (image) => {
+            let files: readonly Uint8Array[]
+            try {
+                const bytes = await run.attachments.read(image.key)
+                if (createHash('sha256').update(bytes).digest('hex') !== image.key) {
+                    throw new Error('the file of the attachment folder is not the file of its key')
+                }
+                files = await encode(bytes, image)
+                if (files.length !== image.variants.length) {
+                    throw new Error(
+                        `${String(files.length)} variants were made, not ${String(image.variants.length)}`
+                    )
+                }
+            } catch (error) {
+                failed.push(`${image.name} (${image.key}): ${messageOf(error)}`)
+                return
+            }
+            for (const [index, variant] of image.variants.entries()) {
+                const name = variantKey(image.key, variant.step)
+                const bytes = files[index]
+                if (bytes !== undefined && !stored.has(name)) {
+                    await storage.put(name, bytes)
+                    made += 1
+                    uploaded()
+                }
+            }
+        },
+        PARALLEL_ENCODES
+    )
+    if (failed.length > 0) {
+        throw new Error(`the variants of these images cannot be made: ${failed.sort().join('; ')}`)
+    }
+    run.log(`uploaded ${String(made)} variants of images to the attachment storage`)
 }
 
 /**

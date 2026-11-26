@@ -9,6 +9,7 @@ import {
     deployToken,
     headersFile,
     targetFrom,
+    releaseImages,
     usedAttachmentKeys,
     withoutTokens,
     workerConfiguration
@@ -361,6 +362,60 @@ describe('the attachments that a release uses', () => {
     test('are none for a content store with no publication', async () => {
         await withFolder(async (store) => {
             expect(await usedAttachmentKeys(store)).toEqual([])
+            expect(await releaseImages(store)).toEqual([])
+        })
+    })
+
+    // Issue 87: the images whose variants the pages of the release offer.
+    test('give the images of the release that get variants, each key one time, with their variants', async () => {
+        await withFolder(async (store) => {
+            await mkdir(join(store, 'manifest'))
+            const sized = (key: string, path: string, width: number, height: number) => ({
+                ...attachment(key, path),
+                width,
+                height
+            })
+            const entries = {
+                'a.json': {
+                    ...ENTRY,
+                    id: 'aaaaaaaaaaaaaaaa',
+                    path: 'A.md',
+                    state: 'published',
+                    attachments: [
+                        sized(TWO, 'cover.jpg', 1000, 1500),
+                        sized(ONE, 'icon.png', 64, 64),
+                        attachment(THREE, 'plan.pdf')
+                    ]
+                },
+                'b.json': {
+                    ...ENTRY,
+                    id: 'bbbbbbbbbbbbbbbb',
+                    path: 'B.md',
+                    state: 'published',
+                    attachments: [sized(TWO, 'copy of cover.jpg', 1000, 1500)]
+                },
+                'c.json': {
+                    ...ENTRY,
+                    id: 'cccccccccccccccc',
+                    path: 'C.md',
+                    state: 'unpublished',
+                    attachments: [sized(THREE, 'w.png', 2000, 1000)]
+                }
+            }
+            for (const [name, entry] of Object.entries(entries)) {
+                await writeFile(join(store, 'manifest', name), JSON.stringify(entry))
+            }
+            expect(await releaseImages(store)).toEqual([
+                {
+                    key: TWO,
+                    name: 'cover.jpg',
+                    variants: [
+                        { step: 480, width: 480, height: 720 },
+                        { step: 800, width: 800, height: 1200 },
+                        { step: 1200, width: 1000, height: 1500 }
+                    ]
+                }
+            ])
         })
     })
 })

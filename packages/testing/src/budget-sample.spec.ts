@@ -3,11 +3,13 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
+import sharp from 'sharp'
 import { imageSize } from '../../../apps/plugin/src/publishing/images.ts'
 import {
     BUDGET_SAMPLE,
     BUDGET_SAMPLE_BACKLINKS,
     BUDGET_SAMPLE_FOLDER,
+    samplePhoto,
     samplePng,
     writeBudgetSample
 } from './budget-sample.ts'
@@ -53,7 +55,7 @@ describe('the budget sample', () => {
 
         expect(two).toEqual(one)
         expect(other).not.toEqual(one)
-    })
+    }, 60_000)
 
     test('has the shape of the large published notes', async () => {
         const vault = await sample()
@@ -63,19 +65,47 @@ describe('the budget sample', () => {
         expect(long.length).toBeGreaterThan(20_000)
         expect(long.match(/^#{2,3} /gmu)).toHaveLength(24)
         expect(long.match(/\[\[[^\]]+\]\]/gu)?.length).toBeGreaterThanOrEqual(60)
-        expect(media.indexOf('![[cover.png]]')).toBeLessThan(media.indexOf('## My notes'))
+        expect(media.indexOf('![[cover.jpg]]')).toBeLessThan(media.indexOf('## My notes'))
         const linking = await readdir(join(vault, BUDGET_SAMPLE_FOLDER, 'Linking'))
         expect(linking).toHaveLength(BUDGET_SAMPLE_BACKLINKS)
-    })
+    }, 30_000)
 
     test('has images of the size of a photo, that the tool reads with their width and height', async () => {
         const vault = await sample()
         const cover = new Uint8Array(
-            await readFile(join(vault, BUDGET_SAMPLE_FOLDER, 'Files/cover.png'))
+            await readFile(join(vault, BUDGET_SAMPLE_FOLDER, 'Files/cover.jpg'))
         )
 
         expect(cover.length).toBe(142_000)
         expect(imageSize(cover)).toEqual({ width: 1000, height: 1500 })
+    }, 30_000)
+})
+
+// Issue 87: the variants of an image are only as small as its pixels let
+// them be, so the images of the sample have the detail of a photo.
+describe('a photo of the sample', () => {
+    test('is a JPEG of its size and bytes, almost all of them image data', async () => {
+        const photo = await samplePhoto(600, 400, 40_000, 1)
+        const facts = await sharp(photo).metadata()
+
+        expect([facts.format, facts.width, facts.height]).toEqual(['jpeg', 600, 400])
+        expect(photo.length).toBe(40_000)
+        // Without its comment, the image data alone is near the size.
+        const data = await sharp(photo).jpeg({ quality: 100 }).toBuffer()
+        expect(data.length).toBeGreaterThan(30_000)
+    })
+
+    test('keeps much of its size in WebP, as a photo does', async () => {
+        const photo = await samplePhoto(1000, 1500, 142_000, 25)
+        const webp = await sharp(photo).resize(800).webp({ quality: 75 }).toBuffer()
+
+        expect(webp.length).toBeGreaterThan(20_000)
+    })
+
+    test('is the same at each run for one seed', async () => {
+        expect(await samplePhoto(300, 200, 10_000, 3)).toEqual(
+            await samplePhoto(300, 200, 10_000, 3)
+        )
     })
 })
 

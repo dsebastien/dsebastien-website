@@ -17,6 +17,8 @@ import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/de
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import { judgeTimes, TIME_BUDGET, type TimeBudget, type TimeRun } from '../apps/site/src/budgets.ts'
 import { startServer } from '../apps/site/server/serve.ts'
+import { releaseImages } from '../apps/site/worker/deployment.ts'
+import { writeVariants } from '../apps/site/worker/image-variants.ts'
 
 // The time budgets of the note page (issue 47, PERF-20, PERF-22, R57). The
 // tool publishes a copy of the fixture vault with the budget sample, the site
@@ -33,7 +35,9 @@ import { startServer } from '../apps/site/server/serve.ts'
 // Lighthouse is the version of `package.json`. Chrome is found by Lighthouse,
 // or named by CHROME_PATH. A run waits for a quiet machine: a backup made the
 // blocking time of one page go from 18 ms to 1,700 ms (issue 25). Everything
-// lives in `.cache/` and is removed at the end, but the reports.
+// lives in `.cache/` and is removed at the end, but the reports. The
+// variants of the images (issue 87) are made as a deploy makes them, into a
+// folder that the plain server reads.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'apps', 'site')
@@ -180,6 +184,8 @@ await mkdir(cache, { recursive: true })
 await rm(REPORTS, { recursive: true, force: true })
 await mkdir(REPORTS, { recursive: true })
 const outDir = await mkdtemp(join(cache, 'page-budgets-'))
+/** The variants of the images, made as a deploy makes them (issue 87). */
+const variants = `${outDir}-variants`
 let failed = false
 try {
     const vault = await copyFixtureVault(stores)
@@ -209,10 +215,16 @@ try {
     if ((await build.exited) !== 0) {
         throw new Error('the build of the site failed')
     }
+    await writeVariants(
+        await releaseImages(contentStore),
+        async (key) => new Uint8Array(await readFile(join(stores.attachmentStorage, key))),
+        variants
+    )
     const server = await startServer({
         dist: outDir,
         port: 0,
-        attachments: stores.attachmentStorage
+        attachments: stores.attachmentStorage,
+        variants
     })
     const proxy = compressingProxy(server.url)
     try {
@@ -247,6 +259,7 @@ try {
     }
 } finally {
     await rm(outDir, { recursive: true, force: true })
+    await rm(variants, { recursive: true, force: true })
     await stores.remove()
 }
 console.error(`The reports of Lighthouse are in ${REPORTS}.`)

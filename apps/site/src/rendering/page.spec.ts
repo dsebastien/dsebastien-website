@@ -654,6 +654,39 @@ describe('attachments of a page', () => {
         ).toContain('alt="The plan" width="120" height="90"')
     })
 
+    // Issue 87, PERF-25: the browser takes the variant that fits the screen.
+    test('an image with variants offers them in WebP, with the size that it takes on the page', () => {
+        const files: Record<string, FileLink> = {
+            'cover.jpg': {
+                url: `/-/attachments/${KEY}/cover.jpg`,
+                name: 'cover.jpg',
+                width: 1000,
+                height: 1500
+            }
+        }
+        const html = (shown: string): string =>
+            new SitePages([
+                note(
+                    'Self.md',
+                    `<note-link data-link="cover.jpg" data-embed="">${shown}</note-link>`,
+                    {},
+                    files
+                )
+            ]).render('Self.md')
+        const variants = `/-/attachments/${KEY}/w480-1/cover.webp 480w, /-/attachments/${KEY}/w800-1/cover.webp 800w, /-/attachments/${KEY}/w1200-1/cover.webp 1000w`
+        expect(html('cover.jpg')).toBe(
+            `<img src="/-/attachments/${KEY}/cover.jpg" srcset="${variants}" sizes="(min-width: 688px) 656px, calc(100vw - 2rem)" alt="cover.jpg" width="1000" height="1500" loading="lazy" decoding="async">`
+        )
+        // An image shown smaller takes that size on a wide screen.
+        expect(html('300')).toContain(
+            `srcset="${variants}" sizes="(min-width: 332px) 300px, calc(100vw - 2rem)" alt="cover.jpg" width="300" height="450"`
+        )
+        // An image of no variant: a small one, an SVG, one of no known size.
+        expect(
+            render('<note-link data-link="garden-plan.png" data-embed="">x</note-link>')
+        ).not.toContain('srcset')
+    })
+
     test('an image whose size is not known has no width and no height', () => {
         expect(render('<note-link data-link="plan.svg" data-embed="">A plan</note-link>')).toBe(
             `<img src="/-/attachments/${KEY}/plan.svg" alt="A plan" loading="lazy" decoding="async">`

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { failureResponse, siteHandler, type Release, type StoredFile } from './handler.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
 import { SITE_ORIGIN } from './url.ts'
+import { variantKey, variantPath } from './variants.ts'
 
 // The answer of a request (HOST-02 of the spec, issue 21): one handler that
 // knows no host, with the files of a release and of the attachment storage
@@ -554,6 +555,20 @@ describe('a failure of the release', () => {
         expect(response.status).toBe(500)
         expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
         expect(await response.text()).toStartWith('# Server error\n')
+    })
+
+    // Issue 87: an image has the variants of its width only, which the map does not say.
+    test('gives a variant of an image in WebP, and 404 for a variant that the storage lacks', async () => {
+        const variants = {
+            attachment: (key: string) =>
+                Promise.resolve(key === variantKey(KEY, 480) ? stored('webp') : undefined)
+        }
+        const response = await get(variantPath(PHOTO, 480), {}, variants)
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('image/webp')
+        expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+        expect(await response.text()).toBe('webp')
+        expect((await get(variantPath(PHOTO, 1600), {}, variants)).status).toBe(404)
     })
 
     test('answers 500 when the storage lacks an attachment of the map', async () => {
