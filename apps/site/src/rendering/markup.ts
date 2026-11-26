@@ -11,7 +11,7 @@ import rehypeSanitize from 'rehype-sanitize'
 import temml from 'temml'
 import { linkPathOfDestination, wikilinksOf } from '../../../plugin/src/publishing/links.ts'
 import { allowList } from './allow-list.ts'
-import { headingIds } from './anchors.ts'
+import { FRAME_IDS, freeId, headingIds } from './anchors.ts'
 import { tagOfText } from '../tags.ts'
 import { encode, MARK } from './mark.ts'
 
@@ -35,7 +35,7 @@ import { encode, MARK } from './mark.ts'
  * (`wikilinksOf`, `linkPathOfDestination`) and of the reader of the tags
  * (`tagOfText` in `tags.ts`).
  */
-export const MARKUP_VERSION = 9
+export const MARKUP_VERSION = 10
 
 /**
  * The packages that write the markup, with their versions from the site
@@ -604,8 +604,9 @@ function diagramOf(source: string, prefix: string): ElementContent[] | undefined
 
 /**
  * The step of the HTML tree after the allow list: math, Mermaid diagrams,
- * then ids for the headings (URL-14), which keep clear of every id before
- * them. It runs after the allow list, because what it writes is ours.
+ * then one id per element: an id of the frame of the page or a repeated id
+ * takes a number (issue 124), and the headings get ids (URL-14) that keep
+ * clear of every other id. It runs after the allow list, because what it writes is ours.
  */
 export function rehypeNote() {
     return (tree: HastRoot): void => {
@@ -630,11 +631,17 @@ export function rehypeNote() {
         const headings = all.filter(
             ({ node }) => /^h[1-6]$/u.test(node.tagName) && node.properties['id'] === undefined
         )
-        const taken = new Set(
-            all
-                .map(({ node }) => node.properties['id'])
-                .filter((id): id is string => typeof id === 'string')
-        )
+        // The ids that the note already has (block ids, raw HTML, footnotes,
+        // diagrams), in their order: an id of the frame or an id of an earlier
+        // element takes a number, as a heading does (issue 124).
+        const taken = new Set(FRAME_IDS)
+        for (const { node } of all) {
+            const id = node.properties['id']
+            if (typeof id !== 'string') continue
+            const free = freeId(id, taken)
+            node.properties['id'] = free
+            taken.add(free)
+        }
         const ids = headingIds(
             headings.map(({ node }) => ({
                 depth: Number(node.tagName.slice(1)),

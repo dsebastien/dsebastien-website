@@ -119,6 +119,30 @@ describe('cards, names and diagrams', () => {
             '<h1 id="guide">Guide</h1>\n<h2 id="guide-content">Content</h2>'
         )
     })
+
+    test('a block id never takes an id of the frame of the page (issue 124)', async () => {
+        expect(await html('A block. ^content')).toBe('<p id="^content">A block.</p>')
+    })
+
+    test('a repeated block id names its first block only; the next one takes a number (issue 124)', async () => {
+        expect(await html('A ^twice\n\nB ^twice')).toBe(
+            '<p id="^twice">A</p>\n<p id="^twice-2">B</p>'
+        )
+    })
+
+    test('raw HTML never gives an element an id of the frame of the page (issue 124)', async () => {
+        expect(await html('<div id="content">x</div>')).toBe('<div id="content-2">x</div>')
+    })
+
+    test('a repeated id of raw HTML, of a block or of a heading names its first element only (issue 124)', async () => {
+        expect(await html('<p id="a">1</p>\n\n<p id="a">2</p>')).toBe(
+            '<p id="a">1</p>\n<p id="a-2">2</p>'
+        )
+        expect(await html('A ^b\n\n<p id="^b">x</p>')).toBe('<p id="^b">A</p>\n<p id="^b-2">x</p>')
+        expect(await html('# Notes\n\n<p id="notes">x</p>')).toBe(
+            '<h1 id="notes-2">Notes</h1>\n<p id="notes">x</p>'
+        )
+    })
 })
 
 describe('cache of the markup (BUILD-04)', () => {

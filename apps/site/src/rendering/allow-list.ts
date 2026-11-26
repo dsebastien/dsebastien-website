@@ -15,7 +15,9 @@ import { MARK } from './mark.ts'
 //
 // Ids are kept as they are (no `user-content-` prefix): the ids of the
 // headings, the blocks and the footnotes are the anchors of a page (URL-14).
-// A `name` gets the prefix.
+// The HTML step after the list gives an id of the frame of the page or a
+// repeated id a number (issue 124), so raw HTML cannot take the id of the
+// main element. A `name` gets the prefix.
 
 // The list of GitHub limits the classes of some elements (`a`, `li`, `ul`,
 // `code`) to the ones that GitHub writes. Here every element may have a class,

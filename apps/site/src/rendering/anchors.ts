@@ -13,16 +13,20 @@
 // heading in that form too (`[[Note#Autumn#Tasks]]`). `headingFor` reads it,
 // in the build for the links and in the page for an old hash.
 //
-// The frame of every page (`layouts/Page.astro`) has ids of its own: a heading
-// never takes one of them (issue 88). A heading "Content" takes `content-2`,
-// as a repeated slug does.
+// The frame of every page (`layouts/Page.astro`) has ids of its own: no id of
+// a note takes one of them (issue 88, issue 124). A heading "Content" takes
+// `content-2`, as a repeated slug does. A block id (`^content`) and an id of
+// raw HTML go through the same reservation: an id of the frame or an id that
+// an element before it has takes a number (`content-2`, `^twice-2`).
 
 /** The id of the main element of every page: the target of the skip link. */
 export const MAIN_ID = 'content'
 
 /**
- * The ids of the frame of a page, which no heading of a note takes. A new
- * fixed id of `layouts/Page.astro` goes into this set.
+ * The ids of the frame of a page, which no id of a note takes. A new fixed id
+ * of the frame of a note page (`layouts/Page.astro`, its components, the
+ * title band of `pages/-/note/[id].astro`) goes into this set: a test of the
+ * built site fails when the frame has an id that the set does not hold.
  */
 export const FRAME_IDS: ReadonlySet<string> = new Set([MAIN_ID])
 
@@ -42,6 +46,18 @@ export function slugOf(text: string): string {
         .trim()
         .replace(/\s+/gu, '-')
     return slug === '' ? 'section' : slug
+}
+
+/**
+ * An id that is not used yet: the id itself, or the id with the first number
+ * from 2 that is free (`notes-2`).
+ */
+export function freeId(id: string, used: ReadonlySet<string>): string {
+    let free = id
+    for (let number = 2; used.has(free); number += 1) {
+        free = `${id}-${String(number)}`
+    }
+    return free
 }
 
 /**
@@ -68,10 +84,7 @@ export function headingIds(
         if (used.has(id) && parent !== undefined) {
             id = `${parent.slug}-${slug}`
         }
-        const base = id
-        for (let number = 2; used.has(id); number += 1) {
-            id = `${base}-${String(number)}`
-        }
+        id = freeId(id, used)
         used.add(id)
         ids.push(id)
         parents.push({ depth: heading.depth, slug })

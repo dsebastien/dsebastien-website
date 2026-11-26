@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Element, Root } from 'hast'
+import { fromHtml } from 'hast-util-from-html'
 import {
     FIXTURE_NOTE_TYPES,
     BUDGET_SAMPLE,
@@ -15,6 +17,7 @@ import {
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 import { checkNotePage, PAGE_BUDGET, type PageCheck } from './budgets.ts'
+import { FRAME_IDS } from './rendering/anchors.ts'
 
 // The budgets of the note page in CI (issue 47, PERF-20, PERF-22, R57): the
 // tool publishes every note of a copy of the fixture vault, which holds a
@@ -23,6 +26,11 @@ import { checkNotePage, PAGE_BUDGET, type PageCheck } from './budgets.ts'
 // built, and every note page must pass the byte and request budgets. They
 // give the same result at each run, so they block at once. The times of
 // Lighthouse run in their own job (`scripts/page-budgets.ts`).
+//
+// The same build checks the ids of every page (issue 124): no page has two
+// elements with one id, and the frame of a note page has only the ids of
+// `FRAME_IDS`, which no id of a note takes. A note of traps writes ids of the
+// frame and repeated ids in its headings, its blocks and its raw HTML.
 const SITE = fileURLToPath(new URL('..', import.meta.url))
 
 let stores: TestStores | undefined
@@ -30,6 +38,55 @@ let outDir: string | undefined
 let exitCode = -1
 const checks = new Map<string, PageCheck>()
 let sampleFiles: Record<string, string> = {}
+/** The parsed pages of the build, by their path in the output folder. */
+const pages = new Map<string, Root>()
+
+/** The note of traps of the ids: ids of the frame and repeated ids (issue 124). */
+const ID_TRAPS = '96 Id traps/Ids of the frame.md'
+const ID_TRAPS_TEXT = [
+    '# Content',
+    '',
+    'A block named as the main element. ^content',
+    '',
+    'A block with a repeated name. ^twice',
+    '',
+    'Another block with the same name. ^twice',
+    '',
+    '<div id="content">Raw HTML with the id of the main element.</div>',
+    '',
+    '<p id="notes">Raw HTML with an id.</p>',
+    '',
+    '<p id="notes">Raw HTML with the same id.</p>',
+    '',
+    '## Notes',
+    ''
+].join('\n')
+
+/** Every element of a tree, with the elements above it. */
+function* elementsOf(
+    node: Root | Element,
+    above: readonly Element[] = []
+): Generator<{ element: Element; above: readonly Element[] }> {
+    for (const child of node.children) {
+        if (child.type !== 'element') continue
+        yield { element: child, above }
+        yield* elementsOf(child, [...above, child])
+        if (child.content !== undefined) yield* elementsOf(child.content, [...above, child])
+    }
+}
+
+/** The ids of a page that more than one element has. */
+function repeatedIds(page: Root): string[] {
+    const seen = new Set<string>()
+    const repeated = new Set<string>()
+    for (const { element } of elementsOf(page)) {
+        const id = element.properties['id']
+        if (typeof id !== 'string') continue
+        if (seen.has(id)) repeated.add(id)
+        seen.add(id)
+    }
+    return [...repeated]
+}
 
 beforeAll(async () => {
     stores = await makeTestStores()
@@ -42,6 +99,8 @@ beforeAll(async () => {
         contentStore,
         attachmentStorage: stores.attachmentStorage
     })
+    await mkdir(join(vault, '96 Id traps'), { recursive: true })
+    await Bun.write(join(vault, ID_TRAPS), ID_TRAPS_TEXT)
     const queue = await status(device)
     const planned = await plan(device, { include: queue.new })
     await publish(device, planned.id, {
@@ -66,6 +125,11 @@ beforeAll(async () => {
     for (const name of await readdir(join(dist, '-', 'note'))) {
         const html = await readFile(join(dist, '-', 'note', name), 'utf8')
         checks.set(name, await checkNotePage(html, read))
+    }
+    for (const entry of await readdir(dist, { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith('.html')) continue
+        const file = join(entry.parentPath, entry.name)
+        pages.set(relative(dist, file), fromHtml(await readFile(file, 'utf8')))
     }
     const manifest = join(contentStore, 'manifest')
     for (const name of await readdir(manifest)) {
@@ -152,5 +216,50 @@ describe('budgets of the note page', () => {
             pages: Record<string, string>
         }
         expect(map.pages[`/-/backlinks/${id}`]).toBe(`-/backlinks/${file}`)
+    })
+})
+
+describe('ids of the built pages (issue 124)', () => {
+    test('no page has two elements with one id', () => {
+        const repeated = Object.fromEntries(
+            [...pages]
+                .map(([path, page]) => [path, repeatedIds(page)] as const)
+                .filter(([, ids]) => ids.length > 0)
+        )
+
+        expect(pages.size).toBeGreaterThan(checks.size)
+        expect(repeated).toEqual({})
+    })
+
+    test('the page of the note of traps keeps a target for each id that the note names', () => {
+        const page = pages.get(join('-', 'note', sampleFiles[ID_TRAPS] ?? ''))
+        const ids = [...elementsOf(page ?? { type: 'root', children: [] })]
+            .map(({ element }) => element.properties['id'])
+            .filter((id) => typeof id === 'string')
+
+        expect(ids).toContain('content')
+        expect(ids).toContain('^content')
+        expect(ids).toContain('^twice')
+        expect(ids).toContain('notes')
+        expect(ids.filter((id) => id === 'content')).toHaveLength(1)
+    })
+
+    test('the frame of every note page has only the ids of FRAME_IDS, which no id of a note takes', () => {
+        const outside = new Set<string>()
+        for (const [path, page] of pages) {
+            if (!path.startsWith(join('-', 'note'))) continue
+            for (const { element, above } of elementsOf(page)) {
+                const id = element.properties['id']
+                const inNote =
+                    element.properties['dataNoteTitle'] !== undefined ||
+                    [element, ...above].some(
+                        (node) => node.properties['dataNoteBody'] !== undefined
+                    )
+                if (typeof id === 'string' && !inNote) outside.add(id)
+            }
+        }
+
+        expect(outside.size).toBeGreaterThan(0)
+        expect([...outside].filter((id) => !FRAME_IDS.has(id))).toEqual([])
     })
 })
