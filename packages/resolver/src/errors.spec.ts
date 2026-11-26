@@ -99,10 +99,22 @@ describe('form of an error answer', () => {
             'markdown'
         ],
         [
-            'the new name of Markdown refused before the old name',
+            'the new name of Markdown refused: the old name does not count',
             '/Nothing',
-            'text/markdown;q=0, text/x-markdown;q=0.5',
-            'markdown'
+            'text/markdown;q=0, text/x-markdown',
+            'html'
+        ],
+        [
+            'the weight of the new name, not the higher weight of the old name',
+            '/Nothing',
+            'text/markdown;q=0.5, text/x-markdown, text/html;q=0.8',
+            'html'
+        ],
+        [
+            'the old name of Markdown, refused, with any text',
+            '/Nothing',
+            'text/x-markdown;q=0, text/*',
+            'html'
         ],
         [
             'both names of Markdown refused',
@@ -159,6 +171,13 @@ describe('short text of an error answer', () => {
         )
         expect(text).toContain(
             '- [https://notes.example.invalid/Mint\\)\\_\\*bold\\*](<https://notes.example.invalid/Mint)_*bold*>)\n'
+        )
+    })
+
+    // A character reference of the text would show as another character.
+    test('keeps an & of the text plain', () => {
+        expect(errorText(404, 'https://a.invalid', ['/Mint&amp;'])).toContain(
+            '- [https://a.invalid/Mint\\&amp;](<https://a.invalid/Mint\\&amp;>)\n'
         )
     })
 })
