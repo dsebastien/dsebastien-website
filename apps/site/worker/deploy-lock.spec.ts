@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -137,6 +138,62 @@ describe('the lock of the deployments of a target', () => {
         const holder = JSON.parse(await readFile(file, 'utf8')) as { pid: number }
         expect([42, 43, 44, 45]).toContain(holder.pid)
         // No temporary file and no stale lock stay beside the lock.
+        expect(await readdir(dirname(file))).toEqual(['lock'])
+    })
+
+    // Three runs at once (issue 126): a run that gives way must never drop
+    // the lock of the run that won. Random pauses before each step on the
+    // files try many orders of the three runs.
+    test('lets one run only hold the lock when three take over a stale lock at once, in any order', async () => {
+        let seed = 126
+        const random = (): number => {
+            // A small generator with a seed: the same pauses at each run.
+            seed = (seed * 16_807) % 2_147_483_647
+            return seed / 2_147_483_647
+        }
+        const pause = (): Promise<void> =>
+            new Promise((resolve) => {
+                setTimeout(resolve, Math.floor(random() ** 3 * 10))
+            })
+        const alive = (pid: number): boolean => pid !== 41
+        for (let round = 0; round < 100; round += 1) {
+            const file = await lockFile()
+            await takeDeployLock(file, { pid: 41, now: () => NOW, isAlive: () => true })
+
+            const results = await Promise.allSettled(
+                [42, 43, 44].map((pid) =>
+                    takeDeployLock(file, { pid, now: () => NOW, isAlive: alive, pause })
+                )
+            )
+
+            const won = results.flatMap((one, index) =>
+                one.status === 'fulfilled' ? [[42, 43, 44][index]] : []
+            )
+            // One run won, and the lock is its lock.
+            const holder = JSON.parse(await readFile(file, 'utf8')) as { pid: number }
+            expect({ round, won }).toEqual({ round, won: [holder.pid] })
+            expect(await readdir(dirname(file))).toEqual(['lock'])
+        }
+    }, 60_000)
+
+    test('clears the claim of a run that stopped during its takeover, and takes over at the next run', async () => {
+        const file = await lockFile()
+        await takeDeployLock(file, { pid: 41, now: () => NOW, isAlive: () => true })
+        const digest = createHash('sha256')
+            .update(await readFile(file, 'utf8'))
+            .digest('hex')
+            .slice(0, 16)
+        const claim = join(dirname(file), `.takeover-${digest}`)
+        await writeFile(claim, JSON.stringify({ pid: 40, startedAt: '2031-04-01T08:00:00Z' }))
+        const alive = (pid: number): boolean => pid > 41
+
+        const message = await rejectionOf(
+            takeDeployLock(file, { pid: 42, now: () => NOW, isAlive: alive })
+        )
+        const lock = await takeDeployLock(file, { pid: 42, now: () => NOW, isAlive: alive })
+
+        expect(message).toContain('at the same time')
+        expect(lock.warning).toContain('41')
         expect(await readdir(dirname(file))).toEqual(['lock'])
     })
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { MAX_TIMEOUT_MINUTES } from '../../plugin/src/publishing/deploy.ts'
@@ -11,8 +12,9 @@ import { MAX_TIMEOUT_MINUTES } from '../../plugin/src/publishing/deploy.ts'
 // file first, then linked to its name, which fails when the lock exists, so
 // a lock is never half written. A lock whose process is dead, or that is
 // older than the most time limit of a deployment with a margin (a process
-// number used again after a reboot), is taken over with a warning: the stale
-// lock is renamed away first, so only one run wins.
+// number used again after a reboot), is taken over with a warning: the runs
+// that read one stale lock race for one claim of its takeover, so only one
+// run takes it away, and no run moves a lock that another run holds.
 
 /** The age after which a lock is the lock of a run that stopped: the most time limit of the tools, and one hour. */
 export const STALE_AFTER_MS = (MAX_TIMEOUT_MINUTES + 60) * 60_000
@@ -30,6 +32,8 @@ export interface LockOptions {
     readonly now: () => Date
     /** True when the process still runs. */
     readonly isAlive: (pid: number) => boolean
+    /** A pause before each step on the files: a test gives random pauses to try many orders of runs at once. */
+    readonly pause?: () => Promise<void>
 }
 
 /** A lock that this run holds. */
@@ -86,10 +90,12 @@ function temporaryOf(file: string, pid: number, kind: string): string {
 }
 
 /** Makes the lock file whole, or gives `false` when it exists. */
-async function create(file: string, holder: LockHolder): Promise<boolean> {
+async function create(file: string, holder: LockHolder, options: LockOptions): Promise<boolean> {
     const temporary = temporaryOf(file, holder.pid, 'lock')
+    await options.pause?.()
     await writeFile(temporary, `${JSON.stringify(holder)}\n`)
     try {
+        await options.pause?.()
         await link(temporary, file)
         return true
     } catch (error) {
@@ -111,6 +117,84 @@ function isStale(holder: LockHolder, options: LockOptions): boolean {
     )
 }
 
+/** The age after which the claim of a takeover is the claim of a run that stopped: a takeover takes a few milliseconds. */
+const CLAIM_STALE_AFTER_MS = 60_000
+
+/** True when the claim of a takeover is the claim of a run that stopped during its takeover. */
+function isStaleClaim(claimer: LockHolder | 'unreadable', options: LockOptions): boolean {
+    if (claimer === 'unreadable') {
+        return true
+    }
+    const started = Date.parse(claimer.startedAt)
+    return (
+        !options.isAlive(claimer.pid) ||
+        (Number.isFinite(started) && options.now().getTime() - started > CLAIM_STALE_AFTER_MS)
+    )
+}
+
+/** The claim of the takeover of the stale lock with this text: one name for each stale lock. */
+function claimOf(file: string, text: string): string {
+    const digest = createHash('sha256').update(text).digest('hex').slice(0, 16)
+    return join(dirname(file), `.takeover-${digest}`)
+}
+
+function tookItAtTheSameTime(): Error {
+    return new Error('another deployment of this target took the lock at the same time')
+}
+
+/**
+ * Takes over the stale lock with this text (issue 126). The runs that read
+ * it race for one claim, made whole like a lock: only one run makes it, so
+ * only one run takes the stale lock away, and no run ever moves a lock that
+ * another run holds. The run with the claim gives way when the lock is no
+ * longer the stale one, else it takes the stale lock away and makes its own;
+ * a run that makes its lock in that moment wins, and this run gives way. The
+ * claim of a run that stopped during its takeover goes, and the run that saw
+ * it gives way.
+ */
+async function takeOver(
+    file: string,
+    text: string,
+    holder: LockHolder,
+    options: LockOptions
+): Promise<void> {
+    const claim = claimOf(file, text)
+    if (!(await create(claim, holder, options))) {
+        await options.pause?.()
+        const claimer = await holderOf(claim)
+        if (claimer !== undefined && isStaleClaim(claimer, options)) {
+            await rm(claim, { force: true })
+        }
+        throw tookItAtTheSameTime()
+    }
+    try {
+        await options.pause?.()
+        const now = await readFile(file, 'utf8').catch(() => undefined)
+        if (now !== text) {
+            throw tookItAtTheSameTime()
+        }
+        // Renamed, not removed: on Windows the name of a removed file that
+        // a run still reads stays taken until it closes the file.
+        const away = temporaryOf(file, holder.pid, 'stale')
+        await options.pause?.()
+        try {
+            await rename(file, away)
+        } catch (error) {
+            if (codeOf(error) === 'ENOENT') {
+                throw tookItAtTheSameTime()
+            }
+            throw error
+        }
+        await rm(away, { force: true })
+        if (!(await create(file, holder, options))) {
+            throw tookItAtTheSameTime()
+        }
+    } finally {
+        await options.pause?.()
+        await rm(claim, { force: true })
+    }
+}
+
 /**
  * Takes the lock of the deployments of a target. It throws when another run
  * that still runs holds it.
@@ -130,45 +214,30 @@ export async function takeDeployLock(file: string, options: LockOptions): Promis
             }
         }
     })
-    if (await create(file, holder)) {
+    if (await create(file, holder, options)) {
         return lock()
     }
+    await options.pause?.()
     const text = await readFile(file, 'utf8').catch(() => undefined)
-    const other = text === undefined ? undefined : (holderFrom(text) ?? 'unreadable')
-    if (other !== undefined && other !== 'unreadable' && !isStale(other, options)) {
+    if (text === undefined) {
+        // The lock went meanwhile: this run makes its lock like a first run.
+        if (!(await create(file, holder, options))) {
+            throw tookItAtTheSameTime()
+        }
+        return lock()
+    }
+    const other = holderFrom(text) ?? 'unreadable'
+    if (other !== 'unreadable' && !isStale(other, options)) {
         throw new Error(
             `another deployment of this target runs on this machine (process ${String(other.pid)}, since ${other.startedAt}): wait for it to end`
         )
     }
-    const warning =
+    await takeOver(file, text, holder, options)
+    return lock(
         other === 'unreadable'
             ? `took over a lock of the deployments that cannot be read: ${file}`
-            : other === undefined
-              ? undefined
-              : `took over the lock of a deployment that stopped (process ${String(other.pid)}, since ${other.startedAt})`
-    if (text !== undefined) {
-        // Only one run renames the stale lock away. A lock that is not the
-        // one that this run read goes back, and this run gives way.
-        const away = temporaryOf(file, holder.pid, 'stale')
-        try {
-            await rename(file, away)
-        } catch (error) {
-            if (codeOf(error) !== 'ENOENT') {
-                throw error
-            }
-        }
-        const moved = await readFile(away, 'utf8').catch(() => undefined)
-        if (moved !== undefined && moved !== text) {
-            await link(away, file).catch(() => undefined)
-            await rm(away, { force: true })
-            throw new Error('another deployment of this target took the lock at the same time')
-        }
-        await rm(away, { force: true })
-    }
-    if (!(await create(file, holder))) {
-        throw new Error('another deployment of this target took the lock at the same time')
-    }
-    return lock(warning)
+            : `took over the lock of a deployment that stopped (process ${String(other.pid)}, since ${other.startedAt})`
+    )
 }
 
 /** True when this process holds the lock of the deployments of a target. */
