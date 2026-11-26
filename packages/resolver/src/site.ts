@@ -284,13 +284,20 @@ export function resolverMapOf(
  * The former folders whose notes all moved to one folder (decision of the
  * author R82): for each folder of a former path of a published note, by its
  * folded form, the address of the one folder where those notes are now, as
- * the map gives it (its folder note or its folder page). A folder that is an
- * address now (a note, a folder) keeps it, and a folder whose notes moved to
- * more than one folder, or to the root, is no address.
+ * the map gives it (its folder note or its folder page). A folder whose text
+ * is the text of a current note or folder keeps that address, a folder whose
+ * text is the text of an unpublished note stays gone (business rule 1), and a
+ * folder whose notes moved to more than one folder, or to the root, is no
+ * address. A former folder wins over a file name, an alias and a former file
+ * name of another note: the resolver looks for it right after the former
+ * paths and the rows of the redirect list.
+ *
+ * @param taken the folded texts of the unpublished notes
  */
 function formerFoldersOf(
     notes: readonly SiteNote[],
-    folded: ReadonlyMap<string, string>
+    folded: ReadonlyMap<string, string>,
+    taken: ReadonlySet<string>
 ): Record<string, string> {
     const targets = new Map<string, Set<string>>()
     for (const note of notes) {
@@ -310,7 +317,13 @@ function formerFoldersOf(
     for (const key of [...targets.keys()].sort(compareCodePoints)) {
         const [now, ...others] = [...(targets.get(key) ?? [])]
         const target = now === undefined || now === '' ? undefined : folded.get(now)
-        if (others.length === 0 && now !== key && !folded.has(key) && target !== undefined) {
+        if (
+            others.length === 0 &&
+            now !== key &&
+            !folded.has(key) &&
+            !taken.has(key) &&
+            target !== undefined
+        ) {
             folders[key] = target
         }
     }
@@ -346,7 +359,7 @@ function formerMapOf(
             ])
         }
     }
-    const folders = formerFoldersOf(notes, folded)
+    const folders = formerFoldersOf(notes, folded, taken)
     return {
         folded: urls(texts),
         names: urls(names),

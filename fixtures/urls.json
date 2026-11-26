@@ -15,7 +15,8 @@
         },
         {
             "path": "10 Garden/Drip irrigation.md",
-            "aliases": ["Watering"]
+            "aliases": ["Watering"],
+            "formerPaths": ["10 Garden/Bean trellis/Drip irrigation.md"]
         },
         {
             "path": "10 Garden/Watering schedule.md",
@@ -148,6 +149,10 @@
             },
             {
                 "from": "Old Beds/",
+                "to": "/Welcome"
+            },
+            {
+                "from": "Old Shed/",
                 "to": "/Welcome"
             }
         ]
@@ -751,6 +756,19 @@
             "status": 301,
             "location": "/10+Garden/Herb+bed/Herb+bed",
             "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "a former folder whose text is the text of an unpublished note is gone (R82)",
+            "request": "/10+Garden/Bean+trellis/",
+            "status": 410,
+            "format": "html"
+        },
+        {
+            "name": "a prefix rule needs a path under the folder: the folder of a rule that is no former folder is not found",
+            "request": "/Old+Shed/",
+            "status": 404,
+            "suggestions": [],
+            "format": "html"
         },
         {
             "name": "the former path of an unpublished note",
