@@ -229,10 +229,15 @@ export interface ListRefresh {
     /**
      * Refreshes the lists of the notes at these vault paths, sorted by path.
      * It writes only the output of the serializer. It never throws: a note
-     * that it cannot refresh is in `problems`.
+     * that it cannot refresh is in `problems`. `moment` says when: before a
+     * plan (the default), or after a run (R84), for the wording of the
+     * problems.
      */
-    refresh(paths: readonly string[]): Promise<RefreshResult>
+    refresh(paths: readonly string[], moment?: RefreshMoment): Promise<RefreshResult>
 }
+
+/** When the frozen lists are refreshed: before a plan (R71), or after a publication, an unpublish or a takedown (R84). */
+export type RefreshMoment = 'before-plan' | 'after-run'
 
 /** What a refresh of the frozen lists did (rule 7 of "The frozen lists of a note"). */
 export interface RefreshResult {

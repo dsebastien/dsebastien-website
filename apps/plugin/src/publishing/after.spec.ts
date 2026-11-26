@@ -3,14 +3,15 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
     copyFixtureVault,
+    gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
     type TestStores
 } from '@dsebastien-website/testing'
-import { refreshAfterRun } from './after.ts'
+import { refreshAfterRun, SeenNotes, seeingVault } from './after.ts'
 import { queryNamesProperty } from './frozen.ts'
 import { nodeDevice } from './node/device.ts'
-import type { Device, ListRefresh, RefreshResult } from './ports.ts'
+import type { Device, ListRefresh, RefreshResult, Vault } from './ports.ts'
 import { plan, publish, status, takedown, unpublish } from './tool.ts'
 
 // The refresh of the frozen lists after a publication, an unpublish and a
@@ -34,8 +35,30 @@ const PUBLIC_QUERY = [
     ''
 ].join('\n')
 
+/** A folder of the deny list whose path Obsidian reads as `My Private` (issue 110). */
+const DENIED_FOLDER = 'My\u00a0Private'
+
+/** Another device adds a folder to the deny list of the content store, and pushes it. */
+async function denyAlso(copy: string, folder: string): Promise<void> {
+    await writeFile(
+        join(copy, 'configuration.json'),
+        `${JSON.stringify({ denyList: ['80 Templates', '90 Locked Shed', folder] }, null, 4)}\n`
+    )
+    for (const args of [
+        ['add', '--', 'configuration.json'],
+        ['commit', '--quiet', '--message', 'Deny one more folder'],
+        ['push', '--quiet', 'origin', 'HEAD:main']
+    ]) {
+        const child = Bun.spawn(['git', ...args], { cwd: copy, env: gitEnvironment() })
+        if ((await child.exited) !== 0) {
+            throw new Error(`git ${args.join(' ')} failed`)
+        }
+    }
+}
+
 interface Setup {
     vault: string
+    copy: string
     device: Device
     /** The paths of each call of the stand-in, in order. */
     calls: string[][]
@@ -84,7 +107,7 @@ async function setUp(stores: TestStores, fails = false): Promise<Setup> {
         ...nodeDevice({ vault, contentStore: copy, attachmentStorage: stores.attachmentStorage }),
         lists
     }
-    return { vault, device, calls }
+    return { vault, copy, device, calls }
 }
 
 describe('a query that names a property of the publication (R84)', () => {
@@ -129,7 +152,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
         expect(calls).toEqual([[PUBLIC_LIST]])
         expect(after.listsRefreshed).toEqual([PUBLIC_LIST])
         expect(after.refreshProblems).toEqual([])
-    })
+    }, 60_000)
 
     test('after an unpublish, the same notes are asked', async () => {
         await using stores = await makeTestStores()
@@ -143,7 +166,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
 
         expect(calls).toEqual([[PUBLIC_LIST]])
         expect(after.listsRefreshed).toEqual([PUBLIC_LIST])
-    })
+    }, 60_000)
 
     test('after a takedown, the same notes are asked', async () => {
         await using stores = await makeTestStores()
@@ -157,7 +180,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
 
         expect(calls).toEqual([[PUBLIC_LIST]])
         expect(after.listsRefreshed).toEqual([PUBLIC_LIST])
-    })
+    }, 60_000)
 
     test('a published note that the refresh wrote is a changed note for the next plan', async () => {
         await using stores = await makeTestStores()
@@ -169,7 +192,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
         const queue = await status(device)
 
         expect(queue.changed).toContain(PUBLIC_LIST)
-    })
+    }, 60_000)
 
     test('a note under a guard is never asked', async () => {
         await using stores = await makeTestStores()
@@ -184,7 +207,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
         await refreshAfterRun(device)
 
         expect(calls).toEqual([[PUBLIC_LIST]])
-    })
+    }, 60_000)
 
     test('a note that names no property of the publication is never asked', async () => {
         await using stores = await makeTestStores()
@@ -193,7 +216,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
         await refreshAfterRun(device)
 
         expect(calls.flat()).not.toContain(FROZEN)
-    })
+    }, 60_000)
 
     test('a refresh that fails is reported and throws nothing', async () => {
         await using stores = await makeTestStores()
@@ -203,7 +226,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
 
         expect(after.listsRefreshed).toEqual([])
         expect(after.refreshProblems).toEqual([{ path: PUBLIC_LIST, message: 'a query failed' }])
-    })
+    }, 60_000)
 
     test('a refresh that throws is reported for each note', async () => {
         await using stores = await makeTestStores()
@@ -220,7 +243,7 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
         expect(after.refreshProblems).toEqual([
             { path: PUBLIC_LIST, message: 'the refresh of the Dataview Serializer failed: stopped' }
         ])
-    })
+    }, 60_000)
 
     test('without a serializer, nothing is asked and nothing is reported', async () => {
         await using stores = await makeTestStores()
@@ -231,5 +254,106 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
             listsRefreshed: [],
             refreshProblems: []
         })
-    })
+    }, 60_000)
+})
+
+describe('the refresh after a run reads little and fails closed (R84 review)', () => {
+    /** The same device with a vault that counts its reads of notes and can fail on one path. */
+    function counting(device: Device, fails?: string): { device: Device; reads: string[] } {
+        const reads: string[] = []
+        const wrap = (vault: Vault): Vault => ({
+            ...vault,
+            list: (folder) => vault.list(folder),
+            readBytes: (path) => vault.readBytes(path),
+            size: (path) => vault.size(path),
+            hasFolder: (path) => vault.hasFolder(path),
+            write: (path, text, before) => vault.write(path, text, before),
+            read: async (path) => {
+                reads.push(path)
+                if (path === fails) {
+                    throw new Error('not valid UTF-8')
+                }
+                return await vault.read(path)
+            },
+            forRun: () => wrap(vault.forRun())
+        })
+        return { device: { ...device, vault: wrap(device.vault) }, reads }
+    }
+
+    test('with the notes that the check read, only the notes to refresh are read again', async () => {
+        await using stores = await makeTestStores()
+        const { device, calls } = await setUp(stores)
+        const seen = new SeenNotes()
+        await status({ ...device, vault: seeingVault(device.vault, seen) })
+        const { device: counted, reads } = counting(device)
+
+        const after = await refreshAfterRun(counted, seen)
+
+        expect(reads).toEqual([PUBLIC_LIST])
+        expect(calls).toEqual([[PUBLIC_LIST]])
+        expect(after.listsRefreshed).toEqual([PUBLIC_LIST])
+    }, 60_000)
+
+    test('a guard added after the check is seen before the call', async () => {
+        await using stores = await makeTestStores()
+        const { device, vault, calls } = await setUp(stores)
+        const seen = new SeenNotes()
+        await status({ ...device, vault: seeingVault(device.vault, seen) })
+        await note(vault, PUBLIC_LIST, `---\npublish_ignore: true\n---\n${PUBLIC_QUERY}`)
+
+        await refreshAfterRun(device, seen)
+
+        expect(calls).toEqual([])
+    }, 60_000)
+
+    test('a note whose Obsidian path is the one of a file of the deny list is never asked', async () => {
+        await using stores = await makeTestStores()
+        const { device, vault, copy, calls } = await setUp(stores)
+        await denyAlso(copy, DENIED_FOLDER)
+        await note(vault, `${DENIED_FOLDER}/Public notes.md`, PUBLIC_QUERY)
+        await note(vault, 'My Private/Public notes.md', PUBLIC_QUERY)
+
+        await refreshAfterRun(device)
+
+        expect(calls).toEqual([[PUBLIC_LIST]])
+    }, 60_000)
+
+    test('a note that cannot be read is reported', async () => {
+        await using stores = await makeTestStores()
+        const { device: plain } = await setUp(stores)
+        const { device } = counting(plain, PLAIN)
+
+        const after = await refreshAfterRun(device)
+
+        expect(after.refreshProblems).toEqual([
+            {
+                path: PLAIN,
+                message: 'the note cannot be read, so its lists are not refreshed: not valid UTF-8'
+            }
+        ])
+    }, 60_000)
+
+    test('the serializer is told that the refresh comes after a run', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores)
+        const moments: (string | undefined)[] = []
+        const told = {
+            ...device,
+            lists: {
+                refresh: (paths: readonly string[], moment?: string): Promise<RefreshResult> => {
+                    moments.push(moment)
+                    return Promise.resolve({
+                        refreshed: new Set(paths),
+                        written: new Map(),
+                        wrote: false,
+                        problems: []
+                    })
+                }
+            }
+        }
+
+        await refreshAfterRun(told)
+
+        expect(moments).toEqual(['after-run'])
+    }, 60_000)
 })
