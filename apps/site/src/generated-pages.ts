@@ -271,19 +271,25 @@ export const HOME = {
     description: `${SITE_NAME}: thousands of connected notes about knowledge management, personal productivity, software, and the books, movies and games of their author.`
 } as const
 
-/** The library: the type hubs of the media types (NAV-03). */
+/**
+ * The library: the type hubs of the media types (NAV-03). It is indexed as a
+ * curated list (IDX-22, R61) when one of its hubs is indexed: with no hub, or
+ * only hubs under the floor of 5 notes, it is a thin page (issue 98).
+ */
 export function libraryOf(hubs: readonly NoteList[]): {
     readonly path: string
     readonly title: string
     readonly description: string
     readonly hubs: readonly NoteList[]
+    readonly indexed: boolean
 } {
     const media = hubs.filter((hub) => hub.media)
     return {
         path: LIBRARY_PATH,
         title: fullTitle('Library'),
         description: `The library of ${SITE_NAME}: ${media.length === 0 ? 'no media yet' : media.map((hub) => `${hub.label} (${count(hub.count)})`).join(', ')}.`,
-        hubs: media
+        hubs: media,
+        indexed: media.some((hub) => hub.indexed)
     }
 }
 
@@ -312,8 +318,12 @@ export function generatedTexts(lists: readonly NoteList[]): {
         [HOME.title, 'the home page'],
         [library.title, 'the library']
     ])
-    const descriptions = new Set<string>([HOME.description, library.description])
-    const titles = new Set<string>(owners.keys())
+    const descriptions = new Set<string>([HOME.description])
+    const titles = new Set<string>([HOME.title])
+    if (library.indexed) {
+        titles.add(library.title)
+        descriptions.add(library.description)
+    }
     for (const list of lists) {
         for (const page of list.pages) {
             const owner = owners.get(page.title)

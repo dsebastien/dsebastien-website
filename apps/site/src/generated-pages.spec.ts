@@ -183,6 +183,13 @@ describe('the library and the texts of the generated pages', () => {
         expect(library.description).toBe('The library of Sébastien’s Notes: Movies (1).')
     })
 
+    test('the library is indexed only when one of its hubs is indexed (IDX-22)', () => {
+        const fiveMovies = ['Alien', 'Atlas', 'Brave', 'Cobra', 'Dune'].map((title) => note(title))
+        expect(libraryOf(typeHubsOf(fiveMovies)).indexed).toBe(true)
+        expect(libraryOf(typeHubsOf([note('Alien'), note('Compost', NOTE)])).indexed).toBe(false)
+        expect(libraryOf([]).indexed).toBe(false)
+    })
+
     test('the texts are the ones of the indexed pages only', () => {
         const fiveMovies = ['Alien', 'Atlas', 'Brave', 'Cobra', 'Dune'].map((title) => note(title))
         const lists = [

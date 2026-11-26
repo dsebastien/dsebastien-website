@@ -267,12 +267,14 @@ describe('the type hubs (NAV-03)', () => {
         expect(metaOf(home, 'description')?.startsWith('Sébastien’s Notes:')).toBe(true)
     })
 
-    test('of the media types are in the library, which is indexed, with its title as its H1', async () => {
+    // The movies hub of the fixture vault has fewer than 5 notes: no hub of
+    // the library is indexed, so the library is not either (IDX-22, issue 98).
+    test('of the media types are in the library, not indexed with no indexed hub, with its title as its H1', async () => {
         const library = await served('/-/library')
         expect(
             selectAll('[data-library] a', library).map((link) => link.properties['href'])
         ).toEqual(['/-/types/movies'])
-        expect(metaOf(library, 'robots')).toBeUndefined()
+        expect(metaOf(library, 'robots')).toBe('noindex, follow')
         expect(titleOf(library)).toBe('Library · Sébastien’s Notes')
         expect(textOf(select('h1', library))).toBe('Library')
     })

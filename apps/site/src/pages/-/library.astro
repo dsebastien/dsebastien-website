@@ -4,12 +4,18 @@ import { publishedSite } from '../../published-site.ts'
 
 // The library (NAV-03, decision R61): the type hubs of the media types, the
 // types whose type tag is under `type/media/` in the vault. It is indexed, as
-// a curated list (IDX-22); its H1 is the main part of its title (IDX-07).
+// a curated list, when one of its hubs is indexed (IDX-22); its H1 is the main
+// part of its title (IDX-07).
 const site = await publishedSite()
 const library = site.library
 ---
 
-<Page title={library.title} description={library.description} path={library.path}>
+<Page
+    title={library.title}
+    description={library.description}
+    path={library.path}
+    noindex={!library.indexed}
+>
     <p class='section-title'>Type hubs</p>
     <h1 class='text-3xl font-bold tracking-tight sm:text-4xl'>Library</h1>
     <p class='mt-2 max-w-2xl text-muted'>The movies, shows and games of these notes.</p>
