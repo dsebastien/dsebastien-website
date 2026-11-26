@@ -119,6 +119,28 @@ describe('build of the empty site', () => {
         expect(code).toContain('IntersectionObserver')
     })
 
+    // Issue 122 and issue 100, point 3: a finger needs 44 px on a phone.
+    test('the controls of the header and the rows of the palette are 44 px high on a phone', async () => {
+        const html = await readOutput('index.html')
+        const control = /<a\b[^>]*\sdata-palette\b[^>]*>/u.exec(html)?.[0] ?? ''
+        const mode = /<button\b[^>]*\sdata-mode-switch\b[^>]*>/u.exec(html)?.[0] ?? ''
+        expect(control).toMatch(/class="[^"]*\bh-11\b[^"]*\bmin-w-11\b/u)
+        expect(mode).toMatch(/class="[^"]*\bh-11\b[^"]*\bw-11\b/u)
+        const css = await readStylesheets()
+        expect(css).toContain('.h-11{')
+        expect(css).toContain('.min-w-11{')
+        // The style of the palette is text of its module (R93).
+        const files = await readdir(join(outputPath(), '_astro'))
+        const palette = files.find(
+            (file) => file.startsWith('palette-bundle') && file.endsWith('.js')
+        )
+        const code = await readOutput(join('_astro', palette ?? ''))
+        for (const rule of ['.palette-option{', '.palette-field{', '.palette-close{']) {
+            const block = code.slice(code.indexOf(rule), code.indexOf('}', code.indexOf(rule)))
+            expect(block, rule).toContain('min-height:calc(var(--spacing,.25rem) * 11)')
+        }
+    })
+
     test('compiles the Tailwind classes that the home page uses', async () => {
         const css = await readStylesheets()
         expect(css).toContain('.bg-background')

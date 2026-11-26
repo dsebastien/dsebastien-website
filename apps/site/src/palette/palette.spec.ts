@@ -205,6 +205,9 @@ describe('the opening (SRCH-08)', () => {
         palette.open(null, 'co')
         await settle()
         expect(field().value).toBe('co')
+        // The caret goes after the text, so the next letter adds to it.
+        expect(field().selectionStart).toBe(2)
+        expect(field().selectionEnd).toBe(2)
         expect(shown().slice(0, 3)).toEqual(['# Titles', 'Compost basics', 'Compost tea'])
     })
 
@@ -411,13 +414,43 @@ describe('the closing and the focus', () => {
         expect(document.activeElement).toBe(opener)
     })
 
-    test('a click on the backdrop closes it; a click in the panel does not', async () => {
+    test('a click on the backdrop closes it; a click in the panel or a drag out of it does not', async () => {
+        const press = (target: Element): void => {
+            target.dispatchEvent(
+                new window.MouseEvent('pointerdown', { bubbles: true }) as unknown as Event
+            )
+        }
         palette.open(null, '')
-        dialog().querySelector<HTMLElement>('[aria-live]')?.click()
+        const status = dialog().querySelector<HTMLElement>('[aria-live]')
+        if (status !== null) press(status)
+        status?.click()
         expect(dialog().open).toBe(true)
+        // A selection in the field that ends on the backdrop.
+        press(field())
+        dialog().click()
+        expect(dialog().open).toBe(true)
+        press(dialog())
         dialog().click()
         await settle()
         expect(dialog().open).toBe(false)
+    })
+
+    test('the status line is written only when its text changes', async () => {
+        palette.open(null, '')
+        await type('h')
+        const status = dialog().querySelector('[aria-live]')
+        const changes: unknown[] = []
+        const observer = new window.MutationObserver((records) => changes.push(...records))
+        observer.observe(status as unknown as Parameters<typeof observer.observe>[0], {
+            childList: true,
+            characterData: true,
+            subtree: true
+        })
+        await type('h')
+        await settle()
+        observer.disconnect()
+        expect(status?.textContent).toBe('Type two letters or more.')
+        expect(changes).toEqual([])
     })
 
     test('Enter in a composition of an input method stays in the field', async () => {

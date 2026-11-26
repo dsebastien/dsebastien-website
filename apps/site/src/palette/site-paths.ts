@@ -4,6 +4,8 @@
 // are the same texts, and `site-paths.spec.ts` checks them against the
 // resolver and the files of the search.
 
+/** The home page. */
+export const HOME = '/'
 /** The search page (`SEARCH_PATH`). */
 export const SEARCH_PAGE = '/-/search'
 /** The title index (`TITLES_FOLDER`). */

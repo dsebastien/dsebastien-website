@@ -352,15 +352,17 @@ export function createPalette(document: Document, options: PaletteOptions = {}):
         input.setAttribute('aria-expanded', String(rows.length > 0))
         const kept = chosen ? rows.findIndex((row) => row.key === activeKey) : 0
         select(Math.max(kept, 0))
-        if (notice !== '') {
-            status.textContent = notice
-        } else if (commandsOnly()) {
-            const count = rows.length
-            status.textContent =
-                count === 0 ? 'No command matches.' : counted(count, 'command', 'commands')
-        } else {
-            status.textContent = said
-        }
+        const count = rows.length
+        const line =
+            notice !== ''
+                ? notice
+                : commandsOnly()
+                  ? count === 0
+                      ? 'No command matches.'
+                      : counted(count, 'command', 'commands')
+                  : said
+        // The live region speaks at each write: only a new text is written.
+        if (status.textContent !== line) status.textContent = line
     }
 
     const view: SearchView = {
@@ -427,9 +429,16 @@ export function createPalette(document: Document, options: PaletteOptions = {}):
         const row = rows[Number(option?.getAttribute('data-index') ?? -1)]
         if (row !== undefined) void run(row, event.ctrlKey || event.metaKey)
     })
-    // A click on the backdrop closes the palette: the panel fills the dialog.
+    // A click on the backdrop closes the palette: the panel fills the dialog. A
+    // press that starts in the panel (a selection of the field) and ends on the
+    // backdrop closes nothing.
+    let pressedBackdrop = false
+    dialog.addEventListener('pointerdown', (event) => {
+        pressedBackdrop = event.target === dialog
+    })
     dialog.addEventListener('click', (event) => {
-        if (event.target === dialog) palette.close()
+        if (event.target === dialog && pressedBackdrop) palette.close()
+        pressedBackdrop = false
     })
     dialog.addEventListener('keydown', (event) => {
         // A key of a composition (an input method) belongs to the field.
@@ -488,7 +497,12 @@ export function createPalette(document: Document, options: PaletteOptions = {}):
                 changed()
             }
             input.focus()
-            input.select()
+            if (typed === '') {
+                input.select()
+            } else {
+                // The text typed while the palette loaded: the next letter adds to it.
+                input.setSelectionRange(input.value.length, input.value.length)
+            }
         },
         close() {
             if (dialog.open) dialog.close()

@@ -78,35 +78,64 @@ export function startPaletteLoader(
     control?.setAttribute('aria-keyshortcuts', '/ Control+K Meta+K')
     let palette: PaletteHandle | undefined
     let loading: Promise<PaletteHandle> | undefined
+    /** The field that holds the focus while an opening waits for the palette. */
+    let wait: HTMLInputElement | undefined
+    let waitOpener: HTMLElement | null = null
+
+    /** Ends the wait: the field goes, and the focus goes back when the opening is cancelled. */
+    const stopWaiting = (): HTMLInputElement | undefined => {
+        const field = wait
+        wait = undefined
+        return field
+    }
 
     const open = (opener: HTMLElement | null): void => {
         if (palette !== undefined) {
             palette.open(opener, '')
             return
         }
-        if (loading !== undefined) return
-        const wait = document.createElement('input')
-        wait.type = 'text'
-        wait.className = 'sr-only'
-        wait.setAttribute('data-palette-wait', '')
-        wait.setAttribute('aria-label', 'Search the notes or run a command')
-        wait.autocomplete = 'off'
-        // A smaller text makes a phone zoom into the field.
-        wait.style.fontSize = '16px'
-        document.body.append(wait)
-        wait.focus()
-        loading = load().then((create) => create(document))
+        if (wait !== undefined) {
+            // A second click or key while the palette loads.
+            wait.focus({ preventScroll: true })
+            return
+        }
+        const field = document.createElement('input')
+        field.type = 'text'
+        field.className = 'sr-only'
+        field.setAttribute('data-palette-wait', '')
+        field.setAttribute('aria-label', 'Search the notes or run a command')
+        field.autocomplete = 'off'
+        // A smaller text makes a phone zoom into the field; fixed at the top, the page does not move.
+        field.style.fontSize = '16px'
+        field.style.position = 'fixed'
+        field.style.top = '0px'
+        field.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || wait !== field) return
+            // Escape cancels the opening; the palette still loads for the next one.
+            event.preventDefault()
+            stopWaiting()?.remove()
+            waitOpener?.focus()
+        })
+        wait = field
+        waitOpener = opener
+        document.body.append(field)
+        field.focus({ preventScroll: true })
+        loading ??= load().then((create) => create(document))
         loading.then(
             (made) => {
                 palette = made
-                const typed = wait.value
-                wait.remove()
-                made.open(opener, typed)
+                const waited = stopWaiting()
+                if (waited === undefined) return
+                // The palette takes the focus from the field: a phone keeps its keyboard.
+                made.open(waitOpener, waited.value)
+                waited.remove()
             },
             () => {
                 loading = undefined
-                wait.remove()
-                opener?.focus()
+                const waited = stopWaiting()
+                if (waited === undefined) return
+                waited.remove()
+                waitOpener?.focus()
                 if (control !== null) follow(control.href)
             }
         )

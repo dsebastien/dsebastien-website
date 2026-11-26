@@ -192,7 +192,18 @@ describe('the loader of the palette (SRCH-08)', () => {
 
     test('while the palette loads, a field holds the focus, so a phone shows its keyboard, and keeps what the reader types', async () => {
         let finish: (() => void) | undefined
-        const openings: { typed: string; field: boolean }[] = []
+        const openings: { typed: string; field: boolean; focused: boolean }[] = []
+        // The focus of the field must not scroll the page to it.
+        const focusOptions: unknown[] = []
+        const prototype = window.HTMLElement.prototype as unknown as HTMLElement
+        const focus = Object.getOwnPropertyDescriptor(prototype, 'focus')?.value as (
+            this: HTMLElement,
+            options?: FocusOptions
+        ) => void
+        prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+            focusOptions.push(options)
+            focus.call(this, options)
+        }
         startPaletteLoader(
             document,
             () =>
@@ -200,9 +211,13 @@ describe('the loader of the palette (SRCH-08)', () => {
                     finish = () => {
                         resolve(() => ({
                             open(_opener, typed) {
+                                // The palette takes the focus while the field still has it:
+                                // a focus that moves from a field to a field keeps the keyboard.
+                                const wait = document.querySelector('[data-palette-wait]')
                                 openings.push({
                                     typed,
-                                    field: document.querySelector('[data-palette-wait]') !== null
+                                    field: wait !== null,
+                                    focused: wait !== null && document.activeElement === wait
                                 })
                             }
                         }))
@@ -214,10 +229,66 @@ describe('the loader of the palette (SRCH-08)', () => {
         expect(waiting?.tagName).toBe('INPUT')
         expect(waiting?.hasAttribute('data-palette-wait')).toBe(true)
         expect(waiting?.getAttribute('aria-label')).toBe('Search the notes or run a command')
+        // Fixed at the top, so the page does not jump.
+        expect(waiting?.style.position).toBe('fixed')
+        expect(waiting?.style.top).toBe('0px')
+        expect(focusOptions).toContainEqual({ preventScroll: true })
+        prototype.focus = focus
         if (waiting !== null) waiting.value = 'comp'
         finish?.()
         await new Promise((resolve) => setTimeout(resolve, 0))
-        expect(openings).toEqual([{ typed: 'comp', field: false }])
+        expect(openings).toEqual([{ typed: 'comp', field: true, focused: true }])
+        expect(document.querySelector('[data-palette-wait]')).toBeNull()
+    })
+
+    test('a second click while the palette loads gives the focus back to the waiting field', async () => {
+        let finish: (() => void) | undefined
+        startPaletteLoader(
+            document,
+            () =>
+                new Promise((resolve) => {
+                    finish = () => {
+                        resolve(() => ({ open: () => undefined }))
+                    }
+                })
+        )
+        control().click()
+        control().focus()
+        control().click()
+        expect(document.activeElement?.hasAttribute('data-palette-wait')).toBe(true)
+        finish?.()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    test('Escape in the waiting field cancels the opening, and the next click opens the palette', async () => {
+        let finish: (() => void) | undefined
+        const openings: string[] = []
+        startPaletteLoader(
+            document,
+            () =>
+                new Promise((resolve) => {
+                    finish = () => {
+                        resolve(() => ({
+                            open(_opener, typed) {
+                                openings.push(typed)
+                            }
+                        }))
+                    }
+                })
+        )
+        const text = document.getElementById('text')
+        text?.focus()
+        key(text ?? document.body, { key: '/' })
+        const waiting = document.activeElement as HTMLInputElement | null
+        if (waiting !== null) waiting.value = 'co'
+        expect(key(waiting ?? document.body, { key: 'Escape' })).toBe(true)
+        expect(document.querySelector('[data-palette-wait]')).toBeNull()
+        expect(document.activeElement).toBe(text)
+        finish?.()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(openings).toEqual([])
+        control().click()
+        expect(openings).toEqual([''])
     })
 
     test('when the palette cannot load, the control leads to the search page', async () => {

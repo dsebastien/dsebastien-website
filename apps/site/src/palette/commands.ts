@@ -1,6 +1,13 @@
 import { PROPERTIES_SHORTCUT } from '../properties-panel.ts'
 import { foldedWords } from '../search/titles.ts'
-import { LIBRARY, markdownOf, RECENT_ADDED, RECENT_UPDATED, SEARCH_PAGE } from './site-paths.ts'
+import {
+    HOME,
+    LIBRARY,
+    markdownOf,
+    RECENT_ADDED,
+    RECENT_UPDATED,
+    SEARCH_PAGE
+} from './site-paths.ts'
 
 // The command registry (SRCH-05, SRCH-07, issue 122): the one list of the
 // commands of the palette, with the facts of the page that decide which ones
@@ -63,7 +70,7 @@ function page(id: string, title: string, path: string, keywords: readonly string
 /** The commands that this page offers, in the order of the palette: the navigation first. */
 export function commandsOf(facts: PageFacts): Command[] {
     const commands: Command[] = [
-        page('home', 'Go to the home page', '/', ['start']),
+        page('home', 'Go to the home page', HOME, ['start']),
         page('search', 'Go to the search page', SEARCH_PAGE, ['find', 'full', 'text']),
         page('recent-added', 'Go to the notes added recently', RECENT_ADDED, ['new', 'latest']),
         page('recent-updated', 'Go to the notes updated recently', RECENT_UPDATED, [
