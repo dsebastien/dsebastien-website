@@ -278,6 +278,8 @@ describe('a real host by its address', () => {
     test('is any host that is not on this machine', () => {
         expect(isRealHost('https://notes-preview.dsebastien.net')).toBe(true)
         expect(isRealHost('http://192.0.2.10:8080/')).toBe(true)
+        expect(isRealHost('https://127.0.0.1.nip.io/')).toBe(true)
+        expect(isRealHost('https://127.example.com/')).toBe(true)
     })
 
     test('is not the plain server or a local runtime of the host', () => {
@@ -285,6 +287,9 @@ describe('a real host by its address', () => {
             'http://127.0.0.1:4321/',
             'http://127.8.0.1:9',
             'http://localhost:8787',
+            'http://LOCALHOST.:8787',
+            'http://site.localhost:8787',
+            'http://0.0.0.0:4321',
             'http://[::1]:8787'
         ]) {
             expect(isRealHost(base)).toBe(false)
