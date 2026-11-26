@@ -1835,6 +1835,12 @@ fn the_lock_names_the_computer_and_the_system_of_its_run() {
     .expect("the lock is data");
 
     assert_eq!(lock["system"], std::env::consts::OS);
-    assert!(lock["host"].as_str().is_some_and(|host| !host.is_empty()));
+    // The name of the computer as the plugin reads it (`os.hostname()` of
+    // Node, the system call gethostname), which the program `hostname`
+    // prints too: the plugin compares them.
+    let host = std::process::Command::new("hostname")
+        .output()
+        .expect("hostname runs");
+    assert_eq!(lock["host"], String::from_utf8_lossy(&host.stdout).trim());
     assert_eq!(lock["command"], "publish");
 }

@@ -576,20 +576,20 @@ fn now() -> String {
     )
 }
 
-/// The name of the host: the default name of the device, and the computer of
-/// the lock of the device. The program reads it here. The logic never does.
+/// The name of the host, as `os.hostname()` of Node gives it (the system
+/// call gethostname): the default name of the device, and the computer of the
+/// lock of the device, which the plugin compares with its own (R81). The
+/// program reads it here. The logic never does.
 pub(crate) fn host_name() -> String {
-    let from_file = || {
-        std::fs::read_to_string("/etc/hostname")
-            .ok()
-            .map(|name| name.trim().to_owned())
-    };
-    ["COMPUTERNAME", "HOSTNAME"]
-        .iter()
-        .find_map(|name| std::env::var(name).ok())
-        .or_else(from_file)
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "unknown device".to_owned())
+    let name = gethostname::gethostname()
+        .to_string_lossy()
+        .trim()
+        .to_owned();
+    if name.is_empty() {
+        "unknown device".to_owned()
+    } else {
+        name
+    }
 }
 
 /// Reads a selection from a JSON file: an object with the lists `include`,
