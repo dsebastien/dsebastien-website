@@ -206,7 +206,7 @@ describe('the type badge of a note page', () => {
         const badge = select('[data-type-badge]', noteOf(FILM))
         expect(textOf(badge)).toBe('Movie')
         expect(badge?.properties['href']).toBe('/-/types/movies')
-        expect(badge?.properties['ariaLabel']).toBe('Movie: all Movies')
+        expect(badge?.properties['ariaLabel']).toBe('Movie, all notes of this type')
         expect(badge?.properties['className']).toEqual(['badge-link'])
     })
 })
