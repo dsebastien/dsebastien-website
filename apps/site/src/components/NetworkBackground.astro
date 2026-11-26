@@ -1,0 +1,20 @@
+---
+// The network behind the hero of the home page (issue 81): a canvas that
+// covers its section (which must be `relative` and carry
+// `data-network-scope`), behind the content, with no size of its own, so
+// nothing moves when it draws. It is decoration: hidden from assistive
+// technology, never a target of the pointer, and not printed. Its color is
+// the class `text-secondary-text`, which its script reads. The text that it
+// keeps readable carries `data-network-quiet`. Without the script the canvas
+// stays empty.
+---
+
+<canvas
+    class='pointer-events-none absolute inset-0 h-full w-full text-secondary-text print:hidden'
+    aria-hidden='true'
+    data-network
+></canvas>
+<script>
+    import { startNetworkLayers } from '../background/network-layer.ts'
+    startNetworkLayers(document)
+</script>

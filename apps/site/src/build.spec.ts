@@ -77,17 +77,36 @@ describe('build of the empty site', () => {
         expect(exitCode).toBe(0)
     })
 
-    test('writes the home page as plain HTML, with the two scripts of the mode only', async () => {
+    test('writes the home page as plain HTML, with the scripts of the mode and of the network', async () => {
         const html = await readOutput('index.html')
         expect(html).toContain('<html lang="en"')
         expect(html).toContain('<h1')
         // The head script holds the function as the build writes it: the
-        // tests below run it. The switch script is the same text.
-        const [head = '', ...rest] = scriptsOf(html)
+        // tests below run it. The switch script is the same text. The script
+        // of the network is a module file: deferred, after the first paint.
+        const [head = '', network = '', ...rest] = scriptsOf(html)
+        expect(network).toMatch(/^<script type="module" src="\/_astro\/[^"]+\.js"><\/script>$/u)
         expect(rest).toEqual([modeSwitchScript])
         expect(head).toContain('localStorage.getItem("mode")')
         expect(head.startsWith('{')).toBe(true)
         expect(modeScript.startsWith('{')).toBe(true)
+    })
+
+    // Issue 81: the network behind the hero is decoration, takes no space and is not printed.
+    test('has the network layer behind the hero, hidden from assistive technology', async () => {
+        const html = await readOutput('index.html')
+        const canvas = /<canvas\b[^>]*data-network[^>]*>/u.exec(html)?.[0] ?? ''
+        expect(canvas).toContain('aria-hidden="true"')
+        expect(canvas).toMatch(/class="[^"]*\babsolute\b[^"]*\binset-0\b[^"]*\bprint:hidden\b/u)
+        expect(canvas).toContain('pointer-events-none')
+        const hero = /<section\b[^>]*data-network-scope[^>]*>[\s\S]*?<\/section>/u.exec(html)?.[0]
+        expect(hero).toMatch(/<h1\b[^>]*data-network-quiet/u)
+        expect(hero).toContain('class="relative')
+        const script = /<script type="module" src="(\/_astro\/[^"]+\.js)"/u.exec(html)?.[1] ?? ''
+        const code = await readOutput(script)
+        expect(code).toContain('prefers-reduced-motion: reduce')
+        expect(code).toContain('visibilitychange')
+        expect(code).toContain('IntersectionObserver')
     })
 
     test('compiles the Tailwind classes that the home page uses', async () => {
