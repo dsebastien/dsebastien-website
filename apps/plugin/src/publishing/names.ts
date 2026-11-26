@@ -64,16 +64,20 @@ export function isChangedByObsidian(path: string): boolean {
     return obsidianPath(path) !== path
 }
 
-/** Names that Windows refuses for a file or a folder, whatever their end. */
+/**
+ * Names that Windows refuses for a file or a folder, whatever their end:
+ * spaces after the name still name the device.
+ */
 const WINDOWS_NAMES =
-    /^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/iu
+    /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3]) *(?:\.|$)/iu
 
 /**
  * True when Windows cannot hold the path (decision of the author R82): a
  * part holds one of `<>:"|?*\` or a control character, ends with a dot or a
- * space, or is a reserved name of Windows (`CON`, `NUL`, `COM1`, with any
- * end). Git cannot write such a path into a copy on Windows, so such a note
- * is never published and no move takes a note to it.
+ * space, or is a reserved name of Windows (`CON`, `NUL`, `CONIN$`, `COM1`,
+ * also with spaces after it, and any end). Git cannot write such a path into
+ * a copy on Windows, so such a note is never published and no move takes a
+ * note to it.
  */
 export function isRefusedByWindows(path: string): boolean {
     return path

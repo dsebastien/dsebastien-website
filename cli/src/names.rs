@@ -66,14 +66,21 @@ pub fn obsidian_path(path: &str) -> String {
 }
 
 /// True when Windows cannot hold the path (decision of the author R82): a
-/// part holds one of `<>:"|?*\` or a control character, ends with a dot or
-/// a space, or is a reserved name of Windows (`CON`, `NUL`, `COM1`, with any
-/// end). Git cannot write such a path into a copy on Windows, so such a note
-/// is never published and no move takes a note to it.
+/// part holds one of `<>:"|?*\` or a control character, ends with a dot or a
+/// space, or is a reserved name of Windows (`CON`, `NUL`, `CONIN$`, `COM1`,
+/// also with spaces after it, and any end). Git cannot write such a path into
+/// a copy on Windows, so such a note is never published and no move takes a
+/// note to it.
 pub fn is_refused_by_windows(path: &str) -> bool {
     let refused = |part: &str| {
-        let base = part.split('.').next().unwrap_or(part).to_ascii_lowercase();
-        let reserved = ["con", "prn", "aux", "nul"].contains(&base.as_str())
+        // Spaces after the name still name the device.
+        let base = part
+            .split('.')
+            .next()
+            .unwrap_or(part)
+            .trim_end_matches(' ')
+            .to_ascii_lowercase();
+        let reserved = ["con", "prn", "aux", "nul", "conin$", "conout$"].contains(&base.as_str())
             || ((base.starts_with("com") || base.starts_with("lpt"))
                 && base.chars().count() == 4
                 && base.chars().last().is_some_and(|last| {

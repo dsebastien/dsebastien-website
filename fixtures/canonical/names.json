@@ -266,6 +266,37 @@
         }
     ],
     "windows": [
+        {
+            "name": "a reserved name with spaces before the dot",
+            "text": "Notes/CON .md",
+            "refused": true
+        },
+        {
+            "name": "a reserved name with spaces before another end",
+            "text": "Notes/NUL  .txt",
+            "refused": true
+        },
+        { "name": "the console input name", "text": "Notes/CONIN$.md", "refused": true },
+        {
+            "name": "the console output name in small letters",
+            "text": "Notes/conout$",
+            "refused": true
+        },
+        {
+            "name": "a reserved name with spaces and no end",
+            "text": "CON  /Plan.md",
+            "refused": true
+        },
+        {
+            "name": "a longer name that starts with a reserved name",
+            "text": "Notes/CONSOLE.md",
+            "refused": false
+        },
+        {
+            "name": "a reserved name followed by a word",
+            "text": "Notes/CON x.md",
+            "refused": false
+        },
         { "name": "a plain path", "text": "Notes/Plan.md", "refused": false },
         {
             "name": "a space and a dot inside a name",
