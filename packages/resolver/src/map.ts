@@ -1,4 +1,5 @@
 import type { ResolverMap, SiteFile } from './resolver.ts'
+import { isAttachmentKey } from './url.ts'
 
 // The reader of a resolver map (MOD-06): the map is a file of a release, so
 // each host that reads it checks its shape at that boundary, with the same
@@ -10,9 +11,6 @@ export const RESOLVER_MAP_FILE = '-/resolver-map.json'
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
-
-/** The form of a key of the attachment storage. It names a file of the storage. */
-const ATTACHMENT_KEY = /^[0-9a-f]{64}$/
 
 /** True when every value of the record passes the check. */
 function everyValue(value: unknown, check: (item: unknown) => boolean): boolean {
@@ -71,7 +69,7 @@ export function resolverMapFrom(value: unknown): ResolverMap {
         !everyValue(value['files'] ?? {}, isSiteFile) ||
         !everyValue(
             value['attachments'] ?? {},
-            (key) => typeof key === 'string' && ATTACHMENT_KEY.test(key)
+            (key) => typeof key === 'string' && isAttachmentKey(key)
         ) ||
         !everyValue(value['folded'] ?? {}, isText) ||
         !everyValue(value['names'] ?? {}, isTextList) ||

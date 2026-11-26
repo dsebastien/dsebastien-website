@@ -49,7 +49,7 @@ What the browser loads on the media note of the sample:
 | Hub note   | mobile  | 834                             | 842               | 1,200       |
 | Hub note   | desktop | 316                             | 282               | 800         |
 
-The LCP of the long note on mobile is the first paragraph, with two values on this machine (about 830 ms and about 1,740 ms, in turn): the first image of the page loads with a high priority below the fold (R58), and the simulation of Lighthouse counts it in or out. On the CI runner of `main` the same page gives 838 ms in four runs of five. A smaller first image makes the slow value rarer and lower, but does not remove it.
+The LCP of the long note on mobile is the first paragraph, with two values on this machine (about 830 ms and about 1,740 ms, in turn): the first image of the page loads with a high priority below the fold (R58), and the simulation of Lighthouse counts it in or out. On the CI runner of `main` the same page gives 838 ms in four runs of five. A smaller first image makes the slow value rarer and lower, but does not remove it: the long note on mobile can still need the second round of five runs, and on this machine it can still fail it.
 
 ## Where they are made
 

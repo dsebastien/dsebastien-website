@@ -67,8 +67,8 @@ describe('resolver of attachments', () => {
         expect(resolve(variantPath(`/-/attachments/${KEY}/garden-plan.png`, 800), WITH)).toEqual({
             kind: 'attachment',
             key: variantKey(KEY, 800),
-            name: 'garden-plan.webp',
-            variant: true
+            name: 'garden-plan.png.webp',
+            image: { key: KEY, name: 'garden-plan.png' }
         })
         expect(resolve(variantPath(`/-/attachments/${KEY}/other.png`, 800), WITH)).toMatchObject({
             kind: 'not-found'

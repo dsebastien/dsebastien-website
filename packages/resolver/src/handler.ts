@@ -226,12 +226,13 @@ function rangeOf(header: string | null, size: number): ByteRange | undefined | n
 async function attachmentResponse(
     request: Request,
     file: StoredFile,
-    name: string
+    name: string,
+    cacheControl = 'public, max-age=31536000, immutable'
 ): Promise<Response> {
     const type = ATTACHMENT_TYPES.get(extensionOf(name).toLowerCase()) ?? 'application/octet-stream'
     const headers: Record<string, string> = {
         'accept-ranges': 'bytes',
-        'cache-control': 'public, max-age=31536000, immutable',
+        'cache-control': cacheControl,
         'content-type': type,
         'x-content-type-options': 'nosniff'
     }
@@ -492,14 +493,26 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                     return errorPlain(404, 'Not found\n')
                 }
                 const file = await release.attachment(resolution.key)
+                if (file !== undefined) {
+                    return await attachmentResponse(request, file, resolution.name)
+                }
+                // A variant that the storage lacks (its width does not exist,
+                // or the deploy could not make it, R92) gives the file of its
+                // image, kept one hour: a later deploy can make the variant.
+                const image =
+                    resolution.image === undefined
+                        ? undefined
+                        : await release.attachment(resolution.image.key)
                 // The map names the file, so the storage lacks it: a failure
                 // of the release, never "not found" that a cache keeps (URL-33).
-                // An image has the variants of its width only, which the map
-                // does not say: a variant that the storage lacks is not found.
-                if (file === undefined) {
-                    return resolution.variant === true ? errorPlain(404, 'Not found\n') : undefined
-                }
-                return await attachmentResponse(request, file, resolution.name)
+                return image === undefined || resolution.image === undefined
+                    ? undefined
+                    : await attachmentResponse(
+                          request,
+                          image,
+                          resolution.image.name,
+                          'public, max-age=3600'
+                      )
             }
             case 'redirect':
                 return new Response(null, {

@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { resolverMapOf, type SiteFiles } from '@dsebastien-website/resolver'
+import {
+    resolverMapOf,
+    variantKey,
+    variantPath,
+    type SiteFiles
+} from '@dsebastien-website/resolver'
 import { createWorker, type Environment, type ObjectStorage, type StaticFiles } from './worker.ts'
 
 // The Worker of the host (HOST-01, HOST-03, issue 21): an adapter of the
@@ -23,6 +28,7 @@ const FILES: SiteFiles = {
 
 const KEY = 'cd'.repeat(32)
 const SONG = `/-/attachments/${KEY}/song.mp3`
+const COVER = `/-/attachments/${KEY}/cover.jpg`
 // A name with the characters that a URL gives a meaning to.
 const ODD = '20 Library/100% rain + sun? #1 & more.md'
 
@@ -32,7 +38,7 @@ const map = resolverMapOf(
         { path: ODD, aliases: [] }
     ],
     FILES,
-    { [SONG]: KEY }
+    { [SONG]: KEY, [COVER]: KEY }
 )
 
 type AskedFiles = StaticFiles & {
@@ -385,6 +391,17 @@ describe('the Worker', () => {
         expect(response.headers.get('content-type')).toBe('audio/mpeg')
         expect(await response.text()).toBe('0123456789')
         expect(site.storage.asked).toEqual([KEY])
+    })
+
+    // Issue 87, R92: a variant that the object storage lacks never breaks a page.
+    test('gives the image of a variant that the object storage lacks', async () => {
+        const site = host()
+        const response = await site.get(variantPath(COVER, 480))
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('image/jpeg')
+        expect(response.headers.get('cache-control')).toBe('public, max-age=3600')
+        expect(await response.text()).toBe('0123456789')
+        expect(site.storage.asked).toEqual([variantKey(KEY, 480), KEY])
     })
 
     // HOST-05: a player asks for parts of a file.

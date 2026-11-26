@@ -24,6 +24,40 @@ async function jpeg(width: number, height: number, orientation?: number): Promis
     )
 }
 
+/** A PNG of this size, one color, with the Exif turn when it is given. */
+async function png(width: number, height: number, orientation?: number): Promise<Uint8Array> {
+    const image = sharp({
+        create: { width, height, channels: 3, background: { r: 40, g: 90, b: 160 } }
+    }).png()
+    return new Uint8Array(
+        await (orientation === undefined ? image : image.withMetadata({ orientation })).toBuffer()
+    )
+}
+
+/** An animated WebP of two frames of this size, with the Exif turn when it is given. */
+async function animated(width: number, height: number, orientation?: number): Promise<Uint8Array> {
+    const frame = (red: number): Promise<Buffer> =>
+        sharp({ create: { width, height, channels: 3, background: { r: red, g: 0, b: 0 } } })
+            .png()
+            .toBuffer()
+    const image = sharp([await frame(20), await frame(200)], { join: { animated: true } }).webp({
+        delay: [100, 100]
+    })
+    return new Uint8Array(
+        await (orientation === undefined ? image : image.withMetadata({ orientation })).toBuffer()
+    )
+}
+
+/** A PNG whose header says this size, with one pixel of data: sharp reads its size only. */
+async function pngHeader(width: number, height: number): Promise<Uint8Array> {
+    const bytes = new Uint8Array(await png(1, 1))
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    view.setUint32(16, width)
+    view.setUint32(20, height)
+    view.setUint32(29, Bun.hash.crc32(bytes.subarray(12, 29)))
+    return bytes
+}
+
 describe('the variants of an image', () => {
     test('are WebP files of the width and the height of each variant', async () => {
         const image = {
@@ -64,6 +98,51 @@ describe('the variants of an image', () => {
         expect(facts.map((fact) => fact.exif)).toEqual([undefined, undefined])
     })
 
+    // Issue 87, R92: the plugin reads the turn of a JPEG only, so the size of
+    // the manifest of any other kind is the size of its pixels as stored.
+    test('turn only a JPEG: a PNG and an animated WebP with an Exif turn keep their shape', async () => {
+        const variants = imageVariants('plan.png', 1000, 600)
+        const fromPng = await encodeVariants(await png(1000, 600, 6), { variants })
+        const facts = await Promise.all(fromPng.map((bytes) => sharp(bytes).metadata()))
+        expect(facts.map((fact) => [fact.width, fact.height])).toEqual([
+            [480, 288],
+            [800, 480],
+            [1000, 600]
+        ])
+
+        const moving = await encodeVariants(await animated(1000, 600, 6), {
+            variants: imageVariants('moving.webp', 1000, 600)
+        })
+        const frames = await Promise.all(
+            moving.map((bytes) => sharp(bytes, { animated: true }).metadata())
+        )
+        expect(frames.map((fact) => [fact.width, fact.pageHeight, fact.pages])).toEqual([
+            [480, 288, 2],
+            [800, 480, 2],
+            [1000, 600, 2]
+        ])
+    })
+
+    test('fail on a cut JPEG and a cut PNG', async () => {
+        const variants = imageVariants('cover.jpg', 1000, 600)
+        const cut = (bytes: Uint8Array): Uint8Array => bytes.subarray(0, bytes.length >> 1)
+
+        expect(
+            await rejectionOf(encodeVariants(cut(await jpeg(1000, 600)), { variants }))
+        ).toContain('JPEG')
+        expect(
+            await rejectionOf(encodeVariants(cut(await png(1000, 600)), { variants }))
+        ).toContain('png')
+    })
+
+    test('fail on an image of more than 50 megapixels, before its pixels are read', async () => {
+        const variants = imageVariants('huge.png', 1000, 600)
+
+        expect(
+            await rejectionOf(encodeVariants(await pngHeader(8_000, 8_000), { variants }))
+        ).toContain('pixel limit')
+    })
+
     test('fail on a file that is not an image', async () => {
         const image = {
             key: 'k',
@@ -82,6 +161,8 @@ describe('the variants of an image', () => {
             const image = {
                 key: 'a'.repeat(64),
                 name: 'plan.jpg',
+                width: 900,
+                height: 600,
                 variants: imageVariants('plan.jpg', 900, 600)
             }
             const reads: string[] = []

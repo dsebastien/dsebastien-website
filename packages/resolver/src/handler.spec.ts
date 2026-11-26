@@ -557,18 +557,40 @@ describe('a failure of the release', () => {
         expect(await response.text()).toStartWith('# Server error\n')
     })
 
-    // Issue 87: an image has the variants of its width only, which the map does not say.
-    test('gives a variant of an image in WebP, and 404 for a variant that the storage lacks', async () => {
+    // Issue 87, R92: a variant never fails a page. The map does not say the
+    // width of an image, and a variant that could not be made is missing:
+    // the host gives the file of the image, kept one hour only.
+    test('gives a variant of an image in WebP, and the image when the storage lacks the variant', async () => {
         const variants = {
             attachment: (key: string) =>
-                Promise.resolve(key === variantKey(KEY, 480) ? stored('webp') : undefined)
+                Promise.resolve(
+                    key === variantKey(KEY, 480)
+                        ? stored('webp')
+                        : key === KEY
+                          ? stored('png')
+                          : undefined
+                )
         }
         const response = await get(variantPath(PHOTO, 480), {}, variants)
         expect(response.status).toBe(200)
         expect(response.headers.get('content-type')).toBe('image/webp')
         expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
         expect(await response.text()).toBe('webp')
-        expect((await get(variantPath(PHOTO, 1600), {}, variants)).status).toBe(404)
+
+        const image = await get(variantPath(PHOTO, 1600), {}, variants)
+        expect(image.status).toBe(200)
+        expect(image.headers.get('content-type')).toBe('image/png')
+        expect(image.headers.get('cache-control')).toBe('public, max-age=3600')
+        expect(await image.text()).toBe('png')
+    })
+
+    test('answers 500 when the storage lacks a variant and its image', async () => {
+        const response = await get(
+            variantPath(PHOTO, 480),
+            {},
+            { attachment: () => Promise.resolve(undefined) }
+        )
+        expect(response.status).toBe(500)
     })
 
     test('answers 500 when the storage lacks an attachment of the map', async () => {

@@ -47,6 +47,14 @@ export function markdownPath(vaultPath: string): string {
     return `/-/md${canonicalPath(vaultPath)}.md`
 }
 
+/** The form of a key of the attachment storage: the SHA-256 of the bytes of a file, in 64 small hexadecimal digits. */
+const ATTACHMENT_KEY = /^[0-9a-f]{64}$/u
+
+/** True when the text is a key of the attachment storage. Every reader of a key uses it. */
+export function isAttachmentKey(text: string): boolean {
+    return ATTACHMENT_KEY.test(text)
+}
+
 /** The form of the hash of an attachment in the manifest. */
 const ATTACHMENT_HASH = /^sha256:([0-9a-f]{64})$/
 

@@ -6,7 +6,14 @@
 
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { imageVariants, RESOLVER_MAP_FILE, type ImageVariant } from '@dsebastien-website/resolver'
+import {
+    hasVariants,
+    imageVariants,
+    MAX_VARIANT_PIXELS,
+    RESOLVER_MAP_FILE,
+    VARIANT_WIDTHS,
+    type ImageVariant
+} from '@dsebastien-website/resolver'
 import { readPublishedNotes } from '../src/content-store.ts'
 
 /** Where a release goes. */
@@ -165,9 +172,6 @@ export async function checkOutput(folder: string): Promise<string | undefined> {
     return undefined
 }
 
-/** The form of a key of the attachment storage: the SHA-256 of the bytes of a file. */
-export const ATTACHMENT_KEY = /^[0-9a-f]{64}$/u
-
 /** The limits of the host for one release: a Worker version and its static files (BUILD-08). */
 export interface HostLimits {
     /** The most files of the static files of one Worker version. */
@@ -261,6 +265,13 @@ export interface DeploymentRecord extends ReleaseBuild {
      * Missing otherwise.
      */
     readonly newContentStore?: true
+    /**
+     * The generation of the image variants that the pages of the release
+     * name (issue 87, R92): the cleanup keeps the variants of that generation
+     * while it keeps the release. Missing in a record of a release with no
+     * variants.
+     */
+    readonly variants?: number
 }
 
 const REVISION = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u
@@ -292,12 +303,22 @@ export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefin
     if (build === undefined || typeof value !== 'object' || value === null) {
         return undefined
     }
-    let move: { newContentStore?: true } = {}
+    let move: { newContentStore?: true; variants?: number } = {}
     if ('newContentStore' in value && value.newContentStore !== undefined) {
         if (value.newContentStore !== true) {
             return undefined
         }
         move = { newContentStore: true }
+    }
+    if ('variants' in value && value.variants !== undefined) {
+        if (
+            typeof value.variants !== 'number' ||
+            !Number.isSafeInteger(value.variants) ||
+            value.variants < 1
+        ) {
+            return undefined
+        }
+        move = { ...move, variants: value.variants }
     }
     if (!('previous' in value) || value.previous === undefined) {
         return { ...build, ...move }
@@ -366,7 +387,14 @@ export interface ReleaseImage {
     readonly key: string
     /** A name of its file, which gives its kind. */
     readonly name: string
-    /** The variants that the pages of the release offer, from the size of the manifest. */
+    /** Its width and height in pixels, from the manifest. */
+    readonly width: number
+    readonly height: number
+    /**
+     * The variants that the pages of the release offer, from the size of the
+     * manifest. None for an image above `MAX_VARIANT_PIXELS`: the deploy
+     * warns about it.
+     */
     readonly variants: readonly ImageVariant[]
 }
 
@@ -375,7 +403,9 @@ export interface ReleaseImage {
  * with the variants of the first attachment of that key that has some, by
  * the order of the keys. The build reads the same manifest with the same
  * reader and the same rule (`imageVariants()`), so the deploy makes the
- * variants that the pages name.
+ * variants that the pages name. An image of a kind and a width with variants
+ * but of more than `MAX_VARIANT_PIXELS` comes with none, so the deploy can
+ * name it.
  */
 export async function releaseImages(store: string): Promise<ReleaseImage[]> {
     const images = new Map<string, ReleaseImage>()
@@ -388,9 +418,14 @@ export async function releaseImages(store: string): Promise<ReleaseImage[]> {
             ) {
                 continue
             }
-            const variants = imageVariants(attachment.name, attachment.width, attachment.height)
-            if (variants.length > 0) {
-                images.set(attachment.key, { key: attachment.key, name: attachment.name, variants })
+            const { key, name, width, height } = attachment
+            const variants = imageVariants(name, width, height)
+            const tooLarge =
+                hasVariants(name) &&
+                width > VARIANT_WIDTHS[0] &&
+                width * height > MAX_VARIANT_PIXELS
+            if (variants.length > 0 || tooLarge) {
+                images.set(key, { key, name, width, height, variants })
             }
         }
     }

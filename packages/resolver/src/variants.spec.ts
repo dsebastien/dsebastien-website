@@ -3,9 +3,11 @@ import {
     hasVariants,
     imageKeyOf,
     imageVariants,
+    MAX_VARIANT_PIXELS,
     VARIANT_GENERATION,
     VARIANT_WIDTHS,
     variantAt,
+    variantGenerationOf,
     variantKey,
     variantKeysOf,
     variantPath
@@ -47,6 +49,12 @@ describe('the variants of an image', () => {
         ])
     })
 
+    test('an image of more than 50 megapixels gets none', () => {
+        expect(MAX_VARIANT_PIXELS).toBe(50_000_000)
+        expect(imageVariants('large.jpg', 10_000, 5_000)).toHaveLength(4)
+        expect(imageVariants('huge.jpg', 10_000, 5_001)).toEqual([])
+    })
+
     test('a small image and a kind with no variant get none', () => {
         expect(imageVariants('icon.png', 480, 480)).toEqual([])
         expect(imageVariants('plan.svg', 2000, 1000)).toEqual([])
@@ -71,10 +79,15 @@ describe('the names and the addresses of the variants', () => {
         for (const name of variantKeysOf(KEY)) {
             expect(imageKeyOf(name)).toBe(KEY)
         }
-        // A variant of an older generation, or of a width of no generation, follows its image too.
+        // A variant of any generation, or of a width of no generation, follows its image too:
+        // a newer generation of another clone leaves with a takedown of the image.
         expect(imageKeyOf(`${KEY}-w801-${String(VARIANT_GENERATION)}.webp`)).toBe(KEY)
-        // A generation that does not exist yet, another form: no file of a release.
-        expect(imageKeyOf(`${KEY}-w800-${String(VARIANT_GENERATION + 1)}.webp`)).toBeUndefined()
+        expect(imageKeyOf(`${KEY}-w800-${String(VARIANT_GENERATION + 1)}.webp`)).toBe(KEY)
+        expect(variantGenerationOf(`${KEY}-w800-${String(VARIANT_GENERATION + 1)}.webp`)).toBe(
+            VARIANT_GENERATION + 1
+        )
+        expect(variantGenerationOf(KEY)).toBeUndefined()
+        // Another form: no file of a release.
         expect(imageKeyOf(`${KEY}-w800-0.webp`)).toBeUndefined()
         expect(imageKeyOf(`${KEY}-w0800-${String(VARIANT_GENERATION)}.webp`)).toBeUndefined()
         expect(imageKeyOf(`${KEY}.part`)).toBeUndefined()
@@ -83,10 +96,10 @@ describe('the names and the addresses of the variants', () => {
 
     test('the address of a variant comes from the address of its image', () => {
         expect(variantPath(`/-/attachments/${KEY}/Garden%20plan.png`, 480)).toBe(
-            `/-/attachments/${KEY}/w480-${String(VARIANT_GENERATION)}/Garden%20plan.webp`
+            `/-/attachments/${KEY}/w480-${String(VARIANT_GENERATION)}/Garden%20plan.png.webp`
         )
         expect(variantPath(`/-/attachments/${KEY}/plan.v2.JPG`, 1600)).toBe(
-            `/-/attachments/${KEY}/w1600-${String(VARIANT_GENERATION)}/plan.v2.webp`
+            `/-/attachments/${KEY}/w1600-${String(VARIANT_GENERATION)}/plan.v2.JPG.webp`
         )
         expect(() => variantPath('/-/note/a.html', 480)).toThrow()
     })
@@ -99,9 +112,10 @@ describe('the names and the addresses of the variants', () => {
         const address = variantPath(`/-/attachments/${KEY}/Garden%20plan.png`, 800)
         expect(variantAt(address, attachments)).toEqual({
             key: variantKey(KEY, 800),
-            name: 'Garden plan.webp'
+            name: 'Garden plan.png.webp',
+            image: { key: KEY, name: 'Garden plan.png' }
         })
-        // Another name, another key, an SVG, another generation.
+        // Another name, another key, an SVG, another generation, another width.
         expect(variantAt(address.replace('Garden%20plan', 'Other'), attachments)).toBeUndefined()
         expect(variantAt(address.replace(KEY, OTHER), attachments)).toBeUndefined()
         expect(
@@ -110,6 +124,7 @@ describe('the names and the addresses of the variants', () => {
         expect(
             variantAt(address.replace(`-${String(VARIANT_GENERATION)}/`, '-0/'), attachments)
         ).toBeUndefined()
+        expect(variantAt(address.replace('/w800-', '/w801-'), attachments)).toBeUndefined()
         expect(variantAt(address, {})).toBeUndefined()
     })
 })

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -15,8 +15,7 @@ import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/de
 import { plan, publish, status, takedown, unpublish } from '../apps/plugin/src/publishing/tool.ts'
 import type { Subprocess } from 'bun'
 import { startServer, type Server } from '../apps/site/server/serve.ts'
-import { releaseImages } from '../apps/site/worker/deployment.ts'
-import { writeVariants } from '../apps/site/worker/image-variants.ts'
+import { writeReleaseVariants } from '../apps/site/worker/image-variants.ts'
 
 // The site of the invented fixture vault, to click through on this machine:
 // the publishing tool publishes every new note of a copy of the fixture vault
@@ -147,11 +146,7 @@ try {
         throw new Error('the build of the site failed')
     }
 
-    await writeVariants(
-        await releaseImages(contentStore),
-        async (key) => new Uint8Array(await readFile(join(stores.attachmentStorage, key))),
-        variants
-    )
+    await writeReleaseVariants(contentStore, stores.attachmentStorage, variants)
     server = await startServer({
         dist: outDir,
         port: Number(values.port),

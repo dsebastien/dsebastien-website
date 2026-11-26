@@ -673,7 +673,7 @@ describe('attachments of a page', () => {
                     files
                 )
             ]).render('Self.md')
-        const variants = `/-/attachments/${KEY}/w480-1/cover.webp 480w, /-/attachments/${KEY}/w800-1/cover.webp 800w, /-/attachments/${KEY}/w1200-1/cover.webp 1000w`
+        const variants = `/-/attachments/${KEY}/w480-1/cover.jpg.webp 480w, /-/attachments/${KEY}/w800-1/cover.jpg.webp 800w, /-/attachments/${KEY}/w1200-1/cover.jpg.webp 1000w`
         expect(html('cover.jpg')).toBe(
             `<img src="/-/attachments/${KEY}/cover.jpg" srcset="${variants}" sizes="(min-width: 688px) 656px, calc(100vw - 2rem)" alt="cover.jpg" width="1000" height="1500" loading="lazy" decoding="async">`
         )

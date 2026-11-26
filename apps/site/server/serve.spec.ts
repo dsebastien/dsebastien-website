@@ -111,7 +111,10 @@ describe('the plain server and the variants of an image', () => {
             expect(variant.headers.get('content-type')).toBe('image/webp')
             expect(await variant.text()).toBe('webp')
             expect(await (await fetch(`${site.url}${image}`)).text()).toBe('png')
-            expect((await fetch(`${site.url}${variantPath(image, 800)}`)).status).toBe(404)
+            // A variant that the folder lacks gives the image (R92).
+            const missing = await fetch(`${site.url}${variantPath(image, 800)}`)
+            expect(missing.headers.get('content-type')).toBe('image/png')
+            expect(await missing.text()).toBe('png')
         } finally {
             await site.stop()
             await rm(root, { recursive: true, force: true })

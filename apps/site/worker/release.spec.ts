@@ -3,11 +3,12 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { variantKey, variantKeysOf } from '@dsebastien-website/resolver'
+import { VARIANT_GENERATION, variantKey, variantKeysOf } from '@dsebastien-website/resolver'
 import { rejectionOf } from '@dsebastien-website/testing'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     deployRelease,
+    makeVariants,
     readHostRecord,
     resultLine,
     pendingUrls,
@@ -18,7 +19,9 @@ import {
     type DeployRun,
     type RevertRun
 } from './release.ts'
+import sharp from 'sharp'
 import type { ReleaseImage } from './deployment.ts'
+import { encodeVariants } from './image-variants.ts'
 import { INDEXNOW_KEY, type IndexNowBatch } from '../src/indexnow.ts'
 import { sitemapIndexXml, sitemapXml } from '../src/sitemaps.ts'
 
@@ -263,7 +266,9 @@ describe('a deployment', () => {
             contentRevision: CONTENT,
             siteRevision: SITE,
             builtAt: '2031-04-01T08:00:00Z',
-            previous: null
+            previous: null,
+            // The generation of the image variants that its pages name (R92).
+            variants: VARIANT_GENERATION
         })
         expect(await readFile(join(site.dist(), '_headers'), 'utf8')).toBe(
             '/*\n  X-Robots-Tag: noindex\n'
@@ -2116,7 +2121,13 @@ describe('the variants of the images of a release', () => {
         { step: 480, width: 480, height: 720 },
         { step: 800, width: 800, height: 1200 }
     ] as const
-    const imageOf = (key: string): ReleaseImage => ({ key, name: 'cover.jpg', variants: VARIANTS })
+    const imageOf = (key: string): ReleaseImage => ({
+        key,
+        name: 'cover.jpg',
+        width: 1000,
+        height: 1500,
+        variants: VARIANTS
+    })
     const variantsOf = (key: string): string[] => [variantKey(key, 480), variantKey(key, 800)]
     /** An encoder that writes the step into each variant. */
     const encode = (bytes: Uint8Array, image: ReleaseImage): Promise<Uint8Array[]> =>
@@ -2127,7 +2138,10 @@ describe('the variants of the images of a release', () => {
         )
 
     /** A run whose host gives the live release until this run deploys its own. */
-    function overLive(options: Parameters<typeof fixture>[0]): Fixture {
+    function overLive(
+        options: Parameters<typeof fixture>[0],
+        live: object = LIVE_RELEASE
+    ): Fixture {
         const site = fixture(options)
         const checks = site.run.live
         if (checks === undefined) {
@@ -2137,7 +2151,7 @@ describe('the variants of the images of a release', () => {
             ...site,
             run: {
                 ...site.run,
-                live: { ...checks, read: async () => (await checks.read()) ?? LIVE_RELEASE }
+                live: { ...checks, read: async () => (await checks.read()) ?? live }
             }
         }
     }
@@ -2184,7 +2198,9 @@ describe('the variants of the images of a release', () => {
         expect(site.reads).toEqual([])
     })
 
-    test('stop the run before the build when one cannot be made, and name its image', async () => {
+    // Review round 1 of issue 87 (R92): a variant never blocks a deployment.
+    // A page that names a missing variant gets the file of its image.
+    test('that cannot be made give a warning that names the image, and the release goes on', async () => {
         const site = fixture({
             stored: [COVER.key],
             folder: [COVER],
@@ -2195,24 +2211,69 @@ describe('the variants of the images of a release', () => {
             }
         })
         const result = await deployRelease(site.run)
-        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', live: false })
-        expect(result.error).toContain(`cover.jpg (${COVER.key}): the file is not an image`)
-        expect(site.events).not.toContain('build')
+        expect(result).toMatchObject({ ...OK, uploaded: 0 })
+        expect(result.warnings).toEqual([
+            `the variants of the image cover.jpg (${COVER.key}) were not made, so its pages give its file: the file is not an image`
+        ])
     })
 
-    test('stop the run before the build when the file of their image is not in the folder', async () => {
+    test('of a cut JPEG and a cut PNG give a warning each, with the encoder of the deploy', async () => {
+        const photo = new Uint8Array(
+            await sharp({
+                create: {
+                    width: 1000,
+                    height: 1500,
+                    channels: 3,
+                    background: '#000',
+                    noise: { type: 'gaussian', mean: 128, sigma: 30 }
+                }
+            })
+                .jpeg()
+                .toBuffer()
+        )
+        const plan = new Uint8Array(
+            await sharp({
+                create: { width: 1000, height: 1500, channels: 3, background: '#335' }
+            })
+                .png()
+                .toBuffer()
+        )
+        const cut = (bytes: Uint8Array): { key: string; bytes: Uint8Array } => {
+            const part = bytes.subarray(0, bytes.length >> 1)
+            return { key: createHash('sha256').update(part).digest('hex'), bytes: part }
+        }
+        const jpeg = cut(photo)
+        const png = cut(plan)
+        const site = fixture({
+            stored: [jpeg.key, png.key],
+            folder: [jpeg, png],
+            used: [jpeg.key, png.key],
+            overrides: {
+                images: [imageOf(jpeg.key), { ...imageOf(png.key), name: 'plan.png' }],
+                encode: encodeVariants
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 0, error: null })
+        expect(result.warnings).toHaveLength(2)
+        expect(result.warnings.join('\n')).toContain(`cover.jpg (${jpeg.key})`)
+        expect(result.warnings.join('\n')).toContain(`plan.png (${png.key})`)
+    })
+
+    test('whose image is not in the folder give a warning, and the release goes on', async () => {
         const site = fixture({
             stored: [COVER.key],
             used: [COVER.key],
             overrides: { images: [imageOf(COVER.key)], encode }
         })
         const result = await deployRelease(site.run)
-        expect(result.error).toContain(COVER.key)
-        expect(result.error).toContain('variants')
-        expect(site.events).not.toContain('build')
+        expect(result).toMatchObject({ ...OK, uploaded: 0 })
+        expect(result.warnings).toEqual([
+            `the variants of the image cover.jpg (${COVER.key}) were not made, so its pages give its file: its file is not in the attachment folder`
+        ])
     })
 
-    test('stop the run before the build when the images of the release cannot be read', async () => {
+    test('give a warning when the images of the release cannot be read, and the release goes on', async () => {
         const site = fixture({
             stored: [PHOTO.key, PLAN.key],
             overrides: {
@@ -2221,8 +2282,130 @@ describe('the variants of the images of a release', () => {
             }
         })
         const result = await deployRelease(site.run)
-        expect(result.error).toContain('the manifest is not valid')
-        expect(site.events).not.toContain('build')
+        expect(result).toMatchObject({ ...OK })
+        expect(result.warnings).toEqual([
+            'no variant of an image was made, so the pages give the files of the images: the manifest is not valid'
+        ])
+    })
+
+    test('give a warning when one cannot be uploaded, and the release goes on', async () => {
+        const site = fixture({
+            stored: [COVER.key],
+            folder: [COVER],
+            used: [COVER.key],
+            overrides: { images: [imageOf(COVER.key)], encode }
+        })
+        const put = site.storage.put.bind(site.storage)
+        site.storage.put = (key, bytes) =>
+            key === variantKey(COVER.key, 800)
+                ? Promise.reject(new Error('the storage refused it'))
+                : put(key, bytes)
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 1 })
+        expect(result.warnings.join('\n')).toContain('the storage refused it')
+    })
+
+    test('of an image of more than 50 megapixels are none, with a warning', async () => {
+        const site = fixture({
+            stored: [COVER.key],
+            folder: [COVER],
+            used: [COVER.key],
+            overrides: {
+                images: [{ ...imageOf(COVER.key), width: 10_000, height: 6_000, variants: [] }],
+                encode: () => Promise.reject(new Error('no encode'))
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 0 })
+        expect(result.warnings).toEqual([
+            `the image cover.jpg (${COVER.key}) has more than 50 million pixels, so it has no variant and its pages give its file`
+        ])
+        expect(site.reads).toEqual([])
+    })
+
+    test('of large images are made one at a time, and the others together', async () => {
+        const many = [file('one'), file('two'), file('three'), file('four')]
+        let running = 0
+        const peaks: Record<string, number> = {}
+        const site = fixture({
+            stored: many.map((item) => item.key),
+            folder: many,
+            used: many.map((item) => item.key),
+            overrides: {
+                images: many.map((item, index) => ({
+                    ...imageOf(item.key),
+                    ...(index < 2 ? { width: 6_000, height: 4_000 } : {})
+                })),
+                encode: async (bytes, image) => {
+                    running += 1
+                    peaks[image.key] = running
+                    await Bun.sleep(5)
+                    running -= 1
+                    return await encode(bytes, image)
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 8, warnings: [] })
+        const [first, second, third, fourth] = many.map((item) => peaks[item.key])
+        expect([first, second]).toEqual([1, 1])
+        expect(Math.max(third ?? 0, fourth ?? 0)).toBe(2)
+    })
+
+    // `bun run variants`: the warm-up before a deployment, with no build.
+    test('are made apart from a deployment: only the missing ones, and nothing is deleted', async () => {
+        const site = fixture({ stored: [PHOTO.key, variantKey(PHOTO.key, 480)], folder: [PHOTO] })
+        const result = await makeVariants(
+            { ...site.run, encode },
+            [imageOf(PHOTO.key), imageOf(COVER.key)],
+            site.storage,
+            new Set(site.storage.names)
+        )
+        expect(result.uploaded).toBe(1)
+        expect(result.warnings).toEqual([
+            `the variants of the image cover.jpg (${COVER.key}) were not made, so its pages give its file: its file is not in the attachment folder`
+        ])
+        expect(site.events).toEqual([`put ${variantKey(PHOTO.key, 800)}`])
+    })
+
+    // Review round 1, point 2: a takedown never waits for an encoder.
+    test('are not made by a takedown', async () => {
+        const site = fixture({
+            stored: [PHOTO.key, PLAN.key],
+            folder: [PHOTO, PLAN],
+            overrides: {
+                takedown: true,
+                images: [imageOf(PHOTO.key)],
+                encode: () => Promise.reject(new Error('no encode'))
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 0, warnings: [] })
+        expect(site.reads).toEqual([])
+    })
+
+    // Review round 1, point 5: a newer encoder gives new names, and the old ones
+    // stay only while the release before names them.
+    test('of another generation stay only while the release before uses that generation', async () => {
+        const other = `${PHOTO.key}-w800-${String(VARIANT_GENERATION + 1)}.webp`
+        const before = (record: object): Fixture =>
+            overLive(
+                {
+                    stored: [PHOTO.key, PLAN.key, other],
+                    overrides: {
+                        images: [],
+                        releaseKeys: () => Promise.resolve([PHOTO.key, PLAN.key])
+                    }
+                },
+                record
+            )
+        const without = before(LIVE_RELEASE)
+        expect(await deployRelease(without.run)).toMatchObject({ live: true, deleted: 1 })
+        expect(without.storage.names.has(other)).toBe(false)
+
+        const using = before({ ...LIVE_RELEASE, variants: VARIANT_GENERATION + 1 })
+        expect(await deployRelease(using.run)).toMatchObject({ live: true, deleted: 0 })
+        expect(using.storage.names.has(other)).toBe(true)
     })
 
     test('are names of the storage that belong to their image: no warning, and no failure after a takedown', async () => {

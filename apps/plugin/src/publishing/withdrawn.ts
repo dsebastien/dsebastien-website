@@ -1,3 +1,4 @@
+import { isAttachmentKey } from '@dsebastien-website/resolver'
 import { toCanonicalJson } from './canonical.ts'
 import { parseJson } from './json.ts'
 import { sortByCodePoint } from './order.ts'
@@ -13,9 +14,6 @@ import { sortByCodePoint } from './order.ts'
 
 /** The file of the withdrawn keys in the content store. */
 export const WITHDRAWN_FILE = 'withdrawn.json'
-
-/** The form of a key of the attachment storage. */
-const KEY = /^[0-9a-f]{64}$/
 
 /**
  * Reads the withdrawn keys from the text of `withdrawn.json`: an object with
@@ -55,7 +53,7 @@ export function parseWithdrawn(text: string | undefined): string[] {
     }
     const read: string[] = []
     for (const key of keys) {
-        if (typeof key !== 'string' || !KEY.test(key)) {
+        if (typeof key !== 'string' || !isAttachmentKey(key)) {
             return refuse('an item of "keys" is not a key of the attachment storage')
         }
         const last = read.at(-1)

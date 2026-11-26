@@ -5,14 +5,17 @@ import { MAX_ATTACHMENT_SIZE } from '../../plugin/src/publishing/attachments.ts'
 import {
     DEPLOYMENT_RECORD_FILE,
     imageKeyOf,
+    isAttachmentKey,
+    MAX_VARIANT_PIXELS,
     SITE_ORIGIN,
+    VARIANT_GENERATION,
+    variantGenerationOf,
     variantKey,
     variantKeysOf
 } from '@dsebastien-website/resolver'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     checkOutput,
-    ATTACHMENT_KEY,
     checkOutputLimits,
     deploymentRecordFrom,
     HOST_LIMITS,
@@ -37,10 +40,11 @@ import { locsOf, SITEMAP_INDEX_PATH } from '../src/sitemaps.ts'
 //    takedown or of a forced removal that the new release does not use;
 // 2. the attachments: each key that the release uses and that the object
 //    storage lacks goes up from the attachment folder of the machine; a key
-//    in neither place stops the run before the build; then each variant of
-//    an image of the release that the storage lacks is made from the file of
-//    the folder and goes up (issue 87): the storage is the cache of the
-//    variants, so an image is encoded one time;
+//    in neither place stops the run before the build; then, but in a
+//    takedown, each variant of an image of the release that the storage
+//    lacks is made from the file of the folder and goes up (issue 87, R92):
+//    the storage is the cache of the variants, so an image is encoded one
+//    time, and a variant that cannot be made is a warning;
 // 3. the build, then its deployment record and its headers file, then the
 //    limits of the host;
 // 4. the deployment (one new Worker version, one switch);
@@ -57,11 +61,13 @@ import { locsOf, SITEMAP_INDEX_PATH } from '../src/sitemaps.ts'
 // command line (`scripts/deploy.ts`) gives the real ones, the tests give
 // fakes.
 //
-// A variant of an image is a file derived from it (issue 87, business rule
-// 16): every step reads a name of the storage as the key of its image
-// (`imageKeyOf()`), so a variant leaves and stays with its image. A step
-// that deletes by key, without a list of the storage, deletes the variants
-// of the key too (`withVariants()`).
+// A variant of an image is a file derived from it (issue 87, R92): every
+// step reads a name of the storage as the key of its image (`imageKeyOf()`),
+// so a variant leaves and stays with its image; the cleanup also keeps it
+// only in a generation that a kept release names. A step that deletes by
+// key, without a list of the storage, deletes the variants of the key too
+// (`withVariants()`). A variant never blocks a deployment, and a takedown
+// makes none.
 
 /** The files of the attachment folder of the machine, by their keys. */
 export interface AttachmentFolder {
@@ -166,15 +172,15 @@ export interface DeployRun {
     /** The attachment folder of the machine. */
     readonly attachments: AttachmentFolder
     /**
-     * The images of the release whose pages offer variants (issue 87), or
-     * the read of them. A read that throws stops the run before the build.
-     * Without it, the release has none.
+     * The images of the release whose pages offer variants (issue 87, R92),
+     * or the read of them. A read that throws gives a warning: the pages
+     * give the files of the images. Without it, the release has none.
      */
     readonly images?: readonly ReleaseImage[] | (() => Promise<readonly ReleaseImage[]>)
     /**
      * Makes the variants of an image from the bytes of its file, in the
-     * order of its variants. It throws when it cannot. Without it, a variant
-     * that the storage lacks stops the run before the build.
+     * order of its variants. It throws when it cannot: a warning. Without
+     * it, a variant that the storage lacks gives a warning.
      */
     readonly encode?: (bytes: Uint8Array, image: ReleaseImage) => Promise<readonly Uint8Array[]>
     /** True when a takedown started the run. */
@@ -377,7 +383,7 @@ async function eachItem<T>(
 
 /** The keys, each with every name that a variant of it can have: a deletion without a list of the storage. */
 function withVariants(keys: readonly string[]): string[] {
-    return keys.flatMap((key) => (ATTACHMENT_KEY.test(key) ? [key, ...variantKeysOf(key)] : [key]))
+    return keys.flatMap((key) => (isAttachmentKey(key) ? [key, ...variantKeysOf(key)] : [key]))
 }
 
 /** True for a name of the storage whose image has one of these keys: the file or a variant of it. */
@@ -928,7 +934,21 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 `the attachment storage has ${String(others)} file(s) that are not keys, left as they are`
             )
         }
-        const keep = belongsTo(kept)
+        // A variant stays with its image only in a generation that a kept
+        // release names: this one, and the one of the release before (R92).
+        const generations = new Set([VARIANT_GENERATION])
+        if (replaced?.variants !== undefined && run.newContentStore !== true) {
+            generations.add(replaced.variants)
+        }
+        const keep = (name: string): boolean => {
+            const key = imageKeyOf(name)
+            const generation = variantGenerationOf(name)
+            return (
+                key !== undefined &&
+                kept.has(key) &&
+                (generation === undefined || generations.has(generation))
+            )
+        }
         const unused = names.filter((name) => imageKeyOf(name) !== undefined && !keep(name)).sort()
         const failed = await remove(storage, unused)
         if (failed.length > 0) {
@@ -1009,16 +1029,27 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             await upload(run, [...used], run.storage, new Set(stored), () => {
                 uploaded += 1
             })
-            const images = typeof run.images === 'function' ? await run.images() : run.images
-            await uploadVariants(
-                run,
-                (images ?? []).filter((image) => used.has(image.key)),
-                run.storage,
-                new Set(stored),
-                () => {
-                    uploaded += 1
+            // A takedown makes no variant: its pages give the files of the
+            // images until a later deployment (R92, `bun run variants`).
+            if (!takedown) {
+                let images: readonly ReleaseImage[] = []
+                try {
+                    images =
+                        (typeof run.images === 'function' ? await run.images() : run.images) ?? []
+                } catch (failure) {
+                    warnings.push(
+                        `no variant of an image was made, so the pages give the files of the images: ${messageOf(failure)}`
+                    )
                 }
-            )
+                const made = await makeVariants(
+                    run,
+                    images.filter((image) => used.has(image.key)),
+                    run.storage,
+                    new Set(stored)
+                )
+                uploaded += made.uploaded
+                warnings.push(...made.warnings)
+            }
         }
 
         let dist: string
@@ -1035,6 +1066,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 contentRevision: run.contentRevision,
                 siteRevision: run.siteRevision,
                 builtAt: timeOf(run.now()),
+                variants: VARIANT_GENERATION,
                 ...(replaced === undefined
                     ? {}
                     : { previous: replaced === null ? null : buildOf(replaced) }),
@@ -1228,77 +1260,124 @@ async function upload(
 /** How many images are encoded at the same time: each holds its pixels in memory. */
 const PARALLEL_ENCODES = 4
 
+/** The images of more pixels than this are encoded one at a time, alone. */
+export const LARGE_IMAGE_PIXELS = 16_000_000
+
+/** What the making of the variants of images needs (issue 87, R92). */
+export interface VariantRun {
+    /** The attachment folder of the machine, where the file of each image is. */
+    readonly attachments: AttachmentFolder
+    /** Makes the variants of an image, as `DeployRun.encode`. */
+    readonly encode?: DeployRun['encode']
+    readonly log: (line: string) => void
+}
+
+/** What the making of the variants did. */
+export interface VariantResult {
+    /** The variants uploaded. */
+    readonly uploaded: number
+    /** One line per image that has no variant or lacks some, with its name and its key. */
+    readonly warnings: string[]
+}
+
 /**
  * Makes each variant of the images that the storage lacks from the file of
- * the folder, and uploads it (issue 87). An image whose variants the
- * storage has is never read. An image whose file is not in the folder, or
- * whose variants cannot be made, stops the run before the build, with its
- * name and its key: a page would name a variant that does not exist.
+ * the folder, and uploads it (issue 87, R92). An image whose variants the
+ * storage has is never read. A variant never blocks a deployment: an image
+ * whose file is not in the folder, is above the size limit, is not the file
+ * of its key or cannot be encoded, and a variant that cannot be uploaded,
+ * give a warning with the name and the key of the image, and its pages give
+ * the file of the image instead (the resolver). An image of more than
+ * `MAX_VARIANT_PIXELS` has none, with a warning. The images of more than
+ * `LARGE_IMAGE_PIXELS` are encoded one at a time, then the others four at a
+ * time. It never throws.
+ *
+ * @param stored the names that the storage has
  */
-async function uploadVariants(
-    run: DeployRun,
+export async function makeVariants(
+    run: VariantRun,
     images: readonly ReleaseImage[],
     storage: AttachmentStorage,
-    stored: ReadonlySet<string>,
-    uploaded: () => void
-): Promise<void> {
-    const wanted = images.filter((image) =>
-        image.variants.some((variant) => !stored.has(variantKey(image.key, variant.step)))
-    )
-    if (wanted.length === 0) {
-        return
+    stored: ReadonlySet<string>
+): Promise<VariantResult> {
+    const warnings: string[] = []
+    let uploaded = 0
+    const what = (image: ReleaseImage): string => `the image ${image.name} (${image.key})`
+    const fail = (image: ReleaseImage, why: string): void => {
+        warnings.push(
+            `the variants of ${what(image)} were not made, so its pages give its file: ${why}`
+        )
     }
-    const failed: string[] = []
+    const wanted: ReleaseImage[] = []
+    for (const image of images) {
+        if (image.variants.length === 0) {
+            warnings.push(
+                `${what(image)} has more than ${String(MAX_VARIANT_PIXELS / 1_000_000)} million pixels, so it has no variant and its pages give its file`
+            )
+        } else if (
+            image.variants.some((variant) => !stored.has(variantKey(image.key, variant.step)))
+        ) {
+            wanted.push(image)
+        }
+    }
+    const ready: ReleaseImage[] = []
     for (const image of wanted) {
-        if (!(await run.attachments.exists(image.key))) {
-            failed.push(`${image.name} (${image.key}): its file is not in the attachment folder`)
-        } else if ((await run.attachments.size(image.key)) > MAX_ATTACHMENT_SIZE) {
-            failed.push(`${image.name} (${image.key}): its file is above the size limit`)
+        try {
+            if (!(await run.attachments.exists(image.key))) {
+                fail(image, 'its file is not in the attachment folder')
+            } else if ((await run.attachments.size(image.key)) > MAX_ATTACHMENT_SIZE) {
+                fail(image, 'its file is above the size limit')
+            } else if (run.encode === undefined) {
+                fail(image, 'nothing on this machine makes the variants of an image')
+            } else {
+                ready.push(image)
+            }
+        } catch (error) {
+            fail(image, messageOf(error))
         }
     }
     const encode = run.encode
-    if (encode === undefined) {
-        failed.push('nothing on this machine makes the variants of an image')
-    }
-    if (failed.length > 0 || encode === undefined) {
-        throw new Error(`the variants of these images cannot be made: ${failed.sort().join('; ')}`)
-    }
-    let made = 0
-    await eachItem(
-        wanted,
-        async (image) => {
-            let files: readonly Uint8Array[]
+    const make = async (image: ReleaseImage): Promise<void> => {
+        if (encode === undefined) {
+            return
+        }
+        let files: readonly Uint8Array[]
+        try {
+            const bytes = await run.attachments.read(image.key)
+            if (createHash('sha256').update(bytes).digest('hex') !== image.key) {
+                throw new Error('the file of the attachment folder is not the file of its key')
+            }
+            files = await encode(bytes, image)
+            if (files.length !== image.variants.length) {
+                throw new Error(
+                    `${String(files.length)} variants were made, not ${String(image.variants.length)}`
+                )
+            }
+        } catch (error) {
+            fail(image, messageOf(error))
+            return
+        }
+        for (const [index, variant] of image.variants.entries()) {
+            const name = variantKey(image.key, variant.step)
+            const bytes = files[index]
+            if (bytes === undefined || stored.has(name)) continue
             try {
-                const bytes = await run.attachments.read(image.key)
-                if (createHash('sha256').update(bytes).digest('hex') !== image.key) {
-                    throw new Error('the file of the attachment folder is not the file of its key')
-                }
-                files = await encode(bytes, image)
-                if (files.length !== image.variants.length) {
-                    throw new Error(
-                        `${String(files.length)} variants were made, not ${String(image.variants.length)}`
-                    )
-                }
+                await storage.put(name, bytes)
+                uploaded += 1
             } catch (error) {
-                failed.push(`${image.name} (${image.key}): ${messageOf(error)}`)
-                return
+                fail(image, `the upload of ${name} failed: ${messageOf(error)}`)
             }
-            for (const [index, variant] of image.variants.entries()) {
-                const name = variantKey(image.key, variant.step)
-                const bytes = files[index]
-                if (bytes !== undefined && !stored.has(name)) {
-                    await storage.put(name, bytes)
-                    made += 1
-                    uploaded()
-                }
-            }
-        },
+        }
+    }
+    const large = (image: ReleaseImage): boolean => image.width * image.height > LARGE_IMAGE_PIXELS
+    await eachItem(ready.filter(large), make, 1)
+    await eachItem(
+        ready.filter((image) => !large(image)),
+        make,
         PARALLEL_ENCODES
     )
-    if (failed.length > 0) {
-        throw new Error(`the variants of these images cannot be made: ${failed.sort().join('; ')}`)
-    }
-    run.log(`uploaded ${String(made)} variants of images to the attachment storage`)
+    run.log(`uploaded ${String(uploaded)} variants of images to the attachment storage`)
+    return { uploaded, warnings: warnings.sort() }
 }
 
 /**

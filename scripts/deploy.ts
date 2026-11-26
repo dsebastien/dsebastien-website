@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { SITE_ORIGIN } from '@dsebastien-website/resolver'
 import {
-    ATTACHMENT_KEY,
     deployToken,
     headersFile,
     releaseImages,
@@ -31,7 +30,7 @@ import {
     processIsAlive,
     takeDeployLock
 } from '../apps/site/worker/deploy-lock.ts'
-import { encodeVariants } from '../apps/site/worker/image-variants.ts'
+import { attachmentFolder, encodeVariants } from '../apps/site/worker/image-variants.ts'
 import { r2Storage } from '../apps/site/worker/r2.ts'
 import { STORE_CATALOG_URL } from '../apps/site/src/site.ts'
 import {
@@ -301,12 +300,6 @@ async function deploy(
         const folder = join(ROOT, '.cache', 'deploy', target.worker)
         // The warnings of the store catalog of the build (issue 56).
         const catalogReport = join(folder, 'store-catalog-warnings.txt')
-        const keyPath = (key: string): string => {
-            if (attachments === undefined || !ATTACHMENT_KEY.test(key)) {
-                throw new Error(`"${key}" is not a key of the attachment storage`)
-            }
-            return join(attachments, key)
-        }
         // The record names this commit, so the keys and the build come from it.
         // The fetch comes first (a fetch that fails refuses with no deletion);
         // a copy that cannot be built is refused inside the run, after the
@@ -345,12 +338,7 @@ async function deploy(
                           token
                       })
                   }),
-            attachments: {
-                exists: async (key) =>
-                    (await stat(keyPath(key)).catch(() => undefined))?.isFile() === true,
-                size: async (key) => (await stat(keyPath(key))).size,
-                read: async (key) => new Uint8Array(await readFile(keyPath(key)))
-            },
+            attachments: attachmentFolder(attachments),
             takedown: values.takedown,
             newContentStore: move !== undefined,
             dryRun,

@@ -223,7 +223,7 @@ describe('budgets of the note page', () => {
         expect(cover?.properties['loading']).toBeUndefined()
         expect([cover?.properties['width'], cover?.properties['height']]).toEqual([1000, 1500])
         expect(String(cover?.properties['srcSet'])).toMatch(
-            /^\/-\/attachments\/[0-9a-f]{64}\/w480-1\/cover\.webp 480w,/u
+            /^\/-\/attachments\/[0-9a-f]{64}\/w480-1\/cover\.jpg\.webp 480w,/u
         )
         expect(cover?.properties['sizes']).toBe('(min-width: 688px) 656px, calc(100vw - 2rem)')
         expect(images.slice(1).map((image) => image.properties['loading'])).toEqual([

@@ -155,8 +155,13 @@ function keyOf(text: string): string {
 export type Resolution =
     | { kind: 'page'; file: string }
     | { kind: 'file'; file: string; type: SiteFileType }
-    /** `variant`: a variant of an image (issue 87), which the storage can lack: then not found. */
-    | { kind: 'attachment'; key: string; name: string; variant?: true }
+    /** `image`: the file of the image of a variant (issue 87, R92), for a storage that lacks the variant. */
+    | {
+          kind: 'attachment'
+          key: string
+          name: string
+          image?: { readonly key: string; readonly name: string }
+      }
     | { kind: 'redirect'; status: 301 | 302; location: string; cacheControl: string }
     | { kind: 'not-found'; suggestions: string[]; file?: string }
     | { kind: 'gone'; file?: string }
@@ -297,7 +302,7 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
     // A variant of an image that a page uses (issue 87): only of an image of the map.
     const variant = map.attachments === undefined ? undefined : variantAt(path, map.attachments)
     if (variant !== undefined) {
-        return { kind: 'attachment', key: variant.key, name: variant.name, variant: true }
+        return { kind: 'attachment', key: variant.key, name: variant.name, image: variant.image }
     }
     const notFound: Resolution = {
         kind: 'not-found',

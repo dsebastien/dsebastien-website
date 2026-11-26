@@ -1,10 +1,14 @@
-// The variants of an image (issue 87, PERF-25): smaller copies of an image of
-// a note in WebP, which a page offers with `srcset` so that a phone loads the
-// size that its screen needs. The deploy on the machine that publishes makes
-// them from the file of the image and puts them into the attachment storage
-// beside it (`apps/site/worker/release.ts`); the build writes their addresses
-// from the width and the height of the manifest, so it reads no image; the
-// resolver gives a variant only of an image that the release uses.
+import { isAttachmentKey } from './url.ts'
+
+// The variants of an image (issue 87, PERF-25, R92): smaller copies of an
+// image of a note in WebP, which a page offers with `srcset` so that a phone
+// loads the size that its screen needs. The deploy on the machine that
+// publishes makes them from the file of the image and puts them into the
+// attachment storage beside it (`apps/site/worker/release.ts`); the build
+// writes their addresses from the width and the height of the manifest, so it
+// reads no image; the resolver gives a variant only of an image that the
+// release uses, and a host gives the file of the image when the storage
+// lacks the variant.
 //
 // A variant is a file derived from its image: it follows every rule of its
 // image (the guards, a takedown, the withdrawn files, the cleanup, a revert).
@@ -23,10 +27,18 @@ const SOURCES = new Set(['jpeg', 'jpg', 'png', 'webp'])
 export const VARIANT_WIDTHS = [480, 800, 1200, 1600] as const
 
 /**
+ * The most pixels of an image that gets variants: 50 million. A larger image
+ * keeps only its file, so the machine that publishes never holds its pixels.
+ */
+export const MAX_VARIANT_PIXELS = 50_000_000
+
+/**
  * The generation of the variants: it is in every name and every address of a
  * variant, so a change of the way they are made (format, quality) gives new
  * addresses. An address of an attachment is kept for a year (URL-15). Raise
  * it with every change of `encodeVariants()` of `apps/site/worker/image-variants.ts`.
+ * The deployment record of a release names its generation, so the cleanup
+ * keeps the variants that the release before uses.
  */
 export const VARIANT_GENERATION = 1
 
@@ -43,8 +55,6 @@ export interface ImageVariant {
     readonly height: number
 }
 
-const KEY = /^[0-9a-f]{64}$/u
-
 /** The end of a name in small letters, without its dot. */
 function endOf(name: string): string {
     const dot = name.lastIndexOf('.')
@@ -58,12 +68,17 @@ export function hasVariants(name: string): boolean {
 
 /**
  * The variants of an image of this name and size, the smallest first: none
- * for a kind that gets none, and none for an image of `VARIANT_WIDTHS[0]`
- * pixels or less.
+ * for a kind that gets none, none for an image of `VARIANT_WIDTHS[0]` pixels
+ * or less, and none for an image of more than `MAX_VARIANT_PIXELS`.
  */
 export function imageVariants(name: string, width: number, height: number): ImageVariant[] {
     const smallest = VARIANT_WIDTHS[0]
-    if (!hasVariants(name) || !(width > smallest) || !(height > 0)) {
+    if (
+        !hasVariants(name) ||
+        !(width > smallest) ||
+        !(height > 0) ||
+        width * height > MAX_VARIANT_PIXELS
+    ) {
         return []
     }
     const variants: ImageVariant[] = []
@@ -83,25 +98,26 @@ export function imageVariants(name: string, width: number, height: number): Imag
 }
 
 /** The part of a name or an address that says which variant it is: `w800-1`. */
-function tagOf(step: number): string {
-    return nameTag(step, VARIANT_GENERATION)
+function nameTag(step: number, generation = VARIANT_GENERATION): string {
+    return `w${String(step)}-${String(generation)}`
 }
 
 /** The name in the attachment storage of a variant of the image of this key. */
 export function variantKey(key: string, step: VariantStep): string {
-    if (!KEY.test(key)) {
+    if (!isAttachmentKey(key)) {
         throw new Error(`"${key}" is not the key of an attachment`)
     }
-    return `${key}-${tagOf(step)}.webp`
+    return `${key}-${nameTag(step)}.webp`
 }
 
 /**
  * The names in the attachment storage of the variants that the image of this
  * key can have: each width of each generation up to this one. A deletion
- * that does not list the storage deletes them all with the image.
+ * that does not list the storage deletes them all with the image; a list of
+ * the storage finds any other (`imageKeyOf()`).
  */
 export function variantKeysOf(key: string): string[] {
-    if (!KEY.test(key)) {
+    if (!isAttachmentKey(key)) {
         throw new Error(`"${key}" is not the key of an attachment`)
     }
     const names: string[] = []
@@ -113,38 +129,35 @@ export function variantKeysOf(key: string): string[] {
     return names
 }
 
-function nameTag(step: number, generation: number): string {
-    return `w${String(step)}-${String(generation)}`
-}
-
 const VARIANT_NAME = /^([0-9a-f]{64})-w([1-9]\d*)-([1-9]\d*)\.webp$/u
+
+/**
+ * The generation of a name of the attachment storage that is a variant (of
+ * any generation and any width); `undefined` for any other name.
+ */
+export function variantGenerationOf(name: string): number | undefined {
+    const generation = VARIANT_NAME.exec(name)?.[3]
+    return generation === undefined ? undefined : Number(generation)
+}
 
 /**
  * The key of the image that a name of the attachment storage belongs to:
  * the name itself for the file of an image (any attachment), the key of its
- * image for a variant of this generation or of an older one, `undefined`
- * for any other name. A variant always follows its image: it leaves the
- * storage with it, and stays while a release keeps it.
+ * image for a variant of any generation (an older one, and a newer one of
+ * another clone), `undefined` for any other name. A variant always leaves
+ * the storage with its image.
  */
 export function imageKeyOf(name: string): string | undefined {
-    if (KEY.test(name)) {
-        return name
-    }
-    const match = VARIANT_NAME.exec(name)
-    return match !== null && Number(match[3]) <= VARIANT_GENERATION ? match[1] : undefined
-}
-
-/** The name of a variant file: the name of the image without its end, then `.webp`. */
-function variantName(name: string): string {
-    const dot = name.lastIndexOf('.')
-    return `${dot > 0 ? name.slice(0, dot) : name}.webp`
+    return isAttachmentKey(name) ? name : VARIANT_NAME.exec(name)?.[1]
 }
 
 const ATTACHMENT_ADDRESS = /^\/-\/attachments\/([0-9a-f]{64})\/([^/]+)$/u
 
 /**
  * The address of a variant of an image, from the hashed address of the image
- * (`attachmentPath()`): `/-/attachments/<key>/w800-1/<name>.webp`.
+ * (`attachmentPath()`): `/-/attachments/<key>/w800-1/<name of the image>.webp`.
+ * It holds the address of its image, so the resolver finds the image with
+ * one lookup of the map.
  */
 export function variantPath(imagePath: string, step: VariantStep): string {
     const match = ATTACHMENT_ADDRESS.exec(imagePath)
@@ -153,39 +166,53 @@ export function variantPath(imagePath: string, step: VariantStep): string {
     if (key === undefined || name === undefined) {
         throw new Error(`"${imagePath}" is not the address of an attachment`)
     }
-    return `/-/attachments/${key}/${tagOf(step)}/${encodeURIComponent(variantName(decodeURIComponent(name)))}`
+    return `/-/attachments/${key}/${nameTag(step)}/${name}.webp`
 }
 
-/** The addresses of the variants of each image of an attachment map, by the address of the variant. */
-const variantMaps = new WeakMap<object, Map<string, { key: string; name: string }>>()
+const VARIANT_ADDRESS = /^\/-\/attachments\/([0-9a-f]{64})\/w([1-9]\d*)-([1-9]\d*)\/([^/]+)\.webp$/u
+
+/** A variant of an image of a release, as the resolver gives it. */
+export interface VariantFile {
+    /** The name of the variant in the attachment storage. */
+    readonly key: string
+    /** Its file name, which gives its kind (`.webp`). */
+    readonly name: string
+    /** The file of its image, which a host gives when the storage lacks the variant. */
+    readonly image: { readonly key: string; readonly name: string }
+}
 
 /**
- * The variant of an image of the release at this address: its name in the
- * attachment storage and its file name. `undefined` when the address is no
- * variant of an image of `attachments` (the hashed addresses of the release
- * and their keys).
+ * The variant of an image of the release at this address. `undefined` when
+ * the address is no variant of this generation, of a width of
+ * `VARIANT_WIDTHS`, of an image with variants of `attachments` (the hashed
+ * addresses of the release and their keys).
  */
 export function variantAt(
     path: string,
     attachments: Readonly<Record<string, string>>
-): { key: string; name: string } | undefined {
-    let variants = variantMaps.get(attachments)
-    if (variants === undefined) {
-        variants = new Map()
-        for (const [address, key] of Object.entries(attachments)) {
-            const match = ATTACHMENT_ADDRESS.exec(address)
-            const encoded = match?.[2]
-            if (match?.[1] !== key || encoded === undefined) continue
-            const name = decodeURIComponent(encoded)
-            if (!hasVariants(name)) continue
-            for (const step of VARIANT_WIDTHS) {
-                variants.set(variantPath(address, step), {
-                    key: variantKey(key, step),
-                    name: variantName(name)
-                })
-            }
-        }
-        variantMaps.set(attachments, variants)
+): VariantFile | undefined {
+    const match = VARIANT_ADDRESS.exec(path)
+    if (match === null) {
+        return undefined
     }
-    return variants.get(path)
+    const [, key = '', step = '', generation = '', encoded = ''] = match
+    const image = `/-/attachments/${key}/${encoded}`
+    if (
+        Number(generation) !== VARIANT_GENERATION ||
+        !(VARIANT_WIDTHS as readonly number[]).includes(Number(step)) ||
+        !Object.hasOwn(attachments, image) ||
+        attachments[image] !== key
+    ) {
+        return undefined
+    }
+    // The map holds only addresses that the build wrote, so the name decodes.
+    const name = decodeURIComponent(encoded)
+    if (!hasVariants(name)) {
+        return undefined
+    }
+    return {
+        key: `${key}-${nameTag(Number(step))}.webp`,
+        name: `${name}.webp`,
+        image: { key, name }
+    }
 }

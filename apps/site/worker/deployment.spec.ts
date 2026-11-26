@@ -258,6 +258,14 @@ describe('the deployment record', () => {
         expect(deploymentRecordFrom({ ...RECORD, newContentStore: 'yes' })).toBeUndefined()
     })
 
+    // Issue 87, R92: the cleanup keeps the variants of the generation of the release before.
+    test('reads the generation of the variants of the release', () => {
+        expect(deploymentRecordFrom({ ...RECORD, variants: 2 })).toEqual({ ...RECORD, variants: 2 })
+        expect(deploymentRecordFrom({ ...RECORD, variants: 0 })).toBeUndefined()
+        expect(deploymentRecordFrom({ ...RECORD, variants: 1.5 })).toBeUndefined()
+        expect(deploymentRecordFrom({ ...RECORD, variants: '1' })).toBeUndefined()
+    })
+
     test('is no record when the record that it replaced is not one', () => {
         expect(deploymentRecordFrom({ ...RECORD, previous: { builtAt: 'x' } })).toBeUndefined()
     })
@@ -321,6 +329,7 @@ describe('the attachments that a release uses', () => {
     const ONE = 'a1'.repeat(32)
     const TWO = 'b2'.repeat(32)
     const THREE = 'c3'.repeat(32)
+    const FOUR = 'd4'.repeat(32)
 
     function attachment(key: string, path: string): Record<string, unknown> {
         return { hash: `sha256:${key}`, link: path, path, size: 1 }
@@ -384,6 +393,7 @@ describe('the attachments that a release uses', () => {
                     attachments: [
                         sized(TWO, 'cover.jpg', 1000, 1500),
                         sized(ONE, 'icon.png', 64, 64),
+                        sized(FOUR, 'huge.jpg', 10_000, 6_000),
                         attachment(THREE, 'plan.pdf')
                     ]
                 },
@@ -409,12 +419,16 @@ describe('the attachments that a release uses', () => {
                 {
                     key: TWO,
                     name: 'cover.jpg',
+                    width: 1000,
+                    height: 1500,
                     variants: [
                         { step: 480, width: 480, height: 720 },
                         { step: 800, width: 800, height: 1200 },
                         { step: 1200, width: 1000, height: 1500 }
                     ]
-                }
+                },
+                // Above 50 megapixels: no variant, and the deploy says so.
+                { key: FOUR, name: 'huge.jpg', width: 10_000, height: 6_000, variants: [] }
             ])
         })
     })
