@@ -1127,6 +1127,39 @@ describe('attachments of a publication', () => {
         expect(down.takenDown).toEqual([PLAN])
         expect(reads.filter((path) => path === VIDEO)).toEqual([])
     }, 60_000)
+
+    // Issue 72: an entry of an earlier version can list a file above the
+    // limit; the repair of the storage never reads it.
+    test('the repair of a lost file never reads a file above the size limit that an entry lists', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        const SIZE = 101 * 1024 * 1024
+        expect((await publishNotes(setup, { include: [PLAN] })).published).toEqual([PLAN])
+        // The entry says that the image has that size, as an earlier version
+        // could write, and the vault has a file of that size at its path.
+        const folder = join(setup.copy, 'manifest')
+        for (const name of await readdir(folder)) {
+            const text = await Bun.file(join(folder, name)).text()
+            await writeFile(
+                join(folder, name),
+                text.replace(/"size": \d+/u, `"size": ${String(SIZE)}`)
+            )
+        }
+        await commitInCopy(setup.copy, 'An entry of an earlier version')
+        await writeFile(join(setup.vault, IMAGE), '')
+        await truncate(join(setup.vault, IMAGE), SIZE)
+        await rm(join(stores.attachmentStorage, IMAGE_KEY))
+        const reads: string[] = []
+        const device = spiedDevice(setup.device, reads)
+
+        const planned = await plan(device, { include: [] })
+        const report = await publish(device, planned.id, RUN)
+
+        expect(report.skipped).toEqual([PLAN])
+        expect(report.attachmentsUploaded).toEqual([])
+        expect(report.warnings.map((warning) => warning.path)).toEqual([IMAGE])
+        expect(reads.filter((path) => path === IMAGE)).toEqual([])
+    }, 60_000)
 })
 
 /** The device with a vault that records the path of each read of a file, text or bytes. */

@@ -696,8 +696,9 @@ fn warn_when_offline(plan: &str) {
 }
 
 /// A plan of the command line program refreshes no frozen list (PUB-101,
-/// R71), and the page drops a live query block (REN-14): it says so on the
-/// error output too.
+/// R71), the page drops a live query block (REN-14), and the plan holds a
+/// note that links a file above the size limit of an attachment (issue 72):
+/// it says so on the error output too, one line per held note and file.
 fn warn_about_lists(plan: &str) {
     let Ok(plan) = json::parse_json(plan) else {
         return;
@@ -717,6 +718,28 @@ fn warn_about_lists(plan: &str) {
     if live > 0 {
         eprintln!(
             "warning: {live} notes of the plan have a live Dataview or Bases block, which the page does not show (liveQueries)"
+        );
+    }
+    // One line per note and file above the size limit (issue 72).
+    for item in plan
+        .get("tooLarge")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let text = |key: &str| {
+            item.get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+        };
+        let size = item
+            .get("size")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        eprintln!(
+            "warning: \"{}\" is held: it links \"{}\" ({size} bytes), above the size limit of an attachment (tooLarge)",
+            text("path"),
+            text("file")
         );
     }
 }

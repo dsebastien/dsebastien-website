@@ -1,4 +1,4 @@
-import { attachmentsOf, keyOf } from './attachments.ts'
+import { attachmentsOf, keyOf, MAX_ATTACHMENT_SIZE } from './attachments.ts'
 import type { Attachment, TooLarge } from './attachments.ts'
 import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
@@ -986,8 +986,10 @@ class Uploads {
             if (present.has(key)) {
                 continue
             }
-            // A file of another size is not read: it can be above the size limit (issue 72).
-            const sized = (await this.#device.vault.size(attachment.path)) === attachment.size
+            // A file of another size, or above the size limit, is not read (issue 72).
+            const sized =
+                attachment.size <= MAX_ATTACHMENT_SIZE &&
+                (await this.#device.vault.size(attachment.path)) === attachment.size
             const bytes = sized ? await this.#device.vault.readBytes(attachment.path) : undefined
             if (bytes === undefined || bytesHash(bytes) !== attachment.hash) {
                 throw new Error(
@@ -1195,8 +1197,11 @@ async function repairStorage(
         for (const attachment of attachments) {
             let bytes: Uint8Array | undefined
             try {
-                // A file of another size is not read: it can be above the size limit (issue 72).
-                if ((await device.vault.size(attachment.path)) === attachment.size) {
+                // A file of another size, or above the size limit, is not read (issue 72).
+                if (
+                    attachment.size <= MAX_ATTACHMENT_SIZE &&
+                    (await device.vault.size(attachment.path)) === attachment.size
+                ) {
                     bytes = await device.vault.readBytes(attachment.path)
                 }
             } catch {

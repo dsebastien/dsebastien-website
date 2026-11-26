@@ -16,7 +16,7 @@ use std::process::Output;
 
 use serde_json::{Value, json};
 
-use support::{TestStores, text};
+use support::{TestStores, git, text};
 
 const NOTE: &str = "10 Garden/Frost dates explained.md";
 const PLAN: &str = "10 Garden/Garden plan.md";
@@ -438,9 +438,61 @@ fn a_note_that_links_a_file_above_the_size_limit_is_held_and_no_step_reads_the_f
             { "file": VIDEO, "path": TOUR, "size": SIZE }
         ])
     );
+    // One warning line per note and file for the author.
+    for note in [PLAN, TOUR] {
+        let line = format!(
+            "warning: \"{note}\" is held: it links \"{VIDEO}\" ({SIZE} bytes), above the size limit of an attachment (tooLarge)"
+        );
+        assert!(errors_of(&output).contains(&line), "{}", errors_of(&output));
+    }
     assert_eq!(paths(&report["published"]), Vec::<String>::new());
     assert_eq!(paths(&report["updated"]), Vec::<String>::new());
     assert_eq!(paths(&report["skipped"]), [PLAN]);
     let down: Value = serde_json::from_slice(&down.stdout).expect("the report is JSON");
     assert_eq!(paths(&down["takenDown"]), [PLAN]);
+}
+
+// Issue 72: an entry of an earlier version can list a file above the limit;
+// the repair of the storage never reads it.
+#[test]
+fn the_repair_of_a_lost_file_never_reads_a_file_above_the_size_limit_that_an_entry_lists() {
+    const SIZE: u64 = 101 * 1024 * 1024;
+    let setup = set_up();
+    assert_eq!(paths(&setup.publish(&[PLAN], &[])["published"]), [PLAN]);
+    // The entry says that the image has that size, as an earlier version
+    // could write, and the vault has a file of that size at its path.
+    let folder = setup.copy.join("manifest");
+    for entry in fs::read_dir(&folder).expect("the manifest can be listed") {
+        let path = entry.expect("the entry can be read").path();
+        let text = fs::read_to_string(&path).expect("the entry can be read");
+        let mut value: Value = serde_json::from_str(&text).expect("the entry is JSON");
+        value["attachments"][0]["size"] = json!(SIZE);
+        let mut written = serde_json::to_string_pretty(&value).expect("the entry is written");
+        written.push('\n');
+        fs::write(&path, written).expect("the entry is written");
+    }
+    let copy = text(&setup.copy);
+    git(&["-C", copy, "add", "--all"]);
+    git(&[
+        "-C",
+        copy,
+        "commit",
+        "--quiet",
+        "--message",
+        "An entry of an earlier version",
+    ]);
+    git(&["-C", copy, "push", "--quiet", "origin", "HEAD:main"]);
+    fs::File::create(setup.vault.join(IMAGE))
+        .and_then(|file| file.set_len(SIZE))
+        .expect("the sparse file is made");
+    fs::remove_file(setup.stores.attachment_storage().join(IMAGE_KEY))
+        .expect("the file of the storage is removed");
+    let guard = NoRead::on(&setup.vault.join(IMAGE));
+
+    let report = setup.publish(&[], &[]);
+    drop(guard);
+
+    assert_eq!(paths(&report["skipped"]), [PLAN]);
+    assert_eq!(paths(&report["attachmentsUploaded"]), Vec::<String>::new());
+    assert_eq!(paths(&report["warnings"]), [IMAGE]);
 }

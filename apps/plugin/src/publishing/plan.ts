@@ -395,6 +395,10 @@ function refuseRootNames(scan: Scan, plan: PublicationPlan, pairs: readonly Move
  * selection with it before the author clicks (TOOL-21): the label of the
  * publish button and the plan come from this one function. A note of
  * `tooLarge` of the queue, or of the candidates `tooLarge`, is held (issue 72).
+ * The queue reads no links of the candidates, so a face that gives no
+ * `tooLarge` can count a ticked candidate that the plan then holds for the
+ * size limit: the label of the publish button can count one note more than
+ * the plan publishes.
  */
 export function planLists(
     queue: QueueLists,

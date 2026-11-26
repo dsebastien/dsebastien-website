@@ -466,7 +466,11 @@ export class PublicationCenter {
         }
     }
 
-    /** Logs the notes of a plan whose lists were not refreshed, and the notes with a live query (R71, REN-14). */
+    /**
+     * Logs the notes of a plan whose lists were not refreshed, the notes with a
+     * live query (R71, REN-14) and the notes held for the size limit of an
+     * attachment (issue 72).
+     */
     #logLists(stored: StoredPlan): void {
         if (stored.listsNotRefreshed.length > 0) {
             const reasons = new Map(stored.refreshProblems.map((one) => [one.path, one.message]))
@@ -477,6 +481,12 @@ export class PublicationCenter {
         if (stored.liveQueries.length > 0) {
             this.#log(
                 `Live query blocks, not on the page: ${stored.liveQueries.map((path) => `"${path}"`).join(', ')}`
+            )
+        }
+        // One line per note and file above the size limit (issue 72).
+        for (const item of stored.tooLarge) {
+            this.#log(
+                `Held, above the size limit of an attachment: "${item.path}" links "${item.file}" (${String(item.size)} bytes)`
             )
         }
     }

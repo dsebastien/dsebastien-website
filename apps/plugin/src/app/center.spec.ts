@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -1327,5 +1327,27 @@ describe('the deploy after a push (issue 32, PUB-42)', () => {
             )
         })
         expect(fake.runs).toEqual([{ push: 'skipped', takedown: false }])
+    }, 60_000)
+})
+
+describe('the size limit of an attachment in the publication center (issue 72)', () => {
+    test('a dry run logs one line for each note that it holds, with the file and its size', async () => {
+        await using stores = await makeTestStores()
+        const { center, vault } = await setUp(stores)
+        const VIDEO = 'Attachments/field-walk.mp4'
+        const SIZE = 101 * 1024 * 1024
+        await writeFile(join(vault, VIDEO), '')
+        await truncate(join(vault, VIDEO), SIZE)
+        const text = await Bun.file(join(vault, NOTE)).text()
+        await writeFile(join(vault, NOTE), `${text}\n![[field-walk.mp4]]\n`)
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+
+        await center.dryRun()
+
+        expect(center.state.dryRun?.tooLarge).toEqual([{ file: VIDEO, path: NOTE, size: SIZE }])
+        expect(center.state.log.map((line) => line.text)).toContain(
+            `Held, above the size limit of an attachment: "${NOTE}" links "${VIDEO}" (${String(SIZE)} bytes)`
+        )
     }, 60_000)
 })

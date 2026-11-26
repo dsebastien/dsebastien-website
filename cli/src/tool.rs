@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::attachments::attachments_of;
-use crate::attachments::{Attachment, TooLarge, key_of};
+use crate::attachments::{Attachment, MAX_ATTACHMENT_SIZE, TooLarge, key_of};
 use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
@@ -1176,9 +1176,11 @@ impl<'a> Uploads<'a> {
             {
                 continue;
             }
-            // A file of another size is not read: it can be above the size
-            // limit (issue 72).
-            let bytes = if self.vault.size(&attachment.path)? == Some(attachment.size) {
+            // A file of another size, or above the size limit, is not read
+            // (issue 72).
+            let bytes = if attachment.size <= MAX_ATTACHMENT_SIZE
+                && self.vault.size(&attachment.path)? == Some(attachment.size)
+            {
                 self.vault.read_bytes(&attachment.path)?
             } else {
                 None
@@ -1324,8 +1326,11 @@ fn repair_storage(
     }
     for (key, attachments) in wanted {
         let found = attachments.iter().find_map(|attachment| {
-            // A file of another size is not read: it can be above the size
-            // limit (issue 72).
+            // A file of another size, or above the size limit, is not read
+            // (issue 72).
+            if attachment.size > MAX_ATTACHMENT_SIZE {
+                return None;
+            }
             vault
                 .size(&attachment.path)
                 .ok()
