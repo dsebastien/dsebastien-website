@@ -7,6 +7,7 @@ import type { NoteLink } from './links.ts'
 import { isNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
 import { compareCodePoints } from './order.ts'
+import type { Original } from './originals.ts'
 import type { ContentStore } from './ports.ts'
 
 // The manifest: the record of each published note, one file per note
@@ -38,6 +39,12 @@ export type ManifestEntry = {
     readonly links: readonly NoteLink[]
     /** The note type of the note, when it has one (decision R61). */
     readonly noteType?: NoteType
+    /**
+     * The post on the main site that the last publication of the note
+     * verified as its original (PUB-100, IDX-12). An entry without a
+     * verified post has no such key.
+     */
+    readonly original?: Original
     /** The vault path of the note. */
     readonly path: string
     readonly sourceHash: string
@@ -93,6 +100,16 @@ function isLinkList(value: unknown): value is NoteLink[] {
     )
 }
 
+/** True when the value is the `original` of an entry: exactly a text `checked` and a text `url`. */
+function isOriginal(value: unknown): value is Original {
+    return (
+        isRecord(value) &&
+        Object.keys(value).length === 2 &&
+        typeof value['checked'] === 'string' &&
+        typeof value['url'] === 'string'
+    )
+}
+
 /** The form of the identity of a note: 16 hexadecimal digits. It names the file of the entry. */
 const NOTE_ID = /^[0-9a-f]{16}$/
 
@@ -118,7 +135,8 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
     }
     const { aliases, attachments, cleanedHash, cleaningVersion, firstPublished, formerPaths } =
         value
-    const { id, lastPublished, links, noteType, path, sourceHash, state, updateHeld } = value
+    const { id, lastPublished, links, noteType, original, path, sourceHash, state, updateHeld } =
+        value
     if (
         !isAliasList(aliases) ||
         !isAttachmentList(attachments, isVaultPath) ||
@@ -133,6 +151,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         typeof lastPublished !== 'string' ||
         !isLinkList(links) ||
         (noteType !== undefined && !isNoteType(noteType)) ||
+        (original !== undefined && !isOriginal(original)) ||
         typeof path !== 'string' ||
         !isNotePath(path) ||
         typeof sourceHash !== 'string' ||
@@ -168,6 +187,9 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
                       ...(noteType.suffix === undefined ? {} : { suffix: noteType.suffix })
                   }
               }),
+        ...(original === undefined
+            ? {}
+            : { original: { checked: original.checked, url: original.url } }),
         path,
         sourceHash,
         state,

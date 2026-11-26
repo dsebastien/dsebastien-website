@@ -287,6 +287,61 @@ export function setProperty(text: string, key: string, value: string): string {
     return write(note)
 }
 
+/**
+ * The value of a property that holds one text, such as `url` (section "Notes
+ * and their properties", rule of a text property): a line of the closed
+ * properties that names the key, not indented and in its exact case, with
+ * the value on that line. The value can be in double quotes with no
+ * backslash in it, in single quotes with no quote in it, or plain, where a
+ * `#` after a space or a tab starts a comment. `undefined` when no line or
+ * more than one line names the key, and when the value is empty, is not
+ * closed, or starts a value of another kind (a list, an object, an anchor, a
+ * tag or a block).
+ */
+export function textProperty(text: string, key: string): string | undefined {
+    const note = read(text)
+    if (note.close === undefined) {
+        return undefined
+    }
+    const values = propertyLines(note)
+        .map((line) => valueOf(line.text, key, false, false))
+        .filter((value) => value !== undefined)
+    const [value, ...more] = values
+    if (value === undefined || more.length > 0) {
+        return undefined
+    }
+    return textValue(value)
+}
+
+/** The text of a value of one line (rule of a text property), or `undefined`. */
+function textValue(value: string): string | undefined {
+    const quote = value[0]
+    if (quote === '"' || quote === "'") {
+        const close = value.indexOf(quote, 1)
+        if (close < 0) {
+            return undefined
+        }
+        const inner = value.slice(1, close)
+        const rest = trim(value.slice(close + 1))
+        if ((quote === '"' && inner.includes('\\')) || (rest !== '' && !rest.startsWith('#'))) {
+            return undefined
+        }
+        return inner === '' ? undefined : inner
+    }
+    let end = value.length
+    for (let at = 1; at < value.length; at += 1) {
+        if (value[at] === '#' && isBlank(value[at - 1])) {
+            end = at
+            break
+        }
+    }
+    const plain = trim(value.slice(0, end))
+    if (plain === '' || plain.startsWith('#') || '[{&*!|>'.includes(plain[0] ?? '')) {
+        return undefined
+    }
+    return plain
+}
+
 /** The property of the aliases of a note. */
 const ALIASES = 'aliases'
 

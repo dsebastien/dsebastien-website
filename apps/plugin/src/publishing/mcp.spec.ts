@@ -173,6 +173,7 @@ describe('the failure texts of the tools', () => {
         ],
         forcedRemoved: [],
         moved: [],
+        originalsNotVerified: [],
         propertyRemoved: [],
         propertySet: [],
         published: [],

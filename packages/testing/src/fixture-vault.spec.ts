@@ -506,14 +506,14 @@ describe('first set of notes (spec 18.4)', () => {
             for (const note of notes) {
                 expect(property(note, 'ghost_publish')).toBe('true')
                 expect(property(note, 'ghost_publish_id')).toMatch(/^\S+$/)
-                expect(property(note, 'main_site_url')).toMatch(/^https:\/\/\S+$/)
+                expect(property(note, 'url')).toMatch(/^https:\/\/www\.dsebastien\.net\/\S+\/$/)
             }
         },
         'main-site-without-url': (notes) => {
             for (const note of notes) {
                 expect(property(note, 'ghost_publish')).toBe('true')
                 expect(property(note, 'ghost_publish_id')).toMatch(/^\S+$/)
-                expect(property(note, 'main_site_url')).toBeUndefined()
+                expect(property(note, 'url')).toBeUndefined()
             }
         },
         'stub': (notes) => {

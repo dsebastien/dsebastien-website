@@ -1022,6 +1022,12 @@ export class PublicationCenterView extends ItemView {
                       ['Skipped (their live version stays)', report.report.skipped],
                       ['Failed', report.report.failed.map((one) => `${one.path}: ${one.reason}`)],
                       [
+                          'Not indexed: the post on the main site is not verified',
+                          report.report.originalsNotVerified.map(
+                              (one) => `${one.path}: ${one.reason}`
+                          )
+                      ],
+                      [
                           'Warnings',
                           report.report.warnings.map((one) => `${one.path}: ${one.message}`)
                       ]

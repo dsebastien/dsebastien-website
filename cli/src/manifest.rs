@@ -14,6 +14,7 @@ use crate::hash::sha256_hex;
 use crate::json::parse_json;
 use crate::links::NoteLink;
 use crate::note_types::{NoteType, note_type_of_entry};
+use crate::originals::{Original, original_of_entry};
 
 /// The folder of the manifest in the content store.
 pub const MANIFEST_FOLDER: &str = "manifest";
@@ -46,6 +47,11 @@ pub struct ManifestEntry {
     /// The note type of the note, when it has one (decision R61).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note_type: Option<NoteType>,
+    /// The post on the main site that the last publication of the note
+    /// verified as its original (PUB-100, IDX-12). An entry without a
+    /// verified post has no such key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original: Option<Original>,
     /// The vault path of the note.
     pub path: String,
     pub source_hash: String,
@@ -213,6 +219,11 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         None => None,
         Some(value) => Some(note_type_of_entry(value)?),
     };
+    // No key: no verified post.
+    let original = match entry.get("original") {
+        None => None,
+        Some(value) => Some(original_of_entry(value)?),
+    };
     // No key: no held update. The key holds `true` only.
     let update_held = match entry.get("updateHeld") {
         None => false,
@@ -230,6 +241,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         last_published: text_of("lastPublished")?,
         links: link_list(entry.get("links")?)?,
         note_type,
+        original,
         path: text_of("path").filter(|path| is_note_path(path))?,
         source_hash: text_of("sourceHash")?,
         state,
@@ -298,6 +310,34 @@ mod tests {
                 Some(parse_manifest_entry(&entry_with(text)).is_some()),
                 case["valid"].as_bool(),
                 "{text}"
+            );
+        }
+    }
+
+    /// The key `original` of an entry (PUB-100): the cases of
+    /// `fixtures/canonical/originals.json`, which the TypeScript tests read
+    /// too.
+    #[test]
+    fn reads_the_original_of_an_entry_as_the_file_states() {
+        let cases: Value =
+            serde_json::from_str(include_str!("../../fixtures/canonical/originals.json"))
+                .expect("the cases file is JSON");
+        let cases = cases["entries"]
+            .as_array()
+            .expect("the cases file has the list");
+        assert!(cases.len() > 3);
+        for case in cases {
+            let original = case["original"]
+                .as_str()
+                .map_or_else(String::new, |text| format!(r#","original":{text}"#));
+            let text = format!(
+                r#"{{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":4,"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[]{original},"path":"A.md","sourceHash":"sha256:00","state":"published"}}"#
+            );
+            assert_eq!(
+                Some(parse_manifest_entry(&text).is_some()),
+                case["valid"].as_bool(),
+                "{}",
+                case["name"]
             );
         }
     }

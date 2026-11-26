@@ -258,6 +258,32 @@ export interface RefreshResult {
     readonly problems: readonly { readonly path: string; readonly message: string }[]
 }
 
+/** The answer of the main site to one request, after its redirects. */
+// A type alias, not an interface: the shared cases are data.
+export type PageAnswer = {
+    /** The status of the last answer. */
+    readonly status: number
+    /** The URL of the last answer: the post URL, or where its redirects led. */
+    readonly url: string
+    /** The first bytes of the page, as UTF-8 text. */
+    readonly body: string
+}
+
+/**
+ * The main site, for the check of the original of a note (PUB-100): a
+ * request of a page over the network in the faces, a file of answers in the
+ * tests. No test reaches the real main site.
+ */
+export interface MainSite {
+    /**
+     * Asks for the page at the URL, with `GET`: it follows redirects within
+     * `https` only, has a time limit and reads at most a limit of bytes. It
+     * throws when there is no answer to judge (no network, the time limit, a
+     * redirect out of `https`, too many redirects, a page above the limit).
+     */
+    page(url: string): Promise<PageAnswer>
+}
+
 /** Everything that a publication needs on one device. */
 export interface Device {
     readonly vault: Vault
@@ -268,4 +294,10 @@ export interface Device {
     readonly noteTypes: NoteTypes
     /** The refresh of the frozen lists, in Obsidian only. Without it, every list is published as saved. */
     readonly lists?: ListRefresh
+    /**
+     * The main site, for the check of the original of a note (PUB-100).
+     * Without it, no post is checked: the notes of a type with an original
+     * get no verified URL, so they are `noindex` (IDX-13).
+     */
+    readonly mainSite?: MainSite
 }

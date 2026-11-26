@@ -155,6 +155,10 @@ The one URL under which a note is served. Every other form redirects to it.
 The URL that a page names to search engines as the one to rank. For a note that also exists on the main site, the original is the post there.
 _Avoid_: canonical URL (that is the address of a note on this site)
 
+**Post URL**:
+The address of the post on the main site of a note that also exists there: its property `url`. The tool verifies it at each publication of the note; only a verified post URL becomes the original of the note.
+_Avoid_: main site URL, Ghost URL
+
 **Main site**:
 The website of the author on his main domain. It is not part of this project.
 _Avoid_: blog, Ghost site

@@ -25,6 +25,7 @@ mod mcp;
 mod names;
 mod note_types;
 mod order;
+mod originals;
 mod plan;
 mod queue;
 mod renames;
@@ -538,6 +539,7 @@ fn device_at(
         store: ContentStore::new(content_store),
         renames,
         note_types: note_types::StarterKit::new(&program, vault),
+        main_site: originals::MainSite::network(),
     })
 }
 

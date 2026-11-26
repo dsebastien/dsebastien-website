@@ -1,0 +1,429 @@
+{
+    "about": "Cases of the check of the original on the main site (documentation/Canonical Form.md, section \"The original of a note\", PUB-100, IDX-11 to IDX-13). The TypeScript and the Rust implementation both read this file. `noteTypes`: the note types whose notes also exist on the main site. `forms`: a text and its comparison form (`null`: not a URL that the check reads). `properties`: a note and the post URL that its property `url` gives (`null`: none). `canonicals`: the head of a page, the URL of the page, and the canonical links that it names, resolved. `entries`: the key `original` of a manifest entry, as JSON text (`null`: no such key), and whether the entry is read. `judged`: the post URL of a note, the answer of the main site (or the failure of the request), and whether the post is verified. Each expected result is written by hand.",
+    "noteTypes": ["own-articles", "own-news", "own-newsletters"],
+    "forms": [
+        {
+            "name": "a post URL as the main site writes it",
+            "text": "https://www.dsebastien.net/a-post/",
+            "form": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "no slash at the end",
+            "text": "https://www.dsebastien.net/a-post",
+            "form": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "the scheme and the host in capital letters",
+            "text": "HTTPS://WWW.DSEBASTIEN.NET/A-Post",
+            "form": "https://www.dsebastien.net/A-Post/"
+        },
+        {
+            "name": "the scheme http",
+            "text": "http://www.dsebastien.net/a-post/",
+            "form": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "the default port",
+            "text": "https://www.dsebastien.net:443/a-post/",
+            "form": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "another port stays",
+            "text": "https://www.dsebastien.net:8443/a-post/",
+            "form": "https://www.dsebastien.net:8443/a-post/"
+        },
+        {
+            "name": "a fragment goes",
+            "text": "https://www.dsebastien.net/a-post/#part",
+            "form": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "a query stays",
+            "text": "https://www.dsebastien.net/a-post?ref=x",
+            "form": "https://www.dsebastien.net/a-post/?ref=x"
+        },
+        {
+            "name": "an empty query goes",
+            "text": "https://www.dsebastien.net/a-post/?",
+            "form": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "the root",
+            "text": "https://www.dsebastien.net",
+            "form": "https://www.dsebastien.net/"
+        },
+        {
+            "name": "spaces around",
+            "text": "  https://www.dsebastien.net/a-post/ ",
+            "form": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "percent escapes stay as they are",
+            "text": "https://www.dsebastien.net/caf%C3%A9/",
+            "form": "https://www.dsebastien.net/caf%C3%A9/"
+        },
+        {
+            "name": "another scheme",
+            "text": "ftp://www.dsebastien.net/a-post/",
+            "form": null
+        },
+        {
+            "name": "no scheme",
+            "text": "www.dsebastien.net/a-post/",
+            "form": null
+        },
+        {
+            "name": "a space inside",
+            "text": "https://www.dsebastien.net/a post/",
+            "form": null
+        },
+        {
+            "name": "a user name",
+            "text": "https://someone@www.dsebastien.net/a-post/",
+            "form": null
+        },
+        {
+            "name": "no host",
+            "text": "https:///a-post/",
+            "form": null
+        },
+        {
+            "name": "a host outside ASCII",
+            "text": "https://wwẁ.dsebastien.net/a-post/",
+            "form": null
+        },
+        {
+            "name": "a port that is not a number",
+            "text": "https://www.dsebastien.net:x/a-post/",
+            "form": null
+        },
+        {
+            "name": "a backslash",
+            "text": "https://www.dsebastien.net\\a-post/",
+            "form": null
+        },
+        {
+            "name": "an empty text",
+            "text": "",
+            "form": null
+        }
+    ],
+    "properties": [
+        {
+            "name": "a post URL",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/\n---\nText\n",
+            "url": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "a post URL in double quotes",
+            "note": "---\nurl: \"https://www.dsebastien.net/a-post\"\n---\nText\n",
+            "url": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "a post URL in single quotes",
+            "note": "---\nurl: 'https://www.dsebastien.net/a-post/'\n---\nText\n",
+            "url": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "a comment after the value",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/ # the post\n---\nText\n",
+            "url": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "Windows line ends",
+            "note": "---\r\nurl: https://www.dsebastien.net/a-post/\r\n---\r\nText\r\n",
+            "url": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "another key before",
+            "note": "---\ntags:\n  - a\nurl: https://www.dsebastien.net/a-post/\n---\nText\n",
+            "url": "https://www.dsebastien.net/a-post/"
+        },
+        {
+            "name": "the home page of the main site",
+            "note": "---\nurl: https://www.dsebastien.net/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "a page with a query",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/?ref=x\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "another host",
+            "note": "---\nurl: https://dsebastien.net/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "the notes site",
+            "note": "---\nurl: https://notes.dsebastien.net/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "another port",
+            "note": "---\nurl: https://www.dsebastien.net:8443/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "an empty value",
+            "note": "---\nurl:\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "a value on the lines below",
+            "note": "---\nurl:\n  - https://www.dsebastien.net/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "the key two times",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/\nurl: https://www.dsebastien.net/b-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "an indented key",
+            "note": "---\nmeta:\n  url: https://www.dsebastien.net/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "the key in capital letters",
+            "note": "---\nURL: https://www.dsebastien.net/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "a longer key",
+            "note": "---\nurl_old: https://www.dsebastien.net/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "a quote that is not closed",
+            "note": "---\nurl: \"https://www.dsebastien.net/a-post/\n---\nText\n",
+            "url": null
+        },
+        {
+            "name": "properties that are never closed",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/\nText\n",
+            "url": null
+        },
+        {
+            "name": "no properties",
+            "note": "url: https://www.dsebastien.net/a-post/\n",
+            "url": null
+        }
+    ],
+    "canonicals": [
+        {
+            "name": "one canonical link",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<html><head><title>A</title><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head><body></body></html>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "attributes in another order, single quotes and capital letters",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<HEAD><LINK HREF='https://www.dsebastien.net/a-post/' REL='Canonical' /></HEAD>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a value without quotes",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=canonical href=https://www.dsebastien.net/a-post/></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a rel with more than one word",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"alternate canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a path from the root of the host",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"canonical\" href=\"/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "an address without a scheme",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"canonical\" href=\"//notes.dsebastien.net/A%20post\"></head>",
+            "links": ["https://notes.dsebastien.net/A%20post"]
+        },
+        {
+            "name": "an escaped ampersand",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/?a=1&amp;b=2\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/?a=1&b=2"]
+        },
+        {
+            "name": "two canonical links",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"><link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/", "https://notes.dsebastien.net/A"]
+        },
+        {
+            "name": "other links only",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"stylesheet\" href=\"/a.css\"><link rel=\"canonicalish\" href=\"/b/\"><linked rel=\"canonical\" href=\"/c/\"></head>",
+            "links": []
+        },
+        {
+            "name": "a link without an address",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"canonical\"></head>",
+            "links": []
+        },
+        {
+            "name": "a canonical link in the body does not count",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><title>A</title></head><body><link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"></body>",
+            "links": []
+        },
+        {
+            "name": "a page without a head element",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\">",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "an address that is not a URL stays as it is written",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><link rel=\"canonical\" href=\"a-post\"></head>",
+            "links": ["a-post"]
+        }
+    ],
+    "entries": [
+        {
+            "name": "an original with its time and its URL",
+            "original": "{\"checked\":\"2031-04-01T08:00:00Z\",\"url\":\"https://www.dsebastien.net/a-post/\"}",
+            "valid": true
+        },
+        { "name": "no original", "original": null, "valid": true },
+        {
+            "name": "an original without its time",
+            "original": "{\"url\":\"https://www.dsebastien.net/a-post/\"}",
+            "valid": false
+        },
+        {
+            "name": "an original with another key",
+            "original": "{\"checked\":\"2031-04-01T08:00:00Z\",\"status\":200,\"url\":\"https://www.dsebastien.net/a-post/\"}",
+            "valid": false
+        },
+        {
+            "name": "an original that is a text",
+            "original": "\"https://www.dsebastien.net/a-post/\"",
+            "valid": false
+        },
+        {
+            "name": "a URL that is not a text",
+            "original": "{\"checked\":\"2031-04-01T08:00:00Z\",\"url\":1}",
+            "valid": false
+        }
+    ],
+    "judged": [
+        {
+            "name": "the post names itself",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>"
+            },
+            "verified": true
+        },
+        {
+            "name": "the post names itself without its slash at the end",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><link rel=\"canonical\" href=\"http://WWW.dsebastien.net/a-post\"></head>"
+            },
+            "verified": true
+        },
+        {
+            "name": "the post names the notes site: a loop",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><link rel=\"canonical\" href=\"https://notes.dsebastien.net/A%20post\"></head>"
+            },
+            "verified": false
+        },
+        {
+            "name": "the post names another post",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/b-post/\"></head>"
+            },
+            "verified": false
+        },
+        {
+            "name": "the post has no canonical link",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><title>A</title></head>"
+            },
+            "verified": false
+        },
+        {
+            "name": "the post has two canonical links",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"><link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"></head>"
+            },
+            "verified": false
+        },
+        {
+            "name": "two canonical links that name one URL",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"><link rel=\"canonical\" href=\"/a-post\"></head>"
+            },
+            "verified": true
+        },
+        {
+            "name": "the post is not found",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 404,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>"
+            },
+            "verified": false
+        },
+        {
+            "name": "the post moved to another URL",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/b-post/",
+                "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/b-post/\"></head>"
+            },
+            "verified": false
+        },
+        {
+            "name": "a redirect to the slash at the end",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post",
+                "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>"
+            },
+            "verified": true
+        },
+        {
+            "name": "the request failed",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": { "failure": "the main site did not answer in 10 seconds" },
+            "verified": false
+        }
+    ]
+}

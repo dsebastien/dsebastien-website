@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path'
 import { nodeDevice } from '../publishing/node/device.ts'
+import { httpsMainSite } from '../publishing/node/main-site.ts'
 import type { Device, ListRefresh, NoteTypes, Vault } from '../publishing/ports.ts'
 import type { DeviceStorage } from './rename-journal.ts'
 
@@ -104,7 +105,9 @@ export function deviceOf(
         contentStore,
         attachmentStorage,
         noteTypes,
-        ...(git === undefined ? {} : { git })
+        ...(git === undefined ? {} : { git }),
+        // The check of the originals on the main site (PUB-100).
+        mainSite: httpsMainSite()
     })
     // The writes into the notes go through the vault of Obsidian (`editorWrites`).
     const device = writes === undefined ? made : { ...made, vault: writes(made.vault) }

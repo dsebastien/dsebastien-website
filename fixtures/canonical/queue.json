@@ -13671,6 +13671,155 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "the original of a note on the main site (issue 55)",
+            "denyList": [],
+            "noteTypes": {
+                "noteTypes": [
+                    {
+                        "name": "own-articles",
+                        "displayName": "Own Articles",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    },
+                    {
+                        "name": "own-news",
+                        "displayName": "Own News",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    },
+                    {
+                        "name": "recipes",
+                        "displayName": "Recipes",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    }
+                ],
+                "notes": {
+                    "Article.md": "own-articles",
+                    "Down.md": "own-articles",
+                    "Lost.md": "own-articles",
+                    "News.md": "own-news",
+                    "Recipe.md": "recipes"
+                }
+            },
+            "mainSite": {
+                "https://www.dsebastien.net/an-article/": {
+                    "status": 200,
+                    "url": "https://www.dsebastien.net/an-article/",
+                    "body": "<html><head><link rel=\"canonical\" href=\"https://www.dsebastien.net/an-article/\"></head></html>"
+                },
+                "https://www.dsebastien.net/a-news-post/": {
+                    "status": 200,
+                    "url": "https://www.dsebastien.net/a-news-post/",
+                    "body": "<head><link rel=\"canonical\" href=\"https://notes.dsebastien.net/News\"></head>"
+                },
+                "https://www.dsebastien.net/a-recipe/": {
+                    "status": 200,
+                    "url": "https://www.dsebastien.net/a-recipe/",
+                    "body": "<html><head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-recipe/\"></head></html>"
+                },
+                "https://www.dsebastien.net/down/": {
+                    "failure": "the main site did not answer in 10 seconds"
+                }
+            },
+            "vault": {
+                "Article.md": "---\nurl: https://www.dsebastien.net/an-article\n---\nArticle\n",
+                "Down.md": "---\nurl: https://www.dsebastien.net/down/\n---\nDown\n",
+                "Lost.md": "Lost\n",
+                "News.md": "---\nurl: https://www.dsebastien.net/a-news-post/\n---\nNews\n",
+                "Recipe.md": "---\nurl: https://www.dsebastien.net/a-recipe/\n---\nRecipe\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the tool checks the post of each note of a type with an original: the article is verified; the news post names the notes site (a loop), the lost note has no post URL and the main site does not answer for the last one, so they are listed and stay noindex; a recipe keeps its own canonical link, also with a URL of the main site",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Article.md", "Down.md", "Lost.md", "News.md", "Recipe.md"],
+                        "remove": []
+                    },
+                    "time": "2031-07-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "originalsNotVerified": ["Down.md", "Lost.md", "News.md"],
+                        "propertyRemoved": [],
+                        "propertySet": ["Article.md", "Down.md", "Lost.md", "News.md", "Recipe.md"],
+                        "published": ["Article.md", "Down.md", "Lost.md", "News.md", "Recipe.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "only the verified post is in its entry, with the time of the check and the post URL in its comparison form",
+                    "vault": {},
+                    "store": {
+                        "manifest/7e07a34b787cb04d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:0b33f30f7ef19f19c825d8f22b20d74dd3b5f741f059f520b6901fc62ff91bd0\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"7e07a34b787cb04d\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"original\": {\n    \"checked\": \"2031-07-01T08:00:00Z\",\n    \"url\": \"https://www.dsebastien.net/an-article/\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:0b33f30f7ef19f19c825d8f22b20d74dd3b5f741f059f520b6901fc62ff91bd0\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/dfb33736e7afda30.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:f065e8b93330e669150cd16be56d3d28082e67d6b97fa4fa873e3e884d155d70\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"dfb33736e7afda30\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own News\",\n    \"name\": \"own-news\"\n  },\n  \"path\": \"News.md\",\n  \"sourceHash\": \"sha256:f065e8b93330e669150cd16be56d3d28082e67d6b97fa4fa873e3e884d155d70\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/ef62ec321b500064.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:e2d7744145645599412bfe6110b4a97b50174cbf40ff1f807519c188302bc509\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"ef62ec321b500064\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"path\": \"Down.md\",\n  \"sourceHash\": \"sha256:e2d7744145645599412bfe6110b4a97b50174cbf40ff1f807519c188302bc509\",\n  \"state\": \"published\"\n}\n",
+                        "manifest/3878ec8f4ae24bf5.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:07cc768c8b239cc241850ff7a02ff537aec00a5d5768310821b5ab95ace6f9ea\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"3878ec8f4ae24bf5\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Recipes\",\n    \"name\": \"recipes\"\n  },\n  \"path\": \"Recipe.md\",\n  \"sourceHash\": \"sha256:07cc768c8b239cc241850ff7a02ff537aec00a5d5768310821b5ab95ace6f9ea\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "mainSite",
+                    "why": "the network is gone",
+                    "answers": {}
+                },
+                {
+                    "do": "write",
+                    "why": "the author edits the article",
+                    "files": {
+                        "Article.md": "---\nurl: https://www.dsebastien.net/an-article\npublic_note: true\n---\nArticle, longer\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a check that fails never stops the publication, and it fails closed: the update records no original, so the article is noindex until a check passes",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Article.md"],
+                        "remove": []
+                    },
+                    "time": "2031-07-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "originalsNotVerified": ["Article.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Article.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry of the article lost its original",
+                    "vault": {},
+                    "store": {
+                        "manifest/7e07a34b787cb04d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:3307b6d52f601597bf3fee1d1dab1f9b86405b00d9e3a7681444b16a6e99439c\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"7e07a34b787cb04d\",\n  \"lastPublished\": \"2031-07-02T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:3307b6d52f601597bf3fee1d1dab1f9b86405b00d9e3a7681444b16a6e99439c\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
         }
     ]
 }

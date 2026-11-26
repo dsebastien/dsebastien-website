@@ -22,6 +22,7 @@ import type {
     AttachmentStorage,
     ContentStore,
     Device,
+    MainSite,
     NoteTypes,
     LocalStore,
     RenameJournals,
@@ -1549,6 +1550,39 @@ export function fileNoteTypes(file: string, asked?: string): NoteTypes {
 }
 
 /**
+ * The main site of the tests: it answers from a file in place of the network
+ * (PUB-100). The file is an object with `answers`: for each URL that the
+ * check asks for, a page (`status`, `url`, `body`) or `{ "failure": <text> }`.
+ * A URL that the file does not name has no answer. The file is read again at
+ * each request. The Rust twin is the switch
+ * `DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE` of its debug build.
+ */
+export function fileMainSite(file: string): MainSite {
+    return {
+        async page(url) {
+            const data: unknown = JSON.parse(await readFile(file, 'utf8'))
+            const answers = isRecord(data) && isRecord(data['answers']) ? data['answers'] : {}
+            const answer = answers[url]
+            if (!isRecord(answer)) {
+                throw new Error('the main site gave no answer')
+            }
+            if (typeof answer['failure'] === 'string') {
+                throw new Error(answer['failure'])
+            }
+            const { status, url: last, body } = answer
+            if (
+                typeof status !== 'number' ||
+                typeof last !== 'string' ||
+                typeof body !== 'string'
+            ) {
+                throw new Error(`the answer for ${url} in ${file} is not a page`)
+            }
+            return { status, url: last, body }
+        }
+    }
+}
+
+/**
  * Makes a device from three folders.
  *
  * @param options.vault the folder of the vault
@@ -1557,6 +1591,7 @@ export function fileNoteTypes(file: string, asked?: string): NoteTypes {
  * @param options.noteTypes the Starter Kit of the device; by default no note has a type
  * @param options.renames the folder of the rename journals; by default those of every configuration folder of the vault
  * @param options.git the git program; by default `git` of the path of the system
+ * @param options.mainSite the main site, for the check of the originals; by default none: no post is checked
  */
 export function nodeDevice(options: {
     vault: string
@@ -1565,6 +1600,7 @@ export function nodeDevice(options: {
     noteTypes?: NoteTypes
     renames?: string
     git?: string
+    mainSite?: MainSite
 }): Device {
     return {
         vault: folderVault(options.vault),
@@ -1575,7 +1611,8 @@ export function nodeDevice(options: {
         store: gitContentStore(options.contentStore, options.git),
         attachments: folderAttachmentStorage(options.attachmentStorage),
         local: folderLocalStore(options.contentStore),
-        noteTypes: options.noteTypes ?? NO_NOTE_TYPES
+        noteTypes: options.noteTypes ?? NO_NOTE_TYPES,
+        ...(options.mainSite === undefined ? {} : { mainSite: options.mainSite })
     }
 }
 

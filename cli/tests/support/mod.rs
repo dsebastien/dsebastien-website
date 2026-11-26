@@ -27,10 +27,13 @@ fn repository() -> PathBuf {
 /// The program of the tool, with the Starter Kit of the tests: no note has a
 /// type (the switch `DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES` of the debug
 /// build, decision R61). A test that needs types sets the switch to a file
-/// of answers.
+/// of answers. No test reaches the real main site: no post is checked (the
+/// switch `DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE`, PUB-100), unless a test
+/// gives a file of answers.
 pub fn program() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
     command.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", "none");
+    command.env("DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE", "none");
     command
 }
 

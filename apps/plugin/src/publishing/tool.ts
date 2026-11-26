@@ -36,6 +36,8 @@ import { isNoteType, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
 import { foldedForm, obsidianTwins } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
+import { checkOriginals } from './originals.ts'
+import type { CheckResult, Original } from './originals.ts'
 import { normalSelection, planWithSizes } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
@@ -96,6 +98,12 @@ export type PublicationReport = {
     readonly forcedRemoved: readonly string[]
     /** The moves of the publication: their old paths are former paths now (R66). */
     readonly moved: readonly Move[]
+    /**
+     * The published and updated notes of a type with an original on the main
+     * site whose post is not verified, with the reason: they are `noindex`
+     * until a publication verifies it (IDX-13).
+     */
+    readonly originalsNotVerified: readonly { readonly path: string; readonly reason: string }[]
     /** The notes whose state property was removed. */
     readonly propertyRemoved: readonly string[]
     /** The notes whose state property was set. */
@@ -794,7 +802,8 @@ function entryOf(
     path: string,
     texts: NoteTexts,
     before: ManifestEntry | undefined,
-    time: string
+    time: string,
+    original: Original | undefined
 ): ManifestEntry {
     const hashes = {
         aliases: texts.aliases.aliases,
@@ -803,6 +812,7 @@ function entryOf(
         cleaningVersion: CLEANING_VERSION,
         links: texts.links,
         ...(texts.noteType === undefined ? {} : { noteType: texts.noteType }),
+        ...(original === undefined ? {} : { original }),
         sourceHash: contentHash(texts.source)
     }
     if (before === undefined) {
@@ -820,9 +830,10 @@ function entryOf(
     // the last date, nor a publication again of a text that did not change:
     // the author did not edit the note (PUB-24, PUB-71).
     const edited = before.sourceHash !== hashes.sourceHash
-    // A note that has no type now loses the type of its entry, and an update
-    // ends a held update (R67).
-    const { noteType: _before, updateHeld: _held, ...kept } = before
+    // A note that has no type now loses the type of its entry, an update
+    // ends a held update (R67), and only the check of this run gives an
+    // original (PUB-100).
+    const { noteType: _before, original: _checked, updateHeld: _held, ...kept } = before
     return {
         ...kept,
         ...hashes,
@@ -1355,6 +1366,8 @@ async function writeAll(
         readonly plan: string
         /** Throws when the lock of the run is not its own any more. */
         readonly ownLock: () => Promise<void>
+        /** The checks of the originals of the notes of the plan (PUB-100). */
+        readonly originals: ReadonlyMap<string, CheckResult>
     }
 ): Promise<Written> {
     const { scan, texts } = computed
@@ -1522,7 +1535,10 @@ async function writeAll(
         if (noteTexts === undefined) {
             throw new Error('the plan has no text for the note')
         }
-        const entry = entryOf(path, noteTexts, manifest.get(path), run.time)
+        const checked = run.originals.get(path)
+        const original =
+            checked !== undefined && 'original' in checked ? checked.original : undefined
+        const entry = entryOf(path, noteTexts, manifest.get(path), run.time, original)
         return {
             files: [
                 { path: `${NOTES_FOLDER}/${path}`, text: noteTexts.cleaned },
@@ -1587,10 +1603,19 @@ async function writeAll(
     }
     const planned = new Set([...lists.update, ...lists.remove])
     const skipped = scan.queue.changed.filter((path) => !planned.has(path))
+    // The notes of this run whose original is not verified (IDX-13).
+    const originalsNotVerified: { path: string; reason: string }[] = []
+    for (const path of sortByCodePoint([...done.published, ...done.updated])) {
+        const checked = run.originals.get(path)
+        if (checked !== undefined && 'reason' in checked) {
+            originalsNotVerified.push({ path, reason: checked.reason })
+        }
+    }
     const report = {
         failed: failed.sort((one, two) => compareCodePoints(one.path, two.path)),
         forcedRemoved: lists.forcedRemove,
         moved: lists.move,
+        originalsNotVerified,
         ...done,
         skipped
     }
@@ -2147,6 +2172,21 @@ async function applyCurrent(
             (await device.store.read(WITHDRAWN_FILE))
             ? sortByCodePoint([...planned, WITHDRAWN_FILE])
             : planned
+    // The posts on the main site of the notes to publish and to update are
+    // checked before the first write (PUB-100). A check never stops the
+    // publication: a note without a verified post is noindex (IDX-13).
+    const originals = await checkOriginals(
+        device.mainSite,
+        [...current.plan.publish, ...current.plan.update].map((path) => {
+            const noteTexts = current.texts.get(path)
+            return {
+                path,
+                noteType: noteTexts?.noteType,
+                source: noteTexts?.source ?? ''
+            }
+        }),
+        run.time
+    )
     const head = await device.store.head()
     await ownLock()
     if (paths.length > 0) {
@@ -2166,7 +2206,12 @@ async function applyCurrent(
     const uploads = new Uploads(device)
     let outcome: Written
     try {
-        outcome = await writeAll(device, journal, uploads, current, { ...run, plan: id, ownLock })
+        outcome = await writeAll(device, journal, uploads, current, {
+            ...run,
+            plan: id,
+            ownLock,
+            originals
+        })
     } catch (error) {
         // Another run took the copy: this run touches nothing of it any more,
         // or it would put its files back over the work of the other run.

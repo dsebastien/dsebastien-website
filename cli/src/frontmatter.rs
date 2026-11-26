@@ -185,6 +185,58 @@ fn property_lines(note: &Note) -> &[Line] {
     }
 }
 
+/// The value of a property that holds one text, such as `url` (section
+/// "Notes and their properties", rule of a text property): a line of the
+/// closed properties that names the key, not indented and in its exact case,
+/// with the value on that line. The value can be in double quotes with no
+/// backslash in it, in single quotes with no quote in it, or plain, where a
+/// `#` after a space or a tab starts a comment. `None` when no line or more
+/// than one line names the key, and when the value is empty, is not closed,
+/// or starts a value of another kind (a list, an object, an anchor, a tag or
+/// a block). The TypeScript twin is `textProperty`.
+pub fn text_property(text: &str, key: &str) -> Option<String> {
+    let note = read(text);
+    note.close?;
+    let mut values = property_lines(&note)
+        .iter()
+        .filter_map(|line| value_of(&line.text, key, false, false));
+    let value = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    text_value(value)
+}
+
+/// The text of a value of one line (rule of a text property), or `None`.
+fn text_value(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    if let Some(&quote) = bytes
+        .first()
+        .filter(|byte| **byte == b'"' || **byte == b'\'')
+    {
+        let close = value[1..].find(char::from(quote))? + 1;
+        let inner = &value[1..close];
+        let rest = trim(&value[close + 1..]);
+        if (quote == b'"' && inner.contains('\\')) || !(rest.is_empty() || rest.starts_with('#')) {
+            return None;
+        }
+        return (!inner.is_empty()).then(|| inner.to_owned());
+    }
+    let mut end = value.len();
+    for at in 1..bytes.len() {
+        if bytes[at] == b'#' && is_blank(bytes[at - 1]) {
+            end = at;
+            break;
+        }
+    }
+    let plain = trim(&value[..end]);
+    let first = plain.chars().next()?;
+    if first == '#' || "[{&*!|>".contains(first) {
+        return None;
+    }
+    Some(plain.to_owned())
+}
+
 /// True when a line of the properties holds the key, unless that line names
 /// the key with the value exactly `false`. It is the reading of a guard, so it
 /// fails closed: the key counts anywhere in a line (in one line of JSON, in a

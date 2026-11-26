@@ -44,6 +44,9 @@ struct Setup {
     /// The file of the answers of the Starter Kit of a scenario, which a
     /// step can change or remove. Without one, no note has a type.
     answers: Option<PathBuf>,
+    /// The file of the answers of the main site of a scenario (PUB-100),
+    /// which a step can change. Without one, no post is checked.
+    main_site: Option<PathBuf>,
 }
 
 fn errors_of(output: &Output) -> String {
@@ -177,6 +180,7 @@ impl Setup {
             vault,
             copy,
             answers: None,
+            main_site: None,
         }
     }
 
@@ -195,11 +199,17 @@ impl Setup {
             note_types => note_types.clone(),
         };
         fs::write(&answers, note_types.to_string()).expect("the answers can be written");
+        let main_site = (!scenario["mainSite"].is_null()).then(|| {
+            let file = stores.root().join("main-site.json");
+            set_main_site(&file, &scenario["mainSite"]);
+            file
+        });
         Self {
             stores,
             vault,
             copy,
             answers: Some(answers),
+            main_site,
         }
     }
 
@@ -220,6 +230,9 @@ impl Setup {
         if let Some(point) = crash {
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_CRASH", point);
         }
+        if let Some(file) = &self.main_site {
+            program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE", file);
+        }
         if let Some(answers) = &self.answers {
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", answers);
             let mut asked = answers.as_os_str().to_owned();
@@ -236,6 +249,15 @@ impl Setup {
             .args(arguments)
             .output()
             .expect("the program starts")
+    }
+
+    /// The step `mainSite`: the main site of the scenario gives other answers.
+    fn set_main_site(&self, answers: &Value) {
+        let file = self
+            .main_site
+            .as_ref()
+            .expect("the scenario has a main site");
+        set_main_site(file, answers);
     }
 
     fn status(&self) -> Value {
@@ -359,6 +381,9 @@ impl Setup {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if let Some(file) = &self.main_site {
+            program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE", file);
+        }
         if let Some(answers) = &self.answers {
             program.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", answers);
         }
@@ -425,12 +450,33 @@ fn report_lists(report: &Value) -> Value {
     let mut lists = report.clone();
     // A takedown report has no `failed`, and a publication report no
     // `storageWarnings`.
-    for key in ["failed", "storageWarnings", "warnings"] {
+    for key in [
+        "failed",
+        "originalsNotVerified",
+        "storageWarnings",
+        "warnings",
+    ] {
         if report.get(key).is_some() {
             lists[key] = json!(paths(&report[key]));
         }
     }
     lists
+}
+
+/// The report that a step states. A publication report of a scenario before
+/// issue 55 has no list `originalsNotVerified`: it is empty then.
+fn expected_report(report: &Value) -> Value {
+    let mut expected = report.clone();
+    if report.get("attachmentsUploaded").is_some() && report.get("originalsNotVerified").is_none() {
+        expected["originalsNotVerified"] = json!([]);
+    }
+    expected
+}
+
+/// The answers of the main site of a scenario, by URL, into its file.
+fn set_main_site(file: &Path, answers: &Value) {
+    fs::write(file, json!({ "answers": answers }).to_string())
+        .expect("the answers of the main site can be written");
 }
 
 /// The command stopped with an error and wrote nothing to its output.
@@ -578,7 +624,11 @@ fn run_publish_step(setup: &Setup, step: &Value, label: &str, plans: &Plans) {
                 assert_refused_saying(&output, step, label);
             } else {
                 assert!(output.status.success(), "{label}: {}", errors_of(&output));
-                assert_eq!(report_lists(&json_of(&output)), step["report"], "{label}");
+                assert_eq!(
+                    report_lists(&json_of(&output)),
+                    expected_report(&step["report"]),
+                    "{label}"
+                );
             }
         }
         "mcp-server" => {
@@ -592,7 +642,11 @@ fn run_publish_step(setup: &Setup, step: &Value, label: &str, plans: &Plans) {
                 assert!(first.contains(says), "{label}: {first}");
             } else {
                 let report: Value = serde_json::from_str(first).expect("the report is JSON");
-                assert_eq!(report_lists(&report), step["report"], "{label}");
+                assert_eq!(
+                    report_lists(&report),
+                    expected_report(&step["report"]),
+                    "{label}"
+                );
             }
         }
         other => panic!("{label}: the face \"{other}\" is not known"),
@@ -628,7 +682,11 @@ fn run_removal_step(setup: &Setup, step: &Value, label: &str) -> bool {
             assert_refused_saying(&output, step, label);
         } else {
             assert!(output.status.success(), "{label}: {}", errors_of(&output));
-            assert_eq!(report_lists(&json_of(&output)), step["report"], "{label}");
+            assert_eq!(
+                report_lists(&json_of(&output)),
+                expected_report(&step["report"]),
+                "{label}"
+            );
         }
     } else {
         return false;
@@ -732,6 +790,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
             }
         }
         "noteTypes" => set_answers(setup, &step["noteTypes"]),
+        "mainSite" => setup.set_main_site(&step["answers"]),
         "asked" => check_questions(setup, step, label),
         "publish" => run_publish_step(setup, step, label, plans),
         "expect" => check_files(setup, step, label),
@@ -777,6 +836,7 @@ fn every_step_of_the_shared_scenarios_gives_what_the_file_states() {
             "expect",
             "guards",
             "lose",
+            "mainSite",
             "noteTypes",
             "offline",
             "online",
@@ -1159,6 +1219,7 @@ fn a_first_publication_after_another_device_stops_and_the_copy_can_pull() {
         vault: setup.vault.clone(),
         copy: first,
         answers: None,
+        main_site: None,
     };
     let id = setup.plan_id(&json!({ "include": ["Welcome.md"] }));
     first_device.publish(&json!({ "include": ["Welcome.md"] }), TIME);
@@ -1653,6 +1714,7 @@ fn a_copy_of_a_content_store_with_no_commit_stops_it_has_no_configuration() {
         vault,
         copy,
         answers: None,
+        main_site: None,
     };
 
     let output = setup.plan(&json!({ "include": ["Welcome.md"] }));
@@ -2130,6 +2192,7 @@ fn copy_of_a_new_content_store() -> Setup {
         vault,
         copy,
         answers: None,
+        main_site: None,
     }
 }
 
@@ -2895,6 +2958,7 @@ fn other_device(setup: &Setup, name: &str) -> Setup {
         vault: setup.vault.clone(),
         copy,
         answers: None,
+        main_site: None,
     }
 }
 
@@ -3003,6 +3067,7 @@ fn a_copy_that_never_fetched_stops_plan_until_the_pull() {
         vault: setup.vault.clone(),
         copy: fresh,
         answers: None,
+        main_site: None,
     };
 
     let output = device.plan(&json!({ "include": ["Welcome.md"] }));

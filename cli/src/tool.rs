@@ -33,6 +33,7 @@ use crate::manifest::{
 use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_type_of_entry, note_types_of};
 use crate::order::sort_by_code_point;
+use crate::originals::{CheckResult, CheckedNote, MainSite, Original};
 use crate::plan::{PublicationPlan, Selection, forced_removals, plan_with_sizes};
 use crate::queue::{GuardChange, Move, Scan, compute_guard_queues, compute_queue, moved_entry};
 use crate::renames::{
@@ -50,6 +51,8 @@ pub struct Device {
     /// The Obsidian Starter Kit of the vault, which knows the note type of
     /// each note (decision R61).
     pub note_types: StarterKit,
+    /// The main site, for the check of the original of a note (PUB-100).
+    pub main_site: MainSite,
 }
 
 /// The faces of the tool that can start a publication.
@@ -931,6 +934,7 @@ fn entry_of(
     texts: &NoteTexts,
     before: Option<&ManifestEntry>,
     time: &str,
+    original: Option<&Original>,
 ) -> ManifestEntry {
     let cleaned_hash = content_hash(&texts.cleaned);
     let source_hash = content_hash(&texts.source);
@@ -946,6 +950,7 @@ fn entry_of(
             last_published: time.to_owned(),
             links: texts.links.clone(),
             note_type: texts.note_type.clone(),
+            original: original.cloned(),
             path: path.to_owned(),
             source_hash,
             state: State::Published,
@@ -969,6 +974,8 @@ fn entry_of(
         links: texts.links.clone(),
         // A note that has no type now loses the type of its entry.
         note_type: texts.note_type.clone(),
+        // Only the check of this run gives an original (PUB-100).
+        original: original.cloned(),
         source_hash,
         state: State::Published,
         // An update ends a held update (R67).
@@ -991,9 +998,11 @@ fn note_unit(
     texts: &BTreeMap<String, NoteTexts>,
     before: Option<&ManifestEntry>,
     time: &str,
+    originals: &BTreeMap<String, CheckResult>,
 ) -> Result<Unit, String> {
     let texts = texts.get(path).ok_or("the plan has no text for the note")?;
-    let entry = entry_of(path, texts, before, time);
+    let original = originals.get(path).and_then(|result| result.as_ref().ok());
+    let entry = entry_of(path, texts, before, time, original);
     Ok(Unit {
         files: vec![
             StoreFile {
@@ -1688,6 +1697,9 @@ fn check_run(run: &Run) -> Result<(), String> {
 /// What the writes of a plan did.
 struct Written {
     failed: Vec<Value>,
+    /// The published and updated notes whose original is not verified, each
+    /// with its `path` and a `reason` (IDX-13).
+    originals_not_verified: Vec<Value>,
     published: Vec<String>,
     updated: Vec<String>,
     removed: Vec<String>,
@@ -1852,6 +1864,7 @@ fn write_all(
     computed: &Computed,
     run: &Run,
     commit: &Commit,
+    originals: &BTreeMap<String, CheckResult>,
 ) -> Result<Written, String> {
     let Computed {
         plan, scan, texts, ..
@@ -1901,12 +1914,18 @@ fn write_all(
         }
     };
     for path in plan.publish() {
-        if apply(path, note_unit(path, texts, moved.get(path), run.time))? {
+        if apply(
+            path,
+            note_unit(path, texts, moved.get(path), run.time, originals),
+        )? {
             done.published.push(path.clone());
         }
     }
     for path in plan.update() {
-        if apply(path, note_unit(path, texts, moved.get(path), run.time))? {
+        if apply(
+            path,
+            note_unit(path, texts, moved.get(path), run.time, originals),
+        )? {
             done.updated.push(path.clone());
         }
     }
@@ -1953,6 +1972,7 @@ fn write_all(
     failed.sort_by(|one: &Value, two: &Value| one["path"].as_str().cmp(&two["path"].as_str()));
     Ok(Written {
         failed,
+        originals_not_verified: not_verified(&done, originals),
         published: done.published,
         updated: done.updated,
         removed: done.removed,
@@ -1960,6 +1980,46 @@ fn write_all(
         paths,
         manifest,
     })
+}
+
+/// The published and updated notes of a run whose original is not verified,
+/// each with its `path` and a `reason`, sorted by path (IDX-13).
+fn not_verified(done: &Done, originals: &BTreeMap<String, CheckResult>) -> Vec<Value> {
+    let mut checked: Vec<&String> = done.published.iter().chain(&done.updated).collect();
+    // As `String`: the order of the code points.
+    checked.sort();
+    checked
+        .into_iter()
+        .filter_map(|path| match originals.get(path) {
+            Some(Err(reason)) => Some(json!({ "path": path, "reason": reason })),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The checks of the posts on the main site of the notes to publish and to
+/// update (PUB-100). A check never stops the publication: a note without a
+/// verified post is noindex (IDX-13).
+fn check_originals(
+    device: &Device,
+    current: &Computed,
+    time: &str,
+) -> BTreeMap<String, CheckResult> {
+    let notes: Vec<CheckedNote> = current
+        .plan
+        .publish()
+        .iter()
+        .chain(current.plan.update())
+        .map(|path| {
+            let texts = current.texts.get(path);
+            CheckedNote {
+                path,
+                note_type: texts.and_then(|texts| texts.note_type.as_ref()),
+                source: texts.map_or("", |texts| texts.source.as_str()),
+            }
+        })
+        .collect();
+    device.main_site.check(&notes, time)
 }
 
 /// Applies exactly one plan, by its id.
@@ -2162,6 +2222,8 @@ fn apply_current(
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one.
     let paths = journal_paths(device, current, run)?;
+    // The posts are checked before the first write (PUB-100).
+    let originals = check_originals(device, current, run.time);
     let head = device.store.head();
     own_lock()?;
     if !paths.is_empty() {
@@ -2190,7 +2252,15 @@ fn apply_current(
 
     let mut journal = Backup::new(&device.store);
     let mut uploads = Uploads::new(&device.vault, storage);
-    let written = match write_all(device, &mut journal, &mut uploads, current, run, commit) {
+    let written = match write_all(
+        device,
+        &mut journal,
+        &mut uploads,
+        current,
+        run,
+        commit,
+        &originals,
+    ) {
         Ok(written) => written,
         // Another run took the copy: this run touches nothing of it any more,
         // or it would put its files back over the work of the other run.
@@ -2375,6 +2445,7 @@ fn report_of(
         "failed": written.failed,
         "forcedRemoved": plan.forced_remove(),
         "moved": to_value(&plan.moves())?,
+        "originalsNotVerified": written.originals_not_verified,
         "propertyRemoved": correction.property_removed,
         "propertySet": correction.property_set,
         "published": written.published,

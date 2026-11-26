@@ -85,6 +85,9 @@ export async function runRustProgram(
         env: {
             ...process.env,
             DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES: FIXTURE_NOTE_TYPES,
+            // No test reaches the real main site (PUB-100): no post is
+            // checked, unless a test gives a file of answers.
+            DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE: 'none',
             ...environment
         },
         stdout: 'pipe',

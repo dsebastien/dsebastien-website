@@ -24,7 +24,7 @@ import {
     type TestStores
 } from '@dsebastien-website/testing'
 import type { EditAction, EditEvent } from './edits.ts'
-import { fileNoteTypes, nodeDevice } from './node/device.ts'
+import { fileMainSite, fileNoteTypes, nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
 import type { Device, Vault } from './ports.ts'
 import type { TooLarge } from './attachments.ts'
@@ -47,6 +47,8 @@ interface ReportLists {
     attachmentsUploaded: readonly string[]
     failed: readonly string[]
     forcedRemoved: readonly string[]
+    /** A scenario before issue 55 has no list `originalsNotVerified`: it is empty then. */
+    originalsNotVerified?: readonly string[]
     propertyRemoved: readonly string[]
     propertySet: readonly string[]
     published: readonly string[]
@@ -168,6 +170,7 @@ type Step = { why: string } & (
     | { do: 'lose'; keys: string[] }
     | { do: 'storage'; files: Record<string, string> }
     | { do: 'noteTypes'; noteTypes: NoteTypesFile | null }
+    | { do: 'mainSite'; answers: Record<string, unknown> }
     | { do: 'asked'; questions?: string[][] }
     | {
           do: 'expect'
@@ -188,6 +191,8 @@ interface Scenario {
     denyList: string[]
     /** The answers of the Starter Kit; by default no note has a type. */
     noteTypes?: NoteTypesFile
+    /** The answers of the main site, by URL (see `fileMainSite`); by default no post is checked. */
+    mainSite?: Record<string, unknown>
     vault: Record<string, FileContent>
     steps: Step[]
 }
@@ -294,11 +299,17 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                 answers,
                 JSON.stringify(scenario.noteTypes ?? { noteTypes: [], notes: {} })
             )
+            // The main site of the scenario answers from a file (PUB-100).
+            const posts = join(stores.root, 'main-site.json')
+            if (scenario.mainSite !== undefined) {
+                await writeFile(posts, JSON.stringify({ answers: scenario.mainSite }))
+            }
             const device = nodeDevice({
                 vault,
                 contentStore: copy,
                 attachmentStorage: stores.attachmentStorage,
-                noteTypes: fileNoteTypes(answers, `${answers}.asked`)
+                noteTypes: fileNoteTypes(answers, `${answers}.asked`),
+                ...(scenario.mainSite === undefined ? {} : { mainSite: fileMainSite(posts) })
             })
 
             // The address of the content store, for the steps "offline" and "online".
@@ -428,6 +439,8 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     } else {
                         await writeFile(answers, JSON.stringify(step.noteTypes))
                     }
+                } else if (step.do === 'mainSite') {
+                    await writeFile(posts, JSON.stringify({ answers: step.answers }))
                 } else if (step.do === 'publish' && step.refused === true) {
                     const id =
                         step.stored === true
@@ -479,9 +492,12 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     const lists: ReportLists = {
                         ...report,
                         failed: report.failed.map((entry) => entry.path),
+                        originalsNotVerified: report.originalsNotVerified.map(
+                            (entry) => entry.path
+                        ),
                         warnings: report.warnings.map((entry) => entry.path)
                     }
-                    expect(lists, label).toEqual(step.report)
+                    expect(lists, label).toEqual({ originalsNotVerified: [], ...step.report })
                 } else if (step.do === 'publish') {
                     const planned = await plan(device, step.selection)
                     // A publication from the face of the step: the plugin by default.
@@ -493,9 +509,12 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     const lists: ReportLists = {
                         ...report,
                         failed: report.failed.map((entry) => entry.path),
+                        originalsNotVerified: report.originalsNotVerified.map(
+                            (entry) => entry.path
+                        ),
                         warnings: report.warnings.map((entry) => entry.path)
                     }
-                    expect(lists, label).toEqual(step.report)
+                    expect(lists, label).toEqual({ originalsNotVerified: [], ...step.report })
                 } else {
                     for (const [path, text] of Object.entries(step.vault)) {
                         expect(await textOf(join(vault, path)), `${label}: ${path}`).toBe(text)
@@ -527,6 +546,7 @@ describe('shared scenarios of the publication queue', () => {
             'expect',
             'guards',
             'lose',
+            'mainSite',
             'noteTypes',
             'offline',
             'online',

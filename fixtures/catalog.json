@@ -173,9 +173,8 @@
         },
         {
             "id": "main-site-with-url",
-            "covers": "A note that also exists on the main site and names the URL of the post. The result of the check of that URL lives with the manifest entry, not in the note.",
-            "files": ["40 Writing/Why I keep a garden journal.md"],
-            "open": "The name of the property that holds the URL (main_site_url) is not settled. The slice that builds the original link corrects it."
+            "covers": "A note that also exists on the main site and names the URL of the post in its property url (issue 55). The result of the check of that URL lives with the manifest entry, not in the note.",
+            "files": ["40 Writing/Why I keep a garden journal.md"]
         },
         {
             "id": "main-site-without-url",

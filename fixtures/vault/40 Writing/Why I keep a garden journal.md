@@ -3,7 +3,7 @@ tags:
   - type/article
 ghost_publish: true
 ghost_publish_id: 6f1e2d3c4b5a69788796a5b4
-main_site_url: https://main-site.example/why-i-keep-a-garden-journal/
+url: https://www.dsebastien.net/why-i-keep-a-garden-journal/
 created: 2031-03-15T07:00
 updated: 2031-03-15T07:45
 ---
