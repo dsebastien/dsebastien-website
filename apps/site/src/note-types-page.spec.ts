@@ -38,6 +38,8 @@ const WELCOME = 'Welcome.md'
 const FILM = '20 Library/20.01 Films/The Lantern Keeper (2019).md'
 /** Published for the first time by the second run, after the import. */
 const LATE = '10 Garden/Wormery.md'
+/** A map of content that no note links to. */
+const READING_LIST = '40 Writing/Reading list.md'
 /** Imported, then edited and published again by the second run. */
 const EDITED = '10 Garden/Seed swap day.md'
 
@@ -380,11 +382,17 @@ describe('the home page (NAV-02, R62)', () => {
         expect([...at].sort((one, two) => one - two)).toEqual(at)
     })
 
-    test('leads to the maps of content as topics', async () => {
+    test('leads to the maps of content as topics, but not to one that no note links to', async () => {
         const topics = selectAll('[data-topics] a', await served('/')).map(
             (link) => link.properties['href']
         )
         expect(topics).toEqual(['/10+Garden/Compost+basics'])
+        // The reading list is a map of content too, and no published note links to it.
+        const maps = selectAll('[data-listed-note]', await served('/-/types/maps-of-content')).map(
+            (link) => link.properties['href']
+        )
+        expect(maps).toEqual(['/10+Garden/Compost+basics', '/40+Writing/Reading+list'])
+        expect(select('[data-backlinks]', noteOf(READING_LIST))).toBeUndefined()
     })
 
     test('shows the 10 notes most recently added and updated, newest first, with a link to each list', async () => {
