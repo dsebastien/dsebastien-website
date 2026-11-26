@@ -661,10 +661,13 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
             assert_refused_saying(&setup.run("status", &[]), step, label);
         }
         "status" => {
-            // A scenario before issue 72 states no list `tooLarge`: it is empty.
+            // A scenario before issue 72 states no list `tooLarge`, and a queue
+            // with no list `unpublished` states an empty one.
             let mut expected = step["queue"].clone();
-            if expected.get("tooLarge").is_none() {
-                expected["tooLarge"] = json!([]);
+            for list in ["tooLarge", "unpublished"] {
+                if expected.get(list).is_none() {
+                    expected[list] = json!([]);
+                }
             }
             assert_eq!(setup.status(), expected, "{label}");
         }
@@ -816,7 +819,7 @@ fn the_status_of_an_empty_vault_is_the_empty_queue() {
     assert_eq!(errors_of(&output), "");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"movedEdited\": [],\n  \"new\": [],\n  \"pairings\": [],\n  \"proposals\": [],\n  \"renamed\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"tooLarge\": [],\n  \"unchanged\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
+        "{\n  \"behind\": 0,\n  \"changed\": [],\n  \"counts\": {\n    \"changed\": 0,\n    \"new\": 0,\n    \"toRemove\": 0,\n    \"unchanged\": 0\n  },\n  \"missing\": [],\n  \"movedEdited\": [],\n  \"new\": [],\n  \"pairings\": [],\n  \"proposals\": [],\n  \"renamed\": [],\n  \"technicalUpdates\": [],\n  \"toRemove\": [],\n  \"tooLarge\": [],\n  \"unchanged\": [],\n  \"unpublished\": [],\n  \"unpublishedUnderGuard\": []\n}\n"
     );
 }
 

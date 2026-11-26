@@ -1722,15 +1722,13 @@ async function takeDownLocked(
     // can run (PUB-99).
     await ownLock()
     const early = await deleteUnused(device, publishedKeys(manifest))
-    const entries = named.map((path) => {
-        const entry = manifest.get(path)
-        if (entry === undefined) {
-            throw new Error(
-                `"${path}" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down${nearPaths(path, manifest)}${cleanupLines(early)}`
-            )
-        }
-        return entry
-    })
+    const unknown = named.find((path) => !manifest.has(path))
+    if (unknown !== undefined) {
+        throw new Error(
+            `"${unknown}" is the path of no manifest entry, and a takedown needs the exact path that the manifest names. Nothing is taken down${nearPaths(unknown, manifest)}${cleanupLines(early)}`
+        )
+    }
+    const entries = named.flatMap((path) => manifest.get(path) ?? [])
     // The id names the takedown in the journal and in the message of its
     // commit, so a recovery finds the commit. It is outside the parity rule.
     const id = sha256Hex(
@@ -1832,7 +1830,9 @@ function mergeWarnings(
     const seen = new Set<string>()
     const merged: { path: string; message: string }[] = []
     for (const warning of [...early.warnings, ...late.warnings]) {
-        const key = `${warning.path}\n${warning.message}`
+        // A name of the storage can hold a line break: a key of joined texts
+        // could be the key of another warning.
+        const key = JSON.stringify([warning.path, warning.message])
         if (!seen.has(key) && !deleted.has(warning.path)) {
             seen.add(key)
             merged.push(warning)
@@ -1845,12 +1845,11 @@ function mergeWarnings(
  * The paths of the manifest that a path names in another letter case or
  * Unicode form, or without its end `.md`, as the end of the message of a
  * refusal. The site resolves such an address to the note, so the refusal
- * must never read as "already gone". A folded form names one note at most
- * (URL contract, rule 9).
+ * must never read as "already gone". A folded form names one published note
+ * at most (URL contract, rule 9), but unpublished entries can share it.
  */
 function nearPaths(path: string, manifest: ReadonlyMap<string, ManifestEntry>): string {
-    const typed = path.trim()
-    const forms = new Set([foldedForm(typed), foldedForm(`${typed}.md`)])
+    const forms = nearForms(path)
     const near = sortByCodePoint([...manifest.keys()].filter((key) => forms.has(foldedForm(key))))
     return near.length === 0
         ? ''
@@ -1877,6 +1876,33 @@ function cleanupLines(early: {
             ? `\n- and ${String(early.warnings.length - MOST_LINES)} more warnings`
             : ''
     return `${deleted}${warnings}${hidden}`
+}
+
+/**
+ * The characters that the refusal of a takedown removes at the two ends of a
+ * named path before it looks for the paths near it: the code points of the
+ * Unicode property White_Space, and U+FEFF. `trim()` is not used: it removes
+ * U+FEFF and not U+0085, and `trim` of Rust does the opposite.
+ */
+const SPACES = new Set([
+    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x85, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004,
+    0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff
+])
+
+/** The text without the characters of `SPACES` at its two ends. */
+function withoutSpacesAtTheEnds(text: string): string {
+    let start = 0
+    let end = text.length
+    // Each code point of the set is one unit of UTF-16.
+    while (start < end && SPACES.has(text.charCodeAt(start))) start += 1
+    while (end > start && SPACES.has(text.charCodeAt(end - 1))) end -= 1
+    return text.slice(start, end)
+}
+
+/** The folded forms that a named path gives, also with the end `.md` added. */
+function nearForms(path: string): Set<string> {
+    const typed = withoutSpacesAtTheEnds(path)
+    return new Set([foldedForm(typed), foldedForm(`${typed}.md`)])
 }
 
 /**

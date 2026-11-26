@@ -97,6 +97,11 @@ pub struct PublicationQueue {
     /// path, then by file.
     pub too_large: Vec<TooLarge>,
     pub unchanged: Vec<String>,
+    /// The paths of the unpublished entries of the manifest, as the content
+    /// store has them: the exact paths that a takedown takes (issue 104).
+    /// Also an entry whose file this device does not have. Apart from the
+    /// four lists: they are not counted.
+    pub unpublished: Vec<String>,
     /// The unpublished notes that a guard excludes: forced removals of the
     /// next plan, so that their addresses answer 404 and no more 410
     /// (decision R64). Apart from the four lists: they are not counted.
@@ -125,6 +130,7 @@ impl PublicationQueue {
             to_remove: Vec::new(),
             too_large: Vec::new(),
             unchanged: Vec::new(),
+            unpublished: Vec::new(),
             unpublished_under_guard: Vec::new(),
         }
     }
@@ -690,6 +696,12 @@ fn queue_of(
     };
     queue.missing = missing_of(&queue.to_remove, &guards);
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
+    // The map gives its paths in the order of the code points.
+    queue.unpublished = entries
+        .iter()
+        .filter(|(_, entry)| entry.state == State::Unpublished)
+        .map(|(path, _)| path.clone())
+        .collect();
     let waiting = waiting_for_moves(&queue.missing, &moves.applied);
     queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
     queue.moved_edited = hold_moved_edited(&moves.applied, &queue.changed, &notes, &mut manifest);

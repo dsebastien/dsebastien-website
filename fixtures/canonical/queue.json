@@ -1,5 +1,5 @@
 {
-    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\", a \"publish\", a \"takedown\" or an \"unpublish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum. Steps of issue 38: \"takedown\" takes down the notes of its paths at the time, and states the lists of its report; it must succeed, so its \"storageWarnings\" is empty. \"unpublish\" unpublishes the notes of its paths in one step, and states the lists of the publication report. A \"crash\" with \"takedown\" stops a takedown of those paths in the place of a publication. A \"publish\" with \"stored\" applies the plan of the last \"plan\" step that gave one, not a new plan. Steps of issue 42: \"edit\" runs an edit of the guards (its action, its path, at the time, from the face, on the device garden-shed) and states its event, or with \"refused\" that it stops; \"says\" states a part of its message, which both implementations write. \"guards\" states the output of the guards command. The author confirms and rejects a proposal in the view only, so a scenario writes those events with a \"store\" step. A \"publish\" step with \"face\" runs the publication from that face (by default the plugin in TypeScript and the command line program in Rust). A \"plan\" or \"publish\" selection, and an \"unpublish\" step, can have \"accept\": the forced removals and the notes of guardedAttachments that the request names (rule 10 of the edits of the guards). Steps of issue 40: a \"plan\" states \"listsNotRefreshed\" and \"liveQueries\" (see \"The frozen lists of a note\"); a missing list is empty. No step refreshes a list: the Rust program has no refresh, and the TypeScript tests of the refresh use a stand-in serializer. Issue 72: a file of the vault can be {\"sparse\": <size>}, a file of zero bytes of that size that the test makes without writing them; a \"status\" queue and a \"plan\" can state \"tooLarge\" (the notes held for the size limit of an attachment), and a missing list is empty.",
+    "about": "Scenarios of the publication queue (documentation/Canonical Form.md). Each scenario has a small invented vault, a deny list, and steps. The TypeScript tests and the Rust tests run every step and must get what the step states. Steps: \"write\" and \"delete\" change files of the vault. \"store\" stands for another device: it writes files into the content store and pushes them, also the configuration with its deny list. \"status\" states the queue; a queue with no list \"unpublished\" states an empty one. \"plan\" states the plan of a selection, or that the selection is refused. \"publish\" makes the plan of a selection and applies it at the time, and states the lists of paths of the report. \"expect\" states the text of files of the vault and of the content store: null says that the file does not exist. Its \"attachmentStorage\", when it has one, states every file of the attachment storage, by its key. A file of the vault or of the storage is a text, or {\"bytes\": ...} with its bytes in hexadecimal. Steps of the failure cases (issue 36): \"crash\" makes the plan of a selection and applies it, but the run stops at a point, as after a power cut: \"write\" (the files are written into the copy, before the commit), \"commit\" (after the commit, before the push) or \"push\" (after the push, before the correction of the property). It leaves the lock and the journal. \"unlock\" removes the lock. \"offline\" makes the content store unreachable, and \"online\" makes it reachable again. \"lose\" deletes files of the attachment storage, by their keys, as the cleanup of another device would. A \"status\", a \"publish\", a \"takedown\" or an \"unpublish\" with \"refused\" states that the command stops; \"says\" states a part of its message, which both implementations write. A \"plan\" states \"offline\" when the plan uses the last fetch. Every expected value is written by hand. The hashes were computed with sha256sum. Steps of issue 38: \"takedown\" takes down the notes of its paths at the time, and states the lists of its report; it must succeed, so its \"storageWarnings\" is empty. \"unpublish\" unpublishes the notes of its paths in one step, and states the lists of the publication report. A \"crash\" with \"takedown\" stops a takedown of those paths in the place of a publication. A \"publish\" with \"stored\" applies the plan of the last \"plan\" step that gave one, not a new plan. Steps of issue 42: \"edit\" runs an edit of the guards (its action, its path, at the time, from the face, on the device garden-shed) and states its event, or with \"refused\" that it stops; \"says\" states a part of its message, which both implementations write. \"guards\" states the output of the guards command. The author confirms and rejects a proposal in the view only, so a scenario writes those events with a \"store\" step. A \"publish\" step with \"face\" runs the publication from that face (by default the plugin in TypeScript and the command line program in Rust). A \"plan\" or \"publish\" selection, and an \"unpublish\" step, can have \"accept\": the forced removals and the notes of guardedAttachments that the request names (rule 10 of the edits of the guards). Steps of issue 40: a \"plan\" states \"listsNotRefreshed\" and \"liveQueries\" (see \"The frozen lists of a note\"); a missing list is empty. No step refreshes a list: the Rust program has no refresh, and the TypeScript tests of the refresh use a stand-in serializer. Issue 72: a file of the vault can be {\"sparse\": <size>}, a file of zero bytes of that size that the test makes without writing them; a \"status\" queue and a \"plan\" can state \"tooLarge\" (the notes held for the size limit of an attachment), and a missing list is empty.",
     "scenarios": [
         {
             "name": "the four lists and the selection",
@@ -579,6 +579,7 @@
                         "toRemove": [],
                         "unchanged": ["Alpha.md", "Delta.md", "Folder/Gamma.md"],
                         "behind": 0,
+                        "unpublished": ["Beta.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -646,6 +647,7 @@
                         "toRemove": [],
                         "unchanged": ["Delta.md", "Folder/Gamma.md"],
                         "behind": 0,
+                        "unpublished": ["Beta.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -677,6 +679,7 @@
                         "toRemove": ["Folder/Gamma.md"],
                         "unchanged": ["Delta.md"],
                         "behind": 0,
+                        "unpublished": ["Beta.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -783,6 +786,7 @@
                         "toRemove": [],
                         "unchanged": ["Delta.md"],
                         "behind": 0,
+                        "unpublished": ["Beta.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -1038,6 +1042,7 @@
                         "toRemove": [],
                         "unchanged": ["Published.md"],
                         "behind": 0,
+                        "unpublished": ["Other.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -1930,6 +1935,7 @@
                         "toRemove": [],
                         "unchanged": ["Keep.md"],
                         "behind": 0,
+                        "unpublished": ["Lost.md", "Marked.md", "Moves.md", "Private/Diary.md"],
                         "unpublishedUnderGuard": ["Marked.md", "Moves.md", "Private/Diary.md"],
                         "pairings": [],
                         "renamed": [],
@@ -2028,6 +2034,7 @@
                         "toRemove": [],
                         "unchanged": ["Keep.md"],
                         "behind": 0,
+                        "unpublished": ["Lost.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -5682,6 +5689,128 @@
             ]
         },
         {
+            "name": "the refusal of a takedown names the paths of the manifest that the path names in another form (issue 104)",
+            "denyList": [],
+            "vault": {
+                "Notes/Café.md": "# Café\n",
+                "Notes/shed.md": "# Small shed\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "both notes are published",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/Café.md", "Notes/shed.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Café.md", "Notes/shed.md"],
+                        "published": ["Notes/Café.md", "Notes/shed.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "unpublish",
+                    "why": "the small shed is unpublished: its entry stays in the manifest",
+                    "paths": ["Notes/shed.md"],
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["Notes/shed.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Notes/shed.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the author deletes the small shed",
+                    "paths": ["Notes/shed.md"]
+                },
+                {
+                    "do": "write",
+                    "why": "and writes a note whose path is the same in other letters",
+                    "files": {
+                        "Notes/Shed.md": "# Shed\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the new note is published beside the unpublished entry",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/Shed.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Shed.md"],
+                        "published": ["Notes/Shed.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "takedown",
+                    "why": "a path in capitals is refused, and the refusal names both entries of its folded form, in the order of the code points",
+                    "paths": ["NOTES/SHED.MD"],
+                    "time": "2031-06-04T08:00:00Z",
+                    "refused": true,
+                    "says": "The manifest names: \"Notes/Shed.md\", \"Notes/shed.md\""
+                },
+                {
+                    "do": "takedown",
+                    "why": "a path in the decomposed Unicode form is refused, and the refusal names the composed path of the manifest",
+                    "paths": ["Notes/Café.md"],
+                    "time": "2031-06-04T08:00:00Z",
+                    "refused": true,
+                    "says": "The manifest names: \"Notes/Café.md\""
+                },
+                {
+                    "do": "takedown",
+                    "why": "the refusal reads the path without a byte order mark at its start, and with the end .md added",
+                    "paths": ["﻿Notes/Café"],
+                    "time": "2031-06-04T08:00:00Z",
+                    "refused": true,
+                    "says": "The manifest names: \"Notes/Café.md\""
+                },
+                {
+                    "do": "takedown",
+                    "why": "and without a next line (U+0085) at its end: both languages remove one set of characters",
+                    "paths": ["Notes/Café.md\u0085"],
+                    "time": "2031-06-04T08:00:00Z",
+                    "refused": true,
+                    "says": "The manifest names: \"Notes/Café.md\""
+                }
+            ]
+        },
+        {
             "name": "an unpublish holds the other changed notes, and a takedown removes an unpublished note and a note under a guard (issue 38)",
             "denyList": ["Locked"],
             "vault": {
@@ -5771,6 +5900,7 @@
                         "technicalUpdates": [],
                         "toRemove": [],
                         "unchanged": ["Drafts/Idea.md"],
+                        "unpublished": ["Notes/Old.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -5818,6 +5948,7 @@
                         "technicalUpdates": [],
                         "toRemove": ["Drafts/Idea.md"],
                         "unchanged": [],
+                        "unpublished": ["Notes/Old.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -9037,6 +9168,7 @@
                         "toRemove": ["C.md"],
                         "unchanged": ["A.md", "B.md"],
                         "behind": 0,
+                        "unpublished": ["U.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [
                             {
@@ -9101,6 +9233,7 @@
                         "toRemove": ["C.md"],
                         "unchanged": ["A.md", "B.md"],
                         "behind": 0,
+                        "unpublished": ["U.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [
                             {
@@ -9448,6 +9581,7 @@
                         "toRemove": [],
                         "unchanged": ["C.md"],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],
@@ -9549,6 +9683,7 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [
@@ -9978,6 +10113,7 @@
                         "toRemove": [],
                         "unchanged": [],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [
@@ -10136,6 +10272,7 @@
                         "toRemove": [],
                         "unchanged": ["A.md"],
                         "behind": 0,
+                        "unpublished": ["A.md"],
                         "unpublishedUnderGuard": [],
                         "pairings": [],
                         "renamed": [],

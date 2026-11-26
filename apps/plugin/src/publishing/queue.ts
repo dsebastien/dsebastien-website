@@ -96,6 +96,13 @@ export type QueueLists = {
     readonly toRemove: readonly string[]
     readonly unchanged: readonly string[]
     /**
+     * The paths of the unpublished entries of the manifest, as the content
+     * store has them: the exact paths that a takedown takes (issue 104). Also
+     * an entry whose file this device does not have. Apart from the four
+     * lists: they are not counted.
+     */
+    readonly unpublished: readonly string[]
+    /**
      * The unpublished notes that a guard excludes: forced removals of the next
      * plan, so that their addresses answer 404 and no more 410 (decision R64).
      * Apart from the four lists: they are not counted.
@@ -533,6 +540,11 @@ export async function computeQueue(input: {
         tooLarge: sortTooLarge(lists.tooLarge),
         toRemove: sortByCodePoint(lists.toRemove),
         unchanged: sortByCodePoint(lists.unchanged),
+        unpublished: sortByCodePoint(
+            [...input.manifest]
+                .filter(([, entry]) => entry.state === 'unpublished')
+                .map(([path]) => path)
+        ),
         unpublishedUnderGuard: sortByCodePoint(unpublishedUnderGuard)
     }
     return {

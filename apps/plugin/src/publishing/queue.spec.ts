@@ -79,8 +79,10 @@ type Step = { why: string } & (
     | { do: 'store'; files: Record<string, string>; message?: string }
     | {
           do: 'status'
-          // A scenario before issue 72 has no list `tooLarge`.
-          queue: Omit<PublicationQueue, 'tooLarge'> & Partial<Pick<PublicationQueue, 'tooLarge'>>
+          // A scenario before issue 72 has no list `tooLarge`, and a queue may
+          // have no list `unpublished`: both are empty then.
+          queue: Omit<PublicationQueue, 'tooLarge' | 'unpublished'> &
+              Partial<Pick<PublicationQueue, 'tooLarge' | 'unpublished'>>
           refused?: never
       }
     | { do: 'status'; refused: true; says?: string }
@@ -315,9 +317,11 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                     if (step.refused === true) {
                         expect(await rejectionOf(status(device)), label).toContain(step.says ?? '')
                     } else {
-                        // A scenario before issue 72 states no list `tooLarge`: it is empty.
+                        // A scenario before issue 72 states no list `tooLarge`, and a
+                        // queue with no list `unpublished` states an empty one.
                         expect(await status(device), label).toEqual({
                             tooLarge: [],
+                            unpublished: [],
                             ...step.queue
                         })
                     }

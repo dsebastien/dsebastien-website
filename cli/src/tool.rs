@@ -2686,14 +2686,42 @@ fn merge_warnings(early: &Cleanup, late: &Cleanup) -> Vec<Value> {
     merged
 }
 
+/// True for a character that the refusal of a takedown removes at the two
+/// ends of a named path before it looks for the paths near it: the code
+/// points of the Unicode property `White_Space`, and U+FEFF. `trim` is not
+/// used: it keeps U+FEFF, and `trim()` of TypeScript removes it but keeps
+/// U+0085.
+fn is_space(character: char) -> bool {
+    matches!(
+        u32::from(character),
+        0x09..=0x0d
+            | 0x20
+            | 0x85
+            | 0xa0
+            | 0x1680
+            | 0x2000..=0x200a
+            | 0x2028
+            | 0x2029
+            | 0x202f
+            | 0x205f
+            | 0x3000
+            | 0xfeff
+    )
+}
+
+/// The folded forms that a named path gives, also with the end `.md` added.
+fn near_forms(path: &str) -> [String; 2] {
+    let typed = path.trim_matches(is_space);
+    [folded_form(typed), folded_form(&format!("{typed}.md"))]
+}
+
 /// The paths of the manifest that a path names in another letter case or
 /// Unicode form, or without its end `.md`, as the end of the message of a
 /// refusal. The site resolves such an address to the note, so the refusal
-/// must never read as "already gone". A folded form names one note at most
-/// (URL contract, rule 9).
+/// must never read as "already gone". A folded form names one published note
+/// at most (URL contract, rule 9), but unpublished entries can share it.
 fn near_paths(path: &str, manifest: &BTreeMap<String, ManifestEntry>) -> String {
-    let typed = path.trim();
-    let forms = [folded_form(typed), folded_form(&format!("{typed}.md"))];
+    let forms = near_forms(path);
     // The map gives its keys in the order of the code points.
     let near: Vec<String> = manifest
         .keys()

@@ -1611,6 +1611,51 @@ fn a_takedown_of_a_path_with_no_entry_says_what_its_cleanup_of_the_storage_delet
     assert!(setup.copy.join("notes").join(NOTE).exists());
 }
 
+/// The refusal of a takedown names 20 deleted files and 20 warnings at most,
+/// and counts the others.
+#[test]
+fn the_refusal_of_a_takedown_names_20_deleted_files_and_20_warnings_at_most() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    // Files that no published note uses, and names that are not keys.
+    let keys: Vec<String> = (0..23).map(|index| format!("{index:064x}")).collect();
+    let strays: Vec<String> = (0..22)
+        .map(|index| format!("stray-{}.txt", index + 10))
+        .collect();
+    for name in keys.iter().chain(&strays) {
+        fs::write(
+            setup.stores.attachment_storage().join(name),
+            "A left file\n",
+        )
+        .expect("the file is written");
+    }
+
+    let output = take_down(&setup, SECOND);
+
+    assert_eq!(output.status.code(), Some(1));
+    let errors = errors_of(&output);
+    assert!(
+        errors.contains(&format!(
+            "The takedown deleted 23 file(s) of the attachment storage that no published note uses: {}, and 3 more",
+            keys[..20].join(", ")
+        )),
+        "{errors}"
+    );
+    let lines: Vec<&str> = errors
+        .lines()
+        .filter(|line| line.starts_with("- "))
+        .collect();
+    let named: Vec<&str> = lines[..20]
+        .iter()
+        .map(|line| &line[2..line.find(':').unwrap_or(line.len())])
+        .collect();
+    assert_eq!(named, strays[..20]);
+    assert_eq!(lines[20..], ["- and 2 more warnings"]);
+    for key in &keys {
+        assert!(!setup.stores.attachment_storage().join(key).exists());
+    }
+}
+
 /// A wrong folder for the copy must never read as a content store with an
 /// empty deny list (decision R67).
 #[test]

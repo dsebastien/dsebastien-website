@@ -47,6 +47,7 @@ function queueOf(lists: Partial<PublicationQueue>): PublicationQueue {
         tooLarge: [],
         toRemove: [],
         unchanged: [],
+        unpublished: [],
         unpublishedUnderGuard: [],
         ...lists
     }

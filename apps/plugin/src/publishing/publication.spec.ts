@@ -795,6 +795,63 @@ describe('takedown', () => {
         expect(report.warnings).toEqual([])
     })
 
+    // A name of the storage can hold a line break, so the path and the
+    // message of a warning, joined by one, can be those of another warning.
+    test('two warnings whose joined texts are one text both stay', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        const notAKey =
+            'the attachment storage holds a file whose name is not a key, and the tool leaves it: is the folder of the storage the right one?'
+        const key = 'b'.repeat(64)
+        const odd = `${key}\nthe file could not be deleted from the attachment storage, and the next publication tries again: locked`
+        const device: Device = {
+            ...setup.device,
+            attachments: {
+                list: async () => [...(await setup.device.attachments.list()), key, odd],
+                put: async (name, bytes) => {
+                    await setup.device.attachments.put(name, bytes)
+                },
+                remove: async (name) => {
+                    if (name === key) {
+                        throw new Error(`locked\n${notAKey}`)
+                    }
+                    return await setup.device.attachments.remove(name)
+                }
+            }
+        }
+
+        const report = await takedown(device, [NOTE], LATER)
+
+        expect(report.storageWarnings.map((warning) => warning.path)).toEqual([key, odd])
+    })
+
+    test('the refusal of a takedown names 20 deleted files and 20 warnings at most', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        // Files that no published note uses, and names that are not keys.
+        const keys = Array.from({ length: 23 }, (_, index) => index.toString(16).padStart(64, '0'))
+        const strays = Array.from({ length: 22 }, (_, index) => `stray-${String(index + 10)}.txt`)
+        for (const name of [...keys, ...strays]) {
+            await writeFile(join(stores.attachmentStorage, name), 'A left file\n')
+        }
+
+        const refusal = await rejectionOf(takedown(setup.device, [SECOND], LATER))
+
+        expect(refusal).toContain(
+            `The takedown deleted 23 file(s) of the attachment storage that no published note uses: ${keys.slice(0, 20).join(', ')}, and 3 more`
+        )
+        const lines = refusal.split('\n').filter((line) => line.startsWith('- '))
+        expect(lines.slice(0, 20).map((line) => line.slice(2, line.indexOf(':')))).toEqual(
+            strays.slice(0, 20)
+        )
+        expect(lines.slice(20)).toEqual(['- and 2 more warnings'])
+        for (const key of keys) {
+            expect(await exists(join(stores.attachmentStorage, key))).toBe(false)
+        }
+    })
+
     // A takedown that stopped after its push is finished in this way.
     test('a path with no entry stops the takedown, whose message says what its cleanup of the storage deleted', async () => {
         await using stores = await makeTestStores()
