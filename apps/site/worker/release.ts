@@ -58,6 +58,21 @@ export interface LiveRecord {
 /** The checks of the host after a deployment or a revert: 30 reads, 1 second apart, 3 in a row. */
 export const LIVE_CHECKS = { checks: 30, pause: 1000, inARow: 3 } as const
 
+/**
+ * The keys of the notes that the history of the copy took away (issue 120,
+ * review round 2). A removal that the live release does not hold yet beats
+ * every release: its files leave at once, unless the new release uses them
+ * (business rule 16). A removal that the live release holds follows the
+ * kept rule: its files leave when neither the new release nor the live
+ * release uses them, so a later note that uses such a file openly keeps it.
+ */
+export interface RemovedKeys {
+    /** The keys of the removals that the live release does not hold. */
+    readonly notLive: readonly string[]
+    /** The keys of the removals that the live release holds. */
+    readonly inLive: readonly string[]
+}
+
 /** What a run of a deployment takes. */
 export interface DeployRun {
     /** The address of the site on the host, with its slash at the end. */
@@ -68,14 +83,19 @@ export interface DeployRun {
     readonly siteRevision: string
     /** The clock, for the time of the build. */
     readonly now: () => Date
-    /** The keys of the attachments that the release uses. */
-    readonly usedKeys: readonly string[]
+    /**
+     * The keys of the attachments that the release uses, or the read of
+     * them. A read that throws stops the run after the withdrawn files left.
+     */
+    readonly usedKeys: readonly string[] | (() => Promise<readonly string[]>)
     /**
      * The keys of the attachments of the notes that a takedown or a forced
-     * removal took away, in the whole history of the copy (issue 120). Each
-     * one that the release does not use leaves the object storage at once.
+     * removal took away, in the whole history of the copy (issue 120), apart
+     * by whether the live release of this content revision (`null`: none)
+     * holds the removal. A read that throws stops the run after the
+     * withdrawn files left.
      */
-    readonly removedKeys?: readonly string[]
+    readonly removedKeys?: (live: string | null) => Promise<RemovedKeys>
     /**
      * The keys that the guards withdrew (`withdrawn.json` of the copy, decision of the author R78, after R45,
      * issue 120): they leave the object storage at once, also when the
@@ -91,9 +111,10 @@ export interface DeployRun {
     readonly releaseKeys?: (revision: string) => Promise<readonly string[] | undefined>
     /**
      * The subjects of the commits after `from` up to `to` in the copy that
-     * take notes away at once: takedowns and forced removals (review round 1
-     * of issue 120). When one lies between the live release and this one,
-     * the run counts as a takedown. `undefined` when the copy cannot say.
+     * deleted a manifest entry (a takedown, a forced removal, any other
+     * commit; issue 120), read from their content. When one lies between the
+     * live release and this one, the run counts as a takedown. `undefined`
+     * when the copy cannot say.
      */
     readonly removalsBetween?: (from: string, to: string) => Promise<string[] | undefined>
     /** The object storage of the host. Without it (a dry run), no attachment moves. */
@@ -368,16 +389,11 @@ function timeOf(date: Date): string {
 /** Runs a deployment. It never throws: a failure is in the result. */
 export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     const withdrawn = new Set(run.withdrawnKeys ?? [])
-    // A withdrawn file counts for no note: the page shows it as missing (R45).
-    const used = new Set(run.usedKeys.filter((key) => !withdrawn.has(key)))
-    // The files that leave at once (issue 120): the files that the guards
-    // withdrew, and the files of the notes of a takedown or of a forced
-    // removal that the new release does not use. Business rule 16 wins over
-    // a release that still uses such a file for another note.
-    const forced = new Set([
-        ...withdrawn,
-        ...(run.removedKeys ?? []).filter((key) => !used.has(key))
-    ])
+    // The keys of the copy, once read (`readKeys()`).
+    let used = new Set<string>()
+    let forced = new Set<string>(withdrawn)
+    /** The keys of the removals that the live release holds, that the new release does not use. */
+    let earlier: string[] = []
     const warnings: string[] = []
     // A takedown, or a run whose copy holds a takedown or a forced removal
     // that the live release does not have yet: its pages must go.
@@ -406,6 +422,65 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         return failed.sort()
     }
 
+    /**
+     * Reads the keys of the copy. A withdrawn file counts for no note: the
+     * page shows it as missing (R45). The files that leave at once (issue
+     * 120): the files that the guards withdrew, and the files of the notes
+     * of a takedown or of a forced removal that the live release does not
+     * hold and that the new release does not use. Business rule 16 wins over
+     * a release that still uses such a file for another note.
+     */
+    async function readKeys(): Promise<void> {
+        const keys = typeof run.usedKeys === 'function' ? await run.usedKeys() : run.usedKeys
+        used = new Set(keys.filter((key) => !withdrawn.has(key)))
+        const removed = (await run.removedKeys?.(
+            replaced?.contentRevision === undefined || run.newContentStore === true
+                ? null
+                : replaced.contentRevision
+        )) ?? { notLive: [], inLive: [] }
+        forced = new Set([...withdrawn, ...removed.notLive.filter((key) => !used.has(key))])
+        earlier = removed.inLive.filter((key) => !used.has(key) && !forced.has(key))
+    }
+
+    /** The keys of the live release, read one time: `undefined` when they cannot be known. */
+    let liveKeys: Promise<readonly string[] | undefined> | undefined
+    function keysOfLive(): Promise<readonly string[] | undefined> {
+        const revision = replaced?.contentRevision
+        liveKeys ??=
+            revision === undefined || revision === null
+                ? Promise.resolve(undefined)
+                : Promise.resolve(run.releaseKeys?.(revision)).catch((error: unknown) => {
+                      run.log(`the keys of ${revision} cannot be read: ${messageOf(error)}`)
+                      return undefined
+                  })
+        return liveKeys
+    }
+
+    /**
+     * True when the withdrawn files may leave before the check of the live
+     * release (review round 2): the host has no release or no record that
+     * can be read, or the copy knows the live revision. When the copy does
+     * not know it, a newer release of another machine can be live, and the
+     * run is refused with no deletion. A move deletes them after its check.
+     */
+    async function withdrawnGoFirst(unread: boolean): Promise<boolean> {
+        if (withdrawn.size === 0 || unread || replaced === undefined || replaced === null) {
+            return true
+        }
+        if (run.newContentStore === true) {
+            return false
+        }
+        const revision = replaced.contentRevision
+        if (revision === null) {
+            return true
+        }
+        try {
+            return (await run.descendsFrom?.(revision)) !== undefined
+        } catch {
+            return false
+        }
+    }
+
     /** How many names of the storage are not keys. Such a name can be a path of the vault. */
     function othersOf(names: readonly string[]): number {
         return names.filter((name) => !ATTACHMENT_KEY.test(name)).length
@@ -422,7 +497,24 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         names: readonly string[]
     ): Promise<string[]> {
         // The withdrawn files left before the check of the live release.
-        const keys = names.filter((name) => forced.has(name) && !withdrawn.has(name)).sort()
+        const keys = names.filter((name) => forced.has(name) && !withdrawn.has(name))
+        // The files of a removal that the live release holds go when the
+        // live release does not use them either: a takedown whose cleanup
+        // failed before, also when this run fails.
+        const named = new Set(names)
+        const waiting = earlier.filter((key) => named.has(key))
+        if (waiting.length > 0) {
+            const live = await keysOfLive()
+            if (live === undefined) {
+                warnings.push(
+                    'a file can still be public: the copy cannot read the files of the live release, so the files of earlier takedowns and forced removals stay until a deployment that can'
+                )
+            } else {
+                const inLive = new Set(live)
+                keys.push(...waiting.filter((key) => !inLive.has(key)))
+            }
+        }
+        keys.sort()
         const failed = await remove(storage, keys)
         if (failed.length > 0) {
             warnings.push(
@@ -513,15 +605,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             return new Set(used)
         }
         const revision = replaced.contentRevision
-        let keys: readonly string[] | undefined
-        if (revision !== null) {
-            try {
-                keys = await run.releaseKeys?.(revision)
-            } catch (error) {
-                run.log(`the keys of ${revision} cannot be read: ${messageOf(error)}`)
-                keys = undefined
-            }
-        }
+        const keys = await keysOfLive()
         if (keys === undefined) {
             warnings.push(
                 revision === null
@@ -562,13 +646,32 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
     // before it was read.
     let replaced: DeploymentRecord | null | undefined
     try {
-        if (run.storage !== undefined) {
-            await removeWithdrawn(run.storage)
+        // The live release first: the withdrawn files leave before its
+        // check (a refused run still deletes them), unless the copy does
+        // not know the live revision (review round 2).
+        let unread: Error | undefined
+        try {
+            replaced = run.live === undefined ? undefined : await liveRecordOf(run.live)
+        } catch (failure) {
+            unread = failure instanceof Error ? failure : new Error(messageOf(failure))
         }
-        replaced = run.live === undefined ? undefined : await liveRecordOf(run.live)
+        const storage = run.storage
+        const first = storage !== undefined && (await withdrawnGoFirst(unread !== undefined))
+        if (first) {
+            await removeWithdrawn(storage)
+        }
+        if (unread !== undefined) {
+            throw unread
+        }
         if (replaced !== undefined) {
             await checkOver(run, replaced)
         }
+        if (!first && storage !== undefined) {
+            await removeWithdrawn(storage)
+        }
+        // A read of the copy that fails stops the run here: the withdrawn
+        // files are gone already.
+        await readKeys()
         if (!takedown && (await removalsSinceLive(replaced))) {
             takedown = true
         }
@@ -776,8 +879,9 @@ export interface RevertRun {
     readonly rollback: () => Promise<void>
     /**
      * The subjects of the commits after `from` up to `to` in the copy of the
-     * content store that took a manifest entry away (a takedown, a forced
-     * removal), or `undefined` when the copy does not know them.
+     * content store that deleted a manifest entry (a takedown, a forced
+     * removal, any other commit; issue 120), read from their content, or
+     * `undefined` when the copy does not know them.
      */
     readonly removalsBetween: (from: string, to: string) => Promise<string[] | undefined>
     readonly live: LiveRecord

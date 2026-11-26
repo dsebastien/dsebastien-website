@@ -176,7 +176,13 @@ describe('the attachments in the history of the copy', () => {
     const key = (digit: string): string => digit.repeat(64)
 
     /** A manifest entry of a note with these keys. */
-    function entry(id: string, path: string, keys: string[], state = 'published'): string {
+    function entry(
+        id: string,
+        path: string,
+        keys: string[],
+        state = 'published',
+        formerPaths: string[] = []
+    ): string {
         return `${JSON.stringify({
             aliases: [],
             attachments: keys.map((item, index) => ({
@@ -186,7 +192,7 @@ describe('the attachments in the history of the copy', () => {
                 size: 1
             })),
             firstPublished: '2031-01-01T08:00:00Z',
-            formerPaths: [],
+            formerPaths,
             id,
             lastPublished: '2031-01-01T08:00:00Z',
             links: [],
@@ -214,6 +220,13 @@ describe('the attachments in the history of the copy', () => {
         return await git(copy, 'rev-parse', 'HEAD')
     }
 
+    /** Every removed key of the copy, with no live release. */
+    async function allKeys(copy: string): Promise<readonly string[]> {
+        const keys = await removedAttachmentKeys(copy, null)
+        expect(keys.inLive).toEqual([])
+        return keys.notLive
+    }
+
     const A = 'a1a1a1a1a1a1a1a1'
     const B = 'b2b2b2b2b2b2b2b2'
     const C = 'c3c3c3c3c3c3c3c3'
@@ -234,7 +247,7 @@ describe('the attachments in the history of the copy', () => {
             [`manifest/${C}.json`]: undefined,
             [`manifest/${D}.json`]: undefined
         })
-        expect(await removedAttachmentKeys(copy)).toEqual([key('2'), key('3'), key('4'), key('5')])
+        expect(await allKeys(copy)).toEqual([key('2'), key('3'), key('4'), key('5')])
     })
 
     // An unpublished entry whose path a move took leaves the manifest with the
@@ -250,20 +263,20 @@ describe('the attachments in the history of the copy', () => {
         })
         // A moves to the path of the unpublished B, and D is a forced removal.
         await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 1 forced, 0 skipped, 1 moved', {
-            [`manifest/${A}.json`]: entry(A, 'B.md', [key('1')]),
+            [`manifest/${A}.json`]: entry(A, 'B.md', [key('1')], 'published', ['A.md']),
             [`manifest/${B}.json`]: undefined,
             [`manifest/${D}.json`]: undefined
         })
         await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 0 forced, 0 skipped, 1 moved', {
             [`manifest/${C}.json`]: undefined
         })
-        expect(await removedAttachmentKeys(copy)).toEqual([key('3'), key('4')])
+        expect(await allKeys(copy)).toEqual([key('3'), key('4')])
     })
 
     test('gives no key for a copy with no history', async () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
-        expect(await removedAttachmentKeys(copy)).toEqual([])
+        expect(await allKeys(copy)).toEqual([])
     })
 
     test('gives the keys that the published notes of a revision use, and nothing for a revision that the copy does not know', async () => {
@@ -301,7 +314,7 @@ describe('the attachments in the history of the copy', () => {
         })
         // An unpublished entry that no move replaced counts too.
         await change(copy, 'Publish: 0 new', { [`manifest/${C}.json`]: undefined })
-        expect(await removedAttachmentKeys(copy)).toEqual([key('1'), key('3')])
+        expect(await allKeys(copy)).toEqual([key('1'), key('3')])
     })
 
     test('gives the subjects of the commits between two revisions that deleted an entry', async () => {
@@ -318,7 +331,7 @@ describe('the attachments in the history of the copy', () => {
         })
         // A move takes the path of the unpublished B: no removal.
         await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 0 forced, 0 skipped, 1 moved', {
-            [`manifest/${C}.json`]: entry(C, 'B.md', [key('3')]),
+            [`manifest/${C}.json`]: entry(C, 'B.md', [key('3')], 'published', ['C.md']),
             [`manifest/${B}.json`]: undefined
         })
         const to = await change(copy, 'A change by hand', { [`manifest/${C}.json`]: undefined })
@@ -340,9 +353,9 @@ describe('the attachments in the history of the copy', () => {
             [`manifest/${B}.json`]: '{"attachments": [{"hash": "md5:1"}]}\n'
         })
         await change(copy, 'Takedown: 1 note', { [`manifest/${A}.json`]: undefined })
-        expect(await removedAttachmentKeys(copy)).toEqual([])
+        expect(await allKeys(copy)).toEqual([])
         const broken = await change(copy, 'Takedown: 1 note', { [`manifest/${B}.json`]: undefined })
-        const message = await rejectionOf(removedAttachmentKeys(copy))
+        const message = await rejectionOf(removedAttachmentKeys(copy, null))
         expect(message).toContain(broken)
         expect(message).toContain(`manifest/${B}.json`)
     })
@@ -368,7 +381,117 @@ describe('the attachments in the history of the copy', () => {
             pathToFileURL(stores.contentStore).href,
             shallow
         )
-        expect(await rejectionOf(removedAttachmentKeys(shallow))).toContain('shallow')
+        expect(await rejectionOf(removedAttachmentKeys(shallow, null))).toContain('shallow')
+    })
+
+    // Review round 2, R5: only a real move displaces an unpublished entry.
+    test.each([
+        [
+            'an unpublished writer',
+            entry('a1a1a1a1a1a1a1a1', 'B.md', ['1'.repeat(64)], 'unpublished', ['A.md'])
+        ],
+        [
+            'a writer that did not move',
+            entry('a1a1a1a1a1a1a1a1', 'B.md', ['1'.repeat(64)], 'published', [])
+        ],
+        [
+            'a writer whose old path is not a former path',
+            entry('a1a1a1a1a1a1a1a1', 'B.md', ['1'.repeat(64)], 'published', ['Z.md'])
+        ]
+    ])('counts an unpublished entry whose path %s took', async (_case, writer) => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 2 new', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')]),
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')], 'unpublished')
+        })
+        await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 0 forced, 0 skipped, 1 moved', {
+            [`manifest/${A}.json`]: writer,
+            [`manifest/${B}.json`]: undefined
+        })
+        expect(await allKeys(copy)).toEqual([key('2')])
+    })
+
+    test('counts an unpublished entry that a new entry with its path replaced', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 1 new', {
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')], 'unpublished')
+        })
+        await change(copy, 'Publish: 1 new', {
+            [`manifest/${A}.json`]: entry(A, 'B.md', [key('1')], 'published', ['A.md']),
+            [`manifest/${B}.json`]: undefined
+        })
+        expect(await allKeys(copy)).toEqual([key('2')])
+    })
+
+    // Review round 2, R1: one file that cannot be read never stops every deployment.
+    test('takes the keys of every version that can be read of a deleted file that cannot be read', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 1 new', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')])
+        })
+        await change(copy, 'Publish: 0 new, 1 updated', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('2')])
+        })
+        await change(copy, 'A broken edit by hand', {
+            [`manifest/${A}.json`]: '{"attachments": 1}\n'
+        })
+        await change(copy, 'Takedown: 1 note', { [`manifest/${A}.json`]: undefined })
+        expect(await allKeys(copy)).toEqual([key('1'), key('2')])
+    })
+
+    test('never stops on an entry that cannot be read and that a commit wrote', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 1 new', {
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')], 'unpublished')
+        })
+        await change(copy, 'A change by hand', {
+            [`manifest/${A}.json`]: 'not JSON\n',
+            [`manifest/${B}.json`]: undefined
+        })
+        expect(await allKeys(copy)).toEqual([key('2')])
+    })
+
+    // Review round 2, R3: the live release holds some removals.
+    test('gives apart the keys of the removals that the live release holds', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 2 new', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')]),
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')])
+        })
+        const live = await change(copy, 'Takedown: 1 note', { [`manifest/${A}.json`]: undefined })
+        await change(copy, 'Takedown: 1 note', { [`manifest/${B}.json`]: undefined })
+        expect(await removedAttachmentKeys(copy, live)).toEqual({
+            notLive: [key('2')],
+            inLive: [key('1')]
+        })
+        expect(await removedAttachmentKeys(copy, null)).toEqual({
+            notLive: [key('1'), key('2')],
+            inLive: []
+        })
+    })
+
+    // Review round 2, R5: a merge hides what its sides removed.
+    test('cannot say when the history has a merge commit', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const base = await change(copy, 'Publish: 1 new', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')])
+        })
+        await git(copy, 'checkout', '--quiet', '-b', 'side')
+        await change(copy, 'Takedown: 1 note', { [`manifest/${A}.json`]: undefined })
+        await git(copy, 'checkout', '--quiet', '-')
+        await change(copy, 'Publish: 1 new', {
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')])
+        })
+        await git(copy, 'merge', '--quiet', '--no-edit', 'side')
+        const head = await git(copy, 'rev-parse', 'HEAD')
+        expect(await rejectionOf(removedAttachmentKeys(copy, null))).toContain('merge')
+        expect(await rejectionOf(removalsBetween(copy, base, head))).toContain('merge')
     })
 
     test('stops on a revision whose manifest the build would refuse', async () => {

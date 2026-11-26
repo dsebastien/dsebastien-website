@@ -286,18 +286,21 @@ async function deploy(
         }
         // The record names this commit, so the keys and the build come from it.
         const contentRevision = store === undefined ? null : await checkContentCopy(store)
-        const usedKeys = store === undefined ? [] : await usedAttachmentKeys(store)
-        // The files of the takedowns and of the forced removals leave at once (issue 120).
-        const removedKeys = store === undefined ? [] : await removedAttachmentKeys(store)
-        // The files that the guards withdrew: never uploaded, deleted at once (issue 120, decision of the author R78, after R45).
+        // The files that the guards withdrew are read first: when a later
+        // read of the copy fails, the run still deletes them before it stops
+        // (issue 120, decision of the author R78, after R45). The keys of the
+        // release and the history are read inside the run.
         const withdrawnKeys = store === undefined ? [] : await withdrawnAttachmentKeys(store)
         const result = await deployRelease({
             url,
             contentRevision,
             siteRevision: await git(ROOT, 'rev-parse', 'HEAD'),
             now: () => new Date(),
-            usedKeys,
-            removedKeys,
+            usedKeys: () => (store === undefined ? Promise.resolve([]) : usedAttachmentKeys(store)),
+            // The files of the takedowns and of the forced removals leave at once (issue 120).
+            ...(store === undefined
+                ? {}
+                : { removedKeys: (live: string | null) => removedAttachmentKeys(store, live) }),
             withdrawnKeys,
             // A dry run reaches no host. `--dist` has no manifest: the
             // storage must not be cleaned by it.

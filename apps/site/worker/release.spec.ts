@@ -33,6 +33,10 @@ function file(text: string): { key: string; bytes: Uint8Array } {
     return { key: createHash('sha256').update(bytes).digest('hex'), bytes }
 }
 
+/** The removed keys of a copy whose removals the live release does not hold. */
+const removedNotLive = (keys: string[]) => (): Promise<{ notLive: string[]; inLive: string[] }> =>
+    Promise.resolve({ notLive: keys, inLive: [] })
+
 const PHOTO = file('photo')
 const PLAN = file('plan')
 const OLD = file('old')
@@ -367,7 +371,7 @@ describe('a deployment', () => {
         async (_step, failure) => {
             const site = fixture({
                 stored: [PHOTO.key, PLAN.key, OLD.key],
-                overrides: { takedown: true, removedKeys: [OLD.key], ...failure }
+                overrides: { takedown: true, removedKeys: removedNotLive([OLD.key]), ...failure }
             })
             const result = await deployRelease(site.run)
             expect(result.deleted).toBe(1)
@@ -412,7 +416,7 @@ describe('a deployment', () => {
     test('after a takedown, deletes the files of the takedown also when a used file is missing', async () => {
         const site = fixture({
             stored: [PHOTO.key, OLD.key],
-            overrides: { takedown: true, removedKeys: [OLD.key] }
+            overrides: { takedown: true, removedKeys: removedNotLive([OLD.key]) }
         })
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ build: 'skipped', deleted: 1 })
@@ -462,7 +466,7 @@ describe('a deployment', () => {
 
         const takedown = fixture({
             stored: [PHOTO.key, PLAN.key, OLD.key],
-            overrides: { live: notLive, takedown: true, removedKeys: [OLD.key] }
+            overrides: { live: notLive, takedown: true, removedKeys: removedNotLive([OLD.key]) }
         })
         const removed = await deployRelease(takedown.run)
         // A takedown that is not seen live is a failure: its files still left.
@@ -1127,7 +1131,7 @@ describe('the cleanup of the object storage', () => {
                 used: [A_NEW.key],
                 overrides: {
                     takedown: true,
-                    removedKeys: [B.key],
+                    removedKeys: removedNotLive([B.key]),
                     releaseKeys: liveUses([A_OLD.key, B.key]),
                     ...failure
                 }
@@ -1146,7 +1150,7 @@ describe('the cleanup of the object storage', () => {
             used: [A_NEW.key],
             overrides: {
                 takedown: true,
-                removedKeys: [SHARED.key],
+                removedKeys: removedNotLive([SHARED.key]),
                 releaseKeys: liveUses([SHARED.key]),
                 build: () => Promise.reject(new Error('the build failed'))
             }
@@ -1161,7 +1165,7 @@ describe('the cleanup of the object storage', () => {
             used: [A_NEW.key, B.key],
             overrides: {
                 takedown: true,
-                removedKeys: [B.key],
+                removedKeys: removedNotLive([B.key]),
                 releaseKeys: liveUses([B.key]),
                 build: () => Promise.reject(new Error('the build failed'))
             }
@@ -1178,7 +1182,7 @@ describe('the cleanup of the object storage', () => {
             stored: [A_OLD.key, A_NEW.key, B.key, GONE.key],
             used: [A_NEW.key],
             overrides: {
-                removedKeys: [B.key],
+                removedKeys: removedNotLive([B.key]),
                 releaseKeys: liveUses([A_OLD.key, B.key]),
                 build: () => Promise.reject(new Error('the build failed'))
             }
@@ -1194,7 +1198,11 @@ describe('the cleanup of the object storage', () => {
             stored: [A_NEW.key, B.key],
             folder: [PHOTO],
             used: [A_NEW.key, PHOTO.key],
-            overrides: { takedown: true, removedKeys: [B.key], releaseKeys: liveUses([B.key]) }
+            overrides: {
+                takedown: true,
+                removedKeys: removedNotLive([B.key]),
+                releaseKeys: liveUses([B.key])
+            }
         })
         await deployRelease(site.run)
         expect(site.events.slice(0, 4)).toEqual([
@@ -1236,7 +1244,7 @@ describe('the cleanup of the object storage', () => {
         const site = overLive({
             stored: [A_NEW.key, B.key],
             used: [A_NEW.key],
-            overrides: { removedKeys: [B.key], releaseKeys: liveUses([B.key]) }
+            overrides: { removedKeys: removedNotLive([B.key]), releaseKeys: liveUses([B.key]) }
         })
         await deployRelease(site.run)
         expect([...site.storage.names]).toEqual([A_NEW.key])
@@ -1276,7 +1284,7 @@ describe('the cleanup of the object storage', () => {
         const site = overLive({
             stored: [A_NEW.key, B.key],
             used: [A_NEW.key],
-            overrides: { removedKeys: [B.key], releaseKeys: liveUses([]) }
+            overrides: { removedKeys: removedNotLive([B.key]), releaseKeys: liveUses([]) }
         })
         const result = await deployRelease({
             ...site.run,
@@ -1311,7 +1319,7 @@ describe('the cleanup of the object storage', () => {
             {
                 stored: [A_OLD.key, A_NEW.key, B.key],
                 used: [A_NEW.key],
-                overrides: { removedKeys: [B.key], ...overrides }
+                overrides: { removedKeys: removedNotLive([B.key]), ...overrides }
             },
             live
         )
@@ -1414,23 +1422,159 @@ describe('the cleanup of the object storage', () => {
         expect(result).toMatchObject({ deploy: 'ok', live: false, error: null })
     })
 
-    // Review round 1, A2: the withdrawn files leave also when the release is refused.
-    test('deletes the withdrawn files before it reads the live release, so a refusal still deletes them', async () => {
+    // Review round 1, A2, and round 2, R4: the withdrawn files leave also
+    // when the release is refused, once the copy knows the live revision.
+    test('deletes the withdrawn files before the check of the live release, so a refusal still deletes them', async () => {
         const site = overLive({
             stored: [A_NEW.key, B.key, GONE.key],
             used: [A_NEW.key],
             overrides: {
                 withdrawnKeys: [B.key],
-                removedKeys: [GONE.key],
+                removedKeys: removedNotLive([GONE.key]),
                 descendsFrom: () => Promise.resolve(false)
             }
         })
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ build: 'skipped', deleted: 1 })
         expect(result.error).toContain('is not in the history of this copy')
-        expect(site.events[0]).toBe(`remove ${B.key}`)
+        expect(site.events.slice(0, 2)).toEqual(['live?', `remove ${B.key}`])
         // The files of a takedown wait for the check of the live release.
         expect([...site.storage.names].sort()).toEqual([A_NEW.key, GONE.key].sort())
+    })
+
+    // Review round 2, R2: a read of the copy that fails still lets the
+    // withdrawn files leave.
+    test.each([
+        [
+            'the keys of the release',
+            { usedKeys: () => Promise.reject(new Error('the manifest is not valid')) }
+        ],
+        [
+            'the history of the copy',
+            {
+                removedKeys: () =>
+                    Promise.reject(new Error('the copy of the content store is shallow'))
+            }
+        ]
+    ])(
+        'when %s cannot be read, deletes the withdrawn files, then stops',
+        async (_case, failure: Partial<DeployRun>) => {
+            const site = overLive({
+                stored: [A_NEW.key, B.key, GONE.key],
+                used: [A_NEW.key],
+                overrides: { withdrawnKeys: [B.key], ...failure }
+            })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted: 1 })
+            expect(result.error).toMatch(/not valid|shallow/u)
+            expect([...site.storage.names].sort()).toEqual([A_NEW.key, GONE.key].sort())
+            expect(site.events).not.toContain('build')
+        }
+    )
+
+    // Review round 2, R4: a copy that does not know the live revision can be
+    // older than a release of another machine.
+    test('refuses without deleting the withdrawn files when the copy does not know the live revision', async () => {
+        const site = overLive({
+            stored: [A_NEW.key, B.key],
+            used: [A_NEW.key],
+            overrides: { withdrawnKeys: [B.key], descendsFrom: () => Promise.resolve(undefined) }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deleted: 0 })
+        expect(result.error).toContain('does not know the live content revision')
+        expect(site.storage.names.has(B.key)).toBe(true)
+    })
+
+    test('deletes the withdrawn files when the record of the live release cannot be read, then refuses', async () => {
+        const site = overLive({
+            stored: [A_NEW.key, B.key],
+            used: [A_NEW.key],
+            overrides: {
+                withdrawnKeys: [B.key],
+                live: {
+                    read: () => Promise.reject(new Error('offline')),
+                    checks: 2,
+                    pause: 1000,
+                    inARow: 3
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deleted: 1 })
+        expect(result.error).toContain('cannot be read')
+        expect(site.storage.names.has(B.key)).toBe(false)
+    })
+
+    // Review round 2, R3: a removal that the live release holds no longer
+    // beats a note that uses its file openly.
+    test('keeps a file of an old takedown that a note of the live release uses openly, when the build fails', async () => {
+        const site = overLive({
+            stored: [A_OLD.key, A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                removedKeys: () => Promise.resolve({ notLive: [], inLive: [A_OLD.key] }),
+                releaseKeys: liveUses([A_OLD.key]),
+                build: () => Promise.reject(new Error('the build failed'))
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'failed', deleted: 0 })
+        expect(site.storage.names.has(A_OLD.key)).toBe(true)
+    })
+
+    test('keeps it after a deployment that is live too, for the release before', async () => {
+        const site = overLive({
+            stored: [A_OLD.key, A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                removedKeys: () => Promise.resolve({ notLive: [], inLive: [A_OLD.key] }),
+                releaseKeys: liveUses([A_OLD.key])
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ live: true, deleted: 0, error: null })
+        expect(site.storage.names.has(A_OLD.key)).toBe(true)
+    })
+
+    // The file of a takedown whose cleanup failed before: neither the new nor
+    // the live release uses it.
+    test.each([
+        ['the build fails', { build: () => Promise.reject(new Error('the build failed')) }],
+        ['the release is live', {}]
+    ])(
+        'deletes a file of an old takedown that neither the new nor the live release uses, when %s',
+        async (_case, overrides: Partial<DeployRun>) => {
+            const site = overLive({
+                stored: [B.key, A_NEW.key, A_OLD.key],
+                used: [A_NEW.key],
+                overrides: {
+                    removedKeys: () => Promise.resolve({ notLive: [], inLive: [B.key] }),
+                    releaseKeys: liveUses([A_OLD.key]),
+                    ...overrides
+                }
+            })
+            const result = await deployRelease(site.run)
+            expect(result.deleted).toBe(1)
+            expect([...site.storage.names].sort()).toEqual([A_NEW.key, A_OLD.key].sort())
+        }
+    )
+
+    test('asks the history with the live content revision', async () => {
+        const asked: (string | null)[] = []
+        const site = overLive({
+            stored: [A_NEW.key],
+            used: [A_NEW.key],
+            overrides: {
+                removedKeys: (live) => {
+                    asked.push(live)
+                    return Promise.resolve({ notLive: [], inLive: [] })
+                },
+                releaseKeys: liveUses([])
+            }
+        })
+        await deployRelease(site.run)
+        expect(asked).toEqual([LIVE_RELEASE.contentRevision])
     })
 
     // A revert across a move is refused: the release before cannot come back.
