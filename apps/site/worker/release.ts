@@ -448,7 +448,13 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
      * a release that still uses such a file for another note.
      */
     async function readKeys(): Promise<void> {
-        const keys = typeof run.usedKeys === 'function' ? await run.usedKeys() : run.usedKeys
+        let keys: readonly string[]
+        try {
+            keys = typeof run.usedKeys === 'function' ? await run.usedKeys() : run.usedKeys
+        } catch (failure) {
+            await removeWithoutRelease(messageOf(failure))
+            throw failure
+        }
         used = new Set(keys.filter((key) => !withdrawn.has(key)))
         let removed: RemovedKeys
         try {
@@ -468,6 +474,65 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
         warnings.push(...(removed.warnings ?? []))
         forced = new Set([...withdrawn, ...removed.notLive.filter((key) => !used.has(key))])
         earlier = removed.inLive.filter((key) => !used.has(key) && !forced.has(key))
+    }
+
+    /**
+     * When the keys of the new release cannot be read (last look, L1), the
+     * files of every removal of the history leave all the same, with no
+     * filter of a release; when the history cannot be read either, every
+     * file that the live release does not use leaves (a reading, easy to
+     * change). The run then stops, with a warning that a file can still be
+     * public.
+     */
+    async function removeWithoutRelease(cause: string): Promise<void> {
+        const storage = run.storage
+        if (storage === undefined) {
+            return
+        }
+        let keys: string[]
+        let how: string
+        try {
+            const removed = (await run.removedKeys?.(
+                replaced?.contentRevision === undefined || run.newContentStore === true
+                    ? null
+                    : replaced.contentRevision
+            )) ?? { notLive: [], inLive: [] }
+            warnings.push(...(removed.warnings ?? []))
+            keys = [...removed.notLive, ...removed.inLive]
+            how = 'the files of every takedown and forced removal were deleted'
+        } catch (history) {
+            const live = await keysOfLive()
+            if (live === undefined) {
+                warnings.push(
+                    `a file can still be public: the keys of the new release cannot be read (${cause}), and neither the history of the copy (${messageOf(history)}) nor the files of the live release can be read, so no file of a takedown was deleted`
+                )
+                return
+            }
+            const inLive = new Set(live)
+            let names: string[]
+            try {
+                names = await storage.list()
+            } catch (listing) {
+                warnings.push(
+                    `a file can still be public: the keys of the new release cannot be read (${cause}), nor the history of the copy (${messageOf(history)}), and the attachment storage could not be listed (${messageOf(listing)}), so no file of a takedown was deleted`
+                )
+                return
+            }
+            keys = names.filter((name) => ATTACHMENT_KEY.test(name) && !inLive.has(name))
+            how = `the history of the copy cannot be read either (${messageOf(history)}), so every file that the live release does not use was deleted`
+        }
+        const failed = await remove(
+            storage,
+            [...new Set(keys)].filter((key) => !withdrawn.has(key)).sort()
+        )
+        if (failed.length > 0) {
+            failures.push(
+                `the attachment storage kept files that must leave it: ${failed.join('; ')}`
+            )
+        }
+        warnings.push(
+            `a file can still be public: the keys of the new release cannot be read (${cause}); ${how}, and the run stops`
+        )
     }
 
     /** The keys of the live release, read one time: `undefined` when they cannot be known. */
@@ -701,12 +766,14 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
             // Review round 3: the copy cannot be built. The withdrawn files
             // leave when the copy is the main of the content store, or knows
             // the live revision; then the run is refused.
+            // Last look, L2: the copy must hold the live revision; a newer
+            // release whose commit the fetch brought is no such revision.
             const known =
                 replaced?.contentRevision === undefined || replaced.contentRevision === null
                     ? false
                     : (await run
                           .descendsFrom?.(replaced.contentRevision)
-                          .catch(() => undefined)) !== undefined
+                          .catch(() => undefined)) === true
             if (storage !== undefined && (run.copyAtMain === true || known)) {
                 await removeWithdrawn(storage)
             }

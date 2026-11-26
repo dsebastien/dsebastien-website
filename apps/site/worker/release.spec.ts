@@ -1457,6 +1457,44 @@ describe('the cleanup of the object storage', () => {
 
     // Review round 2, R2: a read of the copy that fails still lets the
     // withdrawn files leave.
+    // Last look, L1: the keys of the new release cannot be read (a broken
+    // manifest at the commit of the copy). The files of the removals leave
+    // all the same, then the run stops.
+    test('when the keys of the release cannot be read, deletes the files of every removal, then stops', async () => {
+        const site = overLive({
+            stored: [A_NEW.key, A_OLD.key, B.key, GONE.key],
+            used: [A_NEW.key],
+            overrides: {
+                usedKeys: () => Promise.reject(new Error('the manifest is not valid')),
+                removedKeys: () => Promise.resolve({ notLive: [B.key], inLive: [A_OLD.key] }),
+                releaseKeys: liveUses([A_OLD.key])
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted: 2 })
+        expect(result.error).toContain('not valid')
+        expect([...site.storage.names].sort()).toEqual([A_NEW.key, GONE.key].sort())
+        expect(result.warnings.join('\n')).toContain('can still be public')
+        expect(site.events).not.toContain('build')
+    })
+
+    test('when the keys of the release and the history cannot be read, deletes every file that the live release does not use, then stops', async () => {
+        const site = overLive({
+            stored: [A_NEW.key, A_OLD.key, B.key, GONE.key],
+            used: [A_NEW.key],
+            overrides: {
+                usedKeys: () => Promise.reject(new Error('the manifest is not valid')),
+                removedKeys: () => Promise.reject(new Error('the copy is shallow')),
+                releaseKeys: liveUses([A_OLD.key, A_NEW.key])
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped', deleted: 2 })
+        expect([...site.storage.names].sort()).toEqual([A_NEW.key, A_OLD.key].sort())
+        expect(result.warnings.join('\n')).toContain('can still be public')
+        expect(result.warnings.join('\n')).toContain('the copy is shallow')
+    })
+
     test('when the keys of the release cannot be read, deletes the withdrawn files, then stops', async () => {
         const site = overLive({
             stored: [A_NEW.key, B.key, GONE.key],
@@ -1530,7 +1568,9 @@ describe('the cleanup of the object storage', () => {
     test.each([
         ['has changes, at the main of the content store', true, true, 1],
         ['is behind, and knows the live revision', false, true, 1],
-        ['is behind, and does not know the live revision', false, undefined, 0]
+        ['is behind, and does not know the live revision', false, undefined, 0],
+        // Last look, L2: a newer release is live, and the fetch brought its commit.
+        ['is behind a newer live release that it knows', false, false, 0]
     ])(
         'refuses a copy that %s, and deletes the withdrawn files as it may',
         async (_case, atMain, known, deleted) => {
