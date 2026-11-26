@@ -6,17 +6,23 @@ import { ctaAttributes, ctaScript } from './cta.ts'
 
 type Listener = (event: Record<string, unknown>) => void
 
-function page(plausible?: (...args: unknown[]) => void): { click: (target: unknown) => void } {
+function page(plausible?: (...args: unknown[]) => void): {
+    click: (target: unknown) => void
+    window: Record<string, unknown>
+} {
     const listeners: Listener[] = []
-    runInNewContext(ctaScript, {
+    const window: Record<string, unknown> = {
         addEventListener: (name: string, listener: Listener, capture: boolean) => {
             expect(name).toBe('click')
             expect(capture).toBe(true)
             listeners.push(listener)
         },
         ...(plausible === undefined ? {} : { plausible })
-    })
+    }
+    window['window'] = window
+    runInNewContext(ctaScript, window)
     return {
+        window,
         click: (target) => {
             for (const listener of listeners) {
                 listener({ target })
@@ -66,6 +72,27 @@ describe('the click of an ad', () => {
         reader.click({ closest: () => null })
         reader.click(undefined)
         expect(sent).toEqual([])
+    })
+
+    // As the current site does (`publish.js`): the analytics script sends the queue when it loads.
+    test('queues the event when the analytics script is not loaded yet', () => {
+        const reader = page()
+        reader.click(adLink())
+        const plausible = reader.window['plausible'] as { q?: ArrayLike<unknown>[] }
+        expect(plausible.q?.map((args) => Array.from(args))).toEqual([
+            [
+                'cta_clicked',
+                {
+                    props: {
+                        product: 'water-wise-garden',
+                        position: 'end',
+                        slot: '1',
+                        page: '10 Garden/Drip irrigation.md',
+                        href: 'https://store.example/product/water-wise-garden'
+                    }
+                }
+            ]
+        ])
     })
 
     test('never breaks the click: without the analytics call, or when it fails', () => {
