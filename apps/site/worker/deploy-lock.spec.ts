@@ -144,7 +144,7 @@ describe('the lock of the deployments of a target', () => {
     // Three runs at once (issue 126): a run that gives way must never drop
     // the lock of the run that won. Random pauses before each step on the
     // files try many orders of the three runs.
-    test('lets one run only hold the lock when three take over a stale lock at once, in any order', async () => {
+    test('ends with one holder when three runs take over a stale lock at once, in any order', async () => {
         let seed = 126
         const random = (): number => {
             // A small generator with a seed: the same pauses at each run.
