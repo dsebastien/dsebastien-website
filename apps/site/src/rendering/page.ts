@@ -455,7 +455,7 @@ export class SitePages {
         const paths = new Set([...this.#notes.values()].map((note) => note.path))
         this.#addressOf =
             options.addressOf ??
-            ((address) => (paths.has(address.split('#')[0] ?? '') ? address : undefined))
+            ((address) => (paths.has(address.split(/[?#]/u)[0] ?? '') ? address : undefined))
     }
 
     /** The HTML of the body of a published note, as the page step gives it. */

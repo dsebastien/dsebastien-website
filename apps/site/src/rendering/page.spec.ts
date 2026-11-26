@@ -121,6 +121,12 @@ describe('raw links to an address of the site', () => {
         ).toBe('<a href="/Rain+barrel#x">a</a> <span class="not-published">b</span>')
     })
 
+    test('lead to the page of a published note with a query', () => {
+        expect(
+            page('<note-link data-address="%2FRain%2Bbarrel%3Fx%3D1">a</note-link>', {}, BARREL)
+        ).toBe('<a href="/Rain+barrel?x=1">a</a>')
+    })
+
     test('with an address that cannot be decoded are plain text', () => {
         expect(page('<note-link data-address="%E0">raw</note-link>', {}, BARREL)).toBe(
             '<span class="not-published">raw</span>'
