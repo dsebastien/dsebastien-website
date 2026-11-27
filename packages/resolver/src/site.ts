@@ -325,7 +325,8 @@ function formerFoldersOf(
             targets.set(key, set)
         }
     }
-    const folders: Record<string, string> = {}
+    // No prototype: a former folder `__proto__` is a key like any other (issue 121).
+    const folders = Object.create(null) as Record<string, string>
     for (const key of [...targets.keys()].sort(compareCodePoints)) {
         const [now, ...others] = [...(targets.get(key) ?? [])]
         const target = now === undefined || now === '' ? undefined : folded.get(now)

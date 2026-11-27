@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
     CURL_WRITE_OUT,
     floorConfiguration,
+    floorRemoval,
     floorWorkerName,
     hasTiming,
     locationsOf,
@@ -159,5 +160,35 @@ describe('the floor Worker of a run', () => {
             )
         ).toBe('https://w-floor-a1b2c3.someone.workers.dev')
         expect(workersDevAddress('no address')).toBeUndefined()
+    })
+})
+
+describe('the removal of the floor Worker', () => {
+    test('stops the deployment first, then deletes the Worker, one time for every caller', async () => {
+        const steps: string[] = []
+        const remove = floorRemoval({
+            stop: async () => {
+                steps.push('stop')
+                await Promise.resolve()
+            },
+            remove: async () => {
+                steps.push('delete')
+                await Promise.resolve()
+            }
+        })
+        const first = remove()
+        const second = remove()
+        expect(second).toBe(first)
+        await Promise.all([first, second, remove()])
+        expect(steps).toEqual(['stop', 'delete'])
+    })
+
+    test('a delete that fails fails every caller', () => {
+        const remove = floorRemoval({
+            stop: () => Promise.resolve(),
+            remove: () => Promise.reject(new Error('the host refuses the delete'))
+        })
+        expect(remove()).rejects.toThrow('the host refuses the delete')
+        expect(remove()).rejects.toThrow('the host refuses the delete')
     })
 })

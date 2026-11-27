@@ -171,6 +171,24 @@ describe('the output that a deployment puts on the host', () => {
         })
     })
 
+    test('refuses an output with a part that is not a part of its map', async () => {
+        await withFolder(async (folder) => {
+            await mapParts(folder, [0, 1])
+            await writeFile(join(folder, '-', 'resolver-map', '1.json'), '{"pages":{"/x":1}}')
+            expect(await checkOutput(folder)).toBe(
+                '-/resolver-map/1.json is not a part of the resolver map'
+            )
+        })
+    })
+
+    test('refuses an output with a part that is not JSON', async () => {
+        await withFolder(async (folder) => {
+            await mapParts(folder, [0, 1])
+            await writeFile(join(folder, '-', 'resolver-map', '0.json'), '{')
+            expect(await checkOutput(folder)).toContain('-/resolver-map/0.json')
+        })
+    })
+
     test('refuses an output whose head is not a head', async () => {
         await withFolder(async (folder) => {
             await mkdir(join(folder, '-', 'resolver-map'), { recursive: true })

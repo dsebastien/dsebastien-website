@@ -12,6 +12,7 @@ import {
     MAP_HEAD_FILE,
     mapHeadFrom,
     mapPartFile,
+    mapPartFrom,
     MAX_VARIANT_PIXELS,
     RESOLVER_MAP_FILE,
     VARIANT_WIDTHS,
@@ -180,8 +181,9 @@ export async function checkOutput(folder: string): Promise<string | undefined> {
     if (map?.isFile() !== true) {
         return `${folder} is not the output of a build: it has no resolver map (${MAP_HEAD_FILE})`
     }
-    // Every part of the map must be there: a host that lacks one answers 500
-    // for each path of that part (issue 121).
+    // Every part of the map must be there and be right: a host that lacks one,
+    // or reads one that is not right, answers 500 for each path of that part
+    // (issue 121).
     let head: MapHead
     try {
         head = mapHeadFrom(
@@ -191,9 +193,19 @@ export async function checkOutput(folder: string): Promise<string | undefined> {
         return error instanceof Error ? error.message : String(error)
     }
     for (let index = 0; index < head.parts; index += 1) {
-        const part = await stat(join(folder, mapPartFile(index))).catch(() => undefined)
+        const file = join(folder, mapPartFile(index))
+        const part = await stat(file).catch(() => undefined)
         if (part?.isFile() !== true) {
             return `the output lacks a part of its resolver map: ${mapPartFile(index)}`
+        }
+        try {
+            mapPartFrom(JSON.parse(await readFile(file, 'utf8')) as unknown, head, index)
+        } catch (error) {
+            return error instanceof SyntaxError
+                ? `${mapPartFile(index)} is not JSON`
+                : error instanceof Error
+                  ? error.message
+                  : String(error)
         }
     }
     return undefined

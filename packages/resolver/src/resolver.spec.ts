@@ -438,6 +438,18 @@ describe('resolver of former paths', () => {
         expect(resolve('/Shed', map)).toEqual(moved('/Garden/Garden'))
     })
 
+    // A name of the prototype of an object is a name like any other (issue 121).
+    test('an old folder named __proto__ leads to the folder that its notes moved to', () => {
+        const map = mapOf([
+            { path: 'Garden/Rake.md', aliases: [], formerPaths: ['__proto__/Rake.md'] }
+        ])
+        expect(Object.hasOwn(map.former?.folders ?? {}, '__proto__')).toBe(true)
+        expect(resolve('/__proto__', map)).toEqual(moved('/Garden'))
+        expect(resolve('/__proto__/', JSON.parse(JSON.stringify(map)) as ResolverMap)).toEqual(
+            moved('/Garden')
+        )
+    })
+
     test('an old folder whose notes moved to two folders is no address', () => {
         const map = mapOf([
             NOTE,

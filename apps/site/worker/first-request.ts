@@ -169,3 +169,21 @@ export function floorConfiguration(options: {
 export function workersDevAddress(output: string): string | undefined {
     return /https:\/\/[a-z0-9.-]+\.workers\.dev/u.exec(output)?.[0]
 }
+
+/**
+ * The removal of the floor Worker of a run: it stops the deployment that may
+ * still run (the child process of wrangler, which could otherwise finish
+ * after the delete), then deletes the Worker. Every caller (the end of the
+ * run, a failure, a signal) gets the same promise, so it runs one time.
+ */
+export function floorRemoval(steps: {
+    readonly stop: () => Promise<void>
+    readonly remove: () => Promise<void>
+}): () => Promise<void> {
+    let removing: Promise<void> | undefined
+    return () =>
+        (removing ??= (async (): Promise<void> => {
+            await steps.stop()
+            await steps.remove()
+        })())
+}

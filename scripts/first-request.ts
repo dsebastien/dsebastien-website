@@ -7,6 +7,7 @@ import { deployToken, targetFrom, withoutTokens } from '../apps/site/worker/depl
 import {
     CURL_WRITE_OUT,
     floorConfiguration,
+    floorRemoval,
     floorWorkerName,
     locationsOf,
     sampleOf,
@@ -136,7 +137,12 @@ const pick = (): string => paths[Math.floor(Math.random() * paths.length)] ?? '/
 let cleanup: (() => Promise<void>) | undefined
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
     process.on(signal, () => {
-        void (cleanup?.() ?? Promise.resolve()).finally(() => process.exit(130))
+        void (cleanup?.() ?? Promise.resolve())
+            .catch((error: unknown) => {
+                // The reader must know when the floor Worker is still on the host.
+                process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+            })
+            .finally(() => process.exit(130))
     })
 }
 
@@ -178,36 +184,42 @@ async function deployFloor(targetFile: string): Promise<Floor> {
             })
         )
     )
-    let removed = false
-    const remove = async (): Promise<void> => {
-        if (removed) {
-            return
-        }
-        removed = true
-        const answer = await fetch(
-            `https://api.cloudflare.com/client/v4/accounts/${target.accountId}/workers/scripts/${name}?force=true`,
-            { method: 'DELETE', headers: { authorization: `Bearer ${token}` } }
-        )
-        await rm(folder, { recursive: true, force: true })
-        if (!answer.ok && answer.status !== 404) {
-            throw new Error(
-                `the floor Worker ${name} could not be deleted (${String(answer.status)}): delete it by hand`
+    let child: ReturnType<typeof Bun.spawn> | undefined
+    const remove = floorRemoval({
+        // A deployment that still runs is stopped first: it could finish after the delete.
+        stop: async () => {
+            if (child !== undefined && child.exitCode === null) {
+                child.kill()
+                await child.exited
+            }
+        },
+        remove: async () => {
+            const answer = await fetch(
+                `https://api.cloudflare.com/client/v4/accounts/${target.accountId}/workers/scripts/${name}?force=true`,
+                { method: 'DELETE', headers: { authorization: `Bearer ${token}` } }
             )
+            await rm(folder, { recursive: true, force: true })
+            if (!answer.ok && answer.status !== 404) {
+                throw new Error(
+                    `the floor Worker ${name} could not be deleted (${String(answer.status)}): delete it by hand`
+                )
+            }
+            process.stderr.write(`The floor Worker ${name} is deleted.\n`)
         }
-        process.stderr.write(`The floor Worker ${name} is deleted.\n`)
-    }
+    })
     // From now on a signal deletes the floor Worker, also while wrangler deploys it.
     cleanup = remove
     try {
-        const child = Bun.spawn([WRANGLER, 'deploy', '--config', configuration], {
+        const deploying = Bun.spawn([WRANGLER, 'deploy', '--config', configuration], {
             cwd: folder,
             env: { ...withoutTokens(process.env), CLOUDFLARE_API_TOKEN: token },
             stdio: ['ignore', 'pipe', 'pipe']
         })
+        child = deploying
         const [output, errors, code] = await Promise.all([
-            new Response(child.stdout).text(),
-            new Response(child.stderr).text(),
-            child.exited
+            new Response(deploying.stdout).text(),
+            new Response(deploying.stderr).text(),
+            deploying.exited
         ])
         const address = workersDevAddress(output)
         if (code !== 0 || address === undefined) {
