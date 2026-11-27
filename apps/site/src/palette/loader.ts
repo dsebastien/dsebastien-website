@@ -87,8 +87,18 @@ export function startPaletteLoader(
     control?.setAttribute('aria-keyshortcuts', '/ Control+K Meta+K')
     const form = document.querySelector<HTMLFormElement>(`form[${PALETTE_FORM}]`)
     const formField = form?.querySelector<HTMLInputElement>('input[name="q"]') ?? null
-    for (const element of [formField, form?.querySelector('button[type="submit"]')]) {
-        element?.setAttribute('aria-haspopup', 'dialog')
+    const formButton = form?.querySelector('button[type="submit"]') ?? null
+    // A searchbox has no popup in ARIA 1.2: its button says it, and a hint names it for the field.
+    let formHint: HTMLElement | undefined
+    if (formField !== null) {
+        formButton?.setAttribute('aria-haspopup', 'dialog')
+        formHint = document.createElement('span')
+        formHint.id = `${formField.id || 'palette-form'}-hint`
+        formHint.className = 'sr-only'
+        formHint.setAttribute('data-palette-hint', '')
+        formHint.textContent = 'Opens the search and commands panel'
+        formField.after(formHint)
+        formField.setAttribute('aria-describedby', formHint.id)
     }
     /** False once the palette failed to load from the form: the form is plain again. */
     let formOpens = formField !== null
@@ -100,7 +110,7 @@ export function startPaletteLoader(
     /** The address to follow when the palette cannot load, or none. */
     let waitFallback: string | null = null
 
-    /** Ends the wait: the field goes, and the focus goes back when the opening is cancelled. */
+    /** Ends the wait and gives back the waiting field: the caller removes it or keeps it. */
     const stopWaiting = (): HTMLInputElement | undefined => {
         const field = wait
         wait = undefined
@@ -177,6 +187,9 @@ export function startPaletteLoader(
                 if (waited === formField) {
                     // The field keeps the focus and the text, and the form is plain again.
                     formOpens = false
+                    formButton?.removeAttribute('aria-haspopup')
+                    formField.removeAttribute('aria-describedby')
+                    formHint?.remove()
                 } else {
                     waited.remove()
                     waitOpener?.focus()
@@ -194,15 +207,34 @@ export function startPaletteLoader(
         form.addEventListener('submit', (event) => {
             if (!formOpens) return
             event.preventDefault()
+            if (wait === formField) {
+                // Enter while the palette loads: the search page if it cannot load.
+                waitFallback = form.action
+                return
+            }
             open(formField, formField, form.action)
         })
         // A click or a tap into the field; a tap also shows the keyboard of a phone.
         formField.addEventListener('click', () => {
             if (formOpens) open(formField, formField, null)
         })
-        // A key typed in the field that the reader reached with Tab.
-        formField.addEventListener('input', () => {
-            if (formOpens && wait === undefined) open(formField, formField, null)
+        // A key typed in the field that the reader reached with Tab. A key of an
+        // input method (Japanese, Chinese, a phone keyboard) waits for the end of
+        // the composition; the input event that may follow the end has no text left.
+        const typed = (): void => {
+            if (formOpens && wait === undefined && formField.value !== '') {
+                open(formField, formField, null)
+            }
+        }
+        formField.addEventListener('input', (event) => {
+            if (!(event as InputEvent).isComposing) typed()
+        })
+        formField.addEventListener('compositionend', typed)
+        formField.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || wait !== formField) return
+            // Escape cancels the opening; the field keeps the focus and the text.
+            event.preventDefault()
+            stopWaiting()
         })
     }
 

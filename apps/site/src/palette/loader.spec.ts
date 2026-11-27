@@ -378,10 +378,70 @@ describe('the search form of the home page (R101)', () => {
         return event.defaultPrevented
     }
 
-    test('marks the field and its button as openers of a dialog', () => {
+    /** The text of the hint that the field names, or none. */
+    const hint = (): string | null => {
+        const id = field().getAttribute('aria-describedby')
+        return id === null ? null : (document.getElementById(id)?.textContent ?? null)
+    }
+
+    test('marks the button as the opener of a dialog, and gives the field a hint (a searchbox has no popup)', () => {
         home()
-        expect(field().getAttribute('aria-haspopup')).toBe('dialog')
         expect(document.getElementById('go')?.getAttribute('aria-haspopup')).toBe('dialog')
+        expect(field().hasAttribute('aria-haspopup')).toBe(false)
+        expect(hint()).toBe('Opens the search and commands panel')
+    })
+
+    test('Enter while the palette loads after a click leads to the search page when the load fails', async () => {
+        const loader = home({ fail: true })
+        field().focus()
+        field().click()
+        field().value = 'rain'
+        expect(submit()).toBe(true)
+        await loader.finish()
+        expect(loader.followed).toEqual(['https://notes.dsebastien.net/-/search?q=rain'])
+    })
+
+    test('Enter while the palette loads after a click opens it with the text when the load works', async () => {
+        const loader = home()
+        field().focus()
+        field().click()
+        field().value = 'rain'
+        expect(submit()).toBe(true)
+        await loader.finish()
+        expect(loader.openings).toEqual([{ opener: 'home', typed: 'rain', focused: 'home' }])
+        expect(loader.followed).toEqual([])
+    })
+
+    test('a composition (an input method) opens the palette at its end only', async () => {
+        const loader = home()
+        await loader.finish()
+        field().focus()
+        field().value = 'あ'
+        const composing = new window.InputEvent('input', { bubbles: true, isComposing: true })
+        field().dispatchEvent(composing as unknown as Event)
+        await loader.finish()
+        expect(loader.openings).toEqual([])
+        field().value = '雨'
+        const end = new window.Event('compositionend', { bubbles: true })
+        field().dispatchEvent(end as unknown as Event)
+        // The input event that some browsers send after the end opens nothing more.
+        field().dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event)
+        await loader.finish()
+        expect(loader.openings).toEqual([{ opener: 'home', typed: '雨', focused: 'home' }])
+    })
+
+    test('Escape while the palette loads cancels the opening; the field keeps the focus and the text', async () => {
+        const loader = home()
+        field().focus()
+        field().click()
+        field().value = 'ra'
+        expect(key(field(), { key: 'Escape' })).toBe(true)
+        await loader.finish()
+        expect(loader.openings).toEqual([])
+        expect(field().value).toBe('ra')
+        expect(document.activeElement).toBe(field())
+        field().click()
+        expect(loader.openings.map((opening) => opening.typed)).toEqual(['ra'])
     })
 
     test('a submit opens the palette with the typed text instead of the search page', async () => {
@@ -429,6 +489,10 @@ describe('the search form of the home page (R101)', () => {
         expect(loader.followed).toEqual(['https://notes.dsebastien.net/-/search?q=rain+%26+water'])
         expect(document.activeElement).toBe(field())
         expect(submit()).toBe(false)
+        // A plain form: no popup and no hint any more.
+        expect(document.getElementById('go')?.hasAttribute('aria-haspopup')).toBe(false)
+        expect(field().hasAttribute('aria-describedby')).toBe(false)
+        expect(document.querySelector('[data-palette-hint]')).toBeNull()
     })
 
     test('when the palette cannot load after a click, the field stays a plain field', async () => {
