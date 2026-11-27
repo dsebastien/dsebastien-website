@@ -136,7 +136,11 @@ export function startPaletteLoader(
                 if (waited === undefined) return
                 waited.remove()
                 waitOpener?.focus()
-                if (control !== null) follow(control.href)
+                if (control === null) return
+                // The search page, with what the reader typed while the palette loaded.
+                const address = new URL(control.href)
+                if (waited.value.trim() !== '') address.searchParams.set('q', waited.value)
+                follow(address.href)
             }
         )
     }

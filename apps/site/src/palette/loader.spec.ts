@@ -298,4 +298,25 @@ describe('the loader of the palette (SRCH-08)', () => {
         expect(loader.followed).toEqual(['https://notes.dsebastien.net/-/search'])
         expect(document.querySelector('[data-palette-wait]')).toBeNull()
     })
+
+    test('when the palette cannot load, the search page gets what the reader typed', async () => {
+        let fail: (() => void) | undefined
+        const followed: string[] = []
+        startPaletteLoader(
+            document,
+            () =>
+                new Promise((_resolve, reject) => {
+                    fail = () => {
+                        reject(new Error('offline'))
+                    }
+                }),
+            (href) => followed.push(href)
+        )
+        control().click()
+        const waiting = document.activeElement as HTMLInputElement | null
+        if (waiting !== null) waiting.value = 'rain & water'
+        fail?.()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(followed).toEqual(['https://notes.dsebastien.net/-/search?q=rain+%26+water'])
+    })
 })
