@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { isIP } from 'node:net'
 import { join } from 'node:path'
 import { LINK_PREVIEW_FOLDER } from '@dsebastien-website/resolver'
 import type * as SharpTypes from 'sharp'
 import { fromHtml } from 'hast-util-from-html'
 import type { Element, Root, RootContent } from 'hast'
+import { isPublicAddress } from './guarded-fetch.ts'
 import { videoOf } from './video.ts'
 
 // The previews of the link cards (CARD-06, CARD-07, CARD-09): the small image
@@ -16,11 +18,14 @@ import { videoOf } from './video.ts'
 // The pages load the images from the host of the notes
 // (`/-/link-previews/<hash>.webp`, `LINK_PREVIEW_FOLDER`): a reader makes no
 // request to the site of a card. A failed fetch leaves the card compact and
-// never fails the build; it is tried again after `LINK_PREVIEW_RETRY_DAYS`.
+// never fails the build; it is tried again after `LINK_PREVIEW_RETRY_DAYS`,
+// as is a page that gave no image.
 // A build that only reads the cache (no `fetch`) makes no request at all.
 //
 // The rules of a fetch: `http` and `https` only, at most five redirects, a
-// time limit, a size limit, a neutral user agent and no cookies.
+// time limit, a size limit, a neutral user agent and no cookies. The build
+// fetches through `guardedFetch()`, which reaches the public web only, at
+// each hop; an address literal that is not public is refused here too.
 
 /** A request to the web, as the build makes it: the `fetch` of the runtime, or a fake in a test. */
 export type FetchPort = (url: string, init: RequestInit) => Promise<Response>
@@ -77,7 +82,17 @@ const TIMEOUT = 10_000
 const MAX_REDIRECTS = 5
 const MAX_HTML = 1_000_000
 const MAX_IMAGE = 5_000_000
-const MAX_PIXELS = 50_000_000
+// Six images decode at once: 16 million pixels of 16-bit RGBA is 128 MB each,
+// so the decoding stays under 1 GB.
+const MAX_PIXELS = 16_000_000
+/** The image types that a card takes: the photo types of the web, never SVG. */
+const IMAGE_TYPES: ReadonlySet<string> = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/avif'
+])
 const CONCURRENCY = 6
 const USER_AGENT = 'Mozilla/5.0 (compatible; link-preview)'
 const DAY = 86_400_000
@@ -113,6 +128,16 @@ export function previewFileOf(cache: string, path: string): string | undefined {
     const prefix = `/${LINK_PREVIEW_FOLDER}/`
     const name = path.startsWith(prefix) ? path.slice(prefix.length) : ''
     return IMAGE_NAME.test(name) ? join(cache, IMAGES, name) : undefined
+}
+
+/** The names of the images of the previews in the cache (`<hash>.webp`), from its index. */
+export async function previewImageNames(cache: string): Promise<ReadonlySet<string>> {
+    const entries = await readIndex(cache, () => undefined)
+    const names = new Set<string>()
+    for (const entry of entries.values()) {
+        if (entry.image !== undefined) names.add(entry.image.file)
+    }
+    return names
 }
 
 function isNumber(value: unknown): value is number {
@@ -207,9 +232,11 @@ async function bodyOf(
     return bytes
 }
 
-/** True for an address of the web. */
+/** True for an address of the web whose host, when it is an address literal, is public. */
 function isWeb(url: URL): boolean {
-    return url.protocol === 'https:' || url.protocol === 'http:'
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+    const host = url.hostname.replace(/^\[(.*)\]$/u, '$1')
+    return isIP(host) === 0 || isPublicAddress(host)
 }
 
 /** An answer of the web after its redirects, with the address that gave it. */
@@ -295,10 +322,10 @@ async function storeImage(
     cache: string
 ): Promise<Entry['image']> {
     const { response } = await get(fetch, address.href, 'image/*')
-    const type = response.headers.get('content-type') ?? ''
-    if (!type.toLowerCase().startsWith('image/')) {
+    const type = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase()
+    if (type === undefined || !IMAGE_TYPES.has(type)) {
         await response.body?.cancel()
-        throw new Error(`${address.href} is not an image`)
+        throw new Error(`${address.href} is not an image of a type that a card takes`)
     }
     const bytes = await bodyOf(response, MAX_IMAGE, false)
     if (bytes === undefined)
@@ -365,11 +392,11 @@ async function fetchEntry(fetch: FetchPort, key: string, cache: string, now: Dat
     return { fetchedAt, ...(image === undefined ? {} : { image }) }
 }
 
-/** True when the cache must ask the web again: never read, or failed long enough ago. */
+/** True when the cache must ask the web again: never read, or with no image since long enough. */
 function isDue(entry: Entry | undefined, now: Date): boolean {
     if (entry === undefined) return true
     return (
-        entry.failed === true &&
+        entry.image === undefined &&
         now.getTime() - Date.parse(entry.fetchedAt) > LINK_PREVIEW_RETRY_DAYS * DAY
     )
 }

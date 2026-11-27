@@ -172,6 +172,93 @@ describe('the preview of a link card (CARD-06, CARD-07)', () => {
         expect(fake.asked.some((url) => url.startsWith('javascript:'))).toBe(false)
     })
 
+    test('an image or a redirect at a private address literal is never asked (CARD-06)', async () => {
+        const fake = web({
+            'https://f.example/': () =>
+                html('<meta property="og:image" content="http://169.254.169.254/latest">'),
+            'https://g.example/': () =>
+                new Response(null, { status: 302, headers: { location: 'http://[::1]:8080/' } }),
+            'https://h.example/': () =>
+                html('<meta property="og:image" content="http://2130706433/x.png">')
+        })
+        const targets = ['f', 'g', 'h'].map((name) => ({
+            url: `https://${name}.example/`,
+            video: false
+        }))
+        const previews = await readLinkPreviews(targets, {
+            cache,
+            fetch: fake.fetch,
+            now: NOW,
+            warn: () => undefined
+        })
+        for (const target of targets) expect(previews.get(previewKey(target) ?? '')).toEqual({})
+        expect(fake.asked.sort()).toEqual([
+            'https://f.example/',
+            'https://g.example/',
+            'https://h.example/'
+        ])
+    })
+
+    test('an image of a type that is not a photo type, or of too many pixels, is not read', async () => {
+        const photo = await picture(64, 64)
+        const huge = new Uint8Array(
+            await sharp({
+                create: { width: 5000, height: 4000, channels: 3, background: '#336633' }
+            })
+                .png()
+                .toBuffer()
+        )
+        const types = ['image/svg+xml', 'image/tiff', 'image/x-icon', 'image/png; q=1']
+        const table: Record<string, () => Response> = {
+            'https://huge.example/': () => html('<meta property="og:image" content="/huge.png">'),
+            'https://huge.example/huge.png': () => image(huge)
+        }
+        types.forEach((type, index) => {
+            table[`https://t${String(index)}.example/`] = () =>
+                html('<meta property="og:image" content="/x">')
+            table[`https://t${String(index)}.example/x`] = () =>
+                new Response(new Uint8Array(photo), { headers: { 'content-type': type } })
+        })
+        const targets = [
+            ...types.map((_, index) => ({
+                url: `https://t${String(index)}.example/`,
+                video: false
+            })),
+            { url: 'https://huge.example/', video: false }
+        ]
+        const previews = await readLinkPreviews(targets, {
+            cache,
+            fetch: web(table).fetch,
+            now: NOW,
+            warn: () => undefined
+        })
+        const shown = targets.map((target) => previews.get(previewKey(target) ?? '')?.image)
+        expect(shown.map((one) => one !== undefined)).toEqual([false, false, false, true, false])
+    })
+
+    test('a page that gave no image is tried again after the retry delay', async () => {
+        const plain = { url: 'https://plain.example/', video: false }
+        const first = web({
+            'https://garden.example/soil': () => html(''),
+            'https://plain.example/': () =>
+                new Response('{}', { headers: { 'content-type': 'application/json' } })
+        })
+        await readLinkPreviews([SOIL, plain], { cache, fetch: first.fetch, now: NOW })
+        const soon = web({})
+        await readLinkPreviews([SOIL, plain], { cache, fetch: soon.fetch, now: NOW })
+        expect(soon.asked).toEqual([])
+        const later = new Date(NOW.getTime() + (LINK_PREVIEW_RETRY_DAYS + 1) * 86_400_000)
+        const retry = web({
+            'https://garden.example/soil': () => html(''),
+            'https://plain.example/': () => html('')
+        })
+        await readLinkPreviews([SOIL, plain], { cache, fetch: retry.fetch, now: later })
+        expect(retry.asked.sort()).toEqual([
+            'https://garden.example/soil',
+            'https://plain.example/'
+        ])
+    })
+
     test('a video card gets the still image of the video and its title', async () => {
         const still = await picture(480, 360)
         const fake = web({

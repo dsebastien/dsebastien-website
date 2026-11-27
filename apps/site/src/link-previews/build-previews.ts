@@ -3,8 +3,10 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LINK_PREVIEW_FOLDER } from '@dsebastien-website/resolver'
 import type { AstroIntegration } from 'astro'
+import { guardedFetch } from './guarded-fetch.ts'
 import {
     previewFileOf,
+    previewImageNames,
     previewKey,
     readLinkPreviews,
     type LinkPreview,
@@ -17,7 +19,8 @@ import {
 // `cache` reads the cache only, and no value (the public CI, the tests) gives
 // compact cards and reads nothing. The cache is `.cache/link-previews/` of
 // the site, or the folder that `LINK_PREVIEWS_CACHE` names. After the build,
-// the images that the pages name go from the cache into the output.
+// the images of the previews that the pages name go from the cache into the
+// output.
 
 /** The variable that says what the build does with the previews. */
 export const LINK_PREVIEWS = 'LINK_PREVIEWS'
@@ -49,7 +52,7 @@ export async function buildPreviews(
     const previews = await readLinkPreviews(targets, {
         cache,
         now: new Date(),
-        ...(mode === 'fetch' ? { fetch: (url, init) => fetch(url, init) } : {})
+        ...(mode === 'fetch' ? { fetch: guardedFetch() } : {})
     })
     return (target) => {
         const key = previewKey(target)
@@ -59,8 +62,14 @@ export async function buildPreviews(
 
 const NAMED = new RegExp(`/${LINK_PREVIEW_FOLDER}/[0-9a-f]{64}\\.webp`, 'gu')
 
-/** Puts into an output the images of the cards that its pages name, from the cache. */
+/**
+ * Puts into an output the images of the previews that its pages name, from
+ * the cache. Only an image of the index of the cache counts: a note text that
+ * writes such an address names no file.
+ */
 export async function copyPreviewImages(output: string, cache: string): Promise<number> {
+    const known = await previewImageNames(cache)
+    if (known.size === 0) return 0
     const entries = await readdir(output, { recursive: true, withFileTypes: true })
     const pages = entries
         .filter((entry) => entry.isFile() && entry.name.endsWith('.html'))
@@ -71,7 +80,9 @@ export async function copyPreviewImages(output: string, cache: string): Promise<
             pages.slice(start, start + 64).map((page) => readFile(page, 'utf8'))
         )
         for (const text of texts) {
-            for (const [path] of text.matchAll(NAMED)) named.add(path)
+            for (const [path] of text.matchAll(NAMED)) {
+                if (known.has(path.slice(path.lastIndexOf('/') + 1))) named.add(path)
+            }
         }
     }
     if (named.size === 0) return 0
@@ -80,7 +91,6 @@ export async function copyPreviewImages(output: string, cache: string): Promise<
     for (const path of named) {
         const file = previewFileOf(cache, path)
         if (file === undefined) continue
-        // A page names only an image that the cache held when it was read.
         await copyFile(file, join(folder, path.slice(path.lastIndexOf('/') + 1)))
     }
     return named.size
