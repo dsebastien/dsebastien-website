@@ -6,6 +6,11 @@ import {
     uniqueDescriptions
 } from './descriptions.ts'
 
+/** The characters of a text as a reader counts them. */
+function graphemes(text: string): number {
+    return [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(text)].length
+}
+
 const MOVIE = {
     title: 'Inception',
     typeLabel: 'Movie',
@@ -137,6 +142,80 @@ describe('the description of a note', () => {
             html: `<p>${character.repeat(200)}</p>`
         })
         expect(cut).toBe(`${character.repeat(DESCRIPTION_LENGTH - 1)}…`)
+    })
+
+    // Issue 95: the property follows the same rule as a written description.
+    test('is its description property cut at a word end with an end mark', () => {
+        const cut = noteDescription({ ...MOVIE, properties: { description: 'grow '.repeat(60) } })
+        expect(cut).toBe(`${'grow '.repeat(31).trim()}…`)
+        expect(graphemes(cut)).toBeLessThanOrEqual(DESCRIPTION_LENGTH)
+    })
+
+    test('is its description property in full at exactly the limit', () => {
+        const exact = `${'grow '.repeat(30)}mint.`
+        expect(graphemes(exact)).toBe(DESCRIPTION_LENGTH)
+        expect(noteDescription({ ...MOVIE, properties: { description: exact } })).toBe(exact)
+    })
+
+    test('is cut one character past the limit', () => {
+        const over = `${'grow '.repeat(30)}mints.`
+        expect(graphemes(over)).toBe(DESCRIPTION_LENGTH + 1)
+        expect(noteDescription({ ...MOVIE, properties: { description: over } })).toBe(
+            `${'grow '.repeat(30).trim()}…`
+        )
+    })
+
+    test('keeps the last word when a space follows it at the limit', () => {
+        const text = 'abcd '.repeat(40)
+        expect(noteDescription({ ...MOVIE, properties: { description: text } })).toBe(
+            `${'abcd '.repeat(31).trim()}…`
+        )
+    })
+
+    test('cuts a word longer than the limit on whole characters', () => {
+        expect(noteDescription({ ...MOVIE, properties: { description: 'a'.repeat(200) } })).toBe(
+            `${'a'.repeat(DESCRIPTION_LENGTH - 1)}…`
+        )
+        expect(
+            noteDescription({ ...MOVIE, properties: { description: `Hi ${'a'.repeat(200)}` } })
+        ).toBe(`Hi ${'a'.repeat(DESCRIPTION_LENGTH - 4)}…`)
+    })
+
+    test('cuts a text with no spaces (Chinese, Japanese) at a word end', () => {
+        const japanese = `あ${'東京'.repeat(100)}`
+        expect(noteDescription({ ...MOVIE, properties: { description: japanese } })).toBe(
+            `あ${'東京'.repeat(76)}…`
+        )
+        const sentence = '中文文本没有空格分词。'
+        expect(
+            noteDescription({ ...MOVIE, properties: { description: `X ${sentence.repeat(20)}` } })
+        ).toBe(`X ${sentence.repeat(13)}中文文本没有空格…`)
+    })
+
+    test('cuts emoji between words on whole characters', () => {
+        const text = 'mint 🌱 '.repeat(40)
+        const cut = noteDescription({ ...MOVIE, properties: { description: text } })
+        expect(graphemes(cut)).toBeLessThanOrEqual(DESCRIPTION_LENGTH)
+        expect(cut).toMatch(/(?:mint|🌱)…$/u)
+        expect(cut.isWellFormed()).toBe(true)
+        expect(text.startsWith(cut.slice(0, -1))).toBe(true)
+    })
+
+    test('cuts the shown text of a property with Markdown, never its markup', () => {
+        const markdown = '**Grow** [[Mint|mint]] in [beds](https://example.invalid/b). '.repeat(10)
+        const cut = noteDescription({ ...MOVIE, properties: { description: markdown } })
+        expect(cut).toBe(`${'Grow mint in beds. '.repeat(8).trim().slice(0, -1)}…`)
+    })
+
+    test('cuts a property with HTML and entities on its decoded text, never inside an entity', () => {
+        const html = '<b>Tom</b> &amp; Jerry &#127793; '.repeat(20)
+        const cut = noteDescription({ ...MOVIE, properties: { description: html } })
+        expect(cut).not.toContain('<')
+        expect(cut).not.toContain('&amp')
+        expect(cut).not.toContain('&#')
+        expect(cut.startsWith('Tom & Jerry 🌱 Tom & Jerry')).toBe(true)
+        expect(cut).toMatch(/(?:Tom|Jerry|&|🌱)…$/u)
+        expect(graphemes(cut)).toBeLessThanOrEqual(DESCRIPTION_LENGTH)
     })
 
     // Issue 98: the type alone (`Movie.`) is a thin description.

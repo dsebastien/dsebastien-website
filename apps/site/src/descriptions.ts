@@ -9,7 +9,8 @@ import { isDroppedInline } from './rendering/dropped.ts'
 import { SITE_NAME } from './site.ts'
 
 // The description of a page (IDX-05, IDX-04, IDX-06, decision R61): the
-// `description` property of a note, with the text of its links; else a
+// `description` property of a note, with the text of its links, cut as
+// below (issue 95); else a
 // sentence from its note type and its properties, with the data that only
 // this site has first (the rating and the status of the author), then the
 // first sentences of its text, cut at a word end. A note of a media type
@@ -195,16 +196,51 @@ function graphemesOf(text: string): string[] {
     return Array.from(GRAPHEMES.segment(text), (part) => part.segment)
 }
 
-/** The text cut at a word end, with an end mark, when it has more characters than the limit. */
-function cut(text: string): string {
+/** The words of a text and what lies between them: Chinese and Japanese words too, by a dictionary. */
+const WORDS = new Intl.Segmenter('en', { granularity: 'word' })
+
+/** The characters read past the room, so that the last word end in it is a true one. */
+const LOOKAHEAD = 16
+
+/** What a cut text does not end with: white space, a comma, a stop, a dash. */
+const TRAILING = /[\s\p{Pd},;:.、。，；：]+$/u
+
+/**
+ * The rule of every description of a note (IDX-05, issue 95): a text of
+ * {@link DESCRIPTION_LENGTH} characters or fewer stays whole; a longer one is
+ * cut to the last word end that leaves room for the end mark `…`. A word end
+ * before a space wins; else, in a text with no spaces (Chinese, Japanese),
+ * the last word end of the dictionary of the system. A word longer than half
+ * the limit is cut on whole characters. It counts the characters that a
+ * reader sees, so no emoji, flag or accent loses a part. It cuts the text
+ * that a reader sees, before the page escapes it, so never inside an entity.
+ */
+export function cutDescription(text: string): string {
     const characters = graphemesOf(text)
     if (characters.length <= DESCRIPTION_LENGTH) {
         return text
     }
-    // Cut on whole characters, so that no emoji or accent loses a part.
-    const room = characters.slice(0, DESCRIPTION_LENGTH - 1).join('')
-    const end = room.lastIndexOf(' ')
-    return `${(end > DESCRIPTION_LENGTH / 2 ? room.slice(0, end) : room).replace(/[\s,;:.]+$/u, '')}…`
+    const room = DESCRIPTION_LENGTH - 1
+    let kept = ''
+    let size = 0
+    let beforeSpace = ''
+    let atWordEnd = ''
+    for (const { segment } of WORDS.segment(characters.slice(0, room + LOOKAHEAD).join(''))) {
+        if (/^\s/u.test(segment)) {
+            beforeSpace = kept
+        }
+        size += graphemesOf(segment).length
+        if (size > room) {
+            break
+        }
+        kept += segment
+        atWordEnd = kept
+    }
+    const whole = characters.slice(0, room).join('').replace(TRAILING, '')
+    const shown = [beforeSpace, atWordEnd]
+        .map((part) => part.replace(TRAILING, ''))
+        .find((part) => graphemesOf(part).length > DESCRIPTION_LENGTH / 2)
+    return `${shown ?? whole}…`
 }
 
 /** The description of a note page (IDX-05). */
@@ -212,7 +248,7 @@ export function noteDescription(input: DescriptionInput): string {
     const property = input.properties['description']
     const written = typeof property === 'string' ? linkTexts(property) : ''
     if (written !== '') {
-        return written
+        return cutDescription(written)
     }
     const text = [factsOf(input), input.media === true ? undefined : plainTextOf(input.html)]
         .filter((part) => part !== undefined && part !== '')
@@ -222,9 +258,9 @@ export function noteDescription(input: DescriptionInput): string {
     }
     // The type alone (`Movie.`) says too little: the title and the site go with it (issue 98).
     if (input.typeLabel !== undefined && text === `${input.typeLabel}.`) {
-        return cut(`${input.title}: ${input.typeLabel}, a note of ${SITE_NAME}.`)
+        return cutDescription(`${input.title}: ${input.typeLabel}, a note of ${SITE_NAME}.`)
     }
-    return cut(text)
+    return cutDescription(text)
 }
 
 /**
@@ -255,11 +291,11 @@ export function uniqueDescriptions(
     // as another text: two long titles that start alike keep it whole (issue 98).
     const others = new Map<string, number>()
     for (const [key, text] of result) {
-        const shown = prefixed.has(key) ? cut(prefixed.get(key) ?? '') : text
+        const shown = prefixed.has(key) ? cutDescription(prefixed.get(key) ?? '') : text
         others.set(shown, (others.get(shown) ?? 0) + 1)
     }
     for (const [key, text] of prefixed) {
-        const short = cut(text)
+        const short = cutDescription(text)
         result.set(key, (others.get(short) ?? 0) === 1 && !taken.has(short) ? short : text)
     }
     const seen = new Map<string, string>()
