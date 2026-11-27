@@ -67,11 +67,35 @@ describe('the short run of the random parity test', () => {
         expect(count(/"takenDown":\["/u)).toBeGreaterThan(0)
         expect(count(/"removed":\["/u)).toBeGreaterThan(0)
         expect(count(/"attachmentsUploaded":\["/u)).toBeGreaterThan(0)
+        expect(count(/"attachmentsRemoved":\[\{/u)).toBeGreaterThan(0)
         expect(count(/has the publish_ignore property/u)).toBeGreaterThan(0)
         expect(count(/is in a folder of the deny list/u)).toBeGreaterThan(0)
         // Most steps succeed: a case of refusals only compares little.
         const refused = count(/"refused":/u)
         expect(refused).toBeLessThan(texts.length / 4)
+    })
+})
+
+describe('the attachments that leave the site (issue 135)', () => {
+    test('the report of a publication with no note left out lists those of its plan', () => {
+        let compared = 0
+        for (const result of runs.flatMap((run) => run.typescript)) {
+            const { plan, outcome } = result
+            if (
+                plan !== undefined &&
+                'value' in plan &&
+                outcome !== undefined &&
+                'value' in outcome
+            ) {
+                const report = outcome.value as { failed: unknown[]; attachmentsRemoved: unknown }
+                if (report.failed.length === 0) {
+                    const planned = plan.value as { attachmentsRemoved: unknown }
+                    expect(report.attachmentsRemoved).toEqual(planned.attachmentsRemoved)
+                    compared += 1
+                }
+            }
+        }
+        expect(compared).toBeGreaterThan(0)
     })
 })
 
