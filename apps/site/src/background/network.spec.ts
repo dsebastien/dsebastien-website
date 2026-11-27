@@ -132,12 +132,13 @@ describe('the motion', () => {
 
 // The text over the layer keeps WCAG AA: behind it no pixel has more than the
 // quiet limit of the color of the nodes. The worst pixel is that color at that
-// limit over the background of the page, in each mode of the theme.
+// limit over the background of the page, in each mode of each theme (R107).
 describe('the text over the layer', () => {
-    const THEME = fileURLToPath(new URL('../styles/themes/knowii.css', import.meta.url))
+    const themeFile = (name: string): string =>
+        fileURLToPath(new URL(`../styles/themes/${name}.css`, import.meta.url))
 
-    async function values(selector: string): Promise<Map<string, string>> {
-        const css = await readFile(THEME, 'utf8')
+    async function values(name: string, selector: string): Promise<Map<string, string>> {
+        const css = await readFile(themeFile(name), 'utf8')
         const start = css.indexOf(`${selector} {`)
         const block = css.slice(start, css.indexOf('}', start))
         return new Map(
@@ -174,12 +175,14 @@ describe('the text over the layer', () => {
     })
 
     test.each([
-        ['dark', ":root,\n[data-theme='dark']"],
-        ['light', "[data-theme='light']"]
-    ] as const)('passes WCAG AA in the %s mode', async (mode, selector) => {
-        const theme = await values(selector)
+        ['aurora', 'dark', ":root,\n[data-theme='dark']"],
+        ['aurora', 'light', "[data-theme='light']"],
+        ['signal', 'dark', ":root[data-design='signal']"],
+        ['signal', 'light', ":root[data-design='signal'][data-theme='light']"]
+    ] as const)('passes WCAG AA in %s, the %s mode', async (name, mode, selector) => {
+        const theme = await values(name, selector)
         const background = channels(theme.get('background') ?? '')
-        const node = channels(theme.get('secondary-text') ?? '')
+        const node = channels(theme.get('network') ?? '')
         const quiet = LAYER[mode].quiet
         const worst = background.map(
             (channel, index) => channel * (1 - quiet) + (node[index] ?? 0) * quiet

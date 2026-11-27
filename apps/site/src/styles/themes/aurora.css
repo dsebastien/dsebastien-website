@@ -1,13 +1,18 @@
 /*
- * The design variant `aurora` (issue 116, a prototype): layers of light on a
- * deep indigo night (dark) or a lilac white (light). Glows of magenta and
- * violet behind the page, raised cards with soft long shadows and a violet
- * glow under the pointer, large rounded cards, a magenta to violet strip
- * that drifts slowly under the header, and links with a gradient line that
- * grows under the pointer. Values only: the token contract is `../tokens.css`.
+ * The theme `aurora`, the default theme (DES-01, DES-03, decision R107):
+ * layers of light on a deep indigo night (dark) or a lilac white (light).
+ * Glows of magenta and violet behind the page, raised cards with soft long
+ * shadows and a violet glow under the pointer, large rounded cards, a magenta
+ * to violet strip that drifts slowly under the header, and links in soft pink
+ * with a gradient line that grows under the pointer (DES-05). Dark is the
+ * default mode. A theme gives values only; components never read these
+ * variables directly: the token contract is `../tokens.css`.
+ * `apps/site/src/design.spec.ts` checks the contrast of every pair in both
+ * modes. The signature magenta is for fills, borders and decoration only.
  */
 
-:root[data-design='aurora'] {
+:root,
+[data-theme='dark'] {
     color-scheme: dark;
     --theme-background: #151a2c;
     --theme-surface: #1d2338;
@@ -27,7 +32,6 @@
     --theme-focus: #c4b5fd;
     --theme-link-decoration-end: #a78bfa;
     --theme-link-hover: #ffffff;
-    --theme-link-highlight: #151a2c;
     --theme-nav-hover: #f9a8d4;
 
     --theme-eyebrow: #c4b5fd;
@@ -52,7 +56,55 @@
         inset 0 1px 0 rgb(255 255 255 / 0.08), 0 20px 44px -16px rgb(167 139 250 / 0.45),
         0 0 0 1px rgb(255 79 168 / 0.35);
     --theme-shadow-header: 0 10px 30px -16px rgb(0 0 0 / 0.8);
+}
 
+[data-theme='light'] {
+    color-scheme: light;
+    --theme-background: #f6f5fc;
+    --theme-surface: #ffffff;
+    --theme-surface-elevated: #efedfb;
+    --theme-well: #e9e6f7;
+    --theme-overlay: rgb(23 22 43 / 0.45);
+
+    --theme-primary: #17162b;
+    --theme-muted: #55567a;
+    --theme-secondary: #d10070;
+    --theme-secondary-hover: #ad005a;
+    --theme-secondary-text: #b0005f;
+    --theme-on-secondary: #ffffff;
+
+    --theme-link: #b0005f;
+    --theme-link-decoration: #e5007d;
+    --theme-focus: #7c3aed;
+    --theme-link-decoration-end: #7c3aed;
+    --theme-link-hover: #6d28d9;
+    --theme-nav-hover: #6d28d9;
+
+    --theme-eyebrow: #6d28d9;
+    --theme-glow: #f7e4f3;
+    --theme-badge: #7c3aed;
+    --theme-on-badge: #ffffff;
+    --theme-badge-edge: #7c3aed;
+    --theme-badge-hover: #6d28d9;
+    --theme-card-edge-hover: #c4b5fd;
+    --theme-network: #c026d3;
+
+    --theme-border: rgb(23 22 43 / 0.08);
+    --theme-border-strong: rgb(23 22 43 / 0.2);
+
+    --theme-success: #15803d;
+    --theme-warning: #b45309;
+    --theme-danger: #b91c1c;
+
+    --theme-shadow-raised: 0 24px 60px -20px rgb(76 29 149 / 0.35);
+    --theme-shadow-card: 0 1px 2px rgb(23 22 43 / 0.06), 0 12px 32px -16px rgb(76 29 149 / 0.25);
+    --theme-shadow-card-hover:
+        0 1px 2px rgb(23 22 43 / 0.06), 0 20px 40px -16px rgb(124 58 237 / 0.35),
+        0 0 0 1px rgb(229 0 125 / 0.25);
+    --theme-shadow-header: 0 8px 24px -16px rgb(76 29 149 / 0.35);
+}
+
+:root {
     --theme-font-sans:
         'Noto Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
         sans-serif;
@@ -108,51 +160,4 @@
         var(--theme-secondary)
     );
     --theme-eyebrow-marker: 1rem;
-}
-
-:root[data-design='aurora'][data-theme='light'] {
-    color-scheme: light;
-    --theme-background: #f6f5fc;
-    --theme-surface: #ffffff;
-    --theme-surface-elevated: #efedfb;
-    --theme-well: #e9e6f7;
-    --theme-overlay: rgb(23 22 43 / 0.45);
-
-    --theme-primary: #17162b;
-    --theme-muted: #55567a;
-    --theme-secondary: #d10070;
-    --theme-secondary-hover: #ad005a;
-    --theme-secondary-text: #b0005f;
-    --theme-on-secondary: #ffffff;
-
-    --theme-link: #b0005f;
-    --theme-link-decoration: #e5007d;
-    --theme-focus: #7c3aed;
-    --theme-link-decoration-end: #7c3aed;
-    --theme-link-hover: #6d28d9;
-    --theme-link-highlight: #f6f5fc;
-    --theme-nav-hover: #6d28d9;
-
-    --theme-eyebrow: #6d28d9;
-    --theme-glow: #f7e4f3;
-    --theme-badge: #7c3aed;
-    --theme-on-badge: #ffffff;
-    --theme-badge-edge: #7c3aed;
-    --theme-badge-hover: #6d28d9;
-    --theme-card-edge-hover: #c4b5fd;
-    --theme-network: #c026d3;
-
-    --theme-border: rgb(23 22 43 / 0.08);
-    --theme-border-strong: rgb(23 22 43 / 0.2);
-
-    --theme-success: #15803d;
-    --theme-warning: #b45309;
-    --theme-danger: #b91c1c;
-
-    --theme-shadow-raised: 0 24px 60px -20px rgb(76 29 149 / 0.35);
-    --theme-shadow-card: 0 1px 2px rgb(23 22 43 / 0.06), 0 12px 32px -16px rgb(76 29 149 / 0.25);
-    --theme-shadow-card-hover:
-        0 1px 2px rgb(23 22 43 / 0.06), 0 20px 40px -16px rgb(124 58 237 / 0.35),
-        0 0 0 1px rgb(229 0 125 / 0.25);
-    --theme-shadow-header: 0 8px 24px -16px rgb(76 29 149 / 0.35);
 }

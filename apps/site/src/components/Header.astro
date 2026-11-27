@@ -21,8 +21,8 @@ import { SITE_NAME } from '../site.ts'
 // is in the page, with its size, so it costs no request and moves nothing,
 // and the server error page keeps it (NAV-20). It has its own background, so
 // it shows the same in both modes. The site name is the name of the link.
-// The switch of the design variant (issue 116, a prototype) comes before
-// the switch of the mode, hidden until its script runs, as that switch.
+// The switch of the theme (DES-10, R107) comes before the switch of the
+// mode, hidden until its script runs, as that switch.
 interface Props {
     /** False on a page with no script: the switch and the palette need their scripts (NAV-20). */
     modeSwitch?: boolean

@@ -2,7 +2,7 @@
  * The token contract of the site (DES-02, DES-12 of the spec). Components use
  * the Tailwind utilities that these theme variables make (`bg-surface`,
  * `text-muted`, `rounded-card`), never a raw value. A theme gives each
- * `--theme-*` value, in a dark and a light mode: see `themes/knowii.css`.
+ * `--theme-*` value, in a dark and a light mode: see `themes/aurora.css`.
  * The names are the same in every theme.
  */
 
@@ -39,7 +39,6 @@
     --color-link-decoration: var(--theme-link-decoration);
     --color-link-decoration-end: var(--theme-link-decoration-end);
     --color-link-hover: var(--theme-link-hover);
-    --color-link-highlight: var(--theme-link-highlight);
     --color-focus: var(--theme-focus);
     /* The hover text of a link of the navigation (the outline of a note). */
     --color-nav-hover: var(--theme-nav-hover);

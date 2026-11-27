@@ -4,7 +4,7 @@ Date: 2026-11-27. Branch: `spike/116-design-variants`. Every page of the prototy
 
 ## The question
 
-The author finds the site flat and dull, and the links do not read as the Knowii brand: in the dark mode a link has the color of the text with a pink underline (DES-05). Which look becomes the new default theme? The author picks from the variants below. This file records his choice once he made it.
+The author finds the site flat and dull, and the links do not read as the Knowii brand: in the dark mode a link has the color of the text with a pink underline (DES-05). Which look becomes the new default theme? The author picked from the variants below: see the choice at the end.
 
 ## How to see the variants
 
@@ -107,4 +107,9 @@ Not done before the author picks:
 
 ## Choice of the author
 
-Not made yet.
+Made on 2026-11-27 (decision R107): Aurora is the default theme, Signal stays as a second theme, today's look and Marker are removed.
+
+1. Aurora is in the default blocks of `themes/aurora.css` (`:root` and `[data-theme='light']`): the theme of every page with no stored choice and with no script. `themes/aurora-system.css` gives its light mode to the server error page, and `themes/aurora-bar.ts` the color of the bar of the browser (the surface of its header).
+2. Signal stays in `themes/signal.css`, on the root `data-design='signal'`. The select of the header offers Aurora and Signal; `?design=aurora` and `?design=signal` choose one and store it. A stored or asked `knowii` or `marker` shows Aurora.
+3. `themes/knowii.css`, `themes/marker.css` and `themes/knowii-system.css` are removed, and so is the token of the band of the marker (`link-highlight`). Signal takes the radius of the pills of Aurora (0.375rem).
+4. The spec: DES-01, DES-03, DES-05 and DES-10. The known limit 1 stays for Signal: the bar of the browser keeps the colors of Aurora. The known limits 2 and 3 are gone: the server error page shows Aurora, and Marker is removed.

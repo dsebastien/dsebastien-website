@@ -1,34 +1,33 @@
-// The design variants of the prototype of issue 116: each one is a theme, a
+// The themes that a reader can choose (DES-10, decision R107): each one is a
 // set of token values only (DES-02), with a dark and a light mode
-// (`styles/themes/<name>.css`). The reader switches them in the browser,
-// so that the author can compare them on the real pages and pick the new
-// default theme. A page shows a variant with the attribute `data-design` of
-// its root; `knowii`, the look of today, has no attribute of its own.
+// (`styles/themes/<name>.css`). Aurora is the default theme: the HTML and the
+// CSS show it with no script and with no stored choice. A page shows another
+// theme with the attribute `data-design` of its root. A name that is not a
+// theme (`knowii` and `marker`, the themes of the prototype of issue 116, are
+// gone) counts as no choice, so the page shows Aurora.
 
-/** The key of the stored choice of a variant. */
+/** The key of the stored choice of a theme. */
 export const DESIGN_KEY = 'design'
 
-/** The query parameter that chooses a variant: `?design=signal` (and stores it). */
+/** The query parameter that chooses a theme: `?design=signal` (and stores it). */
 export const DESIGN_PARAMETER = 'design'
 
-/** The variants, the look of today first. */
+/** The themes, the default theme first. */
 export const DESIGNS = [
-    { name: 'knowii', label: 'Today' },
-    { name: 'signal', label: 'Signal' },
-    { name: 'marker', label: 'Marker' },
-    { name: 'aurora', label: 'Aurora' }
+    { name: 'aurora', label: 'Aurora' },
+    { name: 'signal', label: 'Signal' }
 ] as const
 
 export type Design = (typeof DESIGNS)[number]['name']
 
-/** The variant of a page with no choice: the look of today. */
-export const DEFAULT_DESIGN: Design = 'knowii'
+/** The theme of a page with no choice. */
+export const DEFAULT_DESIGN: Design = 'aurora'
 
 const NAMES: readonly string[] = DESIGNS.map((design) => design.name)
 
 /**
- * The variant of a page: the query parameter wins, then the stored choice,
- * then the look of today. An unknown name counts as none.
+ * The theme of a page: the query parameter wins, then the stored choice,
+ * then the default theme. An unknown name counts as none.
  */
 export function designOf(asked: string | null, stored: string | null): Design {
     for (const name of [asked, stored]) {
@@ -42,8 +41,8 @@ export function designOf(asked: string | null, stored: string | null): Design {
 /**
  * The script of the head, before any style: a part of the script of the
  * mode (`modeScript`), so that a page keeps its count of inline scripts. It
- * shows the variant of `designOf()`, and stores a variant that the query
- * asks for.
+ * shows the theme of `designOf()`, and stores a theme that the query asks
+ * for.
  */
 export const designScript = `{
     const names = ${JSON.stringify(NAMES)}
@@ -58,11 +57,10 @@ export const designScript = `{
 }`
 
 /**
- * The script of the switch of the variant, at the end of the body, a part of
- * the script of the switch of the mode (`modeSwitchScript`): it shows
- * the switch with the current variant, and a change shows the new variant
- * and stores it. The script of the mode is not run again: a variant keeps
- * the mode.
+ * The script of the switch of the theme, at the end of the body, a part of
+ * the script of the switch of the mode (`modeSwitchScript`): it shows the
+ * switch with the current theme, and a change shows the new theme and stores
+ * it. The script of the mode is not run again: a theme keeps the mode.
  */
 export const designSwitchScript = `{
     const root = document.documentElement

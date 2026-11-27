@@ -1,0 +1,55 @@
+/*
+ * The mode of the system of the theme `aurora`, for a page with no script:
+ * the server error page imports it, and no other page (decision R64). The
+ * values of the light mode when the system asks for it, else the dark values
+ * of `:root` in `aurora.css`. `apps/site/src/design.spec.ts` checks that this
+ * block is the light block of `aurora.css`, value by value.
+ */
+@media (prefers-color-scheme: light) {
+    [data-theme='system'] {
+        color-scheme: light;
+        --theme-background: #f6f5fc;
+        --theme-surface: #ffffff;
+        --theme-surface-elevated: #efedfb;
+        --theme-well: #e9e6f7;
+        --theme-overlay: rgb(23 22 43 / 0.45);
+
+        --theme-primary: #17162b;
+        --theme-muted: #55567a;
+        --theme-secondary: #d10070;
+        --theme-secondary-hover: #ad005a;
+        --theme-secondary-text: #b0005f;
+        --theme-on-secondary: #ffffff;
+
+        --theme-link: #b0005f;
+        --theme-link-decoration: #e5007d;
+        --theme-focus: #7c3aed;
+        --theme-link-decoration-end: #7c3aed;
+        --theme-link-hover: #6d28d9;
+        --theme-nav-hover: #6d28d9;
+
+        --theme-eyebrow: #6d28d9;
+        --theme-glow: #f7e4f3;
+        --theme-badge: #7c3aed;
+        --theme-on-badge: #ffffff;
+        --theme-badge-edge: #7c3aed;
+        --theme-badge-hover: #6d28d9;
+        --theme-card-edge-hover: #c4b5fd;
+        --theme-network: #c026d3;
+
+        --theme-border: rgb(23 22 43 / 0.08);
+        --theme-border-strong: rgb(23 22 43 / 0.2);
+
+        --theme-success: #15803d;
+        --theme-warning: #b45309;
+        --theme-danger: #b91c1c;
+
+        --theme-shadow-raised: 0 24px 60px -20px rgb(76 29 149 / 0.35);
+        --theme-shadow-card:
+            0 1px 2px rgb(23 22 43 / 0.06), 0 12px 32px -16px rgb(76 29 149 / 0.25);
+        --theme-shadow-card-hover:
+            0 1px 2px rgb(23 22 43 / 0.06), 0 20px 40px -16px rgb(124 58 237 / 0.35),
+            0 0 0 1px rgb(229 0 125 / 0.25);
+        --theme-shadow-header: 0 8px 24px -16px rgb(76 29 149 / 0.35);
+    }
+}

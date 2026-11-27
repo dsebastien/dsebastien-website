@@ -2,23 +2,24 @@ import { describe, expect, test } from 'bun:test'
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BAR_COLORS } from './styles/themes/knowii-bar.ts'
+import { BAR_COLORS } from './styles/themes/aurora-bar.ts'
 
 // The guards of the design base (issue 46): tokens only (DES-02, DES-12), and
 // the contrast of the theme in both modes (DES-05, DES-11, the gate of DES-04).
 const SOURCE = fileURLToPath(new URL('.', import.meta.url))
 const THEMES_FOLDER = join(SOURCE, 'styles', 'themes')
-const THEME = join(THEMES_FOLDER, 'knowii.css')
-const SYSTEM_MODE = join(THEMES_FOLDER, 'knowii-system.css')
+/** The default theme (R107). */
+const THEME = join(THEMES_FOLDER, 'aurora.css')
+const SYSTEM_MODE = join(THEMES_FOLDER, 'aurora-system.css')
 
-/** Each theme, with the selectors of its dark and its light block (issue 116: the variants). */
+/** Each theme, with the selectors of its dark and its light block: the default theme first (R107). */
 const THEMES = [
-    { name: 'knowii', dark: ":root,\n[data-theme='dark']", light: "[data-theme='light']" },
-    ...(['signal', 'marker', 'aurora'] as const).map((name) => ({
-        name,
-        dark: `:root[data-design='${name}']`,
-        light: `:root[data-design='${name}'][data-theme='light']`
-    }))
+    { name: 'aurora', dark: ":root,\n[data-theme='dark']", light: "[data-theme='light']" },
+    {
+        name: 'signal',
+        dark: ":root[data-design='signal']",
+        light: ":root[data-design='signal'][data-theme='light']"
+    }
 ]
 
 /** The files of the site that hold markup or styles, except the theme files, which hold the values, and the contract. */
@@ -179,9 +180,6 @@ const PAIRS = [
     ...['link-decoration', 'link-decoration-end'].flatMap((line) =>
         SURFACES.map((surface) => [line, surface, 3] as const)
     ),
-    // The band of color that a theme can put behind a link.
-    ['link', 'link-highlight', 4.5] as const,
-    ['link-hover', 'link-highlight', 4.5] as const,
     ['on-secondary', 'secondary', 4.5] as const,
     ['on-secondary', 'secondary-hover', 4.5] as const,
     // A badge with no fill (`transparent`) shows the surface under it.
@@ -231,11 +229,11 @@ describe('contrast of the themes', () => {
         expect(failingPairs(values)).toEqual([])
     })
 
-    // A variant gives every value of the contract, in each mode (DES-02): its
-    // dark block the dark and the shared values of knowii, its light block
-    // the light values.
+    // A second theme gives every value of the contract, in each mode (DES-02):
+    // its dark block the dark and the shared values of the default theme, its
+    // light block the light values.
     test.each(THEMES.slice(1).map((theme) => [theme.name, theme] as const))(
-        'the variant %s gives every variable of the theme knowii',
+        'the theme %s gives every variable of the default theme',
         async (_name, theme) => {
             const file = join(THEMES_FOLDER, `${theme.name}.css`)
             const shared = await themeNames(':root', THEME)

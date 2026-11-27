@@ -1,10 +1,12 @@
 /*
- * The design variant `signal` (issue 116, a prototype): the Knowii magenta up
- * front. A deeper slate, links in the brand pink, cards that lift with a
- * magenta glow, a magenta strip under the header, a marker before each
- * section title, heavy titles and small mono section labels. Values only:
- * the token contract is `../tokens.css`. `apps/site/src/design.spec.ts`
- * checks the contrast of every pair in both modes.
+ * The theme `signal`, the second theme that a reader can choose (DES-10,
+ * decision R107): the Knowii magenta up front. A deeper slate, links in the
+ * brand pink, cards that lift with a magenta glow, a magenta strip under the
+ * header, a marker before each section title, heavy titles and small mono
+ * section labels. Values only: the token contract is `../tokens.css`. A page
+ * shows it with the attribute `data-design='signal'` of its root
+ * (`apps/site/src/designs.ts`). `apps/site/src/design.spec.ts` checks the
+ * contrast of every pair in both modes.
  */
 
 :root[data-design='signal'] {
@@ -27,7 +29,6 @@
     --theme-focus: #ff8cc6;
     --theme-link-decoration-end: #ff3d9a;
     --theme-link-hover: #ffa3d1;
-    --theme-link-highlight: #1d2129;
     --theme-nav-hover: #ff6fb5;
 
     --theme-eyebrow: #ff6fb5;
@@ -65,7 +66,7 @@
 
     --theme-radius-control: 0.375rem;
     --theme-radius-card: 0.625rem;
-    --theme-radius-pill: 0.25rem;
+    --theme-radius-pill: 0.375rem;
     --theme-ease-standard: cubic-bezier(0.3, 0.7, 0.4, 1);
     --theme-duration-quick: 120ms;
     --theme-duration-sweep: 160ms;
@@ -123,7 +124,6 @@
     --theme-focus: #b8005f;
     --theme-link-decoration-end: #d10070;
     --theme-link-hover: #8a0047;
-    --theme-link-highlight: #fbf6f9;
     --theme-nav-hover: #b8005f;
 
     --theme-eyebrow: #b8005f;

@@ -1,7 +1,7 @@
 ---
 import { DESIGNS } from '../designs.ts'
 
-// The switch of the design variant of the prototype of issue 116: a native
+// The switch of the theme (DES-10, decision R107): Aurora or Signal, a native
 // select, so it works with the keyboard, a screen reader and a touch screen
 // as it is. It is hidden until its script runs (`designSwitchScript`), as the
 // switch of the mode, and it shows in the free space of the header, so
@@ -10,7 +10,7 @@ import { DESIGNS } from '../designs.ts'
 
 <select
     class='button-quiet h-11 max-w-32 bg-surface text-base sm:not-any-pointer-coarse:h-9 sm:not-any-pointer-coarse:text-sm'
-    aria-label='Design variant'
+    aria-label='Theme'
     data-design-switch
     hidden
 >

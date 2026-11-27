@@ -73,8 +73,7 @@
  * A link in a text. A utility, so that the text of a note applies it. The
  * theme gives its whole style (issue 116): the line (an underline or none),
  * its thickness and offset, the weight, a fill under the text (a gradient
- * line), and an inner shadow under the pointer (a thicker line, or a marker
- * band that fills the word). A hover changes only colors, lines and shadows
+ * line), and an inner shadow under the pointer (a thicker line). A hover changes only colors, lines and shadows
  * (section 15.1.1 of the spec).
  */
 @utility link {

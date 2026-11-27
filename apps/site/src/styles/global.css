@@ -1,8 +1,6 @@
 @import '@fontsource-variable/noto-sans';
 @import 'tailwindcss';
 @import './tokens.css';
-@import './themes/knowii.css';
-@import './themes/signal.css';
-@import './themes/marker.css';
 @import './themes/aurora.css';
+@import './themes/signal.css';
 @import './components.css';

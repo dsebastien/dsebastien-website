@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { BAR_MEDIA, modeScript, modeSwitchScript } from './mode.ts'
-import { BAR_COLORS } from './styles/themes/knowii-bar.ts'
+import { BAR_COLORS } from './styles/themes/aurora-bar.ts'
 
 // Acceptance criterion of issue 16: an empty Astro and Tailwind site builds.
 // The test runs the build script of the site and reads the files of the output.
