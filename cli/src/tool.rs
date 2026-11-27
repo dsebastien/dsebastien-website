@@ -502,9 +502,12 @@ fn record_for(
     // selection comes from the queue of the same scan.
     let selection = &selection_of(&scan);
     let (mut plan, too_large) = plan_with_sizes(&device.vault, &scan, selection)?;
+    // The sources and the attachments of the notes to publish and to update
+    // come first: guardedAttachments reads the entries after the plan.
+    let (read, open) = read_planned(device, &scan, &plan)?;
     // Before the question to the Starter Kit: a path of accept that the plan
     // does not name stops the plan (rule 8 of the selection).
-    plan.set_guarded_attachments(guarded_attachments(device, &scan, &plan, selection));
+    plan.set_guarded_attachments(guarded_attachments(device, &scan, &plan, selection, &open));
     refuse_accept(&plan, selection)?;
     // The published notes got their type in the scan. The new ones of the
     // plan get theirs in one more question.
@@ -518,28 +521,21 @@ fn record_for(
     sort_by_code_point(&mut question);
     let new_types = note_types_of(&device.note_types, &question)?;
     let mut texts = BTreeMap::new();
-    for path in plan.publish().iter().chain(plan.update()) {
-        let text = device
-            .vault
-            .read(path)
-            .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?
-            .ok_or_else(|| format!("\"{path}\" does not exist in the vault any more"))?;
-        let source = source_of(&text);
+    for (path, source, links, attachments) in read {
         let cleaned = clean_note(&source);
-        let targets = links_of(&source, path, &scan.index, &scan.guarded);
-        let attachments = attachments_of(&targets.files, &device.vault, &scan.files)?;
+        let note_type = new_types
+            .get(&path)
+            .or_else(|| scan.note_types.get(&path))
+            .cloned();
         texts.insert(
-            path.clone(),
+            path,
             NoteTexts {
                 aliases: aliases_of(&source),
                 source,
                 cleaned,
-                links: targets.links,
+                links,
                 attachments,
-                note_type: new_types
-                    .get(path)
-                    .or_else(|| scan.note_types.get(path))
-                    .cloned(),
+                note_type,
             },
         );
     }
@@ -593,6 +589,47 @@ fn record_for(
     })
 }
 
+/// A note of `publish` or `update` as the plan reads it: its path, its
+/// source, its links and its attachments.
+type ReadNote = (String, String, Vec<NoteLink>, Vec<Attachment>);
+
+/// The hashes that each note of `publish` or `update` lists from a file under
+/// no guard, by its path.
+type OpenHashes = BTreeMap<String, BTreeSet<String>>;
+
+/// Reads the notes to publish and to update, and gives with them, for each
+/// note, the hashes that it lists from a file under no guard (issue 108).
+fn read_planned(
+    device: &Device,
+    scan: &Scan,
+    plan: &PublicationPlan,
+) -> Result<(Vec<ReadNote>, OpenHashes), String> {
+    let mut read = Vec::new();
+    let mut open = OpenHashes::new();
+    for path in plan.publish().iter().chain(plan.update()) {
+        let text = device
+            .vault
+            .read(path)
+            .map_err(|error| format!("\"{path}\" cannot be read: it {error}"))?
+            .ok_or_else(|| format!("\"{path}\" does not exist in the vault any more"))?;
+        let source = source_of(&text);
+        let targets = links_of(&source, path, &scan.index, &scan.guarded);
+        let attachments = attachments_of(&targets.files, &device.vault, &scan.files)?;
+        open.insert(
+            path.clone(),
+            attachments
+                .iter()
+                .filter(|attachment| {
+                    !scan.is_guarded_file(&device.vault, &attachment.path, &attachment.hash)
+                })
+                .map(|attachment| attachment.hash.clone())
+                .collect(),
+        );
+        read.push((path.clone(), source, targets.links, attachments));
+    }
+    Ok((read, open))
+}
+
 /// The attachments of the published entries of a manifest, one list per
 /// entry.
 fn published_attachments(
@@ -610,27 +647,42 @@ fn published_attachments(
 /// update. They are the published entries after the moves whose attachments
 /// list such a file, without the forced removals and the notes to unpublish,
 /// at the new path of a pairing, and without the entries whose every such
-/// file has the hash of a file under no guard of an entry that stays. Sorted
-/// by path.
+/// file has the hash of a file under no guard of a published entry after the
+/// plan. `open` holds, for each note of `publish` and of `update`, the hashes
+/// that its record lists from a file under no guard: an entry that the plan
+/// updates counts only through its record. Sorted by path.
 fn guarded_attachments(
     device: &Device,
     scan: &Scan,
     plan: &PublicationPlan,
     selection: &Selection,
+    open: &OpenHashes,
 ) -> Vec<String> {
     let leaving: BTreeSet<&String> = plan.forced_remove().iter().chain(plan.remove()).collect();
-    // The hashes that an entry that stays lists from a file under no guard:
-    // the cleanup keeps their keys, so a guarded file with such a hash takes
-    // nothing from its note (issue 108, point 2).
+    let now = |path: &String| -> String {
+        selection
+            .pair()
+            .iter()
+            .find(|pairing| &pairing.from == path)
+            .map_or_else(|| path.clone(), |pairing| pairing.to.clone())
+    };
+    // The hashes that a published entry after the plan lists from a file
+    // under no guard: the cleanup keeps their keys, so a guarded file with
+    // such a hash takes nothing from its note (issue 108, point 2).
     let kept: BTreeSet<&String> = scan
         .manifest
         .iter()
-        .filter(|(path, entry)| entry.state == State::Published && !leaving.contains(path))
+        .filter(|(path, entry)| {
+            entry.state == State::Published
+                && !leaving.contains(path)
+                && !open.contains_key(&now(path))
+        })
         .flat_map(|(_, entry)| &entry.attachments)
         .filter(|attachment| {
             !scan.is_guarded_file(&device.vault, &attachment.path, &attachment.hash)
         })
         .map(|attachment| &attachment.hash)
+        .chain(open.values().flatten())
         .collect();
     scan.manifest
         .iter()
@@ -642,13 +694,7 @@ fn guarded_attachments(
                         && scan.is_guarded_file(&device.vault, &attachment.path, &attachment.hash)
                 })
         })
-        .map(|(path, _)| {
-            selection
-                .pair()
-                .iter()
-                .find(|pairing| &pairing.from == path)
-                .map_or_else(|| path.clone(), |pairing| pairing.to.clone())
-        })
+        .map(|(path, _)| now(path))
         .collect()
 }
 

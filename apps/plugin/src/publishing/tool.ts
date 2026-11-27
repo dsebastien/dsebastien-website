@@ -46,7 +46,13 @@ import { foldedForm } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { checkOriginals } from './originals.ts'
 import type { CheckResult, Original } from './originals.ts'
-import { attachmentsAfterPlan, normalSelection, planWithSizes } from './plan.ts'
+import {
+    attachmentsAfterPlan,
+    normalSelection,
+    planWithSizes,
+    refuseAccept,
+    withGuardedAfterPlan
+} from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
 import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult, Sealer } from './ports.ts'
@@ -556,7 +562,37 @@ async function recordFor(
     // An unpublish holds every changed note that it does not name: its
     // selection comes from the queue of the same scan.
     const selection = selectionFor(scan)
-    const { plan, tooLarge } = await planWithSizes(scan, selection)
+    const sized = await planWithSizes(scan, selection)
+    const tooLarge = sized.tooLarge
+    // The sources and the attachments of the notes to publish and to update
+    // come first: guardedAttachments reads the entries after the plan.
+    const read: {
+        path: string
+        source: string
+        links: readonly NoteLink[]
+        attachments: readonly Attachment[]
+    }[] = []
+    const open = new Map<string, Set<string>>()
+    // The two lists have no path in common, and each one is sorted.
+    for (const path of [...sized.plan.publish, ...sized.plan.update]) {
+        const text = await device.vault.read(path)
+        if (text === undefined) {
+            throw new Error(`"${path}" does not exist in the vault any more`)
+        }
+        const source = sourceOf(text)
+        const { links, files } = linksOf(source, path, scan.index, scan.guarded)
+        const attachments = await attachmentsOf(files, scan.files)
+        read.push({ path, source, links, attachments })
+        const hashes = new Set<string>()
+        for (const attachment of attachments) {
+            if (!(await scan.isGuardedFile(attachment.path, attachment.hash))) {
+                hashes.add(attachment.hash)
+            }
+        }
+        open.set(path, hashes)
+    }
+    const plan = withGuardedAfterPlan(sized.plan, selection, scan.guardedEntries, open)
+    refuseAccept(plan, selection)
     // The published notes got their type in the scan. The new ones of the plan
     // get theirs in one more question.
     // The candidates of the pairings get theirs in the same question (R66).
@@ -574,16 +610,8 @@ async function recordFor(
         path: string
         sourceHash: string
     }[] = []
-    // The two lists have no path in common, and each one is sorted.
-    for (const path of [...plan.publish, ...plan.update]) {
-        const text = await device.vault.read(path)
-        if (text === undefined) {
-            throw new Error(`"${path}" does not exist in the vault any more`)
-        }
-        const source = sourceOf(text)
+    for (const { path, source, links, attachments } of read) {
         const cleaned = cleanNote(source)
-        const { links, files } = linksOf(source, path, scan.index, scan.guarded)
-        const attachments = await attachmentsOf(files, scan.files)
         const aliases = aliasesOf(source)
         const noteType = newTypes.get(path) ?? scan.noteTypes.get(path)
         texts.set(path, {

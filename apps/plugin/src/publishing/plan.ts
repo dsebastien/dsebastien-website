@@ -289,17 +289,53 @@ export function computePlan(
     const plan = planLists(queue, selection, eventsSince(scan.edits), scan.guardedEntries, tooLarge)
     refuseObsidianPaths(scan, plan, selection.pair)
     refuseRootNames(scan, plan, selection.pair)
-    // accept only names what an agent face must see named (rule 8).
+    return plan
+}
+
+/**
+ * Stops a selection whose `accept` names a path that the plan does not name
+ * (rule 8 of the selection): accept only names what an agent face must see
+ * named. It runs once `guardedAttachments` reads the entries after the plan.
+ */
+export function refuseAccept(plan: PublicationPlan, selection: NormalSelection): void {
     const acceptable = new Set([...plan.forcedRemove, ...plan.guardedAttachments])
     for (const path of selection.accept) {
         if (!acceptable.has(path)) {
-            refuse(
-                path,
-                'is in accept, but it is neither a forced removal nor a note of guardedAttachments of the plan: accept names only those'
+            throw new SelectionError(
+                `"${path}" is in accept, but it is neither a forced removal nor a note of guardedAttachments of the plan: accept names only those`
             )
         }
     }
-    return plan
+}
+
+/**
+ * The plan with `guardedAttachments` read from the entries after the plan
+ * (issue 108): a guarded file keeps its key in the cleanup only while a
+ * published entry after the plan lists that hash from a file under no guard.
+ * `open` holds, for each note of `publish` and of `update`, the hashes that
+ * its record lists from a file under no guard. A user of the scan that the
+ * plan updates counts only through its record, so an update that drops the
+ * open file puts the guarded note back in the list.
+ */
+export function withGuardedAfterPlan(
+    plan: PublicationPlan,
+    selection: NormalSelection,
+    guardedEntries: readonly GuardedEntry[],
+    open: ReadonlyMap<string, ReadonlySet<string>>
+): PublicationPlan {
+    const leaving = new Set([...plan.forcedRemove, ...plan.remove])
+    const pairedTo = new Map(selection.pair.map((pairing) => [pairing.from, pairing.to]))
+    const usedAfter = (hash: string, users: readonly string[]): boolean =>
+        users.some((user) => !leaving.has(user) && !open.has(pairedTo.get(user) ?? user)) ||
+        [...open.values()].some((hashes) => hashes.has(hash))
+    const guardedAttachments = guardedEntries
+        .filter(
+            ({ path, hashes }) =>
+                !leaving.has(path) &&
+                hashes.some(({ hash, openlyUsedBy }) => !usedAfter(hash, openlyUsedBy))
+        )
+        .map(({ path }) => pairedTo.get(path) ?? path)
+    return makePlan({ ...plan, guardedAttachments })
 }
 
 /**

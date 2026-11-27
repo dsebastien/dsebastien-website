@@ -12296,8 +12296,56 @@
                     }
                 },
                 {
+                    "do": "write",
+                    "why": "the author takes the open image out of the other note: its update drops the key",
+                    "files": {
+                        "Notes/Open.md": "# Open\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the open users are read after the plan: the update of the other note no longer lists the key, so the note is in guardedAttachments",
+                    "configurationChanged": true,
+                    "attachmentsRemoved": [
+                        {
+                            "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                            "path": "Images/plan.png"
+                        },
+                        {
+                            "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                            "path": "Shared/open.png"
+                        }
+                    ],
+                    "selection": {},
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": ["Notes/Plan.md"],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Notes/Open.md", "Notes/Plan.md"]
+                    }
+                },
+                {
                     "do": "publish",
-                    "why": "an agent publication without accept goes on: no note would lose a file",
+                    "why": "an agent publication without accept stops: the note would lose its image",
+                    "selection": {},
+                    "time": "2031-10-01T08:30:00Z",
+                    "face": "mcp-server",
+                    "refused": true,
+                    "says": "accept does not name"
+                },
+                {
+                    "do": "write",
+                    "why": "the author puts the open image back: the other note is unchanged again",
+                    "files": {
+                        "Notes/Open.md": "# Open\n\n![[open.png]]\n"
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "an agent publication without accept goes on: no note would lose a file, and the property goes back into the other note",
                     "selection": {},
                     "time": "2031-10-01T09:00:00Z",
                     "face": "mcp-server",
@@ -12307,7 +12355,7 @@
                         "failed": [],
                         "forcedRemoved": [],
                         "propertyRemoved": [],
-                        "propertySet": [],
+                        "propertySet": ["Notes/Open.md"],
                         "published": [],
                         "removed": [],
                         "skipped": [],
