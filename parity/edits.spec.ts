@@ -6,7 +6,8 @@ import {
     copyFixtureVault,
     gitEnvironment,
     makeContentStoreCopy,
-    makeTestStores
+    makeTestStores,
+    sealHead
 } from '@dsebastien-website/testing'
 import { toCanonicalJson } from '../apps/plugin/src/publishing/canonical.ts'
 import type { EditAction } from '../apps/plugin/src/publishing/edits.ts'
@@ -314,10 +315,15 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
     }
 }
 
-/** Commits and pushes a configuration of the content store, as the author does by hand. */
+/**
+ * Commits and pushes a configuration of the content store, as the tool of
+ * another device does: the commit is sealed (R104), so that the test checks
+ * the list and not the seal.
+ */
 async function writeConfiguration(copy: string, text: string): Promise<void> {
     await writeFile(join(copy, 'configuration.json'), text)
     await git(copy, 'commit', '--quiet', '--all', '--message', 'Change the configuration')
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
 
