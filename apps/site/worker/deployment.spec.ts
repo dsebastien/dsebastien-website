@@ -9,6 +9,7 @@ import {
     checkOutput,
     checkOutputAnalytics,
     checkOutputLimits,
+    checkOutputPolicy,
     deploymentRecordFrom,
     deployToken,
     headersFile,
@@ -237,6 +238,35 @@ describe('the analytics of a built output', () => {
             await writeFile(join(folder, 'index.html'), homePage(built))
             const of = target === undefined ? PREVIEW : { ...PREVIEW, analytics: target }
             expect(await checkOutputAnalytics(folder, of)).toContain('analytics')
+        })
+    })
+})
+
+// SEC-01 (issue 79): a new output has the policy of its pages. Only a
+// rollback to an older build gives its pages the fallback policy.
+describe('the page policy of an output', () => {
+    test('accepts an output with a policy that refuses frames', async () => {
+        await withFolder(async (folder) => {
+            await mkdir(join(folder, '-'), { recursive: true })
+            await writeFile(
+                join(folder, '-', 'page-policy.txt'),
+                "default-src 'self'; frame-ancestors 'none'"
+            )
+            expect(await checkOutputPolicy(folder)).toBeUndefined()
+        })
+    })
+
+    test('refuses an output without a policy file', async () => {
+        await withFolder(async (folder) => {
+            expect(await checkOutputPolicy(folder)).toContain('-/page-policy.txt')
+        })
+    })
+
+    test('refuses an output whose policy does not refuse frames', async () => {
+        await withFolder(async (folder) => {
+            await mkdir(join(folder, '-'), { recursive: true })
+            await writeFile(join(folder, '-', 'page-policy.txt'), "default-src 'self'")
+            expect(await checkOutputPolicy(folder)).toContain('does not refuse frames')
         })
     })
 })

@@ -14,6 +14,8 @@ import {
     mapPartFile,
     mapPartFrom,
     MAX_VARIANT_PIXELS,
+    PAGE_POLICY_FILE,
+    pagePolicyFrom,
     RESOLVER_MAP_FILE,
     SECURITY_HEADERS,
     VARIANT_WIDTHS,
@@ -266,6 +268,27 @@ function analyticsTagOf(html: string): AnalyticsSettings | undefined {
         script: attribute('src'),
         event: attribute('data-api')
     }
+}
+
+/**
+ * Why an output has no right policy of its pages (SEC-01, issue 79), or
+ * `undefined` when it has one. Every build writes it; the Worker and the
+ * plain server keep a fallback policy only for a rollback to an older build,
+ * so a deployment never puts a new output without it on the host.
+ */
+export async function checkOutputPolicy(folder: string): Promise<string | undefined> {
+    const text = await readFile(join(folder, ...PAGE_POLICY_FILE.split('/')), 'utf8').catch(
+        () => undefined
+    )
+    if (text === undefined) {
+        return `the output has no ${PAGE_POLICY_FILE}: build it again`
+    }
+    try {
+        pagePolicyFrom(text)
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+    }
+    return undefined
 }
 
 /**

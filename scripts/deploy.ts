@@ -6,6 +6,7 @@ import { MAP_HEAD_FILE, mapHeadFrom, SITE_ORIGIN } from '@dsebastien-website/res
 import {
     analyticsVariable,
     checkOutputAnalytics,
+    checkOutputPolicy,
     deployToken,
     headersFile,
     releaseImages,
@@ -396,6 +397,12 @@ async function deploy(
                     .split('\n')
                     .filter((line) => line !== ''),
             deploy: async (dist) => {
+                // A new output has the policy of its pages (SEC-01, issue 79):
+                // the fallback of the Worker is for a rollback only.
+                const policy = await checkOutputPolicy(dist)
+                if (policy !== undefined) {
+                    throw new Error(policy)
+                }
                 await mkdir(folder, { recursive: true })
                 const configuration = join(folder, 'wrangler.json')
                 const main = join(SITE, 'worker', 'worker.ts')
