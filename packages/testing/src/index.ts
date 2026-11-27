@@ -26,5 +26,5 @@ export {
     samplePng,
     writeBudgetSample
 } from './budget-sample.ts'
+export { PINNED_ANALYTICS_SCRIPT, TEST_ANALYTICS } from './analytics.ts'
 export { launchChrome } from './browser.ts'
-export { TEST_ANALYTICS } from './analytics.ts'

@@ -18,7 +18,9 @@ export default defineConfig([
             '**/.cache/**',
             '.private/**',
             '.claude/**',
-            'prettier.config.cjs'
+            'prettier.config.cjs',
+            // A pinned copy of a script of another project (the Plausible tracker).
+            'packages/testing/fixtures/**'
         ]
     },
     {

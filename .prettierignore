@@ -10,3 +10,4 @@ bun.lock
 target/
 Cargo.lock
 fixtures/vault/
+packages/testing/fixtures/

@@ -7,6 +7,7 @@ import {
     BUDGET_SAMPLE,
     FIXTURE_NOTE_TYPES,
     FIXTURE_STORE_CATALOG,
+    PINNED_ANALYTICS_SCRIPT,
     TEST_ANALYTICS,
     copyFixtureVault,
     launchChrome,
@@ -18,6 +19,7 @@ import {
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
 import { startServer, type Server } from '../server/serve.ts'
+import { pageViewScript } from './analytics/analytics.ts'
 import { NEWSLETTER_KEY } from './newsletter/bar.ts'
 import { MESSAGES } from './newsletter/newsletter-bar.ts'
 
@@ -26,8 +28,9 @@ import { MESSAGES } from './newsletter/newsletter-bar.ts'
 // at an invented host through the plain local server: the analytics script
 // ignores a local host. Every request is intercepted: the page views and the
 // events never reach the network, the signup service is a stub, and any other
-// host is refused and recorded. Only the script of the analytics is read from
-// the proxy, as the page reads it.
+// host is refused and recorded. The script of the analytics is the pinned copy
+// of `packages/testing` (`bun run analytics:script` compares it with the live
+// one): no test reaches the proxy.
 const SITE = fileURLToPath(new URL('..', import.meta.url))
 const ORIGIN = 'https://notes.example'
 const MEMBERS = 'https://www.dsebastien.net/members/api/'
@@ -41,6 +44,8 @@ let browser: Browser | undefined
 let exitCode = -1
 /** The path of the page of each note, by its vault path. */
 const paths = new Map<string, string>()
+/** The gone page of the build. */
+let gonePage = ''
 
 beforeAll(async () => {
     stores = await makeTestStores()
@@ -84,6 +89,7 @@ beforeAll(async () => {
         if (canonical === undefined) continue
         paths.set(vaultPath ?? BUDGET_SAMPLE.long, canonical)
     }
+    gonePage = await Bun.file(join(dist, '410.html')).text()
     server = await startServer({ dist, port: 0 })
     browser = await launchChrome()
 }, 300_000)
@@ -108,7 +114,9 @@ interface Traffic {
 }
 
 /** The answer of the stub of the signup service. */
-type MembersStub = (url: string) => { status: number; body: string }
+type MembersStub = (
+    url: string
+) => { status: number; body: string } | Promise<{ status: number; body: string }>
 
 const SIGNUP_SENT: MembersStub = (url) =>
     url.endsWith('/integrity-token/')
@@ -149,7 +157,10 @@ async function contextOf(
                 body: Buffer.from(await answer.arrayBuffer())
             })
         } else if (url === TEST_ANALYTICS.script) {
-            await route.fulfill({ response: await route.fetch() })
+            await route.fulfill({
+                contentType: 'application/javascript',
+                body: await Bun.file(PINNED_ANALYTICS_SCRIPT).text()
+            })
         } else if (url === TEST_ANALYTICS.event) {
             traffic.events.push(JSON.parse(request.postData() ?? '{}') as Record<string, unknown>)
             await route.fulfill({ status: 202, body: 'ok' })
@@ -161,7 +172,7 @@ async function contextOf(
                 body: body === null ? undefined : (JSON.parse(body) as unknown)
             })
             await route.fulfill({
-                ...options.members(url),
+                ...(await options.members(url)),
                 headers: { 'access-control-allow-origin': '*' }
             })
         } else {
@@ -193,6 +204,14 @@ async function eventWhere(
         await Bun.sleep(100)
     }
     throw new Error(`no such event, the page sent ${JSON.stringify(traffic.events)}`)
+}
+
+/** Waits for the page view of a page load, then checks that no second one follows. */
+async function onePageView(traffic: Traffic): Promise<Record<string, unknown>> {
+    const view = await eventWhere(traffic, (event) => event['n'] === 'pageview')
+    await Bun.sleep(500)
+    expect(traffic.events.filter((event) => event['n'] === 'pageview')).toHaveLength(1)
+    return view
 }
 
 /** Puts the bottom of the screen at a share of the text of the note. */
@@ -237,7 +256,7 @@ describe('the built site in a browser', () => {
         const path = pathOf(BUDGET_SAMPLE.long)
         await page.goto(`${ORIGIN}${path}`)
 
-        const view = await eventWhere(traffic, (event) => event['n'] === 'pageview')
+        const view = await onePageView(traffic)
         expect(view).toMatchObject({ d: TEST_ANALYTICS.siteId, u: `${ORIGIN}${path}` })
         // No cookie, nothing in the storage, no other host, no call of the signup service.
         expect(await context.cookies()).toEqual([])
@@ -255,7 +274,7 @@ describe('the built site in a browser', () => {
         const answer = await page.goto(`${ORIGIN}/No-such-note`)
         expect(answer?.status()).toBe(404)
 
-        const view = await eventWhere(traffic, (event) => event['n'] === 'pageview')
+        const view = await onePageView(traffic)
         expect(view).toMatchObject({
             d: TEST_ANALYTICS.siteId,
             u: `${ORIGIN}/404`,
@@ -263,6 +282,11 @@ describe('the built site in a browser', () => {
         })
         expect(traffic.refused).toEqual([])
         await context.close()
+    })
+
+    // The gone page sends /410 with the path, like the "not found" page.
+    test('the gone page sends its view as /410', () => {
+        expect(gonePage).toContain(pageViewScript('gone'))
     })
 
     test('a click on an ad sends cta_clicked with its five properties', async () => {
@@ -312,6 +336,12 @@ describe('the newsletter bar in a browser', () => {
         const box = await page.locator('[data-newsletter]').boundingBox()
         expect(box?.height ?? 640).toBeLessThanOrEqual(640 * 0.2)
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360)
+        // A focused element and the target of a link stay above the bar (WCAG 2.4.11).
+        expect(
+            await page.evaluate(
+                () => getComputedStyle(document.documentElement).scrollPaddingBottom
+            )
+        ).toBe(`${String(box?.height ?? 0)}px`)
 
         await scrollToEnd(page)
         await barBecomes(page, false)
@@ -320,6 +350,15 @@ describe('the newsletter bar in a browser', () => {
 
         await page.getByRole('button', { name: "Don't show this again" }).click()
         await barBecomes(page, false)
+        // The focus goes back to the text of the note, and the padding leaves.
+        expect(await page.evaluate(() => document.activeElement?.matches('[data-note-body]'))).toBe(
+            true
+        )
+        expect(
+            await page.evaluate(
+                () => getComputedStyle(document.documentElement).scrollPaddingBottom
+            )
+        ).not.toBe(`${String(box?.height ?? 0)}px`)
         expect(await page.evaluate((key) => localStorage.getItem(key), NEWSLETTER_KEY)).toBe(
             'dismissed'
         )
@@ -358,7 +397,17 @@ describe('the newsletter bar in a browser', () => {
 
     test('signs up through the stub of the service, then stays closed', async () => {
         const traffic = noTraffic()
-        const context = await contextOf(traffic, { members: SIGNUP_SENT })
+        // The service answers when the test lets it, so the bar is seen while the signup runs.
+        let answer = (): void => undefined
+        const answered = new Promise<void>((resolve) => {
+            answer = resolve
+        })
+        const context = await contextOf(traffic, {
+            members: async (url) => {
+                if (!url.endsWith('/integrity-token/')) await answered
+                return SIGNUP_SENT(url)
+            }
+        })
         const page = await context.newPage()
         await page.goto(`${ORIGIN}${pathOf(BUDGET_SAMPLE.long)}`)
         await scrollToShare(page, 0.5)
@@ -366,7 +415,15 @@ describe('the newsletter bar in a browser', () => {
 
         await page.getByRole('textbox', { name: 'Your email address' }).fill('reader@example.com')
         await page.getByRole('button', { name: 'Subscribe' }).click()
+        // While the signup runs, the bar stays, also at the footer.
+        await scrollToEnd(page)
+        await Bun.sleep(300)
+        expect(await barShows(page)).toBe(true)
+        answer()
         await page.getByRole('status').getByText(MESSAGES.sent).waitFor({ timeout: 5_000 })
+        expect(await page.evaluate(() => document.activeElement?.matches('[data-note-body]'))).toBe(
+            true
+        )
         expect(traffic.members).toEqual([
             { url: `${MEMBERS}integrity-token/`, method: 'GET', body: undefined },
             {
