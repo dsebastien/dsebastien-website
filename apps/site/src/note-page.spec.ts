@@ -168,9 +168,14 @@ describe('build of a content store with one published note', () => {
     // reads an old heading anchor (URL-14), with no attribute.
     test('makes a page without JavaScript, but for the mode, the properties panel and the old anchors', async () => {
         const html = await readOutput(NOTE_FILE)
-        const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gu)].map(
-            ([whole, attributes = '', text = '']) => (attributes.trim() === '' ? text : whole)
-        )
+        const all = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gu)]
+        // The loader of the command palette (R93) is a module file: without
+        // JavaScript its control stays a link to the search page (SRCH-08).
+        const modules = all.filter(([, attributes = '']) => /\btype="module"/u.test(attributes))
+        expect(modules).toHaveLength(1)
+        const scripts = all
+            .filter((match) => !modules.includes(match))
+            .map(([whole, attributes = '', text = '']) => (attributes.trim() === '' ? text : whole))
         const [head = '', panel, ...rest] = scripts
         // The script of the panel as the build wrote it (its run is tested in properties-panel.spec.ts).
         expect(panel).toBe(propertiesScript)
