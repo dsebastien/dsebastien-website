@@ -268,6 +268,35 @@ describe('the object storage through the API', () => {
             expect(clock.waited).toHaveLength(9)
         })
 
+        test('waits at least the pause that doubles for a Retry-After of 0', async () => {
+            const fake = api([tooMany('0'), tooMany('0'), STORED()])
+            const clock = pauses()
+            await storage(fake.fetch, clock.wait).put(KEY, new Uint8Array([1]))
+            expect(clock.waited).toEqual([1000, 2000])
+        })
+
+        test('sends the same page of a list again, with its cursor', async () => {
+            const fake = api([page(['a'], 'next', true), tooMany('3'), page(['b'])])
+            const clock = pauses()
+            expect(await storage(fake.fetch, clock.wait).list()).toEqual(['a', 'b'])
+            expect(fake.asked.map((request) => request.url)).toEqual([
+                `${BASE}?per_page=1000`,
+                `${BASE}?per_page=1000&cursor=next`,
+                `${BASE}?per_page=1000&cursor=next`
+            ])
+            expect(clock.waited).toEqual([3000])
+        })
+
+        test('does not try again on another refusal: a 500 fails at the first try', async () => {
+            const fake = api([new Response('upstream', { status: 500 }), STORED()])
+            const clock = pauses()
+            expect(
+                await rejectionOf(storage(fake.fetch, clock.wait).put(KEY, new Uint8Array([1])))
+            ).toContain('(500)')
+            expect(fake.asked).toHaveLength(1)
+            expect(clock.waited).toEqual([])
+        })
+
         test('waits for nothing when the host answers at once', async () => {
             const fake = api([STORED()])
             const clock = pauses()

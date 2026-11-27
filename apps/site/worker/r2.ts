@@ -17,9 +17,9 @@ import { imageKeyOf } from '@dsebastien-website/resolver'
 //
 // The API has a rate limit: a first deployment of thousands of attachments
 // meets it, and the host answers 429 (issue 60, R102). A request that gets 429
-// is sent again after a pause: the seconds of `Retry-After` when the answer
-// gives a number (five minutes at most), else a pause that doubles from 1 s
-// up to 2 min. After {@link MOST_TRIES} tries it fails and says so. The pauses
+// is sent again after a pause that doubles from 1 s up to 2 min, or after
+// the seconds of `Retry-After` when the answer gives a longer number (five
+// minutes at most). After {@link MOST_TRIES} tries it fails and says so. The pauses
 // of 1 s to 2 min add up to more than the 5 min block of the API.
 
 /** The `fetch` of the platform, as the adapter uses it. */
@@ -61,11 +61,12 @@ const TOO_MANY_REQUESTS = 429
 
 /** The pause before the next try, after a 429 at the try `tried` (1 for the first). */
 function pauseAfter(response: Response, tried: number): number {
+    const doubling = Math.min(FIRST_PAUSE * 2 ** (tried - 1), LONGEST_PAUSE)
     const header = response.headers.get('retry-after')?.trim() ?? ''
-    if (/^\d+$/u.test(header)) {
-        return Math.min(Number(header) * 1000, LONGEST_RETRY_AFTER)
-    }
-    return Math.min(FIRST_PAUSE * 2 ** (tried - 1), LONGEST_PAUSE)
+    // A `Retry-After` of 0 must not spend every try at once.
+    return /^\d+$/u.test(header)
+        ? Math.max(Math.min(Number(header) * 1000, LONGEST_RETRY_AFTER), doubling)
+        : doubling
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -133,7 +134,7 @@ export function r2Storage(access: R2Access): AttachmentStorage {
      * 429, {@link MOST_TRIES} tries at most. The last answer 429 is given back
      * with `tooMany` set, so that the caller says how many tries it took.
      */
-    async function fetch(
+    async function send(
         url: string,
         init: RequestInit
     ): Promise<{ response: Response; tooMany: boolean }> {
@@ -159,7 +160,7 @@ export function r2Storage(access: R2Access): AttachmentStorage {
     async function call(what: string, url: string, init: RequestInit = {}): Promise<unknown> {
         const headers = new Headers(init.headers)
         headers.set('authorization', authorization)
-        const { response, tooMany } = await fetch(url, { ...init, headers })
+        const { response, tooMany } = await send(url, { ...init, headers })
         const body = await bodyOf(response)
         if (!response.ok || !isRecord(body) || body['success'] !== true) {
             throw new Error(
@@ -219,7 +220,7 @@ export function r2Storage(access: R2Access): AttachmentStorage {
             })
         },
         async remove(name) {
-            const { response, tooMany } = await fetch(objectUrl(name), {
+            const { response, tooMany } = await send(objectUrl(name), {
                 method: 'DELETE',
                 headers: { authorization }
             })
