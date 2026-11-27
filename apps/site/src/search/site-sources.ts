@@ -20,7 +20,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** The sources of the site: the search, and the notes that search engines must not index. */
 export interface SiteSources extends SearchSources {
-    /** The canonical paths of the notes with `publish_noindex` (R85), from the keys file of the title index. */
+    /** The canonical paths of the notes that say noindex (R85, R103), from the keys file of the title index. */
     noindex(): Promise<readonly string[]>
 }
 

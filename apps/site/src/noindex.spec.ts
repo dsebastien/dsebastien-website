@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import type { NoteType } from '../../plugin/src/publishing/note-types.ts'
 import {
     existsOnMainSite,
+    isInNoindexFolder,
     isNoindexNote,
     NOINDEX_PROPERTY,
     signalsOf,
+    unusedNoindexFolders,
     type NoteSignals
 } from './noindex.ts'
 
@@ -103,5 +105,60 @@ describe('the search signals of a note', () => {
                 `---\n"public_ghost_blog_news_url": ${POST}\n---\nText\n`
             )
         ).toEqual({ noindex: true, inSitemaps: false })
+    })
+})
+
+// Decision R103: the list `noindexFolders` of the configuration of the content
+// store. A note under one of its folders is noindex as a note with
+// `publish_noindex: true` is; it is not a guard.
+describe('the noindex folders', () => {
+    const FOLDERS = ['Seed Bank', 'Pond/Frogs']
+
+    test('cover the notes under a folder, at any depth', () => {
+        expect(isInNoindexFolder('Seed Bank/Bean.md', FOLDERS)).toBe(true)
+        expect(isInNoindexFolder('Seed Bank/Old/Pea.md', FOLDERS)).toBe(true)
+        expect(isInNoindexFolder('Pond/Frogs/Green frog.md', FOLDERS)).toBe(true)
+    })
+
+    test('match whole folder names only', () => {
+        expect(isInNoindexFolder('Seed Banking/Bean.md', FOLDERS)).toBe(false)
+        expect(isInNoindexFolder('Pond/Frogspawn/Eggs.md', FOLDERS)).toBe(false)
+        expect(isInNoindexFolder('Pond/Lily.md', FOLDERS)).toBe(false)
+        expect(isInNoindexFolder('Seed Bank.md', FOLDERS)).toBe(false)
+        expect(isInNoindexFolder('Garden/Seed Bank/Bean.md', FOLDERS)).toBe(false)
+        expect(isInNoindexFolder('seed bank/Bean.md', FOLDERS)).toBe(false)
+    })
+
+    test('cover nothing when the list is empty', () => {
+        expect(isInNoindexFolder('Seed Bank/Bean.md', [])).toBe(false)
+    })
+
+    test('give a note the signals of the noindex property', () => {
+        const note = {}
+        expect(signalsOf(note, {}, false, true)).toEqual(
+            signalsOf(note, { publish_noindex: true }, false)
+        )
+        expect(signalsOf(note, {}, false, true)).toEqual({ noindex: true, inSitemaps: false })
+        expect(signalsOf(note, {}, false, false)).toEqual({ noindex: false, inSitemaps: true })
+    })
+
+    test('keep the original of a note of the main site, as the property does', () => {
+        const ARTICLE = { name: 'own-articles', displayName: 'Own Articles' }
+        const POST = 'https://www.dsebastien.net/a-post/'
+        expect(signalsOf({ noteType: ARTICLE, original: POST }, {}, true, true)).toEqual({
+            noindex: true,
+            original: POST,
+            inSitemaps: false
+        })
+    })
+
+    test('name the folders that cover no published note, in the order of the list', () => {
+        expect(
+            unusedNoindexFolders(
+                ['Seed Bank', 'Pond/Frogs', 'Seed', 'Shed'],
+                ['Seed Bank/Bean.md', 'Pond/Frogspawn/Eggs.md', 'Shed.md']
+            )
+        ).toEqual(['Pond/Frogs', 'Seed', 'Shed'])
+        expect(unusedNoindexFolders([], ['Seed Bank/Bean.md'])).toEqual([])
     })
 })

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { rejectionOf } from '@dsebastien-website/testing'
 import {
     readImportRun,
+    readNoindexFolders,
     readPublication,
     readPublishedNotes,
     readRedirectList
@@ -368,5 +369,43 @@ describe('the redirect list of a content store', () => {
         expect(await rejectionOf(readRedirectList())).toContain('redirects.json')
         await Bun.write(join(folder ?? '', 'redirects.json'), JSON.stringify({ version: 2 }))
         expect(await rejectionOf(readRedirectList())).toContain('redirects.json')
+    })
+})
+
+// The noindex folders (R103): the optional list of configuration.json of the
+// content store, which the build applies. A wrong list stops the build, as it
+// stops the publishing tool.
+describe('the noindex folders of a content store', () => {
+    test('are the list noindexFolders of configuration.json', async () => {
+        await contentStore({})
+        await Bun.write(
+            join(folder ?? '', 'configuration.json'),
+            JSON.stringify({
+                denyList: ['Locked Shed'],
+                noindexFolders: ['Seed Bank', 'Pond/Frogs']
+            })
+        )
+        expect(await readNoindexFolders()).toEqual(['Seed Bank', 'Pond/Frogs'])
+    })
+
+    test('are empty without the list, without the file, and without a content store', async () => {
+        expect(await readNoindexFolders()).toEqual([])
+        await contentStore({})
+        expect(await readNoindexFolders()).toEqual([])
+        await Bun.write(join(folder ?? '', 'configuration.json'), JSON.stringify({ denyList: [] }))
+        expect(await readNoindexFolders()).toEqual([])
+    })
+
+    test('stop the build when the list is wrong', async () => {
+        await contentStore({})
+        await Bun.write(
+            join(folder ?? '', 'configuration.json'),
+            JSON.stringify({ denyList: [], noindexFolders: ['Seed Bank/'] })
+        )
+        expect(await rejectionOf(readNoindexFolders())).toContain(
+            'the noindex folders entry "Seed Bank/" is not a vault path'
+        )
+        await Bun.write(join(folder ?? '', 'configuration.json'), '{ not json')
+        expect(await rejectionOf(readNoindexFolders())).toContain('configuration.json')
     })
 })

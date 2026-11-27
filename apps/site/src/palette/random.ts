@@ -3,8 +3,9 @@ import type { SearchSources } from '../search/engine.ts'
 // The random note of the palette (SRCH-05, item 134, issue 122), from the
 // title index that the search loads: a complete part picked by chance, then
 // a title of it, never an alias, never a note that search engines must not
-// index (`publish_noindex`, R85: the title index names them). A note with more
-// words is in more parts, so the chance is not the same for every note.
+// index (`publish_noindex`, R85, or a noindex folder, R103: the title index
+// names them). A note with more words is in more parts, so the chance is not
+// the same for every note.
 
 /** The tries before no note is found: a part can hold aliases only. */
 const TRIES = 3

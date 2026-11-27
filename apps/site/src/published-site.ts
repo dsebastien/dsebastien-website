@@ -6,6 +6,7 @@ import { adProductsOf } from './ads/matching.ts'
 import { backlinkList, BACKLINKS_ON_PAGE, type ShownBacklink } from './backlink-list.ts'
 import {
     readCleanedNote,
+    readNoindexFolders,
     readPublication,
     type PublishedNote,
     type RemovedNote
@@ -27,7 +28,7 @@ import { NoteProperties } from './note-properties.ts'
 import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
 import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
-import { signalsOf, type NoteSignals } from './noindex.ts'
+import { isInNoindexFolder, signalsOf, unusedNoindexFolders, type NoteSignals } from './noindex.ts'
 import {
     postFrom,
     postPropertiesOf,
@@ -96,7 +97,7 @@ export interface PublishedSite {
     readonly stats: SiteStats
     /** The title index of the search: the display titles and the aliases of the notes (SRCH-02, R63). */
     readonly titleIndex: TitleIndex
-    /** The canonical paths of the notes with `publish_noindex` (R85), in code point order: the random note leaves them out (issue 122). */
+    /** The canonical paths of the notes that say noindex (R85, R103), in code point order: the random note leaves them out (issue 122). */
     readonly noindexPaths: readonly string[]
     /** The backlinks of a published note, in the order of a page (R59). */
     backlinksOf(vaultPath: string): readonly ShownBacklink[]
@@ -114,6 +115,20 @@ async function read(): Promise<PublishedSite> {
     // The store catalog, read one time per build (BUILD-06, CAT-01).
     const catalog = await storeCatalog()
     const byPath = new Map(notes.map((note) => [note.vaultPath, note]))
+    // The noindex folders of the configuration (R103). A folder that covers no
+    // published note does nothing: a typo would else go unseen.
+    const noindexFolders = await readNoindexFolders()
+    for (const folder of unusedNoindexFolders(
+        noindexFolders,
+        notes.map((note) => note.vaultPath)
+    )) {
+        if (!warnedFolders.has(folder)) {
+            warnedFolders.add(folder)
+            console.warn(
+                `[noindex-folders] the noindex folder "${folder}" of configuration.json covers no published note`
+            )
+        }
+    }
     // The properties of each note, read from its cleaned note with every date
     // as the text of the vault (`note-properties.ts`), not from the collection.
     // A note keeps its properties while its digest does not change (issue 93).
@@ -171,6 +186,14 @@ async function read(): Promise<PublishedSite> {
         }),
         { addressOf }
     )
+    // The signals of each note for search engines (IDX-11 to IDX-14, R85, R103).
+    const signalsOfNote = (note: PublishedNote): NoteSignals =>
+        signalsOf(
+            note,
+            properties.get(note.vaultPath) ?? {},
+            onMainSite.has(note.vaultPath),
+            isInNoindexFolder(note.vaultPath, noindexFolders)
+        )
     const noteOf = (vaultPath: string): PublishedNote => {
         const note = byPath.get(vaultPath)
         if (note === undefined) {
@@ -307,12 +330,7 @@ async function read(): Promise<PublishedSite> {
             noteOf(vaultPath)
             return descriptions.get(vaultPath) ?? ''
         },
-        signalsOf: (vaultPath) =>
-            signalsOf(
-                noteOf(vaultPath),
-                properties.get(vaultPath) ?? {},
-                onMainSite.has(vaultPath)
-            ),
+        signalsOf: (vaultPath) => signalsOfNote(noteOf(vaultPath)),
         typeHubs: lists.typeHubs,
         tagLists: lists.tagLists,
         library: libraryOf(lists.typeHubs),
@@ -347,14 +365,7 @@ async function read(): Promise<PublishedSite> {
             })
         ),
         noindexPaths: notes
-            .filter(
-                (note) =>
-                    signalsOf(
-                        note,
-                        properties.get(note.vaultPath) ?? {},
-                        onMainSite.has(note.vaultPath)
-                    ).noindex
-            )
+            .filter((note) => signalsOfNote(note).noindex)
             .map((note) => note.path)
             .sort(compareCodePoints),
         backlinksOf,
@@ -380,8 +391,7 @@ async function read(): Promise<PublishedSite> {
                 return {
                     path: note.path,
                     noteType: note.noteType?.name,
-                    indexable: signalsOf(note, noteProperties, onMainSite.has(note.vaultPath))
-                        .inSitemaps,
+                    indexable: signalsOfNote(note).inSitemaps,
                     lastmod: lastUpdateOf({
                         lastPublished: note.lastPublished,
                         updated: noteProperties['updated']
@@ -405,6 +415,8 @@ let site: Promise<PublishedSite> | undefined
 const keptProperties = new NoteProperties()
 /** What the post on the main site of each note read of its properties, kept with them (issue 55). */
 const keptPosts = new Map<string, PostProperties>()
+/** The noindex folders that the build already warned about: the dev server reads the site at each question. */
+const warnedFolders = new Set<string>()
 /** A note with no property of a post. */
 const NO_POST: PostProperties = { ghostNamed: false }
 

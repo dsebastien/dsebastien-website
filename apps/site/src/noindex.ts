@@ -10,6 +10,12 @@ import type { NoteType } from '../../plugin/src/publishing/note-types.ts'
 // in the cleaned note, so the manifest entry, the canonical form and the
 // parity do not change. Only the value `true` counts.
 //
+// The noindex folders (R103): the optional list `noindexFolders` of
+// `configuration.json` of the content store. A note under one of them has the
+// signals of a note with the property. A folder covers the notes of its
+// subfolders, by whole names: `A/B` covers `A/B/x.md`, not `A/Bc/x.md`. It is
+// not a guard: it takes no note away from the site.
+//
 // The original of a note (issue 55, ADR 0010, IDX-11 to IDX-14): a note of a
 // type that the main site also publishes, or a note that the Ghost Publish
 // plugin posted (its property `public_ghost_blog_news_url`), names the post there in its
@@ -26,6 +32,22 @@ export const NOINDEX_PROPERTY = 'publish_noindex'
 /** True when the properties of a note take it out of the index. */
 export function isNoindexNote(properties: Readonly<Record<string, unknown>>): boolean {
     return properties[NOINDEX_PROPERTY] === true
+}
+
+/** True when a note is under one of the noindex folders (R103). */
+export function isInNoindexFolder(vaultPath: string, folders: readonly string[]): boolean {
+    return folders.some((folder) => vaultPath.startsWith(`${folder}/`))
+}
+
+/**
+ * The noindex folders that cover none of these notes, in the order of the
+ * list: the build warns about each, since a typo would else do nothing.
+ */
+export function unusedNoindexFolders(
+    folders: readonly string[],
+    vaultPaths: readonly string[]
+): string[] {
+    return folders.filter((folder) => !vaultPaths.some((path) => path.startsWith(`${folder}/`)))
 }
 
 /** What the signals of a note read of its manifest entry. */
@@ -56,14 +78,17 @@ export function existsOnMainSite(cleaned: string, noteType: NoteType | undefined
 
 /**
  * The signals of a note: its noindex, its original, and whether the sitemaps
- * list it. `onMainSite` is `existsOnMainSite()` of its cleaned note.
+ * list it. `onMainSite` is `existsOnMainSite()` of its cleaned note, and
+ * `inNoindexFolder` is `isInNoindexFolder()` of its vault path: it counts as
+ * the property.
  */
 export function signalsOf(
     note: IndexedNote,
     properties: Readonly<Record<string, unknown>>,
-    onMainSite: boolean
+    onMainSite: boolean,
+    inNoindexFolder = false
 ): NoteSignals {
-    const noindexProperty = isNoindexNote(properties)
+    const noindexProperty = inNoindexFolder || isNoindexNote(properties)
     if (!onMainSite) {
         return { noindex: noindexProperty, inSitemaps: !noindexProperty }
     }

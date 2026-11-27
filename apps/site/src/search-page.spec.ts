@@ -44,6 +44,11 @@ const BARREL = '10 Garden/Rain barrel.md'
 const FILM = '20 Library/20.01 Films/The Lantern Keeper (2019).md'
 /** The note with `publish_noindex: true` (IDX-20). */
 const NOINDEX = '10 Garden/Seed swap draft.md'
+/** The notes of the noindex folder of the configuration (R103). */
+const NOINDEX_FOLDER = '20 Library/20.01 Films'
+const IN_NOINDEX_FOLDER = [FILM, '20 Library/20.01 Films/The Quiet Orchard (2021).md']
+/** A noindex folder that covers no note: a part of a folder name is no folder (R103). */
+const UNUSED_FOLDER = '20 Library/20.0'
 /** The notes that also exist on the main site: it answers for none, so none has a verified original (IDX-13). */
 const NOT_VERIFIED = [
     '40 Writing/Garden news, week 12.md',
@@ -57,6 +62,8 @@ const NOT_VERIFIED = [
 let stores: TestStores | undefined
 let outDir: string | undefined
 let exitCode = -1
+/** The error output of the build. */
+let buildErrors = ''
 let map: ResolverMap | undefined
 /** The vault paths of the published notes. */
 const published = new Set<string>()
@@ -162,6 +169,14 @@ beforeAll(async () => {
         face: 'command-line'
     })
     notVerified = run.originalsNotVerified.map((entry) => entry.path)
+    // The author adds the noindex folders by hand (R103): the build reads them.
+    const configuration = JSON.parse(
+        await readFile(join(contentStore, 'configuration.json'), 'utf8')
+    ) as Record<string, unknown>
+    await writeFile(
+        join(contentStore, 'configuration.json'),
+        JSON.stringify({ ...configuration, noindexFolders: [NOINDEX_FOLDER, UNUSED_FOLDER] })
+    )
     const cache = join(SITE, '.cache')
     await mkdir(cache, { recursive: true })
     outDir = await mkdtemp(join(cache, 'search-spec-'))
@@ -169,8 +184,10 @@ beforeAll(async () => {
         cwd: SITE,
         env: { ...process.env, CONTENT_STORE: contentStore },
         stdout: 'ignore',
-        stderr: 'inherit'
+        stderr: 'pipe'
     })
+    buildErrors = await new Response(child.stderr).text()
+    process.stderr.write(buildErrors)
     exitCode = await child.exited
     if (exitCode !== 0) return
     map = JSON.parse(await readFile(join(outDir, '-', 'resolver-map.json'), 'utf8')) as ResolverMap
@@ -403,7 +420,9 @@ describe('the title index (SRCH-02)', () => {
     test('names the notes that search engines must not index, and no other', async () => {
         expect([...notVerified].sort()).toEqual(NOT_VERIFIED)
         const index = (await json('-/search/titles.json')) as { noindex: string[] }
-        expect(index.noindex).toEqual([NOINDEX, ...NOT_VERIFIED].map(canonicalPath))
+        expect(index.noindex).toEqual(
+            [NOINDEX, ...NOT_VERIFIED, ...IN_NOINDEX_FOLDER].map(canonicalPath).sort()
+        )
     })
 
     test('answers with the display title, the type and an alias', async () => {
@@ -547,5 +566,37 @@ describe('the files of the search on the plain server', () => {
         } finally {
             await server.stop()
         }
+    })
+})
+
+// R103: a note under a noindex folder of the configuration is noindex as a
+// note with publish_noindex is, and stays on the site.
+describe('the noindex folders of the configuration', () => {
+    test('a note under one says noindex, and stays on the site', async () => {
+        for (const path of IN_NOINDEX_FOLDER) {
+            const page = await served(canonicalPath(path))
+            expect(select('meta[name="robots"]', page)?.properties['content']).toBe(
+                'noindex, follow'
+            )
+        }
+        const other = await served(canonicalPath(BARREL))
+        expect(select('meta[name="robots"]', other)).toBeUndefined()
+    })
+
+    test('a note under one leaves the sitemaps', async () => {
+        const dir = built().dir
+        const files = (await readdir(dir)).filter((name) => /^sitemap-.+\.xml$/u.test(name))
+        const sitemaps = (
+            await Promise.all(files.map((name) => readFile(join(dir, name), 'utf8')))
+        ).join(' ')
+        expect(sitemaps).toContain(encodeURI(canonicalPath(BARREL)))
+        for (const path of IN_NOINDEX_FOLDER) {
+            expect(sitemaps).not.toContain(encodeURI(canonicalPath(path)))
+        }
+    })
+
+    test('the build warns about a folder that covers no published note', () => {
+        expect(buildErrors).toContain(`"${UNUSED_FOLDER}"`)
+        expect(buildErrors).not.toContain(`"${NOINDEX_FOLDER}" of configuration.json`)
     })
 })

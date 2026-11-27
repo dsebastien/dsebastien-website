@@ -7,13 +7,19 @@ import {
     redirectListFrom,
     type RedirectList
 } from '@dsebastien-website/resolver'
+import {
+    CONFIGURATION_FILE,
+    parseConfiguration
+} from '../../plugin/src/publishing/configuration.ts'
 import { isNoteType, type NoteType } from '../../plugin/src/publishing/note-types.ts'
 import { comparisonForm, MAIN_SITE_ORIGIN } from '../../plugin/src/publishing/originals.ts'
 
 // The content store as the build reads it (BUILD-01 of the spec). The build
 // never reads the vault: the content store holds the cleaned notes and the
 // manifest, and nothing else is published. It also holds the redirect list
-// (`redirects.json`, issue 44), which only the resolver map uses.
+// (`redirects.json`, issue 44), which only the resolver map uses, and the
+// configuration of the publishing tool, of which the build reads only the
+// noindex folders (`noindexFolders`, R103).
 //
 // The variable CONTENT_STORE names the folder of a copy of the content store.
 // Without it the site has no note, which is the state of the public CI: the
@@ -386,4 +392,32 @@ export async function readRedirectList(
         throw new Error(`${REDIRECT_LIST_FILE} of the content store is not JSON`)
     }
     return redirectListFrom(value)
+}
+
+/**
+ * The noindex folders of the configuration of the content store (R103): an
+ * empty list when the build has no content store, or the store has no
+ * `configuration.json` or no list. The reader of the publishing tool checks
+ * the file, so the build accepts and refuses what the tool does.
+ *
+ * @throws when the file cannot be read as a configuration: the build stops
+ */
+export async function readNoindexFolders(
+    store: string | undefined = contentStoreFolder()
+): Promise<readonly string[]> {
+    if (store === undefined) {
+        return []
+    }
+    let text: string
+    try {
+        text = await readFile(join(store, CONFIGURATION_FILE), 'utf8')
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return []
+        }
+        throw new Error(`${CONFIGURATION_FILE} of the content store cannot be read`, {
+            cause: error
+        })
+    }
+    return parseConfiguration(text).noindexFolders
 }
