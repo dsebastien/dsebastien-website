@@ -31,7 +31,8 @@ import { decode, MARK } from './mark.ts'
 //   a card to another site with its stored preview image when the build has
 //   one (CARD-06, CARD-07), a video card with its local image, which names
 //   its video for the player that loads after a click (CARD-09), and a note
-//   card with the title and the description of the note (CARD-03).
+//   card with the label of the link (else the title of the note) and the
+//   description of the note (CARD-03).
 //
 // The pages of a build are also its link index (MOD-06, BUILD-05): they say
 // which published notes link to a note, with the sentence around each link
@@ -900,11 +901,13 @@ export class SitePages {
             if (file !== undefined) {
                 cards.push(this.#card(file.url, title, ''))
             } else if (target !== undefined) {
+                // The label of the link when it has one, else the title of the note.
                 const shown = this.#noteCardOf(target.vaultPath)
+                const labelled = card.properties['dataLabel'] !== undefined
                 cards.push(
                     this.#card(
                         `${target.path}${this.#fragmentOf(target, fragment)}`,
-                        shown?.title ?? title,
+                        labelled ? title : (shown?.title ?? title),
                         '',
                         shown?.description === undefined ? {} : { description: shown.description }
                     )

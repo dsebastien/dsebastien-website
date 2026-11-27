@@ -536,7 +536,7 @@
         {
             "id": "link-block",
             "note": "40 Writing/Reading list.md",
-            "covers": "LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). A card is a link with its title and the name of its site, a note card has the title of the note, and a build without previews has no image in a card (issue 86).",
+            "covers": "LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). A card is a link with its title and the name of its site, a note card has the label of its link, else the title of the note, and a build without previews has no image in a card (issue 86).",
             "source": "^LINK: https://garden\\.example/soil$[\\s\\S]*^LINK: \\[A guide to mulch\\]\\(https://garden\\.example/mulch\\)$[\\s\\S]*^LINK: \\[\\[Compost basics\\]\\]$[\\s\\S]*^LINK: \\[\\[Rain barrel\\|The barrel\\]\\]$[\\s\\S]*^LINK:$\\n^- https://garden\\.example/tools$[\\s\\S]*^LINK$\\n^- \\[\\[Thyme\\]\\]$[\\s\\S]*^LINKS$\\n^- https://garden\\.example/hedges$[\\s\\S]*^LINKS:$\\n^- https://garden\\.example/spring$[\\s\\S]*^LINK: \\[\\[Greenhouse alarm code\\]\\]$",
             "checks": [
                 {

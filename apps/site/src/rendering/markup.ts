@@ -165,15 +165,19 @@ function cardOf(nodes: MdNode[], source: string): MdNode | undefined {
         const url = target['url']
         const destination = destinationOf(url)
         if (destination !== undefined) {
-            // A Markdown link to a note or a file of the vault: a card of that target.
-            return element(MARK.card, {}, [
+            // A Markdown link to a note or a file of the vault: a card of that
+            // target. Its text is its label (CARD-03).
+            const labelled = plainText(target).trim() !== ''
+            return element(MARK.card, labelled ? { dataLabel: '' } : {}, [
                 linkMark(destination.linkPath, destination.fragment, false, target.children ?? [])
             ])
         }
         return element(MARK.card, { dataUrl: url }, [text(plainText(target))])
     }
     if (target.type === 'wikilink' && target['embedded'] !== true) {
-        return element(MARK.card, {}, [wikilinkMark(target, source)])
+        // `data-label`: the link has a label, which its note card shows (CARD-03).
+        const labelled = typeof target['alias'] === 'string' && target['alias'] !== ''
+        return element(MARK.card, labelled ? { dataLabel: '' } : {}, [wikilinkMark(target, source)])
     }
     return undefined
 }

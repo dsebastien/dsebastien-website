@@ -142,7 +142,16 @@ describe('language of a note (REN-09)', () => {
 describe('cards, names and diagrams', () => {
     test('a LINK line with a Markdown link to a note is a card of that note', async () => {
         expect(await html('LINK: [the barrel](Rain%20barrel.md#Cleaning)')).toBe(
-            '<link-cards><link-card><note-link data-link="Rain%20barrel.md" data-fragment="Cleaning">the barrel</note-link></link-card></link-cards>'
+            '<link-cards><link-card data-label=""><note-link data-link="Rain%20barrel.md" data-fragment="Cleaning">the barrel</note-link></link-card></link-cards>'
+        )
+    })
+
+    test('a card of a wikilink says whether the link has a label (CARD-03)', async () => {
+        expect(await html('LINK: [[Rain barrel|The barrel]]')).toBe(
+            '<link-cards><link-card data-label=""><note-link data-link="Rain%20barrel">The barrel</note-link></link-card></link-cards>'
+        )
+        expect(await html('LINK: [[Rain barrel]]')).toBe(
+            '<link-cards><link-card><note-link data-link="Rain%20barrel">Rain barrel</note-link></link-card></link-cards>'
         )
     })
 

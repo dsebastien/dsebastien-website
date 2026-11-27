@@ -8,7 +8,7 @@ export const MARK = {
     link: 'note-link',
     /** A block of link cards (CARD-01 to CARD-09). */
     cards: 'link-cards',
-    /** One link card: `data-url` (and `data-video`) and its title, or a link mark. */
+    /** One link card: `data-url` (and `data-video`) and its title, or a link mark (and `data-label`). */
     card: 'link-card'
 } as const
 

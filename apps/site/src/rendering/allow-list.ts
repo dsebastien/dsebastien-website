@@ -62,6 +62,6 @@ export const allowList: Options = {
         'li': [...(base['li'] ?? []), 'dataTaskChar'],
         'a': [...(base['a'] ?? []), 'dataFootnoteRef', 'dataFootnoteBackref'],
         [MARK.link]: ['dataLink', 'dataFragment', 'dataEmbed', 'dataAddress'],
-        [MARK.card]: ['dataUrl', 'dataVideo']
+        [MARK.card]: ['dataUrl', 'dataVideo', 'dataLabel']
     }
 }

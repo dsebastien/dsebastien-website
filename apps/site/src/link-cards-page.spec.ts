@@ -182,14 +182,14 @@ describe('link cards with their previews (issue 86)', () => {
         expect(compact.length).toBeGreaterThan(5)
     })
 
-    test('a note card shows the title of the note (CARD-03)', () => {
+    test('a note card shows the label of its link (CARD-03)', () => {
         const titles = pageOf(READING)
             .filter((element) => classesOf(element).includes('link-card-link'))
             .filter((link) => String(link.properties['href']).toLowerCase().includes('rain'))
             .map((link) => elementsOf({ type: 'root', children: [link] }))
             .map((inner) => inner.find((element) => classesOf(element).includes('link-card-title')))
             .map((title) => (title?.children[0]?.type === 'text' ? title.children[0].value : ''))
-        expect(titles).toEqual(['Rain barrel'])
+        expect(titles).toEqual(['The barrel'])
     })
 
     test('a page with cards loads nothing from another host (CARD-07)', () => {

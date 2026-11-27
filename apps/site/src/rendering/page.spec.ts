@@ -672,11 +672,11 @@ describe('link cards (CARD-01 to CARD-09)', () => {
         ).toBeUndefined()
     })
 
-    test('a note card shows the title of the note, and its description when it has one (CARD-03)', () => {
+    test('a note card shows the label of its link, else the title of the note, and the description (CARD-03)', () => {
         const thyme = note('Thyme.md', '<h1 id="thyme">Thyme</h1>')
         const self = note(
             'Self.md',
-            `<link-cards>${card('<note-link data-link="Rain%20barrel">The barrel</note-link>')}${card('<note-link data-link="Thyme">Thyme</note-link>')}</link-cards>`,
+            `<link-cards><link-card data-label=""><note-link data-link="Rain%20barrel">The barrel</note-link></link-card>${card('<note-link data-link="Thyme">thyme</note-link>')}</link-cards>`,
             { ...NOTES, Thyme: 'Thyme.md' }
         )
         const pages = new SitePages([self, BARREL, thyme], {
@@ -686,7 +686,7 @@ describe('link cards (CARD-01 to CARD-09)', () => {
                     : { title: 'Thyme' }
         })
         expect(pages.render('Self.md')).toBe(
-            '<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/Rain+barrel"><span class="link-card-title">Rain barrel</span><span class="link-card-description">How to keep rain water.</span></a></div><div class="link-card"><a class="link-card-link" href="/Thyme"><span class="link-card-title">Thyme</span></a></div></div>'
+            '<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/Rain+barrel"><span class="link-card-title">The barrel</span><span class="link-card-description">How to keep rain water.</span></a></div><div class="link-card"><a class="link-card-link" href="/Thyme"><span class="link-card-title">Thyme</span></a></div></div>'
         )
     })
 
