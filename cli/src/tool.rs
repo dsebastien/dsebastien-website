@@ -208,7 +208,7 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
 /// with no commit passes.
 fn refuse_unsealed_state(device: &Device) -> Result<(), String> {
     let key = device.seal.key()?;
-    match check_seal(&device.store, &key)? {
+    match check_seal(&device.store, &key, None)? {
         SealCheck::Differs(difference) => Err(difference_text(&difference)),
         SealCheck::Empty | SealCheck::Sealed => Ok(()),
     }
@@ -2655,7 +2655,7 @@ fn take_down_locked(
     // sealed, so it never seals a state that the author did not confirm.
     let key = device.seal.key().ok().filter(|key| {
         matches!(
-            check_seal(&device.store, key),
+            check_seal(&device.store, key, None),
             Ok(SealCheck::Sealed | SealCheck::Empty)
         )
     });
@@ -3219,7 +3219,7 @@ pub fn confirm_state(device: &Device, head: &str, run: &Run) -> Result<String, S
         recover(device, own_lock)?;
         refuse_when_behind(device.store.verify(Fetch::Must)?.behind)?;
         let key = device.seal.key()?;
-        let difference = match check_seal(&device.store, &key)? {
+        let difference = match check_seal(&device.store, &key, None)? {
             SealCheck::Empty => {
                 return Err(
                     "the content store has no commit: there is no state to confirm".to_owned(),

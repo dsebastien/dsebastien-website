@@ -27,20 +27,24 @@ use crate::order::sort_by_code_point;
 pub const SEAL_KEY_VARIABLE: &str = "VAULT_PUBLISH_SEAL_KEY";
 
 /// The one file of the content store that the seal does not cover: the
-/// redirect list, which only the author writes, at the root and by its exact
-/// name. Every other file of a commit is sealed.
+/// redirect list, which only the author writes, at the root, by its exact
+/// name, as a regular file (mode 100644). Every other file of a commit is
+/// sealed, also a link or an executable file at that path.
 pub const UNSEALED_FILE: &str = "redirects.json";
 
-/// True when the seal covers this path of the content store.
-pub fn is_sealed_path(path: &str) -> bool {
-    path != UNSEALED_FILE
+/// The mode of git of a regular file.
+const REGULAR_FILE: &str = "100644";
+
+/// True when the seal covers this file of the content store.
+pub fn is_sealed_file(file: &TreeFile) -> bool {
+    file.path != UNSEALED_FILE || file.mode != REGULAR_FILE
 }
 
 /// The files of a commit that the seal covers.
 pub fn sealed_files(files: Vec<TreeFile>) -> Vec<TreeFile> {
     files
         .into_iter()
-        .filter(|file| is_sealed_path(&file.path))
+        .filter(is_sealed_file)
         .collect()
 }
 
@@ -365,9 +369,11 @@ pub struct FileChange {
 
 /// What a difference compares with: the last commit with a valid seal that
 /// the copy trusts (`seal`), the mark of the copy when the history has no
-/// such commit (`mark`), or nothing (`none`).
+/// such commit (`mark`), the live content revision of the host when the copy
+/// has no mark and no such commit (`live`), or nothing (`none`).
 pub const BASE_SEAL: &str = "seal";
 pub const BASE_MARK: &str = "mark";
+pub const BASE_LIVE: &str = "live";
 pub const BASE_NONE: &str = "none";
 
 /// How the state of the last commit differs from the last sealed state.
@@ -441,7 +447,9 @@ pub trait SealedHistory {
 /// seal is valid for its parents and its state; a commit with more than one
 /// parent stops the walk, so no merge lies between the last commit and the
 /// sealed one, and the sealed one is no merge. That commit is trusted when
-/// the copy has no mark, or when it is the mark or descends from it. The
+/// it is the mark of the copy or descends from it; a copy with no mark takes
+/// the live content revision of the host (`floor`, the deploy only) as its
+/// lower bound, and with neither it trusts the commit. The
 /// check writes nothing: the mark moves only when the tool pushes a sealed
 /// commit (a confirmation included). The check passes when the trusted commit has the sealed
 /// state of the last commit: a later commit of the redirect list alone is no
@@ -450,7 +458,11 @@ pub trait SealedHistory {
 /// # Errors
 ///
 /// The history or the mark cannot be read.
-pub fn check_seal(store: &dyn SealedHistory, key: &[u8]) -> Result<SealCheck, String> {
+pub fn check_seal(
+    store: &dyn SealedHistory,
+    key: &[u8],
+    floor: Option<&str>,
+) -> Result<SealCheck, String> {
     let commits = store.commits(SEAL_HISTORY)?;
     let Some(head) = commits.first() else {
         return Ok(SealCheck::Empty);
@@ -474,7 +486,9 @@ pub fn check_seal(store: &dyn SealedHistory, key: &[u8]) -> Result<SealCheck, St
             break;
         }
     }
-    let mark = store.mark()?;
+    let own = store.mark()?;
+    let base = if own.is_some() { BASE_MARK } else { BASE_LIVE };
+    let mark = own.or_else(|| floor.map(str::to_owned));
     let read = |ids: &[String]| store.objects(ids);
     if let Some((id, files)) = found {
         let trusted = match mark.as_deref() {
@@ -501,7 +515,7 @@ pub fn check_seal(store: &dyn SealedHistory, key: &[u8]) -> Result<SealCheck, St
         let mark_files = store.files(&mark).map_or_else(|_| Vec::new(), sealed_files);
         return Ok(SealCheck::Differs(Box::new(difference_of(
             &head.id,
-            BASE_MARK,
+            base,
             Some(&mark),
             &mark_files,
             &head_files,
@@ -719,6 +733,9 @@ fn start_of(difference: &StoreDifference) -> String {
         ),
         BASE_MARK => format!(
             "the content store has no sealed state that the tool can trust: no commit of the last {SEAL_HISTORY} (and none before a merge) has a valid seal and descends from {sealed}, the last sealed commit that this copy trusted. More than {SEAL_HISTORY} commits that no tool wrote, a merge, or an older history that a forced push put back can cause it. Nothing is planned or published until you confirm it. What differs from that commit"
+        ),
+        BASE_LIVE => format!(
+            "the content store has no sealed state that the deploy can trust: this copy has no mark yet, and no commit of the last {SEAL_HISTORY} (and none before a merge) has a valid seal and is the live content revision {sealed} of the host or descends from it. An older history that a forced push put back can cause it. Nothing is built until you confirm it. What differs from the live content revision"
         ),
         _ => format!(
             "the state of the content store at {head} is not the state that a commit of the tool sealed ({sealed}): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state"
@@ -1123,7 +1140,8 @@ mod tests {
                 commits: case["commits"].as_array().expect("the commits").clone(),
                 mark: std::cell::RefCell::new(case["mark"].as_str().map(str::to_owned)),
             };
-            let checked = check_seal(&history, &history.key.clone()).expect(name);
+            let checked =
+                check_seal(&history, &history.key.clone(), case["floor"].as_str()).expect(name);
             let (status, base, sealed) = match &checked {
                 SealCheck::Empty => ("empty", None, None),
                 SealCheck::Sealed => ("sealed", None, None),

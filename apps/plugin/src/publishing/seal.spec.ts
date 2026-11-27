@@ -59,6 +59,8 @@ interface Cases {
         keyByte: string
         commits: { id: string; parents: string[]; files: TreeFile[]; seal?: string }[]
         mark: string | null
+        /** The live content revision of the host, the lower bound of a copy with no mark. */
+        floor?: string
         result: 'empty' | 'sealed' | 'differs'
         base?: DifferenceBase
         sealed?: string
@@ -187,6 +189,7 @@ describe('the seal of the content store', () => {
             keyByte,
             commits,
             mark,
+            floor,
             result,
             base,
             sealed,
@@ -246,7 +249,7 @@ describe('the seal of the content store', () => {
                     return Promise.resolve(known.has(ancestor) && walk(commit))
                 }
             }
-            const checked = await checkSeal(history, key)
+            const checked = await checkSeal(history, key, floor)
             expect([
                 name,
                 checked.status,

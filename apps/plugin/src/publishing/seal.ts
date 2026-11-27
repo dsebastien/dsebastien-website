@@ -17,19 +17,23 @@ export const SEAL_KEY_VARIABLE = 'VAULT_PUBLISH_SEAL_KEY'
 
 /**
  * The one file of the content store that the seal does not cover: the
- * redirect list, which only the author writes, at the root and by its exact
- * name. Every other file of a commit is sealed.
+ * redirect list, which only the author writes, at the root, by its exact
+ * name, as a regular file (mode 100644). Every other file of a commit is
+ * sealed, also a link or an executable file at that path.
  */
 export const UNSEALED_FILE = 'redirects.json'
 
-/** True when the seal covers this path of the content store. */
-export function isSealedPath(path: string): boolean {
-    return path !== UNSEALED_FILE
+/** The mode of git of a regular file. */
+const REGULAR_FILE = '100644'
+
+/** True when the seal covers this file of the content store. */
+export function isSealedFile(file: TreeFile): boolean {
+    return file.path !== UNSEALED_FILE || file.mode !== REGULAR_FILE
 }
 
 /** The files of a commit that the seal covers. */
 export function sealedFiles(files: readonly TreeFile[]): TreeFile[] {
-    return files.filter((file) => isSealedPath(file.path))
+    return files.filter(isSealedFile)
 }
 
 /** How many commits of the first-parent chain the check reads, from the last one. */
@@ -223,9 +227,10 @@ export type EntryChange = {
 /**
  * What a difference compares with: the last commit with a valid seal that
  * the copy trusts (`seal`), the mark of the copy when the history has no
- * such commit (`mark`), or nothing (`none`).
+ * such commit (`mark`), the live content revision of the host when the copy
+ * has no mark and no such commit (`live`), or nothing (`none`).
  */
-export type DifferenceBase = 'seal' | 'mark' | 'none'
+export type DifferenceBase = 'seal' | 'mark' | 'live' | 'none'
 
 /** How the state of the last commit differs from the last sealed state. */
 // A type alias, not an interface: the shared cases are data.
@@ -278,13 +283,19 @@ export interface SealedHistory {
  * seal is valid for its parents and its state; a commit with more than one
  * parent stops the walk, so no merge lies between the last commit and the
  * sealed one, and the sealed one is no merge. That commit is trusted when
- * the copy has no mark, or when it is the mark or descends from it. The
+ * it is the mark of the copy or descends from it; a copy with no mark takes
+ * the live content revision of the host (`floor`, the deploy only) as its
+ * lower bound, and with neither it trusts the commit. The
  * check writes nothing: the mark moves only when the tool pushes a sealed
  * commit (a confirmation included). The check passes when the trusted commit has the sealed
  * state of the last commit: a later commit of the redirect list alone is no
  * difference.
  */
-export async function checkSeal(store: SealedHistory, key: Uint8Array): Promise<SealCheck> {
+export async function checkSeal(
+    store: SealedHistory,
+    key: Uint8Array,
+    floor?: string
+): Promise<SealCheck> {
     const commits = await store.commits(SEAL_HISTORY)
     const head = commits[0]
     if (head === undefined) {
@@ -306,7 +317,8 @@ export async function checkSeal(store: SealedHistory, key: Uint8Array): Promise<
             break
         }
     }
-    const mark = await store.mark()
+    const own = await store.mark()
+    const mark = own ?? floor
     const read = (ids: readonly string[]): Promise<ReadonlyMap<string, string>> =>
         store.objects(ids)
     if (
@@ -326,7 +338,14 @@ export async function checkSeal(store: SealedHistory, key: Uint8Array): Promise<
         const markFiles = await store.files(mark).then(sealedFiles, () => [])
         return {
             status: 'differs',
-            difference: await differenceOf(head.id, 'mark', mark, markFiles, headFiles, read)
+            difference: await differenceOf(
+                head.id,
+                own === undefined ? 'live' : 'mark',
+                mark,
+                markFiles,
+                headFiles,
+                read
+            )
         }
     }
     return {
@@ -495,6 +514,8 @@ function startOf(difference: StoreDifference): string {
             return `the content store has no sealed state yet (a store from before R104, or a new one), and this copy trusted none before, so the tool does not trust its state: it plans and publishes nothing until you confirm it one time. Its state at ${difference.head}`
         case 'mark':
             return `the content store has no sealed state that the tool can trust: no commit of the last ${String(SEAL_HISTORY)} (and none before a merge) has a valid seal and descends from ${difference.sealed}, the last sealed commit that this copy trusted. More than ${String(SEAL_HISTORY)} commits that no tool wrote, a merge, or an older history that a forced push put back can cause it. Nothing is planned or published until you confirm it. What differs from that commit`
+        case 'live':
+            return `the content store has no sealed state that the deploy can trust: this copy has no mark yet, and no commit of the last ${String(SEAL_HISTORY)} (and none before a merge) has a valid seal and is the live content revision ${difference.sealed} of the host or descends from it. An older history that a forced push put back can cause it. Nothing is built until you confirm it. What differs from the live content revision`
         case 'seal':
             return `the state of the content store at ${difference.head} is not the state that a commit of the tool sealed (${difference.sealed}): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state`
     }

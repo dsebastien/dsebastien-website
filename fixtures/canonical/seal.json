@@ -1701,6 +1701,149 @@
             "base": "none",
             "sealed": "none",
             "markAfter": null
+        },
+        {
+            "name": "a link at the path of the redirect list is sealed",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        },
+                        {
+                            "mode": "120000",
+                            "object": "dddddddddddddddddddddddddddddddddddddddd",
+                            "path": "redirects.json"
+                        }
+                    ]
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "result": "differs",
+            "base": "seal",
+            "sealed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "markAfter": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+            "name": "with no mark, a sealed commit that descends from the live revision passes",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "dddddddddddddddddddddddddddddddddddddddd",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": null,
+            "floor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "result": "sealed",
+            "markAfter": null
+        },
+        {
+            "name": "with no mark, a sealed commit older than the live revision does not pass",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                },
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "dddddddddddddddddddddddddddddddddddddddd",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": null,
+            "floor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "result": "differs",
+            "base": "live",
+            "sealed": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "markAfter": null
+        },
+        {
+            "name": "the mark of the copy wins over the live revision",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "dddddddddddddddddddddddddddddddddddddddd",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "floor": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "result": "sealed",
+            "markAfter": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }
     ]
 }
