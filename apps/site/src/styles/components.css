@@ -806,6 +806,42 @@
     @apply rounded-pill;
 }
 
+/* One place for every bar: in the flow, below what it plays. The library keeps
+   the bar of a tab at the bottom of the screen while the tab shows, and no
+   other bar; on a phone, that bar covers the lines of the tab. */
+.note-text.note-text .mn-tab .mn-play.mn-tab-bar {
+    bottom: auto;
+}
+
+/* A block in full screen keeps the theme of the page: its background, text
+   and font, in the active theme and mode. The library writes the background
+   that it finds at the start on the block itself: the token wins over it, so
+   a switch of the mode in full screen changes the block too. The room of the
+   notch and of the home bar of a phone stays free. */
+.note-text.note-text .mn-block:is(.mn-fullscreen, .mn-fullscreen-fit) {
+    background-color: var(--color-background) !important;
+    color: var(--color-primary);
+    @apply font-sans;
+    padding-right: max(--spacing(6), 3vw, env(safe-area-inset-right));
+    padding-left: max(--spacing(6), 3vw, env(safe-area-inset-left));
+}
+
+.note-text.note-text .mn-block.mn-fullscreen {
+    padding-top: max(--spacing(3), env(safe-area-inset-top));
+    padding-bottom: max(--spacing(2), env(safe-area-inset-bottom));
+}
+
+.note-text.note-text .mn-block:is(.mn-fullscreen, .mn-fullscreen-fit)::backdrop {
+    background-color: var(--color-background);
+}
+
+/* Where the browser has no full screen for an element (an iPhone), the block
+   covers the window: the text of the note lets it out of its contained paint
+   while it does. */
+.note-text:has(.mn-block:is(.mn-fullscreen, .mn-fullscreen-fit)) {
+    contain: none;
+}
+
 /* The library takes the outline of its controls away (`all: unset`): a key
    of the keyboard shows the ring of the site again (WCAG 2.4.7). */
 .note-text.note-text .mn-play :is(button, select, input):focus-visible {

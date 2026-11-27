@@ -456,6 +456,112 @@ describe('the music notation of a note page', () => {
         expect(traffic.consoleErrors).toEqual([])
     }, 90_000)
 
+    test('every bar stays in the flow of its block', async () => {
+        const traffic = noTraffic()
+        const context = await contextOf(traffic, { mobile: 390 })
+        const page = await open(context, MUSIC_NOTE, traffic)
+        await waitForBlocks(page)
+        // The top of the tab at the top of the screen: its bar stays below the tab.
+        const bars = await page.evaluate(() => {
+            const tab = document.querySelector('.mn-tab') as HTMLElement
+            window.scrollTo({ top: tab.getBoundingClientRect().top + window.scrollY })
+            return [...document.querySelectorAll('.mn-block .mn-play')].map((bar) => {
+                const style = getComputedStyle(bar)
+                return { position: style.position, bottom: style.bottom }
+            })
+        })
+        const tabBar = await page.evaluate(() => {
+            const tab = document.querySelector('.mn-tab') as HTMLElement
+            const bar = tab.querySelector('.mn-play') as HTMLElement
+            return {
+                barTop: bar.getBoundingClientRect().top,
+                tabBottom: tab.getBoundingClientRect().bottom,
+                screen: window.innerHeight
+            }
+        })
+        await context.close()
+        expect(bars.length).toBeGreaterThan(1)
+        for (const bar of bars) {
+            expect(['fixed', 'absolute']).not.toContain(bar.position)
+            expect(bar).toEqual(bars[0] ?? bar)
+            expect(bar.bottom).toBe('auto')
+        }
+        // A tab taller than the screen has its bar at its end, off the screen.
+        if (tabBar.tabBottom > tabBar.screen) {
+            expect(tabBar.barTop).toBeGreaterThan(tabBar.screen)
+        }
+    }, 60_000)
+
+    for (const refused of [false, true]) {
+        const how = refused ? 'the window' : 'the screen'
+        test(`a block in full screen keeps the theme of the page (${how})`, async () => {
+            const traffic = noTraffic()
+            const context = await contextOf(traffic, { mobile: 390 })
+            if (refused) {
+                // An iPhone: no full screen for an element, the block covers the window.
+                await context.addInitScript(() => {
+                    Element.prototype.requestFullscreen = () => Promise.reject(new Error('no'))
+                })
+            }
+            const page = await open(context, MUSIC_NOTE, traffic)
+            await waitForBlocks(page)
+            const look = (): Promise<Record<string, unknown>> =>
+                page.evaluate(() => {
+                    const block = document.querySelector<HTMLElement>(
+                        '.mn-fullscreen, .mn-fullscreen-fit'
+                    )
+                    if (block === null) return { block: false }
+                    const style = getComputedStyle(block)
+                    const box = block.getBoundingClientRect()
+                    const bar = block.querySelector('.mn-play') as HTMLElement
+                    return {
+                        block: true,
+                        background: style.backgroundColor,
+                        page: getComputedStyle(document.documentElement).backgroundColor,
+                        color: style.color,
+                        font: style.fontFamily,
+                        barFont: getComputedStyle(bar).fontFamily,
+                        covers:
+                            Math.round(box.top) === 0 &&
+                            Math.round(box.left) === 0 &&
+                            Math.round(box.width) === window.innerWidth &&
+                            Math.round(box.height) === window.innerHeight,
+                        browser: document.fullscreenElement === block
+                    }
+                })
+            const results: Record<string, unknown>[] = []
+            for (const selector of ['.mn-tab', '.mn-block-chord']) {
+                await page.locator(`${selector} .mn-play-full`).first().click()
+                await page.waitForTimeout(1_000)
+                const before = await look()
+                // The mode switch is under the block: the script of the test presses it.
+                await page.evaluate(() => {
+                    ;(document.querySelector('[data-mode-switch]') as HTMLElement).click()
+                })
+                await page.waitForTimeout(1_000)
+                const after = await look()
+                await page.locator(`${selector} .mn-play-full`).first().click()
+                await page.waitForTimeout(500)
+                results.push(before, after, await look())
+            }
+            await context.close()
+            for (let at = 0; at < results.length; at += 3) {
+                const [before, after, left] = results.slice(at, at + 3)
+                for (const shown of [before, after]) {
+                    expect(shown).toMatchObject({ block: true, covers: true, browser: !refused })
+                    expect(shown?.['background']).toBe(shown?.['page'])
+                    expect(String(shown?.['font'])).toContain('Noto Sans')
+                    expect(String(shown?.['barFont'])).toContain('Noto Sans')
+                }
+                expect(after?.['background']).not.toBe(before?.['background'])
+                expect(after?.['color']).not.toBe(before?.['color'])
+                expect(left).toEqual({ block: false })
+            }
+            expect(traffic.errors).toEqual([])
+            expect(traffic.violations).toEqual([])
+        }, 90_000)
+    }
+
     for (const width of [320, 390]) {
         test(`the music page keeps the mobile rules at ${String(width)} px`, async () => {
             const traffic = noTraffic()
