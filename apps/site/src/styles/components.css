@@ -584,9 +584,10 @@
         @apply border-danger;
     }
 
-    /* A small text button, 24 px high at least for a finger (WCAG 2.5.8). */
+    /* A small text button: 24 px high at least (WCAG 2.5.8), 44 px on a touch
+       screen (section 15.1.1 of the spec). */
     .newsletter-dismiss {
-        @apply mx-auto block min-h-6 px-2 text-xs text-muted underline-offset-4;
+        @apply mx-auto block min-h-6 px-2 text-xs text-muted underline-offset-4 any-pointer-coarse:min-h-11;
     }
 
     .newsletter-dismiss:hover {

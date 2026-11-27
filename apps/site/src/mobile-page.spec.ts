@@ -383,6 +383,31 @@ describe('the mobile rules (issue 91)', () => {
         }
     }, 300_000)
 
+    // The newsletter bar (NEWS-01) is hidden when the page loads: the rules
+    // run again once it shows, after 30 percent of the note.
+    test('the newsletter bar passes once it shows', async () => {
+        for (const width of WIDTHS) {
+            for (const mode of MODES) {
+                const context = await phone(width, mode)
+                try {
+                    const page = await context.newPage()
+                    await page.goto(canonicalPath(BUDGET_SAMPLE.long))
+                    await page.evaluate(() => {
+                        const note = document.querySelector('[data-note-body]')
+                        if (note === null) throw new Error('no note body')
+                        const box = note.getBoundingClientRect()
+                        const top = box.top + scrollY + box.height * 0.5 - innerHeight
+                        scrollTo({ top, behavior: 'instant' })
+                    })
+                    await page.locator('[data-newsletter]').waitFor({ state: 'visible' })
+                    expect(await check(page), `${String(width)} px, ${mode}`).toEqual([])
+                } finally {
+                    await context.close()
+                }
+            }
+        }
+    }, 60_000)
+
     test('the bar goes away when the screen becomes wide', async () => {
         const context = await phone(390, 'dark')
         try {
