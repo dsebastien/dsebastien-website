@@ -10,7 +10,8 @@ import {
     type TestStores
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
-import type { Device, ListRefresh, RefreshResult } from './ports.ts'
+import type { Device, ListRefresh, RefreshResult, Vault } from './ports.ts'
+import { outcomeOfPlan } from './mcp.ts'
 import { plan, publish, unpublish } from './tool.ts'
 
 // The refresh of the frozen lists before a plan, in Obsidian (PUB-35, R71,
@@ -44,6 +45,18 @@ async function denyAlso(copy: string, folder: string): Promise<void> {
             // Sealed, as a commit of the tool of that device (R104).
             await sealHead(copy)
         }
+    }
+}
+
+/** The vault, with each path that a run reads pushed to `reads`. */
+function counting(vault: Vault, reads: string[]): Vault {
+    return {
+        ...vault,
+        read: (path) => {
+            reads.push(path)
+            return vault.read(path)
+        },
+        forRun: () => counting(vault.forRun(), reads)
     }
 }
 
@@ -143,10 +156,18 @@ describe('the refresh of the frozen lists before a plan', () => {
         await using stores = await makeTestStores()
         const { device } = await setUp(stores, () => 'unchanged')
 
-        const once = await plan(device, { include: [FROZEN] })
-        const twice = await plan(device, { include: [FROZEN] })
+        // The reads of the vault tell that the plan was not computed again
+        // (issue 111): a second scan would read every note one more time.
+        const reads: string[] = []
+        const counted = { ...device, vault: counting(device.vault, reads) }
+        const once = await plan(counted, { include: [FROZEN] })
+        const withRefresh = reads.length
+        reads.length = 0
+        const { lists: _lists, ...withoutLists } = counted
+        const twice = await plan(withoutLists, { include: [FROZEN] })
 
         expect(twice.id).toBe(once.id)
+        expect(withRefresh).toBe(reads.length)
     })
 
     test('a note that the serializer did not refresh is marked, with the reason', async () => {
@@ -158,6 +179,32 @@ describe('the refresh of the frozen lists before a plan', () => {
         expect(planned.listsNotRefreshed).toEqual([FROZEN])
         expect(planned.liveQueries).toEqual([LIVE])
         expect(planned.refreshProblems).toEqual([{ path: FROZEN, message: 'a query failed' }])
+        // The output of the plan tool gives the reason too (issue 111).
+        const output = JSON.parse(outcomeOfPlan(planned).output) as Record<string, unknown>
+        expect(output['listsNotRefreshedReasons']).toEqual([
+            { path: FROZEN, reason: 'a query failed' }
+        ])
+        expect(Object.keys(output)).toEqual([
+            'id',
+            'listsNotRefreshed',
+            'listsNotRefreshedReasons',
+            'liveQueries',
+            'offline',
+            'plan',
+            'tooLarge'
+        ])
+    })
+
+    test('a device without a serializer says that this face refreshes no list', async () => {
+        await using stores = await makeTestStores()
+        const { device } = await setUp(stores)
+        const { lists: _lists, ...withoutLists } = device
+
+        const planned = await plan(withoutLists, { include: [FROZEN] })
+
+        expect(planned.listsNotRefreshedReasons).toEqual([
+            { path: FROZEN, reason: 'this face refreshes no list' }
+        ])
     })
 
     test('a plan with no note to publish or update asks no refresh', async () => {

@@ -36,7 +36,29 @@ fn writes_an_empty_plan_with_its_id_when_no_note_is_included() {
     assert_eq!(id.len(), 16);
     assert_eq!(
         plan,
-        "  \"listsNotRefreshed\": [],\n  \"liveQueries\": [],\n  \"offline\": false,\n  \"plan\": {\n    \"edits\": [],\n    \"forcedRemove\": [],\n    \"guardedAttachments\": [],\n    \"move\": [],\n    \"publish\": [],\n    \"remove\": [],\n    \"update\": []\n  },\n  \"tooLarge\": []\n}\n"
+        "  \"listsNotRefreshed\": [],\n  \"listsNotRefreshedReasons\": [],\n  \"liveQueries\": [],\n  \"offline\": false,\n  \"plan\": {\n    \"edits\": [],\n    \"forcedRemove\": [],\n    \"guardedAttachments\": [],\n    \"move\": [],\n    \"publish\": [],\n    \"remove\": [],\n    \"update\": []\n  },\n  \"tooLarge\": []\n}\n"
+    );
+}
+
+/// The reason of each note of `listsNotRefreshed` comes with the plan,
+/// outside the record, so an agent can tell it (issue 111).
+#[test]
+fn gives_the_reason_of_each_list_that_is_not_refreshed() {
+    let stores = TestStores::new();
+
+    let output = plan_command(&stores)
+        .arg("--include=50 Field guide/Queries/Frozen table.md")
+        .output()
+        .expect("the program starts");
+
+    assert!(output.status.success());
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).expect("the plan is JSON");
+    assert_eq!(
+        plan["listsNotRefreshedReasons"],
+        serde_json::json!([{
+            "path": "50 Field guide/Queries/Frozen table.md",
+            "reason": "the command line program refreshes no list"
+        }])
     );
 }
 

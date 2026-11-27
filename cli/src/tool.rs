@@ -708,10 +708,18 @@ fn refuse_unaccepted(current: &Computed, run: &Run) -> Result<(), String> {
 pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
     let (id, computed) = store_plan(device, &|_| selection.clone())?;
     let paths = || computed.plan.publish().iter().chain(computed.plan.update());
+    let not_refreshed = lists_not_refreshed(&computed.texts, paths());
+    // Why each list is not refreshed, outside the record and outside the
+    // parity rule (issue 111): an agent cannot read the error output.
+    let reasons: Vec<Value> = not_refreshed
+        .iter()
+        .map(|path| json!({ "path": path, "reason": NO_REFRESH }))
+        .collect();
     canonical(&json!({
         "attachmentsRemoved": to_value(&computed.attachments_removed)?,
         "id": id,
-        "listsNotRefreshed": lists_not_refreshed(&computed.texts, paths()),
+        "listsNotRefreshed": not_refreshed,
+        "listsNotRefreshedReasons": reasons,
         "liveQueries": live_queries(&computed.texts, paths()),
         "offline": !computed.reached,
         "plan": to_value(&computed.plan)?,
@@ -2440,6 +2448,9 @@ fn live_queries<'a>(
     sort_by_code_point(&mut found);
     found
 }
+
+/// The reason of each note of `listsNotRefreshed` in this face.
+const NO_REFRESH: &str = "the command line program refreshes no list";
 
 /// `listsNotRefreshed` (rule 6 of "The frozen lists of a note"): the paths of
 /// the notes with a list to refresh, sorted by path. The Rust program

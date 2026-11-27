@@ -492,11 +492,12 @@ describe('the MCP server of the plugin', () => {
 
     test('after a run of an agent, a ticked new note that changed still stops a publication of the view', async () => {
         await using stores = await makeTestStores()
-        const { server, call, center } = await setUp(stores)
+        const { server, call, center, vault } = await setUp(stores)
         try {
             await center.check()
             center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
             // Another program writes the ticked note after the check.
+            await writeFile(join(vault, NOTE), 'Another note at the same path\n')
             center.noteChanged(NOTE)
             const planned = JSON.parse(
                 (await call('plan', { include: [SECOND] })).texts[0] ?? ''
@@ -514,9 +515,10 @@ describe('the MCP server of the plugin', () => {
 
     test('after a run of an agent, a new note that changed and is ticked later still stops a publication', async () => {
         await using stores = await makeTestStores()
-        const { server, call, center } = await setUp(stores)
+        const { server, call, center, vault } = await setUp(stores)
         try {
             await center.check()
+            await writeFile(join(vault, NOTE), 'Another note at the same path\n')
             center.noteChanged(NOTE)
             const planned = JSON.parse(
                 (await call('plan', { include: [SECOND] })).texts[0] ?? ''

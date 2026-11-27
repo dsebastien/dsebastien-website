@@ -17,6 +17,12 @@ export const REFRESH_LIMIT = 10 * 60 * 1000
 /** The outcomes of a note that count as refreshed (rule 7 of "The frozen lists of a note"). */
 const REFRESHED: ReadonlySet<string> = new Set(['updated', 'unchanged'])
 
+/**
+ * The form of `textHash` of a note of the answer: the hash of the text after
+ * the last write of the call (issue 111). An older serializer gives none.
+ */
+const TEXT_HASH = /^sha256:[0-9a-f]{64}$/u
+
 /** Why a note with another outcome is not refreshed. */
 const NOT_REFRESHED: ReadonlyMap<string, string> = new Map([
     ['no-queries', 'the Dataview Serializer found no query to run in this note'],
@@ -105,6 +111,7 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
     }
     const refreshed = new Set<string>()
     const written = new Map<string, number>()
+    const textHashes = new Map<string, string>()
     const problems: { path: string; message: string }[] = []
     let wrote = false
     for (const [index, path] of paths.entries()) {
@@ -117,7 +124,9 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
             (entry['writes'] as number) < 0 ||
             typeof entry['outcome'] !== 'string' ||
             !isListOf(entry['errors'], ['query', 'message']) ||
-            !isListOf(entry['skipped'], ['query', 'reason'])
+            !isListOf(entry['skipped'], ['query', 'reason']) ||
+            (entry['textHash'] !== undefined &&
+                (typeof entry['textHash'] !== 'string' || !TEXT_HASH.test(entry['textHash'])))
         ) {
             return undefined
         }
@@ -136,6 +145,9 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
         }
         if (writes > 0 && typeof entry['resolvedPath'] === 'string') {
             written.set(entry['resolvedPath'], writes)
+            if (typeof entry['textHash'] === 'string') {
+                textHashes.set(entry['resolvedPath'], entry['textHash'])
+            }
         }
         if (state !== 'ready') {
             problems.push({ path, message: `${STATES.get(state) ?? state}${staleOf(answer)}` })
@@ -162,7 +174,7 @@ function readAnswer(paths: readonly string[], answer: unknown): RefreshResult | 
             problems.push({ path, message: NOT_REFRESHED.get(outcome) ?? outcome })
         }
     }
-    return { refreshed, written, wrote, problems }
+    return { refreshed, written, textHashes, wrote, problems }
 }
 
 /**

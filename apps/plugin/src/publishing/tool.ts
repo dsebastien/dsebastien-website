@@ -75,6 +75,12 @@ export interface StoredPlan {
     readonly offline: boolean
     /** The notes of the plan with a list to refresh that this run did not refresh (PUB-101, R71). */
     readonly listsNotRefreshed: readonly string[]
+    /**
+     * Why each note of `listsNotRefreshed` was not refreshed, in its order
+     * (issue 111): the plan tool gives it outside the record, so an agent
+     * can tell it. Outside the parity rule.
+     */
+    readonly listsNotRefreshedReasons: readonly { readonly path: string; readonly reason: string }[]
     /** The notes of the plan with a live query block, which the page drops (REN-14). */
     readonly liveQueries: readonly string[]
     /** The notes that the plan holds: they link to a file above the size limit (issue 72). */
@@ -83,6 +89,12 @@ export interface StoredPlan {
     readonly listsRefreshed: readonly string[]
     /** Why the refresh did not refresh a note, for the author. Outside the parity rule. */
     readonly refreshProblems: readonly { readonly path: string; readonly message: string }[]
+    /**
+     * The source hash and the text hash of each note of `publish` and
+     * `update`, as the record holds it: the publication center compares
+     * them with the texts of its check (issue 111). Outside the parity rule.
+     */
+    readonly hashes: ReadonlyMap<string, { readonly source: string; readonly text: string }>
 }
 
 export { FACES } from './run.ts'
@@ -465,6 +477,8 @@ export async function statusWithEdits(given: Device): Promise<{
     readonly edits: readonly EditEvent[]
     /** The published entries whose attachments list a file under a guard now (`guardedAttachments` of a plan). */
     readonly guardedEntries: readonly string[]
+    /** The source hash of each candidate and of each note of `movedEdited`, as the scan read it (issue 111). */
+    readonly sources: ReadonlyMap<string, string>
 }> {
     const device = forRun(given)
     await refuseWhenLocked(device)
@@ -477,13 +491,23 @@ export async function statusWithEdits(given: Device): Promise<{
     return {
         queue: { ...state.scan.queue, behind: state.behind },
         edits: eventsSince(state.scan.edits),
-        guardedEntries: state.scan.guardedEntries
+        guardedEntries: state.scan.guardedEntries,
+        sources: new Map(
+            [...state.scan.queue.new, ...state.scan.queue.movedEdited].flatMap(
+                (path): [string, string][] => {
+                    const note = state.scan.notes.get(path)
+                    return note === undefined ? [] : [[path, note.sourceHash]]
+                }
+            )
+        )
     }
 }
 
 /** The source, the cleaned note, the aliases, the links, the attachments and the note type of one note of a plan. */
 interface NoteTexts {
     readonly source: string
+    /** The hash of the whole text that the plan read. */
+    readonly textHash: string
     readonly aliases: Aliases
     readonly cleaned: string
     readonly links: readonly NoteLink[]
@@ -552,7 +576,15 @@ async function recordFor(
         const attachments = await attachmentsOf(files, scan.files)
         const aliases = aliasesOf(source)
         const noteType = newTypes.get(path) ?? scan.noteTypes.get(path)
-        texts.set(path, { source, aliases, cleaned, links, attachments, noteType })
+        texts.set(path, {
+            source,
+            textHash: contentHash(text),
+            aliases,
+            cleaned,
+            links,
+            attachments,
+            noteType
+        })
         notes.push({
             aliases: aliases.aliases,
             attachments,
@@ -640,15 +672,33 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
             computed = await recordFor(device, () => normal, 'none')
         }
     }
+    const lists = listsOfPlan(computed, refresh.refreshed)
+    const problems = new Map(refresh.problems.map((one) => [one.path, one.message]))
     return {
         id: await store(device, computed),
         plan: computed.plan,
         attachmentsRemoved: computed.attachmentsRemoved,
         offline: !reached,
-        ...listsOfPlan(computed, refresh.refreshed),
+        ...lists,
+        listsNotRefreshedReasons: lists.listsNotRefreshed.map((path) => ({
+            path,
+            reason:
+                problems.get(path) ??
+                (device.lists === undefined
+                    ? 'this face refreshes no list'
+                    : twins.has(path)
+                      ? 'another file has the same path in Obsidian (an Obsidian twin), so the Dataview Serializer is not asked: its lists are published as saved'
+                      : 'the Dataview Serializer did not refresh it')
+        })),
         tooLarge: computed.tooLarge,
         listsRefreshed: sortByCodePoint([...refresh.written.keys()]),
-        refreshProblems: refresh.problems
+        refreshProblems: refresh.problems,
+        hashes: new Map(
+            [...computed.texts].map(([path, texts]) => [
+                path,
+                { source: contentHash(texts.source), text: texts.textHash }
+            ])
+        )
     }
 }
 

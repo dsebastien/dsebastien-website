@@ -432,9 +432,11 @@ export function outcomeOfPlan(stored: StoredPlan): ToolOutcome {
             attachmentsRemoved: stored.attachmentsRemoved,
             id: stored.id,
             listsNotRefreshed: stored.listsNotRefreshed,
+            listsNotRefreshedReasons: stored.listsNotRefreshedReasons,
             liveQueries: stored.liveQueries,
             offline: stored.offline,
-            plan: stored.plan
+            plan: stored.plan,
+            tooLarge: stored.tooLarge
         })
     }
 }

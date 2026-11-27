@@ -281,6 +281,13 @@ export interface RefreshResult {
      */
     readonly written: ReadonlyMap<string, number>
     /**
+     * The hash of the text of each note of `written` after the last write of
+     * the refresh (`sha256:` and the hexadecimal digits of its UTF-8 bytes),
+     * when the serializer gives it (issue 111). The publication center
+     * accepts that text for a new note as the text of the check.
+     */
+    readonly textHashes?: ReadonlyMap<string, string>
+    /**
      * True when the refresh wrote a note, or may have written one (an error,
      * a note that changed during the refresh, an answer that cannot be read):
      * the plan is computed again.

@@ -341,6 +341,22 @@ export class PublicationCenter {
     readonly #ownWrites = new Map<string, FileStat>()
     /** The edits that Obsidian reports while a refresh of the lists runs (R71). */
     #duringRefresh: NoteEvent[] | undefined
+    /** The source hash of each new note and moved edited note at the last check (issue 111). */
+    #checkedSources: ReadonlyMap<string, string> = new Map()
+    /** The text hashes that the serializer gave for its writes since the last check (issue 111). */
+    readonly #refreshedTexts = new Map<string, Set<string>>()
+    /** The notes that a refresh wrote since the last check with no text hash in its answer. */
+    readonly #writtenWithoutHash = new Set<string>()
+    /**
+     * The takedowns that started while the current refresh of the lists
+     * runs (issue 111): the refresh returns only after them. `undefined`
+     * when no refresh runs.
+     */
+    #duringRefreshRuns: Promise<void>[] | undefined
+    /** The takedowns that wait for the end of an activity: a refresh that starts wakes them. */
+    #waitingTakedowns: (() => void)[] = []
+    /** The last takedown that runs during a refresh: one takedown at a time holds the copy. */
+    #refreshTakedown: Promise<void> = Promise.resolve()
     /** The notes whose state property the run wrote: the refresh after the run is owed (R84). */
     #owed: readonly PropertyWrite[] | undefined
     /** What the check after a run read, while a refresh after the run is owed. */
@@ -517,12 +533,39 @@ export class PublicationCenter {
                 refresh: async (paths, moment) => {
                     const waiting: NoteEvent[] = []
                     this.#duringRefresh = waiting
+                    // A takedown never waits for a refresh (issue 111): it
+                    // touches no list, and a plan that it makes stale is
+                    // refused at its publication.
+                    const runs: Promise<void>[] = []
+                    this.#duringRefreshRuns = runs
+                    for (const wake of this.#waitingTakedowns.splice(0)) {
+                        wake()
+                    }
                     let result: RefreshResult | undefined
                     try {
                         result = await lists.refresh(paths, moment)
                         return result
                     } finally {
+                        // The refresh returns after the takedowns that started
+                        // during it: the plan is then computed on their copy,
+                        // and their writes are recorded before the events are
+                        // judged.
+                        this.#duringRefreshRuns = undefined
+                        await Promise.allSettled(runs)
                         const writes = new Map(result?.written ?? [])
+                        // The texts that the serializer wrote: a new note
+                        // with one of them is the note of the check (issue 111).
+                        for (const path of writes.keys()) {
+                            const hash = result?.textHashes?.get(path)
+                            if (hash === undefined) {
+                                this.#writtenWithoutHash.add(path)
+                            } else {
+                                this.#refreshedTexts.set(
+                                    path,
+                                    new Set([...(this.#refreshedTexts.get(path) ?? []), hash])
+                                )
+                            }
+                        }
                         // One event for each write of the refresh is that
                         // write; any other event is an edit, unless the note
                         // is as the last write of a run left it.
@@ -562,9 +605,8 @@ export class PublicationCenter {
      */
     #logLists(stored: StoredPlan): void {
         if (stored.listsNotRefreshed.length > 0) {
-            const reasons = new Map(stored.refreshProblems.map((one) => [one.path, one.message]))
             this.#log(
-                `Lists not refreshed, published as they are in the note now: ${stored.listsNotRefreshed.map((path) => `"${path}": ${reasons.get(path) ?? 'the Dataview Serializer did not refresh it'}`).join('; ')}`
+                `Lists not refreshed, published as they are in the note now: ${stored.listsNotRefreshedReasons.map((one) => `"${one.path}": ${one.reason}`).join('; ')}`
             )
         }
         if (stored.liveQueries.length > 0) {
@@ -1006,6 +1048,10 @@ export class PublicationCenter {
         // The edits before this check: they are marks again when it fails.
         const before = this.#changed
         this.#changed = new Set()
+        // The texts of the check that the author saw (issue 111).
+        const sources = this.#checkedSources
+        const texts = new Map(this.#refreshedTexts)
+        const unhashed = new Set(this.#writtenWithoutHash)
         try {
             await this.#checkWith(device)
         } catch (error) {
@@ -1029,6 +1075,24 @@ export class PublicationCenter {
                 this.#changed.add(path)
             }
         }
+        // A kept note keeps the text of the check before the run of the
+        // agent: a publication of the view stops when the plan holds another
+        // one (issue 111).
+        const now = new Map(this.#checkedSources)
+        for (const path of kept) {
+            const source = sources.get(path)
+            if (source !== undefined) {
+                now.set(path, source)
+            }
+            const hashes = texts.get(path)
+            if (hashes !== undefined) {
+                this.#refreshedTexts.set(path, hashes)
+            }
+            if (unhashed.has(path)) {
+                this.#writtenWithoutHash.add(path)
+            }
+        }
+        this.#checkedSources = now
     }
 
     async #checkWith(device: Device): Promise<void> {
@@ -1044,7 +1108,10 @@ export class PublicationCenter {
                 await device.local.release(lock.text)
             }
         }
-        const { queue, edits, guardedEntries } = await statusWithEdits(device)
+        const { queue, edits, guardedEntries, sources } = await statusWithEdits(device)
+        this.#checkedSources = sources
+        this.#refreshedTexts.clear()
+        this.#writtenWithoutHash.clear()
         this.#fresh = true
         this.#set({
             queue,
@@ -1102,10 +1169,7 @@ export class PublicationCenter {
                     throw new Error('check the vault first')
                 }
                 const expected = planOfChoices(queue, choices, edits ?? [], guardedEntries ?? [])
-                // A new note that changed after the check can be another note at
-                // the same path: the author never saw it in the lists.
                 const selection = selectionOf(queue, choices)
-                this.#refuseChangedNewNotes(queue, expected, selection.pair)
                 const device = this.#device()
                 let stored: StoredPlan
                 try {
@@ -1119,8 +1183,10 @@ export class PublicationCenter {
                     }
                     throw error
                 }
-                // An edit during the scan of the plan counts too.
-                this.#refuseChangedNewNotes(queue, expected, selection.pair)
+                // A new note that changed after the check can be another note at
+                // the same path: the author never saw it in the lists. The
+                // texts of the plan decide, not the events (issue 111).
+                this.#refuseChangedNewNotes(queue, expected, selection.pair, stored)
                 if (!samePlan(stored.plan, expected)) {
                     this.#set({ dryRun: stored })
                     throw new Error(
@@ -1165,70 +1231,144 @@ export class PublicationCenter {
      */
     async takedown(paths: readonly string[], shown?: readonly string[]): Promise<void> {
         // A takedown does not wait for a publication (PUB-99), but one run
-        // at a time holds the copy: it runs at the end of the current one.
+        // at a time holds the copy: it runs at the end of the current one,
+        // or at once while the current one waits for a refresh of the lists
+        // (issue 111).
         while (this.#state.activity !== 'idle') {
-            await this.#current
+            const runs = this.#duringRefreshRuns
+            if (runs !== undefined) {
+                await this.#takedownDuringRefresh(runs, paths, shown)
+                return
+            }
+            await Promise.race([
+                this.#current,
+                new Promise<void>((resolve) => {
+                    this.#waitingTakedowns.push(resolve)
+                })
+            ])
         }
         // Set by the work of the run: the push succeeded.
         const done = { pushed: false }
         await this.#run(
             'taking down',
             'Takedown',
-            async () => {
-                const device = this.#device()
-                // The queue tells where a note is in the content store: after a
-                // run that changed the copy, it is checked again first.
-                if (!this.#fresh || this.#changed.size > 0) {
-                    // Nothing but the copy stops a takedown (PUB-99): a check that
-                    // fails (a deny list entry that names no folder, a stopped
-                    // run) leaves the last check.
-                    try {
-                        await this.#checkWith(device)
-                    } catch (error) {
-                        this.#log(
-                            `Takedown: the check before it failed, so it uses the last check (${messageOf(error)})`
-                        )
-                    }
-                }
-                // A note that a move of the queue moved is still at its old path
-                // in the content store until the next publication.
-                const stored = paths.map((path) => this.storePathOf(path))
-                if (shown !== undefined && stored.some((path, index) => path !== shown[index])) {
-                    throw new Error(
-                        `The note moved in the content store since its dialog opened, so nothing was taken down: open its dialog again (${stored.map((path) => `"${path}"`).join(', ')})`
-                    )
-                }
-                this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
-                this.#fresh = false
-                const report = await this.#pushing(
-                    device,
-                    () =>
-                        takedown(device, stored, {
-                            time: canonicalTime(this.host.now()),
-                            device: this.host.deviceName,
-                            face: 'plugin'
-                        }),
-                    () => {
-                        done.pushed = true
-                    },
-                    true
-                )
-                done.pushed = true
-                await this.#wrote(report.propertyRemoved)
-                this.#set({ report: { kind: 'takedown', report, addresses: [] } })
-                this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
-                this.#oweRefresh(device, [], report.propertyRemoved)
-                if (report.storageWarnings.length > 0) {
-                    // A file that stays in the storage can still be public (issue 38).
-                    throw new Error(
-                        `The note was taken down, but the attachment storage gave warnings: a file can still be public. Take the note down again, or delete these files by hand: ${report.storageWarnings.map((one) => `${one.path}: ${one.message}`).join('. ')}`
-                    )
-                }
-            },
+            () => this.#takedownWork(paths, shown, done),
             'author'
         )
         if (done.pushed) {
             void this.#deploy({ push: 'ok', takedown: true })
+        }
+    }
+
+    /**
+     * A takedown that starts while a refresh of the lists runs (issue 111),
+     * inside the activity that waits for the refresh: the refresh returns
+     * after it. It checks again at its end, as every run that changed the
+     * copy, and one such takedown runs at a time.
+     */
+    async #takedownDuringRefresh(
+        runs: Promise<void>[],
+        paths: readonly string[],
+        shown: readonly string[] | undefined
+    ): Promise<void> {
+        const done = { pushed: false }
+        const before = this.#refreshTakedown
+        const run = (async () => {
+            await before
+            const { error: _old, failure: _kept, ...rest } = this.#state
+            this.#state = rest
+            this.#log('Takedown started while the lists are refreshed')
+            try {
+                await this.#takedownWork(paths, shown, done)
+            } catch (error) {
+                const failure = messageOf(error)
+                this.#log(`Takedown failed: ${failure}`)
+                this.#set({ error: failure, failure })
+            }
+            // The activity that waits for the refresh decides on the texts of
+            // the check that the author saw, not on this one.
+            const sources = this.#checkedSources
+            const texts = new Map(this.#refreshedTexts)
+            const unhashed = new Set(this.#writtenWithoutHash)
+            const marks = new Set(this.#changed)
+            try {
+                await this.#check()
+            } catch (error) {
+                this.#log(`Check failed: ${messageOf(error)}`)
+            }
+            this.#checkedSources = sources
+            for (const [path, hashes] of texts) {
+                this.#refreshedTexts.set(path, hashes)
+            }
+            for (const path of unhashed) {
+                this.#writtenWithoutHash.add(path)
+            }
+            for (const path of marks) {
+                this.#changed.add(path)
+            }
+        })()
+        this.#refreshTakedown = run
+        runs.push(run)
+        await run
+        if (done.pushed) {
+            void this.#deploy({ push: 'ok', takedown: true })
+        }
+    }
+
+    /** The work of a takedown (PUB-81): the check when the queue is old, the takedown, its report. */
+    async #takedownWork(
+        paths: readonly string[],
+        shown: readonly string[] | undefined,
+        done: { pushed: boolean }
+    ): Promise<void> {
+        const device = this.#device()
+        // The queue tells where a note is in the content store: after a
+        // run that changed the copy, it is checked again first.
+        if (!this.#fresh || this.#changed.size > 0) {
+            // Nothing but the copy stops a takedown (PUB-99): a check that
+            // fails (a deny list entry that names no folder, a stopped
+            // run) leaves the last check.
+            try {
+                await this.#checkWith(device)
+            } catch (error) {
+                this.#log(
+                    `Takedown: the check before it failed, so it uses the last check (${messageOf(error)})`
+                )
+            }
+        }
+        // A note that a move of the queue moved is still at its old path
+        // in the content store until the next publication.
+        const stored = paths.map((path) => this.storePathOf(path))
+        if (shown !== undefined && stored.some((path, index) => path !== shown[index])) {
+            throw new Error(
+                `The note moved in the content store since its dialog opened, so nothing was taken down: open its dialog again (${stored.map((path) => `"${path}"`).join(', ')})`
+            )
+        }
+        this.#log(`Takedown started: ${stored.map((path) => `"${path}"`).join(', ')}`)
+        this.#fresh = false
+        const report = await this.#pushing(
+            device,
+            () =>
+                takedown(device, stored, {
+                    time: canonicalTime(this.host.now()),
+                    device: this.host.deviceName,
+                    face: 'plugin'
+                }),
+            () => {
+                done.pushed = true
+            },
+            true
+        )
+        done.pushed = true
+        await this.#wrote(report.propertyRemoved)
+        this.#set({ report: { kind: 'takedown', report, addresses: [] } })
+        this.#log(`Takedown done: ${String(report.takenDown.length)} taken down`)
+        this.#oweRefresh(device, [], report.propertyRemoved)
+        if (report.storageWarnings.length > 0) {
+            // A file that stays in the storage can still be public (issue 38).
+            throw new Error(
+                `The note was taken down, but the attachment storage gave warnings: a file can still be public. Take the note down again, or delete these files by hand: ${report.storageWarnings.map((one) => `${one.path}: ${one.message}`).join('. ')}`
+            )
         }
     }
 
@@ -1545,16 +1685,19 @@ export class PublicationCenter {
     #refuseChangedNewNotes(
         queue: PublicationQueue,
         expected: PublicationPlan,
-        pairs: readonly Move[]
+        pairs: readonly Move[],
+        stored: StoredPlan
     ): void {
         // A ticked moved note whose text is not the published text can be
         // another note too (R67).
         const moved = new Set(queue.movedEdited)
         const fresh = [
-            ...expected.publish,
-            ...expected.update.filter((path) => moved.has(path)),
-            ...pairs.map((one) => one.to)
-        ].filter((path) => this.#changed.has(path))
+            ...new Set([
+                ...expected.publish,
+                ...expected.update.filter((path) => moved.has(path)),
+                ...pairs.map((one) => one.to)
+            ])
+        ].filter((path) => this.#changedSinceCheck(path, stored))
         if (fresh.length === 0) {
             return
         }
@@ -1569,6 +1712,25 @@ export class PublicationCenter {
         throw new Error(
             `A new note changed after the check, so nothing was published and its tick is gone: ${fresh.map((path) => `"${path}"`).join(', ')}. The lists are checked again: check them, tick again and publish.`
         )
+    }
+
+    /**
+     * True when the plan holds another text of the note than the check:
+     * its source is not the source of the check, and its text is not one
+     * that the serializer wrote since (issue 111). A note that the plan does
+     * not write is no change. When the serializer gave no hash of its write,
+     * the events decide for that note, as before: an event that is not one
+     * of its writes is an edit.
+     */
+    #changedSinceCheck(path: string, stored: StoredPlan): boolean {
+        const planned = stored.hashes.get(path)
+        if (planned === undefined || planned.source === this.#checkedSources.get(path)) {
+            return false
+        }
+        if (this.#refreshedTexts.get(path)?.has(planned.text) === true) {
+            return false
+        }
+        return !this.#writtenWithoutHash.has(path) || this.#changed.has(path)
     }
 
     /**

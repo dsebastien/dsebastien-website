@@ -144,6 +144,43 @@ describe('the Dataview Serializer in Obsidian', () => {
         expect([...(await lists.refresh(['A.md'])).written]).toEqual([['A.md', 2]])
     })
 
+    // The hash of the text of the last write (issue 111): the publication
+    // center takes that text for the note of its check.
+    test('gives the hash of the text that the serializer wrote, when the answer has one', async () => {
+        const hash = `sha256:${'ab'.repeat(32)}`
+        const lists = listsOf(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [
+                        { ...(note('A.md', 'updated') as object), textHash: hash },
+                        note('B.md', 'updated')
+                    ]
+                }))
+            )
+        )
+
+        const result = await lists.refresh(['A.md', 'B.md'])
+
+        expect([...(result.textHashes ?? [])]).toEqual([['A.md', hash]])
+    })
+
+    test('an answer with a hash of another form cannot be read', async () => {
+        const lists = listsOf(
+            host(
+                serializer(() => ({
+                    state: 'ready',
+                    notes: [{ ...(note('A.md', 'updated') as object), textHash: 'abc' }]
+                }))
+            )
+        )
+
+        const result = await lists.refresh(['A.md'])
+
+        expect(result.refreshed.size).toBe(0)
+        expect(result.problems[0]?.message).toContain('cannot read')
+    })
+
     test('a note that a pass wrote before a later pass failed is a write', async () => {
         const lists = listsOf(
             host(
