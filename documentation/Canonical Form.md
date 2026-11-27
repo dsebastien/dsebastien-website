@@ -94,7 +94,7 @@ The table is the one of Bun, a JavaScript engine (JavaScriptCore). Obsidian runs
 
 | Path                 | What it holds                                                                                                        |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `configuration.json` | The configuration of the tool: `denyList`, the list of the denied folders                                            |
+| `configuration.json` | The configuration of the tool: `denyList`, the list of the denied folders, and the optional `noindexFolders` (R103)  |
 | `notes/<vault path>` | The cleaned note of a published note, at its vault path                                                              |
 | `manifest/<id>.json` | The manifest entry of a published note, as data in the canonical form                                                |
 | `renames.json`       | How many lines of each rename journal the publications read (see below)                                              |
@@ -107,6 +107,7 @@ The configuration is read strictly. The tool stops, and publishes nothing, in ea
 1. The file exists and cannot be read as UTF-8 text, or is not JSON, or is not an object whose `denyList` is a list of texts.
 2. An entry of the deny list is not a vault path in the form of this document: relative, with `/`, with no empty part, no `.` part and no `..` part.
 3. An entry of the deny list names no folder of the vault, with exactly that name (GATE-38 of the spec). A folder that was renamed, or an entry with another letter case, would else make its notes candidates. When the rename journals moved that folder, the message names its new path (see "The rename journal").
+4. The key `noindexFolders` is there and is not a list of texts, or an entry of it is not a vault path in that form (R103). The list is for the site build: the tool checks it and keeps it, and its folders are not checked against the vault. The messages are the shared cases of `fixtures/canonical/configuration.json`.
 
 A copy with no `configuration.json` in its last commit stops the tool too (decision R67): a wrong folder must never read as a content store with an empty deny list. Every reader of the deny list holds to this rule, also the removal of the state property after a takedown, which then writes no note and gives a warning, and the refresh of the frozen lists after a run, which then asks no note and gives a problem (issue 79).
 

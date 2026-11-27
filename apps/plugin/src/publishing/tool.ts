@@ -2473,7 +2473,8 @@ async function scansOfOneRead(
                       },
             manifest,
             journals,
-            configuration: { denyList: present },
+            // The queue never reads the noindex folders (R103).
+            configuration: { denyList: present, noindexFolders: [] },
             noteTypes: NO_NOTE_TYPES,
             edits: log
         })

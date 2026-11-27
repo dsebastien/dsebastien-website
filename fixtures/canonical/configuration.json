@@ -1,0 +1,74 @@
+{
+    "about": "The configuration of the publishing tool in the content store (configuration.json, GATE-04, R103). Both implementations read every case: `text` is the text of the file (null: the store has no file), `denyList` and `noindexFolders` are what a valid text gives, and `error` is the message that both give for a text that they refuse.",
+    "cases": [
+        {
+            "name": "no file",
+            "text": null,
+            "denyList": [],
+            "noindexFolders": []
+        },
+        {
+            "name": "a deny list alone",
+            "text": "{\"denyList\": [\"Locked Shed\"]}",
+            "denyList": ["Locked Shed"],
+            "noindexFolders": []
+        },
+        {
+            "name": "a deny list and noindex folders",
+            "text": "{\"denyList\": [], \"noindexFolders\": [\"Seed Bank\", \"Pond/Frogs\"]}",
+            "denyList": [],
+            "noindexFolders": ["Seed Bank", "Pond/Frogs"]
+        },
+        {
+            "name": "an empty list of noindex folders",
+            "text": "{\"denyList\": [], \"noindexFolders\": []}",
+            "denyList": [],
+            "noindexFolders": []
+        },
+        {
+            "name": "noindex folders that are not a list",
+            "text": "{\"denyList\": [], \"noindexFolders\": \"Seed Bank\"}",
+            "error": "configuration.json: the noindex folders must be a list of folders"
+        },
+        {
+            "name": "noindex folders as null",
+            "text": "{\"denyList\": [], \"noindexFolders\": null}",
+            "error": "configuration.json: the noindex folders must be a list of folders"
+        },
+        {
+            "name": "a noindex folder that is not a text",
+            "text": "{\"denyList\": [], \"noindexFolders\": [\"Seed Bank\", 3]}",
+            "error": "configuration.json: the noindex folders must be a list of folders"
+        },
+        {
+            "name": "a noindex folder that leaves the vault",
+            "text": "{\"denyList\": [], \"noindexFolders\": [\"../Seed Bank\"]}",
+            "error": "configuration.json: the noindex folders entry \"../Seed Bank\" is not a vault path. Write a folder as \"Folder/Sub folder\""
+        },
+        {
+            "name": "a noindex folder with a slash at its end",
+            "text": "{\"denyList\": [], \"noindexFolders\": [\"Seed Bank/\"]}",
+            "error": "configuration.json: the noindex folders entry \"Seed Bank/\" is not a vault path. Write a folder as \"Folder/Sub folder\""
+        },
+        {
+            "name": "a noindex folder with a backslash",
+            "text": "{\"denyList\": [], \"noindexFolders\": [\"Pond\\\\Frogs\"]}",
+            "error": "configuration.json: the noindex folders entry \"Pond\\Frogs\" is not a vault path. Write a folder as \"Folder/Sub folder\""
+        },
+        {
+            "name": "a wrong deny list comes first",
+            "text": "{\"denyList\": \"Locked Shed\", \"noindexFolders\": 3}",
+            "error": "configuration.json: the deny list must be a list of folders"
+        },
+        {
+            "name": "a deny list entry that leaves the vault",
+            "text": "{\"denyList\": [\"../Locked Shed\"]}",
+            "error": "configuration.json: the deny list entry \"../Locked Shed\" is not a vault path. Write a folder as \"Folder/Sub folder\""
+        },
+        {
+            "name": "a text that is not JSON",
+            "text": "{ not json",
+            "error": "configuration.json is not JSON"
+        }
+    ]
+}

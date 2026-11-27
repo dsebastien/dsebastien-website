@@ -16,6 +16,7 @@ Test data of the repository. Everything here is invented. Nothing comes from a r
 - `canonical/mcp.json`: the shared cases of the MCP server of the publishing tool: one message of the client, the call that the server makes and the answer that it gives. Both faces read them, with a stand-in for the operations.
 - `canonical/deploy.json`: the shared cases of the deploy after a push (issue 32): the command that the tool runs from the settings of a device, and the deploy report that it reads from the result line of the deploy. Both faces read them.
 - `canonical/originals.json`: the shared cases of the original of a note on the main site (issue 55): the comparison form of a URL, the post URL of a note, the canonical links of a page, the key `original` of a manifest entry, and the judgment of an answer of the main site.
+- `canonical/configuration.json`: the shared cases of `configuration.json` of the content store (R103): the texts that both implementations read, with the deny list that they give, and the texts that they refuse, with the message.
 - `canonical/queue.json`: the shared scenarios of the publication queue. Each scenario has its own small invented vault, written inside the file, so that a new note of the fixture vault changes no scenario.
 
 ## Rules

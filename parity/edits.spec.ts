@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import {
     FIXTURE_NOTE_TYPES,
     copyFixtureVault,
+    gitEnvironment,
     makeContentStoreCopy,
     makeTestStores
 } from '@dsebastien-website/testing'
@@ -302,5 +303,79 @@ describe('parity of the edits of the guards', () => {
         expect(edit.state).toBe('applied')
         expect(edit.removes).toBeUndefined()
         expect(edit.affects).toBeUndefined()
+    }, 300_000)
+})
+
+async function git(cwd: string, ...args: string[]): Promise<void> {
+    const child = Bun.spawn(['git', ...args], { cwd, env: gitEnvironment(), stderr: 'pipe' })
+    const errors = await new Response(child.stderr).text()
+    if ((await child.exited) !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${errors.trim()}`)
+    }
+}
+
+/** Commits and pushes a configuration of the content store, as the author does by hand. */
+async function writeConfiguration(copy: string, text: string): Promise<void> {
+    await writeFile(join(copy, 'configuration.json'), text)
+    await git(copy, 'commit', '--quiet', '--all', '--message', 'Change the configuration')
+    await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+}
+
+// R103: the list `noindexFolders` is for the site build. Both implementations
+// accept it, keep it when they write the configuration, and refuse a wrong
+// list with the same message.
+describe('parity of the noindex folders of the configuration', () => {
+    test('both keep the list through a deny, and refuse a wrong list the same way', async () => {
+        const outcome = async (
+            toolOf: (vault: string, copy: string) => Tool,
+            refusalOf: (vault: string, copy: string) => Promise<string>
+        ): Promise<{ event: string; configuration: string; refused: string }> => {
+            await using stores = await makeTestStores()
+            const vault = await copyFixtureVault(stores)
+            const copy = await makeContentStoreCopy(stores)
+            const tool = toolOf(vault, copy)
+            await writeConfiguration(
+                copy,
+                JSON.stringify({ denyList: ['80 Templates'], noindexFolders: ['10 Garden'] })
+            )
+            const event = await tool.edit('deny', '30 People', '2031-04-02T08:00:00Z')
+            const configuration = await readFile(join(copy, 'configuration.json'), 'utf8')
+            await writeConfiguration(
+                copy,
+                JSON.stringify({ denyList: ['80 Templates'], noindexFolders: ['10 Garden/'] })
+            )
+            return { event, configuration, refused: await refusalOf(vault, copy) }
+        }
+        const fromTypeScript = await outcome(typescriptTool, async (vault, copy) => {
+            try {
+                await typescriptTool(vault, copy).guards()
+                return 'accepted'
+            } catch (error) {
+                return error instanceof Error ? error.message : ''
+            }
+        })
+        const fromRust = await outcome(rustTool, async (vault, copy) => {
+            const result = await runRustProgram(program, [
+                'guards',
+                '--vault',
+                vault,
+                '--content-store',
+                copy
+            ])
+            return result.exitCode === 0 ? 'accepted' : result.stderr
+        })
+
+        expect(fromRust.event).toBe(fromTypeScript.event)
+        expect(fromRust.configuration).toBe(fromTypeScript.configuration)
+        expect(fromTypeScript.configuration).toBe(
+            toCanonicalJson({
+                denyList: ['80 Templates', '30 People'],
+                noindexFolders: ['10 Garden']
+            })
+        )
+        const message =
+            'configuration.json: the noindex folders entry "10 Garden/" is not a vault path'
+        expect(fromTypeScript.refused).toContain(message)
+        expect(fromRust.refused).toContain(message)
     }, 300_000)
 })

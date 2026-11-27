@@ -19,6 +19,11 @@ export function isVaultPath(path: string): boolean {
 export interface Configuration {
     /** The vault folders whose notes can never be published. */
     readonly denyList: readonly string[]
+    /**
+     * The vault folders whose notes are published but say `noindex` (R103):
+     * the site build applies them; the publishing tool only checks them.
+     */
+    readonly noindexFolders: readonly string[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -27,12 +32,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Reads the configuration from the text of its file. A content store without
- * the file has an empty deny list. It throws when the text is not a valid
- * configuration: a wrong deny list must never be read as an empty one.
+ * the file has an empty deny list. The list `noindexFolders` is optional. It
+ * throws when the text is not a valid configuration: a wrong deny list must
+ * never be read as an empty one.
  */
 export function parseConfiguration(text: string | undefined): Configuration {
     if (text === undefined) {
-        return { denyList: [] }
+        return { denyList: [], noindexFolders: [] }
     }
     let value: unknown
     try {
@@ -40,18 +46,31 @@ export function parseConfiguration(text: string | undefined): Configuration {
     } catch {
         throw new Error(`${CONFIGURATION_FILE} is not JSON`)
     }
-    const denyList = isRecord(value) ? value['denyList'] : undefined
-    if (!Array.isArray(denyList) || !denyList.every((folder) => typeof folder === 'string')) {
-        throw new Error(`${CONFIGURATION_FILE}: the deny list must be a list of folders`)
+    const object = isRecord(value) ? value : {}
+    const denyList = foldersOf(object['denyList'], 'deny list')
+    // An optional list (R103), but a wrong one is never read as an empty one.
+    const noindexFolders =
+        'noindexFolders' in object ? foldersOf(object['noindexFolders'], 'noindex folders') : []
+    return { denyList, noindexFolders }
+}
+
+/** The folders of a list of the configuration, or an error that names the list. */
+function foldersOf(list: unknown, name: string): readonly string[] {
+    if (
+        !Array.isArray(list) ||
+        !list.every((folder: unknown): folder is string => typeof folder === 'string')
+    ) {
+        throw new Error(`${CONFIGURATION_FILE}: the ${name} must be a list of folders`)
     }
-    // An entry in another form would match no note, and the guard would be open.
-    const wrong = denyList.find((folder) => !isVaultPath(folder))
+    // An entry in another form would match no note: the guard would be open,
+    // or the notes of a noindex folder would stay in the index.
+    const wrong = list.find((folder) => !isVaultPath(folder))
     if (wrong !== undefined) {
         throw new Error(
-            `${CONFIGURATION_FILE}: the deny list entry "${wrong}" is not a vault path. Write a folder as "Folder/Sub folder"`
+            `${CONFIGURATION_FILE}: the ${name} entry "${wrong}" is not a vault path. Write a folder as "Folder/Sub folder"`
         )
     }
-    return { denyList }
+    return list
 }
 
 /** The text of the configuration. It throws when the copy has none. */
