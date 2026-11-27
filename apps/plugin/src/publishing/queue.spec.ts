@@ -1770,7 +1770,17 @@ describe('commit that fails', () => {
             await writeFile(join(hooks, 'post-commit'), '#!/bin/sh\ntouch .git/committed\n')
             await writeFile(
                 join(hooks, 'reference-transaction'),
-                '#!/bin/sh\nif [ "$1" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n'
+                // The first move after the commit is its seal (R104): it goes
+                // through, so that the push and the undo come after it.
+                [
+                    '#!/bin/sh',
+                    'if [ "$1" = prepared ] && [ -f .git/committed ]; then',
+                    '    [ -f .git/sealed ] && exit 1',
+                    '    touch .git/sealed',
+                    'fi',
+                    'exit 0',
+                    ''
+                ].join('\n')
             )
             await chmod(join(hooks, 'post-commit'), 0o755)
             await chmod(join(hooks, 'reference-transaction'), 0o755)

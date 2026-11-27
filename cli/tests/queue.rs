@@ -2180,7 +2180,16 @@ fn refuse_moves_after_a_commit(copy: &Path) {
         ("post-commit", "#!/bin/sh\ntouch .git/committed\n"),
         (
             "reference-transaction",
-            "#!/bin/sh\nif [ \"$1\" = prepared ] && [ -f .git/committed ]; then exit 1; fi\nexit 0\n",
+            // The first move after the commit is its seal (R104): it goes
+            // through, so that the push and the undo come after it.
+            concat!(
+                "#!/bin/sh\n",
+                "if [ \"$1\" = prepared ] && [ -f .git/committed ]; then\n",
+                "    [ -f .git/sealed ] && exit 1\n",
+                "    touch .git/sealed\n",
+                "fi\n",
+                "exit 0\n",
+            ),
         ),
     ] {
         fs::write(hooks.join(name), script).expect("the hook is written");
