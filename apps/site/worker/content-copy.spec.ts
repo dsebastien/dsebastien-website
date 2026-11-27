@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { makeContentStoreCopy, makeTestStores, rejectionOf } from '@dsebastien-website/testing'
+import {
+    makeContentStoreCopy,
+    makeTestStores,
+    rejectionOf,
+    sealHead
+} from '@dsebastien-website/testing'
 import {
     checkContentCopy,
     contentStoreHas,
@@ -11,7 +16,9 @@ import {
     releaseAttachmentKeys,
     removalsBetween,
     removedAttachmentKeys,
+    sealOfCopy,
     sealRefusal,
+    takedownStore,
     withdrawnAttachmentKeys
 } from './content-copy.ts'
 
@@ -637,6 +644,17 @@ describe('the withdrawn keys of the copy', () => {
         expect(await withdrawnAttachmentKeys(copy)).toEqual(['a'.repeat(64), 'b'.repeat(64)])
     })
 
+    // R104: on a state that is not sealed, they come from the trusted sealed state.
+    test('are the keys of withdrawn.json at a revision of the copy', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await withdraw(copy, `{"keys": ["${'a'.repeat(64)}"]}\n`)
+        const sealed = await git(copy, 'rev-parse', 'HEAD')
+        await withdraw(copy, `{"keys": ["${'b'.repeat(64)}"]}\n`)
+        expect(await withdrawnAttachmentKeys(copy, sealed)).toEqual(['a'.repeat(64)])
+        expect(await withdrawnAttachmentKeys(copy)).toEqual(['b'.repeat(64)])
+    })
+
     test('stop on a file that the tool would refuse', async () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
@@ -662,6 +680,34 @@ describe('the seal of the copy of a deployment', () => {
         expect(refused).toContain(`confirm-state --head ${head}`)
     })
 
+    test('gives the trusted sealed commit of a state that is not sealed', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const sealed = await git(copy, 'rev-parse', 'HEAD')
+        expect(await sealOfCopy(copy, key)).toEqual({})
+        await commit(copy, 'A commit by hand')
+        const state = await sealOfCopy(copy, key)
+        expect(state.trusted).toBe(sealed)
+        expect(state.refusal).toContain('files of the store: notes.txt (added)')
+    })
+
+    // The owner decision of item 3: no confirmation for a new copy, the live
+    // revision of the host is its lower bound.
+    test('takes the live revision as the lower bound of a copy with no mark', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const older = await git(copy, 'rev-parse', 'HEAD')
+        await commit(copy, 'Publish: 1 note', false)
+        await sealHead(copy)
+        const newer = await git(copy, 'rev-parse', 'HEAD')
+        await rm(join(copy, '.git', 'vault-publish', 'sealed'), { force: true })
+        expect(await sealOfCopy(copy, key, older)).toEqual({})
+        await git(copy, 'reset', '--quiet', '--hard', older)
+        const state = await sealOfCopy(copy, key, newer)
+        expect(state.refusal).toContain(`the live content revision ${newer} of the host`)
+        expect(state.trusted).toBeUndefined()
+    })
+
     test('refuses with no key or a key that is not valid, and never shows it', async () => {
         await using stores = await makeTestStores()
         const copy = await makeContentStoreCopy(stores)
@@ -670,5 +716,64 @@ describe('the seal of the copy of a deployment', () => {
             expect(refused).toContain('VAULT_PUBLISH_SEAL_KEY of its environment')
             expect(refused).not.toContain('7c7c')
         }
+    })
+})
+
+// R104, rule 11: a takedown on a state that is not sealed builds the trusted
+// sealed state without the entries and cleaned notes that the last commit lacks.
+describe('the content store of a takedown on a state that is not sealed', () => {
+    /** Every file of a folder, by its path with slashes, with its text. */
+    async function filesOf(folder: string): Promise<Record<string, string>> {
+        const found: Record<string, string> = {}
+        for (const entry of await readdir(folder, { recursive: true, withFileTypes: true })) {
+            if (entry.isFile()) {
+                const path = join(entry.parentPath, entry.name)
+                const name = path
+                    .slice(folder.length + 1)
+                    .split(sep)
+                    .join('/')
+                found[name] = await readFile(path, 'utf8')
+            }
+        }
+        return found
+    }
+
+    test('holds the sealed files without the notes that the last commit removed', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await mkdir(join(copy, 'manifest'))
+        await mkdir(join(copy, 'notes'))
+        for (const name of ['A', 'B']) {
+            await writeFile(join(copy, 'manifest', `${name}.json`), `{"entry": "${name}"}\n`)
+            await writeFile(join(copy, 'notes', `${name}.md`), `Note ${name}\n`)
+        }
+        await git(copy, 'add', '--all')
+        await git(copy, 'commit', '--quiet', '--message', 'Publish: 2 notes')
+        await sealHead(copy)
+        const sealed = await git(copy, 'rev-parse', 'HEAD')
+        const configuration = await readFile(join(copy, 'configuration.json'), 'utf8')
+        // A foreign commit: a new entry and another configuration.
+        await writeFile(join(copy, 'manifest', 'C.json'), '{"entry": "C"}\n')
+        await writeFile(join(copy, 'notes', 'C.md'), 'Note C\n')
+        await writeFile(join(copy, 'configuration.json'), '{}\n')
+        await git(copy, 'add', '--all')
+        await git(copy, 'commit', '--quiet', '--message', 'A commit by hand')
+        // The takedown of B.
+        await git(copy, 'rm', '--quiet', 'manifest/B.json', 'notes/B.md')
+        await git(copy, 'commit', '--quiet', '--message', 'Takedown: 1 note')
+        const folder = join(stores.root, 'takedown-store')
+        expect(await takedownStore(copy, sealed, folder)).toEqual({
+            removed: ['manifest/B.json', 'notes/B.md']
+        })
+        expect(await filesOf(folder)).toEqual({
+            'configuration.json': configuration,
+            'manifest/A.json': '{"entry": "A"}\n',
+            'notes/A.md': 'Note A\n'
+        })
+        // A second run starts from an empty folder.
+        expect(await takedownStore(copy, sealed, folder)).toEqual({
+            removed: ['manifest/B.json', 'notes/B.md']
+        })
+        expect(Object.keys(await filesOf(folder))).toHaveLength(3)
     })
 })

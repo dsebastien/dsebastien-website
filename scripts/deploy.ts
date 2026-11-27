@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -7,6 +7,7 @@ import {
     analyticsVariable,
     checkOutputAnalytics,
     checkOutputPolicy,
+    deploymentRecordFrom,
     deployToken,
     headersFile,
     releaseImages,
@@ -24,7 +25,8 @@ import {
     releaseAttachmentKeys,
     removalsBetween,
     removedAttachmentKeys,
-    sealRefusal,
+    sealOfCopy,
+    takedownStore,
     withdrawnAttachmentKeys
 } from '../apps/site/worker/content-copy.ts'
 import {
@@ -132,6 +134,21 @@ const TAKEDOWN = Bun.argv.slice(2).includes('--takedown')
 /** The result of a run that stopped before its first step. */
 function stopped(error: unknown, target?: DeployTarget): DeployResult {
     return stoppedResult(error, target === undefined ? '' : `https://${target.host}/`, TAKEDOWN)
+}
+
+/**
+ * The revision that the live release of the host was built from (R104): the
+ * lower bound of the seal of a copy with no mark. `undefined` when the host
+ * has no release of a content store, or when its record cannot be read (the
+ * run then refuses at its check of the live release).
+ */
+async function liveSourceOf(url: string): Promise<string | undefined> {
+    try {
+        const record = deploymentRecordFrom(await readHostRecord(url))
+        return record?.builtFrom ?? record?.contentRevision ?? undefined
+    } catch {
+        return undefined
+    }
 }
 
 /** The lock of the deployments of a target in this clone. */
@@ -309,31 +326,62 @@ async function deploy(
         // a copy that cannot be built is refused inside the run, after the
         // withdrawn files left when that is safe (review round 3 of issue 120).
         const inspected = store === undefined ? undefined : await inspectContentCopy(store)
-        // A state that the tool did not seal is never built (R104, rule 10):
-        // it is refused as a copy that cannot be built, after the withdrawn
-        // files left, so a takedown on such a state waits for its deploy.
-        const sealed =
-            store === undefined || inspected?.refusal !== undefined
+        // The seal of the state (R104, rules 10 and 11). A copy with no mark
+        // takes the revision that the live release was built from as its
+        // lower bound; a move to another content store has none.
+        const floor =
+            store === undefined || dryRun || move !== undefined
                 ? undefined
-                : await sealRefusal(store, process.env)
+                : await liveSourceOf(url)
+        const seal = store === undefined ? {} : await sealOfCopy(store, process.env, floor)
+        // A takedown on a state that is not sealed never waits: it builds the
+        // trusted sealed state without the notes that the last commit lacks,
+        // so its pages leave and no change of another pusher goes live. Every
+        // other deploy of such a state is refused as a copy that cannot be built.
+        const fromSealed =
+            values.takedown && inspected?.refusal === undefined && seal.refusal !== undefined
+                ? seal.trusted
+                : undefined
         const copy =
-            inspected === undefined || sealed === undefined
+            inspected === undefined ||
+            inspected.refusal !== undefined ||
+            seal.refusal === undefined ||
+            fromSealed !== undefined
                 ? inspected
-                : { ...inspected, refusal: sealed }
+                : { ...inspected, refusal: seal.refusal }
+        const buildStore =
+            store === undefined || fromSealed === undefined ? store : join(folder, 'takedown-store')
+        if (store !== undefined && fromSealed !== undefined && buildStore !== undefined) {
+            const { removed } = await takedownStore(store, fromSealed, buildStore)
+            process.stdout.write(
+                `the state of the content store is not sealed: the takedown builds the sealed state ${fromSealed} without ${String(removed.length)} file(s) that the last commit lacks\n`
+            )
+        }
         const contentRevision = copy?.head ?? null
         // The files that the guards withdrew are read first: when a later
         // read of the copy fails, the run still deletes them before it stops
         // (issue 120, decision of the author R78, after R45). The keys of the
-        // release and the history are read inside the run.
-        const withdrawnKeys = store === undefined ? [] : await withdrawnAttachmentKeys(store)
+        // release and the history are read inside the run. On a state that
+        // is not sealed they come from the trusted sealed state only, never
+        // from the last commit (R104): none when there is no such state.
+        const withdrawnKeys =
+            store === undefined
+                ? []
+                : seal.refusal === undefined
+                  ? await withdrawnAttachmentKeys(store)
+                  : seal.trusted === undefined
+                    ? []
+                    : await withdrawnAttachmentKeys(store, seal.trusted)
         const result = await deployRelease({
             url,
             contentRevision,
             siteRevision: await git(ROOT, 'rev-parse', 'HEAD'),
             now: () => new Date(),
-            usedKeys: () => (store === undefined ? Promise.resolve([]) : usedAttachmentKeys(store)),
+            usedKeys: () =>
+                buildStore === undefined ? Promise.resolve([]) : usedAttachmentKeys(buildStore),
             // The variants of the images (issue 87): made here, from the attachment folder.
-            images: () => (store === undefined ? Promise.resolve([]) : releaseImages(store)),
+            images: () =>
+                buildStore === undefined ? Promise.resolve([]) : releaseImages(buildStore),
             encode: encodeVariants,
             // The files of the takedowns and of the forced removals leave at once (issue 120).
             ...(store === undefined
@@ -355,6 +403,13 @@ async function deploy(
                   }),
             attachments: attachmentFolder(attachments),
             takedown: values.takedown,
+            ...(store === undefined || fromSealed === undefined
+                ? {}
+                : {
+                      builtFrom: fromSealed,
+                      builtFromDescendsFrom: (revision: string) =>
+                          descendsFrom(store, revision, fromSealed)
+                  }),
             newContentStore: move !== undefined,
             dryRun,
             ...(store === undefined
@@ -394,7 +449,7 @@ async function deploy(
                 await writeFile(catalogReport, '')
                 await run(['bun', 'run', 'build:site'], {
                     environment: {
-                        CONTENT_STORE: store,
+                        CONTENT_STORE: buildStore ?? store,
                         STORE_CATALOG:
                             catalog === undefined || catalog === '' ? STORE_CATALOG_URL : catalog,
                         STORE_CATALOG_REPORT: catalogReport,
@@ -452,6 +507,9 @@ async function deploy(
                 process.stdout.write(`${line}\n`)
             }
         })
+        if (fromSealed !== undefined && buildStore !== undefined) {
+            await rm(buildStore, { recursive: true, force: true })
+        }
         return {
             ...result,
             warnings: [

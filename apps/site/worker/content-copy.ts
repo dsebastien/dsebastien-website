@@ -1,3 +1,4 @@
+import { mkdir, rm } from 'node:fs/promises'
 import { gitSealedHistory } from '../../plugin/src/publishing/node/sealed-history.ts'
 import {
     checkSeal,
@@ -143,31 +144,120 @@ export async function inspectContentCopy(
  */
 export async function sealRefusal(
     store: string,
-    environment: Readonly<Record<string, string | undefined>>
+    environment: Readonly<Record<string, string | undefined>>,
+    floor?: string
 ): Promise<string | undefined> {
-    const key = sealKeyOf(environment[SEAL_KEY_VARIABLE], undefined)
-    if ('problem' in key) {
-        return `the deploy checks the seal of the content store (R104), and ${SEAL_KEY_VARIABLE} of its environment is missing or not 64 hexadecimal digits: the publishing tool gives the key of the vault to the deploy that it starts; for a deploy by hand, set the variable, or put the line ${SEAL_KEY_VARIABLE}=<64 hexadecimal digits> into the file of --env-file. Nothing is built`
-    }
-    const checked = await checkSeal(
-        gitSealedHistory(store, { program: 'git', environment: gitEnvironment() }),
-        key.key
-    )
-    return checked.status === 'differs'
-        ? `the deploy builds only a state of the content store that the tool sealed, so nothing is built: ${differenceText(checked.difference)}, then deploy again`
-        : undefined
+    return (await sealOfCopy(store, environment, floor)).refusal
 }
 
 /**
- * True when the revision is the commit of the copy or one of its ancestors,
+ * The seal of the commit of the copy (R104, rules 10 and 11 of "The seal of
+ * the content store"): nothing when it is sealed; else why it must not be
+ * built (`refusal`) and, when there is one, the trusted sealed commit that
+ * the commit of the copy descends from (`trusted`): a takedown builds it
+ * without the notes that it removes, and the withdrawn keys come from it.
+ * `floor` is the live content revision of the host: the lower bound of a
+ * copy with no mark.
+ */
+export async function sealOfCopy(
+    store: string,
+    environment: Readonly<Record<string, string | undefined>>,
+    floor?: string
+): Promise<{ readonly refusal?: string; readonly trusted?: string }> {
+    const key = sealKeyOf(environment[SEAL_KEY_VARIABLE], undefined)
+    if ('problem' in key) {
+        return {
+            refusal: `the deploy checks the seal of the content store (R104), and ${SEAL_KEY_VARIABLE} of its environment is missing or not 64 hexadecimal digits: the publishing tool gives the key of the vault to the deploy that it starts; for a deploy by hand, set the variable, or put the line ${SEAL_KEY_VARIABLE}=<64 hexadecimal digits> into the file of --env-file. Nothing is built`
+        }
+    }
+    const checked = await checkSeal(
+        gitSealedHistory(store, { program: 'git', environment: gitEnvironment() }),
+        key.key,
+        floor
+    )
+    if (checked.status !== 'differs') {
+        return {}
+    }
+    const { base, sealed } = checked.difference
+    const refusal = `the deploy builds only a state of the content store that the tool sealed, so nothing is built: ${differenceText(checked.difference)}, then deploy again`
+    // The base of the difference is trusted when the last commit descends from it.
+    const trusted =
+        base !== 'none' && (await descendsFrom(store, sealed)) === true ? sealed : undefined
+    return trusted === undefined ? { refusal } : { refusal, trusted }
+}
+
+/**
+ * Writes into `folder` (emptied first) the files of the trusted sealed
+ * commit of the copy without the files of `manifest/` and `notes/` that the
+ * last commit lacks (R104, rule 11): the content store of a takedown on a
+ * state that is not sealed. It reads with a temporary index, so the copy
+ * stays as it is. It gives the paths that it left out, sorted.
+ */
+export async function takedownStore(
+    store: string,
+    trusted: string,
+    folder: string
+): Promise<{ removed: string[] }> {
+    const listed = async (revision: string): Promise<string[]> =>
+        (
+            await gitText(
+                store,
+                'ls-tree',
+                '-r',
+                '-z',
+                '--name-only',
+                revision,
+                '--',
+                'manifest',
+                'notes'
+            )
+        )
+            .split('\0')
+            .filter((path) => path !== '')
+    const head = new Set(await listed('HEAD'))
+    const removed = (await listed(trusted)).filter((path) => !head.has(path)).sort()
+    await rm(folder, { recursive: true, force: true })
+    await mkdir(folder, { recursive: true })
+    const index = `${folder}.index`
+    const environment = { ...gitEnvironment(), GIT_INDEX_FILE: index }
+    const indexed = async (...args: string[]): Promise<void> => {
+        const child = Bun.spawn(['git', '-C', store, '-c', 'core.autocrlf=false', ...args], {
+            env: environment,
+            stdio: ['ignore', 'ignore', 'pipe']
+        })
+        const [errors, code] = await Promise.all([new Response(child.stderr).text(), child.exited])
+        if (code !== 0) {
+            throw new Error(
+                `git ${args.join(' ')} failed in the copy of the content store ${store}: ${errors.trim()}`
+            )
+        }
+    }
+    try {
+        await indexed('read-tree', trusted)
+        if (removed.length > 0) {
+            await indexed('update-index', '--force-remove', '--', ...removed)
+        }
+        await indexed('checkout-index', '--all', `--prefix=${folder}/`)
+    } finally {
+        await rm(index, { force: true })
+    }
+    return { removed }
+}
+
+/**
+ * True when the revision is the commit of the copy (or `commit`) or one of its ancestors,
  * false when it is not, `undefined` when the copy does not know the revision.
  */
-export async function descendsFrom(store: string, revision: string): Promise<boolean | undefined> {
+export async function descendsFrom(
+    store: string,
+    revision: string,
+    commit = 'HEAD'
+): Promise<boolean | undefined> {
     const known = await git(store, 'cat-file', '-e', `${revision}^{commit}`)
     if (known.code !== 0) {
         return undefined
     }
-    const result = await git(store, 'merge-base', '--is-ancestor', revision, 'HEAD')
+    const result = await git(store, 'merge-base', '--is-ancestor', revision, commit)
     if (result.code === 0 || result.code === 1) {
         return result.code === 0
     }
@@ -772,13 +862,13 @@ export async function releaseAttachmentKeys(
 }
 
 /**
- * The keys that the guards withdrew (`withdrawn.json` of the copy at its
+ * The keys that the guards withdrew (`withdrawn.json` of the copy at a revision, by default its
  * commit, issue 120), read as the tool reads them: none without the file. It
  * throws for a file that the tool would refuse, so the deployment stops
  * before its first step: it could put a file under a guard back on the host.
  */
-export async function withdrawnAttachmentKeys(store: string): Promise<string[]> {
-    const name = `HEAD:${WITHDRAWN_FILE}`
+export async function withdrawnAttachmentKeys(store: string, revision = 'HEAD'): Promise<string[]> {
+    const name = `${revision}:${WITHDRAWN_FILE}`
     if ((await git(store, 'cat-file', '-e', name)).code !== 0) {
         return []
     }
