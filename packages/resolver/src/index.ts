@@ -40,6 +40,7 @@ export {
 } from './site.ts'
 export { guardName, smallLetters } from './small-letters.ts'
 export {
+    EncoderUnavailableError,
     hasVariants,
     imageKeyOf,
     imageVariants,

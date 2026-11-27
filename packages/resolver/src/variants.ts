@@ -45,6 +45,18 @@ export class TooManyPixelsError extends Error {
 }
 
 /**
+ * The failure of the making of variants when the encoder cannot load on the
+ * machine (sharp has no binary for it): every image would fail the same
+ * way, so the deploy stops encoding after the first one, with one warning.
+ */
+export class EncoderUnavailableError extends Error {
+    constructor(cause: unknown) {
+        super(cause instanceof Error ? cause.message : String(cause), { cause })
+        this.name = 'EncoderUnavailableError'
+    }
+}
+
+/**
  * The generation of the variants: it is in every name and every address of a
  * variant, so a change of the way they are made (format, quality) gives new
  * addresses. An address of an attachment is kept for a year (URL-15). Raise

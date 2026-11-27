@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { imageVariants, TooManyPixelsError, variantKey } from '@dsebastien-website/resolver'
+import { deflateSync } from 'node:zlib'
+import {
+    EncoderUnavailableError,
+    imageVariants,
+    TooManyPixelsError,
+    variantKey
+} from '@dsebastien-website/resolver'
 import { rejectionOf } from '@dsebastien-website/testing'
 import sharp from 'sharp'
 import { encodeVariants, writeVariants } from './image-variants.ts'
@@ -56,6 +62,70 @@ async function pngHeader(width: number, height: number): Promise<Uint8Array> {
     view.setUint32(20, height)
     view.setUint32(29, Bun.hash.crc32(bytes.subarray(12, 29)))
     return bytes
+}
+
+/** A PNG chunk: its length, its type, its data and its checksum. */
+function pngChunk(type: string, data: Uint8Array): Uint8Array {
+    const out = new Uint8Array(12 + data.length)
+    const view = new DataView(out.buffer)
+    view.setUint32(0, data.length)
+    out.set(new TextEncoder().encode(type), 4)
+    out.set(data, 8)
+    view.setUint32(8 + data.length, Bun.hash.crc32(out.subarray(4, 8 + data.length)))
+    return out
+}
+
+/** An animated PNG made by hand: two frames of one color each, of this size. */
+function apng(width: number, height: number): Uint8Array {
+    const numbers = (...values: [number, number][]): Uint8Array => {
+        const out = new Uint8Array(values.reduce((total, [, size]) => total + size, 0))
+        const view = new DataView(out.buffer)
+        let at = 0
+        for (const [value, size] of values) {
+            if (size === 4) view.setUint32(at, value)
+            else if (size === 2) view.setUint16(at, value)
+            else view.setUint8(at, value)
+            at += size
+        }
+        return out
+    }
+    const pixels = (red: number): Uint8Array => {
+        const row = new Uint8Array(1 + width * 3)
+        for (let x = 0; x < width; x += 1) row[1 + x * 3] = red
+        const raw = new Uint8Array(row.length * height)
+        for (let y = 0; y < height; y += 1) raw.set(row, y * row.length)
+        return deflateSync(raw)
+    }
+    const frame = (sequence: number): Uint8Array =>
+        numbers(
+            [sequence, 4],
+            [width, 4],
+            [height, 4],
+            [0, 4],
+            [0, 4],
+            [1, 2],
+            [10, 2],
+            [0, 1],
+            [0, 1]
+        )
+    const second = pixels(200)
+    const parts = [
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        pngChunk('IHDR', numbers([width, 4], [height, 4], [8, 1], [2, 1], [0, 1], [0, 1], [0, 1])),
+        pngChunk('acTL', numbers([2, 4], [0, 4])),
+        pngChunk('fcTL', frame(0)),
+        pngChunk('IDAT', pixels(20)),
+        pngChunk('fcTL', frame(1)),
+        pngChunk('fdAT', new Uint8Array([...numbers([2, 4]), ...second])),
+        pngChunk('IEND', new Uint8Array(0))
+    ]
+    const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0))
+    let at = 0
+    for (const part of parts) {
+        out.set(part, at)
+        at += part.length
+    }
+    return out
 }
 
 describe('the variants of an image', () => {
@@ -156,10 +226,21 @@ describe('the variants of an image', () => {
     test('fail, and throw nothing at their import, when sharp cannot load', async () => {
         const variants = imageVariants('cover.jpg', 1000, 600)
         const load = (): Promise<never> => Promise.reject(new Error('sharp has no binary here'))
-
-        expect(await rejectionOf(encodeVariants(await jpeg(1000, 600), { variants }, load))).toBe(
-            'sharp has no binary here'
+        const error = await encodeVariants(await jpeg(1000, 600), { variants }, load).catch(
+            (failure: unknown) => failure
         )
+
+        expect(error).toBeInstanceOf(EncoderUnavailableError)
+        expect(String(error)).toContain('sharp has no binary here')
+    })
+
+    // The last look: the plugin reads an animated PNG as a PNG, and sharp would
+    // keep its first frame only; the page keeps the file that moves.
+    test('refuse an animated PNG', async () => {
+        const variants = imageVariants('moving.png', 600, 400)
+
+        expect(await rejectionOf(encodeVariants(apng(600, 400), { variants }))).toContain('moves')
+        expect(await encodeVariants(await png(600, 400), { variants })).toHaveLength(2)
     })
 
     test('fail on a cut JPEG and a cut PNG', async () => {

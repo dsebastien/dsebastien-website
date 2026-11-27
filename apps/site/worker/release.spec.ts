@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+    EncoderUnavailableError,
     TooManyPixelsError,
     VARIANT_GENERATION,
     variantKey,
@@ -2451,6 +2452,31 @@ describe('the variants of the images of a release', () => {
         expect([...site.storage.names].sort()).toEqual(
             [PHOTO.key, PLAN.key, variantKey(PHOTO.key, 480)].sort()
         )
+    })
+
+    // The last look: a machine where sharp cannot load stops after the first
+    // failure, with one warning for every image.
+    test('stop to be made after sharp cannot load, with one warning', async () => {
+        const many = ['one', 'two', 'three', 'four', 'five', 'six'].map(file)
+        let calls = 0
+        const site = fixture({
+            stored: many.map((item) => item.key),
+            folder: many,
+            used: many.map((item) => item.key),
+            overrides: {
+                images: many.map((item) => imageOf(item.key)),
+                encode: () => {
+                    calls += 1
+                    return Promise.reject(new EncoderUnavailableError(new Error('no binary')))
+                }
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 0 })
+        expect(result.warnings).toEqual([
+            'the variants of 6 images were not made, so their pages give their files: sharp cannot load on this machine (no binary)'
+        ])
+        expect(calls).toBeLessThan(6)
     })
 
     // Review round 3: a deployment encodes for 10 minutes at most.

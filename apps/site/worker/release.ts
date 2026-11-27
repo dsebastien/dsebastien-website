@@ -8,6 +8,7 @@ import {
     isAttachmentKey,
     MAX_VARIANT_PIXELS,
     SITE_ORIGIN,
+    EncoderUnavailableError,
     TooManyPixelsError,
     VARIANT_GENERATION,
     variantGenerationOf,
@@ -1355,8 +1356,14 @@ export async function makeVariants(
     const limit = run.encodeTimeLimit ?? VARIANT_TIME_LIMIT
     const start = run.now().getTime()
     let waiting = 0
+    /** The failure of the encoder, after which no image is encoded, and the images it left. */
+    let unavailable: { why: string; images: number } | undefined
     const make = async (image: ReleaseImage): Promise<void> => {
         if (encode === undefined) {
+            return
+        }
+        if (unavailable !== undefined) {
+            unavailable.images += 1
             return
         }
         if (run.now().getTime() - start >= limit) {
@@ -1376,8 +1383,11 @@ export async function makeVariants(
                 )
             }
         } catch (error) {
-            // An image that moves: its frames together are too large.
-            if (error instanceof TooManyPixelsError) {
+            if (error instanceof EncoderUnavailableError) {
+                unavailable ??= { why: error.message, images: 0 }
+                unavailable.images += 1
+            } else if (error instanceof TooManyPixelsError) {
+                // An image that moves: its frames together are too large.
                 tooLarge(image)
             } else {
                 fail(image, messageOf(error))
@@ -1403,6 +1413,11 @@ export async function makeVariants(
         make,
         PARALLEL_ENCODES
     )
+    if (unavailable !== undefined) {
+        warnings.push(
+            `the variants of ${String(unavailable.images)} images were not made, so their pages give their files: sharp cannot load on this machine (${unavailable.why})`
+        )
+    }
     if (waiting > 0) {
         warnings.push(
             `the variants of ${String(waiting)} images were not made in the time limit of ${String(limit / 60_000)} minutes of this run, so their pages give their files: the next deployment or bun run variants makes them`

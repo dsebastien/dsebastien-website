@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+    EncoderUnavailableError,
     isAttachmentKey,
     MAX_VARIANT_PIXELS,
     TooManyPixelsError,
@@ -48,7 +49,25 @@ type SharpModule = typeof SharpTypes
  * encode, which the deploy gives as a warning: the import of this module
  * never fails.
  */
-const loadSharp = (): Promise<SharpModule> => import('sharp')
+let sharpModule: Promise<SharpModule> | undefined
+const loadSharp = (): Promise<SharpModule> => (sharpModule ??= import('sharp'))
+
+/**
+ * True when a PNG is animated (APNG): an `acTL` chunk comes before its first
+ * `IDAT`. sharp would keep its first frame only, and the plugin reads it as
+ * a still PNG, so the page keeps its file that moves.
+ */
+function isAnimatedPng(bytes: Uint8Array): boolean {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const type = (at: number): string => String.fromCharCode(...bytes.subarray(at + 4, at + 8))
+    for (let at = 8; at + 8 <= bytes.length;) {
+        const kind = type(at)
+        if (kind === 'acTL') return true
+        if (kind === 'IDAT') return false
+        at += 12 + view.getUint32(at)
+    }
+    return false
+}
 
 /** The output of a variant. */
 const webp = (image: Sharp): Sharp => image.webp({ quality: QUALITY, effort: EFFORT })
@@ -66,7 +85,8 @@ const webp = (image: Sharp): Sharp => image.webp({ quality: QUALITY, effort: EFF
  * a WebP with an Exif turn (the page shows the size as stored, so its
  * variants would have another shape), an image of more than
  * `MAX_VARIANT_PIXELS`, all its frames together (`TooManyPixelsError`,
- * before its pixels are read), and when sharp cannot load.
+ * before its pixels are read), an animated PNG, and when sharp cannot load
+ * (`EncoderUnavailableError`; sharp is loaded one time, in one promise).
  *
  * @param load loads sharp; a test gives one that fails
  */
@@ -79,11 +99,19 @@ export async function encodeVariants(
     if (largest === undefined) {
         return []
     }
-    const { default: sharp } = await load()
+    let sharp: SharpModule['default']
+    try {
+        sharp = (await load()).default
+    } catch (error) {
+        throw new EncoderUnavailableError(error)
+    }
     // The header only: the pixels of every frame count (review round 2).
     const facts = await sharp(bytes, { ...INPUT, limitInputPixels: false }).metadata()
     if (!FORMATS.has(facts.format)) {
         throw new Error(`the file is a ${facts.format}, not a JPEG, a PNG or a WebP`)
+    }
+    if (facts.format === 'png' && isAnimatedPng(bytes)) {
+        throw new Error('the PNG moves (APNG): its page gives its file')
     }
     if (facts.format !== 'jpeg' && facts.orientation !== undefined && facts.orientation !== 1) {
         throw new Error(
