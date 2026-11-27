@@ -1,0 +1,29 @@
+---
+// The music of a note page (Story 11, REN-07, issue 53). The note page
+// renders this component only when its body holds a music block, so a page
+// without music loads no music code. Its script is a module of the build: it
+// links the style sheet of the library and loads the parts that the blocks
+// need, after the page shows (PERF-21). The properties of the note go in a
+// data block, for its empty blocks.
+import { propertiesText } from '../music/page.ts'
+
+interface Props {
+    /** The properties that the empty blocks of the note draw from, if any. */
+    properties?: Readonly<Record<string, unknown>> | undefined
+}
+
+const { properties } = Astro.props
+---
+
+{properties !== undefined && (
+    <script
+        type='application/json'
+        data-music-properties
+        is:inline
+        set:html={propertiesText(properties)}
+    />
+)}
+<script>
+    import { startMusic } from '../music/music.ts'
+    startMusic(document, window)
+</script>

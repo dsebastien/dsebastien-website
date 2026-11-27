@@ -26,7 +26,9 @@ async function readOutput(path: string): Promise<string> {
 
 async function readStylesheets(): Promise<string> {
     const files = await readdir(outputPath(), { recursive: true })
-    const sheets = files.filter((file) => file.endsWith('.css'))
+    // The style sheet of the music library is not the style of the site: only a
+    // page with a music block links it (issue 53).
+    const sheets = files.filter((file) => file.endsWith('.css') && !file.includes('music-notation'))
     const texts = await Promise.all(sheets.map((sheet) => readOutput(sheet)))
     return texts.join('\n')
 }

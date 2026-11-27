@@ -6,6 +6,7 @@ import { ctaScript } from '../../../ads/cta.ts'
 import { BACKLINKS_ON_PAGE } from '../../../backlink-list.ts'
 import Ad from '../../../components/Ad.astro'
 import Backlinks from '../../../components/Backlinks.astro'
+import Music from '../../../components/Music.astro'
 import NewsletterBar from '../../../components/NewsletterBar.astro'
 import Outline from '../../../components/Outline.astro'
 import Properties from '../../../components/Properties.astro'
@@ -14,6 +15,8 @@ import { propertiesOf } from '../../../properties.ts'
 import { videoPlayerScript } from '../../../link-previews/player.ts'
 import { publishedSite } from '../../../published-site.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
+import { musicOf } from '../../../music/languages.ts'
+import { musicProperties } from '../../../music/page.ts'
 import { languageOf } from '../../../rendering/language.ts'
 import { sectionBarScript } from '../../../section-bar.ts'
 
@@ -50,6 +53,9 @@ const ad = site.adOf(note.vaultPath)
 // A note that also exists on the main site names the post there as its
 // original, or is noindex without a verified post (issue 55, ADR 0010).
 const signals = site.signalsOf(note.vaultPath)
+// The music blocks of the body and its embeds (REN-07): only then does the
+// page load the music code.
+const music = musicOf(body.html)
 ---
 
 <Page
@@ -169,6 +175,7 @@ const signals = site.signalsOf(note.vaultPath)
         </div>
     </div>
     {body.outline !== undefined && <script is:inline set:html={sectionBarScript} />}
+    {(music.diagrams || music.tabs) && <Music properties={musicProperties(data)} />}
     {/* The newsletter bar, on note pages only (NEWS-01). */}
     <NewsletterBar />
     <script is:inline set:html={oldAnchorScript} />

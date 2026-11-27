@@ -60,6 +60,21 @@ export const FIRST_SEARCH_BROTLI = 350_000
  */
 export const FIRST_PALETTE_BROTLI = 10_000
 
+/**
+ * The budget of the music of a note page (R57, PERF-21, issue 53), loaded
+ * after the page shows and only on a page with a music block (REN-07): the
+ * diagram part of the library (its code and its style sheet), with Brotli;
+ * the tab part on top of it (alphaTab and the tab code of the library), with
+ * Brotli; and the music font of alphaTab, a WOFF2 file that only a tab or a
+ * score loads (R105: the budget of 2026-11-20 counted the scripts only). The
+ * sounds come at the first Play, apart from these.
+ */
+export const MUSIC_BUDGET = {
+    diagramsBrotli: 160_000,
+    tabsBrotli: 300_000,
+    musicFontBytes: 320_000
+} as const
+
 /** A budget of the times of Lighthouse, for one preset. */
 export interface TimeBudget {
     /** Largest Contentful Paint, in milliseconds. */

@@ -721,6 +721,59 @@
         @apply text-primary underline;
     }
 
+    /* The music blocks (REN-07, issue 53). The style sheet of the library reads
+       the theme variables of Obsidian: here they take the tokens of the theme,
+       so the blocks follow the mode of the page. */
+    .note-text {
+        --background-primary: var(--color-background);
+        --text-normal: var(--color-primary);
+        --text-muted: var(--color-muted);
+        --background-modifier-border: var(--color-border);
+        --interactive-accent: var(--color-secondary);
+        --text-on-accent: var(--color-on-secondary);
+        --font-interface: var(--font-sans);
+    }
+
+    /* The place of a music block before it draws: the height of a usual drawing
+       of its language (measured on the fixture note), on a wide screen and on a
+       touch screen, where the library draws larger. The source fills it until
+       the block draws, so the page moves little (the layout shift of PERF-20). */
+    .note-text pre:has(> code.language-chord) {
+        @apply min-h-40 any-pointer-coarse:min-h-69;
+    }
+
+    .note-text pre:has(> code.language-chords) {
+        @apply min-h-36 any-pointer-coarse:min-h-56;
+    }
+
+    .note-text pre:has(> code.language-keyboard) {
+        @apply min-h-34 any-pointer-coarse:min-h-53;
+    }
+
+    .note-text pre:has(> code.language-fretboard) {
+        @apply min-h-43 any-pointer-coarse:min-h-74;
+    }
+
+    .note-text pre:has(> code.language-strum) {
+        @apply min-h-30 any-pointer-coarse:min-h-48;
+    }
+
+    .note-text pre:has(> code.language-picking) {
+        @apply min-h-78 any-pointer-coarse:min-h-87;
+    }
+
+    .note-text pre:has(> code.language-progression) {
+        @apply min-h-57 any-pointer-coarse:min-h-249;
+    }
+
+    .note-text pre:has(> code.language-circle) {
+        @apply min-h-120 any-pointer-coarse:min-h-133;
+    }
+
+    .note-text pre:has(> code:is(.language-tab, .language-score)) {
+        @apply min-h-72 any-pointer-coarse:min-h-103;
+    }
+
     /* Text for screen readers only. The footnotes of a note have such a heading. */
     .visually-hidden,
     .note-text .sr-only {
@@ -736,5 +789,21 @@
 
     to {
         background-position: 100% 0;
+    }
+}
+
+/* On a touch screen, each control of a playback bar of a music block is 44 px
+   at least, and its fields have a text of 16 px (section 15.1.1 of the spec). Outside the layers: the style sheet
+   of the library has no layer, and its own sizes would win over a layer. */
+@media (any-pointer: coarse) {
+    /* The class twice: the rules of the library for these controls are as strong as one. */
+    .note-text.note-text .mn-play :is(button, select, input[type]) {
+        min-width: --spacing(11);
+        min-height: --spacing(11);
+    }
+
+    /* A phone zooms into a field with a smaller text when it takes the focus. */
+    .note-text.note-text .mn-play :is(select, input[type]) {
+        font-size: var(--text-base);
     }
 }

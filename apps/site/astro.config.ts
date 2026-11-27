@@ -5,6 +5,7 @@ import { notePageBudget } from './src/budgets.ts'
 import { linkPreviewFiles } from './src/link-previews/build-previews.ts'
 import { resolverMapParts } from './src/map-parts.ts'
 import { pagePolicyFile } from './src/page-policy.ts'
+import { soundsFolder } from './src/music/sounds-integration.ts'
 import { markdownProcessor } from './src/rendering/markup.ts'
 import { searchIndex } from './src/search/search-index.ts'
 import { selfContainedPages } from './src/self-contained.ts'
@@ -32,7 +33,8 @@ export default defineConfig({
     // gets its style inside it (NAV-20, R64). The resolver map is cut into
     // parts, which the hosts read (issue 121, R94). The Content Security
     // Policy of the pages gets the hashes of their inline scripts and styles
-    // (SEC-01, issue 79).
+    // (SEC-01, issue 79). The instrument files of the music go into the
+    // output (REN-07, PERF-21).
     integrations: [
         linkPreviewFiles(),
         notePageBudget(),
@@ -40,7 +42,8 @@ export default defineConfig({
         searchIndex(),
         selfContainedPages(),
         pagePolicyFile(),
-        resolverMapParts()
+        resolverMapParts(),
+        soundsFolder()
     ],
     vite: {
         plugins: [tailwindcss()],
