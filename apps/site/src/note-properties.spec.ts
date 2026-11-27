@@ -226,11 +226,14 @@ describe('properties of the notes of a site, kept between two reads', () => {
 
     test('names the note whose properties cannot be read', async () => {
         const notes = new NoteProperties()
-        expect(
-            notes.read(
+        const failure: unknown = await notes
+            .read(
                 [{ vaultPath: 'Broken.md', digest: 'x' }],
                 source({ 'Broken.md': note('a: [one') }).read
             )
-        ).rejects.toThrow('the properties of "Broken.md" cannot be read')
+            .catch((error: unknown) => error)
+
+        expect(failure).toBeInstanceOf(Error)
+        expect(String(failure)).toContain('the properties of "Broken.md" cannot be read')
     })
 })
