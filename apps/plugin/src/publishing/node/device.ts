@@ -706,7 +706,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                           .map((file) => file.path)
                           .join(
                               ', '
-                          )}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it, then confirm the new state (confirm-state)`
+                          )}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back: first look at them (git log origin/main..HEAD); when they are commits that the content store had and lost (a forced push), do not reset, and tell the author; else git fetch origin, then git reset --hard origin/main when the copy holds no other work (the seal check of the next run still compares with the mark of the copy), put your configuration.json back, then commit and push it, then confirm the new state (confirm-state)`
                 throw new Error(
                     `the copy of the content store has ${ahead} commit(s) that the content store does not have. Nothing can be published until the copy is corrected: ${way}: ${folder}`
                 )
