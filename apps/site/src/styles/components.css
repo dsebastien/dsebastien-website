@@ -799,12 +799,11 @@
    layers: the style sheet of the library has no layer, and a layer would lose
    to it. The class twice: its rules for these controls are as strong as one. */
 .note-text.note-text .mn-play {
-    border-radius: var(--radius-pill);
-    font-family: var(--font-sans);
+    @apply rounded-pill font-sans;
 }
 
 .note-text.note-text .mn-play :is(button, select, .mn-tempo-value) {
-    border-radius: var(--radius-pill);
+    @apply rounded-pill;
 }
 
 /* The library takes the outline of its controls away (`all: unset`): a key

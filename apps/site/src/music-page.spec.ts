@@ -336,7 +336,9 @@ describe('the music notation of a note page', () => {
         await context.addInitScript(() => {
             const loaded: string[] = []
             ;(window as unknown as { __worklets: string[] }).__worklets = loaded
-            const add = AudioWorklet.prototype.addModule
+            // The method of `Worklet`, which holds it, called with its worklet below.
+            const descriptor = Object.getOwnPropertyDescriptor(Worklet.prototype, 'addModule')
+            const add = descriptor?.value as AudioWorklet['addModule']
             AudioWorklet.prototype.addModule = async function (url, options) {
                 await add.call(this, url, options)
                 loaded.push(String(url))

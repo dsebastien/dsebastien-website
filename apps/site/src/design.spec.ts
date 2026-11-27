@@ -73,14 +73,26 @@ const RAW = [
     ['a motion value', /\b(?:duration-\d+|ease-(?:linear|in|out|in-out))\b/u]
 ] as const
 
+/**
+ * The raw values that a file of the music may hold, as no theme gives them:
+ * the style text of alphaTab names its music font (the page policy hashes the
+ * text as alphaTab writes it), and the tabs read a computed color through a
+ * canvas, which needs a start color and gives `rgba()` numbers.
+ */
+const MUSIC_RAW: Record<string, readonly string[]> = {
+    [join('music', 'tab-style.ts')]: ['a font family'],
+    [join('music', 'tabs.ts')]: ['a hex color', 'a color function']
+}
+
 describe('tokens only', () => {
     test('no component holds a raw color, font or radius', async () => {
         const found: string[] = []
         for (const file of await componentFiles()) {
             const lines = (await readFile(file, 'utf8')).split('\n')
+            const allowed = MUSIC_RAW[relative(SOURCE, file)] ?? []
             for (const [index, line] of lines.entries()) {
                 for (const [name, pattern] of RAW) {
-                    if (pattern.test(line)) {
+                    if (pattern.test(line) && !allowed.includes(name)) {
                         found.push(`${relative(SOURCE, file)}:${String(index + 1)}: ${name}`)
                     }
                 }
