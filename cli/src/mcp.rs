@@ -40,7 +40,7 @@ pub const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-2
 
 /// The names of the tools: the names of the commands of the program, but
 /// `mcp`.
-pub const TOOL_NAMES: [&str; 12] = [
+pub const TOOL_NAMES: [&str; 13] = [
     "status",
     "plan",
     "publish",
@@ -52,6 +52,7 @@ pub const TOOL_NAMES: [&str; 12] = [
     "ignore",
     "unignore",
     "unlock",
+    "confirm_store_state",
     "deploy",
 ];
 
@@ -99,6 +100,11 @@ pub enum Call {
         path: String,
     },
     Unlock,
+    /// The confirmation of the state of the content store (R104): `head` is
+    /// the last commit that the difference names.
+    ConfirmStoreState {
+        head: String,
+    },
     /// The deploy again, with no publication (issue 32), with `--takedown`
     /// when `takedown` is true; with `last`, the last deploy report, with no
     /// deploy.
@@ -121,6 +127,7 @@ impl Call {
             Self::Guards => "guards",
             Self::Edit { action, .. } => action,
             Self::Unlock => "unlock",
+            Self::ConfirmStoreState { .. } => "confirm_store_state",
             Self::Deploy { .. } => "deploy",
         }
     }
@@ -142,6 +149,7 @@ impl Call {
                 value
             }
             Self::Edit { path, .. } => json!({ "path": path }),
+            Self::ConfirmStoreState { head } => json!({ "head": head }),
             Self::Plan {
                 include,
                 hold,
@@ -199,6 +207,7 @@ fn arguments_of(tool: &str) -> &'static [&'static str] {
         "takedown" => &["paths"],
         "deny" | "allow" | "ignore" | "unignore" => &["path"],
         "deploy" => &["last", "takedown"],
+        "confirm_store_state" => &["head"],
         _ => &[],
     }
 }
@@ -292,6 +301,18 @@ fn call_of(name: &str, arguments: Option<&Value>) -> Result<Call, Refusal> {
         "status" => Call::Status,
         "guards" => Call::Guards,
         "unlock" => Call::Unlock,
+        "confirm_store_state" => Call::ConfirmStoreState {
+            head: arguments
+                .get("head")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    Refusal::Arguments(
+                        "confirm_store_state needs the argument \"head\": the last commit that the difference names"
+                            .to_owned(),
+                    )
+                })?
+                .to_owned(),
+        },
         "deploy" => {
             let flag = |key: &str| match arguments.get(key) {
                 None => Ok(false),
@@ -708,6 +729,7 @@ mod tests {
             let arguments = match name {
                 "publish" => json!({ "plan": "0123456789abcdef" }),
                 "unpublish" | "takedown" => json!({ "paths": ["a.md"] }),
+                "confirm_store_state" => json!({ "head": "ab".repeat(20) }),
                 "deny" | "allow" | "ignore" | "unignore" => json!({ "path": "a.md" }),
                 _ => json!({}),
             };

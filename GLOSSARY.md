@@ -124,6 +124,10 @@ The mark that a publication runs on a device. One publication at a time per devi
 **Missing from this vault**:
 A published note whose file this device does not have, and that no guard excludes. It is never selected by default.
 
+**Seal**:
+The mark that the publishing tool puts on each of its commits in the content store, with a key that only the vaults of the author hold. The tool trusts the state of the content store only when a seal covers it; another state waits for a confirmation of the author.
+_Avoid_: signature, checksum
+
 **Deny list**:
 The vault folders whose notes can never be published. It lives in the configuration of the publishing tool.
 _Avoid_: block list, ignore list, excluded folders

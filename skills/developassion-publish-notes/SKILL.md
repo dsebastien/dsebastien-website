@@ -13,12 +13,12 @@ metadata:
     effects: external
     tier: primitive
     created: 2026-11-23T14:00
-    updated: 2026-11-26T12:00
+    updated: 2026-11-27T12:00
 ---
 
 # Publish Notes
 
-The publishing tool of the notes website takes notes of the vault to the content store, from which the site is built. An agent drives it through twelve operations, each with the same name and the same output on every face: `status`, `plan`, `publish`, `unpublish`, `takedown` and `unlock` for the publications, `deploy` for the site, and `guards`, `deny`, `allow`, `ignore` and `unignore` for the guards. After its push, a publication, an unpublish and a takedown deploy the site on this machine. The tool holds every rule; this skill says how to use it the way the author wants.
+The publishing tool of the notes website takes notes of the vault to the content store, from which the site is built. An agent drives it through operations that have the same name and the same output on every face: `status`, `plan`, `publish`, `unpublish`, `takedown` `unlock` and `confirm_store_state` for the publications, `deploy` for the site, and `guards`, `deny`, `allow`, `ignore` and `unignore` for the guards. After its push, a publication, an unpublish and a takedown deploy the site on this machine. The tool holds every rule; this skill says how to use it the way the author wants.
 
 ## Critical Rules
 
@@ -28,7 +28,8 @@ The publishing tool of the notes website takes notes of the vault to the content
 4. **An error stops the run.** Report the text of the tool word for word and stop. A stale plan is the one exception: make the plan again, show it, and wait for a yes again.
 5. **After a lost connection, read first, and treat a lock as a run that still goes.** When a call gets no answer (a reload of the plugin, a timeout), the run can go on without its answer. Wait, then run `status`. A lock error then means that the run still goes: wait and run `status` again. To know what a lost run did, ask the author to read the report of the publication center, or read the line `Plan: <id>` of the last commit of the copy.
 6. **`unlock` only after a restart.** Offer it only when the author confirms that Obsidian and the command line program were restarted after the time of the lock, so that no run can hold it. The tool does not check it. A publication that stopped halfway is no case for `unlock`: the next `plan` puts the copy back.
-7. **Not on the real vault before the first publication.** Until the first publication to the preview host (issue 60 of the repository dsebastien-website) is done, run `publish`, `unpublish` and `takedown` only on a test vault (`bun run plugin:vault` in the repository). The tool also stops on a copy of the content store that has no `configuration.json`.
+7. **`confirm_store_state` only on an explicit yes of the author.** When a run stops because the state of the content store is not sealed (a commit that no tool wrote, or a store with no seal yet), show the difference of the message as it is and stop. Call `confirm_store_state` with the commit that the message names (`head`) only when the author read it and asked for the confirmation; never to get a plan through.
+8. **Not on the real vault before the first publication.** Until the first publication to the preview host (issue 60 of the repository dsebastien-website) is done, run `publish`, `unpublish` and `takedown` only on a test vault (`bun run plugin:vault` in the repository). The tool also stops on a copy of the content store that has no `configuration.json`.
 
 ## Faces
 
@@ -65,6 +66,7 @@ The tools take the arguments of the commands: `plan` takes `include`, `hold`, `r
 
 | The message says                                                                                                      | Do this                                                                                                                                                                                                      |
 | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The state of the content store is not sealed, or the seal key is missing                                              | Report the message word for word and stop. Confirm only on an explicit yes of the author (rule 7). A missing key is for the author to set                                                                    |
 | The plan is stale                                                                                                     | Plan again, show the new plan, wait for a yes (rule 4)                                                                                                                                                       |
 | A guard excludes a note, or a path is in no list                                                                      | Report it and stop. Never move the guard (rule 3)                                                                                                                                                            |
 | The copy is locked                                                                                                    | A run still goes: wait and run `status` again (rule 5). `unlock` only as rule 6 says                                                                                                                         |

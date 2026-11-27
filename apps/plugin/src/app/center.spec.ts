@@ -6,7 +6,8 @@ import {
     FIXTURE_NOTE_TYPES,
     gitEnvironment,
     makeContentStoreCopy,
-    makeTestStores
+    makeTestStores,
+    sealHead
 } from '@dsebastien-website/testing'
 import type { TestStores } from '@dsebastien-website/testing'
 import { NO_CHOICES, toggleRow, markUnpublish } from '../publishing/center.ts'
@@ -298,6 +299,7 @@ describe('the publication center', () => {
         await writeFile(join(other, 'renames.json'), '{}\n')
         await git('-C', other, 'add', 'renames.json')
         await git('-C', other, 'commit', '--quiet', '--message', 'Publish')
+        await sealHead(other)
         await git('-C', other, 'push', '--quiet', 'origin', 'HEAD:main')
         await center.check()
         expect(center.state.queue?.behind).toBe(1)
@@ -440,6 +442,7 @@ describe('the publication center', () => {
         // A deny list entry that names no folder stops every check (GATE-38).
         await writeFile(join(copy, 'configuration.json'), '{"denyList": ["No such folder"]}\n')
         await git('-C', copy, 'commit', '--quiet', '--all', '--message', 'A wrong deny list')
+        await sealHead(copy)
         await git('-C', copy, 'push', '--quiet', 'origin', 'HEAD:main')
         center.noteChanged(SECOND)
 

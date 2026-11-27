@@ -72,6 +72,12 @@ impl Setup {
         }
     }
 
+    fn git(&self, arguments: &[&str]) -> String {
+        let mut all = vec!["-C", text(&self.copy)];
+        all.extend_from_slice(arguments);
+        git(&all)
+    }
+
     /// The output of a command of the program.
     fn command(&self, command: &str, arguments: &[&str]) -> String {
         let output = support::program()
@@ -184,6 +190,7 @@ fn initializes_and_lists_the_tools_of_the_commands() {
             "ignore",
             "unignore",
             "unlock",
+            "confirm_store_state",
             "deploy"
         ]
     );
@@ -322,6 +329,65 @@ fn reads_and_edits_the_guards_as_the_commands_do() {
     );
     assert!(missing_is_error);
     assert!(missing[0].contains("\"path\""), "{missing:?}");
+    assert!(server.stop().success());
+}
+
+#[test]
+fn confirm_store_state_confirms_the_difference_that_the_agent_read() {
+    let setup = set_up();
+    // A commit that no tool wrote: the tools stop with the difference.
+    fs::create_dir_all(setup.copy.join("notes")).expect("the folder can be made");
+    fs::write(setup.copy.join("notes").join("Elsewhere.md"), "A note\n")
+        .expect("the note is written");
+    support::git_unsealed(&["-C", text(&setup.copy), "add", "--", "notes/Elsewhere.md"]);
+    support::git_unsealed(&[
+        "-C",
+        text(&setup.copy),
+        "commit",
+        "--quiet",
+        "--message",
+        "A change by hand",
+    ]);
+    support::git_unsealed(&[
+        "-C",
+        text(&setup.copy),
+        "push",
+        "--quiet",
+        "origin",
+        "HEAD:main",
+    ]);
+    let head = setup.git(&["rev-parse", "HEAD"]);
+    let mut server = setup.start();
+
+    let (stopped, is_error) = server.call("status", &json!({}));
+    assert!(is_error);
+    assert!(stopped[0].contains("confirm_store_state"), "{stopped:?}");
+    let (wrong, is_error) = server.call("confirm_store_state", &json!({ "head": "0".repeat(40) }));
+    assert!(is_error);
+    assert!(
+        wrong[0].contains("the content store changed since the difference"),
+        "{wrong:?}"
+    );
+    let (missing, is_error) = server.call("confirm_store_state", &json!({}));
+    assert!(is_error);
+    assert!(missing[0].contains("needs the argument"), "{missing:?}");
+    let confirmed = server.data("confirm_store_state", &json!({ "head": head }));
+
+    assert_eq!(confirmed["confirmed"], true);
+    assert_eq!(confirmed["difference"]["head"], head.as_str());
+    assert!(
+        setup
+            .git(&["log", "--max-count=1", "--format=%B"])
+            .contains("Face: mcp-server")
+    );
+    server.data("status", &json!({}));
+    assert_eq!(
+        server.data(
+            "confirm_store_state",
+            &json!({ "head": setup.git(&["rev-parse", "HEAD"]) })
+        ),
+        json!({ "confirmed": false })
+    );
     assert!(server.stop().success());
 }
 

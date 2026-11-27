@@ -10,11 +10,15 @@
 #![allow(dead_code)]
 
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::ErrorKind;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{self, Command};
+use std::process::{self, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
+
+use sha2::{Digest, Sha256};
 
 /// The root of the repository.
 fn repository() -> PathBuf {
@@ -30,8 +34,13 @@ fn repository() -> PathBuf {
 /// of answers. No test reaches the real main site: no post is checked (the
 /// switch `DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE`, PUB-100), unless a test
 /// gives a file of answers.
+///
+/// It sets the seal key of the vault (R104) in the environment, a key built at
+/// run time: `seal_key()`, the same as the TypeScript test preload uses, so
+/// that parity runs agree.
 pub fn program() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dsebastien-vault-publish"));
+    command.env("VAULT_PUBLISH_SEAL_KEY", seal_key());
     command.env("DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES", "none");
     command.env("DSEBASTIEN_VAULT_PUBLISH_TEST_MAIN_SITE", "none");
     command
@@ -171,9 +180,46 @@ impl Drop for TestStores {
     }
 }
 
+/// The seal key of the tests: 32 bytes of `5e`, built at run time. It is never
+/// stored as text in a file.
+pub fn seal_key() -> String {
+    "5e".repeat(32)
+}
+
 /// Runs git on a repository that is named in the arguments (`--git-dir`,
 /// `-C`), with an environment that points to no other repository.
+///
+/// A commit that it makes is sealed with the key of the tests (`seal_head`): a
+/// commit by hand in a test stands for the commit of a tool, possibly on
+/// another device. A test of a commit that no tool wrote uses `git_unsealed`.
 pub fn git(args: &[&str]) -> String {
+    let output = git_unsealed(args);
+    if let Some(copy) = committed_copy(args) {
+        seal_head(copy);
+    }
+    output
+}
+
+/// The folder of a `git -C <folder> commit ...` command.
+fn committed_copy<'a>(args: &[&'a str]) -> Option<&'a str> {
+    let mut folder = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "-C" => {
+                folder = args.get(index + 1).copied();
+                index += 2;
+            }
+            "-c" => index += 2,
+            "commit" => return folder,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Runs git as `git` does, and seals nothing.
+pub fn git_unsealed(args: &[&str]) -> String {
     let mut git = Command::new("git");
     git.args(args);
     for (name, _) in env::vars_os() {
@@ -190,6 +236,157 @@ pub fn git(args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout)
         .trim_end()
         .to_owned()
+}
+
+/// The HMAC-SHA256 of RFC 2104, in small hexadecimal digits.
+fn hmac(key: &[u8], text: &str) -> String {
+    let mut block = [0_u8; 64];
+    if key.len() > 64 {
+        block[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        block[..key.len()].copy_from_slice(key);
+    }
+    let mut inner = Sha256::new();
+    inner.update(block.map(|byte| byte ^ 0x36));
+    inner.update(text.as_bytes());
+    let mut outer = Sha256::new();
+    outer.update(block.map(|byte| byte ^ 0x5c));
+    outer.update(inner.finalize());
+    hex(&outer.finalize())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::new(), |mut hex, byte| {
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    })
+}
+
+/// The seal of a commit with this parent and its files below the sealed paths,
+/// as `git ls-tree -r -z --full-tree` lists them.
+fn seal_of(key: &[u8], parent: Option<&str>, listing: &str) -> String {
+    let mut lines: Vec<(&str, String)> = Vec::new();
+    for entry in listing.split('\0').filter(|entry| !entry.is_empty()) {
+        let (facts, path) = entry.split_once('\t').expect("a line of the tree");
+        let mut parts = facts.split(' ');
+        let (mode, kind, object) = (
+            parts.next().expect("a mode"),
+            parts.next().expect("a type"),
+            parts.next().expect("an object"),
+        );
+        if kind == "blob" || kind == "commit" {
+            lines.push((path, format!("{mode} {object} {path}\n")));
+        }
+    }
+    lines.sort();
+    let state: String = lines.into_iter().map(|(_, line)| line).collect();
+    hmac(
+        key,
+        &format!(
+            "dsebastien-vault-publish seal 1\nparent {}\nstate {}\n",
+            parent.unwrap_or("none"),
+            hex(&Sha256::digest(state.as_bytes()))
+        ),
+    )
+}
+
+/// The seal that a tool would give a commit of a copy, with the key of the
+/// tests: from its first parent and its files below the sealed paths.
+pub fn expected_seal(copy: &str, revision: &str) -> String {
+    let parent = git_unsealed(&[
+        "-C",
+        copy,
+        "rev-list",
+        "--parents",
+        "--max-count=1",
+        revision,
+    ])
+    .split_whitespace()
+    .nth(1)
+    .map(str::to_owned);
+    let mut git = Command::new("git");
+    git.args([
+        "-C",
+        copy,
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        revision,
+        "--",
+    ])
+    .args([
+        "configuration.json",
+        "edits.json",
+        "manifest",
+        "notes",
+        "renames.json",
+        "withdrawn.json",
+    ]);
+    for (name, _) in env::vars_os() {
+        if name.to_string_lossy().starts_with("GIT_") {
+            git.env_remove(name);
+        }
+    }
+    let output = git.output().expect("git starts");
+    assert!(output.status.success(), "git ls-tree failed");
+    seal_of(
+        &[0x5e_u8; 32],
+        parent.as_deref(),
+        &String::from_utf8_lossy(&output.stdout),
+    )
+}
+
+/// Makes the last commit of a copy again, with the same tree and parent and
+/// a valid seal of the tests as the last line of its message, as a tool does.
+/// Call it on a commit that is not pushed yet.
+pub fn seal_head(copy: &str) {
+    let run = |args: &[&str]| {
+        let mut all = vec!["-C", copy];
+        all.extend_from_slice(args);
+        git_unsealed(&all)
+    };
+    let head = run(&["rev-parse", "HEAD"]);
+    let parent = run(&["rev-list", "--parents", "--max-count=1", "HEAD"])
+        .split_whitespace()
+        .nth(1)
+        .map(str::to_owned);
+    let seal = expected_seal(copy, "HEAD");
+    let message = format!(
+        "{}\n\nSeal: {seal}\n",
+        run(&["log", "--max-count=1", "--format=%B", "HEAD"]).trim_end_matches('\n')
+    );
+    let tree = run(&["rev-parse", "HEAD^{tree}"]);
+    let mut commit = Command::new("git");
+    commit.args(["-C", copy, "commit-tree", &tree]);
+    if let Some(parent) = &parent {
+        commit.args(["-p", parent]);
+    }
+    for (name, _) in env::vars_os() {
+        if name.to_string_lossy().starts_with("GIT_") {
+            commit.env_remove(name);
+        }
+    }
+    let mut child = commit
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("git starts");
+    child
+        .stdin
+        .take()
+        .expect("git has an input")
+        .write_all(message.as_bytes())
+        .expect("the message is written");
+    let output = child.wait_with_output().expect("git ends");
+    assert!(
+        output.status.success(),
+        "git commit-tree failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let sealed = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    run(&["update-ref", "HEAD", &sealed, &head]);
 }
 
 pub fn text(path: &Path) -> &str {

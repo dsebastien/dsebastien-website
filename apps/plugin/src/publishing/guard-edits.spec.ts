@@ -8,6 +8,8 @@ import {
     makeTestStores,
     refusePushes,
     rejectionOf,
+    sealHead,
+    sealOfCommit,
     type CrashPoint,
     type TestStores
 } from '@dsebastien-website/testing'
@@ -86,6 +88,7 @@ async function pushFiles(copy: string, files: Record<string, string>): Promise<v
     await writeFiles(copy, files)
     await git(copy, 'add', '--', ...Object.keys(files))
     await git(copy, 'commit', '--quiet', '--message', 'A change of another device')
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
 
@@ -147,8 +150,10 @@ describe('an edit of the guards', () => {
             })
         )
         expect(await inStore(stores, 'configuration.json')).toBe(WITH_PRIVATE)
+        // The commit carries the seal of its state (R104).
+        const seal = await sealOfCommit(copy)
         expect(await git(copy, 'log', '-1', '--format=%B')).toBe(
-            `Edit: deny (applied)\n\nDevice: garden-shed\nFace: mcp-server\nPlan: ${event.id}`
+            `Edit: deny (applied)\n\nDevice: garden-shed\nFace: mcp-server\nPlan: ${event.id}\nSeal: ${seal}`
         )
         expect(await git(copy, 'show', '--name-only', '--format=', 'HEAD')).toBe(
             'configuration.json\nedits.json'

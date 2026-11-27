@@ -1,0 +1,331 @@
+{
+    "about": "Shared cases of the seal of the content store (decision R104, documentation/Canonical Form.md, \"The seal of the content store\"). The TypeScript and the Rust implementation both read this file. A key is never stored as text: a case gives the byte that its key repeats (\"keyByte\", \"keyLength\" bytes, 32 when not given), and <key> in a text is the 64 small hexadecimal digits of that key, <KEY> the same in capital letters, built at run time. The HMAC cases are test cases 1 and 6 of RFC 4231. A difference case gives the files of the sealed commit and of the last commit, the texts of their files by \"<commit>:<path>\", the difference and its text.",
+    "hmac": [
+        {
+            "name": "RFC 4231, test case 1",
+            "keyByte": "0b",
+            "keyLength": 20,
+            "text": "Hi There",
+            "hmac": "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+        },
+        {
+            "name": "RFC 4231, test case 6: a key longer than a block",
+            "keyByte": "aa",
+            "keyLength": 131,
+            "text": "Test Using Larger Than Block-Size Key - Hash Key First",
+            "hmac": "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
+        }
+    ],
+    "env": [
+        { "name": "a plain line", "text": "A=1\nVAULT_PUBLISH_SEAL_KEY=abc\n", "value": "abc" },
+        {
+            "name": "export, spaces and double quotes",
+            "text": "  export VAULT_PUBLISH_SEAL_KEY = \"abc\"  \n",
+            "value": "abc"
+        },
+        {
+            "name": "single quotes and Windows line ends",
+            "text": "VAULT_PUBLISH_SEAL_KEY='abc'\r\nB=2\r\n",
+            "value": "abc"
+        },
+        { "name": "a comment is no line", "text": "# VAULT_PUBLISH_SEAL_KEY=abc\n", "value": null },
+        {
+            "name": "the last line of the name wins",
+            "text": "VAULT_PUBLISH_SEAL_KEY=one\nVAULT_PUBLISH_SEAL_KEY=two\n",
+            "value": "two"
+        },
+        {
+            "name": "another name that starts the same",
+            "text": "VAULT_PUBLISH_SEAL_KEY_OLD=abc\n",
+            "value": null
+        },
+        { "name": "an empty value", "text": "VAULT_PUBLISH_SEAL_KEY=\n", "value": "" },
+        { "name": "one quote is kept", "text": "VAULT_PUBLISH_SEAL_KEY=\"abc\n", "value": "\"abc" }
+    ],
+    "keys": [
+        {
+            "name": "from the .env file of the vault",
+            "environment": null,
+            "envFile": "VAULT_PUBLISH_SEAL_KEY=<key>\n",
+            "keyByte": "5e",
+            "result": "key"
+        },
+        {
+            "name": "the environment wins",
+            "environment": "<key>",
+            "envFile": "VAULT_PUBLISH_SEAL_KEY=00\n",
+            "keyByte": "a7",
+            "result": "key"
+        },
+        {
+            "name": "an empty environment reads the file",
+            "environment": "  ",
+            "envFile": "VAULT_PUBLISH_SEAL_KEY=<key>",
+            "keyByte": "5e",
+            "result": "key"
+        },
+        {
+            "name": "capital letters",
+            "environment": null,
+            "envFile": "VAULT_PUBLISH_SEAL_KEY=<KEY>\n",
+            "keyByte": "ab",
+            "result": "key"
+        },
+        { "name": "no key anywhere", "environment": null, "envFile": null, "result": "missing" },
+        {
+            "name": "a file with no such line",
+            "environment": null,
+            "envFile": "A=1\n",
+            "result": "missing"
+        },
+        { "name": "too short", "environment": "abcd", "envFile": null, "result": "invalid" },
+        {
+            "name": "not hexadecimal",
+            "environment": null,
+            "envFile": "VAULT_PUBLISH_SEAL_KEY=<key>zz\n",
+            "keyByte": "5e",
+            "result": "invalid"
+        }
+    ],
+    "seals": [
+        {
+            "name": "a first commit",
+            "keyByte": "5e",
+            "parent": null,
+            "files": [
+                {
+                    "mode": "100644",
+                    "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "path": "manifest/0123456789abcdef.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "cccccccccccccccccccccccccccccccccccccccc",
+                    "path": "notes/Été.md"
+                }
+            ],
+            "digest": "85385224092d26b55a543540a1139fc2a764173574b6048199dc354f33f89a34",
+            "seal": "40816aeb31c5cf7fff1e3e5fed046e031042373bb7e85487b7cc65178636ec00"
+        },
+        {
+            "name": "the same state on top of a parent, the files in another order",
+            "keyByte": "5e",
+            "parent": "dddddddddddddddddddddddddddddddddddddddd",
+            "files": [
+                {
+                    "mode": "100644",
+                    "object": "cccccccccccccccccccccccccccccccccccccccc",
+                    "path": "notes/Été.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "path": "manifest/0123456789abcdef.json"
+                }
+            ],
+            "digest": "85385224092d26b55a543540a1139fc2a764173574b6048199dc354f33f89a34",
+            "seal": "7fe15e65043acdaafef4c3532387c573c756dd4a033b9cbc435b02858b7b1d15"
+        },
+        {
+            "name": "no sealed file",
+            "keyByte": "5e",
+            "parent": "dddddddddddddddddddddddddddddddddddddddd",
+            "files": [],
+            "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "seal": "b03d7646251d523e55f3e5a6b0baeb975793146607ee239247857893ad70fa10"
+        }
+    ],
+    "sealLines": [
+        {
+            "message": "Publish\n\nPlan: 0123456789abcdef\nSeal: 40816aeb31c5cf7fff1e3e5fed046e031042373bb7e85487b7cc65178636ec00\n",
+            "seal": "40816aeb31c5cf7fff1e3e5fed046e031042373bb7e85487b7cc65178636ec00"
+        },
+        {
+            "message": "Publish\nSeal: 40816aeb31c5cf7fff1e3e5fed046e031042373bb7e85487b7cc65178636ec00\n\n\n",
+            "seal": "40816aeb31c5cf7fff1e3e5fed046e031042373bb7e85487b7cc65178636ec00"
+        },
+        {
+            "message": "Seal: 40816aeb31c5cf7fff1e3e5fed046e031042373bb7e85487b7cc65178636ec00\nPublish\n",
+            "seal": null
+        },
+        {
+            "message": "Publish\nSeal: 40816AEB31C5CF7FFF1E3E5FED046E031042373BB7E85487B7CC65178636EC00\n",
+            "seal": null
+        },
+        { "message": "Publish\nSeal: 40816aeb\n", "seal": null },
+        { "message": "", "seal": null }
+    ],
+    "listings": [
+        {
+            "name": "blobs, a link and a folder, NUL ends, unsorted",
+            "text": "100644 blob bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\tnotes/b c.md\u0000120000 blob cccccccccccccccccccccccccccccccccccccccc\tmanifest/x.json\u0000040000 tree dddddddddddddddddddddddddddddddddddddddd\tnotes/folder\u0000100644 blob aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\tconfiguration.json\u0000",
+            "files": [
+                {
+                    "mode": "100644",
+                    "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "120000",
+                    "object": "cccccccccccccccccccccccccccccccccccccccc",
+                    "path": "manifest/x.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "path": "notes/b c.md"
+                }
+            ]
+        }
+    ],
+    "differences": [
+        {
+            "name": "a foreign commit: a published entry added, an entry changed, a folder left the deny list",
+            "head": "2222222222222222222222222222222222222222",
+            "sealed": "1111111111111111111111111111111111111111",
+            "sealedFiles": [
+                {
+                    "mode": "100644",
+                    "object": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+                    "path": "edits.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+                    "path": "manifest/aaaaaaaaaaaaaaaa.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+                    "path": "manifest/bbbbbbbbbbbbbbbb.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+                    "path": "notes/Garden/Old.md"
+                }
+            ],
+            "headFiles": [
+                {
+                    "mode": "100644",
+                    "object": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+                    "path": "edits.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+                    "path": "manifest/aaaaaaaaaaaaaaaa.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+                    "path": "manifest/bbbbbbbbbbbbbbbb.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+                    "path": "manifest/dddddddddddddddd.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+                    "path": "renames.json"
+                }
+            ],
+            "texts": {
+                "1111111111111111111111111111111111111111:configuration.json": "{\n  \"denyList\": [\n    \"Drafts\",\n    \"Inbox\"\n  ]\n}\n",
+                "2222222222222222222222222222222222222222:configuration.json": "{\n  \"denyList\": [\n    \"Inbox\",\n    \"Journal\"\n  ]\n}\n",
+                "1111111111111111111111111111111111111111:manifest/bbbbbbbbbbbbbbbb.json": "{\n  \"path\": \"Garden/Fern.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "2222222222222222222222222222222222222222:manifest/bbbbbbbbbbbbbbbb.json": "{\n  \"path\": \"Garden/Fern.md\",\n  \"state\": \"published\"\n}\n",
+                "2222222222222222222222222222222222222222:manifest/dddddddddddddddd.json": "{\n  \"path\": \"Drafts/Plan.md\",\n  \"state\": \"published\"\n}\n"
+            },
+            "difference": {
+                "head": "2222222222222222222222222222222222222222",
+                "sealed": "1111111111111111111111111111111111111111",
+                "entries": [
+                    {
+                        "change": "changed",
+                        "file": "manifest/bbbbbbbbbbbbbbbb.json",
+                        "path": "Garden/Fern.md",
+                        "before": "unpublished",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/dddddddddddddddd.json",
+                        "path": "Drafts/Plan.md",
+                        "before": "none",
+                        "after": "published"
+                    }
+                ],
+                "denyListRemoved": ["Drafts"],
+                "denyListAdded": ["Journal"],
+                "files": [
+                    { "path": "configuration.json", "change": "changed" },
+                    { "path": "notes/Garden/Old.md", "change": "removed" },
+                    { "path": "renames.json", "change": "added" }
+                ]
+            },
+            "text": "the state of the content store at 2222222222222222222222222222222222222222 is not the state that a commit of the tool sealed (1111111111111111111111111111111111111111): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state: manifest entries added (1): \"Drafts/Plan.md\" (none to published); manifest entries changed (1): \"Garden/Fern.md\" (unpublished to published); folders that left the deny list, so the guards are looser: \"Drafts\"; folders added to the deny list: \"Journal\"; files of the store: configuration.json (changed), renames.json (added); cleaned notes (1): notes/Garden/Old.md (removed). When you made or accept every change, confirm the state of commit 2222222222222222222222222222222222222222 (the command confirm-state --head 2222222222222222222222222222222222222222, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
+        },
+        {
+            "name": "a store with no sealed state, and an entry that cannot be read",
+            "head": "3333333333333333333333333333333333333333",
+            "sealed": null,
+            "sealedFiles": [],
+            "headFiles": [
+                {
+                    "mode": "100644",
+                    "object": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+                    "path": "manifest/aaaaaaaaaaaaaaaa.json"
+                }
+            ],
+            "texts": {
+                "3333333333333333333333333333333333333333:configuration.json": "{\n  \"denyList\": [\n    \"Inbox\"\n  ]\n}\n",
+                "3333333333333333333333333333333333333333:manifest/aaaaaaaaaaaaaaaa.json": "not json"
+            },
+            "difference": {
+                "head": "3333333333333333333333333333333333333333",
+                "sealed": "none",
+                "entries": [
+                    {
+                        "change": "added",
+                        "file": "manifest/aaaaaaaaaaaaaaaa.json",
+                        "path": "",
+                        "before": "none",
+                        "after": "?"
+                    }
+                ],
+                "denyListRemoved": [],
+                "denyListAdded": ["Inbox"],
+                "files": [{ "path": "configuration.json", "change": "added" }]
+            },
+            "text": "the content store has no sealed state yet (a store from before R104, or a new one), so the tool does not trust its state: it plans and publishes nothing until you confirm it one time. Its state at 3333333333333333333333333333333333333333: manifest entries added (1): \"manifest/aaaaaaaaaaaaaaaa.json\" (none to ?); folders added to the deny list: \"Inbox\"; files of the store: configuration.json (added). When you made or accept every change, confirm the state of commit 3333333333333333333333333333333333333333 (the command confirm-state --head 3333333333333333333333333333333333333333, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
+        }
+    ]
+}

@@ -26,10 +26,13 @@ import type {
     NoteTypes,
     LocalStore,
     RenameJournals,
+    SealSource,
     Vault,
     VaultEntry
 } from '../ports.ts'
 import { JOURNAL_FOLDER } from '../renames.ts'
+import { parseTreeListing, SEAL_KEY_VARIABLE, SEALED_PATHS, withSeal } from '../seal.ts'
+import type { Commit } from '../seal.ts'
 import { isChangedByWindows, isRefusedByWindows } from '../names.ts'
 
 // A device whose vault and whose copy of the content store are folders, with
@@ -337,8 +340,8 @@ function waysOut(different: readonly { code: string; path: string }[], folder: s
                     : configuration.includes('T')
                       ? 'Put configuration.json back with git checkout HEAD -- configuration.json: a link or a folder is not a file of the store'
                       : configuration === '??' || configuration === '!!'
-                        ? 'When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main). Else remove it'
-                        : 'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json'
+                        ? 'When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main), then confirm the new state (confirm-state). Else remove it'
+                        : 'When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main), then confirm the new state (confirm-state). Else put the file back with git checkout HEAD -- configuration.json'
         )
     }
     // The log of the edits of the guards (R69): only the tool writes it.
@@ -696,13 +699,13 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                         files[0]?.path === 'configuration.json' &&
                         (files[0].code === 'M' || files[0].code === 'A'))
                 const way = safe
-                    ? 'a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main)'
+                    ? 'a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main), then confirm the new state (confirm-state)'
                     : `a push would change other files of the store too, or remove the configuration (${files
                           .slice(0, 5)
                           .map((file) => file.path)
                           .join(
                               ', '
-                          )}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it`
+                          )}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it, then confirm the new state (confirm-state)`
                 throw new Error(
                     `the copy of the content store has ${ahead} commit(s) that the content store does not have. Nothing can be published until the copy is corrected: ${way}: ${folder}`
                 )
@@ -1068,7 +1071,46 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                 .map((entry) => `${below}/${entry.name}`)
                 .sort(compareCodePoints)
         },
-        async commitAndPush(message, paths) {
+        async commits(limit) {
+            if ((await headOf()) === undefined) {
+                return []
+            }
+            // Each commit: its id, its parents and its message, each ended by a NUL.
+            const fields = (
+                await gitRaw(
+                    'log',
+                    '--first-parent',
+                    '-z',
+                    `--max-count=${String(limit)}`,
+                    '--format=%H%x00%P%x00%B',
+                    'HEAD'
+                )
+            ).split('\0')
+            const commits: Commit[] = []
+            for (let index = 0; index + 2 < fields.length; index += 3) {
+                const parent = (fields[index + 1] ?? '').split(' ')[0] ?? ''
+                commits.push({
+                    id: (fields[index] ?? '').trim(),
+                    parent: parent === '' ? undefined : parent,
+                    message: fields[index + 2] ?? ''
+                })
+            }
+            return commits
+        },
+        async files(commit, paths) {
+            return parseTreeListing(
+                await gitRaw('ls-tree', '-r', '-z', '--full-tree', commit, '--', ...paths)
+            )
+        },
+        async readAt(commit, path) {
+            const spec = `${commit}:${path}`
+            const exists = await git('cat-file', '-e', spec).then(
+                () => true,
+                () => false
+            )
+            return exists ? await gitRaw('cat-file', 'blob', spec) : undefined
+        },
+        async commitAndPush(message, paths, seal) {
             // A copy with no commit has no commit to go back to.
             let before: string | undefined
             try {
@@ -1124,6 +1166,53 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                         ? what
                         : `${what}. Git could not take the publication back, so correct the copy by hand before the next publication (${before === undefined ? 'git update-ref -d HEAD' : `git reset --soft ${before}`}): ${failures.join('; ')}`
                 )
+            /** Makes a commit of this tree on top of the commit before the run, with the sealed message. */
+            const sealedCommit = async (
+                tree: string,
+                sealer: NonNullable<typeof seal>
+            ): Promise<string> => {
+                const files = parseTreeListing(
+                    await gitRaw('ls-tree', '-r', '-z', '--full-tree', tree, '--', ...SEALED_PATHS)
+                )
+                const text = withSeal(message, sealer(before, files))
+                const parent = before === undefined ? [] : ['-p', before]
+                return (await gitWith(['commit-tree', tree, ...parent, '-F', '-'], text)).trim()
+            }
+            if (paths.length === 0) {
+                // A commit with no change of a file (the confirmation of the
+                // state, R104): on top of the last commit, with its tree.
+                if (seal === undefined || before === undefined) {
+                    throw new Error('a commit with no file needs a seal and a commit before it')
+                }
+                const last = before
+                try {
+                    const commit = await sealedCommit(
+                        await git('rev-parse', `${last}^{tree}`),
+                        seal
+                    )
+                    await git('update-ref', 'HEAD', commit, last)
+                    made = commit
+                } catch (error) {
+                    throw failed(
+                        `the commit into the copy of the content store failed: ${error instanceof Error ? error.message.trim() : 'git failed'}`,
+                        []
+                    )
+                }
+                try {
+                    await git('push', '--quiet', 'origin', `${made}:refs/heads/main`)
+                } catch {
+                    // No path to unstage: only the branch goes back.
+                    const commit = made
+                    const failures = await git('update-ref', 'HEAD', last, commit).then(
+                        () => [],
+                        (error: unknown) => [
+                            error instanceof Error ? error.message.trim() : 'git failed'
+                        ]
+                    )
+                    throw failed('the push to the content store was refused', failures)
+                }
+                return
+            }
             try {
                 // With force: a rule of the store that ignores a path must not
                 // leave a note out of its own publication.
@@ -1175,6 +1264,24 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                     'the commit of this publication does not hold exactly its files on top of the commit before it: another run changed the copy during the publication. Nothing is pushed',
                     await undo(true)
                 )
+            }
+            if (seal !== undefined) {
+                // The same tree and parent, with the seal as the last line of
+                // the message (R104): the branch moves from one to the other.
+                const unsealed = made
+                try {
+                    const sealed = await sealedCommit(
+                        await git('rev-parse', `${unsealed}^{tree}`),
+                        seal
+                    )
+                    await git('update-ref', 'HEAD', sealed, unsealed)
+                    made = sealed
+                } catch (error) {
+                    throw failed(
+                        `the seal of the commit failed: ${error instanceof Error ? error.message.trim() : 'git failed'}`,
+                        await undo(true)
+                    )
+                }
             }
             try {
                 // Never with force: when another device pushed first, git
@@ -1651,6 +1758,18 @@ export function fileMainSite(file: string): MainSite {
  * @param options.git the git program; by default `git` of the path of the system
  * @param options.mainSite the main site, for the check of the originals; by default none: no post is checked
  */
+/**
+ * The source of the seal key of a vault (R104): the variable of the
+ * environment of the process, else the `.env` file at the root of the vault.
+ * Both are read at each check, never kept.
+ */
+export function vaultSealSource(vault: string): SealSource {
+    return {
+        environment: () => process.env[SEAL_KEY_VARIABLE],
+        envFile: () => textOrNothing(join(vault, '.env'))
+    }
+}
+
 export function nodeDevice(options: {
     vault: string
     contentStore: string
@@ -1670,6 +1789,7 @@ export function nodeDevice(options: {
         attachments: folderAttachmentStorage(options.attachmentStorage),
         local: folderLocalStore(options.contentStore),
         noteTypes: options.noteTypes ?? NO_NOTE_TYPES,
+        seal: vaultSealSource(options.vault),
         ...(options.mainSite === undefined ? {} : { mainSite: options.mainSite })
     }
 }

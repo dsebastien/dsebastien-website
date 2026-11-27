@@ -94,6 +94,7 @@ describe('the tools of the MCP server', () => {
         // The Rust face compares its tools with its commands (`cli/src/mcp.rs`).
         expect([...TOOL_NAMES].sort()).toEqual([
             'allow',
+            'confirm_store_state',
             'deny',
             'deploy',
             'guards',
@@ -116,7 +117,9 @@ describe('the tools of the MCP server', () => {
                   ? { paths: ['a.md'] }
                   : name === 'deny' || name === 'allow' || name === 'ignore' || name === 'unignore'
                     ? { path: 'a.md' }
-                    : {}
+                    : name === 'confirm_store_state'
+                      ? { head: '1'.repeat(40) }
+                      : {}
         expect(toolCallOf(name, args).tool).toBe(name)
     })
 

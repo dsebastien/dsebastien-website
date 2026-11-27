@@ -5,7 +5,8 @@ import {
     FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     makeContentStoreCopy,
-    makeTestStores
+    makeTestStores,
+    testSealKey
 } from '@dsebastien-website/testing'
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish } from '../../plugin/src/publishing/tool.ts'
@@ -54,12 +55,16 @@ export async function buildUrlTableSite(
             }
         }
         const contentStore = await makeContentStoreCopy(stores)
-        const device = nodeDevice({
-            noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
-            vault,
-            contentStore,
-            attachmentStorage: stores.attachmentStorage
-        })
+        const device = {
+            ...nodeDevice({
+                noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
+                vault,
+                contentStore,
+                attachmentStorage: stores.attachmentStorage
+            }),
+            // The invented store is sealed with the key of the tests (R104).
+            seal: { environment: () => testSealKey(), envFile: () => Promise.resolve(undefined) }
+        }
         const removed = table.removed.map((note) => note.path)
         // A note with former paths is published at its first one, then moved
         // by a line of a rename journal, as the plugin writes it (R66).

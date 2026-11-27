@@ -2,6 +2,8 @@
 // gives the vault of Obsidian. The tests and the parity harness give folders.
 // The logic itself never touches a file system, git or Obsidian.
 
+import type { Commit, TreeFile } from './seal.ts'
+
 /** One name of a folder of the vault. */
 export interface VaultEntry {
     readonly name: string
@@ -141,7 +143,36 @@ export interface ContentStore {
      * and throws. It leaves the files of the copy as they are: the tool puts
      * them back. Other staged work of the copy stays staged.
      */
-    commitAndPush(message: string, paths: readonly string[]): Promise<void>
+    commitAndPush(message: string, paths: readonly string[], seal?: Sealer): Promise<void>
+    /**
+     * The commits of the first-parent chain from the last commit of the copy,
+     * newest first, at most `limit`. None when the copy has no commit.
+     */
+    commits(limit: number): Promise<readonly Commit[]>
+    /** The files of a commit below these paths (`git ls-tree -r`), sorted by path. */
+    files(commit: string, paths: readonly string[]): Promise<readonly TreeFile[]>
+    /** The text of a file of a commit, or `undefined` when the commit has no such file. */
+    readAt(commit: string, path: string): Promise<string | undefined>
+}
+
+/**
+ * The seal of a commit (R104): from the commit before it (`undefined` for a
+ * first commit) and the files of the commit below `SEALED_PATHS`. With a
+ * sealer, `commitAndPush` makes the commit again with the seal as the last
+ * line of its message, and pushes that one. With no path, it makes a commit
+ * with no change of a file.
+ */
+export type Sealer = (parent: string | undefined, files: readonly TreeFile[]) => string
+
+/**
+ * Where the seal key comes from (R104): the variable of the environment and
+ * the `.env` file at the root of the vault. The logic decides which one counts.
+ */
+export interface SealSource {
+    /** The value of `VAULT_PUBLISH_SEAL_KEY` in the environment, read at each call. */
+    environment(): string | undefined
+    /** The text of the `.env` file at the root of the vault, or `undefined` when there is none. */
+    envFile(): Promise<string | undefined>
 }
 
 /**
@@ -300,6 +331,8 @@ export interface Device {
     readonly attachments: AttachmentStorage
     readonly local: LocalStore
     readonly noteTypes: NoteTypes
+    /** The source of the seal key of the content store (R104). */
+    readonly seal: SealSource
     /** The refresh of the frozen lists, in Obsidian only. Without it, every list is published as saved. */
     readonly lists?: ListRefresh
     /**

@@ -16,11 +16,12 @@ import {
     copyFixtureVault,
     crashingStore,
     gitEnvironment,
-    type CrashPoint,
     makeContentStoreCopy,
     makeTestStores,
     refusePushes,
     rejectionOf,
+    sealHead,
+    type CrashPoint,
     type TestStores
 } from '@dsebastien-website/testing'
 import type { EditAction, EditEvent } from './edits.ts'
@@ -269,6 +270,7 @@ async function storageOf(folder: string): Promise<Record<string, FileContent>> {
 async function commitAll(copy: string): Promise<void> {
     await git(copy, 'add', '--all')
     await git(copy, 'commit', '--quiet', '--message', 'A change of another device')
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
 
@@ -281,6 +283,7 @@ async function pushToStore(
     await writeFiles(copy, files)
     await git(copy, 'add', '--', ...Object.keys(files))
     await git(copy, 'commit', '--quiet', '--message', message)
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
 
@@ -1178,6 +1181,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             '{"denyList":["80 Templates","90 Locked Shed","10 Garden"]}\n'
         )
         await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'A stricter deny list')
+        await sealHead(setup.copy)
 
         expect(await rejectionOf(status(setup.device))).toContain('git push origin HEAD:main')
 
@@ -1185,6 +1189,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         await writeFile(join(setup.copy, 'notes', 'Stuck.md'), 'A publication that stayed\n')
         await git(setup.copy, 'add', 'notes')
         await git(setup.copy, 'commit', '--quiet', '--message', 'A publication that stayed')
+        await sealHead(setup.copy)
         const message = await rejectionOf(status(setup.device))
 
         expect(message).not.toContain('push it (git push')
@@ -1200,6 +1205,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         const setup = await setUp(stores)
         await git(setup.copy, 'rm', '--quiet', 'configuration.json')
         await git(setup.copy, 'commit', '--quiet', '--message', 'No deny list')
+        await sealHead(setup.copy)
 
         const message = await rejectionOf(status(setup.device))
 
@@ -1224,6 +1230,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             '{"denyList":["80 Templates","90 Locked Shed","10 Garden"]}\n'
         )
         await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'A stricter deny list')
+        await sealHead(setup.copy)
         await git(setup.copy, 'fetch', '--quiet', 'origin')
         await git(
             setup.copy,
@@ -1251,6 +1258,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         await git(setup.copy, 'config', 'core.autocrlf', 'false')
         await writeFile(file, (await Bun.file(file).text()).replaceAll('\n', '\r\n'))
         await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'Windows line ends')
+        await sealHead(setup.copy)
         await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
         await git(setup.copy, 'config', 'core.autocrlf', 'true')
 
@@ -1334,6 +1342,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
         const setup = await setUp(stores)
         await git(setup.copy, 'rm', '--quiet', 'configuration.json')
         await git(setup.copy, 'commit', '--quiet', '--message', 'No deny list')
+        await sealHead(setup.copy)
         await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
         const file = join(setup.copy, 'configuration.json')
         await writeFile(file, '{"denyList":["80 Templates","90 Locked Shed"]}\n')
@@ -1453,7 +1462,7 @@ describe('commit of a publication of the queue', () => {
         )
 
         expect(await git(setup.copy, 'log', '-1', '--format=%B')).toMatch(
-            /^Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped, 0 moved\n\nDevice: garden-shed\nFace: mcp-server\nPlan: [0-9a-f]{16}$/u
+            /^Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped, 0 moved\n\nDevice: garden-shed\nFace: mcp-server\nPlan: [0-9a-f]{16}\nSeal: [0-9a-f]{64}$/u
         )
         // One commit, and the content store has it.
         expect(await git(setup.copy, 'rev-list', '--count', 'HEAD')).toBe('3')
@@ -1752,6 +1761,7 @@ describe('commit that fails', () => {
         await pushToStore(setup.copy, { 'README.md': 'A file of another branch\n' })
         await writeFile(join(setup.copy, 'README.md'), 'A newer text\n')
         await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'On another branch')
+        await sealHead(setup.copy)
         await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:other')
 
         expect((await status(setup.device)).new).toContain(NOTE)
@@ -1890,8 +1900,8 @@ describe('correction of the state property', () => {
             ...setup.device,
             store: {
                 ...store,
-                async commitAndPush(message, paths) {
-                    await store.commitAndPush(message, paths)
+                async commitAndPush(message, paths, seal) {
+                    await store.commitAndPush(message, paths, seal)
                     await append(join(setup.vault, wrong), 'A line that the author adds now.\n')
                 }
             }
@@ -2010,6 +2020,7 @@ async function makeContentStoreCopyOf(stores: TestStores, name: string): Promise
         await writeFile(join(seed, 'configuration.json'), '{"denyList": []}\n')
         await git(seed, 'add', 'configuration.json')
         await git(seed, 'commit', '--quiet', '--message', 'An empty deny list')
+        await sealHead(seed)
         await git(seed, 'push', '--quiet', 'origin', 'HEAD:main')
     }
     const copy = join(stores.root, name)
@@ -2238,6 +2249,7 @@ describe('forced removal', () => {
         await writeFile(join(setup.vault, NOTE), IGNORED)
         await writeFile(join(setup.copy, 'notes', NOTE), Uint8Array.from([0xff, 0xfe, 0x0a]))
         await git(setup.copy, 'commit', '--quiet', '--all', '--message', 'Another device')
+        await sealHead(setup.copy)
         await git(setup.copy, 'push', '--quiet', 'origin', 'HEAD:main')
 
         const report = await publishNotes(setup, { include: [] }, { ...RUN, time: LATER })

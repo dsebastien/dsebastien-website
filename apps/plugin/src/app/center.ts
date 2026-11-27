@@ -42,6 +42,7 @@ import type { ToolCall, ToolOutcome } from '../publishing/mcp.ts'
 import type { Move, PublicationQueue } from '../publishing/queue.ts'
 import {
     confirmProposal,
+    confirmState,
     reviewProposal,
     edit,
     guards,
@@ -193,7 +194,8 @@ const TOOL_ACTIVITIES: Record<Exclude<ToolCall['tool'], 'deploy'>, Activity> = {
     allow: 'editing',
     ignore: 'editing',
     unignore: 'editing',
-    unlock: 'unlocking'
+    unlock: 'unlocking',
+    confirm_store_state: 'editing'
 }
 
 export interface LogLine {
@@ -1406,6 +1408,13 @@ export class PublicationCenter {
                 this.#log(`Agent edit done: ${call.tool} "${call.path}" (${event.state})`)
                 return outcomeOfEdit(event)
             }
+            case 'confirm_store_state': {
+                this.#log(`Agent confirmation of the state started: ${call.head}`)
+                this.#fresh = false
+                const confirmed = await confirmState(device, call.head, run)
+                this.#log(`Agent confirmation of the state done: ${call.head}`)
+                return { output: toCanonicalJson(confirmed) }
+            }
             case 'unlock': {
                 this.#fresh = false
                 const removed = await unlock(device)
@@ -1481,6 +1490,32 @@ export class PublicationCenter {
                     await this.#wrote([event.path])
                 }
                 this.#log(`${name} done: ${event.action} "${event.path}" (${event.state})`)
+            },
+            'author'
+        )
+    }
+
+    /**
+     * The author confirms the state of the content store at this commit,
+     * after the difference that an error named (R104), then checks again.
+     */
+    async confirmState(head: string): Promise<void> {
+        await this.#run(
+            'editing',
+            'Confirmation of the state',
+            async () => {
+                this.#log(`Confirmation of the state started: ${head}`)
+                this.#fresh = false
+                const { confirmed } = await confirmState(this.#device(), head, {
+                    time: canonicalTime(this.host.now()),
+                    device: this.host.deviceName,
+                    face: 'plugin'
+                })
+                this.#log(
+                    confirmed
+                        ? `Confirmation of the state done: ${head} is sealed`
+                        : 'Confirmation of the state done: the state was sealed already'
+                )
             },
             'author'
         )

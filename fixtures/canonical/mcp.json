@@ -1163,6 +1163,54 @@
             }
         },
         {
+            "name": "confirm_store_state confirms the state of the commit that the difference names",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 104,
+                "method": "tools/call",
+                "params": {
+                    "name": "confirm_store_state",
+                    "arguments": { "head": "1111111111111111111111111111111111111111" }
+                }
+            },
+            "call": {
+                "tool": "confirm_store_state",
+                "head": "1111111111111111111111111111111111111111"
+            },
+            "operation": { "output": "{\n  \"confirmed\": false\n}\n" },
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 104,
+                "result": {
+                    "content": [{ "type": "text", "text": "{\n  \"confirmed\": false\n}\n" }],
+                    "isError": false
+                }
+            }
+        },
+        {
+            "name": "confirm_store_state with no head",
+            "request": {
+                "jsonrpc": "2.0",
+                "id": 105,
+                "method": "tools/call",
+                "params": { "name": "confirm_store_state", "arguments": {} }
+            },
+            "call": null,
+            "response": {
+                "jsonrpc": "2.0",
+                "id": 105,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "confirm_store_state needs the argument \"head\": the last commit that the difference names"
+                        }
+                    ],
+                    "isError": true
+                }
+            }
+        },
+        {
             "name": "deploy runs the deploy again and gives its report",
             "request": {
                 "jsonrpc": "2.0",

@@ -2356,6 +2356,11 @@ fn the_commit_has_a_message_with_the_counts_the_device_and_the_face() {
     let (counts, plan) = message
         .split_once("\nPlan: ")
         .expect("the message names the plan");
+    // The last line is the seal of the commit (R104).
+    let (plan, seal) = plan
+        .split_once("\nSeal: ")
+        .expect("the message ends with its seal");
+    assert_eq!(seal.trim_end().len(), 64);
     assert_eq!(
         counts,
         "Publish: 1 new, 1 updated, 1 removed, 0 forced, 1 skipped, 0 moved\n\nDevice: garden-shed\nFace: command-line"

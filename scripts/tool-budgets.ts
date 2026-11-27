@@ -2,7 +2,10 @@ import { appendFile, chmod, cp, mkdir, readdir, readFile, rm } from 'node:fs/pro
 import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { gitEnvironment } from '@dsebastien-website/testing'
+import { gitEnvironment, sealHead, testSealKey } from '@dsebastien-website/testing'
+// The invented stores are sealed with the key of the tests (R104): every
+// device of this run, and every program that it starts, uses that key.
+process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 import { NO_NOTE_TYPES, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import { prepareOutputFolder, writeMarker, type OutputOptions } from './output-folder.ts'
@@ -205,6 +208,7 @@ async function setUp(corpus: string, work: string, places: Places): Promise<{ no
     await Bun.write(join(places.copy, 'configuration.json'), '{ "denyList": [] }\n')
     await run(['git', 'add', 'configuration.json'], places.copy)
     await run(['git', 'commit', '--quiet', '--message', 'Add the configuration'], places.copy)
+    await sealHead(places.copy)
     await run(['git', 'push', '--quiet', 'origin', 'HEAD:main'], places.copy)
     await writeStarterKit(work, places)
 

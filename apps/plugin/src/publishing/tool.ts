@@ -46,10 +46,12 @@ import type { CheckResult, Original } from './originals.ts'
 import { normalSelection, planWithSizes } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
-import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult } from './ports.ts'
+import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult, Sealer } from './ports.ts'
 import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
 import type { Move, PublicationQueue, Scan } from './queue.ts'
 import { foldMoves, movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
+import { checkSeal, SealDiffers, sealKeyOf, sealOf } from './seal.ts'
+import type { StoreDifference } from './seal.ts'
 import { parseWithdrawn, WITHDRAWN_FILE, withdrawnKeys, withdrawnText } from './withdrawn.ts'
 import type { JournalState } from './renames.ts'
 import { FACES, isCanonicalTime, isOneLine } from './run.ts'
@@ -223,6 +225,8 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
     const edits = parseEdits(await device.store.read(EDITS_FILE))
     // So does a list of withdrawn keys that is not valid (issue 120).
     parseWithdrawn(await device.store.read(WITHDRAWN_FILE))
+    // The state of the copy is trusted only when a commit of the tool sealed it (R104).
+    await refuseUnsealed(device)
     const manifest = await readManifest(device.store)
     return {
         scan: await computeQueue({
@@ -238,6 +242,33 @@ async function readState(device: Device, fetch: Fetch): Promise<State> {
         behind,
         reached
     }
+}
+
+/** The seal key of the device. It throws, with how to make one, when there is none (R104). */
+async function sealKey(device: Device): Promise<Uint8Array> {
+    const key = sealKeyOf(device.seal.environment(), await device.seal.envFile())
+    if ('problem' in key) {
+        throw new Error(key.problem)
+    }
+    return key.key
+}
+
+/**
+ * Stops when the state of the last commit of the copy is not the state that a
+ * commit of the tool sealed (R104): the error says what differs, and how the
+ * author confirms it. A copy with no commit holds nothing to trust.
+ */
+async function refuseUnsealed(device: Device): Promise<void> {
+    const checked = await checkSeal(device.store, await sealKey(device))
+    if (checked.status === 'differs') {
+        throw new SealDiffers(checked.difference)
+    }
+}
+
+/** The sealer of the commit of a run, with the key of the device (R104). */
+async function sealerOf(device: Device): Promise<Sealer> {
+    const key = await sealKey(device)
+    return (parent, files) => sealOf(key, parent, files)
 }
 
 /**
@@ -1622,7 +1653,8 @@ async function writeAll(
                 // The recovery of a run that stopped halfway finds its commit by this line.
                 `Plan: ${run.plan}`
             ].join('\n'),
-            [...new Set(written)]
+            [...new Set(written)],
+            await sealerOf(device)
         )
     }
     return { report, written: [...new Set(written)], manifest }
@@ -1754,6 +1786,15 @@ export async function takedown(
 }
 
 /** The takedown of the named notes, with the lock of the device. */
+/** The sealer of a takedown: only with a key and a state that is sealed, or a copy with no commit. */
+async function takedownSealer(device: Device): Promise<Sealer | undefined> {
+    const key = sealKeyOf(device.seal.environment(), await device.seal.envFile())
+    if ('problem' in key || (await checkSeal(device.store, key.key)).status === 'differs') {
+        return undefined
+    }
+    return (parent, files) => sealOf(key.key, parent, files)
+}
+
 async function takeDownLocked(
     device: Device,
     named: readonly string[],
@@ -1767,6 +1808,9 @@ async function takeDownLocked(
     // The copy must follow the content store: an older manifest would miss a
     // note, and the push would be refused.
     refuseWhenBehind((await device.store.verify('must')).behind)
+    // A takedown never waits for a confirmation of the state (R104), and seals
+    // its commit only when the state before it was sealed.
+    const sealer = await takedownSealer(device)
     const manifest = await readManifest(device.store)
     // First the files of the storage that no published note uses: a takedown
     // that stopped after its push left the files of its notes there, and its
@@ -1812,7 +1856,8 @@ async function takeDownLocked(
                 // The recovery of a run that stopped halfway finds its commit by this line.
                 `Plan: ${id}`
             ].join('\n'),
-            written
+            written,
+            sealer
         )
     } catch (error) {
         // Another run took the copy: this run touches nothing of it any more.
@@ -2385,13 +2430,16 @@ async function prepareEdit(device: Device, ownLock: () => Promise<void>): Promis
 
 async function editContext(device: Device): Promise<EditContext> {
     const text = await configurationText(device)
-    return {
+    const context: EditContext = {
         configurationText: text,
         // No check of GATE-38: an edit is how an agent corrects a deny list
         // entry that names no folder (PUB-91).
         configuration: parseConfiguration(text),
         log: parseEdits(await device.store.read(EDITS_FILE))
     }
+    // The log and the deny list are trusted only when they are sealed (R104).
+    await refuseUnsealed(device)
+    return context
 }
 
 /**
@@ -2836,7 +2884,8 @@ async function commitEvent(
                 // The recovery of a run that stopped halfway finds its commit by this line.
                 `Plan: ${event.id}`
             ].join('\n'),
-            written
+            written,
+            await sealerOf(device)
         )
     } catch (error) {
         // Another run took the copy: this run touches nothing of it any more.
@@ -3090,5 +3139,68 @@ export async function rejectProposal(given: Device, id: string, run: Run): Promi
         })
         await applyEvent(device, context, event, { removes: [], affects: [] }, run, owed, ownLock)
         return event
+    })
+}
+
+/** What a confirmation of the state of the content store did (R104). */
+// A type alias, not an interface: the canonical form takes any object of data.
+export type StateConfirmation = {
+    /** False when the state was sealed already: nothing was written. */
+    readonly confirmed: boolean
+    /** The difference that the confirmation sealed. */
+    readonly difference?: StoreDifference
+}
+
+/** The form of the id of a commit: SHA-1 or SHA-256. */
+const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u
+
+/**
+ * The author confirms the state of the content store after a difference
+ * (R104, "The seal of the content store", rule 8): one commit with no change
+ * of a file, sealed, on top of the last commit, which must be the one that
+ * the author read the difference of.
+ */
+export async function confirmState(
+    given: Device,
+    head: string,
+    run: Run
+): Promise<StateConfirmation> {
+    const device = forRun(given)
+    checkRun(run)
+    if (!COMMIT_ID.test(head)) {
+        throw new Error(
+            'the commit to confirm must be the 40 or 64 small hexadecimal digits of a commit'
+        )
+    }
+    return await withLock(device, editHolder(run), async (ownLock) => {
+        await recover(device, ownLock)
+        refuseWhenBehind((await device.store.verify('must')).behind)
+        const key = await sealKey(device)
+        const checked = await checkSeal(device.store, key)
+        if (checked.status === 'empty') {
+            throw new Error('the content store has no commit: there is no state to confirm')
+        }
+        if (checked.status === 'sealed') {
+            return { confirmed: false }
+        }
+        const { difference } = checked
+        if (difference.head !== head) {
+            throw new Error(
+                `the content store changed since the difference that you read: its last commit is now ${difference.head}, not ${head}. Read the difference again (status or plan), then confirm that commit`
+            )
+        }
+        await ownLock()
+        await device.store.commitAndPush(
+            [
+                'Confirm the state of the content store',
+                '',
+                `Confirmed: ${head}`,
+                `Device: ${run.device}`,
+                `Face: ${run.face}`
+            ].join('\n'),
+            [],
+            (parent, files) => sealOf(key, parent, files)
+        )
+        return { confirmed: true, difference }
     })
 }

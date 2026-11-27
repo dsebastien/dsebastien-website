@@ -6,6 +6,7 @@ import {
     gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
+    sealHead,
     type TestStores
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
@@ -38,6 +39,10 @@ async function denyAlso(copy: string, folder: string): Promise<void> {
         const child = Bun.spawn(['git', ...args], { cwd: copy, env: gitEnvironment() })
         if ((await child.exited) !== 0) {
             throw new Error(`git ${args.join(' ')} failed`)
+        }
+        if (args[0] === 'commit') {
+            // Sealed, as a commit of the tool of that device (R104).
+            await sealHead(copy)
         }
     }
 }

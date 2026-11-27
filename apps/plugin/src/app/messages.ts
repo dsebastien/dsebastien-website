@@ -95,10 +95,17 @@ export interface WaysOut {
     readonly pull: boolean
     /** A lock of the device stops the runs: its removal, after a confirmation. */
     readonly unlock: boolean
+    /**
+     * The state of the content store is not sealed (R104): the last commit
+     * that the difference names, which a confirmation seals. No key for
+     * another error.
+     */
+    readonly confirmState?: string
 }
 
 /** The buttons for an error, from its text. */
 export function waysOut(error: string): WaysOut {
+    const head = /confirm-state --head ([0-9a-f]{40}(?:[0-9a-f]{24})?)\b/u.exec(error)?.[1]
     return {
         settings:
             error.includes('settings of Vault Publish') ||
@@ -108,6 +115,7 @@ export function waysOut(error: string): WaysOut {
         pull:
             error.includes('commit(s) behind the content store') ||
             error.includes('configuration.json in its last commit'),
-        unlock: error.includes('a publication runs on this device, or one stopped halfway')
+        unlock: error.includes('a publication runs on this device, or one stopped halfway'),
+        ...(head === undefined ? {} : { confirmState: head })
     }
 }

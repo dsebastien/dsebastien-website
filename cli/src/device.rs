@@ -23,6 +23,9 @@ use crate::deploy::{
     takedown_entry_of, takedown_entry_text,
 };
 use crate::names::{is_changed_by_windows, is_refused_by_windows};
+use crate::seal::{
+    Commit, SEALED_PATHS, SealedHistory, Sealer, TreeFile, parse_tree_listing, with_seal,
+};
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -572,6 +575,98 @@ impl ContentStore {
             .map(|head| head.trim().to_owned())
     }
 
+    /// The first-parent chain from the last commit of the copy, newest first,
+    /// at most `limit` commits (R104). None when the copy has no commit.
+    ///
+    /// # Errors
+    ///
+    /// Git fails.
+    pub fn commits(&self, limit: usize) -> Result<Vec<Commit>, String> {
+        if self.head().is_none() {
+            return Ok(Vec::new());
+        }
+        let listing = self.git_output(&[
+            "log",
+            "--first-parent",
+            "-z",
+            "--format=%H%x00%P%x00%B",
+            &format!("--max-count={limit}"),
+            "HEAD",
+        ])?;
+        // Each commit gives three texts, each one ended by a NUL.
+        let mut texts = listing.split('\0');
+        let mut commits = Vec::new();
+        while let (Some(id), Some(parents), Some(message)) =
+            (texts.next(), texts.next(), texts.next())
+        {
+            // A line feed can separate two commits of the log.
+            let id = id.trim_start_matches('\n');
+            if id.is_empty() {
+                break;
+            }
+            commits.push(Commit {
+                id: id.to_owned(),
+                parent: parents.split_whitespace().next().map(str::to_owned),
+                message: message.to_owned(),
+            });
+        }
+        Ok(commits)
+    }
+
+    /// The files of a commit below these paths, blobs and links, sorted by
+    /// the code points of the paths (`git ls-tree -r -z --full-tree`).
+    ///
+    /// # Errors
+    ///
+    /// Git fails.
+    pub fn files(&self, commit: &str, paths: &[&str]) -> Result<Vec<TreeFile>, String> {
+        let mut arguments = vec!["ls-tree", "-r", "-z", "--full-tree", commit, "--"];
+        arguments.extend_from_slice(paths);
+        parse_tree_listing(&self.git_output(&arguments)?)
+    }
+
+    /// The text of a file of a commit, or `None` when the commit has no such
+    /// file.
+    ///
+    /// # Errors
+    ///
+    /// Git fails.
+    pub fn read_at(&self, commit: &str, path: &str) -> Result<Option<String>, String> {
+        if self.files(commit, &[path])?.is_empty() {
+            return Ok(None);
+        }
+        self.git_output(&["cat-file", "blob", &format!("{commit}:{path}")])
+            .map(Some)
+    }
+
+    /// Makes the sealed commit of `made` (the commit of the tool, or the last
+    /// commit for a confirmation): the same tree, the parent `before`, and the
+    /// message with its seal. The branch moves from `made` to it.
+    fn sealed_commit(
+        &self,
+        made: &str,
+        before: Option<&str>,
+        message: &str,
+        seal: Sealer,
+    ) -> Result<String, String> {
+        let tree = self
+            .git_output(&["rev-parse", "--verify", &format!("{made}^{{tree}}")])?
+            .trim()
+            .to_owned();
+        let files = self.files(made, &SEALED_PATHS)?;
+        let sealed_message = with_seal(message, &seal(before, &files));
+        let mut arguments = vec!["commit-tree", tree.as_str()];
+        if let Some(before) = before {
+            arguments.extend(["-p", before]);
+        }
+        let sealed = self
+            .git_with(&arguments, sealed_message.as_bytes())?
+            .trim()
+            .to_owned();
+        self.git_output(&["update-ref", "HEAD", &sealed, made])?;
+        Ok(sealed)
+    }
+
     /// Puts back what a publication that stopped halfway left, by the rules
     /// of the run journal (`documentation/Canonical Form.md`, "Failure
     /// cases"): `head` is the commit before the run, `paths` are the files
@@ -818,7 +913,7 @@ impl ContentStore {
                     && files[0].1 == "configuration.json"
                     && (files[0].0 == "M" || files[0].0 == "A"));
             let way = if safe {
-                "a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main)".to_owned()
+                "a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main, then confirm the new state (confirm-state))".to_owned()
             } else {
                 format!(
                     "a push would change other files of the store too, or remove the configuration ({}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it",
@@ -1198,51 +1293,22 @@ impl ContentStore {
     /// back and these paths are unstaged: other staged work of the copy stays
     /// staged. The files of the copy stay as they are: the tool puts them
     /// back.
-    pub fn commit_and_push(&self, message: &str, paths: &[String]) -> Result<(), String> {
+    pub fn commit_and_push(
+        &self,
+        message: &str,
+        paths: &[String],
+        seal: Option<Sealer>,
+    ) -> Result<(), String> {
         let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        if paths.is_empty() && seal.is_none() {
+            return Err("a commit with no file needs a seal".to_owned());
+        }
         // A copy with no commit has no commit to go back to.
         let before = self
             .git_output(&["rev-parse", "--verify", "--quiet", "HEAD"])
             .ok()
             .map(|head| head.trim().to_owned());
-        // Takes the commit back, when there is one, and unstages the paths of
-        // the publication. Every step runs, also when one fails. The result
-        // is what failed.
-        // The branch goes back only when it is still at the commit of this
-        // publication: another run can have moved it.
-        let undo = |made: Option<&str>| -> Vec<String> {
-            let mut failures = Vec::new();
-            if let Some(made) = made {
-                let moved = match &before {
-                    Some(before) => self.git_output(&["update-ref", "HEAD", before, made]),
-                    None => self.git_output(&["update-ref", "-d", "HEAD", made]),
-                };
-                failures.extend(moved.err());
-            }
-            let unstaged = match &before {
-                Some(before) => self.git_on_paths(&["reset", "--quiet", before], &paths),
-                None => {
-                    self.git_on_paths(&["rm", "--quiet", "--cached", "--ignore-unmatch"], &paths)
-                }
-            };
-            failures.extend(unstaged.err());
-            if before.is_none() {
-                // A fresh clone of an empty content store has no index. An
-                // index with no entry would stop a later pull.
-                match self.git_output(&["ls-files", "-z"]) {
-                    Ok(listing) if listing.is_empty() => {
-                        if let Err(error) = fs::remove_file(self.folder.join(".git").join("index"))
-                            && error.kind() != ErrorKind::NotFound
-                        {
-                            failures.push(format!("the empty index cannot be removed: {error}"));
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(error) => failures.push(error),
-                }
-            }
-            failures
-        };
+        let undo = |made: Option<&str>| self.take_back(before.as_deref(), &paths, made);
         let failed = |what: String, failures: Vec<String>| {
             if failures.is_empty() {
                 what
@@ -1260,32 +1326,56 @@ impl ContentStore {
         // With force: a rule of the store that ignores a path must not leave a
         // note out of its own publication. Then only the files of the
         // publication: other changes of the copy stay out.
-        let committed = self
-            .git_on_paths(&["add", "--force"], &paths)
-            .and_then(|()| {
-                self.git_on_paths(
-                    &["commit", "--quiet", "--message", message, "--only"],
-                    &paths,
-                )
-            });
+        // With no path (the confirmation of the state), no file changes: the
+        // sealed commit is made from the tree of the last commit.
+        let committed = if paths.is_empty() {
+            Ok(())
+        } else {
+            self.git_on_paths(&["add", "--force"], &paths)
+                .and_then(|()| {
+                    self.git_on_paths(
+                        &["commit", "--quiet", "--message", message, "--only"],
+                        &paths,
+                    )
+                })
+        };
         if let Err(error) = committed {
             return Err(failed(
                 format!("the commit into the copy of the content store failed: {error}"),
                 undo(None),
             ));
         }
-        crash_point("commit");
-        let made = self.head().unwrap_or_default();
+        let mut made = if paths.is_empty() {
+            before.clone().ok_or_else(|| {
+                "the content store has no commit: there is no state to confirm".to_owned()
+            })?
+        } else {
+            self.head().unwrap_or_default()
+        };
         // The commit holds exactly the files that changed, on top of the
         // commit before the run: another run that changed the copy in the
         // middle (after an unlock) can never get a commit through that misses
         // a forced removal.
-        if !self.holds_exactly(&made, before.as_deref(), &paths) {
+        if !paths.is_empty() && !self.holds_exactly(&made, before.as_deref(), &paths) {
             return Err(failed(
                 "the commit of this publication does not hold exactly its files on top of the commit before it: another run changed the copy during the publication. Nothing is pushed".to_owned(),
                 undo(Some(&made)),
             ));
         }
+        // The seal: the commit is made again with the same tree and parent and
+        // the sealed message, and the branch moves from one to the other.
+        if let Some(seal) = seal {
+            match self.sealed_commit(&made, before.as_deref(), message, seal) {
+                Ok(sealed) => made = sealed,
+                Err(error) => {
+                    return Err(failed(
+                        format!("the commit cannot be sealed: {error}"),
+                        undo(if paths.is_empty() { None } else { Some(&made) }),
+                    ));
+                }
+            }
+        }
+        crash_point("commit");
         // Never with force: when another device pushed first, git refuses.
         // The commit of this run, by its hash: another run can have moved the
         // branch of the copy.
@@ -1304,6 +1394,44 @@ impl ContentStore {
             "the push to the content store was refused".to_owned(),
             undo(Some(&made)),
         ))
+    }
+
+    /// Takes the commit `made` back, when there is one, and unstages the
+    /// paths of the publication. Every step runs, also when one fails. The
+    /// result is what failed. The branch goes back only when it is still at
+    /// the commit of this publication: another run can have moved it.
+    fn take_back(&self, before: Option<&str>, paths: &[&str], made: Option<&str>) -> Vec<String> {
+        let mut failures = Vec::new();
+        if let Some(made) = made {
+            let moved = match before {
+                Some(before) => self.git_output(&["update-ref", "HEAD", before, made]),
+                None => self.git_output(&["update-ref", "-d", "HEAD", made]),
+            };
+            failures.extend(moved.err());
+        }
+        // A confirmation has no path: no other staged work is touched.
+        let unstaged = match before {
+            _ if paths.is_empty() => Ok(()),
+            Some(before) => self.git_on_paths(&["reset", "--quiet", before], paths),
+            None => self.git_on_paths(&["rm", "--quiet", "--cached", "--ignore-unmatch"], paths),
+        };
+        failures.extend(unstaged.err());
+        if before.is_none() {
+            // A fresh clone of an empty content store has no index. An
+            // index with no entry would stop a later pull.
+            match self.git_output(&["ls-files", "-z"]) {
+                Ok(listing) if listing.is_empty() => {
+                    if let Err(error) = fs::remove_file(self.folder.join(".git").join("index"))
+                        && error.kind() != ErrorKind::NotFound
+                    {
+                        failures.push(format!("the empty index cannot be removed: {error}"));
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => failures.push(error),
+            }
+        }
+        failures
     }
 
     /// True when the commit changes exactly these paths, and its only parent
@@ -1655,9 +1783,9 @@ fn ways_out(different: &[(&str, &str)], folder: &Path) -> String {
         } else if code.contains('T') {
             "Put configuration.json back with git checkout HEAD -- configuration.json: a link or a folder is not a file of the store"
         } else if *code == "??" || *code == "!!" {
-            "When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main). Else remove it"
+            "When configuration.json is your deny list, commit it and push it (git add --force configuration.json, git commit, then git push origin HEAD:main, then confirm the new state (confirm-state)). Else remove it"
         } else {
-            "When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main). Else put the file back with git checkout HEAD -- configuration.json"
+            "When you changed the deny list, commit configuration.json and push it (git add configuration.json, git commit, then git push origin HEAD:main, then confirm the new state (confirm-state)). Else put the file back with git checkout HEAD -- configuration.json"
         });
     }
     // The log of the edits of the guards (R69) and the keys that the guards
@@ -2280,6 +2408,20 @@ static ENTRIES: AtomicU64 = AtomicU64::new(0);
 /// The marker of the takedowns of this device: `.git/vault-publish/takedowns/`
 /// of the copy, one file per takedown, beside the lock and the run journal,
 /// so every face of this device sees it.
+impl SealedHistory for ContentStore {
+    fn commits(&self, limit: usize) -> Result<Vec<Commit>, String> {
+        Self::commits(self, limit)
+    }
+
+    fn files(&self, commit: &str, paths: &[&str]) -> Result<Vec<TreeFile>, String> {
+        Self::files(self, commit, paths)
+    }
+
+    fn read_at(&self, commit: &str, path: &str) -> Result<Option<String>, String> {
+        Self::read_at(self, commit, path)
+    }
+}
+
 impl TakedownMarker for ContentStore {
     fn entries(&self) -> Result<Vec<(String, TakedownEntry)>, String> {
         let folder = self.local_file("takedowns");

@@ -1,5 +1,11 @@
 import { chmod, cp, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import {
+    parseTreeListing,
+    SEALED_PATHS,
+    sealOf,
+    withSeal
+} from '../../../apps/plugin/src/publishing/seal.ts'
 import { FIXTURE_CONFIGURATION, FIXTURE_VAULT } from './fixture-vault.ts'
 import { gitEnvironment, type TestStores } from './test-stores.ts'
 
@@ -19,6 +25,90 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
     }
 }
 
+/** Runs git and gives its output. The input goes to its standard input. */
+async function gitOutput(cwd: string, args: readonly string[], input = ''): Promise<string> {
+    const child = Bun.spawn(['git', ...args], {
+        cwd,
+        env: gitEnvironment(),
+        stdin: new TextEncoder().encode(input),
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+    const [output, errors] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text()
+    ])
+    if ((await child.exited) !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${errors.trim()}`)
+    }
+    return output
+}
+
+/**
+ * The seal key of the tests (R104): 32 bytes of 0x5e, built at run time. The
+ * preload of the tests gives it to every device in the environment, and the
+ * Rust tests use the same one, so that the parity runs agree.
+ */
+export function testSealKey(): string {
+    return '5e'.repeat(32)
+}
+
+/** The first parent of a commit of a repository, or `undefined` for a first commit. */
+async function parentOf(repository: string, commit: string): Promise<string | undefined> {
+    return (await gitOutput(repository, ['rev-list', '--parents', '--max-count=1', commit]))
+        .trim()
+        .split(' ')[1]
+}
+
+/**
+ * The valid seal of a commit of a repository (a copy, or the content store
+ * itself) with the key of the tests (R104): a test compares it with the
+ * last line of the message of the commit.
+ */
+export async function sealOfCommit(
+    repository: string,
+    commit = 'HEAD',
+    key = testSealKey()
+): Promise<string> {
+    const files = parseTreeListing(
+        await gitOutput(repository, [
+            'ls-tree',
+            '-r',
+            '-z',
+            '--full-tree',
+            commit,
+            '--',
+            ...SEALED_PATHS
+        ])
+    )
+    return sealOf(
+        Uint8Array.from(Buffer.from(key, 'hex')),
+        await parentOf(repository, commit),
+        files
+    )
+}
+
+/**
+ * Makes the last commit of the copy again with a valid seal, as a commit of
+ * the tool has (R104): for a commit that a test makes by hand in the place
+ * of the tool of another device. The commit must not be pushed yet.
+ */
+export async function sealHead(copy: string, key = testSealKey()): Promise<void> {
+    const head = (await gitOutput(copy, ['rev-parse', 'HEAD'])).trim()
+    const parent = await parentOf(copy, 'HEAD')
+    const message = await gitOutput(copy, ['log', '-1', '--format=%B', 'HEAD'])
+    const seal = await sealOfCommit(copy, 'HEAD', key)
+    const tree = (await gitOutput(copy, ['rev-parse', 'HEAD^{tree}'])).trim()
+    const sealed = (
+        await gitOutput(
+            copy,
+            ['commit-tree', tree, ...(parent === undefined ? [] : ['-p', parent]), '-F', '-'],
+            withSeal(message, seal)
+        )
+    ).trim()
+    await gitOutput(copy, ['update-ref', 'HEAD', sealed, head])
+}
+
 /**
  * Copies the fixture vault into the folder of the test and returns the path
  * of the copy. A test never writes into the fixture vault itself.
@@ -33,7 +123,8 @@ export async function copyFixtureVault(stores: TestStores, name = 'vault'): Prom
  * Makes the copy of the content store on which the publishing tool works: a
  * clone of the content store of the test, with an invented author. Its first
  * commit holds the configuration of the fixture vault and is pushed, because
- * the configuration of the tool lives in the content store (GATE-04).
+ * the configuration of the tool lives in the content store (GATE-04). It is
+ * sealed with the key of the tests (R104).
  */
 export async function makeContentStoreCopy(stores: TestStores, name = 'copy'): Promise<string> {
     const copy = join(stores.root, name)
@@ -45,6 +136,8 @@ export async function makeContentStoreCopy(stores: TestStores, name = 'copy'): P
     await Bun.write(join(copy, 'configuration.json'), Bun.file(FIXTURE_CONFIGURATION))
     await git(copy, 'add', 'configuration.json')
     await git(copy, 'commit', '--quiet', '--message', 'Add the configuration of the fixture vault')
+    // Sealed, as after the first confirmation of the author (R104).
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
     return copy
 }

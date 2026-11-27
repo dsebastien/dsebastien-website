@@ -280,6 +280,28 @@
             }
         },
         {
+            "name": "confirm_store_state",
+            "title": "Confirm the state of the content store",
+            "description": "Confirms the state of the content store after a difference, as the confirm-state command of the command line program does (R104). Every commit of the tool carries a seal; when a commit that no tool wrote changed the state (the manifest entries, the deny list, the logs), or the store has no seal yet, status, plan, publish, unpublish and the edits stop, and their error names what differs and the last commit (head). Call it only when the author read that difference and asked you to confirm it: never on your own, and never to get a plan through. It writes one sealed commit with no change of a file and pushes it. It gives confirmed (false when the state was sealed already, with nothing written) and the difference that it confirmed. It stops when the last commit is not head: the store changed since the author read the difference.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "head": {
+                        "type": "string",
+                        "description": "The last commit of the content store, exactly as the difference names it: 40 or 64 small hexadecimal digits."
+                    }
+                },
+                "required": ["head"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
             "name": "deploy",
             "title": "Deploy the site again",
             "description": "Runs the deploy of the site again from the copy of the content store, with no publication, as the deploy command of the command line program does: for example after a deploy that failed. It starts the deploy in the background and answers at once with the object deployment and its state started; it never waits for a build. With last, it starts no deploy and gives the last deploy report of this device (the object deployment, with its state done: push, takedown, build and deploy as ok, failed or skipped, live with the url, the counts of the files that the deploy uploaded and deleted, the warnings and the error) and running, true while a deploy runs. publish, unpublish and takedown start a deploy after their push in the same way, and give the report of a deploy that started as their last text: call deploy with last later to read its result. A deploy with a missing setting deploys nothing and names the setting. The publication is done at the push: a failed deploy never undoes it.",

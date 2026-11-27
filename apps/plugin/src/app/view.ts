@@ -124,6 +124,8 @@ export interface ViewHost {
     openSettings(): void
     /** Asks the author to confirm the removal of the lock of the device, then removes it. */
     confirmUnlock(): void
+    /** Asks the author to confirm the state of the content store at this commit (R104), then seals it. */
+    confirmState(head: string): void
 }
 
 /**
@@ -402,6 +404,16 @@ export class PublicationCenterView extends ItemView {
                 unlock.disabled = state.activity !== 'idle'
                 unlock.addEventListener('click', () => {
                     this.host.confirmUnlock()
+                })
+            }
+            const head = ways.confirmState
+            if (head !== undefined) {
+                const confirm = this.#message.createEl('button', {
+                    text: 'Confirm this state…'
+                })
+                confirm.disabled = state.activity !== 'idle'
+                confirm.addEventListener('click', () => {
+                    this.host.confirmState(head)
                 })
             }
             if (state.failure === state.error) {

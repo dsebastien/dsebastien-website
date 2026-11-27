@@ -660,7 +660,8 @@ describe('the MCP server of the plugin', () => {
                 path: '30 People',
                 state: 'applied'
             })
-            expect((await lastCommit(copy)).trimEnd()).toBe(
+            // The commit carries its seal as its last line (R104).
+            expect((await lastCommit(copy)).trimEnd().replace(/\nSeal: [0-9a-f]{64}$/u, '')).toBe(
                 `Edit: deny (applied)\n\nDevice: garden-shed\nFace: mcp-server\nPlan: ${String(event['id'])}`
             )
 

@@ -9,6 +9,7 @@ import {
     makeTestStores,
     refusePushes,
     rejectionOf,
+    sealHead,
     type TestStores
 } from '@dsebastien-website/testing'
 import { nodeDevice } from './node/device.ts'
@@ -136,6 +137,8 @@ async function setUp(stores: TestStores): Promise<Setup> {
 async function commitInCopy(copy: string, message: string): Promise<void> {
     await git('-C', copy, 'add', '--all')
     await git('-C', copy, 'commit', '--quiet', '--message', message)
+    // Sealed, as the tool of another device seals its commits (R104).
+    await sealHead(copy)
     await git('-C', copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
 
@@ -744,8 +747,12 @@ describe('takedown', () => {
             '--no-renames',
             'main'
         )
-        expect(commit.replace(/^Plan: [0-9a-f]{16}$/mu, 'Plan: <id>')).toBe(
-            `Takedown: 1 note\n\nDevice: garden-shed\nFace: plugin\nPlan: <id>\n\n\nD\tmanifest/${NOTE_ID}.json\nD\tnotes/${NOTE}`
+        expect(
+            commit
+                .replace(/^Plan: [0-9a-f]{16}$/mu, 'Plan: <id>')
+                .replace(/^Seal: [0-9a-f]{64}$/mu, 'Seal: <seal>')
+        ).toBe(
+            `Takedown: 1 note\n\nDevice: garden-shed\nFace: plugin\nPlan: <id>\nSeal: <seal>\n\n\nD\tmanifest/${NOTE_ID}.json\nD\tnotes/${NOTE}`
         )
         expect(await git(...remote, 'ls-tree', '-r', '--name-only', 'main')).toBe(
             'configuration.json'
@@ -765,8 +772,8 @@ describe('takedown', () => {
             ...setup.device,
             store: {
                 ...setup.device.store,
-                commitAndPush: async (message, paths) => {
-                    await setup.device.store.commitAndPush(message, paths)
+                commitAndPush: async (message, paths, seal) => {
+                    await setup.device.store.commitAndPush(message, paths, seal)
                     pushed = true
                 },
                 read: async (path) =>
@@ -1426,10 +1433,10 @@ describe('failure cases after the first review', () => {
             ...setup.device,
             store: {
                 ...setup.device.store,
-                async commitAndPush(message, paths) {
+                async commitAndPush(message, paths, seal) {
                     bWaits.resolve(undefined)
                     await b.promise
-                    await setup.device.store.commitAndPush(message, paths)
+                    await setup.device.store.commitAndPush(message, paths, seal)
                 }
             }
         }

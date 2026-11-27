@@ -1,4 +1,5 @@
 import { gitEnvironment } from './test-stores.ts'
+import type { Sealer } from '../../../apps/plugin/src/publishing/ports.ts'
 
 // A run of the TypeScript logic that stops halfway, as after a power cut
 // (issue 36). The Rust program has a switch of its debug build for it
@@ -11,7 +12,7 @@ export type CrashPoint = 'write' | 'commit' | 'push'
 
 /** The part of the copy of the content store that the crash changes. */
 interface Committing {
-    commitAndPush(message: string, paths: readonly string[]): Promise<void>
+    commitAndPush(message: string, paths: readonly string[], seal?: Sealer): Promise<void>
 }
 
 async function git(cwd: string, ...args: string[]): Promise<void> {
@@ -45,7 +46,11 @@ export function crashingStore<Store extends Committing>(
     return {
         store: {
             ...store,
-            async commitAndPush(message: string, paths: readonly string[]): Promise<void> {
+            async commitAndPush(
+                message: string,
+                paths: readonly string[],
+                seal?: Sealer
+            ): Promise<void> {
                 if (at === 'commit') {
                     await git(copy, 'add', '--force', '--', ...paths)
                     await git(
@@ -59,7 +64,7 @@ export function crashingStore<Store extends Committing>(
                         ...paths
                     )
                 } else if (at === 'push') {
-                    await store.commitAndPush(message, paths)
+                    await store.commitAndPush(message, paths, seal)
                 }
                 resolve(undefined)
                 return await new Promise<never>(() => undefined)

@@ -232,6 +232,9 @@ export class VaultPublishPlugin extends Plugin {
                     },
                     confirmUnlock: () => {
                         void this.#confirmUnlock()
+                    },
+                    confirmState: (head) => {
+                        this.#confirmState(head)
                     }
                 })
         )
@@ -523,6 +526,22 @@ export class VaultPublishPlugin extends Plugin {
             'Remove the lock',
             () => {
                 void this.center.unlock()
+            }
+        ).open()
+    }
+
+    /** The confirmation of the state of the content store after a difference (R104). */
+    #confirmState(head: string): void {
+        const { error } = this.center.state
+        new ConfirmModal(
+            this.app,
+            'Confirm the state of the content store?',
+            isolateNames(
+                `Confirm only when you made or accept every change that the message names: a confirmation seals this state, and the next plan trusts it. When a change is not yours, take the commits back in the content store instead.${error === undefined ? '' : ` The message: ${error}`}`
+            ),
+            'Confirm the state',
+            () => {
+                void this.center.confirmState(head)
             }
         ).open()
     }

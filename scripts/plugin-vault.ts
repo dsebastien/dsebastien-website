@@ -6,8 +6,14 @@ import {
     FIXTURE_VAULT,
     gitEnvironment,
     makeContentStoreCopy,
-    makeTestStores
+    makeTestStores,
+    sealHead,
+    testSealKey
 } from '@dsebastien-website/testing'
+
+// The invented stores are sealed with the key of the tests (R104): every
+// device of this run, and every program that it starts, uses that key.
+process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 
 // A test vault for the check of the plugin by hand (issue 39, section 18.1 of
 // the spec): a copy of the invented fixture vault, or of the invented corpus
@@ -70,8 +76,12 @@ if (values.corpus) {
     // deny list entry that names no folder stops every run (GATE-38).
     await writeFile(join(copy, 'configuration.json'), '{\n    "denyList": []\n}\n')
     await git(copy, 'commit', '--quiet', '--all', '--message', 'An empty deny list for the corpus')
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
+// The plugin in Obsidian reads the seal key of the invented store from the
+// .env file of the test vault (R104).
+await writeFile(join(vault, '.env'), `VAULT_PUBLISH_SEAL_KEY=${testSealKey()}\n`)
 
 const plugins = join(vault, '.obsidian', 'plugins')
 await mkdir(plugins, { recursive: true })

@@ -113,4 +113,13 @@ describe('the ways out of an error', () => {
             )
         ).toEqual({ settings: false, pull: false, unlock: false })
     })
+
+    test('offers the confirmation of the state of the commit that a difference names (R104)', () => {
+        const head = 'ab12'.repeat(10)
+        expect(
+            waysOut(
+                `the content store has no sealed state yet: ... confirm the state of commit ${head} (the command confirm-state --head ${head}, the action of the publication center, or the MCP tool confirm_store_state)`
+            )
+        ).toEqual({ settings: false, pull: false, unlock: false, confirmState: head })
+    })
 })

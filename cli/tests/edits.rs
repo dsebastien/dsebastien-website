@@ -268,10 +268,11 @@ fn an_applied_deny_writes_the_configuration_and_the_log_in_one_commit_that_is_pu
         "--no-renames",
         "main",
     ]);
+    let seal = support::expected_seal(text(&setup.copy), "HEAD");
     assert_eq!(
         commit,
         format!(
-            "Edit: deny (applied)\n\nDevice: garden-shed\nFace: command-line\nPlan: {id}\n\n\nM\tconfiguration.json\nA\tedits.json"
+            "Edit: deny (applied)\n\nDevice: garden-shed\nFace: command-line\nPlan: {id}\nSeal: {seal}\n\n\nM\tconfiguration.json\nA\tedits.json"
         )
     );
     assert_eq!(

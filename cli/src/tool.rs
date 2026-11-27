@@ -40,6 +40,7 @@ use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, fold_moves, moved_folder, parse_markers,
     read_journals,
 };
+use crate::seal::{SealCheck, SealSource, TreeFile, check_seal, difference_text, seal_of};
 use crate::withdrawn::{WITHDRAWN_FILE, parse_withdrawn, withdrawn_keys, withdrawn_text};
 
 /// Everything that a publication needs on one device.
@@ -53,6 +54,8 @@ pub struct Device {
     pub note_types: StarterKit,
     /// The main site, for the check of the original of a note (PUB-100).
     pub main_site: MainSite,
+    /// Where the seal key of the content store comes from (R104).
+    pub seal: SealSource,
 }
 
 /// The faces of the tool that can start a publication.
@@ -175,10 +178,13 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
     let renames = device.store.read(RENAMES_FILE)?;
     let journals = read_journals(&device.renames, &parse_markers(renames.as_deref())?)?;
     let (configuration, configuration_hash) = read_configuration(device, &journals)?;
-    let manifest = read_manifest(&device.store)?;
     let edits = read_edits(device)?;
     // So does a list of withdrawn keys that is not valid (issue 120).
     parse_withdrawn(device.store.read(WITHDRAWN_FILE)?.as_deref())?;
+    // The state of the last commit must be the state that a commit of the tool
+    // sealed, before the manifest is trusted (R104).
+    refuse_unsealed_state(device)?;
+    let manifest = read_manifest(&device.store)?;
     let mut scan = compute_queue(
         &device.vault,
         &manifest,
@@ -195,6 +201,17 @@ fn read_state(device: &Device, fetch: Fetch) -> Result<DeviceState, String> {
         renames_hash: renames.map_or_else(|| "none".to_owned(), |text| content_hash(&text)),
         reached: verified.reached,
     })
+}
+
+/// Checks the seal of the copy (R104): the key must be there, and the state of
+/// the last commit must be the state that a commit of the tool sealed. A copy
+/// with no commit passes.
+fn refuse_unsealed_state(device: &Device) -> Result<(), String> {
+    let key = device.seal.key()?;
+    match check_seal(&device.store, &key)? {
+        SealCheck::Differs(difference) => Err(difference_text(&difference)),
+        SealCheck::Empty | SealCheck::Sealed => Ok(()),
+    }
 }
 
 /// The log of the edits of the guards, read strictly: a log that is not
@@ -1858,6 +1875,38 @@ fn write_markers(
     Ok(changed)
 }
 
+/// The message of the commit of a publication: the counts, the device, the
+/// face and the plan (PUB-29).
+fn publish_message(
+    plan: &PublicationPlan,
+    done: &Done,
+    skipped: usize,
+    run: &Run,
+    id: &str,
+) -> String {
+    format!(
+        "Publish: {} new, {} updated, {} removed, {} forced, {} skipped, {} moved\n\nDevice: {}\nFace: {}\nPlan: {id}",
+        done.published.len(),
+        done.updated.len(),
+        done.removed.len(),
+        plan.forced_remove().len(),
+        skipped,
+        plan.moves().len(),
+        run.device,
+        run.face,
+    )
+}
+
+/// Commits and pushes these paths with the seal of the vault (R104).
+fn commit_sealed(device: &Device, message: &str, paths: &[String]) -> Result<(), String> {
+    let key = device.seal.key()?;
+    device.store.commit_and_push(
+        message,
+        paths,
+        Some(&|parent: Option<&str>, files: &[TreeFile]| seal_of(&key, parent, files)),
+    )
+}
+
 /// Writes the files of a plan into the copy, and commits and pushes them.
 /// The moves come first, then the forced removals: when one fails, the whole
 /// publication stops. A note whose uploads or files fail is left out and reported
@@ -1957,21 +2006,8 @@ fn write_all(
         (commit.own_lock)()?;
         // The recovery of a run that stopped halfway finds its commit by the
         // line `Plan:`.
-        device.store.commit_and_push(
-            &format!(
-                "Publish: {} new, {} updated, {} removed, {} forced, {} skipped, {} moved\n\nDevice: {}\nFace: {}\nPlan: {}",
-                done.published.len(),
-                done.updated.len(),
-                done.removed.len(),
-                plan.forced_remove().len(),
-                skipped.len(),
-                plan.moves().len(),
-                run.device,
-                run.face,
-                commit.plan
-            ),
-            &paths,
-        )?;
+        let message = publish_message(plan, &done, skipped.len(), run, commit.plan);
+        commit_sealed(device, &message, &paths)?;
     }
     // Sorted by path, like every list of the report. A stable sort.
     failed.sort_by(|one: &Value, two: &Value| one["path"].as_str().cmp(&two["path"].as_str()));
@@ -2614,6 +2650,15 @@ fn take_down_locked(
     // The copy must follow the content store: an older manifest would miss a
     // note, and the push would be refused.
     refuse_when_behind(device.store.verify(Fetch::Must)?.behind)?;
+    // A takedown never waits for the seal (rule 16 of the business rules): it
+    // seals its commit only when the key is valid and the state before it is
+    // sealed, so it never seals a state that the author did not confirm.
+    let key = device.seal.key().ok().filter(|key| {
+        matches!(
+            check_seal(&device.store, key),
+            Ok(SealCheck::Sealed | SealCheck::Empty)
+        )
+    });
     let manifest = read_manifest(&device.store)?;
     // First the files of the storage that no published note uses: a takedown
     // that stopped after its push left the files of its notes there, and its
@@ -2662,7 +2707,14 @@ fn take_down_locked(
         run.device,
         run.face
     );
-    if let Err(error) = remove_and_push(device, &mut journal, &paths, &message, own_lock) {
+    if let Err(error) = remove_and_push(
+        device,
+        &mut journal,
+        &paths,
+        &message,
+        key.as_deref(),
+        own_lock,
+    ) {
         // Another run took the copy: this run touches nothing of it any more.
         if error == LOCK_LOST {
             return Err(error);
@@ -2702,6 +2754,7 @@ fn remove_and_push(
     journal: &mut Backup,
     paths: &[String],
     message: &str,
+    key: Option<&[u8]>,
     own_lock: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
     let mut written = Vec::new();
@@ -2716,7 +2769,14 @@ fn remove_and_push(
     }
     crash_point("write");
     own_lock()?;
-    device.store.commit_and_push(message, &written)
+    match key {
+        Some(key) => device.store.commit_and_push(
+            message,
+            &written,
+            Some(&|parent: Option<&str>, files: &[TreeFile]| seal_of(key, parent, files)),
+        ),
+        None => device.store.commit_and_push(message, &written, None),
+    }
 }
 
 /// What a takedown does after its push: the files of the attachment storage
@@ -3072,6 +3132,7 @@ fn edit_locked(
         text,
         log: read_edits(device)?,
     };
+    refuse_unsealed_state(device)?;
     let (TakenAway { removes, affects }, note) = check_edit(device, &context, action, path)?;
     let applies = !is_looser(action) && removes.is_empty() && affects.is_empty();
     let event = Event::new(EventFacts {
@@ -3117,6 +3178,73 @@ fn edit_locked(
     };
     commit_edit(device, &event, &files, run, owed, own_lock, &failed)?;
     edit_output(&event)
+}
+
+/// Confirms the state of the content store (R104, rule 8 of "The seal of the
+/// content store"): when the state of the last commit is not the sealed state,
+/// and the last commit is `head`, it writes one sealed commit with no change of
+/// a file and pushes it. The author confirms a difference that they read, so a
+/// content store that changed since then is refused. The result is `confirmed`
+/// and, when it is true, the `difference` that it confirmed, in the canonical
+/// form.
+///
+/// # Errors
+///
+/// The commit to confirm is not a commit hash, the lock is taken, the copy is
+/// behind the content store or cannot be reached or trusted, there is no key,
+/// the content store has no commit, the last commit is not `head`, or the
+/// commit or the push fails.
+pub fn confirm_state(device: &Device, head: &str, run: &Run) -> Result<String, String> {
+    check_run(run)?;
+    if !matches!(head.len(), 40 | 64)
+        || !head
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err(
+            "the commit to confirm must be the 40 or 64 small hexadecimal digits of a commit"
+                .to_owned(),
+        );
+    }
+    // The lock of an edit: a confirmation changes the guards' ground, and no
+    // publication runs during it.
+    let holder = json!({
+        "command": "edit",
+        "device": run.device,
+        "face": run.face,
+        "time": run.time,
+    });
+    with_lock(device, &holder, |own_lock| {
+        // A run that stopped halfway is put back first.
+        recover(device, own_lock)?;
+        refuse_when_behind(device.store.verify(Fetch::Must)?.behind)?;
+        let key = device.seal.key()?;
+        let difference = match check_seal(&device.store, &key)? {
+            SealCheck::Empty => {
+                return Err(
+                    "the content store has no commit: there is no state to confirm".to_owned(),
+                );
+            }
+            SealCheck::Sealed => return canonical(&json!({ "confirmed": false })),
+            SealCheck::Differs(difference) => difference,
+        };
+        if difference.head != head {
+            return Err(format!(
+                "the content store changed since the difference that you read: its last commit is now {}, not {head}. Read the difference again (status or plan), then confirm that commit",
+                difference.head
+            ));
+        }
+        own_lock()?;
+        device.store.commit_and_push(
+            &format!(
+                "Confirm the state of the content store\n\nConfirmed: {head}\nDevice: {}\nFace: {}",
+                run.device, run.face
+            ),
+            &[],
+            Some(&|parent: Option<&str>, files: &[TreeFile]| seal_of(&key, parent, files)),
+        )?;
+        canonical(&json!({ "confirmed": true, "difference": to_value(&difference)? }))
+    })
 }
 
 /// The run journal after an edit: `correct` while an earlier publication
@@ -3200,7 +3328,7 @@ fn write_and_push(
     crash_point("write");
     steal_point("commit", &device.store);
     own_lock()?;
-    device.store.commit_and_push(message, &written)
+    commit_sealed(device, message, &written)
 }
 
 /// Writes the ignore property into a note (rules 6 and 9 of "The edits of the
@@ -3527,6 +3655,7 @@ mod tests {
             renames: crate::renames::RenameJournals::new(root.join("renames")),
             note_types: StarterKit::new(Path::new("no-such-program"), &vault),
             main_site: MainSite::network(),
+            seal: crate::seal::SealSource::new(&vault),
         };
 
         let (removed, warnings) = remove_state(&device, &["Note.md".to_owned()]);

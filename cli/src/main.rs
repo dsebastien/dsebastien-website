@@ -29,6 +29,7 @@ mod originals;
 mod plan;
 mod queue;
 mod renames;
+mod seal;
 mod small_letters;
 mod tool;
 mod withdrawn;
@@ -427,8 +428,9 @@ enum Command {
     /// Serves the MCP server of the tool over the standard input and output,
     /// one message of JSON per line, until the input ends (TOOL-03). Its tools
     /// are the commands of this program, with the same output: status, plan,
-    /// publish, unpublish, takedown, guards, deny, allow, ignore, unignore
-    /// and unlock. The places of this device are
+    /// publish, unpublish, takedown, guards, deny, allow, ignore, unignore,
+    /// confirm-state (as `confirm_store_state`) and unlock. The places of this
+    /// device are
     /// given here, one time. A run takes the time of the clock and the name
     /// of the device, and its face is "mcp-server". Errors of the program go
     /// to the error output.
@@ -490,6 +492,36 @@ enum Command {
         last: bool,
     },
 
+    /// Confirms the state of the content store (R104). The tool trusts only
+    /// the state that a commit of the tool sealed: after a commit that no tool
+    /// wrote (a push of someone else, an edit by hand), a run stops and says
+    /// what differs. When you made or accept every change, confirm the last
+    /// commit that the message names. It takes the lock of the device, stops
+    /// when the copy is behind the content store or when its last commit is
+    /// not `--head`, and writes one sealed commit with no change of a file,
+    /// which it pushes. It writes `confirmed` and the `difference` that it
+    /// confirmed; with a state that is already sealed, it writes nothing and
+    /// `confirmed` is false.
+    ConfirmState {
+        #[command(flatten)]
+        folders: Folders,
+
+        /// The last commit of the copy, as the difference names it: the 40 or
+        /// 64 small hexadecimal digits of a commit.
+        #[arg(long, value_name = "COMMIT")]
+        head: String,
+
+        /// The time of the run, in UTC and to the second, for example
+        /// 2031-04-01T08:00:00Z. The default is the time of the clock.
+        #[arg(long)]
+        time: Option<String>,
+
+        /// The name of this device, for the message of the commit. The
+        /// default is the name of the host.
+        #[arg(long, value_name = "NAME")]
+        device: Option<String>,
+    },
+
     /// Removes the lock of this device that a publication left when it
     /// stopped halfway (a crash, a power cut). Run it only when no
     /// publication runs. The next plan, publish or takedown puts the copy of the
@@ -540,6 +572,7 @@ fn device_at(
         renames,
         note_types: note_types::StarterKit::new(&program, vault),
         main_site: originals::MainSite::network(),
+        seal: seal::SealSource::new(vault),
     })
 }
 
@@ -944,6 +977,7 @@ fn run_tool(
         mcp::Call::Takedown { paths } => tool::takedown(device, attachment_storage, paths, &run),
         mcp::Call::Guards => tool::guards(device).map(done),
         mcp::Call::Edit { action, path } => tool::edit(device, action, path, &run).map(done),
+        mcp::Call::ConfirmStoreState { head } => tool::confirm_state(device, head, &run).map(done),
         mcp::Call::Unlock => tool::unlock(&device.store).map(done),
         mcp::Call::Deploy { .. } => Err("deploy is no command of the publishing logic".to_owned()),
     }
@@ -1004,6 +1038,21 @@ fn run_edit(action: &str, edit: EditArguments) -> Result<Outcome, String> {
         output,
         failure: None,
     })
+}
+
+/// Confirms the state of the content store from the command line
+/// (`confirm-state`).
+fn run_confirm_state(
+    folders: &Folders,
+    head: &str,
+    time: Option<String>,
+    name: Option<String>,
+) -> Result<String, String> {
+    tool::confirm_state(
+        &device_of(folders, None)?,
+        head,
+        &command_line_run(&time.unwrap_or_else(now), &name.unwrap_or_else(host_name)),
+    )
 }
 
 /// Removes the lock of the device (`unlock`).
@@ -1192,6 +1241,12 @@ fn run(command: Command) -> Result<Ran, String> {
         } => {
             Ok(deploy_command(&content_store, &attachment_storage, &places, takedown, last).into())
         }
+        Command::ConfirmState {
+            folders,
+            head,
+            time,
+            device: name,
+        } => run_confirm_state(&folders, &head, time, name).map(done),
         Command::Unlock { content_store } => unlock(&content_store).map(done),
         Command::Publish {
             places,
@@ -1274,6 +1329,14 @@ mod tests {
             .get_subcommands()
             .map(|command| command.get_name().to_owned())
             .filter(|name| name != "mcp")
+            // The MCP tool has the name of the action: the command says what it does.
+            .map(|name| {
+                if name == "confirm-state" {
+                    "confirm_store_state".to_owned()
+                } else {
+                    name
+                }
+            })
             .collect();
         commands.sort_unstable();
         let mut tools = mcp::TOOL_NAMES.to_vec();

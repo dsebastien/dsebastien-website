@@ -2,13 +2,14 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
-    FIXTURE_NOTE_TYPES,
     copyFixtureVault,
     crashingStore,
+    FIXTURE_NOTE_TYPES,
     gitEnvironment,
     makeContentStoreCopy,
     makeTestStores,
-    rejectionOf
+    rejectionOf,
+    sealHead
 } from '@dsebastien-website/testing'
 import { toCanonicalJson } from '../apps/plugin/src/publishing/canonical.ts'
 import type { CanonicalValue } from '../apps/plugin/src/publishing/canonical.ts'
@@ -624,6 +625,7 @@ async function change(vault: string, copy: string): Promise<void> {
     )
     await git(copy, 'add', '--', 'configuration.json')
     await git(copy, 'commit', '--quiet', '--message', 'A folder enters the deny list')
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 
     // The entry of one note comes from an older version of the cleaning step.
@@ -634,6 +636,7 @@ async function change(vault: string, copy: string): Promise<void> {
             await writeFile(path, toCanonicalJson({ ...entry, cleaningVersion: 0 }))
             await git(copy, 'add', '--', `manifest/${file}`)
             await git(copy, 'commit', '--quiet', '--message', 'An entry of an older version')
+            await sealHead(copy)
             await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
         }
     }
@@ -1047,6 +1050,7 @@ describe('parity of an empty queue', () => {
             const copy = await makeContentStoreCopy(stores)
             await writeFile(join(copy, 'configuration.json'), '{"denyList": []}')
             await git(copy, 'commit', '--quiet', '--all', '--message', 'An empty deny list')
+            await sealHead(copy)
             await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
             return await toolOf(vault, copy).status()
         }

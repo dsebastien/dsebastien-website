@@ -1,6 +1,15 @@
 import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { gitEnvironment, makeTestStores, type TestStores } from '@dsebastien-website/testing'
+import {
+    gitEnvironment,
+    makeTestStores,
+    sealHead,
+    testSealKey,
+    type TestStores
+} from '@dsebastien-website/testing'
+// The invented stores are sealed with the key of the tests (R104): every
+// device of this run, and every program that it starts, uses that key.
+process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 import { toCanonicalJson } from '../../apps/plugin/src/publishing/canonical.ts'
 import { fileNoteTypes, nodeDevice } from '../../apps/plugin/src/publishing/node/device.ts'
 import { compareCodePoints } from '../../apps/plugin/src/publishing/order.ts'
@@ -127,6 +136,8 @@ async function pushToStore(copy: string, files: Record<string, string>): Promise
     await writeFiles(copy, files)
     await git(copy, 'add', '--', ...Object.keys(files))
     await git(copy, 'commit', '--quiet', '--message', 'A change of another device')
+    // Sealed, as the tool of that device seals its commits (R104).
+    await sealHead(copy)
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
 }
 

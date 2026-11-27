@@ -8,7 +8,8 @@ import {
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
-    writeBudgetSample
+    writeBudgetSample,
+    testSealKey
 } from '@dsebastien-website/testing'
 import { canonicalPath } from '@dsebastien-website/resolver'
 import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
@@ -16,6 +17,10 @@ import { plan, publish, status, takedown, unpublish } from '../apps/plugin/src/p
 import type { Subprocess } from 'bun'
 import { startServer, type Server } from '../apps/site/server/serve.ts'
 import { writeReleaseVariants } from '../apps/site/worker/image-variants.ts'
+
+// The invented stores are sealed with the key of the tests (R104): every
+// device of this run, and every program that it starts, uses that key.
+process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 
 // The site of the invented fixture vault, to click through on this machine:
 // the publishing tool publishes every new note of a copy of the fixture vault

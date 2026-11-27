@@ -34,6 +34,7 @@ export const TOOL_NAMES = [
     'ignore',
     'unignore',
     'unlock',
+    'confirm_store_state',
     'deploy'
 ] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
@@ -60,6 +61,8 @@ export type ToolCall =
     | { readonly tool: 'guards' }
     | { readonly tool: EditAction; readonly path: string }
     | { readonly tool: 'unlock' }
+    /** The confirmation of the state of the content store (R104): the last commit that the author read the difference of. */
+    | { readonly tool: 'confirm_store_state'; readonly head: string }
     | {
           readonly tool: 'deploy'
           /** True to run with `--takedown`; no key when the call has none or false. */
@@ -139,6 +142,7 @@ const ARGUMENTS: Record<ToolName, readonly string[]> = {
     ignore: ['path'],
     unignore: ['path'],
     unlock: [],
+    confirm_store_state: ['head'],
     deploy: ['last', 'takedown']
 }
 
@@ -273,6 +277,15 @@ export function toolCallOf(name: string, args: unknown): ToolCall {
             return { tool: name, paths: pathsOf(name, given), ...acceptOf(given, name) }
         case 'takedown':
             return { tool: name, paths: pathsOf(name, given) }
+        case 'confirm_store_state': {
+            const head = given['head']
+            if (typeof head !== 'string') {
+                throw new ArgumentError(
+                    'confirm_store_state needs the argument "head": the last commit that the difference names'
+                )
+            }
+            return { tool: name, head }
+        }
     }
 }
 

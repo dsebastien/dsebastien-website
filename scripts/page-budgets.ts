@@ -11,13 +11,18 @@ import {
     copyFixtureVault,
     makeContentStoreCopy,
     makeTestStores,
-    writeBudgetSample
+    writeBudgetSample,
+    testSealKey
 } from '@dsebastien-website/testing'
 import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import { judgeTimes, TIME_BUDGET, type TimeBudget, type TimeRun } from '../apps/site/src/budgets.ts'
 import { startServer } from '../apps/site/server/serve.ts'
 import { writeReleaseVariants } from '../apps/site/worker/image-variants.ts'
+
+// The invented stores are sealed with the key of the tests (R104): every
+// device of this run, and every program that it starts, uses that key.
+process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 
 // The time budgets of the note page (issue 47, PERF-20, PERF-22, R57). The
 // tool publishes a copy of the fixture vault with the budget sample, the site
