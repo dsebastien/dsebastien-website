@@ -118,6 +118,11 @@ fn event_id(event: &Event) -> Result<String, String> {
 /// The log of the edits of the guards: `edits.json` of the content store.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct EditLog {
+    /// The hash of `configuration.json` at the last publication (issue 108):
+    /// the plan says when the file changed since, also by hand. No key in a
+    /// log that no publication wrote since this key exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<String>,
     /// The events, in the order in which they were written.
     pub edits: Vec<Event>,
     /// How many events a publication showed: the plan shows the events after
@@ -164,9 +169,49 @@ impl EditLog {
     /// raised by their number.
     pub fn shown(&self, count: usize) -> Self {
         Self {
+            configuration: self.configuration.clone(),
             edits: self.edits.clone(),
             published: self.published + count,
         }
+    }
+
+    /// True when `configuration.json`, whose hash is `hash`, is not the file
+    /// of the last publication (issue 108): an edit by hand, or an edit of
+    /// the tool on top of one. False for a log with no such hash.
+    pub fn configuration_changed(&self, hash: &str) -> bool {
+        self.configuration
+            .as_deref()
+            .is_some_and(|configuration| configuration != hash)
+    }
+
+    /// The log that a publication writes, or `None` when it writes none: the
+    /// events of the plan (`shown`) are marked as shown, and `configuration`
+    /// is the hash of the configuration that the plan read (issue 108). A log
+    /// with no hash yet gets one only with a commit that the publication
+    /// makes anyway (`commits`): an empty plan still commits nothing.
+    pub fn after_publication(&self, shown: usize, hash: &str, commits: bool) -> Option<Self> {
+        let unchanged = self
+            .configuration
+            .as_deref()
+            .map_or(!commits, |configuration| configuration == hash);
+        if shown == 0 && unchanged {
+            return None;
+        }
+        let mut log = self.shown(shown);
+        log.configuration = Some(hash.to_owned());
+        Some(log)
+    }
+
+    /// The log after an edit of the tool that writes the configuration
+    /// (issue 108): the hash follows the edit when the file was the one of
+    /// the last publication, so the plan shows the event and not a change by
+    /// hand; else it stays, and the change by hand stays visible.
+    pub fn with_configuration(&self, before: &str, after: &str) -> Self {
+        let mut log = self.clone();
+        if log.configuration.as_deref() == Some(before) {
+            log.configuration = Some(after.to_owned());
+        }
+        log
     }
 
     /// The text of the file, in the canonical form.
@@ -371,9 +416,11 @@ pub fn parse_edits(text: Option<&str>) -> Result<EditLog, String> {
     let value = parse_json(text).map_err(|_| not_valid("it is not JSON"))?;
     let object = value
         .as_object()
-        .filter(|object| object.len() == 2)
+        .filter(|object| object.len() == if object.contains_key("configuration") { 3 } else { 2 })
         .ok_or_else(|| {
-            not_valid("it must be an object with exactly \"edits\" and \"published\"")
+            not_valid(
+                "it must be an object with exactly \"edits\" and \"published\", and \"configuration\" when it has one",
+            )
         })?;
     let items = object
         .get("edits")
@@ -383,6 +430,20 @@ pub fn parse_edits(text: Option<&str>) -> Result<EditLog, String> {
         .get("published")
         .and_then(whole_number)
         .ok_or_else(|| not_valid("\"published\" must be a whole number from 0"))?;
+    let configuration = match object.get("configuration") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .filter(|text| is_text_hash(text))
+                .ok_or_else(|| {
+                    not_valid(
+                        "\"configuration\" must be \"sha256:\" and 64 small hexadecimal digits",
+                    )
+                })?
+                .to_owned(),
+        ),
+    };
     let mut edits: Vec<Event> = Vec::new();
     // The proposals that no event decided yet, by their ids.
     let mut open: BTreeMap<String, (String, String)> = BTreeMap::new();
@@ -416,7 +477,22 @@ pub fn parse_edits(text: Option<&str>) -> Result<EditLog, String> {
                 edits.len()
             ))
         })?;
-    Ok(EditLog { edits, published })
+    Ok(EditLog {
+        configuration,
+        edits,
+        published,
+    })
+}
+
+/// True when the text has the form of the hash of a text: `sha256:` and 64
+/// small hexadecimal digits.
+fn is_text_hash(text: &str) -> bool {
+    text.strip_prefix("sha256:").is_some_and(|digits| {
+        digits.len() == 64
+            && digits
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    })
 }
 
 /// The event as data, as the file holds it.
@@ -496,7 +572,11 @@ mod tests {
     }
 
     fn log_of(edits: Vec<Event>, published: usize) -> EditLog {
-        EditLog { edits, published }
+        EditLog {
+            configuration: None,
+            edits,
+            published,
+        }
     }
 
     #[test]
@@ -514,6 +594,46 @@ mod tests {
             EditLog::default().text(),
             Ok("{\n  \"edits\": [],\n  \"published\": 0\n}\n".to_owned())
         );
+    }
+
+    /// The hash of the configuration at the last publication (issue 108).
+    #[test]
+    fn the_log_keeps_the_hash_of_the_configuration_at_the_last_publication() {
+        let hash = format!("sha256:{}", "a".repeat(64));
+        let text = format!("{{\"configuration\":\"{hash}\",\"edits\":[],\"published\":0}}");
+        let log = parse_edits(Some(&text)).expect("the log is valid");
+        assert_eq!(log.configuration.as_deref(), Some(hash.as_str()));
+        assert!(!log.configuration_changed(&hash));
+        assert!(log.configuration_changed("sha256:other"));
+        assert!(!EditLog::default().configuration_changed(&hash));
+        assert_eq!(log.after_publication(0, &hash, true), None);
+        assert_eq!(EditLog::default().after_publication(0, &hash, false), None);
+        assert!(
+            EditLog::default()
+                .after_publication(0, &hash, true)
+                .is_some()
+        );
+        let after = log
+            .after_publication(0, "sha256:new", false)
+            .expect("a new hash is written");
+        assert_eq!(after.configuration.as_deref(), Some("sha256:new"));
+        assert_eq!(
+            log.with_configuration(&hash, "sha256:new").configuration,
+            Some("sha256:new".to_owned())
+        );
+        assert_eq!(
+            log.with_configuration("sha256:other", "sha256:new")
+                .configuration,
+            Some(hash.clone())
+        );
+        for bad in ["\"sha256:abc\"", "1", "null"] {
+            let text = format!("{{\"configuration\":{bad},\"edits\":[],\"published\":0}}");
+            assert!(
+                parse_edits(Some(&text))
+                    .expect_err("the log is not valid")
+                    .contains("\"configuration\" must be")
+            );
+        }
     }
 
     /// The event of the shared scenario of an image under the new guard. The

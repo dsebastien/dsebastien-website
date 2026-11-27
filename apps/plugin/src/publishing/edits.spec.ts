@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    configurationChanged,
     editsText,
     eventId,
     eventsSince,
+    logAfterPublication,
     makeEvent,
     NO_EDITS,
     openProposals,
     parseEdits,
+    withConfiguration,
     withEvent
 } from './edits.ts'
 import type { EditEvent, EditsLog } from './edits.ts'
@@ -100,6 +103,35 @@ describe('the id of an event', () => {
         ).toEqual(DENY)
         const sorted = makeEvent({ ...fields, removes: ['b.md', 'a b/c.md', 'a/z.md'] })
         expect(sorted.removes).toEqual(['a b/c.md', 'a/z.md', 'b.md'])
+    })
+})
+
+describe('the hash of the configuration at the last publication (issue 108)', () => {
+    const HASH = `sha256:${'a'.repeat(64)}`
+
+    test('is read, compared and moved as the canonical form says', () => {
+        const log = parseEdits(textOf({ configuration: HASH, edits: [], published: 0 }))
+        expect(log.configuration).toBe(HASH)
+        expect(configurationChanged(log, HASH)).toBe(false)
+        expect(configurationChanged(log, 'sha256:other')).toBe(true)
+        expect(configurationChanged(NO_EDITS, HASH)).toBe(false)
+        expect(logAfterPublication(log, 0, HASH, true)).toBeUndefined()
+        expect(logAfterPublication(log, 0, 'sha256:new', false)?.configuration).toBe('sha256:new')
+        // A log with no hash gets one only with a commit that happens anyway.
+        expect(logAfterPublication(NO_EDITS, 0, HASH, false)).toBeUndefined()
+        expect(logAfterPublication(NO_EDITS, 0, HASH, true)).toEqual({
+            configuration: HASH,
+            edits: [],
+            published: 0
+        })
+        expect(withConfiguration(log, HASH, 'sha256:new').configuration).toBe('sha256:new')
+        expect(withConfiguration(log, 'sha256:other', 'sha256:new').configuration).toBe(HASH)
+    })
+
+    test.each(['sha256:abc', 1, null])('refuses the value %p', (bad) => {
+        expect(() => parseEdits(textOf({ configuration: bad, edits: [], published: 0 }))).toThrow(
+            '"configuration" must be'
+        )
     })
 })
 

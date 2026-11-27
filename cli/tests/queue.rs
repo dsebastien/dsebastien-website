@@ -624,15 +624,6 @@ fn run_edit_step(setup: &Setup, step: &Value, label: &str) {
     }
 }
 
-/// The lists of the output of `plan` beside the plan, empty when a step
-/// does not state them.
-const PLAN_LISTS: [&str; 4] = [
-    "attachmentsRemoved",
-    "listsNotRefreshed",
-    "liveQueries",
-    "tooLarge",
-];
-
 /// The step `publish`: the plan of the selection, or the stored one, applied
 /// from the face of the step (`command-line` by default, `mcp-server` through
 /// the `mcp` command), at its time. It gives its report, or is refused with
@@ -727,6 +718,22 @@ fn run_removal_step(setup: &Setup, step: &Value, label: &str) -> bool {
     true
 }
 
+/// The outputs of a plan beside the plan: a missing flag is false, and a
+/// missing list is empty.
+fn assert_plan_outputs(output: &Value, step: &Value, label: &str) {
+    for (key, missing) in [
+        ("offline", json!(false)),
+        ("configurationChanged", json!(false)),
+        ("attachmentsRemoved", json!([])),
+        ("listsNotRefreshed", json!([])),
+        ("liveQueries", json!([])),
+        ("tooLarge", json!([])),
+    ] {
+        let expected = step.get(key).cloned().unwrap_or(missing);
+        assert_eq!(output[key], expected, "{label}: {key}");
+    }
+}
+
 fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
     if run_removal_step(setup, step, label) || run_guards_step(setup, step, label) {
         return;
@@ -778,12 +785,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
                     .expect("the plan has an id")
                     .clone_into(&mut plans.stored);
                 assert_eq!(json_of(&output)["plan"], step["plan"], "{label}");
-                let offline = step.get("offline").cloned().unwrap_or(json!(false));
-                assert_eq!(json_of(&output)["offline"], offline, "{label}");
-                for key in PLAN_LISTS {
-                    let expected = step.get(key).cloned().unwrap_or(json!([]));
-                    assert_eq!(json_of(&output)[key], expected, "{label}: {key}");
-                }
+                assert_plan_outputs(&json_of(&output), step, label);
             }
         }
         "crash" => {

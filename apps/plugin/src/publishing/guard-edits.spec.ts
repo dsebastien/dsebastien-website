@@ -13,7 +13,8 @@ import {
     type CrashPoint,
     type TestStores
 } from '@dsebastien-website/testing'
-import { makeEvent } from './edits.ts'
+import { makeEvent, parseEdits } from './edits.ts'
+import { contentHash } from './hash.ts'
 import { nodeDevice } from './node/device.ts'
 import type { Device } from './ports.ts'
 import {
@@ -869,13 +870,18 @@ describe('the plan and the edits', () => {
         expect((await plan(device, { include: [] })).plan.edits).toEqual([])
     }, 120_000)
 
-    test('a publication with no edit never makes edits.json', async () => {
+    test('a publication with no edit makes edits.json with only the hash of the configuration (issue 108)', async () => {
         await using stores = await makeTestStores()
         const { copy, device } = await setUp(stores)
+        const configuration = await textOf(join(copy, 'configuration.json'))
 
         await publishNotes(device, ['Notes/Public.md'], AUTHOR.time)
 
-        expect(await textOf(join(copy, 'edits.json'))).toBeNull()
+        expect(parseEdits((await textOf(join(copy, 'edits.json'))) ?? undefined)).toEqual({
+            configuration: contentHash(configuration ?? ''),
+            edits: [],
+            published: 0
+        })
     }, 60_000)
 })
 

@@ -741,6 +741,24 @@ fn warn_when_offline(plan: &str) {
     }
 }
 
+/// A plan says that `configuration.json` changed since the last publication,
+/// not only through the edits of the tool (issue 108, GATE-07): it says so on
+/// the error output too.
+fn warn_when_configuration_changed(plan: &str) {
+    let changed = json::parse_json(plan)
+        .ok()
+        .and_then(|plan| {
+            plan.get("configurationChanged")
+                .and_then(serde_json::Value::as_bool)
+        })
+        .unwrap_or(false);
+    if changed {
+        eprintln!(
+            "warning: configuration.json changed since the last publication, and not only through the edits of the tool: read the deny list before the publication (configurationChanged)"
+        );
+    }
+}
+
 /// A plan of the command line program refreshes no frozen list (PUB-101,
 /// R71), the page drops a live query block (REN-14), and the plan holds a
 /// note that links a file above the size limit of an attachment (issue 72):
@@ -1082,6 +1100,7 @@ fn unlock(content_store: &Path) -> Result<String, String> {
 fn run_plan(places: &Places, selection: &Selection) -> Result<String, String> {
     let output = tool::plan(&device(places)?, selection)?;
     warn_when_offline(&output);
+    warn_when_configuration_changed(&output);
     warn_about_lists(&output);
     Ok(output)
 }

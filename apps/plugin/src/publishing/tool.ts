@@ -19,7 +19,10 @@ import {
     isLooser,
     makeEvent,
     openProposals,
+    configurationChanged,
+    logAfterPublication,
     parseEdits,
+    withConfiguration,
     withEvent
 } from './edits.ts'
 import type { EditAction, EditEvent, EditsLog } from './edits.ts'
@@ -85,6 +88,8 @@ export interface StoredPlan {
     readonly liveQueries: readonly string[]
     /** The notes that the plan holds: they link to a file above the size limit (issue 72). */
     readonly tooLarge: readonly TooLarge[]
+    /** True when `configuration.json` is not the file of the last publication (issue 108, GATE-07). */
+    readonly configurationChanged: boolean
     /** The notes whose text the refresh changed, for the author. Outside the parity rule. */
     readonly listsRefreshed: readonly string[]
     /** Why the refresh did not refresh a note, for the author. Outside the parity rule. */
@@ -479,6 +484,8 @@ export async function statusWithEdits(given: Device): Promise<{
     readonly guardedEntries: readonly GuardedEntry[]
     /** The source hash of each candidate and of each note of `movedEdited`, as the scan read it (issue 111). */
     readonly sources: ReadonlyMap<string, string>
+    /** True when `configuration.json` is not the file of the last publication (issue 108). */
+    readonly configurationChanged: boolean
 }> {
     const device = forRun(given)
     await refuseWhenLocked(device)
@@ -499,7 +506,8 @@ export async function statusWithEdits(given: Device): Promise<{
                     return note === undefined ? [] : [[path, note.sourceHash]]
                 }
             )
-        )
+        ),
+        configurationChanged: configurationChanged(state.scan.edits, state.configurationHash)
     }
 }
 
@@ -531,6 +539,8 @@ interface Computed {
     readonly texts: ReadonlyMap<string, NoteTexts>
     /** The notes that the plan holds for the size limit of an attachment (issue 72). */
     readonly tooLarge: readonly TooLarge[]
+    /** The hash of the configuration that the plan read, as the record holds it. */
+    readonly configurationHash: string
 }
 
 /**
@@ -616,7 +626,17 @@ async function recordFor(
             new Map([...texts].map(([path, noteTexts]) => [path, noteTexts.attachments]))
         )
     )
-    return { plan, attachmentsRemoved, reached, record, scan, selection, texts, tooLarge }
+    return {
+        plan,
+        attachmentsRemoved,
+        reached,
+        record,
+        scan,
+        selection,
+        texts,
+        tooLarge,
+        configurationHash
+    }
 }
 
 /** The attachments of the published entries of a manifest, one list per entry. */
@@ -691,6 +711,7 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
                       : 'the Dataview Serializer did not refresh it')
         })),
         tooLarge: computed.tooLarge,
+        configurationChanged: configurationChanged(computed.scan.edits, computed.configurationHash),
         listsRefreshed: sortByCodePoint([...refresh.written.keys()]),
         refreshProblems: refresh.problems,
         hashes: new Map(
@@ -1400,7 +1421,12 @@ async function repairStorage(
  * Every path of the content store that the publication of a plan can write or
  * remove: the cleaned note and the manifest entry of each of its notes.
  */
-function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[] {
+function storePathsOf(
+    plan: PublicationPlan,
+    scan: Scan,
+    time: string,
+    configurationHash: string
+): string[] {
     const paths = new Set<string>()
     // The entry of a move of a journal is at its new path in the scan, and
     // the entry of a pairing is still at its old path.
@@ -1426,8 +1452,12 @@ function storePathsOf(plan: PublicationPlan, scan: Scan, time: string): string[]
     if (scan.journals.read) {
         paths.add(RENAMES_FILE)
     }
-    // The publication marks the events of the plan as shown (R69).
-    if (plan.edits.length > 0) {
+    // The publication marks the events of the plan as shown (R69), and keeps
+    // the hash of the configuration (issue 108).
+    if (
+        logAfterPublication(scan.edits, plan.edits.length, configurationHash, paths.size > 0) !==
+        undefined
+    ) {
         paths.add(EDITS_FILE)
     }
     return sortByCodePoint([...paths])
@@ -1691,13 +1721,16 @@ async function writeAll(
         }
     }
     // The events that the plan showed are marked as shown, in the same
-    // commit, so the next plan shows only the newer ones (R69). A
-    // publication never makes the file.
-    if (lists.edits.length > 0) {
-        const log: EditsLog = {
-            edits: scan.edits.edits,
-            published: scan.edits.published + lists.edits.length
-        }
+    // commit, so the next plan shows only the newer ones (R69), and the hash
+    // of the configuration is kept, so the next plan shows a change by hand
+    // (issue 108).
+    const log = logAfterPublication(
+        scan.edits,
+        lists.edits.length,
+        computed.configurationHash,
+        written.length > 0
+    )
+    if (log !== undefined) {
         if (await journal.apply({ path: EDITS_FILE, text: editsText(log) })) {
             written.push(EDITS_FILE)
         }
@@ -2286,7 +2319,7 @@ async function applyCurrent(
     // The journal comes before the first write into the copy: a run that
     // stops halfway is put back by the next one. A plan with no note still
     // writes the withdrawn keys when they change (issue 120).
-    const planned = storePathsOf(current.plan, scan, run.time)
+    const planned = storePathsOf(current.plan, scan, run.time, current.configurationHash)
     const paths =
         planned.length > 0 ||
         (await withdrawnAfter(device, scan, scan.manifest)) !==
@@ -2977,9 +3010,17 @@ async function commitEvent(
         ) {
             written.push(CONFIGURATION_FILE)
         }
-        if (
-            await backup.apply({ path: EDITS_FILE, text: editsText(withEvent(context.log, event)) })
-        ) {
+        // A change of the tool moves the hash of the last publication with
+        // it, unless the file had changed by hand before (issue 108).
+        const log =
+            configuration === undefined
+                ? context.log
+                : withConfiguration(
+                      context.log,
+                      contentHash(context.configurationText),
+                      contentHash(configuration)
+                  )
+        if (await backup.apply({ path: EDITS_FILE, text: editsText(withEvent(log, event)) })) {
             written.push(EDITS_FILE)
         }
         await ownLock()

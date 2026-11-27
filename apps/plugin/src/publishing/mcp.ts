@@ -430,6 +430,7 @@ export function outcomeOfPlan(stored: StoredPlan): ToolOutcome {
     return {
         output: toCanonicalJson({
             attachmentsRemoved: stored.attachmentsRemoved,
+            configurationChanged: stored.configurationChanged,
             id: stored.id,
             listsNotRefreshed: stored.listsNotRefreshed,
             listsNotRefreshedReasons: stored.listsNotRefreshedReasons,

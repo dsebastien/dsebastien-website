@@ -102,6 +102,7 @@ type Step = { why: string } & (
           liveQueries?: string[]
           tooLarge?: TooLarge[]
           attachmentsRemoved?: RemovedAttachment[]
+          configurationChanged?: true
       }
     | {
           do: 'publish'
@@ -398,6 +399,9 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         expect(planned.tooLarge, label).toEqual(step.tooLarge ?? [])
                         expect(planned.attachmentsRemoved, label).toEqual(
                             step.attachmentsRemoved ?? []
+                        )
+                        expect(planned.configurationChanged, label).toBe(
+                            step.configurationChanged ?? false
                         )
                     }
                 } else if (step.do === 'crash' && step.takedown !== undefined) {

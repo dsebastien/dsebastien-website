@@ -1591,6 +1591,7 @@
                 {
                     "do": "plan",
                     "why": "a plan without paths holds the three forced removals: the ignore property, the folder that entered the deny list, and the note whose name is now in a folder of the deny list. The note that is only missing is not one of them",
+                    "configurationChanged": true,
                     "selection": {
                         "hold": [],
                         "include": [],
@@ -1649,6 +1650,7 @@
                 {
                     "do": "plan",
                     "why": "a note that is only missing can be held, and a guard wins over an unpublish: the note is a forced removal one time",
+                    "configurationChanged": true,
                     "selection": {
                         "hold": ["Lost.md"],
                         "include": [],
@@ -1667,6 +1669,7 @@
                 {
                     "do": "plan",
                     "why": "the note that is only missing is removed only when the selection names it",
+                    "configurationChanged": true,
                     "selection": {
                         "hold": ["Keep.md"],
                         "include": [],
@@ -1946,6 +1949,7 @@
                 {
                     "do": "plan",
                     "why": "a plan without paths holds the three unpublished notes under a guard as forced removals: the ignore property, the folder that entered the deny list, and the note whose name is now in a folder of the deny list. The unpublished note that is only missing is not one of them",
+                    "configurationChanged": true,
                     "selection": {
                         "hold": [],
                         "include": [],
@@ -8013,6 +8017,7 @@
                 {
                     "do": "plan",
                     "why": "the note under the guard is a forced removal",
+                    "configurationChanged": true,
                     "selection": {
                         "include": []
                     },
@@ -11271,7 +11276,7 @@
                     },
                     "store": {
                         "configuration.json": "{\n  \"denyList\": [\n    \"Locked\",\n    \"Private\"\n  ]\n}\n",
-                        "edits.json": "{\n  \"edits\": [\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"34f508006aa66095\",\n      \"path\": \"Private\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T09:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2acc19e4bd54a30\",\n      \"path\": \"Mixed\",\n      \"removes\": [\n        \"Mixed/Shown.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T10:00:00Z\"\n    },\n    {\n      \"action\": \"allow\",\n      \"device\": \"garden-shed\",\n      \"face\": \"command-line\",\n      \"id\": \"979410bc2e7c049d\",\n      \"path\": \"Locked\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T11:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2b5e08d3965c97f\",\n      \"path\": \"Notes/Draft.md\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T12:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"4891cf2541f7a7b5\",\n      \"path\": \"Notes/Public.md\",\n      \"removes\": [\n        \"Notes/Public.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T13:00:00Z\"\n    },\n    {\n      \"action\": \"unignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"84fa641ca7d4af9c\",\n      \"path\": \"Notes/Kept.md\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T14:00:00Z\"\n    }\n  ],\n  \"published\": 0\n}\n"
+                        "edits.json": "{\n  \"configuration\": \"sha256:8bb89d1925aaccf9501516f082005698da943951e2fe1c5e837a7c59724d76be\",\n  \"edits\": [\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"34f508006aa66095\",\n      \"path\": \"Private\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T09:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2acc19e4bd54a30\",\n      \"path\": \"Mixed\",\n      \"removes\": [\n        \"Mixed/Shown.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T10:00:00Z\"\n    },\n    {\n      \"action\": \"allow\",\n      \"device\": \"garden-shed\",\n      \"face\": \"command-line\",\n      \"id\": \"979410bc2e7c049d\",\n      \"path\": \"Locked\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T11:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2b5e08d3965c97f\",\n      \"path\": \"Notes/Draft.md\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T12:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"4891cf2541f7a7b5\",\n      \"path\": \"Notes/Public.md\",\n      \"removes\": [\n        \"Notes/Public.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T13:00:00Z\"\n    },\n    {\n      \"action\": \"unignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"84fa641ca7d4af9c\",\n      \"path\": \"Notes/Kept.md\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T14:00:00Z\"\n    }\n  ],\n  \"published\": 0\n}\n"
                     }
                 },
                 {
@@ -11594,7 +11599,7 @@
                     "why": "published counts the events that the plan showed",
                     "vault": {},
                     "store": {
-                        "edits.json": "{\n  \"edits\": [\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"34f508006aa66095\",\n      \"path\": \"Private\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T09:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2acc19e4bd54a30\",\n      \"path\": \"Mixed\",\n      \"removes\": [\n        \"Mixed/Shown.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T10:00:00Z\"\n    },\n    {\n      \"action\": \"allow\",\n      \"device\": \"garden-shed\",\n      \"face\": \"command-line\",\n      \"id\": \"979410bc2e7c049d\",\n      \"path\": \"Locked\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T11:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2b5e08d3965c97f\",\n      \"path\": \"Notes/Draft.md\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T12:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"4891cf2541f7a7b5\",\n      \"path\": \"Notes/Public.md\",\n      \"removes\": [\n        \"Notes/Public.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T13:00:00Z\"\n    },\n    {\n      \"action\": \"unignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"84fa641ca7d4af9c\",\n      \"path\": \"Notes/Kept.md\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T14:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"plugin\",\n      \"id\": \"2c98e8dcc4c24a0d\",\n      \"path\": \"Mixed\",\n      \"proposal\": \"f2acc19e4bd54a30\",\n      \"removes\": [\n        \"Mixed/Shown.md\"\n      ],\n      \"state\": \"confirmed\",\n      \"time\": \"2031-06-01T15:00:00Z\"\n    },\n    {\n      \"action\": \"allow\",\n      \"device\": \"garden-shed\",\n      \"face\": \"plugin\",\n      \"id\": \"956359ea1ea6f305\",\n      \"path\": \"Locked\",\n      \"proposal\": \"979410bc2e7c049d\",\n      \"state\": \"rejected\",\n      \"time\": \"2031-06-01T16:00:00Z\"\n    }\n  ],\n  \"published\": 8\n}\n",
+                        "edits.json": "{\n  \"configuration\": \"sha256:868f9ae6c381d052bd59af99188f2c500667302dadfe0e1bb6e7bd3d4f976fc8\",\n  \"edits\": [\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"34f508006aa66095\",\n      \"path\": \"Private\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T09:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2acc19e4bd54a30\",\n      \"path\": \"Mixed\",\n      \"removes\": [\n        \"Mixed/Shown.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T10:00:00Z\"\n    },\n    {\n      \"action\": \"allow\",\n      \"device\": \"garden-shed\",\n      \"face\": \"command-line\",\n      \"id\": \"979410bc2e7c049d\",\n      \"path\": \"Locked\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T11:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"f2b5e08d3965c97f\",\n      \"path\": \"Notes/Draft.md\",\n      \"state\": \"applied\",\n      \"time\": \"2031-06-01T12:00:00Z\"\n    },\n    {\n      \"action\": \"ignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"4891cf2541f7a7b5\",\n      \"path\": \"Notes/Public.md\",\n      \"removes\": [\n        \"Notes/Public.md\"\n      ],\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T13:00:00Z\"\n    },\n    {\n      \"action\": \"unignore\",\n      \"device\": \"garden-shed\",\n      \"face\": \"mcp-server\",\n      \"id\": \"84fa641ca7d4af9c\",\n      \"path\": \"Notes/Kept.md\",\n      \"state\": \"proposed\",\n      \"time\": \"2031-06-01T14:00:00Z\"\n    },\n    {\n      \"action\": \"deny\",\n      \"device\": \"garden-shed\",\n      \"face\": \"plugin\",\n      \"id\": \"2c98e8dcc4c24a0d\",\n      \"path\": \"Mixed\",\n      \"proposal\": \"f2acc19e4bd54a30\",\n      \"removes\": [\n        \"Mixed/Shown.md\"\n      ],\n      \"state\": \"confirmed\",\n      \"time\": \"2031-06-01T15:00:00Z\"\n    },\n    {\n      \"action\": \"allow\",\n      \"device\": \"garden-shed\",\n      \"face\": \"plugin\",\n      \"id\": \"956359ea1ea6f305\",\n      \"path\": \"Locked\",\n      \"proposal\": \"979410bc2e7c049d\",\n      \"state\": \"rejected\",\n      \"time\": \"2031-06-01T16:00:00Z\"\n    }\n  ],\n  \"published\": 8\n}\n",
                         "notes/Mixed/Shown.md": null
                     }
                 },
@@ -12122,6 +12127,7 @@
                             "path": "Images/plan.png"
                         }
                     ],
+                    "configurationChanged": true,
                     "selection": {},
                     "plan": {
                         "edits": [],
@@ -12250,6 +12256,7 @@
                 {
                     "do": "plan",
                     "why": "the key of the guarded image is also the key of the open image of a note that stays: the cleanup keeps it, so no note is in guardedAttachments",
+                    "configurationChanged": true,
                     "selection": {},
                     "plan": {
                         "edits": [],
@@ -12264,6 +12271,17 @@
                 {
                     "do": "plan",
                     "why": "when the note with the open image leaves in the same plan, the key goes, and the note is in guardedAttachments again",
+                    "configurationChanged": true,
+                    "attachmentsRemoved": [
+                        {
+                            "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                            "path": "Images/plan.png"
+                        },
+                        {
+                            "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                            "path": "Shared/open.png"
+                        }
+                    ],
                     "selection": {
                         "remove": ["Notes/Open.md"]
                     },
@@ -12309,6 +12327,241 @@
                         "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e": {
                             "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
                         }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "the plan shows a change of configuration.json by hand since the last publication (issue 108, point 5)",
+            "denyList": ["Old"],
+            "vault": {
+                "A.md": "# A\n",
+                "Drafts/B.md": "# B\n",
+                "Lab/C.md": "# C\n",
+                "Old/D.md": "# D\n"
+            },
+            "steps": [
+                {
+                    "do": "plan",
+                    "why": "no publication kept the hash of the configuration yet: the plan shows no change",
+                    "selection": {
+                        "include": ["A.md"]
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": ["A.md"],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the first publication keeps the hash of the configuration in edits.json",
+                    "selection": {
+                        "include": ["A.md"]
+                    },
+                    "time": "2031-10-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md"],
+                        "published": ["A.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the hash is the SHA-256 of the text of configuration.json",
+                    "vault": {},
+                    "store": {
+                        "edits.json": "{\n  \"configuration\": \"sha256:e600d3c77f5e95d8509c1406509d070568a52b653f5d7f0f39bc66567628b5cc\",\n  \"edits\": [],\n  \"published\": 0\n}\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the configuration is the one of the last publication",
+                    "selection": {},
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "the author adds a folder to the deny list by hand, on another device",
+                    "files": {
+                        "configuration.json": "{\"denyList\":[\"Old\",\"Drafts\"]}"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan says that the configuration changed since the last publication, with no event of the tool",
+                    "selection": {},
+                    "configurationChanged": true,
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a publication with no note keeps the new hash",
+                    "selection": {},
+                    "time": "2031-10-02T09:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "edits.json has the hash of the configuration that the author edited",
+                    "vault": {},
+                    "store": {
+                        "edits.json": "{\n  \"configuration\": \"sha256:a0f6eafec4078fb62105c68af829a322dc7f141d05594434d1c73d31b01e3376\",\n  \"edits\": [],\n  \"published\": 0\n}\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "no change since that publication",
+                    "selection": {},
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "edit",
+                    "why": "an agent denies a folder with no note on the site: it applies at once",
+                    "action": "deny",
+                    "path": "Lab",
+                    "time": "2031-10-02T10:00:00Z",
+                    "face": "mcp-server",
+                    "event": {
+                        "action": "deny",
+                        "path": "Lab",
+                        "state": "applied",
+                        "face": "mcp-server",
+                        "time": "2031-10-02T10:00:00Z",
+                        "device": "garden-shed",
+                        "id": "859fa2097daefda1"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan shows the event of the tool, and no change by hand: the hash moved with the edit",
+                    "selection": {},
+                    "plan": {
+                        "edits": [
+                            {
+                                "action": "deny",
+                                "path": "Lab",
+                                "state": "applied",
+                                "face": "mcp-server",
+                                "time": "2031-10-02T10:00:00Z",
+                                "device": "garden-shed",
+                                "id": "859fa2097daefda1"
+                            }
+                        ],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "the author takes a folder off the deny list by hand",
+                    "files": {
+                        "configuration.json": "{\"denyList\":[\"Old\",\"Lab\"]}"
+                    }
+                },
+                {
+                    "do": "edit",
+                    "why": "an agent denies a folder after the change by hand",
+                    "action": "deny",
+                    "path": "Drafts",
+                    "time": "2031-10-02T11:00:00Z",
+                    "face": "mcp-server",
+                    "event": {
+                        "action": "deny",
+                        "path": "Drafts",
+                        "state": "applied",
+                        "face": "mcp-server",
+                        "time": "2031-10-02T11:00:00Z",
+                        "device": "garden-shed",
+                        "id": "f09679439334861a"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the edit of the tool does not hide the change by hand before it",
+                    "selection": {},
+                    "configurationChanged": true,
+                    "plan": {
+                        "edits": [
+                            {
+                                "action": "deny",
+                                "path": "Lab",
+                                "state": "applied",
+                                "face": "mcp-server",
+                                "time": "2031-10-02T10:00:00Z",
+                                "device": "garden-shed",
+                                "id": "859fa2097daefda1"
+                            },
+                            {
+                                "action": "deny",
+                                "path": "Drafts",
+                                "state": "applied",
+                                "face": "mcp-server",
+                                "time": "2031-10-02T11:00:00Z",
+                                "device": "garden-shed",
+                                "id": "f09679439334861a"
+                            }
+                        ],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": []
                     }
                 }
             ]

@@ -51,6 +51,12 @@ export type EditEvent = {
 /** `edits.json` as data. */
 // A type alias, not an interface: the canonical form takes any object of data.
 export type EditsLog = {
+    /**
+     * The hash of `configuration.json` at the last publication (issue 108):
+     * the plan says when the file changed since, also by hand. No key in a
+     * log that no publication wrote since this key exists.
+     */
+    readonly configuration?: string
     /** The events, in the order in which they were written. */
     readonly edits: readonly EditEvent[]
     /** How many events of `edits` a publication showed. */
@@ -124,6 +130,9 @@ const EVENT_KEYS = new Set([
 /** The form of an id of an event. */
 const EVENT_ID = /^[0-9a-f]{16}$/u
 
+/** The form of the hash of a text: `sha256:` and 64 small hexadecimal digits. */
+const TEXT_HASH = /^sha256:[0-9a-f]{64}$/u
+
 /** The message of a log that is not valid: it names the file. */
 function notValid(reason: string): Error {
     return new Error(
@@ -149,15 +158,23 @@ export function parseEdits(text: string | undefined): EditsLog {
     } catch {
         throw notValid('it is not JSON')
     }
-    if (!isRecord(value) || Object.keys(value).length !== 2) {
-        throw notValid('it must be an object with exactly "edits" and "published"')
+    if (!isRecord(value) || Object.keys(value).length !== ('configuration' in value ? 3 : 2)) {
+        throw notValid(
+            'it must be an object with exactly "edits" and "published", and "configuration" when it has one'
+        )
     }
-    const { edits, published } = value
+    const { configuration, edits, published } = value
     if (!Array.isArray(edits)) {
         throw notValid('"edits" must be a list of events')
     }
     if (typeof published !== 'number' || !Number.isSafeInteger(published) || published < 0) {
         throw notValid('"published" must be a whole number from 0')
+    }
+    if (
+        configuration !== undefined &&
+        !(typeof configuration === 'string' && TEXT_HASH.test(configuration))
+    ) {
+        throw notValid('"configuration" must be "sha256:" and 64 small hexadecimal digits')
     }
     const events: EditEvent[] = []
     // The proposals that no event decided yet, by their ids.
@@ -189,7 +206,11 @@ export function parseEdits(text: string | undefined): EditsLog {
             `"published" is ${String(published)}, above the number of events (${String(events.length)})`
         )
     }
-    return { edits: events, published }
+    return {
+        ...(typeof configuration === 'string' ? { configuration } : {}),
+        edits: events,
+        published
+    }
 }
 
 /**
@@ -331,7 +352,46 @@ export function editsText(log: EditsLog): string {
 
 /** The log with one more event at its end. */
 export function withEvent(log: EditsLog, event: EditEvent): EditsLog {
-    return { edits: [...log.edits, event], published: log.published }
+    return { ...log, edits: [...log.edits, event] }
+}
+
+/**
+ * True when `configuration.json`, whose hash is `hash`, is not the file of
+ * the last publication (issue 108): an edit by hand, or an edit of the tool
+ * on top of one. False for a log with no such hash.
+ */
+export function configurationChanged(log: EditsLog, hash: string): boolean {
+    return log.configuration !== undefined && log.configuration !== hash
+}
+
+/**
+ * The log that a publication writes, or `undefined` when it writes none:
+ * the events of the plan (`shown`) are marked as shown, and `configuration`
+ * is the hash of the configuration that the plan read (issue 108). A log
+ * with no hash yet gets one only with a commit that the publication makes
+ * anyway (`commits`): an empty plan still commits nothing.
+ */
+export function logAfterPublication(
+    log: EditsLog,
+    shown: number,
+    hash: string,
+    commits: boolean
+): EditsLog | undefined {
+    const unchanged = log.configuration === undefined ? !commits : log.configuration === hash
+    if (shown === 0 && unchanged) {
+        return undefined
+    }
+    return { configuration: hash, edits: log.edits, published: log.published + shown }
+}
+
+/**
+ * The hash of the configuration after an edit of the tool that writes it
+ * (issue 108): it follows the edit when the file was the one of the last
+ * publication, so the plan shows the event and not a change by hand; else it
+ * stays, and the change by hand stays visible.
+ */
+export function withConfiguration(log: EditsLog, before: string, after: string): EditsLog {
+    return log.configuration === before ? { ...log, configuration: after } : log
 }
 
 /** The open proposals: each `proposed` event that no later event confirms or rejects, in the order of the log. */

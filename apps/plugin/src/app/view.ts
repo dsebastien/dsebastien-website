@@ -801,6 +801,15 @@ export class PublicationCenterView extends ItemView {
                 })
             }
         }
+        // A change of configuration.json that the edits do not show (issue 108).
+        if (center.state.configurationChanged === true) {
+            this.#section(
+                this.#sections,
+                'configuration',
+                'configuration.json changed since the last publication, and not only through the edits of the tool: read the deny list before the publication',
+                'vault-publish-moves'
+            )
+        }
         const edits = center.plan()?.edits ?? []
         if (edits.length > 0) {
             const box = this.#section(

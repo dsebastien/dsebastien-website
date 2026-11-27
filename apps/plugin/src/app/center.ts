@@ -238,6 +238,8 @@ export interface CenterState {
     readonly edits?: readonly EditEvent[]
     /** The published entries whose attachments list a file under a guard, at the last check: the plan names the ones that stay (`guardedAttachments`). */
     readonly guardedEntries?: readonly GuardedEntry[]
+    /** True when `configuration.json` changed since the last publication, at the last check (issue 108). */
+    readonly configurationChanged?: boolean
     /** When the last check ended. */
     readonly checkedAt?: Date
     readonly activity: Activity
@@ -607,6 +609,11 @@ export class PublicationCenter {
         if (stored.listsNotRefreshed.length > 0) {
             this.#log(
                 `Lists not refreshed, published as they are in the note now: ${stored.listsNotRefreshedReasons.map((one) => `"${one.path}": ${one.reason}`).join('; ')}`
+            )
+        }
+        if (stored.configurationChanged) {
+            this.#log(
+                'configuration.json changed since the last publication, and not only through the edits of the tool: read the deny list before the publication'
             )
         }
         if (stored.liveQueries.length > 0) {
@@ -1108,7 +1115,7 @@ export class PublicationCenter {
                 await device.local.release(lock.text)
             }
         }
-        const { queue, edits, guardedEntries, sources } = await statusWithEdits(device)
+        const { queue, edits, guardedEntries, sources, configurationChanged } = await statusWithEdits(device)
         this.#checkedSources = sources
         this.#refreshedTexts.clear()
         this.#writtenWithoutHash.clear()
@@ -1117,6 +1124,7 @@ export class PublicationCenter {
             queue,
             edits,
             guardedEntries,
+            configurationChanged,
             checkedAt: this.host.now(),
             choices: reconcile(queue, this.#state.choices)
         })

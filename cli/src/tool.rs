@@ -480,6 +480,9 @@ struct Computed {
     /// The notes that the plan holds for the size limit of an attachment
     /// (issue 72).
     too_large: Vec<TooLarge>,
+    /// The hash of the configuration that the plan read, as the record holds
+    /// it.
+    configuration_hash: String,
 }
 
 /// Computes the plan of a selection and its record: the plan, the selection,
@@ -562,7 +565,7 @@ fn record_for(
         "plan": to_value(&plan)?,
         "selection": to_value(selection)?,
         "state": {
-            "configuration": configuration_hash,
+            "configuration": &configuration_hash,
             "journals": scan.journals.hash,
             "manifest": manifest_hash(device)?,
             "notes": notes,
@@ -586,6 +589,7 @@ fn record_for(
         selection: selection.clone(),
         texts,
         too_large,
+        configuration_hash,
     })
 }
 
@@ -734,6 +738,7 @@ pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
         .collect();
     canonical(&json!({
         "attachmentsRemoved": to_value(&computed.attachments_removed)?,
+        "configurationChanged": computed.scan.edits.configuration_changed(&computed.configuration_hash),
         "id": id,
         "listsNotRefreshed": not_refreshed,
         "listsNotRefreshedReasons": reasons,
@@ -1227,7 +1232,12 @@ fn write_withdrawn(
 /// when the withdrawn keys change: a plan with no note still writes them
 /// (issue 120).
 fn journal_paths(device: &Device, current: &Computed, run: &Run) -> Result<Vec<String>, String> {
-    let mut paths = store_paths_of(&current.plan, &current.scan, run.time);
+    let mut paths = store_paths_of(
+        &current.plan,
+        &current.scan,
+        run.time,
+        &current.configuration_hash,
+    );
     if !paths.is_empty()
         || withdrawn_after(device, &current.scan, &current.scan.manifest)?
             != device.store.read(WITHDRAWN_FILE)?
@@ -1501,7 +1511,12 @@ fn published_keys(manifest: &BTreeMap<String, ManifestEntry>) -> BTreeSet<String
         .collect()
 }
 
-fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String> {
+fn store_paths_of(
+    plan: &PublicationPlan,
+    scan: &Scan,
+    time: &str,
+    configuration_hash: &str,
+) -> Vec<String> {
     let mut paths = BTreeSet::new();
     // The entry of a pairing is still at its old path in the scan.
     let mut ids: BTreeMap<&str, String> = scan
@@ -1543,7 +1558,13 @@ fn store_paths_of(plan: &PublicationPlan, scan: &Scan, time: &str) -> Vec<String
     if scan.journals.read {
         paths.insert(RENAMES_FILE.to_owned());
     }
-    if !plan.edits().is_empty() {
+    // The publication marks the events of the plan as shown (R69), and keeps
+    // the hash of the configuration (issue 108).
+    if scan
+        .edits
+        .after_publication(plan.edits().len(), configuration_hash, !paths.is_empty())
+        .is_some()
+    {
         paths.insert(EDITS_FILE.to_owned());
     }
     // The set gives its texts in the order of the code points.
@@ -1903,24 +1924,36 @@ fn apply_store_moves(
 /// that changed.
 fn write_markers(
     journal: &mut Backup,
-    plan: &PublicationPlan,
-    scan: &Scan,
+    computed: &Computed,
+    commits: bool,
 ) -> Result<Vec<String>, String> {
-    let mut files = Vec::new();
+    let Computed {
+        plan,
+        scan,
+        configuration_hash,
+        ..
+    } = computed;
+    let mut changed = Vec::new();
     if scan.journals.read {
-        files.push(StoreFile {
+        let file = StoreFile {
             path: RENAMES_FILE.to_owned(),
             text: Some(canonical(&to_value(&scan.journals.markers)?)?),
-        });
+        };
+        if journal.apply(&file)? {
+            changed.push(file.path);
+        }
     }
-    if !plan.edits().is_empty() {
-        files.push(StoreFile {
+    // A log with no hash of the configuration yet gets one only with a
+    // commit that the publication makes anyway (issue 108).
+    let commits = commits || !changed.is_empty();
+    if let Some(log) = scan
+        .edits
+        .after_publication(plan.edits().len(), configuration_hash, commits)
+    {
+        let file = StoreFile {
             path: EDITS_FILE.to_owned(),
-            text: Some(scan.edits.shown(plan.edits().len()).text()?),
-        });
-    }
-    let mut changed = Vec::new();
-    for file in files {
+            text: Some(log.text()?),
+        };
         if journal.apply(&file)? {
             changed.push(file.path);
         }
@@ -2041,7 +2074,7 @@ fn write_all(
             done.removed.push(path.clone());
         }
     }
-    paths.extend(write_markers(journal, plan, scan)?);
+    paths.extend(write_markers(journal, computed, !paths.is_empty())?);
     paths.extend(write_withdrawn(device, journal, computed, &manifest)?);
     // Each path one time, in the order of the writes.
     let mut seen = BTreeSet::new();
@@ -3209,6 +3242,7 @@ fn edit_locked(
         face: run.face,
     })?;
     let mut files = Vec::new();
+    let mut log = context.log.clone();
     if applies && action == "deny" {
         // The deny list keeps its order: the folder goes at its end. Every
         // other key of the file stays (rule 8).
@@ -3216,16 +3250,20 @@ fn edit_locked(
         if let Some(list) = value.get_mut("denyList").and_then(Value::as_array_mut) {
             list.push(json!(path));
         }
+        let text = canonical(&value).map_err(|error| {
+            format!("{CONFIGURATION_FILE} cannot be written in the canonical form: {error}")
+        })?;
+        // A change of the tool moves the hash of the last publication with
+        // it, unless the file had changed by hand before (issue 108).
+        log = log.with_configuration(&content_hash(&context.text), &content_hash(&text));
         files.push(StoreFile {
             path: CONFIGURATION_FILE.to_owned(),
-            text: Some(canonical(&value).map_err(|error| {
-                format!("{CONFIGURATION_FILE} cannot be written in the canonical form: {error}")
-            })?),
+            text: Some(text),
         });
     }
     files.push(StoreFile {
         path: EDITS_FILE.to_owned(),
-        text: Some(context.log.with_event(event.clone()).text()?),
+        text: Some(log.with_event(event.clone()).text()?),
     });
     // An `ignore` that applies writes the property first (rule 6): a stricter
     // guard is safe, also when the commit fails.
