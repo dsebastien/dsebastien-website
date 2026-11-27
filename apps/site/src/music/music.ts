@@ -85,6 +85,9 @@ export function startMusic(doc: Document, win: Window): void {
             }
             try {
                 const draw = await drawerOf(code)
+                // The check above laid out the page, and a part that just loaded ran its
+                // module: the drawing takes a task of its own (the blocking time of PERF-20).
+                await nextTask()
                 await draw(code)
                 // A fretboard with an exercise writes its tab as a block in its drawing.
                 if (pre !== null && code.classList.contains('language-fretboard')) {
