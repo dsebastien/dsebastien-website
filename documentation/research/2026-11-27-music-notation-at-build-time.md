@@ -40,7 +40,7 @@ What the Content Security Policy of issue 79 needs (`style-src 'self'`, no `'uns
 1. No eval: neither the library nor alphaTab uses `eval` or `new Function`.
 2. The library adds its style sheet as a `<style>` element unless the page has an element with the id `music-notation-styles`: the site links the file with that id.
 3. The SVG of alphaTab holds `style` attributes, which the policy refuses; without them, the text and the numbers of a tab lose their font and their place. alphaTab draws on a canvas instead (its `html5` engine): no style at all.
-4. alphaTab declares its music font in a `<style>` element. The site adds the font with the `FontFace` API (only `font-src 'self'`). The two `<style>` elements of alphaTab are still refused, one console message each, with no effect on the page.
+4. alphaTab adds two `<style>` elements, which the policy refuses (one console error each). It skips the shared one, which a canvas does not need, when the page has an element with the id `alphaTabStyle`: the site adds one before alphaTab starts. The other declares the music font: the build adds the hash of its text to the policy when the site has the font, so no console error is left. An update of alphaTab that changes the text breaks the hash, and the Chrome test of the music page sees the violation.
 5. The player of alphaTab synthesizes in a worker, which the build gives as a file of `_astro/` (`worker-src` falls back to `'self'`). Its audio worklet imports the core of alphaTab, so the build cannot give it as a file of its own, and the policy refuses the `data:` address that the build makes of it: the sound goes out through a script processor of the Web Audio API instead.
 
 ## 3. The budget of a music page
@@ -61,7 +61,7 @@ The proposed budget of a music page:
 1. The page itself keeps every budget of PERF-20: the music loads after it shows.
 2. The diagram part at most 160 KB with Brotli, as decided.
 3. The tab part at most 300 KB more, as decided.
-4. The music font of alphaTab at most 320 KB, a budget of its own: the budget of 2026-11-20 counted the scripts only, and a tab cannot draw without the font. It loads only on a page with a tab or a score (9 published notes today).
+4. The music font of alphaTab at most 320 KB, a budget of its own: the budget of 2026-11-20 counted the scripts only, and a tab cannot draw without the font. It loads only on a page with a tab or a score (9 published notes today). The font has 313,348 bytes, 2% under the budget, which the author accepts: an update of alphaTab with a larger font breaks it, and a subset of the font in the music-notation library (point 1 of the open points) is the way to lower it.
 5. Nothing of the sounds before the first Play.
 
 The bytes are a test (`music-page.spec.ts`); the times of Lighthouse are the CI job `budgets`, which measures the music page with the others.
