@@ -230,7 +230,7 @@ describe('properties panel of a note page (PAGE-02)', () => {
         expect(textOf(select('dd', rowOf(ADA, 'date_of_birth')) ?? undefined)).toBe('1961-04-12')
     })
 
-    test('runs the script of the panel right after the panel, so a stored choice opens it before the text shows', () => {
+    test('runs the script of the panel right after the panel', () => {
         const html = sources.get(FILM) ?? ''
         const end = html.indexOf('</details>', html.indexOf('data-properties'))
 

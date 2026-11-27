@@ -1,14 +1,12 @@
 // The script of the properties panel of a note page (issue 48, R59). The
 // panel is a `details` element, closed in the HTML (PAGE-02), so it works
-// with no script. The script adds two things: the choice of the reader (open
-// or closed) is kept, as the mode is, and the key `p` opens and closes the
-// panel when the focus is not in a field.
-//
-// The page runs the script right after the panel, before the text of the
-// note: a panel that a stored choice opens is open before the text shows, so
-// nothing moves.
+// with no script. The panel keeps no state: every page loads with it closed,
+// whatever the reader did on another page. The script adds the key `p`, which
+// opens and closes the panel when the focus is not in a field, closes a panel
+// that the back and forward cache of the browser restores open, and removes
+// the choice that an older version of the script stored.
 
-/** The key of the stored choice of the reader: `open` or `closed`. */
+/** The key of the choice that an older version stored. The script removes it. */
 export const PROPERTIES_KEY = 'properties'
 
 /** The key that opens and closes the panel. */
@@ -19,12 +17,10 @@ export const propertiesScript = `{
     const panel = document.querySelector('[data-properties]')
     const key = ${JSON.stringify(PROPERTIES_KEY)}
     try {
-        if (localStorage.getItem(key) === 'open') panel.open = true
+        localStorage.removeItem(key)
     } catch {}
-    panel.addEventListener('toggle', () => {
-        try {
-            localStorage.setItem(key, panel.open ? 'open' : 'closed')
-        } catch {}
+    addEventListener('pageshow', (event) => {
+        if (event.persisted) panel.open = false
     })
     addEventListener('keydown', (event) => {
         if (event.key !== ${JSON.stringify(PROPERTIES_SHORTCUT)} || event.ctrlKey || event.metaKey || event.altKey) return

@@ -3,8 +3,9 @@ import { runInNewContext } from 'node:vm'
 import { PROPERTIES_KEY, propertiesScript } from './properties-panel.ts'
 
 // The script of the properties panel (issue 48, R59): the panel is a `details`
-// element that works with no script. The script keeps the choice of the
-// reader, and the key `p` opens and closes the panel.
+// element that works with no script. It keeps no state: the script removes
+// the choice that an older version stored, and the key `p` opens and closes
+// the panel.
 
 type Listener = (event: Record<string, unknown>) => void
 
@@ -22,6 +23,7 @@ function page(
     storage: Map<string, string>
     press: (event: Record<string, unknown>) => void
     toggle: () => void
+    restore: (persisted: boolean) => void
 } {
     const storage = new Map<string, string>(stored === null ? [] : [[PROPERTIES_KEY, stored]])
     const listeners = new Map<string, Listener>()
@@ -42,10 +44,11 @@ function page(
             querySelector: (selector: string) => (selector === '[data-properties]' ? panel : null)
         },
         localStorage: refused
-            ? { getItem: refuse, setItem: refuse }
+            ? { getItem: refuse, setItem: refuse, removeItem: refuse }
             : {
                   getItem: (key: string) => storage.get(key) ?? null,
-                  setItem: (key: string, value: string) => storage.set(key, value)
+                  setItem: (key: string, value: string) => storage.set(key, value),
+                  removeItem: (key: string) => storage.delete(key)
               },
         addEventListener: (name: string, listener: Listener) => listeners.set(name, listener)
     })
@@ -53,29 +56,41 @@ function page(
         panel,
         storage,
         press: (event) => listeners.get('keydown')?.({ key: 'p', ...event }),
-        toggle: () => panelListeners.get('toggle')?.({})
+        toggle: () => panelListeners.get('toggle')?.({}),
+        restore: (persisted) => listeners.get('pageshow')?.({ persisted })
     }
 }
 
 describe('script of the properties panel', () => {
-    test('leaves the panel closed for a reader with no stored choice', () => {
+    test('leaves the panel closed, also for a reader who left it open with an older version', () => {
         expect(page(null).panel.open).toBe(false)
         expect(page('closed').panel.open).toBe(false)
+        expect(page('open').panel.open).toBe(false)
     })
 
-    test('opens the panel for a reader who left it open', () => {
-        expect(page('open').panel.open).toBe(true)
+    test('removes the choice that an older version stored', () => {
+        expect(page('open').storage.has(PROPERTIES_KEY)).toBe(false)
+        expect(page('closed').storage.has(PROPERTIES_KEY)).toBe(false)
     })
 
-    test('stores the choice when the reader opens or closes the panel', () => {
+    test('stores nothing when the reader opens or closes the panel', () => {
         const { panel, storage, toggle } = page(null)
 
         panel.open = true
         toggle()
-        expect(storage.get(PROPERTIES_KEY)).toBe('open')
         panel.open = false
         toggle()
-        expect(storage.get(PROPERTIES_KEY)).toBe('closed')
+        expect(storage.size).toBe(0)
+    })
+
+    test('closes a panel that the back and forward cache restores open', () => {
+        const { panel, restore } = page(null)
+
+        panel.open = true
+        restore(false)
+        expect(panel.open).toBe(true)
+        restore(true)
+        expect(panel.open).toBe(false)
     })
 
     test('the key `p` opens the panel and brings it into view, and closes it again', () => {

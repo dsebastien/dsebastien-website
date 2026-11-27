@@ -4,9 +4,9 @@ import type { Property } from '../properties.ts'
 import { PROPERTIES_SHORTCUT, propertiesScript } from '../properties-panel.ts'
 
 // The properties panel of a note page (issue 48, PAGE-02, R59): a folding
-// block, closed in the HTML, that works with no script. Its script keeps the
-// choice of the reader and gives it a key. It runs right after the panel, so a
-// panel that a stored choice opens is open before the text of the note shows.
+// block, closed in the HTML, that works with no script. It keeps no state:
+// every page loads with it closed. Its script gives it a key and removes the
+// choice that an older version stored.
 // The full text of the search indexes the values, not the names, and not the
 // tags: every note has its type tag, and a tag has its own page (R63).
 interface Props {
