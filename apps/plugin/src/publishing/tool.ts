@@ -259,7 +259,7 @@ async function sealKey(device: Device): Promise<Uint8Array> {
  * author confirms it. A copy with no commit holds nothing to trust.
  */
 async function refuseUnsealed(device: Device): Promise<void> {
-    const checked = await checkSeal(device.store, await sealKey(device))
+    const checked = await checkSeal(device.store.sealed, await sealKey(device))
     if (checked.status === 'differs') {
         throw new SealDiffers(checked.difference)
     }
@@ -268,7 +268,7 @@ async function refuseUnsealed(device: Device): Promise<void> {
 /** The sealer of the commit of a run, with the key of the device (R104). */
 async function sealerOf(device: Device): Promise<Sealer> {
     const key = await sealKey(device)
-    return (parent, files) => sealOf(key, parent, files)
+    return (parents, files) => sealOf(key, parents, files)
 }
 
 /**
@@ -1789,10 +1789,10 @@ export async function takedown(
 /** The sealer of a takedown: only with a key and a state that is sealed, or a copy with no commit. */
 async function takedownSealer(device: Device): Promise<Sealer | undefined> {
     const key = sealKeyOf(device.seal.environment(), await device.seal.envFile())
-    if ('problem' in key || (await checkSeal(device.store, key.key)).status === 'differs') {
+    if ('problem' in key || (await checkSeal(device.store.sealed, key.key)).status === 'differs') {
         return undefined
     }
-    return (parent, files) => sealOf(key.key, parent, files)
+    return (parents, files) => sealOf(key.key, parents, files)
 }
 
 async function takeDownLocked(
@@ -3176,7 +3176,7 @@ export async function confirmState(
         await recover(device, ownLock)
         refuseWhenBehind((await device.store.verify('must')).behind)
         const key = await sealKey(device)
-        const checked = await checkSeal(device.store, key)
+        const checked = await checkSeal(device.store.sealed, key)
         if (checked.status === 'empty') {
             throw new Error('the content store has no commit: there is no state to confirm')
         }
@@ -3199,7 +3199,7 @@ export async function confirmState(
                 `Face: ${run.face}`
             ].join('\n'),
             [],
-            (parent, files) => sealOf(key, parent, files)
+            (parents, files) => sealOf(key, parents, files)
         )
         return { confirmed: true, difference }
     })

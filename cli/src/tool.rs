@@ -1903,7 +1903,7 @@ fn commit_sealed(device: &Device, message: &str, paths: &[String]) -> Result<(),
     device.store.commit_and_push(
         message,
         paths,
-        Some(&|parent: Option<&str>, files: &[TreeFile]| seal_of(&key, parent, files)),
+        Some(&|parents: &[String], files: &[TreeFile]| seal_of(&key, parents, files)),
     )
 }
 
@@ -2773,7 +2773,7 @@ fn remove_and_push(
         Some(key) => device.store.commit_and_push(
             message,
             &written,
-            Some(&|parent: Option<&str>, files: &[TreeFile]| seal_of(key, parent, files)),
+            Some(&|parents: &[String], files: &[TreeFile]| seal_of(key, parents, files)),
         ),
         None => device.store.commit_and_push(message, &written, None),
     }
@@ -3226,7 +3226,7 @@ pub fn confirm_state(device: &Device, head: &str, run: &Run) -> Result<String, S
                 );
             }
             SealCheck::Sealed => return canonical(&json!({ "confirmed": false })),
-            SealCheck::Differs(difference) => difference,
+            SealCheck::Differs(difference) => *difference,
         };
         if difference.head != head {
             return Err(format!(
@@ -3241,7 +3241,7 @@ pub fn confirm_state(device: &Device, head: &str, run: &Run) -> Result<String, S
                 run.device, run.face
             ),
             &[],
-            Some(&|parent: Option<&str>, files: &[TreeFile]| seal_of(&key, parent, files)),
+            Some(&|parents: &[String], files: &[TreeFile]| seal_of(&key, parents, files)),
         )?;
         canonical(&json!({ "confirmed": true, "difference": to_value(&difference)? }))
     })
@@ -3390,7 +3390,14 @@ fn taken_away(
         .filter(|folder| device.vault.has_folder(folder))
         .cloned()
         .collect();
-    let (now, after) = guard_queues(device, &Configuration { deny_list }, change)?;
+    let (now, after) = guard_queues(
+        device,
+        &Configuration {
+            deny_list,
+            ..Configuration::default()
+        },
+        change,
+    )?;
     Ok(between(device, &after, &now, action == "deny"))
 }
 

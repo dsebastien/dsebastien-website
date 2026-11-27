@@ -20,6 +20,10 @@ use crate::tool::Outcome;
 pub struct Deploy {
     pub settings: DeploySettings,
     pub kind: DeployKind,
+    /// The seal key of the vault in small hexadecimal digits, for the
+    /// environment of the deploy (R104, rule 10 of the seal): the deploy
+    /// checks the seal of the state that it builds. Never logged.
+    pub seal_key: Option<String>,
 }
 
 /// True when the run journal says that the push of the run happened and the
@@ -153,7 +157,10 @@ fn store_of(settings: &DeploySettings) -> Option<ContentStore> {
 /// The deploy report never holds it. The program waits for it in a terminal:
 /// Ctrl-C stops it, and its report says so.
 pub fn run_deploy(deploy: &Deploy) -> DeployReport {
-    deploy_by(deploy, &ChildProcess::with_ctrl_c())
+    deploy_by(
+        deploy,
+        &ChildProcess::with_ctrl_c().with_seal_key(deploy.seal_key.clone()),
+    )
 }
 
 fn deploy_by(deploy: &Deploy, child: &ChildProcess) -> DeployReport {
@@ -219,6 +226,7 @@ impl Background {
                 let merged = match queue.pending.take() {
                     Some(waiting) => Deploy {
                         settings: deploy.settings,
+                        seal_key: deploy.seal_key,
                         kind: DeployKind {
                             push: if waiting.kind.push == "ok" || deploy.kind.push == "ok" {
                                 "ok"
@@ -240,7 +248,10 @@ impl Background {
             let mut next = Some(deploy);
             while let Some(deploy) = next {
                 // In the background: Ctrl-C stops the server, as before.
-                deploy_by(&deploy, &ChildProcess::new());
+                deploy_by(
+                    &deploy,
+                    &ChildProcess::new().with_seal_key(deploy.seal_key.clone()),
+                );
                 let mut queue = shared.lock().unwrap_or_else(PoisonError::into_inner);
                 next = queue.pending.take();
                 if next.is_none() {

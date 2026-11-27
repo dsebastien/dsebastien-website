@@ -818,12 +818,19 @@ fn deploy_settings(
     }
 }
 
+/// The seal key of the device for the environment of the deploy (R104,
+/// rule 10 of the seal), or `None` when it has no valid key.
+fn deploy_seal_key(device: &Device) -> Option<String> {
+    device.seal.key().ok().map(|key| seal::key_hex(&key))
+}
+
 /// The deploy after a push, or `None` with `--no-deploy`.
 fn deploy_after(
     options: &DeployAfterPush,
     content_store: &Path,
     attachment_storage: &Path,
     takedown: bool,
+    device: &Device,
 ) -> Option<Deploy> {
     (!options.no_deploy).then(|| Deploy {
         settings: deploy_settings(&options.places, content_store, attachment_storage),
@@ -831,18 +838,21 @@ fn deploy_after(
             push: "ok",
             takedown,
         },
+        seal_key: deploy_seal_key(device),
     })
 }
 
 /// The `deploy` command and tool: the deploy report as the output, and a
 /// failure when the deploy did not succeed.
 fn deploy_again(settings: DeploySettings, takedown: bool) -> Outcome {
+    // No vault: the deploy reads the seal key of its own environment.
     let report = run_deploy(&Deploy {
         settings,
         kind: DeployKind {
             push: "skipped",
             takedown,
         },
+        seal_key: None,
     });
     Outcome {
         output: deployment_text(&report),
@@ -907,6 +917,7 @@ fn operate(
                 deploy.attachment_storage,
             ),
             kind,
+            seal_key: deploy_seal_key(device),
         });
         return Ok(Outcome::of(started_text(kind)).into());
     }
@@ -933,6 +944,7 @@ fn operate(
         deploy.content_store,
         deploy.attachment_storage,
         takedown,
+        device,
     )
     .filter(|_| pushed);
     let deploy = after.map(|after| {
@@ -1101,6 +1113,7 @@ fn run_publish(
             &places.folders.content_store,
             attachment_storage,
             false,
+            &device,
         ),
     })
 }
@@ -1124,6 +1137,7 @@ fn run_unpublish(
             &places.folders.content_store,
             attachment_storage,
             false,
+            &device,
         ),
     })
 }
@@ -1143,7 +1157,7 @@ fn run_takedown(
     })?;
     Ok(Ran {
         outcome,
-        deploy: deploy_after(deploy, content_store, attachment_storage, true),
+        deploy: deploy_after(deploy, content_store, attachment_storage, true, device),
     })
 }
 

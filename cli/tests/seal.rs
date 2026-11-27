@@ -374,7 +374,11 @@ fn a_key_other_than_the_one_of_the_commits_reads_as_no_sealed_state() {
 
     assert!(!output.status.success());
     let error = errors_of(&output);
-    assert!(error.contains("has no sealed state yet"), "{error}");
+    // The publication left the mark of the copy: the text names it.
+    assert!(
+        error.contains("has no sealed state that the tool can trust"),
+        "{error}"
+    );
     assert!(!error.contains(&"a7".repeat(32)), "{error}");
 }
 
@@ -609,4 +613,197 @@ fn a_takedown_without_a_key_still_works_and_seals_nothing() {
 
     assert!(output.status.success(), "{}", errors_of(&output));
     assert_eq!(seal_line(&setup.message("HEAD")), None);
+}
+
+impl Setup {
+    /// Runs git in the copy, with no seal.
+    fn raw(&self, arguments: &[&str]) -> String {
+        let mut all = vec!["-C", text(&self.copy)];
+        all.extend_from_slice(arguments);
+        git_unsealed(&all)
+    }
+
+    /// Makes a commit with `git commit-tree`, pushes it as a fast-forward or
+    /// with force, and puts the copy at it, as a pull or a reset by hand.
+    fn push_commit(&self, tree: &str, parents: &[&str], message: &str, force: bool) -> String {
+        let mut arguments = vec!["commit-tree", tree];
+        for parent in parents {
+            arguments.extend(["-p", parent]);
+        }
+        arguments.extend(["-m", message]);
+        let commit = self.raw(&arguments);
+        self.push_and_reset(&commit, force);
+        commit
+    }
+
+    fn push_and_reset(&self, commit: &str, force: bool) {
+        let target = format!("{commit}:refs/heads/main");
+        if force {
+            self.raw(&["push", "--quiet", "--force", "origin", &target]);
+        } else {
+            self.raw(&["push", "--quiet", "origin", &target]);
+        }
+        self.raw(&["fetch", "--quiet", "origin"]);
+        self.raw(&["reset", "--quiet", "--hard", "origin/main"]);
+    }
+
+    /// The mark of the copy, without its line end.
+    fn mark(&self) -> String {
+        fs::read_to_string(self.copy.join(".git").join("vault-publish").join("sealed"))
+            .expect("the copy has a mark")
+            .trim_end()
+            .to_owned()
+    }
+}
+
+/// The start of the text when no trusted sealed commit is found after the
+/// mark of the copy.
+const MARK_TEXT: &str = "the content store has no sealed state that the tool can trust";
+
+#[test]
+fn a_file_of_any_name_and_letter_case_is_sealed_but_the_redirect_list() {
+    for (path, named) in [
+        (
+            "Manifest/0123456789abcdef.json",
+            "manifest entries added (1): \"10 Garden/Compost basics.md\" (none to published)",
+        ),
+        (
+            ".gitattributes",
+            "files of the store: .gitattributes (added)",
+        ),
+    ] {
+        let setup = set_up();
+        // The file goes into the commit by its exact name, as git of another
+        // system would write it.
+        let file = setup.copy.join(".git").join("entry.json");
+        fs::write(
+            &file,
+            "{\n  \"path\": \"10 Garden/Compost basics.md\",\n  \"state\": \"published\"\n}\n",
+        )
+        .expect("the entry is written");
+        let blob = setup.raw(&["hash-object", "-w", text(&file)]);
+        setup.raw(&[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("100644,{blob},{path}"),
+        ]);
+        setup.raw(&["commit", "--quiet", "--message", "A file by hand"]);
+        setup.raw(&["push", "--quiet", "origin", "HEAD:main"]);
+        setup.raw(&["reset", "--quiet", "--hard"]);
+
+        let status = setup.run("status", &[]);
+
+        assert!(!status.status.success(), "{path}");
+        let error = errors_of(&status);
+        assert!(error.contains(named), "{path}: {error}");
+        assert!(
+            error.contains("is not the state that a commit"),
+            "{path}: {error}"
+        );
+    }
+    let setup = set_up();
+    setup.commit_by_hand(&[("redirects.json", "[]\n")]);
+    assert!(setup.run("status", &[]).status.success());
+}
+
+#[test]
+fn a_merge_commit_is_refused_also_with_an_old_seal_message() {
+    let setup = set_up();
+    let first = setup.head();
+    setup.publish(NOTE);
+    let current = setup.head();
+    // The old state, as a merge of the old sealed commit and the current one:
+    // a fast-forward of the content store.
+    let old_tree = setup.git(&["rev-parse", &format!("{first}^{{tree}}")]);
+    setup.push_commit(&old_tree, &[&first, &current], "A merge", false);
+
+    let error = errors_of(&setup.run("plan", &["--include", NOTE]));
+
+    assert!(error.contains(MARK_TEXT), "{error}");
+    assert!(error.contains(&current), "{error}");
+
+    // The message of an older sealed commit on a merge of its parent and the
+    // current commit: its seal binds the parents.
+    let setup = set_up();
+    let first = setup.head();
+    setup.publish(NOTE);
+    let older = setup.head();
+    setup.publish(SECOND);
+    let current = setup.head();
+    let tree = setup.git(&["rev-parse", &format!("{older}^{{tree}}")]);
+    let message = setup.message(&older);
+    assert!(seal_line(&message).is_some());
+    setup.push_commit(&tree, &[&first, &current], &message, false);
+
+    let error = errors_of(&setup.run("plan", &["--include", NOTE]));
+
+    assert!(error.contains(MARK_TEXT), "{error}");
+}
+
+#[test]
+fn a_forced_push_of_an_older_sealed_history_and_a_reset_by_hand_are_refused_until_confirmed() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    let older = setup.head();
+    setup.publish(SECOND);
+    let newer = setup.head();
+    assert_eq!(setup.mark(), newer);
+    // The content store goes back to the older sealed commit, and the author
+    // resets the copy by hand.
+    setup.push_and_reset(&older, true);
+    assert_eq!(setup.head(), older);
+
+    let error = errors_of(&setup.run("plan", &["--include", NOTE]));
+
+    assert!(error.contains(MARK_TEXT), "{error}");
+    assert!(error.contains(&newer), "{error}");
+    let confirm = setup.run(
+        "confirm-state",
+        &["--head", &older, "--time", TIME, "--device", "garden-shed"],
+    );
+    let confirmation = json_of(&confirm);
+    assert_eq!(confirmation["confirmed"], true);
+    assert_eq!(confirmation["difference"]["base"], "mark");
+    assert_eq!(setup.mark(), setup.head());
+    setup.plan_id(SECOND);
+}
+
+#[test]
+fn the_mark_names_the_last_sealed_commit_after_a_publication_and_a_confirmation() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    assert_eq!(setup.mark(), setup.head());
+    setup.commit_published_entry();
+    let head = setup.head();
+
+    let confirm = setup.run(
+        "confirm-state",
+        &["--head", &head, "--time", TIME, "--device", "garden-shed"],
+    );
+
+    assert_eq!(json_of(&confirm)["confirmed"], true);
+    assert_ne!(setup.head(), head);
+    assert_eq!(setup.mark(), setup.head());
+}
+
+#[test]
+fn more_commits_by_hand_than_the_history_that_the_check_reads_name_the_mark() {
+    let setup = set_up();
+    setup.publish(NOTE);
+    let sealed = setup.mark();
+    for index in 0..101 {
+        let name = format!("notes/By hand {index:03}.md");
+        fs::create_dir_all(setup.copy.join("notes")).expect("the folder");
+        fs::write(setup.copy.join(&name), "A note by hand\n").expect("the file");
+        setup.raw(&["add", "--", &name]);
+        setup.raw(&["commit", "--quiet", "--message", "A change by hand"]);
+    }
+    setup.raw(&["push", "--quiet", "origin", "HEAD:main"]);
+
+    let error = errors_of(&setup.run("status", &[]));
+
+    assert!(error.contains(MARK_TEXT), "{error}");
+    assert!(error.contains(&sealed), "{error}");
+    assert!(!error.contains("no sealed state yet"), "{error}");
 }

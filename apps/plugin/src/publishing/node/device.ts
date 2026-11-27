@@ -31,8 +31,8 @@ import type {
     VaultEntry
 } from '../ports.ts'
 import { JOURNAL_FOLDER } from '../renames.ts'
-import { parseTreeListing, SEAL_KEY_VARIABLE, SEALED_PATHS, withSeal } from '../seal.ts'
-import type { Commit } from '../seal.ts'
+import { parseTreeListing, SEAL_KEY_VARIABLE, sealedFiles, withSeal } from '../seal.ts'
+import { gitSealedHistory } from './sealed-history.ts'
 import { isChangedByWindows, isRefusedByWindows } from '../names.ts'
 
 // A device whose vault and whose copy of the content store are folders, with
@@ -606,6 +606,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
             }
         }
     }
+    const sealed = gitSealedHistory(folder, { program, environment: gitEnvironment() })
     return {
         async verify(fetch) {
             let reached = true
@@ -1071,45 +1072,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                 .map((entry) => `${below}/${entry.name}`)
                 .sort(compareCodePoints)
         },
-        async commits(limit) {
-            if ((await headOf()) === undefined) {
-                return []
-            }
-            // Each commit: its id, its parents and its message, each ended by a NUL.
-            const fields = (
-                await gitRaw(
-                    'log',
-                    '--first-parent',
-                    '-z',
-                    `--max-count=${String(limit)}`,
-                    '--format=%H%x00%P%x00%B',
-                    'HEAD'
-                )
-            ).split('\0')
-            const commits: Commit[] = []
-            for (let index = 0; index + 2 < fields.length; index += 3) {
-                const parent = (fields[index + 1] ?? '').split(' ')[0] ?? ''
-                commits.push({
-                    id: (fields[index] ?? '').trim(),
-                    parent: parent === '' ? undefined : parent,
-                    message: fields[index + 2] ?? ''
-                })
-            }
-            return commits
-        },
-        async files(commit, paths) {
-            return parseTreeListing(
-                await gitRaw('ls-tree', '-r', '-z', '--full-tree', commit, '--', ...paths)
-            )
-        },
-        async readAt(commit, path) {
-            const spec = `${commit}:${path}`
-            const exists = await git('cat-file', '-e', spec).then(
-                () => true,
-                () => false
-            )
-            return exists ? await gitRaw('cat-file', 'blob', spec) : undefined
-        },
+        sealed,
         async commitAndPush(message, paths, seal) {
             // A copy with no commit has no commit to go back to.
             let before: string | undefined
@@ -1166,15 +1129,23 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                         ? what
                         : `${what}. Git could not take the publication back, so correct the copy by hand before the next publication (${before === undefined ? 'git update-ref -d HEAD' : `git reset --soft ${before}`}): ${failures.join('; ')}`
                 )
+            /**
+             * Moves the mark of the copy to the sealed commit that was pushed
+             * (R104). The push arrived: a mark that cannot be written stays
+             * older, and the next check moves it.
+             */
+            const markSealed = async (commit: string): Promise<void> => {
+                await sealed.setMark(commit).catch(() => undefined)
+            }
             /** Makes a commit of this tree on top of the commit before the run, with the sealed message. */
             const sealedCommit = async (
                 tree: string,
                 sealer: NonNullable<typeof seal>
             ): Promise<string> => {
-                const files = parseTreeListing(
-                    await gitRaw('ls-tree', '-r', '-z', '--full-tree', tree, '--', ...SEALED_PATHS)
+                const files = sealedFiles(
+                    parseTreeListing(await gitRaw('ls-tree', '-r', '-z', '--full-tree', tree))
                 )
-                const text = withSeal(message, sealer(before, files))
+                const text = withSeal(message, sealer(before === undefined ? [] : [before], files))
                 const parent = before === undefined ? [] : ['-p', before]
                 return (await gitWith(['commit-tree', tree, ...parent, '-F', '-'], text)).trim()
             }
@@ -1211,6 +1182,7 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                     )
                     throw failed('the push to the content store was refused', failures)
                 }
+                await markSealed(made)
                 return
             }
             try {
@@ -1290,6 +1262,9 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                 await git('push', '--quiet', 'origin', `${made}:refs/heads/main`)
             } catch {
                 throw failed('the push to the content store was refused', await undo(true))
+            }
+            if (seal !== undefined) {
+                await markSealed(made)
             }
         }
     }

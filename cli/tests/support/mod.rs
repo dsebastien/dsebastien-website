@@ -262,9 +262,10 @@ fn hex(bytes: &[u8]) -> String {
     })
 }
 
-/// The seal of a commit with this parent and its files below the sealed paths,
-/// as `git ls-tree -r -z --full-tree` lists them.
-fn seal_of(key: &[u8], parent: Option<&str>, listing: &str) -> String {
+/// The seal of a commit with these parents and its files, as
+/// `git ls-tree -r -z --full-tree` lists them: every file but `redirects.json`
+/// at the root, one record ended by a NUL each.
+fn seal_of(key: &[u8], parents: &[String], listing: &str) -> String {
     let mut lines: Vec<(&str, String)> = Vec::new();
     for entry in listing.split('\0').filter(|entry| !entry.is_empty()) {
         let (facts, path) = entry.split_once('\t').expect("a line of the tree");
@@ -274,26 +275,26 @@ fn seal_of(key: &[u8], parent: Option<&str>, listing: &str) -> String {
             parts.next().expect("a type"),
             parts.next().expect("an object"),
         );
-        if kind == "blob" || kind == "commit" {
-            lines.push((path, format!("{mode} {object} {path}\n")));
+        if (kind == "blob" || kind == "commit") && path != "redirects.json" {
+            lines.push((path, format!("{mode} {object} {path}\0")));
         }
     }
     lines.sort();
     let state: String = lines.into_iter().map(|(_, line)| line).collect();
-    hmac(
-        key,
-        &format!(
-            "dsebastien-vault-publish seal 1\nparent {}\nstate {}\n",
-            parent.unwrap_or("none"),
-            hex(&Sha256::digest(state.as_bytes()))
-        ),
-    )
+    let mut text = String::from("dsebastien-vault-publish seal 1\n");
+    if parents.is_empty() {
+        text.push_str("parent none\n");
+    }
+    for parent in parents {
+        let _ = writeln!(text, "parent {parent}");
+    }
+    let _ = writeln!(text, "state {}", hex(&Sha256::digest(state.as_bytes())));
+    hmac(key, &text)
 }
 
-/// The seal that a tool would give a commit of a copy, with the key of the
-/// tests: from its first parent and its files below the sealed paths.
-pub fn expected_seal(copy: &str, revision: &str) -> String {
-    let parent = git_unsealed(&[
+/// Every parent of a commit of a repository, in the order of git.
+fn parents_of(copy: &str, revision: &str) -> Vec<String> {
+    git_unsealed(&[
         "-C",
         copy,
         "rev-list",
@@ -302,27 +303,17 @@ pub fn expected_seal(copy: &str, revision: &str) -> String {
         revision,
     ])
     .split_whitespace()
-    .nth(1)
-    .map(str::to_owned);
+    .skip(1)
+    .map(str::to_owned)
+    .collect()
+}
+
+/// The seal that a tool would give a commit of a copy, with the key of the
+/// tests: from its parents and its sealed files.
+pub fn expected_seal(copy: &str, revision: &str) -> String {
+    let parents = parents_of(copy, revision);
     let mut git = Command::new("git");
-    git.args([
-        "-C",
-        copy,
-        "ls-tree",
-        "-r",
-        "-z",
-        "--full-tree",
-        revision,
-        "--",
-    ])
-    .args([
-        "configuration.json",
-        "edits.json",
-        "manifest",
-        "notes",
-        "renames.json",
-        "withdrawn.json",
-    ]);
+    git.args(["-C", copy, "ls-tree", "-r", "-z", "--full-tree", revision]);
     for (name, _) in env::vars_os() {
         if name.to_string_lossy().starts_with("GIT_") {
             git.env_remove(name);
@@ -332,7 +323,7 @@ pub fn expected_seal(copy: &str, revision: &str) -> String {
     assert!(output.status.success(), "git ls-tree failed");
     seal_of(
         &[0x5e_u8; 32],
-        parent.as_deref(),
+        &parents,
         &String::from_utf8_lossy(&output.stdout),
     )
 }
@@ -347,10 +338,7 @@ pub fn seal_head(copy: &str) {
         git_unsealed(&all)
     };
     let head = run(&["rev-parse", "HEAD"]);
-    let parent = run(&["rev-list", "--parents", "--max-count=1", "HEAD"])
-        .split_whitespace()
-        .nth(1)
-        .map(str::to_owned);
+    let parents = parents_of(copy, "HEAD");
     let seal = expected_seal(copy, "HEAD");
     let message = format!(
         "{}\n\nSeal: {seal}\n",
@@ -359,7 +347,7 @@ pub fn seal_head(copy: &str) {
     let tree = run(&["rev-parse", "HEAD^{tree}"]);
     let mut commit = Command::new("git");
     commit.args(["-C", copy, "commit-tree", &tree]);
-    if let Some(parent) = &parent {
+    for parent in &parents {
         commit.args(["-p", parent]);
     }
     for (name, _) in env::vars_os() {

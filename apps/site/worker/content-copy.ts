@@ -1,3 +1,10 @@
+import { gitSealedHistory } from '../../plugin/src/publishing/node/sealed-history.ts'
+import {
+    checkSeal,
+    differenceText,
+    SEAL_KEY_VARIABLE,
+    sealKeyOf
+} from '../../plugin/src/publishing/seal.ts'
 import { parseWithdrawn, WITHDRAWN_FILE } from '../../plugin/src/publishing/withdrawn.ts'
 import { publishedNotesOf } from '../src/content-store.ts'
 
@@ -125,6 +132,30 @@ export async function inspectContentCopy(
     } catch (error) {
         return { head, atMain, refusal: error instanceof Error ? error.message : String(error) }
     }
+}
+
+/**
+ * Why the commit of the copy must not be built: its state is not sealed
+ * (R104, "The seal of the content store" of `documentation/Canonical
+ * Form.md`, rule 10), with the difference that the tool gives, or no key.
+ * `undefined` when the state is sealed. It reads the mark of the copy as the
+ * tool does, and moves it as the tool does.
+ */
+export async function sealRefusal(
+    store: string,
+    environment: Readonly<Record<string, string | undefined>>
+): Promise<string | undefined> {
+    const key = sealKeyOf(environment[SEAL_KEY_VARIABLE], undefined)
+    if ('problem' in key) {
+        return `the deploy checks the seal of the content store (R104), and ${SEAL_KEY_VARIABLE} of its environment is missing or not 64 hexadecimal digits: the publishing tool gives the key of the vault to the deploy that it starts; for a deploy by hand, set the variable, or put the line ${SEAL_KEY_VARIABLE}=<64 hexadecimal digits> into the file of --env-file. Nothing is built`
+    }
+    const checked = await checkSeal(
+        gitSealedHistory(store, { program: 'git', environment: gitEnvironment() }),
+        key.key
+    )
+    return checked.status === 'differs'
+        ? `the deploy builds only a state of the content store that the tool sealed, so nothing is built: ${differenceText(checked.difference)}, then deploy again`
+        : undefined
 }
 
 /**

@@ -1,5 +1,5 @@
 {
-    "about": "Shared cases of the seal of the content store (decision R104, documentation/Canonical Form.md, \"The seal of the content store\"). The TypeScript and the Rust implementation both read this file. A key is never stored as text: a case gives the byte that its key repeats (\"keyByte\", \"keyLength\" bytes, 32 when not given), and <key> in a text is the 64 small hexadecimal digits of that key, <KEY> the same in capital letters, built at run time. The HMAC cases are test cases 1 and 6 of RFC 4231. A difference case gives the files of the sealed commit and of the last commit, the texts of their files by \"<commit>:<path>\", the difference and its text.",
+    "about": "Shared cases of the seal of the content store (decision R104, documentation/Canonical Form.md, \"The seal of the content store\"). The TypeScript and the Rust implementation both read this file. A key is never stored as text: a case gives the byte that its key repeats (\"keyByte\", \"keyLength\" bytes, 32 when not given), and <key> in a text is the 64 small hexadecimal digits of that key, <KEY> the same in capital letters, built at run time. The HMAC cases are test cases 1 and 6 of RFC 4231. A difference case gives the files of the base and of the last commit, the texts of their objects by object id, the difference and its text. A check case gives a first-parent chain, newest first: each commit with its parents, its files and its seal (\"own\": a valid seal of the commit, \"of <id>\": the seal line of that other commit, copied, absent: no seal line), the mark of the copy before the check, the result and the mark after it (the check never writes it). A commit that a case does not list is not known: its files cannot be read, and it descends from nothing.",
     "hmac": [
         {
             "name": "RFC 4231, test case 1",
@@ -17,7 +17,11 @@
         }
     ],
     "env": [
-        { "name": "a plain line", "text": "A=1\nVAULT_PUBLISH_SEAL_KEY=abc\n", "value": "abc" },
+        {
+            "name": "a plain line",
+            "text": "A=1\nVAULT_PUBLISH_SEAL_KEY=abc\n",
+            "value": "abc"
+        },
         {
             "name": "export, spaces and double quotes",
             "text": "  export VAULT_PUBLISH_SEAL_KEY = \"abc\"  \n",
@@ -28,7 +32,11 @@
             "text": "VAULT_PUBLISH_SEAL_KEY='abc'\r\nB=2\r\n",
             "value": "abc"
         },
-        { "name": "a comment is no line", "text": "# VAULT_PUBLISH_SEAL_KEY=abc\n", "value": null },
+        {
+            "name": "a comment is no line",
+            "text": "# VAULT_PUBLISH_SEAL_KEY=abc\n",
+            "value": null
+        },
         {
             "name": "the last line of the name wins",
             "text": "VAULT_PUBLISH_SEAL_KEY=one\nVAULT_PUBLISH_SEAL_KEY=two\n",
@@ -39,8 +47,26 @@
             "text": "VAULT_PUBLISH_SEAL_KEY_OLD=abc\n",
             "value": null
         },
-        { "name": "an empty value", "text": "VAULT_PUBLISH_SEAL_KEY=\n", "value": "" },
-        { "name": "one quote is kept", "text": "VAULT_PUBLISH_SEAL_KEY=\"abc\n", "value": "\"abc" }
+        {
+            "name": "an empty value",
+            "text": "VAULT_PUBLISH_SEAL_KEY=\n",
+            "value": ""
+        },
+        {
+            "name": "one quote is kept",
+            "text": "VAULT_PUBLISH_SEAL_KEY=\"abc\n",
+            "value": "\"abc"
+        },
+        {
+            "name": "a byte order mark at the start of the file",
+            "text": "﻿VAULT_PUBLISH_SEAL_KEY=abc\n",
+            "value": "abc"
+        },
+        {
+            "name": "only the white space of ASCII is taken away",
+            "text": "VAULT_PUBLISH_SEAL_KEY=abc \t\n",
+            "value": "abc "
+        }
     ],
     "keys": [
         {
@@ -71,18 +97,42 @@
             "keyByte": "ab",
             "result": "key"
         },
-        { "name": "no key anywhere", "environment": null, "envFile": null, "result": "missing" },
+        {
+            "name": "no key anywhere",
+            "environment": null,
+            "envFile": null,
+            "result": "missing"
+        },
         {
             "name": "a file with no such line",
             "environment": null,
             "envFile": "A=1\n",
             "result": "missing"
         },
-        { "name": "too short", "environment": "abcd", "envFile": null, "result": "invalid" },
+        {
+            "name": "too short",
+            "environment": "abcd",
+            "envFile": null,
+            "result": "invalid"
+        },
         {
             "name": "not hexadecimal",
             "environment": null,
             "envFile": "VAULT_PUBLISH_SEAL_KEY=<key>zz\n",
+            "keyByte": "5e",
+            "result": "invalid"
+        },
+        {
+            "name": "an environment of a byte order mark only reads the file",
+            "environment": "﻿",
+            "envFile": "VAULT_PUBLISH_SEAL_KEY=<key>\n",
+            "keyByte": "5e",
+            "result": "key"
+        },
+        {
+            "name": "a next line character is no white space",
+            "environment": "",
+            "envFile": "VAULT_PUBLISH_SEAL_KEY=<key>\n",
             "keyByte": "5e",
             "result": "invalid"
         }
@@ -91,7 +141,7 @@
         {
             "name": "a first commit",
             "keyByte": "5e",
-            "parent": null,
+            "parents": [],
             "files": [
                 {
                     "mode": "100644",
@@ -109,13 +159,13 @@
                     "path": "notes/Été.md"
                 }
             ],
-            "digest": "85385224092d26b55a543540a1139fc2a764173574b6048199dc354f33f89a34",
-            "seal": "40816aeb31c5cf7fff1e3e5fed046e031042373bb7e85487b7cc65178636ec00"
+            "digest": "ef48370bd59711beeea7b8f9a419a2bf55893e8e5e7c8874a2480ea6828846d3",
+            "seal": "367c8e64318515841839013d58bf1b7cabd5f5edcc9f6e92e4ecaab391d21593"
         },
         {
             "name": "the same state on top of a parent, the files in another order",
             "keyByte": "5e",
-            "parent": "dddddddddddddddddddddddddddddddddddddddd",
+            "parents": ["dddddddddddddddddddddddddddddddddddddddd"],
             "files": [
                 {
                     "mode": "100644",
@@ -133,16 +183,57 @@
                     "path": "manifest/0123456789abcdef.json"
                 }
             ],
-            "digest": "85385224092d26b55a543540a1139fc2a764173574b6048199dc354f33f89a34",
-            "seal": "7fe15e65043acdaafef4c3532387c573c756dd4a033b9cbc435b02858b7b1d15"
+            "digest": "ef48370bd59711beeea7b8f9a419a2bf55893e8e5e7c8874a2480ea6828846d3",
+            "seal": "9f877bc7b48afd6404b72714ab1658f8c2428df97fa23cb60db62670dc297e23"
+        },
+        {
+            "name": "two parents, in the order of git",
+            "keyByte": "5e",
+            "parents": [
+                "dddddddddddddddddddddddddddddddddddddddd",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ],
+            "files": [
+                {
+                    "mode": "100644",
+                    "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "path": "manifest/0123456789abcdef.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "cccccccccccccccccccccccccccccccccccccccc",
+                    "path": "notes/Été.md"
+                }
+            ],
+            "digest": "ef48370bd59711beeea7b8f9a419a2bf55893e8e5e7c8874a2480ea6828846d3",
+            "seal": "a487abe02ae8316f7f01c0f379b4d325b7b54dfbf866a44f032cdabd8530ff44"
         },
         {
             "name": "no sealed file",
             "keyByte": "5e",
-            "parent": "dddddddddddddddddddddddddddddddddddddddd",
+            "parents": ["dddddddddddddddddddddddddddddddddddddddd"],
             "files": [],
             "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "seal": "b03d7646251d523e55f3e5a6b0baeb975793146607ee239247857893ad70fa10"
+        },
+        {
+            "name": "a path with a line end is one record",
+            "keyByte": "5e",
+            "parents": [],
+            "files": [
+                {
+                    "mode": "100644",
+                    "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "path": "notes/a.md\n100644 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb notes/b.md"
+                }
+            ],
+            "digest": "3b5136bf441e6d40e2f867684394fd92d7d6051746627d2b82a8101f7be6944c",
+            "seal": "bd4bce962421a2d5d9ef5d80fbc51b188705a33061f029830c8867d83e4fe23e"
         }
     ],
     "sealLines": [
@@ -162,8 +253,14 @@
             "message": "Publish\nSeal: 40816AEB31C5CF7FFF1E3E5FED046E031042373BB7E85487B7CC65178636EC00\n",
             "seal": null
         },
-        { "message": "Publish\nSeal: 40816aeb\n", "seal": null },
-        { "message": "", "seal": null }
+        {
+            "message": "Publish\nSeal: 40816aeb\n",
+            "seal": null
+        },
+        {
+            "message": "",
+            "seal": null
+        }
     ],
     "listings": [
         {
@@ -190,13 +287,14 @@
     ],
     "differences": [
         {
-            "name": "a foreign commit: a published entry added, an entry changed, a folder left the deny list",
+            "name": "a foreign commit: published entries added in any letter case, an entry changed, the guards and the noindex folders changed, another file",
             "head": "2222222222222222222222222222222222222222",
+            "base": "seal",
             "sealed": "1111111111111111111111111111111111111111",
             "sealedFiles": [
                 {
                     "mode": "100644",
-                    "object": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+                    "object": "3dfed792a33edf409d50370ccc0e0c16c281ed91",
                     "path": "configuration.json"
                 },
                 {
@@ -211,7 +309,7 @@
                 },
                 {
                     "mode": "100644",
-                    "object": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+                    "object": "7473e68010893e01526b35d0bf555b0b0e56f886",
                     "path": "manifest/bbbbbbbbbbbbbbbb.json"
                 },
                 {
@@ -223,7 +321,17 @@
             "headFiles": [
                 {
                     "mode": "100644",
-                    "object": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+                    "object": "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7",
+                    "path": ".gitattributes"
+                },
+                {
+                    "mode": "100644",
+                    "object": "327ea6df7d0f293320881293ee76d17aa127544c",
+                    "path": "Manifest/eeeeeeeeeeeeeeee.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "2a2082bea5862c16b149a831aebcdf2971a72d65",
                     "path": "configuration.json"
                 },
                 {
@@ -238,12 +346,12 @@
                 },
                 {
                     "mode": "100644",
-                    "object": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+                    "object": "6b2db30163cdabb3b376e29e88d0002c5a391797",
                     "path": "manifest/bbbbbbbbbbbbbbbb.json"
                 },
                 {
                     "mode": "100644",
-                    "object": "d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+                    "object": "6ee298c61473cf741d96939e00a4bce2353586e5",
                     "path": "manifest/dddddddddddddddd.json"
                 },
                 {
@@ -253,16 +361,25 @@
                 }
             ],
             "texts": {
-                "1111111111111111111111111111111111111111:configuration.json": "{\n  \"denyList\": [\n    \"Drafts\",\n    \"Inbox\"\n  ]\n}\n",
-                "2222222222222222222222222222222222222222:configuration.json": "{\n  \"denyList\": [\n    \"Inbox\",\n    \"Journal\"\n  ]\n}\n",
-                "1111111111111111111111111111111111111111:manifest/bbbbbbbbbbbbbbbb.json": "{\n  \"path\": \"Garden/Fern.md\",\n  \"state\": \"unpublished\"\n}\n",
-                "2222222222222222222222222222222222222222:manifest/bbbbbbbbbbbbbbbb.json": "{\n  \"path\": \"Garden/Fern.md\",\n  \"state\": \"published\"\n}\n",
-                "2222222222222222222222222222222222222222:manifest/dddddddddddddddd.json": "{\n  \"path\": \"Drafts/Plan.md\",\n  \"state\": \"published\"\n}\n"
+                "3dfed792a33edf409d50370ccc0e0c16c281ed91": "{\n  \"denyList\": [\n    \"Drafts\",\n    \"Inbox\"\n  ],\n  \"noindexFolders\": [\n    \"Journal\"\n  ]\n}\n",
+                "2a2082bea5862c16b149a831aebcdf2971a72d65": "{\n  \"denyList\": [\n    \"Inbox\",\n    \"Journal\"\n  ],\n  \"noindexFolders\": [\n    \"Garden\"\n  ]\n}\n",
+                "7473e68010893e01526b35d0bf555b0b0e56f886": "{\n  \"path\": \"Garden/Fern.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "6b2db30163cdabb3b376e29e88d0002c5a391797": "{\n  \"path\": \"Garden/Fern.md\",\n  \"state\": \"published\"\n}\n",
+                "6ee298c61473cf741d96939e00a4bce2353586e5": "{\n  \"path\": \"Drafts/Plan.md\",\n  \"state\": \"published\"\n}\n",
+                "327ea6df7d0f293320881293ee76d17aa127544c": "{\n  \"path\": \"Private/Diary.md\",\n  \"state\": \"published\"\n}\n"
             },
             "difference": {
                 "head": "2222222222222222222222222222222222222222",
+                "base": "seal",
                 "sealed": "1111111111111111111111111111111111111111",
                 "entries": [
+                    {
+                        "change": "added",
+                        "file": "Manifest/eeeeeeeeeeeeeeee.json",
+                        "path": "Private/Diary.md",
+                        "before": "none",
+                        "after": "published"
+                    },
                     {
                         "change": "changed",
                         "file": "manifest/bbbbbbbbbbbbbbbb.json",
@@ -280,37 +397,54 @@
                 ],
                 "denyListRemoved": ["Drafts"],
                 "denyListAdded": ["Journal"],
+                "noindexRemoved": ["Journal"],
+                "noindexAdded": ["Garden"],
                 "files": [
-                    { "path": "configuration.json", "change": "changed" },
-                    { "path": "notes/Garden/Old.md", "change": "removed" },
-                    { "path": "renames.json", "change": "added" }
+                    {
+                        "path": ".gitattributes",
+                        "change": "added"
+                    },
+                    {
+                        "path": "configuration.json",
+                        "change": "changed"
+                    },
+                    {
+                        "path": "notes/Garden/Old.md",
+                        "change": "removed"
+                    },
+                    {
+                        "path": "renames.json",
+                        "change": "added"
+                    }
                 ]
             },
-            "text": "the state of the content store at 2222222222222222222222222222222222222222 is not the state that a commit of the tool sealed (1111111111111111111111111111111111111111): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state: manifest entries added (1): \"Drafts/Plan.md\" (none to published); manifest entries changed (1): \"Garden/Fern.md\" (unpublished to published); folders that left the deny list, so the guards are looser: \"Drafts\"; folders added to the deny list: \"Journal\"; files of the store: configuration.json (changed), renames.json (added); cleaned notes (1): notes/Garden/Old.md (removed). When you made or accept every change, confirm the state of commit 2222222222222222222222222222222222222222 (the command confirm-state --head 2222222222222222222222222222222222222222, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
+            "text": "the state of the content store at 2222222222222222222222222222222222222222 is not the state that a commit of the tool sealed (1111111111111111111111111111111111111111): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state: manifest entries added (2): \"Private/Diary.md\" (none to published), \"Drafts/Plan.md\" (none to published); manifest entries changed (1): \"Garden/Fern.md\" (unpublished to published); folders that left the deny list, so the guards are looser: \"Drafts\"; folders added to the deny list: \"Journal\"; folders that left the noindex folders, so their notes can be indexed: \"Journal\"; folders added to the noindex folders: \"Garden\"; files of the store: .gitattributes (added), configuration.json (changed), renames.json (added); cleaned notes (1): notes/Garden/Old.md (removed). When you made or accept every change, confirm the state of commit 2222222222222222222222222222222222222222 (the command confirm-state --head 2222222222222222222222222222222222222222, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
         },
         {
             "name": "a store with no sealed state, and an entry that cannot be read",
             "head": "3333333333333333333333333333333333333333",
+            "base": "none",
             "sealed": null,
             "sealedFiles": [],
             "headFiles": [
                 {
                     "mode": "100644",
-                    "object": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+                    "object": "bac034aed063fe48f32d60a0654adf4c54aa4a4e",
                     "path": "configuration.json"
                 },
                 {
                     "mode": "100644",
-                    "object": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+                    "object": "ed0d1292643d9ed818d9a191829b0f419867f874",
                     "path": "manifest/aaaaaaaaaaaaaaaa.json"
                 }
             ],
             "texts": {
-                "3333333333333333333333333333333333333333:configuration.json": "{\n  \"denyList\": [\n    \"Inbox\"\n  ]\n}\n",
-                "3333333333333333333333333333333333333333:manifest/aaaaaaaaaaaaaaaa.json": "not json"
+                "bac034aed063fe48f32d60a0654adf4c54aa4a4e": "{\n  \"denyList\": [\n    \"Inbox\"\n  ]\n}\n",
+                "ed0d1292643d9ed818d9a191829b0f419867f874": "not json"
             },
             "difference": {
                 "head": "3333333333333333333333333333333333333333",
+                "base": "none",
                 "sealed": "none",
                 "entries": [
                     {
@@ -323,9 +457,1250 @@
                 ],
                 "denyListRemoved": [],
                 "denyListAdded": ["Inbox"],
-                "files": [{ "path": "configuration.json", "change": "added" }]
+                "noindexRemoved": [],
+                "noindexAdded": [],
+                "files": [
+                    {
+                        "path": "configuration.json",
+                        "change": "added"
+                    }
+                ]
             },
-            "text": "the content store has no sealed state yet (a store from before R104, or a new one), so the tool does not trust its state: it plans and publishes nothing until you confirm it one time. Its state at 3333333333333333333333333333333333333333: manifest entries added (1): \"manifest/aaaaaaaaaaaaaaaa.json\" (none to ?); folders added to the deny list: \"Inbox\"; files of the store: configuration.json (added). When you made or accept every change, confirm the state of commit 3333333333333333333333333333333333333333 (the command confirm-state --head 3333333333333333333333333333333333333333, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
+            "text": "the content store has no sealed state yet (a store from before R104, or a new one), and this copy trusted none before, so the tool does not trust its state: it plans and publishes nothing until you confirm it one time. Its state at 3333333333333333333333333333333333333333: manifest entries added (1): \"manifest/aaaaaaaaaaaaaaaa.json\" (none to ?); folders added to the deny list: \"Inbox\"; files of the store: configuration.json (added). When you made or accept every change, confirm the state of commit 3333333333333333333333333333333333333333 (the command confirm-state --head 3333333333333333333333333333333333333333, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
+        },
+        {
+            "name": "no trusted seal after the mark: every published entry is named, the others to 20, a configuration that cannot be read",
+            "head": "4444444444444444444444444444444444444444",
+            "base": "mark",
+            "sealed": "5555555555555555555555555555555555555555",
+            "sealedFiles": [
+                {
+                    "mode": "100644",
+                    "object": "0000000000000000000000000000000000000000",
+                    "path": "configuration.json"
+                }
+            ],
+            "headFiles": [
+                {
+                    "mode": "100644",
+                    "object": "3dfed792a33edf409d50370ccc0e0c16c281ed91",
+                    "path": "configuration.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "6ad6f41ae5b41ceac2f1ffccde2750972d45acd1",
+                    "path": "manifest/0000000000000000.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "6f22d5d0aae2e1e60802d88a6e10eee371ad6204",
+                    "path": "manifest/0000000000000001.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "529a2433635e642ea2c12e06e19c5be9089f63cf",
+                    "path": "manifest/0000000000000002.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "6a5b051915ddb2d74488cb587dfac6b748036428",
+                    "path": "manifest/0000000000000003.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "763f078cb256996e996fdb6db9bcc296f9059b26",
+                    "path": "manifest/0000000000000004.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "329d3f8dd204ebff2a47b39341231a882fc3f881",
+                    "path": "manifest/0000000000000005.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "aee6d352f048aeeaf795f283542cfa0b463c8222",
+                    "path": "manifest/0000000000000006.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "51c867e96e596c113feca92397b3413da01d9ced",
+                    "path": "manifest/0000000000000007.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "7ddb1f56e62aad316b6a06caa5b30a86730c2f9d",
+                    "path": "manifest/0000000000000008.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "6e552ce8fc2efd4883c9e4e50aa6ee4f7e302709",
+                    "path": "manifest/0000000000000009.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "1b424357b83e8707f8320d203e6035630cf47932",
+                    "path": "manifest/0000000000000010.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "22f0bbb36e7ee398c0683dffc25dccb804412122",
+                    "path": "manifest/0000000000000011.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "1fcc26f67c49556d4c6e975633dff5e4af814fec",
+                    "path": "manifest/0000000000000012.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "c8673fec46016ae1d868fa260bf4bbe029ebc509",
+                    "path": "manifest/0000000000000013.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "abf768d9f5d1b90968da84545f624dcf6a13dfd9",
+                    "path": "manifest/0000000000000014.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "69771e189b5d6b3e2d4e7efdbb2926c0931637bb",
+                    "path": "manifest/0000000000000015.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "feee70631aa4101c94d54449171227cfefe38227",
+                    "path": "manifest/0000000000000016.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ee825223c22bc2ce0565ab1d6ab4c6597c505a07",
+                    "path": "manifest/0000000000000017.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "883359fc32dd46ad43d6e6438a442e2410ea1dad",
+                    "path": "manifest/0000000000000018.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "b858815f20a2b2bb589cbe7bee3e249c03b87664",
+                    "path": "manifest/0000000000000019.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "cbc945c768bb8c9abccb6b9e662b115df77d85e4",
+                    "path": "manifest/0000000000000020.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "684f817db3d2457e9e5e5853a75457ef748bb3df",
+                    "path": "manifest/0000000000000021.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "0f8ac6c74671d4ed6b7eae38b1acf2ee215b1186",
+                    "path": "manifest/0000000000000022.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "78b8dbabf60fdc69a6d8c56397d6c1f81750f0f4",
+                    "path": "manifest/0000000000000023.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "d3522610f3daa62e8000fbe6b614fc1fd7b6f6c2",
+                    "path": "manifest/0000000000000024.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "19f888af2983a891e08ea8d1e45c1118896d4623",
+                    "path": "manifest/0000000000000025.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "e2bd4b12eb7d9d9cd3875fe8f4a220a89787f15d",
+                    "path": "manifest/0000000000000026.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "c67b0c9561d42198bb957acbf3fd3f57d014e310",
+                    "path": "manifest/0000000000000027.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "dd4d3a2c5bc052439b8fd8c8caeee60806cf7029",
+                    "path": "manifest/0000000000000028.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "300a287e7bb5a3eae362646530af67684a4a4505",
+                    "path": "manifest/0000000000000029.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "bdb9b74a7c1008065fc5ebb47ab76566873e9c21",
+                    "path": "manifest/0000000000000030.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "604a0ab95afff83c7236ab677d54b2209cc73137",
+                    "path": "manifest/0000000000000031.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "7553fa99de29eb440d914b386145117cd7ef0021",
+                    "path": "manifest/0000000000000032.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "341cb7699e8726e26da968c14d852b1a6d6952fd",
+                    "path": "manifest/0000000000000033.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "fac2c31a1e3b25e767450f86a918ab8a1ec80354",
+                    "path": "manifest/0000000000000034.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "4c97ee892f68c5ace55e1ae64355e92313a41ea1",
+                    "path": "manifest/0000000000000035.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "2c622ebcaf8a223980db67dd8ef6843412d64e40",
+                    "path": "manifest/0000000000000036.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "7f81dfc1a9e6ff7795ef9fa7868be3ad30daee5f",
+                    "path": "manifest/0000000000000037.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "3fe8c3d26414d6bb22f21f9d357a95fc14df6cbf",
+                    "path": "manifest/0000000000000038.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "b2f59f28fe3ef901b7b4d21505664a34bf92e56d",
+                    "path": "manifest/0000000000000039.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "0b4e255d65d389d196175e8d45788b398d37a002",
+                    "path": "manifest/0000000000000040.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "74b77087fdb3bd1dba7655788793cfa5f4e9cf3d",
+                    "path": "manifest/0000000000000041.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "a4d630666760e297ff00325b906b7ca6d935ddcb",
+                    "path": "manifest/0000000000000042.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "972c836263f6d7b193d41a83172ce1b5fefc9125",
+                    "path": "manifest/0000000000000043.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "12214b713d34672e4f8ca0fb026f06e1e1632ed6",
+                    "path": "manifest/0000000000000044.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 00.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 01.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 02.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 03.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 04.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 05.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 06.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 07.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 08.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 09.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 10.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 11.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 12.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 13.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 14.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 15.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 16.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 17.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 18.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 19.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 20.md"
+                },
+                {
+                    "mode": "100644",
+                    "object": "ffffffffffffffffffffffffffffffffffffffff",
+                    "path": "notes/Garden/Note 21.md"
+                }
+            ],
+            "texts": {
+                "6ad6f41ae5b41ceac2f1ffccde2750972d45acd1": "{\n  \"path\": \"Garden/Note 00.md\",\n  \"state\": \"published\"\n}\n",
+                "6f22d5d0aae2e1e60802d88a6e10eee371ad6204": "{\n  \"path\": \"Garden/Note 01.md\",\n  \"state\": \"published\"\n}\n",
+                "529a2433635e642ea2c12e06e19c5be9089f63cf": "{\n  \"path\": \"Garden/Note 02.md\",\n  \"state\": \"published\"\n}\n",
+                "6a5b051915ddb2d74488cb587dfac6b748036428": "{\n  \"path\": \"Garden/Note 03.md\",\n  \"state\": \"published\"\n}\n",
+                "763f078cb256996e996fdb6db9bcc296f9059b26": "{\n  \"path\": \"Garden/Note 04.md\",\n  \"state\": \"published\"\n}\n",
+                "329d3f8dd204ebff2a47b39341231a882fc3f881": "{\n  \"path\": \"Garden/Note 05.md\",\n  \"state\": \"published\"\n}\n",
+                "aee6d352f048aeeaf795f283542cfa0b463c8222": "{\n  \"path\": \"Garden/Note 06.md\",\n  \"state\": \"published\"\n}\n",
+                "51c867e96e596c113feca92397b3413da01d9ced": "{\n  \"path\": \"Garden/Note 07.md\",\n  \"state\": \"published\"\n}\n",
+                "7ddb1f56e62aad316b6a06caa5b30a86730c2f9d": "{\n  \"path\": \"Garden/Note 08.md\",\n  \"state\": \"published\"\n}\n",
+                "6e552ce8fc2efd4883c9e4e50aa6ee4f7e302709": "{\n  \"path\": \"Garden/Note 09.md\",\n  \"state\": \"published\"\n}\n",
+                "1b424357b83e8707f8320d203e6035630cf47932": "{\n  \"path\": \"Garden/Note 10.md\",\n  \"state\": \"published\"\n}\n",
+                "22f0bbb36e7ee398c0683dffc25dccb804412122": "{\n  \"path\": \"Garden/Note 11.md\",\n  \"state\": \"published\"\n}\n",
+                "1fcc26f67c49556d4c6e975633dff5e4af814fec": "{\n  \"path\": \"Garden/Note 12.md\",\n  \"state\": \"published\"\n}\n",
+                "c8673fec46016ae1d868fa260bf4bbe029ebc509": "{\n  \"path\": \"Garden/Note 13.md\",\n  \"state\": \"published\"\n}\n",
+                "abf768d9f5d1b90968da84545f624dcf6a13dfd9": "{\n  \"path\": \"Garden/Note 14.md\",\n  \"state\": \"published\"\n}\n",
+                "69771e189b5d6b3e2d4e7efdbb2926c0931637bb": "{\n  \"path\": \"Garden/Note 15.md\",\n  \"state\": \"published\"\n}\n",
+                "feee70631aa4101c94d54449171227cfefe38227": "{\n  \"path\": \"Garden/Note 16.md\",\n  \"state\": \"published\"\n}\n",
+                "ee825223c22bc2ce0565ab1d6ab4c6597c505a07": "{\n  \"path\": \"Garden/Note 17.md\",\n  \"state\": \"published\"\n}\n",
+                "883359fc32dd46ad43d6e6438a442e2410ea1dad": "{\n  \"path\": \"Garden/Note 18.md\",\n  \"state\": \"published\"\n}\n",
+                "b858815f20a2b2bb589cbe7bee3e249c03b87664": "{\n  \"path\": \"Garden/Note 19.md\",\n  \"state\": \"published\"\n}\n",
+                "cbc945c768bb8c9abccb6b9e662b115df77d85e4": "{\n  \"path\": \"Garden/Note 20.md\",\n  \"state\": \"published\"\n}\n",
+                "684f817db3d2457e9e5e5853a75457ef748bb3df": "{\n  \"path\": \"Garden/Note 21.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "0f8ac6c74671d4ed6b7eae38b1acf2ee215b1186": "{\n  \"path\": \"Garden/Note 22.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "78b8dbabf60fdc69a6d8c56397d6c1f81750f0f4": "{\n  \"path\": \"Garden/Note 23.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "d3522610f3daa62e8000fbe6b614fc1fd7b6f6c2": "{\n  \"path\": \"Garden/Note 24.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "19f888af2983a891e08ea8d1e45c1118896d4623": "{\n  \"path\": \"Garden/Note 25.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "e2bd4b12eb7d9d9cd3875fe8f4a220a89787f15d": "{\n  \"path\": \"Garden/Note 26.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "c67b0c9561d42198bb957acbf3fd3f57d014e310": "{\n  \"path\": \"Garden/Note 27.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "dd4d3a2c5bc052439b8fd8c8caeee60806cf7029": "{\n  \"path\": \"Garden/Note 28.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "300a287e7bb5a3eae362646530af67684a4a4505": "{\n  \"path\": \"Garden/Note 29.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "bdb9b74a7c1008065fc5ebb47ab76566873e9c21": "{\n  \"path\": \"Garden/Note 30.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "604a0ab95afff83c7236ab677d54b2209cc73137": "{\n  \"path\": \"Garden/Note 31.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "7553fa99de29eb440d914b386145117cd7ef0021": "{\n  \"path\": \"Garden/Note 32.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "341cb7699e8726e26da968c14d852b1a6d6952fd": "{\n  \"path\": \"Garden/Note 33.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "fac2c31a1e3b25e767450f86a918ab8a1ec80354": "{\n  \"path\": \"Garden/Note 34.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "4c97ee892f68c5ace55e1ae64355e92313a41ea1": "{\n  \"path\": \"Garden/Note 35.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "2c622ebcaf8a223980db67dd8ef6843412d64e40": "{\n  \"path\": \"Garden/Note 36.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "7f81dfc1a9e6ff7795ef9fa7868be3ad30daee5f": "{\n  \"path\": \"Garden/Note 37.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "3fe8c3d26414d6bb22f21f9d357a95fc14df6cbf": "{\n  \"path\": \"Garden/Note 38.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "b2f59f28fe3ef901b7b4d21505664a34bf92e56d": "{\n  \"path\": \"Garden/Note 39.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "0b4e255d65d389d196175e8d45788b398d37a002": "{\n  \"path\": \"Garden/Note 40.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "74b77087fdb3bd1dba7655788793cfa5f4e9cf3d": "{\n  \"path\": \"Garden/Note 41.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "a4d630666760e297ff00325b906b7ca6d935ddcb": "{\n  \"path\": \"Garden/Note 42.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "972c836263f6d7b193d41a83172ce1b5fefc9125": "{\n  \"path\": \"Garden/Note 43.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "12214b713d34672e4f8ca0fb026f06e1e1632ed6": "{\n  \"path\": \"Garden/Note 44.md\",\n  \"state\": \"unpublished\"\n}\n",
+                "3dfed792a33edf409d50370ccc0e0c16c281ed91": "{\n  \"denyList\": [\n    \"Drafts\",\n    \"Inbox\"\n  ],\n  \"noindexFolders\": [\n    \"Journal\"\n  ]\n}\n"
+            },
+            "difference": {
+                "head": "4444444444444444444444444444444444444444",
+                "base": "mark",
+                "sealed": "5555555555555555555555555555555555555555",
+                "entries": [
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000000.json",
+                        "path": "Garden/Note 00.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000001.json",
+                        "path": "Garden/Note 01.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000002.json",
+                        "path": "Garden/Note 02.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000003.json",
+                        "path": "Garden/Note 03.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000004.json",
+                        "path": "Garden/Note 04.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000005.json",
+                        "path": "Garden/Note 05.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000006.json",
+                        "path": "Garden/Note 06.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000007.json",
+                        "path": "Garden/Note 07.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000008.json",
+                        "path": "Garden/Note 08.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000009.json",
+                        "path": "Garden/Note 09.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000010.json",
+                        "path": "Garden/Note 10.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000011.json",
+                        "path": "Garden/Note 11.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000012.json",
+                        "path": "Garden/Note 12.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000013.json",
+                        "path": "Garden/Note 13.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000014.json",
+                        "path": "Garden/Note 14.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000015.json",
+                        "path": "Garden/Note 15.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000016.json",
+                        "path": "Garden/Note 16.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000017.json",
+                        "path": "Garden/Note 17.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000018.json",
+                        "path": "Garden/Note 18.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000019.json",
+                        "path": "Garden/Note 19.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000020.json",
+                        "path": "Garden/Note 20.md",
+                        "before": "none",
+                        "after": "published"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000021.json",
+                        "path": "Garden/Note 21.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000022.json",
+                        "path": "Garden/Note 22.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000023.json",
+                        "path": "Garden/Note 23.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000024.json",
+                        "path": "Garden/Note 24.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000025.json",
+                        "path": "Garden/Note 25.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000026.json",
+                        "path": "Garden/Note 26.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000027.json",
+                        "path": "Garden/Note 27.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000028.json",
+                        "path": "Garden/Note 28.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000029.json",
+                        "path": "Garden/Note 29.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000030.json",
+                        "path": "Garden/Note 30.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000031.json",
+                        "path": "Garden/Note 31.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000032.json",
+                        "path": "Garden/Note 32.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000033.json",
+                        "path": "Garden/Note 33.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000034.json",
+                        "path": "Garden/Note 34.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000035.json",
+                        "path": "Garden/Note 35.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000036.json",
+                        "path": "Garden/Note 36.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000037.json",
+                        "path": "Garden/Note 37.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000038.json",
+                        "path": "Garden/Note 38.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000039.json",
+                        "path": "Garden/Note 39.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000040.json",
+                        "path": "Garden/Note 40.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000041.json",
+                        "path": "Garden/Note 41.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000042.json",
+                        "path": "Garden/Note 42.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000043.json",
+                        "path": "Garden/Note 43.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    },
+                    {
+                        "change": "added",
+                        "file": "manifest/0000000000000044.json",
+                        "path": "Garden/Note 44.md",
+                        "before": "none",
+                        "after": "unpublished"
+                    }
+                ],
+                "denyListRemoved": [],
+                "denyListAdded": [],
+                "noindexRemoved": [],
+                "noindexAdded": [],
+                "files": [
+                    {
+                        "path": "configuration.json",
+                        "change": "changed, cannot be read"
+                    },
+                    {
+                        "path": "notes/Garden/Note 00.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 01.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 02.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 03.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 04.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 05.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 06.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 07.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 08.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 09.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 10.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 11.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 12.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 13.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 14.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 15.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 16.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 17.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 18.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 19.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 20.md",
+                        "change": "added"
+                    },
+                    {
+                        "path": "notes/Garden/Note 21.md",
+                        "change": "added"
+                    }
+                ]
+            },
+            "text": "the content store has no sealed state that the tool can trust: no commit of the last 100 (and none before a merge) has a valid seal and descends from 5555555555555555555555555555555555555555, the last sealed commit that this copy trusted. More than 100 commits that no tool wrote, a merge, or an older history that a forced push put back can cause it. Nothing is planned or published until you confirm it. What differs from that commit: manifest entries added (45): \"Garden/Note 00.md\" (none to published), \"Garden/Note 01.md\" (none to published), \"Garden/Note 02.md\" (none to published), \"Garden/Note 03.md\" (none to published), \"Garden/Note 04.md\" (none to published), \"Garden/Note 05.md\" (none to published), \"Garden/Note 06.md\" (none to published), \"Garden/Note 07.md\" (none to published), \"Garden/Note 08.md\" (none to published), \"Garden/Note 09.md\" (none to published), \"Garden/Note 10.md\" (none to published), \"Garden/Note 11.md\" (none to published), \"Garden/Note 12.md\" (none to published), \"Garden/Note 13.md\" (none to published), \"Garden/Note 14.md\" (none to published), \"Garden/Note 15.md\" (none to published), \"Garden/Note 16.md\" (none to published), \"Garden/Note 17.md\" (none to published), \"Garden/Note 18.md\" (none to published), \"Garden/Note 19.md\" (none to published), \"Garden/Note 20.md\" (none to published), \"Garden/Note 21.md\" (none to unpublished), \"Garden/Note 22.md\" (none to unpublished), \"Garden/Note 23.md\" (none to unpublished), \"Garden/Note 24.md\" (none to unpublished), \"Garden/Note 25.md\" (none to unpublished), \"Garden/Note 26.md\" (none to unpublished), \"Garden/Note 27.md\" (none to unpublished), \"Garden/Note 28.md\" (none to unpublished), \"Garden/Note 29.md\" (none to unpublished), \"Garden/Note 30.md\" (none to unpublished), \"Garden/Note 31.md\" (none to unpublished), \"Garden/Note 32.md\" (none to unpublished), \"Garden/Note 33.md\" (none to unpublished), \"Garden/Note 34.md\" (none to unpublished), \"Garden/Note 35.md\" (none to unpublished), \"Garden/Note 36.md\" (none to unpublished), \"Garden/Note 37.md\" (none to unpublished), \"Garden/Note 38.md\" (none to unpublished), \"Garden/Note 39.md\" (none to unpublished), \"Garden/Note 40.md\" (none to unpublished) and 4 more; files of the store: configuration.json (changed, cannot be read); cleaned notes (22): notes/Garden/Note 00.md (added), notes/Garden/Note 01.md (added), notes/Garden/Note 02.md (added), notes/Garden/Note 03.md (added), notes/Garden/Note 04.md (added), notes/Garden/Note 05.md (added), notes/Garden/Note 06.md (added), notes/Garden/Note 07.md (added), notes/Garden/Note 08.md (added), notes/Garden/Note 09.md (added), notes/Garden/Note 10.md (added), notes/Garden/Note 11.md (added), notes/Garden/Note 12.md (added), notes/Garden/Note 13.md (added), notes/Garden/Note 14.md (added), notes/Garden/Note 15.md (added), notes/Garden/Note 16.md (added), notes/Garden/Note 17.md (added), notes/Garden/Note 18.md (added), notes/Garden/Note 19.md (added) and 2 more. When you made or accept every change, confirm the state of commit 4444444444444444444444444444444444444444 (the command confirm-state --head 4444444444444444444444444444444444444444, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
+        }
+    ],
+    "checks": [
+        {
+            "name": "a copy with no commit",
+            "keyByte": "5e",
+            "commits": [],
+            "mark": null,
+            "result": "empty",
+            "markAfter": null
+        },
+        {
+            "name": "a sealed last commit, and no mark yet",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": null,
+            "result": "sealed",
+            "markAfter": null
+        },
+        {
+            "name": "a commit of the redirect list alone on top of a sealed one",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        },
+                        {
+                            "mode": "100644",
+                            "object": "dddddddddddddddddddddddddddddddddddddddd",
+                            "path": "redirects.json"
+                        }
+                    ]
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "result": "sealed",
+            "markAfter": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+            "name": "a manifest entry in another letter case is sealed",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                            "path": "Manifest/0123456789abcdef.json"
+                        },
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ]
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "result": "differs",
+            "base": "seal",
+            "sealed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "markAfter": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+            "name": "a newer sealed commit that descends from the mark passes, and the check writes no mark",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "cccccccccccccccccccccccccccccccccccccccc",
+                    "parents": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        },
+                        {
+                            "mode": "100644",
+                            "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "path": "manifest/0123456789abcdef.json"
+                        }
+                    ],
+                    "seal": "own"
+                },
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        },
+                        {
+                            "mode": "100644",
+                            "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "path": "manifest/0123456789abcdef.json"
+                        }
+                    ]
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "result": "sealed",
+            "markAfter": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+            "name": "a merge with an old tree stops the walk, also when its first parent is sealed",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "9999999999999999999999999999999999999999",
+                    "parents": [
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "cccccccccccccccccccccccccccccccccccccccc"
+                    ],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ]
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "cccccccccccccccccccccccccccccccccccccccc",
+            "result": "differs",
+            "base": "mark",
+            "sealed": "cccccccccccccccccccccccccccccccccccccccc",
+            "markAfter": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+            "name": "a merge with the seal message of an older commit copied",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "9999999999999999999999999999999999999999",
+                    "parents": [
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "cccccccccccccccccccccccccccccccccccccccc"
+                    ],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "of 8888888888888888888888888888888888888888"
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": ["8888888888888888888888888888888888888888"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ]
+                },
+                {
+                    "id": "8888888888888888888888888888888888888888",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "8888888888888888888888888888888888888888",
+            "result": "differs",
+            "base": "mark",
+            "sealed": "8888888888888888888888888888888888888888",
+            "markAfter": "8888888888888888888888888888888888888888"
+        },
+        {
+            "name": "a merge that carries a valid seal of all its parents is still refused",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "9999999999999999999999999999999999999999",
+                    "parents": [
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "cccccccccccccccccccccccccccccccccccccccc"
+                    ],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "result": "differs",
+            "base": "mark",
+            "sealed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "markAfter": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+            "name": "an older sealed history that a forced push put back does not pass",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "cccccccccccccccccccccccccccccccccccccccc",
+            "result": "differs",
+            "base": "mark",
+            "sealed": "cccccccccccccccccccccccccccccccccccccccc",
+            "markAfter": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+            "name": "a sealed commit that is no descendant of the mark does not pass",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        },
+                        {
+                            "mode": "100644",
+                            "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "path": "manifest/0123456789abcdef.json"
+                        }
+                    ],
+                    "seal": "own"
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": "cccccccccccccccccccccccccccccccccccccccc",
+            "result": "differs",
+            "base": "mark",
+            "sealed": "cccccccccccccccccccccccccccccccccccccccc",
+            "markAfter": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+            "name": "a seal of another commit, copied, is no seal",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "parents": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        },
+                        {
+                            "mode": "100644",
+                            "object": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            "path": "manifest/0123456789abcdef.json"
+                        }
+                    ],
+                    "seal": "of aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ],
+                    "seal": "own"
+                }
+            ],
+            "mark": null,
+            "result": "differs",
+            "base": "seal",
+            "sealed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "markAfter": null
+        },
+        {
+            "name": "no seal in the history and no mark",
+            "keyByte": "5e",
+            "commits": [
+                {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "parents": [],
+                    "files": [
+                        {
+                            "mode": "100644",
+                            "object": "cccccccccccccccccccccccccccccccccccccccc",
+                            "path": "configuration.json"
+                        }
+                    ]
+                }
+            ],
+            "mark": null,
+            "result": "differs",
+            "base": "none",
+            "sealed": "none",
+            "markAfter": null
         }
     ]
 }

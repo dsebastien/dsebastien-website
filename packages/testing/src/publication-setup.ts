@@ -2,7 +2,7 @@ import { chmod, cp, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
     parseTreeListing,
-    SEALED_PATHS,
+    sealedFiles,
     sealOf,
     withSeal
 } from '../../../apps/plugin/src/publishing/seal.ts'
@@ -53,11 +53,12 @@ export function testSealKey(): string {
     return '5e'.repeat(32)
 }
 
-/** The first parent of a commit of a repository, or `undefined` for a first commit. */
-async function parentOf(repository: string, commit: string): Promise<string | undefined> {
+/** The parents of a commit of a repository, in the order of git: none for a first commit. */
+async function parentsOf(repository: string, commit: string): Promise<string[]> {
     return (await gitOutput(repository, ['rev-list', '--parents', '--max-count=1', commit]))
         .trim()
-        .split(' ')[1]
+        .split(' ')
+        .slice(1)
 }
 
 /**
@@ -70,20 +71,14 @@ export async function sealOfCommit(
     commit = 'HEAD',
     key = testSealKey()
 ): Promise<string> {
-    const files = parseTreeListing(
-        await gitOutput(repository, [
-            'ls-tree',
-            '-r',
-            '-z',
-            '--full-tree',
-            commit,
-            '--',
-            ...SEALED_PATHS
-        ])
+    const files = sealedFiles(
+        parseTreeListing(
+            await gitOutput(repository, ['ls-tree', '-r', '-z', '--full-tree', commit])
+        )
     )
     return sealOf(
         Uint8Array.from(Buffer.from(key, 'hex')),
-        await parentOf(repository, commit),
+        await parentsOf(repository, commit),
         files
     )
 }
@@ -95,14 +90,14 @@ export async function sealOfCommit(
  */
 export async function sealHead(copy: string, key = testSealKey()): Promise<void> {
     const head = (await gitOutput(copy, ['rev-parse', 'HEAD'])).trim()
-    const parent = await parentOf(copy, 'HEAD')
+    const parents = await parentsOf(copy, 'HEAD')
     const message = await gitOutput(copy, ['log', '-1', '--format=%B', 'HEAD'])
     const seal = await sealOfCommit(copy, 'HEAD', key)
     const tree = (await gitOutput(copy, ['rev-parse', 'HEAD^{tree}'])).trim()
     const sealed = (
         await gitOutput(
             copy,
-            ['commit-tree', tree, ...(parent === undefined ? [] : ['-p', parent]), '-F', '-'],
+            ['commit-tree', tree, ...parents.flatMap((parent) => ['-p', parent]), '-F', '-'],
             withSeal(message, seal)
         )
     ).trim()

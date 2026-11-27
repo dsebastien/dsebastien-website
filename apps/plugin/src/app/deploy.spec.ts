@@ -38,6 +38,34 @@ describe('the child process of the deploy', () => {
         expect(run.output).toContain('to the errors')
     })
 
+    test('gives the seal key of the vault to the deploy, and none that is not valid (R104)', async () => {
+        await using stores = await makeTestStores()
+        const file = join(stores.root, 'child.ts')
+        await writeFile(file, "console.log(process.env['VAULT_PUBLISH_SEAL_KEY'] ?? 'none')")
+        const command = {
+            program: process.execPath,
+            args: [file],
+            folder: stores.root,
+            timeoutMinutes: 1
+        }
+        const source = (text: string) => ({
+            environment: () => undefined,
+            envFile: () => Promise.resolve(text)
+        })
+
+        const given = await childProcess({
+            seal: source(`VAULT_PUBLISH_SEAL_KEY=${'AB'.repeat(32)}\n`)
+        }).run(command)
+        const refused = await childProcess({ seal: source('VAULT_PUBLISH_SEAL_KEY=abc\n') }).run(
+            command
+        )
+
+        expect(given.stdout.trim()).toBe('ab'.repeat(32))
+        // The environment of the tests has the key of the tests: a key that
+        // is not valid leaves the environment as it is.
+        expect(refused.stdout.trim()).toBe(process.env['VAULT_PUBLISH_SEAL_KEY'] ?? 'none')
+    })
+
     test('gives the number of the child when it started', async () => {
         await using stores = await makeTestStores()
         const pids: number[] = []

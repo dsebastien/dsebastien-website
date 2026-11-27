@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+    checkSeal,
     differenceOf,
     differenceText,
     envValue,
@@ -10,10 +11,11 @@ import {
     sealKeyOf,
     sealLineOf,
     sealOf,
+    sealedFiles,
     stateDigest,
     withSeal
 } from './seal.ts'
-import type { StoreDifference, TreeFile } from './seal.ts'
+import type { DifferenceBase, SealedHistory, StoreDifference, TreeFile } from './seal.ts'
 
 // The seal of the content store (R104). The shared cases are
 // `fixtures/canonical/seal.json`, which the Rust tests read too. A key is
@@ -34,7 +36,7 @@ interface Cases {
     seals: {
         name: string
         keyByte: string
-        parent: string | null
+        parents: string[]
         files: TreeFile[]
         digest: string
         seal: string
@@ -44,12 +46,23 @@ interface Cases {
     differences: {
         name: string
         head: string
+        base: DifferenceBase
         sealed: string | null
         sealedFiles: TreeFile[]
         headFiles: TreeFile[]
         texts: Record<string, string>
         difference: StoreDifference
         text: string
+    }[]
+    checks: {
+        name: string
+        keyByte: string
+        commits: { id: string; parents: string[]; files: TreeFile[]; seal?: string }[]
+        mark: string | null
+        result: 'empty' | 'sealed' | 'differs'
+        base?: DifferenceBase
+        sealed?: string
+        markAfter: string | null
     }[]
 }
 
@@ -102,14 +115,14 @@ describe('the seal of the content store', () => {
     })
 
     test('seals a parent and the state of a commit', () => {
-        for (const { name, keyByte, parent, files, digest, seal } of cases.seals) {
-            expect([
+        for (const { name, keyByte, parents, files, digest, seal } of cases.seals) {
+            expect([name, stateDigest(files), sealOf(keyOf(keyByte), parents, files)]).toEqual([
                 name,
-                stateDigest(files),
-                sealOf(keyOf(keyByte), parent ?? undefined, files)
-            ]).toEqual([name, digest, seal])
+                digest,
+                seal
+            ])
             // Another key gives another seal.
-            expect(sealOf(keyOf('01'), parent ?? undefined, files)).not.toBe(seal)
+            expect(sealOf(keyOf('01'), parents, files)).not.toBe(seal)
         }
     })
 
@@ -139,6 +152,7 @@ describe('the seal of the content store', () => {
         for (const {
             name,
             head,
+            base,
             sealed,
             sealedFiles,
             headFiles,
@@ -148,13 +162,98 @@ describe('the seal of the content store', () => {
         } of cases.differences) {
             const found = await differenceOf(
                 head,
+                base,
                 sealed ?? undefined,
                 sealedFiles,
                 headFiles,
-                (commit, path) => Promise.resolve(texts[`${commit}:${path}`])
+                (ids) =>
+                    Promise.resolve(
+                        new Map(
+                            ids.flatMap((id) => {
+                                const one = texts[id]
+                                return one === undefined ? [] : [[id, one] as const]
+                            })
+                        )
+                    )
             )
             expect([name, found]).toEqual([name, difference])
             expect([name, differenceText(found)]).toEqual([name, text])
+        }
+    })
+
+    test('trusts the newest sealed commit with no merge before it that descends from the mark', async () => {
+        for (const {
+            name,
+            keyByte,
+            commits,
+            mark,
+            result,
+            base,
+            sealed,
+            markAfter
+        } of cases.checks) {
+            const key = keyOf(keyByte)
+            const known = new Map(commits.map((commit) => [commit.id, commit]))
+            const sealFor = (id: string): string => {
+                const commit = known.get(id)
+                if (commit === undefined) {
+                    throw new Error(`${name}: no commit ${id}`)
+                }
+                return sealOf(key, commit.parents, sealedFiles(commit.files))
+            }
+            let current = mark ?? undefined
+            const history: SealedHistory = {
+                commits: (limit) =>
+                    Promise.resolve(
+                        commits.slice(0, limit).map((commit) => ({
+                            id: commit.id,
+                            parents: commit.parents,
+                            message:
+                                commit.seal === undefined
+                                    ? 'A commit by hand\n'
+                                    : withSeal(
+                                          'Publish\n',
+                                          commit.seal === 'own'
+                                              ? sealFor(commit.id)
+                                              : sealFor(commit.seal.slice('of '.length))
+                                      )
+                        }))
+                    ),
+                files: (commit) => {
+                    const one = known.get(commit)
+                    return one === undefined
+                        ? Promise.reject(new Error(`no commit ${commit}`))
+                        : Promise.resolve(one.files)
+                },
+                objects: () => Promise.resolve(new Map()),
+                mark: () => Promise.resolve(current),
+                setMark: (commit) => {
+                    current = commit
+                    return Promise.resolve()
+                },
+                descends: (commit, ancestor) => {
+                    const seen = new Set<string>()
+                    const walk = (id: string): boolean => {
+                        if (id === ancestor) {
+                            return true
+                        }
+                        if (seen.has(id)) {
+                            return false
+                        }
+                        seen.add(id)
+                        return (known.get(id)?.parents ?? []).some(walk)
+                    }
+                    return Promise.resolve(known.has(ancestor) && walk(commit))
+                }
+            }
+            const checked = await checkSeal(history, key)
+            expect([
+                name,
+                checked.status,
+                checked.status === 'differs' ? checked.difference.base : undefined,
+                checked.status === 'differs' ? checked.difference.sealed : undefined,
+                current ?? null
+            ]).toEqual([name, result, base, sealed, markAfter])
         }
     })
 })

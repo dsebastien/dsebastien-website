@@ -11,6 +11,8 @@ import type {
     TakedownMarker
 } from '../publishing/deploy.ts'
 import { takedownEntryOf, takedownEntryText } from '../publishing/deploy.ts'
+import type { SealSource } from '../publishing/ports.ts'
+import { SEAL_KEY_VARIABLE, sealKeyOf } from '../publishing/seal.ts'
 import type { DeviceSettings } from './settings.ts'
 
 // The child process of the deploy (issue 32, BUILD-02, R76): the port
@@ -29,6 +31,26 @@ export interface ChildTimes {
      * the settings.
      */
     readonly programs?: readonly string[]
+    /**
+     * The source of the seal key of the vault (R104): a valid key goes to
+     * the environment of the deploy, which checks the seal of the state that
+     * it builds. Never logged.
+     */
+    readonly seal?: SealSource
+}
+
+/** The environment of the deploy with the seal key of the vault, when it has a valid one. */
+async function withSealKey(
+    environment: NodeJS.ProcessEnv,
+    seal: SealSource | undefined
+): Promise<NodeJS.ProcessEnv> {
+    if (seal === undefined) {
+        return environment
+    }
+    const key = sealKeyOf(seal.environment(), await seal.envFile().catch(() => undefined))
+    return 'key' in key
+        ? { ...environment, [SEAL_KEY_VARIABLE]: Buffer.from(key.key).toString('hex') }
+        : environment
 }
 
 /**
@@ -100,10 +122,14 @@ export function childProcess(times: ChildTimes = {}): DeployProcess {
             if (folder?.isDirectory() !== true) {
                 throw new Error(`the folder of the site code is not a folder: ${command.folder}`)
             }
+            const env = await withSealKey(
+                childEnvironment(process.env, times.programs ?? []),
+                times.seal
+            )
             return await new Promise<ChildRun>((resolve, reject) => {
                 const child = spawn(command.program, command.args, {
                     cwd: command.folder,
-                    env: childEnvironment(process.env, times.programs ?? []),
+                    env,
                     stdio: ['ignore', 'pipe', 'pipe'],
                     windowsHide: true,
                     // A group of its own on Unix, so that a stop reaches

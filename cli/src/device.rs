@@ -3,7 +3,7 @@
 //! is `apps/plugin/src/publishing/node/device.ts`.
 
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
@@ -24,7 +24,8 @@ use crate::deploy::{
 };
 use crate::names::{is_changed_by_windows, is_refused_by_windows};
 use crate::seal::{
-    Commit, SEALED_PATHS, SealedHistory, Sealer, TreeFile, parse_tree_listing, with_seal,
+    Commit, SEAL_KEY_VARIABLE, SealedHistory, Sealer, TreeFile, parse_tree_listing, sealed_files,
+    with_seal,
 };
 
 /// How a check of the copy reaches the content store: `None` reads no
@@ -606,37 +607,126 @@ impl ContentStore {
             }
             commits.push(Commit {
                 id: id.to_owned(),
-                parent: parents.split_whitespace().next().map(str::to_owned),
+                parents: parents.split_whitespace().map(str::to_owned).collect(),
                 message: message.to_owned(),
             });
         }
         Ok(commits)
     }
 
-    /// The files of a commit below these paths, blobs and links, sorted by
-    /// the code points of the paths (`git ls-tree -r -z --full-tree`).
+    /// Every file of a commit, blobs and links, sorted by the code points of
+    /// the paths (`git ls-tree -r -z --full-tree`).
     ///
     /// # Errors
     ///
-    /// Git fails.
-    pub fn files(&self, commit: &str, paths: &[&str]) -> Result<Vec<TreeFile>, String> {
-        let mut arguments = vec!["ls-tree", "-r", "-z", "--full-tree", commit, "--"];
-        arguments.extend_from_slice(paths);
-        parse_tree_listing(&self.git_output(&arguments)?)
+    /// Git fails, or the commit is not known.
+    pub fn files(&self, commit: &str) -> Result<Vec<TreeFile>, String> {
+        parse_tree_listing(&self.git_output(&["ls-tree", "-r", "-z", "--full-tree", commit])?)
     }
 
-    /// The text of a file of a commit, or `None` when the commit has no such
-    /// file.
+    /// The texts of these objects, by object id, in one run of
+    /// `git cat-file --batch`. An object that git does not have, or that is
+    /// not UTF-8, is not in the result.
     ///
     /// # Errors
     ///
-    /// Git fails.
-    pub fn read_at(&self, commit: &str, path: &str) -> Result<Option<String>, String> {
-        if self.files(commit, &[path])?.is_empty() {
-            return Ok(None);
+    /// Git fails, or gives an answer that cannot be read.
+    pub fn objects(&self, ids: &[String]) -> Result<BTreeMap<String, String>, String> {
+        let mut texts = BTreeMap::new();
+        if ids.is_empty() {
+            return Ok(texts);
         }
-        self.git_output(&["cat-file", "blob", &format!("{commit}:{path}")])
-            .map(Some)
+        let input = ids.iter().fold(String::new(), |mut input, id| {
+            input.push_str(id);
+            input.push('\n');
+            input
+        });
+        let output = self.git_bytes(&["cat-file", "--batch"], input.as_bytes())?;
+        let unreadable = || "git cat-file gave an answer that cannot be read".to_owned();
+        let mut rest = output.as_slice();
+        for id in ids {
+            let end = rest
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .ok_or_else(unreadable)?;
+            let header = String::from_utf8_lossy(&rest[..end]).into_owned();
+            rest = &rest[end + 1..];
+            if header.ends_with(" missing") || header.ends_with(" ambiguous") {
+                continue;
+            }
+            let size: usize = header
+                .rsplit(' ')
+                .next()
+                .and_then(|size| size.parse().ok())
+                .ok_or_else(unreadable)?;
+            if rest.len() < size + 1 {
+                return Err(unreadable());
+            }
+            if let Ok(text) = std::str::from_utf8(&rest[..size]) {
+                texts.insert(id.clone(), text.to_owned());
+            }
+            rest = &rest[size + 1..];
+        }
+        Ok(texts)
+    }
+
+    /// The mark of the copy (R104): the last sealed commit that this copy
+    /// trusted, in `.git/vault-publish/sealed`. A file that is missing, or
+    /// that does not hold the id of a commit, is no mark.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be read.
+    pub fn mark(&self) -> Result<Option<String>, String> {
+        let file = self.local_file("sealed");
+        match fs::read_to_string(&file) {
+            Ok(text) => {
+                let id = text.trim_end_matches('\n');
+                let valid = (id.len() == 40 || id.len() == 64)
+                    && id
+                        .bytes()
+                        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
+                Ok(valid.then(|| id.to_owned()))
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(format!(
+                "the mark of the seal cannot be read ({error}): {}",
+                file.display()
+            )),
+        }
+    }
+
+    /// Writes the mark of the copy: a temporary file that then replaces it.
+    ///
+    /// # Errors
+    ///
+    /// The file cannot be written.
+    pub fn set_mark(&self, commit: &str) -> Result<(), String> {
+        let file = self.local_file("sealed");
+        let temporary = self.local_file(&format!("sealed.{}.tmp", std::process::id()));
+        let written = file
+            .parent()
+            .map_or(Ok(()), fs::create_dir_all)
+            .and_then(|()| fs::write(&temporary, format!("{commit}\n")))
+            .and_then(|()| fs::rename(&temporary, &file));
+        written.map_err(|error| {
+            let _ = fs::remove_file(&temporary);
+            format!(
+                "the mark of the seal cannot be written ({error}): {}",
+                file.display()
+            )
+        })
+    }
+
+    /// True when `ancestor` is `commit` or one of its ancestors; false also
+    /// when git does not know one of them.
+    pub fn descends(&self, commit: &str, ancestor: &str) -> bool {
+        [commit, ancestor].iter().all(|id| {
+            self.git_output(&["cat-file", "-e", &format!("{id}^{{commit}}")])
+                .is_ok()
+        }) && self
+            .git_output(&["merge-base", "--is-ancestor", ancestor, commit])
+            .is_ok()
     }
 
     /// Makes the sealed commit of `made` (the commit of the tool, or the last
@@ -653,8 +743,9 @@ impl ContentStore {
             .git_output(&["rev-parse", "--verify", &format!("{made}^{{tree}}")])?
             .trim()
             .to_owned();
-        let files = self.files(made, &SEALED_PATHS)?;
-        let sealed_message = with_seal(message, &seal(before, &files));
+        let files = sealed_files(self.files(made)?);
+        let parents: Vec<String> = before.map(str::to_owned).into_iter().collect();
+        let sealed_message = with_seal(message, &seal(&parents, &files));
         let mut arguments = vec!["commit-tree", tree.as_str()];
         if let Some(before) = before {
             arguments.extend(["-p", before]);
@@ -913,10 +1004,10 @@ impl ContentStore {
                     && files[0].1 == "configuration.json"
                     && (files[0].0 == "M" || files[0].0 == "A"));
             let way = if safe {
-                "a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main, then confirm the new state (confirm-state))".to_owned()
+                "a push changes configuration.json only, and does not remove it: when that is your change of the deny list, push it (git push origin HEAD:main), then confirm the new state (confirm-state)".to_owned()
             } else {
                 format!(
-                    "a push would change other files of the store too, or remove the configuration ({}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it",
+                    "a push would change other files of the store too, or remove the configuration ({}), so the commits can hold a publication that git could not take back, or take back a publication of another device. Keep a copy of configuration.json when it holds a change of yours, take the commits back (git fetch origin, then git reset --hard origin/main when the copy holds no other work), put your configuration.json back, then commit and push it, then confirm the new state (confirm-state)",
                     files
                         .iter()
                         .take(5)
@@ -1388,6 +1479,12 @@ impl ContentStore {
             ])
             .is_ok()
         {
+            // The mark of the copy follows its last sealed commit (R104). The
+            // push arrived: a mark that cannot be written only means that
+            // the next check moves it.
+            if seal.is_some() {
+                let _ = self.set_mark(&made);
+            }
             return Ok(());
         }
         Err(failed(
@@ -1680,6 +1777,15 @@ impl ContentStore {
         )
     }
 
+    /// Runs git in the copy, as `git_with`, and gives the bytes of its output.
+    fn git_bytes(&self, args: &[&str], input: &[u8]) -> Result<Vec<u8>, String> {
+        self.git_raw(
+            &["--literal-pathspecs", "-c", "core.autocrlf=false"],
+            args,
+            input,
+        )
+    }
+
     /// Runs git in the copy with these options before the command.
     fn git_with_options(
         &self,
@@ -1687,6 +1793,13 @@ impl ContentStore {
         args: &[&str],
         input: &[u8],
     ) -> Result<String, String> {
+        self.git_raw(options, args, input)
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// Runs git in the copy with these options before the command, and gives
+    /// the bytes of its output.
+    fn git_raw(&self, options: &[&str], args: &[&str], input: &[u8]) -> Result<Vec<u8>, String> {
         let mut git = Command::new("git");
         git.args(options)
             .args(args)
@@ -1716,7 +1829,7 @@ impl ContentStore {
         })
         .map_err(|error| format!("git could not run: {error}"))?;
         if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+            Ok(output.stdout)
         } else {
             Err(format!(
                 "git {} failed: {}",
@@ -1992,6 +2105,9 @@ pub struct ChildProcess {
     /// The Ctrl-C that stops the deploy, or `None`: the deploys of the MCP
     /// server run in the background, and Ctrl-C stops the server.
     interrupt: Option<Interrupt>,
+    /// The seal key for the environment of the deploy (R104), or `None`:
+    /// the deploy then reads the environment of the program.
+    seal_key: Option<String>,
 }
 
 /// The exit code of a program that Ctrl-C stopped on Windows: 128 and the
@@ -2131,13 +2247,23 @@ impl ChildProcess {
                 minute: Duration::from_millis(milliseconds),
                 grace: Duration::from_millis(200),
                 interrupt: None,
+                seal_key: None,
             };
         }
         Self {
             minute: Duration::from_secs(60),
             grace: Duration::from_secs(5),
             interrupt: None,
+            seal_key: None,
         }
+    }
+
+    /// The same child process, with the seal key of the vault in the
+    /// environment of the deploy: it checks the seal of what it builds
+    /// (R104, rule 10 of the seal).
+    #[must_use]
+    pub fn with_seal_key(self, seal_key: Option<String>) -> Self {
+        Self { seal_key, ..self }
     }
 
     /// The child process of a deploy that the program waits for in a
@@ -2306,7 +2432,7 @@ fn read_pipe(
 
 /// The command of the child: the program with its arguments, in the folder
 /// of the site code, in a process group of its own, with its environment.
-fn command_of(command: &DeployCommand) -> Command {
+fn command_of(command: &DeployCommand, seal_key: Option<&str>) -> Command {
     let mut child = Command::new(&command.program);
     child
         .args(&command.args)
@@ -2349,6 +2475,9 @@ fn command_of(command: &DeployCommand) -> Command {
             child.env("PATH", path);
         }
     }
+    if let Some(key) = seal_key {
+        child.env(SEAL_KEY_VARIABLE, key);
+    }
     child
 }
 
@@ -2360,7 +2489,7 @@ impl DeployProcess for ChildProcess {
                 command.folder.display()
             ));
         }
-        let mut child = command_of(command);
+        let mut child = command_of(command, self.seal_key.as_deref());
         let interrupt = self.interrupt.clone();
         if let Some(interrupt) = &interrupt {
             interrupt.arm();
@@ -2470,12 +2599,20 @@ impl SealedHistory for ContentStore {
         Self::commits(self, limit)
     }
 
-    fn files(&self, commit: &str, paths: &[&str]) -> Result<Vec<TreeFile>, String> {
-        Self::files(self, commit, paths)
+    fn files(&self, commit: &str) -> Result<Vec<TreeFile>, String> {
+        Self::files(self, commit)
     }
 
-    fn read_at(&self, commit: &str, path: &str) -> Result<Option<String>, String> {
-        Self::read_at(self, commit, path)
+    fn objects(&self, ids: &[String]) -> Result<BTreeMap<String, String>, String> {
+        Self::objects(self, ids)
+    }
+
+    fn mark(&self) -> Result<Option<String>, String> {
+        Self::mark(self)
+    }
+
+    fn descends(&self, commit: &str, ancestor: &str) -> Result<bool, String> {
+        Ok(Self::descends(self, commit, ancestor))
     }
 }
 
@@ -2624,6 +2761,20 @@ mod tests {
     use super::*;
     use std::ffi::OsString;
 
+    #[test]
+    fn the_deploy_gets_the_seal_key_of_the_vault_only_when_there_is_one() {
+        let key_of = |key: Option<&str>| {
+            command_of(&long_command(), key)
+                .get_envs()
+                .find(|(name, _)| *name == SEAL_KEY_VARIABLE)
+                .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()))
+        };
+        let key = "5e".repeat(32);
+
+        assert_eq!(key_of(Some(&key)), Some(key));
+        assert_eq!(key_of(None), None);
+    }
+
     /// A program that runs for 30 seconds, with a program that it started.
     fn long_command() -> DeployCommand {
         #[cfg(unix)]
@@ -2645,6 +2796,7 @@ mod tests {
             minute: Duration::from_secs(60),
             grace: Duration::from_millis(200),
             interrupt: Some(interrupt.clone()),
+            seal_key: None,
         };
         let started = Instant::now();
 
@@ -2665,6 +2817,7 @@ mod tests {
             minute: Duration::from_secs(60),
             grace: Duration::from_millis(200),
             interrupt: Some(interrupt),
+            seal_key: None,
         };
         let mut command = long_command();
         #[cfg(unix)]
@@ -2700,6 +2853,7 @@ mod tests {
             minute: Duration::from_secs(60),
             grace: Duration::from_secs(20),
             interrupt: Some(interrupt.clone()),
+            seal_key: None,
         };
         let started = Instant::now();
 
@@ -2727,6 +2881,7 @@ mod tests {
             minute: Duration::from_secs(60),
             grace: Duration::from_secs(5),
             interrupt: Some(interrupt.clone()),
+            seal_key: None,
         };
         let command = DeployCommand {
             args: vec!["-c".into(), "trap 'exit 0' TERM; sleep 30 & wait".into()],
@@ -2752,6 +2907,7 @@ mod tests {
             minute: Duration::from_secs(60),
             grace: Duration::from_millis(200),
             interrupt: Some(interrupt.clone()),
+            seal_key: None,
         };
         let mut command = long_command();
         command.args = if cfg!(windows) {

@@ -24,6 +24,7 @@ import {
     releaseAttachmentKeys,
     removalsBetween,
     removedAttachmentKeys,
+    sealRefusal,
     withdrawnAttachmentKeys
 } from '../apps/site/worker/content-copy.ts'
 import {
@@ -307,7 +308,18 @@ async function deploy(
         // The fetch comes first (a fetch that fails refuses with no deletion);
         // a copy that cannot be built is refused inside the run, after the
         // withdrawn files left when that is safe (review round 3 of issue 120).
-        const copy = store === undefined ? undefined : await inspectContentCopy(store)
+        const inspected = store === undefined ? undefined : await inspectContentCopy(store)
+        // A state that the tool did not seal is never built (R104, rule 10):
+        // it is refused as a copy that cannot be built, after the withdrawn
+        // files left, so a takedown on such a state waits for its deploy.
+        const sealed =
+            store === undefined || inspected?.refusal !== undefined
+                ? undefined
+                : await sealRefusal(store, process.env)
+        const copy =
+            inspected === undefined || sealed === undefined
+                ? inspected
+                : { ...inspected, refusal: sealed }
         const contentRevision = copy?.head ?? null
         // The files that the guards withdrew are read first: when a later
         // read of the copy fails, the run still deletes them before it stops

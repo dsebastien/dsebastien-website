@@ -16,7 +16,13 @@ import { STATE_PROPERTY } from '../publishing/clean.ts'
 import type { NoteStateKind } from '../publishing/center.ts'
 import { runDeploy, succeeded } from '../publishing/deploy.ts'
 import type { DeployReport } from '../publishing/deploy.ts'
-import { lockHolderOf, processRuns, pullContentStore, SYSTEM } from '../publishing/node/device.ts'
+import {
+    lockHolderOf,
+    processRuns,
+    pullContentStore,
+    SYSTEM,
+    vaultSealSource
+} from '../publishing/node/device.ts'
 import { JOURNAL_FOLDER } from '../publishing/renames.ts'
 import { addressOf, PublicationCenter } from './center.ts'
 import type { FileStat, PropertyWrite } from './center.ts'
@@ -150,7 +156,10 @@ export class VaultPublishPlugin extends Plugin {
             deploy: (kind, signal) => {
                 const settings = loadSettings(this.app)
                 return runDeploy(
-                    childProcess({ programs: [settings.git.trim(), settings.bun.trim()] }),
+                    childProcess({
+                        programs: [settings.git.trim(), settings.bun.trim()],
+                        seal: vaultSealSource(vaultFolder(this.app))
+                    }),
                     deployFiles(settings.contentStore, gitOf(settings)),
                     deploySettingsOf(settings),
                     kind,

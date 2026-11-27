@@ -564,6 +564,7 @@ impl VaultRead {
                     vault,
                     &Configuration {
                         deny_list: vec![folder.to_owned()],
+                        ..Configuration::default()
                     },
                 )?;
                 let mut denied: BTreeSet<String> = read.denied.into_iter().collect();

@@ -11,6 +11,7 @@ import {
     releaseAttachmentKeys,
     removalsBetween,
     removedAttachmentKeys,
+    sealRefusal,
     withdrawnAttachmentKeys
 } from './content-copy.ts'
 
@@ -643,5 +644,31 @@ describe('the withdrawn keys of the copy', () => {
         expect(await rejectionOf(withdrawnAttachmentKeys(copy))).toContain(
             'withdrawn.json of the content store cannot be read'
         )
+    })
+})
+
+// R104, rule 10 of "The seal of the content store": the deploy builds a
+// sealed state only, by the same check as the tool.
+describe('the seal of the copy of a deployment', () => {
+    const key = { VAULT_PUBLISH_SEAL_KEY: '5e'.repeat(32) }
+
+    test('passes a sealed state, and refuses a commit that no tool wrote', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        expect(await sealRefusal(copy, key)).toBeUndefined()
+        const head = await commit(copy, 'A commit by hand')
+        const refused = await sealRefusal(copy, key)
+        expect(refused).toContain('files of the store: notes.txt (added)')
+        expect(refused).toContain(`confirm-state --head ${head}`)
+    })
+
+    test('refuses with no key or a key that is not valid, and never shows it', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        for (const environment of [{}, { VAULT_PUBLISH_SEAL_KEY: '7c'.repeat(20) }]) {
+            const refused = await sealRefusal(copy, environment)
+            expect(refused).toContain('VAULT_PUBLISH_SEAL_KEY of its environment')
+            expect(refused).not.toContain('7c7c')
+        }
     })
 })

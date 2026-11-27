@@ -13,6 +13,9 @@ pub const CONFIGURATION_FILE: &str = "configuration.json";
 pub struct Configuration {
     /// The vault folders whose notes can never be published.
     pub deny_list: Vec<String>,
+    /// The optional list `noindexFolders` of the site build (R103): the
+    /// program only checks it, and the seal names a change of it (R104).
+    pub noindex_folders: Vec<String>,
 }
 
 /// True when the text is a path inside a vault: relative, with `/`, and with
@@ -47,10 +50,14 @@ pub fn parse_configuration(text: Option<&str>) -> Result<Configuration, String> 
     )?;
     // An optional list (R103), but a wrong one is never read as an empty one.
     // The site build applies it; the program only checks it.
-    if let Some(noindex_folders) = object.and_then(|object| object.get("noindexFolders")) {
-        folders_of(Some(noindex_folders), "noindex folders")?;
-    }
-    Ok(Configuration { deny_list })
+    let noindex_folders = match object.and_then(|object| object.get("noindexFolders")) {
+        Some(noindex_folders) => folders_of(Some(noindex_folders), "noindex folders")?,
+        None => Vec::new(),
+    };
+    Ok(Configuration {
+        deny_list,
+        noindex_folders,
+    })
 }
 
 /// The folders of a list of the configuration, or an error that names the list.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
     copyFixtureVault,
@@ -11,9 +11,11 @@ import {
     sealOfCommit,
     type TestStores
 } from '@dsebastien-website/testing'
+import { sealRefusal } from '../../../site/worker/content-copy.ts'
 import { nodeDevice } from './node/device.ts'
+import { markFile } from './node/sealed-history.ts'
 import type { Device } from './ports.ts'
-import { MISSING_KEY } from './seal.ts'
+import { MISSING_KEY, SEAL_HISTORY } from './seal.ts'
 import { confirmState, plan, publish, status, takedown } from './tool.ts'
 
 // The seal of the content store (R104), at the seams of the tool: every
@@ -76,6 +78,46 @@ async function commitByHand(
     }
     await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
     return await git(copy, 'rev-parse', 'HEAD')
+}
+
+/** Gives git a commit of this tree and these parents with this message, and gives its id. */
+async function commitTree(
+    copy: string,
+    tree: string,
+    parents: readonly string[],
+    message: string
+): Promise<string> {
+    const child = Bun.spawn(
+        ['git', 'commit-tree', tree, ...parents.flatMap((one) => ['-p', one]), '-F', '-'],
+        { cwd: copy, env: gitEnvironment(), stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' }
+    )
+    void child.stdin.write(message)
+    void child.stdin.end()
+    const output = await new Response(child.stdout).text()
+    if ((await child.exited) !== 0) {
+        throw new Error('git commit-tree failed')
+    }
+    return output.trim()
+}
+
+/** Writes a text into the objects of git, and gives its id. */
+async function hashObject(copy: string, text: string): Promise<string> {
+    const child = Bun.spawn(['git', 'hash-object', '-w', '--stdin'], {
+        cwd: copy,
+        env: gitEnvironment(),
+        stdin: 'pipe',
+        stdout: 'pipe'
+    })
+    void child.stdin.write(text)
+    void child.stdin.end()
+    const output = await new Response(child.stdout).text()
+    await child.exited
+    return output.trim()
+}
+
+/** Pushes a commit to the content store as its main, by force, as another holder of the store can. */
+async function forcePush(copy: string, commit: string): Promise<void> {
+    await git(copy, 'push', '--quiet', '--force', 'origin', `${commit}:refs/heads/main`)
 }
 
 /** The seal of the last line of the message of a commit. */
@@ -239,5 +281,132 @@ describe('the seal of the content store', () => {
         expect(await rejectionOf(plan(device, { include: [] }))).toContain(
             'manifest entries removed (1)'
         )
+    }, 60_000)
+
+    test('a file of the manifest in another letter case, and any other file, are sealed', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUp(stores)
+        // In the tree only, as a push of someone else gives it: a checkout on
+        // Windows would put it into manifest/.
+        const blob = await hashObject(copy, `{\n  "path": "${OTHER}",\n  "state": "published"\n}\n`)
+        await git(
+            copy,
+            'update-index',
+            '--add',
+            '--cacheinfo',
+            `100644,${blob},Manifest/0123456789abcdef.json`
+        )
+        await git(copy, 'commit', '--quiet', '--message', 'A commit by hand')
+        await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+
+        expect(await rejectionOf(status(device))).toContain(
+            `manifest entries added (1): "${OTHER}" (none to published)`
+        )
+
+        await git(copy, 'reset', '--quiet', '--hard', 'HEAD~1')
+        await forcePush(copy, await git(copy, 'rev-parse', 'HEAD'))
+        await commitByHand(copy, { '.gitattributes': '* -text\n' })
+        expect(await rejectionOf(status(device))).toContain(
+            'files of the store: .gitattributes (added)'
+        )
+    }, 60_000)
+
+    test('a pushed merge is refused, also with the seal message of an older commit', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUp(stores)
+        const first = await git(copy, 'rev-parse', 'HEAD')
+        await publish(device, (await plan(device, { include: [NOTE] })).id, RUN)
+        const current = await git(copy, 'rev-parse', 'HEAD')
+        const oldTree = await git(copy, 'rev-parse', `${first}^{tree}`)
+
+        // The tree of the old sealed state, as a fast-forward of the current one.
+        const merge = await commitTree(copy, oldTree, [first, current], 'Merge')
+        await git(copy, 'push', '--quiet', 'origin', `${merge}:refs/heads/main`)
+        await git(copy, 'merge', '--quiet', '--ff-only', merge)
+        const refused = await rejectionOf(status(device))
+        expect(refused).toStartWith('the content store has no sealed state that the tool can trust')
+        expect(refused).toContain('manifest entries removed (1)')
+
+        // The message of the old sealed commit, copied onto a merge.
+        const copied = await commitTree(
+            copy,
+            oldTree,
+            [first, merge],
+            await git(copy, 'log', '-1', '--format=%B', first)
+        )
+        await git(copy, 'push', '--quiet', 'origin', `${copied}:refs/heads/main`)
+        await git(copy, 'merge', '--quiet', '--ff-only', copied)
+        expect(await rejectionOf(status(device))).toStartWith(
+            'the content store has no sealed state that the tool can trust'
+        )
+    }, 60_000)
+
+    test('a forced push of an older sealed history and a reset by hand stop until a confirmation', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUp(stores)
+        const first = await git(copy, 'rev-parse', 'HEAD')
+        await publish(device, (await plan(device, { include: [NOTE] })).id, RUN)
+        const published = await git(copy, 'rev-parse', 'HEAD')
+        expect((await readFile(markFile(copy), 'utf8')).trim()).toBe(published)
+
+        await forcePush(copy, first)
+        await git(copy, 'fetch', '--quiet', 'origin')
+        await git(copy, 'reset', '--quiet', '--hard', 'origin/main')
+
+        const refused = await rejectionOf(plan(device, { include: [] }))
+        expect(refused).toStartWith('the content store has no sealed state that the tool can trust')
+        expect(refused).toContain(`descends from ${published}, the last sealed commit`)
+        expect(refused).toContain('manifest entries removed (1)')
+
+        await confirmState(device, first, LATER)
+        const confirmed = await git(copy, 'rev-parse', 'HEAD')
+        expect((await readFile(markFile(copy), 'utf8')).trim()).toBe(confirmed)
+        expect((await plan(device, { include: [NOTE] })).plan.publish).toEqual([NOTE])
+    }, 60_000)
+
+    test('more unsealed commits than the check reads give the text of the mark', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUp(stores)
+        await publish(device, (await plan(device, { include: [NOTE] })).id, RUN)
+        const sealed = await git(copy, 'rev-parse', 'HEAD')
+        let head = sealed
+        const tree = await git(copy, 'rev-parse', 'HEAD^{tree}')
+        for (let index = 0; index <= SEAL_HISTORY; index += 1) {
+            head = await commitTree(copy, tree, [head], `A commit by hand ${String(index)}`)
+        }
+        await git(copy, 'merge', '--quiet', '--ff-only', head)
+        await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+
+        const refused = await rejectionOf(status(device))
+        expect(refused).toStartWith('the content store has no sealed state that the tool can trust')
+        expect(refused).toContain(sealed)
+        expect(refused).toContain(': no file.')
+        // Without the mark, it reads as a store with no sealed state.
+        await rm(markFile(copy))
+        expect(await rejectionOf(status(device))).toStartWith(
+            'the content store has no sealed state yet'
+        )
+    }, 120_000)
+
+    test('the deploy refuses a state that is not sealed, also after a takedown on it', async () => {
+        await using stores = await makeTestStores()
+        const { copy, device } = await setUp(stores)
+        await publish(device, (await plan(device, { include: [NOTE, OTHER] })).id, RUN)
+        const key = { VAULT_PUBLISH_SEAL_KEY: '5e'.repeat(32) }
+        expect(await sealRefusal(copy, key)).toBeUndefined()
+        expect(await sealRefusal(copy, {})).toContain('VAULT_PUBLISH_SEAL_KEY of its environment')
+
+        // A note that a takedown removed comes back by a commit that no tool wrote.
+        await takedown(device, [OTHER], RUN)
+        expect(await sealRefusal(copy, key)).toBeUndefined()
+        await git(copy, 'revert', '--no-edit', 'HEAD')
+        await git(copy, 'push', '--quiet', 'origin', 'HEAD:main')
+        await takedown(device, [NOTE], LATER)
+
+        const refused = await sealRefusal(copy, key)
+        expect(refused).toStartWith(
+            'the deploy builds only a state of the content store that the tool sealed'
+        )
+        expect(refused).toContain(`"${OTHER}" (none to published)`)
     }, 60_000)
 })

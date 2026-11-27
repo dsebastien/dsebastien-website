@@ -2,7 +2,7 @@
 // gives the vault of Obsidian. The tests and the parity harness give folders.
 // The logic itself never touches a file system, git or Obsidian.
 
-import type { Commit, TreeFile } from './seal.ts'
+import type { SealedHistory, TreeFile } from './seal.ts'
 
 /** One name of a folder of the vault. */
 export interface VaultEntry {
@@ -144,25 +144,18 @@ export interface ContentStore {
      * them back. Other staged work of the copy stays staged.
      */
     commitAndPush(message: string, paths: readonly string[], seal?: Sealer): Promise<void>
-    /**
-     * The commits of the first-parent chain from the last commit of the copy,
-     * newest first, at most `limit`. None when the copy has no commit.
-     */
-    commits(limit: number): Promise<readonly Commit[]>
-    /** The files of a commit below these paths (`git ls-tree -r`), sorted by path. */
-    files(commit: string, paths: readonly string[]): Promise<readonly TreeFile[]>
-    /** The text of a file of a commit, or `undefined` when the commit has no such file. */
-    readAt(commit: string, path: string): Promise<string | undefined>
+    /** The history of the copy as the check of the seal reads it, with the mark of the copy (R104). */
+    readonly sealed: SealedHistory
 }
 
 /**
- * The seal of a commit (R104): from the commit before it (`undefined` for a
- * first commit) and the files of the commit below `SEALED_PATHS`. With a
- * sealer, `commitAndPush` makes the commit again with the seal as the last
- * line of its message, and pushes that one. With no path, it makes a commit
- * with no change of a file.
+ * The seal of a commit (R104): from the parents of the commit (none for a
+ * first commit) and its sealed files (every file but the redirect list).
+ * With a sealer, `commitAndPush` makes the commit again with the seal as the
+ * last line of its message, pushes that one, and moves the mark of the copy
+ * to it. With no path, it makes a commit with no change of a file.
  */
-export type Sealer = (parent: string | undefined, files: readonly TreeFile[]) => string
+export type Sealer = (parents: readonly string[], files: readonly TreeFile[]) => string
 
 /**
  * Where the seal key comes from (R104): the variable of the environment and

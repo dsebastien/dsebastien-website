@@ -1,7 +1,7 @@
 //! The seal of the content store (decision R104, `documentation/Canonical
 //! Form.md`, "The seal of the content store"). Every commit that the tool
 //! writes carries a seal: an HMAC with the seal key of the vault over its
-//! parent and the state that the tool trusts. Before a run, the tool checks
+//! parents and the state that the tool trusts. Before a run, the tool checks
 //! that the state of the last commit is the sealed state. The TypeScript twin
 //! is `apps/plugin/src/publishing/seal.ts`; the shared cases are in
 //! `fixtures/canonical/seal.json`.
@@ -17,33 +17,39 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::configuration::{CONFIGURATION_FILE, parse_configuration};
-use crate::edits::EDITS_FILE;
 use crate::hash::sha256_hex;
 use crate::json::parse_json;
 use crate::manifest::{MANIFEST_FOLDER, NOTES_FOLDER};
 use crate::order::sort_by_code_point;
-use crate::renames::RENAMES_FILE;
-use crate::withdrawn::WITHDRAWN_FILE;
 
 /// The name of the seal key, in the environment or in the `.env` file at the
 /// root of the vault.
 pub const SEAL_KEY_VARIABLE: &str = "VAULT_PUBLISH_SEAL_KEY";
 
-/// The files and folders of the content store that the seal covers.
-pub const SEALED_PATHS: [&str; 6] = [
-    CONFIGURATION_FILE,
-    EDITS_FILE,
-    MANIFEST_FOLDER,
-    NOTES_FOLDER,
-    RENAMES_FILE,
-    WITHDRAWN_FILE,
-];
+/// The one file of the content store that the seal does not cover: the
+/// redirect list, which only the author writes, at the root and by its exact
+/// name. Every other file of a commit is sealed.
+pub const UNSEALED_FILE: &str = "redirects.json";
+
+/// True when the seal covers this path of the content store.
+pub fn is_sealed_path(path: &str) -> bool {
+    path != UNSEALED_FILE
+}
+
+/// The files of a commit that the seal covers.
+pub fn sealed_files(files: Vec<TreeFile>) -> Vec<TreeFile> {
+    files
+        .into_iter()
+        .filter(|file| is_sealed_path(&file.path))
+        .collect()
+}
 
 /// How many commits of the first-parent chain the check reads, from the last
 /// one.
 pub const SEAL_HISTORY: usize = 100;
 
-/// The most entries of each list of a difference that its text names.
+/// The most entries of each list of a difference that its text names, but
+/// the published ones.
 pub const NAMED_IN_TEXT: usize = 20;
 
 /// One file of a commit, as `git ls-tree -r` gives it.
@@ -59,37 +65,52 @@ pub struct TreeFile {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commit {
     pub id: String,
-    /// The first parent, or `None` for a first commit.
-    pub parent: Option<String>,
+    /// Every parent of the commit, in the order of git: none for a first
+    /// commit.
+    pub parents: Vec<String>,
     pub message: String,
 }
 
-/// The way a seal is made for a commit: from its parent and its sealed files,
-/// the seal in small hexadecimal digits.
-pub type Sealer<'a> = &'a dyn Fn(Option<&str>, &[TreeFile]) -> String;
+/// The way a seal is made for a commit: from its parents and its sealed
+/// files, the seal in small hexadecimal digits.
+pub type Sealer<'a> = &'a dyn Fn(&[String], &[TreeFile]) -> String;
+
+/// True for what `trimmed` takes away: the white space of ASCII (space, tab,
+/// line feed, carriage return, form feed, vertical tab) and the byte order
+/// mark, and nothing else: the TypeScript twin takes away the same.
+fn is_trimmed(character: char) -> bool {
+    matches!(
+        character,
+        ' ' | '\t' | '\n' | '\r' | '\u{c}' | '\u{b}' | '\u{feff}'
+    )
+}
+
+/// The text without the characters of `is_trimmed` at its two ends.
+pub fn trimmed(text: &str) -> &str {
+    text.trim_matches(is_trimmed)
+}
 
 /// The value of a variable in the text of a `.env` file: lines `NAME=value`,
 /// with an optional `export `, white space around the name and the value, and
 /// one pair of single or double quotes around the value. A line that starts
 /// with `#` is a comment. The last line of the name wins.
 pub fn env_value(text: &str, name: &str) -> Option<String> {
-    let blank = |character: char| character.is_whitespace() || character == '\u{feff}';
     let mut found = None;
     for raw in text.split('\n') {
-        let line = raw.strip_suffix('\r').unwrap_or(raw).trim_matches(blank);
+        let line = trimmed(raw);
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         let line = line
             .strip_prefix("export ")
-            .map_or(line, |rest| rest.trim_start_matches(blank));
+            .map_or(line, |rest| rest.trim_start_matches(is_trimmed));
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
-        if key.trim_matches(blank) != name {
+        if trimmed(key) != name {
             continue;
         }
-        let value = value.trim_matches(blank);
+        let value = trimmed(value);
         let bytes = value.as_bytes();
         let quoted = bytes.len() >= 2
             && (bytes[0] == b'"' || bytes[0] == b'\'')
@@ -125,17 +146,15 @@ fn key_bytes(text: &str) -> Option<Vec<u8>> {
 }
 
 /// The seal key: the variable of the environment when it is set and not
-/// empty, else the variable of the `.env` file at the root of the vault. The
-/// error is the message of a key that is missing or not valid: it never holds
-/// the value that it refuses.
+/// empty (after `trimmed`), else the variable of the `.env` file at the root
+/// of the vault. The error is the message of a key that is missing or not
+/// valid: it never holds the value that it refuses.
 ///
 /// # Errors
 ///
 /// There is no key, or it is not 64 hexadecimal digits.
 pub fn seal_key_of(environment: Option<&str>, env_file: Option<&str>) -> Result<Vec<u8>, String> {
-    let from_environment = environment.map_or("", |value| {
-        value.trim_matches(|character: char| character.is_whitespace() || character == '\u{feff}')
-    });
+    let from_environment = environment.map_or("", trimmed);
     let (value, source) = if from_environment.is_empty() {
         (
             env_file
@@ -154,6 +173,17 @@ pub fn seal_key_of(environment: Option<&str>, env_file: Option<&str>) -> Result<
             "{SEAL_KEY_VARIABLE} of {source} is not 64 hexadecimal digits, so no seal can be checked or written (R104). Make a key with openssl rand -hex 32, and give the same key to every device that publishes"
         )
     })
+}
+
+/// The key in small hexadecimal digits, for the environment of the deploy
+/// that the tool starts (rule 10 of the seal). Never for a log.
+pub fn key_hex(key: &[u8]) -> String {
+    let mut hex = String::with_capacity(key.len() * 2);
+    for byte in key {
+        // Writing to a `String` cannot fail.
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
 }
 
 /// Where the seal key of a device comes from: the variable of the
@@ -178,7 +208,7 @@ impl SealSource {
     pub fn key(&self) -> Result<Vec<u8>, String> {
         let environment = env::var_os(SEAL_KEY_VARIABLE)
             .map(|value| value.to_string_lossy().into_owned())
-            .filter(|value| !value.trim().is_empty());
+            .filter(|value| !trimmed(value).is_empty());
         // The file is read only when the environment gives no key.
         let file = if environment.is_some() {
             None
@@ -219,37 +249,36 @@ pub fn hmac_sha256(key: &[u8], text: &str) -> String {
     let mut outer = Sha256::new();
     outer.update(&outer_pad);
     outer.update(inner.finalize());
-    let mut hex = String::with_capacity(64);
-    for byte in outer.finalize() {
-        // Writing to a `String` cannot fail.
-        let _ = write!(hex, "{byte:02x}");
-    }
-    hex
+    key_hex(&outer.finalize())
 }
 
-/// The digest of the sealed state of a commit: one line per file, in the
-/// order of the code points of the paths.
+/// The digest of the sealed state of a commit: one record
+/// `<mode> <object> <path>` ended by a NUL per file (a path of git never
+/// holds a NUL), in the order of the code points of the paths.
 pub fn state_digest(files: &[TreeFile]) -> String {
     let mut sorted: Vec<&TreeFile> = files.iter().collect();
     sorted.sort_by(|one, two| one.path.cmp(&two.path));
-    let mut lines = String::new();
+    let mut records = String::new();
     for file in sorted {
         // Writing to a `String` cannot fail.
-        let _ = writeln!(lines, "{} {} {}", file.mode, file.object, file.path);
+        let _ = write!(records, "{} {} {}\0", file.mode, file.object, file.path);
     }
-    sha256_hex(&lines)
+    sha256_hex(&records)
 }
 
-/// The seal of a commit with this parent and these files.
-pub fn seal_of(key: &[u8], parent: Option<&str>, files: &[TreeFile]) -> String {
-    hmac_sha256(
-        key,
-        &format!(
-            "dsebastien-vault-publish seal 1\nparent {}\nstate {}\n",
-            parent.unwrap_or("none"),
-            state_digest(files)
-        ),
-    )
+/// The seal of a commit with these parents (in the order of git) and these
+/// sealed files.
+pub fn seal_of(key: &[u8], parents: &[String], files: &[TreeFile]) -> String {
+    let mut text = String::from("dsebastien-vault-publish seal 1\n");
+    if parents.is_empty() {
+        text.push_str("parent none\n");
+    }
+    for parent in parents {
+        // Writing to a `String` cannot fail.
+        let _ = writeln!(text, "parent {parent}");
+    }
+    let _ = writeln!(text, "state {}", state_digest(files));
+    hmac_sha256(key, &text)
 }
 
 /// The seal that the last line of a commit message holds, or `None`.
@@ -334,18 +363,31 @@ pub struct FileChange {
     pub change: String,
 }
 
+/// What a difference compares with: the last commit with a valid seal that
+/// the copy trusts (`seal`), the mark of the copy when the history has no
+/// such commit (`mark`), or nothing (`none`).
+pub const BASE_SEAL: &str = "seal";
+pub const BASE_MARK: &str = "mark";
+pub const BASE_NONE: &str = "none";
+
 /// How the state of the last commit differs from the last sealed state.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreDifference {
     /// The last commit of the copy: a confirmation names it.
     pub head: String,
-    /// The last commit with a valid seal, or `none`.
+    /// What the difference compares with: `seal`, `mark` or `none`.
+    pub base: String,
+    /// The commit of the base, or `none`.
     pub sealed: String,
     pub entries: Vec<EntryChange>,
     /// The folders that left the deny list: the guards are looser.
     pub deny_list_removed: Vec<String>,
     pub deny_list_added: Vec<String>,
+    /// The folders that left the list `noindexFolders` (their notes can be
+    /// indexed) and the ones that came in.
+    pub noindex_removed: Vec<String>,
+    pub noindex_added: Vec<String>,
     pub files: Vec<FileChange>,
 }
 
@@ -354,79 +396,136 @@ pub struct StoreDifference {
 pub enum SealCheck {
     Empty,
     Sealed,
-    Differs(StoreDifference),
+    /// Boxed: a difference is much larger than the other results.
+    Differs(Box<StoreDifference>),
 }
 
 /// What the check reads of the copy: its first-parent chain, the files of a
-/// commit, a file of a commit.
+/// commit, the texts of objects, and the mark of the copy: the last sealed
+/// commit that the copy trusted, in its git folder, never in a commit.
 pub trait SealedHistory {
     /// # Errors
     ///
     /// Git fails.
     fn commits(&self, limit: usize) -> Result<Vec<Commit>, String>;
+    /// Every file of a commit (`git ls-tree -r`), sorted by path.
+    ///
+    /// # Errors
+    ///
+    /// Git fails, or the commit is not known.
+    fn files(&self, commit: &str) -> Result<Vec<TreeFile>, String>;
+    /// The texts of these objects of git, by object id. An object that
+    /// cannot be read is not in the result.
+    ///
     /// # Errors
     ///
     /// Git fails.
-    fn files(&self, commit: &str, paths: &[&str]) -> Result<Vec<TreeFile>, String>;
+    fn objects(&self, ids: &[String]) -> Result<BTreeMap<String, String>, String>;
+    /// The mark of the copy, or `None`.
+    ///
+    /// # Errors
+    ///
+    /// The file of the mark cannot be read.
+    fn mark(&self) -> Result<Option<String>, String>;
+    /// True when `ancestor` is `commit` or one of its ancestors; false also
+    /// when one is not known.
+    ///
     /// # Errors
     ///
     /// Git fails.
-    fn read_at(&self, commit: &str, path: &str) -> Result<Option<String>, String>;
+    fn descends(&self, commit: &str, ancestor: &str) -> Result<bool, String>;
 }
 
-/// Checks the seal of the copy: the newest commit of the first-parent chain
-/// (at most `SEAL_HISTORY` commits) whose seal is valid for its parent and its
-/// state must hold the state of the last commit. A commit after it that
-/// changes no sealed path (the redirect list) is no difference.
+/// Checks the seal of the copy. It walks the first-parent chain from the last
+/// commit (at most `SEAL_HISTORY` commits) and takes the newest commit whose
+/// seal is valid for its parents and its state; a commit with more than one
+/// parent stops the walk, so no merge lies between the last commit and the
+/// sealed one, and the sealed one is no merge. That commit is trusted when
+/// the copy has no mark, or when it is the mark or descends from it. The
+/// check writes nothing: the mark moves only when the tool pushes a sealed
+/// commit (a confirmation included). The check passes when the trusted commit has the sealed
+/// state of the last commit: a later commit of the redirect list alone is no
+/// difference.
 ///
 /// # Errors
 ///
-/// The history cannot be read.
+/// The history or the mark cannot be read.
 pub fn check_seal(store: &dyn SealedHistory, key: &[u8]) -> Result<SealCheck, String> {
     let commits = store.commits(SEAL_HISTORY)?;
     let Some(head) = commits.first() else {
         return Ok(SealCheck::Empty);
     };
-    let head_files = store.files(&head.id, &SEALED_PATHS)?;
-    let head_digest = state_digest(&head_files);
+    let head_files = sealed_files(store.files(&head.id)?);
+    let mut found: Option<(&str, Vec<TreeFile>)> = None;
     for (index, commit) in commits.iter().enumerate() {
+        if commit.parents.len() > 1 {
+            break;
+        }
         let Some(seal) = seal_line_of(&commit.message) else {
             continue;
         };
         let files = if index == 0 {
             head_files.clone()
         } else {
-            store.files(&commit.id, &SEALED_PATHS)?
+            sealed_files(store.files(&commit.id)?)
         };
-        if same_seal(&seal, &seal_of(key, commit.parent.as_deref(), &files)) {
-            if state_digest(&files) == head_digest {
-                return Ok(SealCheck::Sealed);
-            }
-            return Ok(SealCheck::Differs(difference_of(
-                &head.id,
-                Some(&commit.id),
-                &files,
-                &head_files,
-                &|at, path| store.read_at(at, path),
-            )?));
+        if same_seal(&seal, &seal_of(key, &commit.parents, &files)) {
+            found = Some((&commit.id, files));
+            break;
         }
     }
-    Ok(SealCheck::Differs(difference_of(
+    let mark = store.mark()?;
+    let read = |ids: &[String]| store.objects(ids);
+    if let Some((id, files)) = found {
+        let trusted = match mark.as_deref() {
+            None => true,
+            Some(mark) => mark == id || store.descends(id, mark)?,
+        };
+        if trusted {
+            if state_digest(&files) == state_digest(&head_files) {
+                return Ok(SealCheck::Sealed);
+            }
+            return Ok(SealCheck::Differs(Box::new(difference_of(
+                &head.id,
+                BASE_SEAL,
+                Some(id),
+                &files,
+                &head_files,
+                &read,
+            )?)));
+        }
+    }
+    if let Some(mark) = mark {
+        // The commit of the mark can be gone from the copy: then every file
+        // is added.
+        let mark_files = store.files(&mark).map_or_else(|_| Vec::new(), sealed_files);
+        return Ok(SealCheck::Differs(Box::new(difference_of(
+            &head.id,
+            BASE_MARK,
+            Some(&mark),
+            &mark_files,
+            &head_files,
+            &read,
+        )?)));
+    }
+    Ok(SealCheck::Differs(Box::new(difference_of(
         &head.id,
+        BASE_NONE,
         None,
         &[],
         &head_files,
-        &|at, path| store.read_at(at, path),
-    )?))
+        &read,
+    )?)))
 }
 
 /// The state and the vault path of a manifest entry, read leniently: a
 /// difference names what it can.
-fn entry_facts(text: Option<&str>) -> (String, String) {
-    let Some(text) = text else {
+fn entry_facts(file: Option<&TreeFile>, text: Option<&str>) -> (String, String) {
+    if file.is_none() {
         return ("none".to_owned(), String::new());
-    };
-    if let Ok(value) = parse_json(text)
+    }
+    if let Some(text) = text
+        && let Ok(value) = parse_json(text)
         && let Some(record) = value.as_object()
     {
         let state = record
@@ -442,25 +541,53 @@ fn entry_facts(text: Option<&str>) -> (String, String) {
     ("?".to_owned(), String::new())
 }
 
-/// The deny list of a configuration text, or `None` when it cannot be read.
-fn deny_list_of(text: Option<&str>) -> Option<Vec<String>> {
-    match text {
-        None => Some(Vec::new()),
-        Some(text) => parse_configuration(Some(text))
-            .ok()
-            .map(|configuration| configuration.deny_list),
+/// The two lists of a configuration (the deny list and the noindex folders),
+/// or `None` when it cannot be read.
+fn configuration_of(
+    file: Option<&TreeFile>,
+    text: Option<&str>,
+) -> Option<(Vec<String>, Vec<String>)> {
+    if file.is_none() {
+        return Some((Vec::new(), Vec::new()));
     }
+    let configuration = parse_configuration(Some(text?)).ok()?;
+    Some((configuration.deny_list, configuration.noindex_folders))
 }
 
-/// A function that gives the text of a file of a commit.
-pub type Reader<'a> = &'a dyn Fn(&str, &str) -> Result<Option<String>, String>;
+/// True for a file of the manifest folder in any letter case: a checkout on
+/// Windows reads `Manifest/` as `manifest/`.
+fn is_manifest_file(path: &str) -> bool {
+    let prefix = format!("{MANIFEST_FOLDER}/");
+    path.get(..prefix.len())
+        .is_some_and(|start| start.eq_ignore_ascii_case(&prefix))
+}
+
+/// The folders of `one` that `two` does not have, sorted.
+fn missing_from(one: &[String], two: &[String]) -> Vec<String> {
+    let mut missing: Vec<String> = one
+        .iter()
+        .filter(|folder| !two.contains(folder))
+        .cloned()
+        .collect();
+    sort_by_code_point(&mut missing);
+    missing
+}
+
+/// A function that gives the texts of objects of git, by object id.
+pub type Reader<'a> = &'a dyn Fn(&[String]) -> Result<BTreeMap<String, String>, String>;
+
+/// One path that differs between two lists of files: its change, and its
+/// file before and after.
+struct Change<'a> {
+    path: &'a str,
+    kind: &'static str,
+    one: Option<&'a TreeFile>,
+    two: Option<&'a TreeFile>,
+}
 
 /// The paths that differ between two lists of files, in the order of the code
-/// points, each with `added`, `changed` or `removed`.
-fn changed_paths<'a>(
-    sealed_files: &'a [TreeFile],
-    head_files: &'a [TreeFile],
-) -> Vec<(&'a str, &'static str)> {
+/// points.
+fn changed_paths<'a>(sealed_files: &'a [TreeFile], head_files: &'a [TreeFile]) -> Vec<Change<'a>> {
     let before: BTreeMap<&str, &TreeFile> = sealed_files
         .iter()
         .map(|file| (file.path.as_str(), file))
@@ -470,131 +597,140 @@ fn changed_paths<'a>(
         .map(|file| (file.path.as_str(), file))
         .collect();
     let paths: BTreeSet<&str> = before.keys().chain(after.keys()).copied().collect();
-    let mut changes: Vec<(&str, &'static str)> = Vec::new();
+    let mut changes = Vec::new();
     for path in paths {
-        match (before.get(path), after.get(path)) {
-            (None, _) => changes.push((path, "added")),
-            (_, None) => changes.push((path, "removed")),
-            (Some(one), Some(two)) if one.mode != two.mode || one.object != two.object => {
-                changes.push((path, "changed"));
-            }
-            _ => {}
-        }
+        let (one, two) = (before.get(path).copied(), after.get(path).copied());
+        let change = match (one, two) {
+            (None, _) => "added",
+            (_, None) => "removed",
+            (Some(one), Some(two)) if one.mode != two.mode || one.object != two.object => "changed",
+            _ => continue,
+        };
+        changes.push(Change {
+            path,
+            kind: change,
+            one,
+            two,
+        });
     }
     changes
 }
 
-/// The difference between the sealed state (`sealed`, `None` for none, with
-/// its files) and the state of the last commit. `read` gives a file of a
-/// commit.
+/// The difference between the files of the base (the commit `sealed`, `None`
+/// for none) and the state of the last commit. `read` gives the texts of
+/// objects of git.
 ///
 /// # Errors
 ///
-/// A file cannot be read.
+/// The objects cannot be read.
 pub fn difference_of(
     head: &str,
+    base: &str,
     sealed: Option<&str>,
     sealed_files: &[TreeFile],
     head_files: &[TreeFile],
     read: Reader,
 ) -> Result<StoreDifference, String> {
     let changes = changed_paths(sealed_files, head_files);
-    let read_sealed = |path: &str| -> Result<Option<String>, String> {
-        sealed.map_or(Ok(None), |sealed| read(sealed, path))
+    // Every entry and the configuration are read, in one read of objects:
+    // the text names every entry that is published after the change.
+    let wanted: Vec<String> = changes
+        .iter()
+        .filter(|change| is_manifest_file(change.path) || change.path == CONFIGURATION_FILE)
+        .flat_map(|change| [change.one, change.two])
+        .flatten()
+        .map(|file| file.object.clone())
+        .collect::<BTreeSet<String>>()
+        .into_iter()
+        .collect();
+    let texts = if wanted.is_empty() {
+        BTreeMap::new()
+    } else {
+        read(&wanted)?
     };
-    let manifest_prefix = format!("{MANIFEST_FOLDER}/");
-    let mut entries = Vec::new();
-    let mut files = Vec::new();
-    let mut deny_list_removed = Vec::new();
-    let mut deny_list_added = Vec::new();
-    // Only the entries that a text names are read: a first check of a large
-    // store lists every entry as added.
-    let mut named: BTreeMap<&str, usize> = BTreeMap::new();
-    for (path, change) in changes {
-        if path.starts_with(&manifest_prefix) {
-            let count = named.entry(change).or_insert(0);
-            *count += 1;
-            if *count > NAMED_IN_TEXT {
-                entries.push(EntryChange {
-                    change: change.to_owned(),
-                    file: path.to_owned(),
-                    path: String::new(),
-                    before: String::new(),
-                    after: String::new(),
-                });
-                continue;
-            }
-            let old_text = if change == "added" {
-                None
-            } else {
-                read_sealed(path)?
-            };
-            let new_text = if change == "removed" {
-                None
-            } else {
-                read(head, path)?
-            };
-            let one = entry_facts(old_text.as_deref());
-            let two = entry_facts(new_text.as_deref());
-            entries.push(EntryChange {
+    let text_of = |file: Option<&TreeFile>| file.and_then(|file| texts.get(&file.object));
+    let mut difference = StoreDifference {
+        head: head.to_owned(),
+        base: base.to_owned(),
+        sealed: sealed.unwrap_or("none").to_owned(),
+        entries: Vec::new(),
+        deny_list_removed: Vec::new(),
+        deny_list_added: Vec::new(),
+        noindex_removed: Vec::new(),
+        noindex_added: Vec::new(),
+        files: Vec::new(),
+    };
+    for Change {
+        path,
+        kind: change,
+        one,
+        two,
+    } in changes
+    {
+        if is_manifest_file(path) {
+            let old = entry_facts(one, text_of(one).map(String::as_str));
+            let now = entry_facts(two, text_of(two).map(String::as_str));
+            difference.entries.push(EntryChange {
                 change: change.to_owned(),
                 file: path.to_owned(),
-                path: if two.1.is_empty() { one.1 } else { two.1 },
-                before: one.0,
-                after: two.0,
+                path: if now.1.is_empty() { old.1 } else { now.1 },
+                before: old.0,
+                after: now.0,
             });
             continue;
         }
+        let mut change = change.to_owned();
         if path == CONFIGURATION_FILE {
-            let old_text = read_sealed(path)?;
-            let new_text = if change == "removed" {
-                None
-            } else {
-                read(head, path)?
-            };
-            let old = deny_list_of(old_text.as_deref());
-            let now = deny_list_of(new_text.as_deref());
+            let old = configuration_of(one, text_of(one).map(String::as_str));
+            let now = configuration_of(two, text_of(two).map(String::as_str));
             if let (Some(old), Some(now)) = (old, now) {
-                deny_list_removed = old
-                    .iter()
-                    .filter(|folder| !now.contains(folder))
-                    .cloned()
-                    .collect();
-                deny_list_added = now
-                    .iter()
-                    .filter(|folder| !old.contains(folder))
-                    .cloned()
-                    .collect();
-                sort_by_code_point(&mut deny_list_removed);
-                sort_by_code_point(&mut deny_list_added);
+                difference.deny_list_removed = missing_from(&old.0, &now.0);
+                difference.deny_list_added = missing_from(&now.0, &old.0);
+                difference.noindex_removed = missing_from(&old.1, &now.1);
+                difference.noindex_added = missing_from(&now.1, &old.1);
+            } else {
+                change = format!("{change}, cannot be read");
             }
         }
-        files.push(FileChange {
+        difference.files.push(FileChange {
             path: path.to_owned(),
-            change: change.to_owned(),
+            change,
         });
     }
-    Ok(StoreDifference {
-        head: head.to_owned(),
-        sealed: sealed.unwrap_or("none").to_owned(),
-        entries,
-        deny_list_removed,
-        deny_list_added,
-        files,
-    })
+    Ok(difference)
 }
 
-/// A list of a text, with at most `NAMED_IN_TEXT` items and the count of the
-/// others.
-fn list_text(items: &[String]) -> String {
-    let shown = items
+/// The quoted list of folders.
+fn folders_text(folders: &[String]) -> String {
+    folders
         .iter()
-        .take(NAMED_IN_TEXT)
-        .cloned()
+        .map(|folder| format!("\"{folder}\""))
         .collect::<Vec<_>>()
-        .join(", ");
-    if items.len() > NAMED_IN_TEXT {
-        format!("{shown} and {} more", items.len() - NAMED_IN_TEXT)
+        .join(", ")
+}
+
+/// The beginning of the text of a difference, by its base.
+fn start_of(difference: &StoreDifference) -> String {
+    let head = &difference.head;
+    let sealed = &difference.sealed;
+    match difference.base.as_str() {
+        BASE_NONE => format!(
+            "the content store has no sealed state yet (a store from before R104, or a new one), and this copy trusted none before, so the tool does not trust its state: it plans and publishes nothing until you confirm it one time. Its state at {head}"
+        ),
+        BASE_MARK => format!(
+            "the content store has no sealed state that the tool can trust: no commit of the last {SEAL_HISTORY} (and none before a merge) has a valid seal and descends from {sealed}, the last sealed commit that this copy trusted. More than {SEAL_HISTORY} commits that no tool wrote, a merge, or an older history that a forced push put back can cause it. Nothing is planned or published until you confirm it. What differs from that commit"
+        ),
+        _ => format!(
+            "the state of the content store at {head} is not the state that a commit of the tool sealed ({sealed}): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state"
+        ),
+    }
+}
+
+/// The text of a list with its count of the items that it does not name.
+fn with_more(shown: &[String], more: usize) -> String {
+    let shown = shown.join(", ");
+    if more > 0 {
+        format!("{shown} and {more} more")
     } else {
         shown
     }
@@ -604,52 +740,64 @@ fn list_text(items: &[String]) -> String {
 /// how to confirm it.
 pub fn difference_text(difference: &StoreDifference) -> String {
     let mut parts: Vec<String> = Vec::new();
+    let named = |entry: &EntryChange| {
+        format!(
+            "\"{}\" ({} to {})",
+            if entry.path.is_empty() {
+                &entry.file
+            } else {
+                &entry.path
+            },
+            entry.before,
+            entry.after
+        )
+    };
     for change in ["added", "changed", "removed"] {
         let entries: Vec<&EntryChange> = difference
             .entries
             .iter()
             .filter(|entry| entry.change == change)
             .collect();
-        if !entries.is_empty() {
-            // The first entries are the named ones: `difference_of` reads them.
-            let items: Vec<String> = entries
-                .iter()
-                .map(|entry| {
-                    format!(
-                        "\"{}\" ({} to {})",
-                        if entry.path.is_empty() {
-                            &entry.file
-                        } else {
-                            &entry.path
-                        },
-                        entry.before,
-                        entry.after
-                    )
-                })
-                .collect();
-            parts.push(format!(
-                "manifest entries {change} ({}): {}",
-                entries.len(),
-                list_text(&items)
-            ));
+        if entries.is_empty() {
+            continue;
         }
-    }
-    let quoted = |folders: &[String]| -> Vec<String> {
-        folders
+        // Every entry that is published after the change is named; of the
+        // others, at most `NAMED_IN_TEXT`.
+        let (published, others): (Vec<&EntryChange>, Vec<&EntryChange>) =
+            entries.iter().partition(|entry| entry.after == "published");
+        let shown: Vec<String> = published
             .iter()
-            .map(|folder| format!("\"{folder}\""))
-            .collect()
-    };
+            .chain(others.iter().take(NAMED_IN_TEXT))
+            .map(|entry| named(entry))
+            .collect();
+        parts.push(format!(
+            "manifest entries {change} ({}): {}",
+            entries.len(),
+            with_more(&shown, others.len().saturating_sub(NAMED_IN_TEXT))
+        ));
+    }
     if !difference.deny_list_removed.is_empty() {
         parts.push(format!(
             "folders that left the deny list, so the guards are looser: {}",
-            list_text(&quoted(&difference.deny_list_removed))
+            folders_text(&difference.deny_list_removed)
         ));
     }
     if !difference.deny_list_added.is_empty() {
         parts.push(format!(
             "folders added to the deny list: {}",
-            list_text(&quoted(&difference.deny_list_added))
+            folders_text(&difference.deny_list_added)
+        ));
+    }
+    if !difference.noindex_removed.is_empty() {
+        parts.push(format!(
+            "folders that left the noindex folders, so their notes can be indexed: {}",
+            folders_text(&difference.noindex_removed)
+        ));
+    }
+    if !difference.noindex_added.is_empty() {
+        parts.push(format!(
+            "folders added to the noindex folders: {}",
+            folders_text(&difference.noindex_added)
         ));
     }
     let notes_prefix = format!("{NOTES_FOLDER}/");
@@ -657,38 +805,27 @@ pub fn difference_text(difference: &StoreDifference) -> String {
         .files
         .iter()
         .partition(|file| file.path.starts_with(&notes_prefix));
-    let shown = |files: &[&FileChange]| -> Vec<String> {
-        files
-            .iter()
-            .map(|file| format!("{} ({})", file.path, file.change))
-            .collect()
-    };
+    let shown = |file: &&FileChange| format!("{} ({})", file.path, file.change);
     if !others.is_empty() {
+        // Every other file is named: a file of any name can change what the
+        // tools read.
         parts.push(format!(
             "files of the store: {}",
-            list_text(&shown(&others))
+            others.iter().map(shown).collect::<Vec<_>>().join(", ")
         ));
     }
     if !notes.is_empty() {
+        let named: Vec<String> = notes.iter().take(NAMED_IN_TEXT).map(shown).collect();
         parts.push(format!(
             "cleaned notes ({}): {}",
             notes.len(),
-            list_text(&shown(&notes))
+            with_more(&named, notes.len().saturating_sub(NAMED_IN_TEXT))
         ));
     }
     let head = &difference.head;
-    let start = if difference.sealed == "none" {
-        format!(
-            "the content store has no sealed state yet (a store from before R104, or a new one), so the tool does not trust its state: it plans and publishes nothing until you confirm it one time. Its state at {head}"
-        )
-    } else {
-        format!(
-            "the state of the content store at {head} is not the state that a commit of the tool sealed ({}): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state",
-            difference.sealed
-        )
-    };
     format!(
-        "{start}: {}. When you made or accept every change, confirm the state of commit {head} (the command confirm-state --head {head}, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store",
+        "{}: {}. When you made or accept every change, confirm the state of commit {head} (the command confirm-state --head {head}, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store",
+        start_of(difference),
         if parts.is_empty() {
             "no file".to_owned()
         } else {
@@ -798,17 +935,18 @@ mod tests {
         for case in list(&cases(), "seals") {
             let name = case["name"].as_str().expect("a name");
             let files = files_of(&case["files"]);
-            let parent = case["parent"].as_str();
+            let parents: Vec<String> =
+                serde_json::from_value(case["parents"].clone()).expect("the parents");
             let key = key_of(case["keyByte"].as_str().expect("a byte"), 32);
             assert_eq!(
                 state_digest(&files),
                 case["digest"].as_str().expect("a digest"),
                 "{name}"
             );
-            let seal = seal_of(&key, parent, &files);
+            let seal = seal_of(&key, &parents, &files);
             assert_eq!(seal, case["seal"].as_str().expect("a seal"), "{name}");
             // Another key gives another seal.
-            assert_ne!(seal_of(&key_of("01", 32), parent, &files), seal, "{name}");
+            assert_ne!(seal_of(&key_of("01", 32), &parents, &files), seal, "{name}");
         }
     }
 
@@ -859,14 +997,20 @@ mod tests {
         for case in list(&cases(), "differences") {
             let name = case["name"].as_str().expect("a name");
             let texts = case["texts"].as_object().expect("the texts");
-            let read = |commit: &str, path: &str| -> Result<Option<String>, String> {
-                Ok(texts
-                    .get(&format!("{commit}:{path}"))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned))
+            let read = |ids: &[String]| -> Result<BTreeMap<String, String>, String> {
+                Ok(ids
+                    .iter()
+                    .filter_map(|id| {
+                        texts
+                            .get(id)
+                            .and_then(Value::as_str)
+                            .map(|text| (id.clone(), text.to_owned()))
+                    })
+                    .collect())
             };
             let found = difference_of(
                 case["head"].as_str().expect("a head"),
+                case["base"].as_str().expect("a base"),
                 case["sealed"].as_str(),
                 &files_of(&case["sealedFiles"]),
                 &files_of(&case["headFiles"]),
@@ -881,6 +1025,120 @@ mod tests {
             assert_eq!(
                 difference_text(&found),
                 case["text"].as_str().expect("a text"),
+                "{name}"
+            );
+        }
+    }
+
+    /// A first-parent chain in memory, as a check case gives it.
+    struct History {
+        key: Vec<u8>,
+        commits: Vec<Value>,
+        mark: std::cell::RefCell<Option<String>>,
+    }
+
+    impl History {
+        fn commit(&self, id: &str) -> Option<&Value> {
+            self.commits.iter().find(|commit| commit["id"] == id)
+        }
+
+        fn parents(commit: &Value) -> Vec<String> {
+            serde_json::from_value(commit["parents"].clone()).expect("the parents")
+        }
+
+        fn seal_for(&self, id: &str) -> String {
+            let commit = self.commit(id).expect("a commit of the case");
+            seal_of(
+                &self.key,
+                &Self::parents(commit),
+                &sealed_files(files_of(&commit["files"])),
+            )
+        }
+    }
+
+    impl SealedHistory for History {
+        fn commits(&self, limit: usize) -> Result<Vec<Commit>, String> {
+            Ok(self
+                .commits
+                .iter()
+                .take(limit)
+                .map(|commit| {
+                    let id = commit["id"].as_str().expect("an id");
+                    Commit {
+                        id: id.to_owned(),
+                        parents: Self::parents(commit),
+                        message: match commit["seal"].as_str() {
+                            None => "A commit by hand\n".to_owned(),
+                            Some("own") => with_seal("Publish\n", &self.seal_for(id)),
+                            Some(other) => with_seal(
+                                "Publish\n",
+                                &self.seal_for(other.strip_prefix("of ").expect("of <id>")),
+                            ),
+                        },
+                    }
+                })
+                .collect())
+        }
+
+        fn files(&self, commit: &str) -> Result<Vec<TreeFile>, String> {
+            self.commit(commit)
+                .map(|commit| files_of(&commit["files"]))
+                .ok_or_else(|| format!("no commit {commit}"))
+        }
+
+        fn objects(&self, _ids: &[String]) -> Result<BTreeMap<String, String>, String> {
+            Ok(BTreeMap::new())
+        }
+
+        fn mark(&self) -> Result<Option<String>, String> {
+            Ok(self.mark.borrow().clone())
+        }
+
+        fn descends(&self, commit: &str, ancestor: &str) -> Result<bool, String> {
+            if self.commit(ancestor).is_none() {
+                return Ok(false);
+            }
+            let mut seen = BTreeSet::new();
+            let mut open = vec![commit.to_owned()];
+            while let Some(id) = open.pop() {
+                if id == ancestor {
+                    return Ok(true);
+                }
+                if seen.insert(id.clone())
+                    && let Some(one) = self.commit(&id)
+                {
+                    open.extend(Self::parents(one));
+                }
+            }
+            Ok(false)
+        }
+    }
+
+    #[test]
+    fn trusts_the_newest_sealed_commit_with_no_merge_before_it_that_descends_from_the_mark() {
+        for case in list(&cases(), "checks") {
+            let name = case["name"].as_str().expect("a name");
+            let history = History {
+                key: key_of(case["keyByte"].as_str().expect("a byte"), 32),
+                commits: case["commits"].as_array().expect("the commits").clone(),
+                mark: std::cell::RefCell::new(case["mark"].as_str().map(str::to_owned)),
+            };
+            let checked = check_seal(&history, &history.key.clone()).expect(name);
+            let (status, base, sealed) = match &checked {
+                SealCheck::Empty => ("empty", None, None),
+                SealCheck::Sealed => ("sealed", None, None),
+                SealCheck::Differs(difference) => (
+                    "differs",
+                    Some(difference.base.clone()),
+                    Some(difference.sealed.clone()),
+                ),
+            };
+            assert_eq!(status, case["result"].as_str().expect("a result"), "{name}");
+            assert_eq!(base.as_deref(), case["base"].as_str(), "{name}");
+            assert_eq!(sealed.as_deref(), case["sealed"].as_str(), "{name}");
+            assert_eq!(
+                history.mark.borrow().as_deref(),
+                case["markAfter"].as_str(),
                 "{name}"
             );
         }
