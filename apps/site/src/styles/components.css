@@ -837,8 +837,9 @@
 
 /* Where the browser has no full screen for an element (an iPhone), the block
    covers the window: the text of the note lets it out of its contained paint
-   while it does. */
-.note-text:has(.mn-block:is(.mn-fullscreen, .mn-fullscreen-fit)) {
+   while it does. The script of the music sets the class (`FULL_SCREEN_CLASS`):
+   a `:has()` rule would check the text again at each change of a drawing. */
+.note-text.note-text-full-screen {
     contain: none;
 }
 

@@ -22,6 +22,9 @@ export const STYLES_ID = 'music-notation-styles'
 /** How far from the screen a block starts to draw: one screen above and below. */
 export const DRAW_MARGIN = '100% 0px'
 
+/** The class of the text of a note while one of its blocks is in full screen. */
+export const FULL_SCREEN_CLASS = 'note-text-full-screen'
+
 /** Draws one block. */
 type Drawer = (code: Element) => void | Promise<void>
 
@@ -33,6 +36,29 @@ export function linkStyles(doc: Document): void {
     link.rel = 'stylesheet'
     link.href = styles
     doc.head.append(link)
+}
+
+/**
+ * Lets a block in full screen out of the contained paint of the text of its
+ * note: where the browser refuses full screen for an element (an iPhone), the
+ * block covers the window, which a contained paint clips. A block enters and
+ * leaves full screen at a click, a key or the end of the full screen of the
+ * browser: after each, the class follows.
+ */
+export function followFullScreen(doc: Document, win: Window): void {
+    const update = (): void => {
+        for (const text of doc.querySelectorAll('.note-text')) {
+            const full = text.querySelector('.mn-fullscreen, .mn-fullscreen-fit') !== null
+            text.classList.toggle(FULL_SCREEN_CLASS, full)
+        }
+    }
+    const later = (): void => {
+        win.setTimeout(update, 0)
+    }
+    // On the way down: the library stops the Escape key that leaves full screen.
+    for (const type of ['click', 'keydown', 'fullscreenchange']) {
+        doc.addEventListener(type, later, { capture: true, passive: true })
+    }
 }
 
 function blockOf(code: Element): CodeBlock {
@@ -58,6 +84,7 @@ export function startMusic(doc: Document, win: Window): void {
     const { diagrams, tabs } = musicOfBlocks(codes.map(blockOf))
     if (!diagrams && !tabs) return
     linkStyles(doc)
+    followFullScreen(doc, win)
     let diagramPart: Promise<Drawer> | undefined
     let tabPart: Promise<Drawer> | undefined
     const drawerOf = (code: Element): Promise<Drawer> =>
