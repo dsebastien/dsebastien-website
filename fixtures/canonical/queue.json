@@ -13825,7 +13825,7 @@
                 },
                 {
                     "do": "publish",
-                    "why": "a check that fails never stops the publication, and it fails closed: the update records no original, so the article is noindex until a check passes; the notes without a verified post are technical updates, checked again (R90)",
+                    "why": "a check that fails never stops the publication, and it fails closed: the update records no original, so the article is noindex until a check passes; the notes with a post URL and no verified post are technical updates, checked again (R90); the note with no post URL has nothing to check",
                     "selection": {
                         "hold": [],
                         "include": ["Article.md"],
@@ -13838,13 +13838,13 @@
                         "failed": [],
                         "forcedRemoved": [],
                         "moved": [],
-                        "originalsNotVerified": ["Article.md", "Down.md", "Lost.md", "News.md"],
+                        "originalsNotVerified": ["Article.md", "Down.md", "News.md"],
                         "propertyRemoved": [],
                         "propertySet": [],
                         "published": [],
                         "removed": [],
                         "skipped": [],
-                        "updated": ["Article.md", "Down.md", "Lost.md", "News.md"],
+                        "updated": ["Article.md", "Down.md", "News.md"],
                         "warnings": []
                     }
                 },
@@ -13977,6 +13977,168 @@
                 {
                     "do": "status",
                     "why": "a verified post that the note still names needs no check",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Article.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a note with no post URL is checked again only to clear an old original (issue 55)",
+            "denyList": [],
+            "noteTypes": {
+                "noteTypes": [
+                    {
+                        "name": "own-articles",
+                        "displayName": "Own Articles",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    }
+                ],
+                "notes": {
+                    "Article.md": "own-articles"
+                }
+            },
+            "mainSite": {},
+            "vault": {
+                "Article.md": "Article\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "an article with no post URL: nothing to check, and the report lists it",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Article.md"],
+                        "remove": []
+                    },
+                    "time": "2031-09-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "originalsNotVerified": ["Article.md"],
+                        "propertyRemoved": [],
+                        "propertySet": ["Article.md"],
+                        "published": ["Article.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "with nothing to check and no original, the note is unchanged: no loop",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Article.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "an older run left an original in the entry",
+                    "files": {
+                        "manifest/2269a73bf2503117.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:eb612b33e08b14877d3f7f3a6272f7f78b16ca11b65279cee5b5754164013227\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-09-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"2269a73bf2503117\",\n  \"lastPublished\": \"2031-09-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"original\": {\n    \"checked\": \"2031-09-01T08:00:00Z\",\n    \"url\": \"https://www.dsebastien.net/an-old-post/\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:eb612b33e08b14877d3f7f3a6272f7f78b16ca11b65279cee5b5754164013227\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "an original that the note no longer names makes a technical update (R90)",
+                    "queue": {
+                        "changed": ["Article.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": ["Article.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the update clears the original",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-09-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "originalsNotVerified": ["Article.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Article.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry has no original any more",
+                    "vault": {},
+                    "store": {
+                        "manifest/2269a73bf2503117.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:eb612b33e08b14877d3f7f3a6272f7f78b16ca11b65279cee5b5754164013227\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-09-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"2269a73bf2503117\",\n  \"lastPublished\": \"2031-09-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:eb612b33e08b14877d3f7f3a6272f7f78b16ca11b65279cee5b5754164013227\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "nothing to check again",
                     "queue": {
                         "changed": [],
                         "counts": {

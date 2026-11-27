@@ -319,6 +319,27 @@ function attributesOf(
     return { attributes, end: html.length }
 }
 
+/**
+ * The place after the end of the comment that starts at `at`, as HTML reads
+ * it: `<!-->` and `<!--->` end at once, else the first `-->` or `--!>`.
+ * `undefined` for a comment that never ends: it hides the rest.
+ */
+function commentEnd(lower: string, at: number): number | undefined {
+    const body = at + '<!--'.length
+    if (lower.startsWith('>', body)) {
+        return body + 1
+    }
+    if (lower.startsWith('->', body)) {
+        return body + 2
+    }
+    const ends = [
+        { close: lower.indexOf('-->', body), length: 3 },
+        { close: lower.indexOf('--!>', body), length: 4 }
+    ].filter((end) => end.close >= 0)
+    const first = ends.sort((one, two) => one.close - two.close)[0]
+    return first === undefined ? undefined : first.close + first.length
+}
+
 /** The elements whose text is raw: a tag in it is text, never a tag. */
 const RAW_TEXT: readonly string[] = ['script', 'style', 'template', 'noscript']
 
@@ -340,15 +361,15 @@ export function canonicalLinksOf(html: string, page: string): string[] {
     let at = 0
     while (at < html.length) {
         if (lower.startsWith('<!--', at)) {
-            // A comment ends at its first `-->`; one that never ends hides the rest.
-            const close = lower.indexOf('-->', at + 4)
-            if (close < 0) {
+            const end = commentEnd(lower, at)
+            if (end === undefined) {
                 break
             }
-            at = close + 3
+            at = end
             continue
         }
-        if (lower.startsWith('</head', at)) {
+        // `</header` is no end of the head.
+        if (lower.startsWith('</head', at) && !isTagLetter(html[at + '</head'.length])) {
             break
         }
         if (html[at] !== '<' || !/^[a-z]$/u.test(lower[at + 1] ?? '')) {

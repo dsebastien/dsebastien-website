@@ -296,7 +296,14 @@ function checksPostAgain(
         return false
     }
     const post = postFrom(properties, noteType)
-    return post.inScope && (entry.original === undefined || post.url !== entry.original.url)
+    if (!post.inScope) {
+        return false
+    }
+    // With no post URL there is nothing to check: only an old original to clear.
+    if (post.url === undefined) {
+        return entry.original !== undefined
+    }
+    return entry.original === undefined || post.url !== entry.original.url
 }
 
 /**

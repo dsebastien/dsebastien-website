@@ -324,6 +324,26 @@ fn attributes_of(html: &str, start: usize) -> (BTreeMap<String, String>, usize) 
     (attributes, bytes.len())
 }
 
+/// The place after the end of the comment that starts at `at`, as HTML
+/// reads it: `<!-->` and `<!--->` end at once, else the first `-->` or
+/// `--!>`. `None` for a comment that never ends: it hides the rest.
+fn comment_end(lower: &str, at: usize) -> Option<usize> {
+    let body = at + "<!--".len();
+    let rest = &lower[body..];
+    if rest.starts_with('>') {
+        return Some(body + 1);
+    }
+    if rest.starts_with("->") {
+        return Some(body + 2);
+    }
+    // The first end, by the place where it starts.
+    [("-->", 3), ("--!>", 4)]
+        .iter()
+        .filter_map(|(mark, length)| rest.find(mark).map(|close| (close, close + length)))
+        .min()
+        .map(|(_, end)| body + end)
+}
+
 /// The elements whose text is raw: a tag in it is text, never a tag.
 const RAW_TEXT: [&str; 4] = ["script", "style", "template", "noscript"];
 
@@ -342,15 +362,18 @@ pub fn canonical_links_of(html: &str, page: &str) -> Vec<String> {
     while at < bytes.len() {
         let rest = &bytes[at..];
         if rest.starts_with(b"<!--") {
-            // A comment ends at its first `-->`; one that never ends hides
-            // the rest.
-            let Some(close) = lower[at + 4..].find("-->") else {
+            let Some(end) = comment_end(&lower, at) else {
                 break;
             };
-            at += 4 + close + 3;
+            at = end;
             continue;
         }
-        if rest.starts_with(b"</head") {
+        // `</header` is no end of the head.
+        if rest.starts_with(b"</head")
+            && !rest
+                .get("</head".len())
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+        {
             break;
         }
         if rest[0] != b'<' || !rest.get(1).is_some_and(u8::is_ascii_lowercase) {

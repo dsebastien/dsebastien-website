@@ -483,6 +483,30 @@
             "page": "https://www.dsebastien.net/a-post/",
             "html": "<head><script><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
             "links": []
+        },
+        {
+            "name": "an empty comment <!--> ends at once",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><!--><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "an empty comment <!---> ends at once",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><!---><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a comment ends at its first --!>",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><!-- <link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"> --!><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"><!-- --></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a header element does not end the head",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head></header><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head><body><link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"></body>",
+            "links": ["https://www.dsebastien.net/a-post/"]
         }
     ],
     "entries": [

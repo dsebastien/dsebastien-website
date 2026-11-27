@@ -636,11 +636,18 @@ fn checks_post_again(
         properties,
         note_type.map(|note_type| note_type.name.as_str()),
     );
-    post.in_scope
-        && entry
-            .original
-            .as_ref()
-            .is_none_or(|original| post.url.as_deref() != Some(original.url.as_str()))
+    if !post.in_scope {
+        return false;
+    }
+    // With no post URL there is nothing to check: only an old original to
+    // clear.
+    let Some(url) = post.url else {
+        return entry.original.is_some();
+    };
+    entry
+        .original
+        .as_ref()
+        .is_none_or(|original| url != original.url)
 }
 
 /// Computes the queue from one read of the vault.
