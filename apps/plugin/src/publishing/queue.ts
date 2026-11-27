@@ -146,6 +146,13 @@ export interface Scan {
      * two have one Obsidian path (R72): a twin is computed over both.
      */
     readonly denied: readonly string[]
+    /**
+     * The Obsidian twins among every file that Obsidian shows (R72, issue
+     * 115): the notes and the other files of the scan, and the files of the
+     * folders of the deny list. Each twin with the first other file of its
+     * Obsidian path in the order of the code points.
+     */
+    readonly twins: ReadonlyMap<string, string>
     /** The files that the notes link to, each one read one time per run. */
     readonly files: FileReader
     /**
@@ -389,23 +396,32 @@ export async function computeQueue(input: {
         input.vault,
         input.configuration
     )
+    // The twins over every file that Obsidian shows: a twin in a folder of
+    // the deny list or among the other files counts too (issue 115).
+    const twins = obsidianTwins([...notes.keys(), ...scanned.others, ...denied])
     const moves = applyMoves(input.manifest, folded, {
         underGuard: (path) =>
             guardOfPath(path, input.configuration) !== undefined || ignored.has(path),
         inVault: (path) => notes.has(path),
         sourceHashAt: (path) => notes.get(path)?.sourceHash,
+        twinOf: (path) => twins.get(path),
         isVaultName: (path) =>
             !path.split('/').some((part) => part.startsWith('.') || part.includes(REPLACEMENT))
     })
     const manifest = moves.manifest
     const index = new LinkIndex([...notes.keys(), ...scanned.others, ...denied])
-    const guarded = new Set([...ignored, ...denied])
+    // A file that is not a note and that has a twin gives no item either:
+    // Obsidian can show the other file (issue 115).
+    const guarded = new Set([
+        ...ignored,
+        ...denied,
+        ...scanned.others.filter((path) => twins.has(path))
+    ])
     const files = new FileReader(input.vault)
     const others = new Set(scanned.others)
     // The type that each published note has now, in one question: never for
     // a note under a guard, and never for a note with a twin, because
     // Obsidian can answer for the twin (R72).
-    const twins = obsidianTwins(notes.keys())
     const noteTypes = await noteTypesOf(
         input.noteTypes,
         [...notes.keys()].filter(
@@ -571,7 +587,8 @@ export async function computeQueue(input: {
         // A note at the new path of a move waits for the publication of the move.
         pairings: pairingsOf(
             missing.filter((path) => !moves.moves.some((move) => move.to === path)),
-            lists.new,
+            // Never to a path that the plan refuses (rule 4 of "Paths", issue 115).
+            lists.new.filter((path) => !isChangedByObsidian(path) && !twins.has(path)),
             manifest,
             notes
         ),
@@ -595,6 +612,7 @@ export async function computeQueue(input: {
         index,
         guarded,
         denied,
+        twins,
         files,
         tooLargeOf: async (paths) => {
             const found: TooLarge[] = []
@@ -709,6 +727,8 @@ export function applyMoves(
         /** The source hash of the note of the scan at this path. */
         sourceHashAt: (path: string) => string | undefined
         isVaultName: (path: string) => boolean
+        /** The other file with the Obsidian path of this path, when there is one. */
+        twinOf: (path: string) => string | undefined
     }
 ): {
     readonly manifest: Map<string, ManifestEntry>
@@ -805,7 +825,15 @@ export function applyMoves(
         if (isChangedByObsidian(to)) {
             warnings.push({
                 path: from,
-                message: `the rename journal moves the note to "${to}", whose path Obsidian reads as "${obsidianPath(to)}": it does not move, and it can show as a pairing`
+                message: `the rename journal moves the note to "${to}", whose path Obsidian reads as "${obsidianPath(to)}": it does not move`
+            })
+            continue
+        }
+        const twin = vault.twinOf(to)
+        if (twin !== undefined) {
+            warnings.push({
+                path: from,
+                message: `the rename journal moves the note to "${to}", where the file "${twin}" has the same path in Obsidian: it does not move`
             })
             continue
         }

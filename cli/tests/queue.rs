@@ -1121,6 +1121,27 @@ fn a_manifest_or_a_configuration_that_only_one_reader_would_take_stops_the_statu
     }
 }
 
+/// On Linux a file `n.md\` is not a note, but Obsidian lists it as `n.md`:
+/// the twins are computed over the other files too (issue 115). Windows
+/// refuses such a name.
+#[cfg(unix)]
+#[test]
+fn a_note_whose_twin_is_a_file_that_is_not_a_note_is_never_published() {
+    let setup = Setup::scenario(&json!({
+        "denyList": [],
+        "vault": { "n.md": "N\n", "n.md\\": "Other\n" }
+    }));
+
+    let status = json_of(&setup.run("status", &[]));
+    assert_eq!(status["new"], json!(["n.md"]));
+    let output = setup.plan(&json!({ "include": ["n.md"] }));
+    assert_refused_saying(
+        &output,
+        &json!({ "says": "the file \"n.md\\\" has the same path in Obsidian" }),
+        "a twin among the other files",
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_symbolic_link_in_the_manifest_stops_the_status() {

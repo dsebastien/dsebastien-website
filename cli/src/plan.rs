@@ -15,7 +15,7 @@ use crate::guards::{IGNORE_PROPERTY, in_deny_list};
 use crate::manifest::{ManifestEntry, State};
 use crate::names::{
     first_part, folded_form, is_changed_by_obsidian, is_refused_by_windows, is_reserved_root_name,
-    obsidian_path, obsidian_twins,
+    obsidian_path,
 };
 use crate::order::sort_by_code_point;
 use crate::queue::{Move, Scan};
@@ -536,7 +536,7 @@ fn refuse_pairings(scan: &Scan, selection: &Selection) -> Result<(), String> {
 }
 
 /// Stops a plan that publishes a note, or pairs a note with a path, that
-/// Obsidian reads as another path or as the path of another note of the scan
+/// Obsidian reads as another path or as the path of another file of the vault
 /// (rule 4 of section "Paths" of the canonical form, decision R72): its
 /// links, the Starter Kit and the refresh of its lists would not find it, or
 /// would find the other file. The author gives the file another name. A plan
@@ -555,7 +555,6 @@ fn refuse_obsidian_paths(
     if paths.is_empty() {
         return Ok(());
     }
-    let twins = obsidian_twins(scan.notes.keys());
     for path in paths {
         if is_changed_by_obsidian(path) {
             return Err(format!(
@@ -568,7 +567,7 @@ fn refuse_obsidian_paths(
                 "\"{path}\" cannot be published: Windows cannot hold its path (a part with one of <>:\"|?*, a control character, a dot or a space at its end, or a reserved name of Windows such as CON or NUL), so a copy of the content store on Windows could not write it. Give the file another name"
             ));
         }
-        if let Some(twin) = twins.get(path) {
+        if let Some(twin) = scan.twins.get(path) {
             return Err(format!(
                 "\"{path}\" cannot be published: the file \"{twin}\" has the same path in Obsidian (\"{}\"), so Obsidian can take one for the other. Give one of the two files another name",
                 obsidian_path(path)

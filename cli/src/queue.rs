@@ -183,6 +183,11 @@ pub struct Scan {
     /// The names of every file in the folders of the deny list, in small
     /// letters, hidden ones included.
     pub denied_file_names: BTreeSet<String>,
+    /// The Obsidian twins among every file that Obsidian shows (R72, issue
+    /// 115): the notes and the other files of the scan, and the files of the
+    /// folders of the deny list. Each twin with the first other file of its
+    /// Obsidian path in the order of the code points.
+    pub twins: BTreeMap<String, String>,
     /// Every entry of the manifest after the moves of the rename journals, by
     /// the vault path of its note.
     pub manifest: BTreeMap<String, ManifestEntry>,
@@ -360,9 +365,9 @@ fn published_question(
     notes: &BTreeMap<String, ScannedNote>,
     manifest: &BTreeMap<String, ManifestEntry>,
     ignored: &BTreeSet<String>,
+    twins: &BTreeMap<String, String>,
 ) -> Vec<String> {
     // Never a note with a twin: Obsidian can answer for the twin (R72).
-    let twins = obsidian_twins(notes.keys());
     notes
         .keys()
         .filter(|path| {
@@ -656,6 +661,60 @@ fn checks_post_again(
         .is_none_or(|original| url != original.url)
 }
 
+/// The files that a link gives no item for: the notes with the ignore
+/// property, the files of the folders of the deny list, and the other files
+/// that have an Obsidian twin, because Obsidian can show the other file
+/// (issue 115).
+fn guarded_of(
+    ignored: &BTreeSet<String>,
+    denied: &[String],
+    others: &[String],
+    twins: &BTreeMap<String, String>,
+) -> BTreeSet<String> {
+    ignored
+        .iter()
+        .chain(denied.iter())
+        .chain(others.iter().filter(|path| twins.contains_key(*path)))
+        .cloned()
+        .collect()
+}
+
+/// The candidates that a pairing can take: never a path that the plan
+/// refuses, one that Obsidian changes or one with a twin (rule 4 of "Paths",
+/// issue 115).
+fn pairable(candidates: &[String], twins: &BTreeMap<String, String>) -> Vec<String> {
+    candidates
+        .iter()
+        .filter(|path| !is_changed_by_obsidian(path) && !twins.contains_key(*path))
+        .cloned()
+        .collect()
+}
+
+/// The moves of the new lines of the rename journals, on the notes of the
+/// scan (`apply_moves`).
+fn moves_of(
+    entries: &BTreeMap<String, ManifestEntry>,
+    journals: &JournalState,
+    configuration: &Configuration,
+    notes: &BTreeMap<String, ScannedNote>,
+    ignored: &BTreeSet<String>,
+    twins: &BTreeMap<String, String>,
+) -> Moves {
+    let folded = fold_moves(
+        entries.keys().cloned(),
+        &journals.lines,
+        &unpublished_paths(entries),
+    );
+    apply_moves(
+        entries,
+        folded,
+        |path| in_deny_list(path, configuration) || ignored.contains(path),
+        |path| notes.contains_key(path),
+        |path| notes.get(path).map(|note| note.source_hash.clone()),
+        |path| twins.get(path).cloned(),
+    )
+}
+
 /// Computes the queue from one read of the vault.
 fn queue_of(
     vault: &Vault,
@@ -674,23 +733,16 @@ fn queue_of(
         denied,
         denied_file_names,
     } = read;
-    let folded = fold_moves(
-        entries.keys().cloned(),
-        &journals.lines,
-        &unpublished_paths(entries),
-    );
-    let moves = apply_moves(
-        entries,
-        folded,
-        |path| in_deny_list(path, &configuration) || ignored.contains(path),
-        |path| notes.contains_key(path),
-        |path| notes.get(path).map(|note| note.source_hash.clone()),
-    );
+    // The twins over every file that Obsidian shows: a twin in a folder of
+    // the deny list or among the other files counts too (issue 115).
+    let twins = obsidian_twins(notes.keys().chain(others.iter()).chain(denied.iter()));
+    let moves = moves_of(entries, &journals, &configuration, &notes, &ignored, &twins);
     let mut manifest = moves.manifest;
     let index = LinkIndex::new(notes.keys().chain(others.iter()).chain(denied.iter()));
-    let guarded: BTreeSet<String> = ignored.iter().chain(denied.iter()).cloned().collect();
+    let guarded = guarded_of(&ignored, &denied, &others, &twins);
     // The type that each published note has now, in one question.
-    let note_types = note_types_of(kit, &published_question(&notes, &manifest, &ignored))?;
+    let question = published_question(&notes, &manifest, &ignored, &twins);
+    let note_types = note_types_of(kit, &question)?;
     // True when the cleaning step gives another result for a published note:
     // it has another version, or a target was made, moved or removed, or a
     // file was added, changed, moved or removed, or a guard now excludes one.
@@ -759,7 +811,7 @@ fn queue_of(
     queue.unpublished_under_guard = unpublished_under_guard(&manifest, &notes, &guards);
     queue.unpublished = unpublished_of(entries);
     let waiting = waiting_for_moves(&queue.missing, &moves.applied);
-    queue.pairings = pairings_of(&waiting, &queue.new, &manifest, &notes);
+    queue.pairings = pairings_of(&waiting, &pairable(&queue.new, &twins), &manifest, &notes);
     queue.moved_edited = hold_moved_edited(&moves.applied, &queue.changed, &notes, &mut manifest);
     let released = release_held(&moves.applied, &notes, &mut manifest);
     queue.renamed = moves.applied;
@@ -774,6 +826,7 @@ fn queue_of(
         files,
         others: others.into_iter().collect(),
         denied_file_names,
+        twins,
         manifest,
         displaced: moves.displaced,
         released,
@@ -1074,9 +1127,10 @@ struct Moves {
 }
 
 /// Why a move of the rename journal cannot take a note to `to`, when it
-/// cannot: the file or the first folder of `to` is a reserved root name, or
-/// Obsidian changes the path (rule 3 of the moves, R72).
-fn refused_target(to: &str) -> Option<String> {
+/// cannot: the file or the first folder of `to` is a reserved root name,
+/// Windows cannot hold it, Obsidian changes the path, or another file has its
+/// Obsidian path (rule 3 of the moves, R72, issue 115).
+fn refused_target(to: &str, twin: Option<String>) -> Option<String> {
     let name = without_suffix(to.rsplit('/').next().unwrap_or(to));
     if is_reserved_root_name(name) || (to.contains('/') && is_reserved_root_name(first_part(to))) {
         return Some("whose name is a reserved root name of the site: it does not move".to_owned());
@@ -1087,11 +1141,14 @@ fn refused_target(to: &str) -> Option<String> {
                 .to_owned(),
         );
     }
-    is_changed_by_obsidian(to).then(|| {
-        format!(
-            "whose path Obsidian reads as \"{}\": it does not move, and it can show as a pairing",
+    if is_changed_by_obsidian(to) {
+        return Some(format!(
+            "whose path Obsidian reads as \"{}\": it does not move",
             obsidian_path(to)
-        )
+        ));
+    }
+    twin.map(|twin| {
+        format!("where the file \"{twin}\" has the same path in Obsidian: it does not move")
     })
 }
 
@@ -1115,6 +1172,7 @@ fn apply_moves(
     under_guard_at: impl Fn(&str) -> bool,
     in_vault: impl Fn(&str) -> bool,
     source_hash_at: impl Fn(&str) -> Option<String>,
+    twin_of: impl Fn(&str) -> Option<String>,
 ) -> Moves {
     let mut warnings = fold_warnings;
     let mut under_guard = BTreeSet::new();
@@ -1183,7 +1241,7 @@ fn apply_moves(
             });
             continue;
         }
-        if let Some(why) = refused_target(&to) {
+        if let Some(why) = refused_target(&to, twin_of(&to)) {
             warnings.push(RenameWarning {
                 path: from.clone(),
                 message: not_moved(&to, &why),

@@ -12503,7 +12503,7 @@
                 },
                 {
                     "do": "status",
-                    "why": "the entry does not move: the note is missing, and the new file is a candidate that the queue proposes as a pairing",
+                    "why": "the entry does not move: the note is missing, and the queue does not propose the new file as a pairing (issue 115)",
                     "queue": {
                         "changed": [],
                         "counts": {
@@ -12525,12 +12525,7 @@
                         "unchanged": [],
                         "behind": 0,
                         "unpublishedUnderGuard": [],
-                        "pairings": [
-                            {
-                                "from": "A.md",
-                                "to": "X\u00a0Y.md"
-                            }
-                        ],
+                        "pairings": [],
                         "renamed": [],
                         "movedEdited": [],
                         "proposals": []
@@ -12538,7 +12533,7 @@
                 },
                 {
                     "do": "plan",
-                    "why": "a pairing with such a path stops the plan, as a new note does",
+                    "why": "a pairing by hand with such a path stops the plan, as a new note does",
                     "selection": {
                         "include": [],
                         "pair": [
@@ -12693,6 +12688,299 @@
             ]
         },
         {
+            "name": "a line of a rename journal does not move a published note to a path with an Obsidian twin, and the queue proposes no pairing to a twin (issue 115)",
+            "denyList": [],
+            "vault": {
+                "P Q.md": "P\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "selection": {
+                        "include": ["P Q.md"]
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["P Q.md"],
+                        "published": ["P Q.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "a line moves the note to R S.md, the vault shows that move, and a program outside Obsidian made a file with the same Obsidian path",
+                    "files": {
+                        "R S.md": "---\npublic_note: true\n---\nP\n",
+                        "R\u00a0S.md": "Other\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"P Q.md\",\"kind\":\"note\",\"time\":\"2031-05-02T08:00:00Z\",\"to\":\"R S.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["P Q.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "the entry does not move: the note is missing, and the queue proposes no pairing to a path with a twin",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 1,
+                            "unchanged": 0
+                        },
+                        "missing": ["P Q.md"],
+                        "movedEdited": [],
+                        "new": ["R S.md", "R\u00a0S.md"],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["P Q.md"],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a pairing by hand to a path with a twin stops the plan",
+                    "selection": {
+                        "include": [],
+                        "pair": [
+                            {
+                                "from": "P Q.md",
+                                "to": "R S.md"
+                            }
+                        ]
+                    },
+                    "refused": true,
+                    "says": "has the same path in Obsidian"
+                },
+                {
+                    "do": "publish",
+                    "why": "a plan without paths does not stop, the report warns that the entry did not move, and the moved file loses the property",
+                    "selection": {
+                        "include": []
+                    },
+                    "time": "2031-05-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": ["R S.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["P Q.md"],
+                        "moved": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "the twins of a note are computed over the files of the folders of the deny list and over the other files (issue 115)",
+            "denyList": ["A\u00a0B"],
+            "vault": {
+                "A B/n.md": "N\n",
+                "A\u00a0B/n.md": "Secret\n",
+                "Note.md": "Note ![[x y.png]] ![[z.png]]\n",
+                "x y.png": "Plain\n",
+                "x\u00a0y.png": "Shadow\n",
+                "z.png": "Zed\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "the note beside the folder of the deny list is a candidate",
+                    "queue": {
+                        "behind": 0,
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 2,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": ["A B/n.md", "Note.md"],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the note has the Obsidian path of a file in a folder of the deny list: Obsidian can take one for the other",
+                    "selection": {
+                        "include": ["A B/n.md"]
+                    },
+                    "refused": true,
+                    "says": "has the same path in Obsidian"
+                },
+                {
+                    "do": "publish",
+                    "why": "a file with a twin is never an attachment: Obsidian can show the other file; the plain file is one",
+                    "selection": {
+                        "include": ["Note.md"]
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "30ff15a3689bbb73e50f80c7ff57841e9aa2d6f09e6688deea053921fac0f239"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Note.md"],
+                        "published": ["Note.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a published note with a type that gets an Obsidian twin loses its type (issue 115)",
+            "denyList": [],
+            "noteTypes": {
+                "noteTypes": [
+                    {
+                        "name": "herbs",
+                        "displayName": "Herbs",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    }
+                ],
+                "notes": {
+                    "Basil leaf.md": "herbs"
+                }
+            },
+            "vault": {
+                "Basil leaf.md": "Basil\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication, with the type",
+                    "selection": {
+                        "include": ["Basil leaf.md"]
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Basil leaf.md"],
+                        "published": ["Basil leaf.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "the questions of the publication are not checked here"
+                },
+                {
+                    "do": "write",
+                    "why": "a program outside Obsidian makes a twin of the published note",
+                    "files": {
+                        "Basil\u00a0leaf.md": "Twin\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "the note has no type while the twin is there: a technical update",
+                    "queue": {
+                        "behind": 0,
+                        "changed": ["Basil leaf.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "movedEdited": [],
+                        "new": ["Basil\u00a0leaf.md"],
+                        "pairings": [],
+                        "proposals": [],
+                        "renamed": [],
+                        "technicalUpdates": ["Basil leaf.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "unpublishedUnderGuard": []
+                    }
+                },
+                {
+                    "do": "asked",
+                    "why": "the published note that has a twin is not asked about",
+                    "questions": [[]]
+                },
+                {
+                    "do": "publish",
+                    "why": "the technical update is published",
+                    "selection": {
+                        "include": []
+                    },
+                    "time": "2031-05-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Basil leaf.md"],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry has no type, and a technical update keeps the time of the last publication",
+                    "vault": {},
+                    "store": {
+                        "manifest/e15652db0a58e87b.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:5aff37f2f78967dc89867878702d9d1a11f666199b100b500e77efeea16505e4\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-05-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"e15652db0a58e87b\",\n  \"lastPublished\": \"2031-05-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"Basil leaf.md\",\n  \"sourceHash\": \"sha256:5aff37f2f78967dc89867878702d9d1a11f666199b100b500e77efeea16505e4\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
             "name": "a line of a rename journal never moves a note to a path that Windows cannot hold (issue 105, decision R82)",
             "denyList": [],
             "vault": {
@@ -12805,7 +13093,7 @@
                 },
                 {
                     "do": "status",
-                    "why": "the entry does not move: the note is missing, and the queue proposes the pairing",
+                    "why": "the entry does not move: the note is missing, and the queue proposes no pairing to a path that Obsidian changes (issue 115)",
                     "queue": {
                         "changed": [],
                         "counts": {
@@ -12821,12 +13109,7 @@
                         "unchanged": [],
                         "behind": 0,
                         "unpublishedUnderGuard": [],
-                        "pairings": [
-                            {
-                                "from": "P/One.md",
-                                "to": "D\u00a0E/One.md"
-                            }
-                        ],
+                        "pairings": [],
                         "renamed": [],
                         "movedEdited": [],
                         "proposals": []

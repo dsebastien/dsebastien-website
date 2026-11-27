@@ -39,7 +39,7 @@ import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } fro
 import type { ManifestEntry } from './manifest.ts'
 import { isNoteType, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
-import { foldedForm, obsidianTwins } from './names.ts'
+import { foldedForm } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { checkOriginals } from './originals.ts'
 import type { CheckResult, Original } from './originals.ts'
@@ -618,8 +618,9 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     // Only the notes with a list to refresh (rule 4) are asked: a first
     // publication of every note asks far fewer.
     // A note with a twin is not asked: Obsidian can refresh the twin (R72),
-    // also a file of the deny list, which the scan does not read.
-    const twins = obsidianTwins([...computed.scan.notes.keys(), ...computed.scan.denied])
+    // also a file of the deny list, which the scan does not read, or another
+    // file (issue 115).
+    const twins = computed.scan.twins
     const paths = sortByCodePoint(
         [...computed.plan.publish, ...computed.plan.update].filter((path) => {
             const source = computed.texts.get(path)?.source

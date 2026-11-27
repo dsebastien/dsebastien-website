@@ -74,9 +74,10 @@ export function seeingVault(vault: Vault, seen: SeenNotes): Vault {
  * texts that the check after the run read; without it, one read of each
  * note outside the folders of the deny list. The notes are always listed
  * again, which reads no file, for the twins. A note with a twin is not
- * asked (R72), also a twin of a file of the deny list, and the serializer
- * face does not ask a path that Obsidian changes (issue 110). Each note is
- * read again just before the call, and its guards are checked on that text.
+ * asked (R72), also a twin of a file of the deny list or of another file
+ * (issue 115), and the serializer face does not ask a path that Obsidian
+ * changes (issue 110). Each note is read again just before the call, and its
+ * guards are checked on that text.
  */
 export async function notesToRefreshAfter(
     device: Device,
@@ -88,9 +89,9 @@ export async function notesToRefreshAfter(
     const vault = device.vault.forRun()
     const configuration = parseConfiguration(await configurationText(device))
     const problems: { path: string; message: string }[] = []
-    // The listing reads no file: the twins are computed over every note of
-    // now, whatever the check read (R72).
-    const notes = (await scanVault(vault, configuration)).notes
+    // The listing reads no file: the twins are computed over every file of
+    // now, whatever the check read (R72, issue 115).
+    const { notes, others } = await scanVault(vault, configuration)
     let candidates: Iterable<string>
     if (seen === undefined) {
         const found: string[] = []
@@ -112,7 +113,7 @@ export async function notesToRefreshAfter(
         candidates = seen.candidates.keys()
     }
     const { files: denied } = await scanDenied(vault, configuration)
-    const twins = obsidianTwins([...notes, ...denied])
+    const twins = obsidianTwins([...notes, ...others, ...denied])
     const paths: string[] = []
     for (const path of candidates) {
         if (twins.has(path)) {

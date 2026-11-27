@@ -11,8 +11,7 @@ import {
     isChangedByObsidian,
     isRefusedByWindows,
     isReservedRootName,
-    obsidianPath,
-    obsidianTwins
+    obsidianPath
 } from './names.ts'
 import { sortByCodePoint } from './order.ts'
 import { compareCodePoints } from './order.ts'
@@ -305,7 +304,7 @@ export function computePlan(
 
 /**
  * Stops a plan that publishes a note, or pairs a note with a path, that
- * Obsidian reads as another path or as the path of another note of the scan
+ * Obsidian reads as another path or as the path of another file of the vault
  * (rule 4 of section "Paths" of the canonical form, decision R72): its
  * links, the Starter Kit and the refresh of its lists would not find it, or
  * would find the other file. The author gives the file another name. A plan
@@ -317,7 +316,6 @@ function refuseObsidianPaths(scan: Scan, plan: PublicationPlan, pairs: readonly 
     if (paths.length === 0) {
         return
     }
-    const twins = obsidianTwins(scan.notes.keys())
     for (const path of paths) {
         if (isChangedByObsidian(path)) {
             throw new SelectionError(
@@ -329,7 +327,7 @@ function refuseObsidianPaths(scan: Scan, plan: PublicationPlan, pairs: readonly 
                 `"${path}" cannot be published: Windows cannot hold its path (a part with one of <>:"|?*, a control character, a dot or a space at its end, or a reserved name of Windows such as CON or NUL), so a copy of the content store on Windows could not write it. Give the file another name`
             )
         }
-        const twin = twins.get(path)
+        const twin = scan.twins.get(path)
         if (twin !== undefined) {
             throw new SelectionError(
                 `"${path}" cannot be published: the file "${twin}" has the same path in Obsidian ("${obsidianPath(path)}"), so Obsidian can take one for the other. Give one of the two files another name`

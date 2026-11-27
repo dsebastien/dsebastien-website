@@ -801,6 +801,32 @@ describe('status of the fixture vault', () => {
         }
     )
 
+    // On Linux a file `n.md\` is not a note, but Obsidian lists it as `n.md`:
+    // the twins are computed over the other files too (issue 115). Windows
+    // refuses such a name.
+    test.skipIf(process.platform === 'win32')(
+        'never publishes a note whose twin is a file that is not a note',
+        async () => {
+            await using stores = await makeTestStores()
+            const vault = join(stores.root, 'vault')
+            await mkdir(vault)
+            await writeFile(join(vault, 'n.md'), 'N\n')
+            await writeFile(join(vault, 'n.md\\'), 'Other\n')
+            const copy = await makeContentStoreCopy(stores)
+            await pushToStore(copy, { 'configuration.json': JSON.stringify({ denyList: [] }) })
+            const device = nodeDevice({
+                vault,
+                contentStore: copy,
+                attachmentStorage: stores.attachmentStorage
+            })
+
+            expect((await status(device)).new).toEqual(['n.md'])
+            expect(await rejectionOf(plan(device, { include: ['n.md'] }))).toContain(
+                'the file "n.md\\" has the same path in Obsidian'
+            )
+        }
+    )
+
     // When the scan listed the folder of each note again, this status took
     // about 20 s. It now takes far less than the budget, which leaves room for
     // a slow runner.
