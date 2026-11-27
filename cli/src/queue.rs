@@ -18,8 +18,8 @@ use crate::hash::content_hash;
 use crate::links::{LinkIndex, link_paths_of, resolve_links, same_links};
 use crate::manifest::{ManifestEntry, State};
 use crate::names::{
-    first_part, folded_form, is_changed_by_obsidian, is_refused_by_windows, is_reserved_root_name,
-    obsidian_path, obsidian_twins,
+    first_part, folded_form, is_changed_by_obsidian, is_changed_by_windows, is_refused_by_windows,
+    is_reserved_root_name, obsidian_path, obsidian_twins,
 };
 use crate::note_types::{NoteType, StarterKit, note_types_of};
 use crate::originals::{PostProperties, post_from, post_properties_of};
@@ -332,8 +332,13 @@ fn scan_denied(
         .map(|folder| (folder.clone(), false))
         .collect();
     while let Some((folder, hidden)) = folders.pop() {
-        for (name, kind) in vault.list(&folder)? {
-            let hidden = hidden || name.starts_with('.') || name.contains('\u{fffd}');
+        // The names only: a name that Windows changes is no entry of the
+        // vault, but a file moved below it is still under the guard (issue 79).
+        for (name, kind) in vault.list_names(&folder)? {
+            let hidden = hidden
+                || name.starts_with('.')
+                || name.contains('\u{fffd}')
+                || is_changed_by_windows(&name);
             let path = format!("{folder}/{name}");
             if kind == Entry::Folder {
                 folders.push((path, hidden));

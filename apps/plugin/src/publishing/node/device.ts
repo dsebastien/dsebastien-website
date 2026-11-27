@@ -14,7 +14,7 @@ import {
     writeFile
 } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { toCanonicalJson } from '../canonical.ts'
 import { compareCodePoints, sortByCodePoint } from '../order.ts'
@@ -208,6 +208,23 @@ function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): 
     return {
         async list(path) {
             return [...(await listing(path))].map(([name, kind]): VaultEntry => ({ name, kind }))
+        },
+        async listNames(path) {
+            // On Windows, the verbatim form of the path: Windows changes no
+            // name in it, so a folder `Sub.` is listed, not the folder `Sub`.
+            const exact =
+                process.platform === 'win32'
+                    ? `\\\\?\\${[resolve(folder), ...(path === '' ? [] : path.split('/'))].join('\\')}`
+                    : join(folder, path)
+            const entries = await readdir(exact, { withFileTypes: true })
+            return entries.flatMap((entry): VaultEntry[] =>
+                // `isFile` and `isDirectory` are false for a symbolic link.
+                entry.isFile()
+                    ? [{ name: entry.name, kind: 'file' }]
+                    : entry.isDirectory()
+                      ? [{ name: entry.name, kind: 'folder' }]
+                      : []
+            )
         },
         async read(path) {
             const bytes = await bytesOf(path)

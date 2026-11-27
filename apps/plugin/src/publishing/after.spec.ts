@@ -286,6 +286,7 @@ describe('the refresh after a run reads little and fails closed (R84 review)', (
         const wrap = (vault: Vault): Vault => ({
             ...vault,
             list: (folder) => vault.list(folder),
+            listNames: (folder) => vault.listNames(folder),
             readBytes: (path) => vault.readBytes(path),
             size: (path) => vault.size(path),
             hasFolder: (path) => vault.hasFolder(path),

@@ -19,6 +19,7 @@ import {
     firstPart,
     foldedForm,
     isChangedByObsidian,
+    isChangedByWindows,
     isRefusedByWindows,
     isReservedRootName,
     obsidianPath,
@@ -265,9 +266,14 @@ export async function scanDenied(
     const names = new Set<string>()
     const folders = configuration.denyList.map((folder) => ({ folder, hidden: false }))
     for (let next = folders.pop(); next !== undefined; next = folders.pop()) {
-        for (const entry of await vault.list(next.folder)) {
+        // The names only: a name that Windows changes is no entry of the
+        // vault, but a file moved below it is still under the guard (issue 79).
+        for (const entry of await vault.listNames(next.folder)) {
             const hidden =
-                next.hidden || entry.name.startsWith('.') || entry.name.includes(REPLACEMENT)
+                next.hidden ||
+                entry.name.startsWith('.') ||
+                entry.name.includes(REPLACEMENT) ||
+                isChangedByWindows(entry.name)
             const path = `${next.folder}/${entry.name}`
             if (entry.kind === 'folder') {
                 folders.push({ folder: path, hidden })

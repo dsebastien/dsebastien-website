@@ -13,6 +13,7 @@ interface Note {
 function logicVault(notes: Map<string, string>, writes: string[]): Vault {
     const vault: Vault = {
         list: () => Promise.resolve([]),
+        listNames: () => Promise.resolve([]),
         read: (path) => Promise.resolve(notes.get(path)),
         readBytes: () => Promise.resolve(undefined),
         size: () => Promise.resolve(undefined),

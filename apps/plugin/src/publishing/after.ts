@@ -51,6 +51,7 @@ export class SeenNotes {
 export function seeingVault(vault: Vault, seen: SeenNotes): Vault {
     return {
         list: (folder) => vault.list(folder),
+        listNames: (folder) => vault.listNames(folder),
         read: async (path) => {
             const text = await vault.read(path)
             if (text !== undefined && path.endsWith('.md')) {

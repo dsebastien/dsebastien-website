@@ -228,6 +228,51 @@ impl Vault {
         Ok(self.listing(folder)?.entries.clone())
     }
 
+    /// The names of one folder, as `list`, but also the names that Windows
+    /// changes (a dot or a space at the end, the name of a device), each
+    /// listed by its exact name (issue 79). Only the scan of the folders of
+    /// the deny list calls it, and only to collect names: no file is read
+    /// through it. The folder can be such a name too. It is never kept for
+    /// the run.
+    ///
+    /// # Errors
+    ///
+    /// The folder cannot be listed.
+    pub fn list_names(&self, folder: &str) -> Result<Vec<(String, Entry)>, String> {
+        let failed = |error: std::io::Error| {
+            format!("the folder \"{folder}\" of the vault cannot be listed: {error}")
+        };
+        // On Windows, the verbatim form of the path: Windows changes no name
+        // in it, so a folder `Sub.` is listed, not the folder `Sub`.
+        #[cfg(windows)]
+        let exact = {
+            let root = std::path::absolute(&self.folder).map_err(failed)?;
+            let mut text = format!(r"\\?\{}", root.to_string_lossy().trim_end_matches('\\'));
+            for part in folder.split('/').filter(|part| !part.is_empty()) {
+                text.push('\\');
+                text.push_str(part);
+            }
+            PathBuf::from(text)
+        };
+        #[cfg(not(windows))]
+        let exact = self.folder.join(folder);
+        let mut names = Vec::new();
+        for entry in fs::read_dir(exact).map_err(failed)? {
+            let entry = entry.map_err(failed)?;
+            let kind = entry.file_type().map_err(failed)?;
+            // A symbolic link is neither a file nor a folder of the vault.
+            let kind = if kind.is_file() {
+                Entry::File
+            } else if kind.is_dir() {
+                Entry::Folder
+            } else {
+                continue;
+            };
+            names.push((entry.file_name().to_string_lossy().into_owned(), kind));
+        }
+        Ok(names)
+    }
+
     /// The text of the file with exactly this vault path. `Ok(None)` when the
     /// vault has no such file: each part of the path must be a name of the
     /// folder listing, with the same letter case, and a symbolic link is not a

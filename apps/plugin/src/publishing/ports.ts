@@ -17,6 +17,14 @@ export interface Vault {
      */
     list(folder: string): Promise<VaultEntry[]>
     /**
+     * The names of one folder, as `list`, but also the names that Windows
+     * changes (a dot or a space at the end, the name of a device), each
+     * listed by its exact name (issue 79). Only the scan of the folders of the
+     * deny list calls it, and only to collect names: no file is read through
+     * it. The folder can be such a name too. It is never kept for the run.
+     */
+    listNames(folder: string): Promise<VaultEntry[]>
+    /**
      * The text of the file with exactly this vault path. `undefined` when the
      * vault has no such file: each part of the path must be a name of the
      * folder listing, with the same letter case, and a symbolic link is not a

@@ -14164,20 +14164,20 @@
         },
         {
             "name": "a name that Windows opens as another entry is no entry of the vault",
-            "denyList": ["Private"],
+            "denyList": ["Archive"],
             "vault": {
-                "Public.md": "A public note. ![[Private./photo.png]] [[Private./Diary]] [[Private /Diary]] [[CON/Note]]\n",
-                "Private/Diary.md": "A note in a folder of the deny list\n",
-                "Private/photo.png": "An invented photo in a folder of the deny list\n",
-                "Private./Other.md": "A note in a folder whose name ends with a dot\n",
-                "Private /Other.md": "A note in a folder whose name ends with a space\n",
+                "Public.md": "A public note. ![[Archive./map.png]] [[Archive./Diary]] [[Archive /Diary]] [[CON/Note]]\n",
+                "Archive/Diary.md": "A note in a folder of the deny list\n",
+                "Archive/map.png": "An invented map in a folder of the deny list\n",
+                "Archive./Other.md": "A note in a folder whose name ends with a dot\n",
+                "Archive /Other.md": "A note in a folder whose name ends with a space\n",
                 "CON/Note.md": "A note in a folder with the name of a device\n",
                 "Notes/nul.md": "A note with the name of a device\n"
             },
             "steps": [
                 {
                     "do": "status",
-                    "why": "a folder or a file whose name Windows changes is no entry: no note in it is a candidate, also when Windows would open the folder of the deny list for it",
+                    "why": "a folder or a file whose name Windows changes is no entry: no note in it is a candidate",
                     "queue": {
                         "changed": [],
                         "counts": {
@@ -14228,11 +14228,102 @@
                     "why": "the attachment storage stays empty",
                     "vault": {},
                     "store": {
-                        "notes/Public.md": "A public note. ![[Private./photo.png]] [[Private./Diary]] [[Private /Diary]] [[CON/Note]]\n",
-                        "notes/Private./Other.md": null,
-                        "notes/Private/Diary.md": null
+                        "notes/Public.md": "A public note. ![[Archive./map.png]] [[Archive./Diary]] [[Archive /Diary]] [[CON/Note]]\n",
+                        "notes/Archive./Other.md": null,
+                        "notes/Archive/Diary.md": null
                     },
                     "attachmentStorage": {}
+                }
+            ]
+        },
+        {
+            "name": "a published note moved below a name that Windows changes in a folder of the deny list is a forced removal",
+            "denyList": ["Locked"],
+            "vault": {
+                "Keep.md": "Keep\n",
+                "Moves.md": "Moves\n",
+                "Device.md": "Device\n",
+                "Locked/Old.md": "Old\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication of three notes",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Device.md", "Keep.md", "Moves.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Device.md", "Keep.md", "Moves.md"],
+                        "published": ["Device.md", "Keep.md", "Moves.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "two notes move, with no line of a rename journal, below a folder of the deny list whose name ends with a dot, and below one with the name of a device",
+                    "files": {
+                        "Locked/Old./Moves.md": "Moves\n",
+                        "Locked/CON/Device.md": "Device\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old paths of the notes that moved",
+                    "paths": ["Moves.md", "Device.md"]
+                },
+                {
+                    "do": "status",
+                    "why": "such a name is no entry of the vault, but the names below it still count for the guards: the two notes wait for their forced removal, and none is only missing",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 2,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": ["Device.md", "Moves.md"],
+                        "unchanged": ["Keep.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a plan without paths holds the two notes as forced removals",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "forcedRemove": ["Device.md", "Moves.md"],
+                        "publish": [],
+                        "remove": [],
+                        "update": [],
+                        "move": [],
+                        "edits": [],
+                        "guardedAttachments": []
+                    }
                 }
             ]
         }
