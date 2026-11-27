@@ -29,13 +29,13 @@ process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 // tool publishes a copy of the fixture vault with the budget sample, the site
 // is built and served behind a proxy that compresses text with Brotli, as the
 // host does, and Lighthouse runs five times per page on the three pages of
-// the sample, on mobile (its default: slow 4G and a CPU four times slower)
-// and on desktop. A median above its time budget gets five more runs, and
+// the sample and on the note with music blocks, on mobile (its default: slow
+// 4G and a CPU four times slower) and on desktop. A median above its time budget gets five more runs, and
 // blocks only when their median fails too. A median of the layout shift
 // above its budget blocks at once. In the second runs every budget counts
 // again, the layout shift too. The byte budgets are a test (`apps/site/src/page-budgets.spec.ts`).
 //
-//     bun scripts/page-budgets.ts [--runs 5]
+//     bun scripts/page-budgets.ts [--runs 5] [--page 'music note']
 //
 // Lighthouse is the version of `package.json`. Chrome is found by Lighthouse,
 // or named by CHROME_PATH. A run waits for a quiet machine: a backup made the
@@ -45,13 +45,16 @@ process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 // folder that the plain server reads. A fourth page is a note of the fixture
 // vault with link cards, whose previews come from the preview sample (issue 86).
 
+/** The invented note with one block of each music language. */
+const MUSIC_NOTE = '20 Library/20.03 Music/Campfire song.md'
+
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'apps', 'site')
 const REPORTS = join(ROOT, '.cache', 'page-budgets')
 
 const { values } = parseArgs({
     args: Bun.argv.slice(2),
-    options: { runs: { type: 'string', default: '5' } },
+    options: { runs: { type: 'string', default: '5' }, page: { type: 'string' } },
     strict: true
 })
 const RUNS = Number(values.runs)
@@ -67,8 +70,20 @@ const PAGES: { name: string; vaultPath: string; mobile: TimeBudget }[] = [
     { name: 'long note', vaultPath: BUDGET_SAMPLE.long, mobile: TIME_BUDGET.mobile },
     { name: 'media note', vaultPath: BUDGET_SAMPLE.media, mobile: TIME_BUDGET.mobileMedia },
     { name: 'hub note', vaultPath: BUDGET_SAMPLE.hub, mobile: TIME_BUDGET.mobile },
-    { name: 'note with cards', vaultPath: '40 Writing/Reading list.md', mobile: TIME_BUDGET.mobile }
+    {
+        name: 'note with cards',
+        vaultPath: '40 Writing/Reading list.md',
+        mobile: TIME_BUDGET.mobile
+    },
+    // The invented note with one block of each music language (PERF-21, issue 53): the
+    // music loads after the page shows, so the page keeps the budgets of PERF-20.
+    { name: 'music note', vaultPath: MUSIC_NOTE, mobile: TIME_BUDGET.mobile }
 ]
+/** The pages of this run: all, or the one that `--page` names. */
+const MEASURED = PAGES.filter((page) => values.page === undefined || page.name === values.page)
+if (MEASURED.length === 0) {
+    throw new Error(`--page names none of: ${PAGES.map((page) => page.name).join(', ')}`)
+}
 
 const COMPRESSED = /^(text\/|application\/(javascript|json|xml)|image\/svg)/u
 
@@ -239,7 +254,7 @@ try {
     })
     const proxy = compressingProxy(server.url)
     try {
-        for (const page of PAGES) {
+        for (const page of MEASURED) {
             const url = `${proxy.url}${canonicalPath(page.vaultPath)}`
             const answer = await fetch(url)
             if (answer.status !== 200) {
@@ -279,4 +294,4 @@ if (failed) {
     console.error('A note page is above a time budget (R57).')
     process.exit(1)
 }
-console.error('Every note page of the sample is within its time budgets.')
+console.error('Every measured note page is within its time budgets.')
