@@ -8,6 +8,7 @@ import {
     isAttachmentKey,
     MAX_VARIANT_PIXELS,
     SITE_ORIGIN,
+    TooManyPixelsError,
     VARIANT_GENERATION,
     variantGenerationOf,
     variantKey,
@@ -1303,6 +1304,11 @@ export async function makeVariants(
     const warnings: string[] = []
     let uploaded = 0
     const what = (image: ReleaseImage): string => `the image ${image.name} (${image.key})`
+    const tooLarge = (image: ReleaseImage): void => {
+        warnings.push(
+            `${what(image)} has more than ${String(MAX_VARIANT_PIXELS / 1_000_000)} million pixels, so it has no variant and its pages give its file`
+        )
+    }
     const fail = (image: ReleaseImage, why: string): void => {
         warnings.push(
             `the variants of ${what(image)} were not made, so its pages give its file: ${why}`
@@ -1311,9 +1317,7 @@ export async function makeVariants(
     const wanted: ReleaseImage[] = []
     for (const image of images) {
         if (image.variants.length === 0) {
-            warnings.push(
-                `${what(image)} has more than ${String(MAX_VARIANT_PIXELS / 1_000_000)} million pixels, so it has no variant and its pages give its file`
-            )
+            tooLarge(image)
         } else if (
             image.variants.some((variant) => !stored.has(variantKey(image.key, variant.step)))
         ) {
@@ -1354,7 +1358,12 @@ export async function makeVariants(
                 )
             }
         } catch (error) {
-            fail(image, messageOf(error))
+            // An image that moves: its frames together are too large.
+            if (error instanceof TooManyPixelsError) {
+                tooLarge(image)
+            } else {
+                fail(image, messageOf(error))
+            }
             return
         }
         for (const [index, variant] of image.variants.entries()) {

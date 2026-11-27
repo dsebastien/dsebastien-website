@@ -3,7 +3,12 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { VARIANT_GENERATION, variantKey, variantKeysOf } from '@dsebastien-website/resolver'
+import {
+    TooManyPixelsError,
+    VARIANT_GENERATION,
+    variantKey,
+    variantKeysOf
+} from '@dsebastien-website/resolver'
 import { rejectionOf } from '@dsebastien-website/testing'
 import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
@@ -2303,6 +2308,23 @@ describe('the variants of the images of a release', () => {
         const result = await deployRelease(site.run)
         expect(result).toMatchObject({ ...OK, uploaded: 1 })
         expect(result.warnings.join('\n')).toContain('the storage refused it')
+    })
+
+    test('of an image whose frames have more than 50 megapixels are none, with the same warning', async () => {
+        const site = fixture({
+            stored: [COVER.key],
+            folder: [COVER],
+            used: [COVER.key],
+            overrides: {
+                images: [imageOf(COVER.key)],
+                encode: () => Promise.reject(new TooManyPixelsError())
+            }
+        })
+        const result = await deployRelease(site.run)
+        expect(result).toMatchObject({ ...OK, uploaded: 0 })
+        expect(result.warnings).toEqual([
+            `the image cover.jpg (${COVER.key}) has more than 50 million pixels, so it has no variant and its pages give its file`
+        ])
     })
 
     test('of an image of more than 50 megapixels are none, with a warning', async () => {

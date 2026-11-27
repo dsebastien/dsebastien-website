@@ -33,6 +33,18 @@ export const VARIANT_WIDTHS = [480, 800, 1200, 1600] as const
 export const MAX_VARIANT_PIXELS = 50_000_000
 
 /**
+ * The failure of the making of the variants of an image of more than
+ * `MAX_VARIANT_PIXELS`, all its frames together: the deploy names the image
+ * in its warning about large images.
+ */
+export class TooManyPixelsError extends Error {
+    constructor() {
+        super(`the image has more than ${String(MAX_VARIANT_PIXELS)} pixels`)
+        this.name = 'TooManyPixelsError'
+    }
+}
+
+/**
  * The generation of the variants: it is in every name and every address of a
  * variant, so a change of the way they are made (format, quality) gives new
  * addresses. An address of an attachment is kept for a year (URL-15). Raise

@@ -1,6 +1,11 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isAttachmentKey, MAX_VARIANT_PIXELS, variantKey } from '@dsebastien-website/resolver'
+import {
+    isAttachmentKey,
+    MAX_VARIANT_PIXELS,
+    TooManyPixelsError,
+    variantKey
+} from '@dsebastien-website/resolver'
 import sharp, { type Sharp } from 'sharp'
 import { releaseImages, type ReleaseImage } from './deployment.ts'
 import type { AttachmentFolder } from './release.ts'
@@ -43,7 +48,8 @@ const webp = (image: Sharp): Sharp => image.webp({ quality: QUALITY, effort: EFF
  * read and resized one time, to the largest variant, and the others are made
  * from that one, so the pixels of the image are in memory one time. It throws
  * on a file that is not an image, a cut file, and an image of more than
- * `MAX_VARIANT_PIXELS` (before its pixels are read).
+ * `MAX_VARIANT_PIXELS`, all its frames together (`TooManyPixelsError`,
+ * before its pixels are read).
  */
 export async function encodeVariants(
     bytes: Uint8Array,
@@ -53,8 +59,12 @@ export async function encodeVariants(
     if (largest === undefined) {
         return []
     }
-    const facts = await sharp(bytes, INPUT).metadata()
+    // The header only: the pixels of every frame count (review round 2).
+    const facts = await sharp(bytes, { ...INPUT, limitInputPixels: false }).metadata()
     const frames = facts.pages ?? 1
+    if (facts.width * (facts.pageHeight ?? facts.height) * frames > MAX_VARIANT_PIXELS) {
+        throw new TooManyPixelsError()
+    }
     const read = sharp(bytes, INPUT)
     const source = facts.format === 'jpeg' && frames === 1 ? read.rotate() : read
     const resized = source.resize(largest.width, largest.height, { fit: 'fill' })

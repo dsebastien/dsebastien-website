@@ -44,6 +44,7 @@ export {
     imageKeyOf,
     imageVariants,
     MAX_VARIANT_PIXELS,
+    TooManyPixelsError,
     VARIANT_GENERATION,
     VARIANT_WIDTHS,
     variantKey,

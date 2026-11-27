@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { imageVariants, variantKey } from '@dsebastien-website/resolver'
+import { imageVariants, TooManyPixelsError, variantKey } from '@dsebastien-website/resolver'
 import { rejectionOf } from '@dsebastien-website/testing'
 import sharp from 'sharp'
 import { encodeVariants, writeVariants } from './image-variants.ts'
@@ -137,11 +137,41 @@ describe('the variants of an image', () => {
 
     test('fail on an image of more than 50 megapixels, before its pixels are read', async () => {
         const variants = imageVariants('huge.png', 1000, 600)
+        const error = await encodeVariants(await pngHeader(8_000, 8_000), { variants }).catch(
+            (failure: unknown) => failure
+        )
 
-        expect(
-            await rejectionOf(encodeVariants(await pngHeader(8_000, 8_000), { variants }))
-        ).toContain('pixel limit')
+        expect(error).toBeInstanceOf(TooManyPixelsError)
     })
+
+    // Review round 2: an image that moves holds the pixels of all its frames.
+    test('fail on an image that moves whose frames have more than 50 megapixels together', async () => {
+        const frames = await Promise.all(
+            Array.from({ length: 13 }, (_, index) =>
+                sharp({
+                    create: {
+                        width: 2_000,
+                        height: 2_000,
+                        channels: 3,
+                        background: { r: index * 15, g: 0, b: 0 }
+                    }
+                })
+                    .png()
+                    .toBuffer()
+            )
+        )
+        const moving = new Uint8Array(
+            await sharp(frames, { join: { animated: true } })
+                .webp({ effort: 0 })
+                .toBuffer()
+        )
+        const variants = imageVariants('moving.webp', 2_000, 2_000)
+        const error = await encodeVariants(moving, { variants }).catch(
+            (failure: unknown) => failure
+        )
+
+        expect(error).toBeInstanceOf(TooManyPixelsError)
+    }, 30_000)
 
     test('fail on a file that is not an image', async () => {
         const image = {

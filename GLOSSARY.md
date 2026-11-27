@@ -18,7 +18,7 @@ A file that a note embeds: image, video, audio, PDF.
 _Avoid_: asset, media file
 
 **Image variant**:
-A smaller copy of an image of a note, in a modern format, that a page offers so that a screen loads the size it needs. It is derived from its image: it is stored, kept and removed with it.
+A smaller copy of an image of a note, in a modern format, that a page offers so that a screen loads the size it needs. It is derived from its image: it is stored, kept and removed with it. Its generation says how it was made, so a new way of making them gives new addresses; when a variant is missing, the reader gets the image itself.
 _Avoid_: thumbnail, rendition, variant (alone: a variant is also another form of a URL)
 
 **Folder note**:
