@@ -197,15 +197,30 @@ fn property_lines(note: &Note) -> &[Line] {
 pub fn text_property(text: &str, key: &str) -> Option<String> {
     let note = read(text);
     note.close?;
-    let mut values = property_lines(&note)
+    let mut named = property_lines(&note)
         .iter()
-        .filter_map(|line| value_of(&line.text, key, false, false));
-    let value = values.next()?;
-    if values.next().is_some() {
+        .filter(|line| value_of(&line.text, key, false, false).is_some());
+    let line = named.next()?;
+    // A key in quotes is not read: only a plain key gives a text.
+    if named.next().is_some() || line.text.starts_with(['"', '\'']) {
         return None;
     }
-    text_value(value)
+    text_value(value_of(&line.text, key, false, false)?)
 }
+
+/// True when a line of the properties names the key (rule 3), also after
+/// spaces and tabs and in quotes, with any value: closed properties, or every
+/// line when they are never closed. It reads to fail closed, as the guard
+/// does, in the exact case of the key. The TypeScript twin is
+/// `namesProperty`.
+pub fn names_property(text: &str, key: &str) -> bool {
+    property_lines(&read(text))
+        .iter()
+        .any(|line| value_of(&line.text, key, true, false).is_some())
+}
+
+/// The plain values that YAML reads as no value.
+const NULLS: [&str; 4] = ["~", "null", "Null", "NULL"];
 
 /// The text of a value of one line (rule of a text property), or `None`.
 fn text_value(value: &str) -> Option<String> {
@@ -231,7 +246,7 @@ fn text_value(value: &str) -> Option<String> {
     }
     let plain = trim(&value[..end]);
     let first = plain.chars().next()?;
-    if first == '#' || "[{&*!|>".contains(first) {
+    if first == '#' || "[{&*!|>".contains(first) || NULLS.contains(&plain) {
         return None;
     }
     Some(plain.to_owned())

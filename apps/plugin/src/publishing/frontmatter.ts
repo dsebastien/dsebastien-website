@@ -303,15 +303,36 @@ export function textProperty(text: string, key: string): string | undefined {
     if (note.close === undefined) {
         return undefined
     }
-    const values = propertyLines(note)
-        .map((line) => valueOf(line.text, key, false, false))
-        .filter((value) => value !== undefined)
-    const [value, ...more] = values
-    if (value === undefined || more.length > 0) {
+    const named = propertyLines(note).filter(
+        (line) => valueOf(line.text, key, false, false) !== undefined
+    )
+    const [line, ...more] = named
+    // A key in quotes is not read: only a plain key gives a text.
+    if (
+        line === undefined ||
+        more.length > 0 ||
+        line.text.startsWith('"') ||
+        line.text.startsWith("'")
+    ) {
         return undefined
     }
-    return textValue(value)
+    return textValue(valueOf(line.text, key, false, false) ?? '')
 }
+
+/**
+ * True when a line of the properties names the key (rule 3), also after
+ * spaces and tabs and in quotes, with any value: closed properties, or every
+ * line when they are never closed. It reads to fail closed, as the guard
+ * does, in the exact case of the key.
+ */
+export function namesProperty(text: string, key: string): boolean {
+    return propertyLines(read(text)).some(
+        (line) => valueOf(line.text, key, true, false) !== undefined
+    )
+}
+
+/** The plain values that YAML reads as no value. */
+const NULLS: readonly string[] = ['~', 'null', 'Null', 'NULL']
 
 /** The text of a value of one line (rule of a text property), or `undefined`. */
 function textValue(value: string): string | undefined {
@@ -336,7 +357,12 @@ function textValue(value: string): string | undefined {
         }
     }
     const plain = trim(value.slice(0, end))
-    if (plain === '' || plain.startsWith('#') || '[{&*!|>'.includes(plain[0] ?? '')) {
+    if (
+        plain === '' ||
+        plain.startsWith('#') ||
+        '[{&*!|>'.includes(plain[0] ?? '') ||
+        NULLS.includes(plain)
+    ) {
         return undefined
     }
     return plain

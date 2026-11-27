@@ -27,6 +27,8 @@ import {
 import { askable, readNoteTypes, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
+import { postFrom, postPropertiesOf } from './originals.ts'
+import type { PostProperties } from './originals.ts'
 import type { NoteTypes, Vault } from './ports.ts'
 import { foldMoves, formerPathsAfter } from './renames.ts'
 import type { JournalState, RenameWarning } from './renames.ts'
@@ -281,6 +283,23 @@ export async function scanDenied(
 }
 
 /**
+ * True when a published note also exists on the main site, and its entry has
+ * no verified post or another one than the post URL of the note now: each
+ * publication checks it again, with no edit (decision of the author R90).
+ */
+function checksPostAgain(
+    properties: PostProperties | undefined,
+    noteType: NoteType | undefined,
+    entry: ManifestEntry
+): boolean {
+    if (properties === undefined) {
+        return false
+    }
+    const post = postFrom(properties, noteType)
+    return post.inScope && (entry.original === undefined || post.url !== entry.original.url)
+}
+
+/**
  * Scans the vault and fills the four lists of the queue. The state property
  * of a note is never an input (PUB-12): it is read only to know which notes
  * the correction after a publication must write.
@@ -315,6 +334,8 @@ export async function computeQueue(input: {
     }
     // The link paths of the published notes: their links are computed again at each scan.
     const linkPaths = new Map<string, string[]>()
+    // What the post on the main site of each published note reads of its properties (issue 55).
+    const posts = new Map<string, PostProperties>()
     const scanned = await scanVault(input.vault, input.configuration)
     for (const path of scanned.notes) {
         let text: string | undefined
@@ -338,6 +359,7 @@ export async function computeQueue(input: {
         const source = sourceOf(text)
         if (publishedPaths.has(path)) {
             linkPaths.set(path, linkPathsOf(source))
+            posts.set(path, postPropertiesOf(source))
         }
         notes.set(path, {
             textHash: contentHash(text),
@@ -413,7 +435,11 @@ export async function computeQueue(input: {
             // A file was added, changed, moved or removed, or a guard now excludes it.
             !sameAttachments(await attachmentsOf(targets.files, files), entry.attachments) ||
             // The Starter Kit gives the note another type, or the type changed.
-            !sameNoteType(noteTypes.get(path), entry.noteType)
+            !sameNoteType(noteTypes.get(path), entry.noteType) ||
+            // The note also exists on the main site and its post is not
+            // verified, or is another one: each publication checks it again
+            // (decision of the author R90).
+            checksPostAgain(posts.get(path), noteTypes.get(path), entry)
         ) {
             lists.changed.push(path)
             lists.technicalUpdates.push(path)

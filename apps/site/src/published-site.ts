@@ -28,6 +28,11 @@ import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
 import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
 import { signalsOf, type NoteSignals } from './noindex.ts'
+import {
+    postFrom,
+    postPropertiesOf,
+    type PostProperties
+} from '../../plugin/src/publishing/originals.ts'
 import { lastUpdateOf, recentListsOf } from './recent.ts'
 import { sitemapEntriesOf, type SitemapEntry } from './sitemaps.ts'
 import { SitePages } from './rendering/page.ts'
@@ -111,12 +116,26 @@ async function read(): Promise<PublishedSite> {
     // The properties of each note, read from its cleaned note with every date
     // as the text of the vault (`note-properties.ts`), not from the collection.
     // A note keeps its properties while its digest does not change (issue 93).
+    // Each read of a cleaned note also keeps what its post on the main site
+    // reads of its properties (issue 55).
     const properties = await keptProperties.read(
         notes.map((note) => {
             const digest = entries.get(note.vaultPath)?.digest
             return { vaultPath: note.vaultPath, ...(digest === undefined ? {} : { digest }) }
         }),
-        readCleanedNote
+        async (vaultPath) => {
+            const source = await readCleanedNote(vaultPath)
+            keptPosts.set(vaultPath, postPropertiesOf(source))
+            return source
+        }
+    )
+    // The notes that also exist on the main site, by the rule of the tool (issue 55).
+    const onMainSite = new Set(
+        notes
+            .filter(
+                (note) => postFrom(keptPosts.get(note.vaultPath) ?? NO_POST, note.noteType).inScope
+            )
+            .map((note) => note.vaultPath)
     )
     // The resolver map of this build, for the raw links of the notes to an
     // address of the site (issue 98). It is made from the first lists, before
@@ -287,7 +306,12 @@ async function read(): Promise<PublishedSite> {
             noteOf(vaultPath)
             return descriptions.get(vaultPath) ?? ''
         },
-        signalsOf: (vaultPath) => signalsOf(noteOf(vaultPath), properties.get(vaultPath) ?? {}),
+        signalsOf: (vaultPath) =>
+            signalsOf(
+                noteOf(vaultPath),
+                properties.get(vaultPath) ?? {},
+                onMainSite.has(vaultPath)
+            ),
         typeHubs: lists.typeHubs,
         tagLists: lists.tagLists,
         library: libraryOf(lists.typeHubs),
@@ -322,7 +346,14 @@ async function read(): Promise<PublishedSite> {
             })
         ),
         noindexPaths: notes
-            .filter((note) => signalsOf(note, properties.get(note.vaultPath) ?? {}).noindex)
+            .filter(
+                (note) =>
+                    signalsOf(
+                        note,
+                        properties.get(note.vaultPath) ?? {},
+                        onMainSite.has(note.vaultPath)
+                    ).noindex
+            )
             .map((note) => note.path)
             .sort(compareCodePoints),
         backlinksOf,
@@ -348,7 +379,8 @@ async function read(): Promise<PublishedSite> {
                 return {
                     path: note.path,
                     noteType: note.noteType?.name,
-                    indexable: signalsOf(note, noteProperties).inSitemaps,
+                    indexable: signalsOf(note, noteProperties, onMainSite.has(note.vaultPath))
+                        .inSitemaps,
                     lastmod: lastUpdateOf({
                         lastPublished: note.lastPublished,
                         updated: noteProperties['updated']
@@ -370,6 +402,10 @@ let site: Promise<PublishedSite> | undefined
 
 /** The properties of the notes, kept while their cleaned notes do not change. */
 const keptProperties = new NoteProperties()
+/** What the post on the main site of each note read of its properties, kept with them (issue 55). */
+const keptPosts = new Map<string, PostProperties>()
+/** A note with no property of a post. */
+const NO_POST: PostProperties = { ghostNamed: false }
 
 /**
  * The published notes of this build. A build reads them one time; the dev

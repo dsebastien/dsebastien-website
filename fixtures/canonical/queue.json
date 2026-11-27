@@ -13825,7 +13825,7 @@
                 },
                 {
                     "do": "publish",
-                    "why": "a check that fails never stops the publication, and it fails closed: the update records no original, so the article is noindex until a check passes",
+                    "why": "a check that fails never stops the publication, and it fails closed: the update records no original, so the article is noindex until a check passes; the notes without a verified post are technical updates, checked again (R90)",
                     "selection": {
                         "hold": [],
                         "include": ["Article.md"],
@@ -13838,7 +13838,125 @@
                         "failed": [],
                         "forcedRemoved": [],
                         "moved": [],
+                        "originalsNotVerified": ["Article.md", "Down.md", "Lost.md", "News.md"],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Article.md", "Down.md", "Lost.md", "News.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the entry of the article lost its original",
+                    "vault": {},
+                    "store": {
+                        "manifest/7e07a34b787cb04d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:3307b6d52f601597bf3fee1d1dab1f9b86405b00d9e3a7681444b16a6e99439c\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"7e07a34b787cb04d\",\n  \"lastPublished\": \"2031-07-02T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:3307b6d52f601597bf3fee1d1dab1f9b86405b00d9e3a7681444b16a6e99439c\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a note without a verified post is checked again at each publication (issue 55)",
+            "denyList": [],
+            "noteTypes": {
+                "noteTypes": [
+                    {
+                        "name": "own-articles",
+                        "displayName": "Own Articles",
+                        "prefix": "",
+                        "suffix": "",
+                        "prefixOptional": false,
+                        "suffixOptional": false
+                    }
+                ],
+                "notes": {
+                    "Article.md": "own-articles"
+                }
+            },
+            "mainSite": {},
+            "vault": {
+                "Article.md": "---\nurl: https://www.dsebastien.net/a-post\n---\nArticle\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the main site does not answer: the article is published with no verified post",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Article.md"],
+                        "remove": []
+                    },
+                    "time": "2031-08-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
                         "originalsNotVerified": ["Article.md"],
+                        "propertyRemoved": [],
+                        "propertySet": ["Article.md"],
+                        "published": ["Article.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "with no edit, the article is a technical update: each publication checks its post again (R90)",
+                    "queue": {
+                        "changed": ["Article.md"],
+                        "counts": {
+                            "changed": 1,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": ["Article.md"],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "mainSite",
+                    "why": "the main site answers again",
+                    "answers": {
+                        "https://www.dsebastien.net/a-post/": {
+                            "status": 200,
+                            "url": "https://www.dsebastien.net/a-post/",
+                            "body": "<head><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>"
+                        }
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "the technical update checks the post again and verifies it",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-08-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "originalsNotVerified": [],
                         "propertyRemoved": [],
                         "propertySet": [],
                         "published": [],
@@ -13850,10 +13968,34 @@
                 },
                 {
                     "do": "expect",
-                    "why": "the entry of the article lost its original",
+                    "why": "the entry holds the verified post; a technical update keeps the last date",
                     "vault": {},
                     "store": {
-                        "manifest/7e07a34b787cb04d.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:3307b6d52f601597bf3fee1d1dab1f9b86405b00d9e3a7681444b16a6e99439c\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"7e07a34b787cb04d\",\n  \"lastPublished\": \"2031-07-02T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:3307b6d52f601597bf3fee1d1dab1f9b86405b00d9e3a7681444b16a6e99439c\",\n  \"state\": \"published\"\n}\n"
+                        "manifest/1b603561bbf46d68.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:b8779aff358595cfdc1edf40d930f4f54cf0d00265dc25cc3d81ac357c935157\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-08-01T08:00:00Z\",\n  \"formerPaths\": [],\n  \"id\": \"1b603561bbf46d68\",\n  \"lastPublished\": \"2031-08-01T08:00:00Z\",\n  \"links\": [],\n  \"noteType\": {\n    \"displayName\": \"Own Articles\",\n    \"name\": \"own-articles\"\n  },\n  \"original\": {\n    \"checked\": \"2031-08-02T08:00:00Z\",\n    \"url\": \"https://www.dsebastien.net/a-post/\"\n  },\n  \"path\": \"Article.md\",\n  \"sourceHash\": \"sha256:b8779aff358595cfdc1edf40d930f4f54cf0d00265dc25cc3d81ac357c935157\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "status",
+                    "why": "a verified post that the note still names needs no check",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 0,
+                            "toRemove": 0,
+                            "unchanged": 1
+                        },
+                        "missing": [],
+                        "new": [],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": ["Article.md"],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
                     }
                 }
             ]

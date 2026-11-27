@@ -286,10 +286,80 @@
             "url": null
         },
         {
-            "name": "an empty property of the Ghost Publish plugin",
+            "name": "an empty property of the Ghost Publish plugin: in scope, with no post URL",
             "noteType": "tools",
             "note": "---\npublic_ghost_blog_news_url:\n---\nText\n",
-            "inScope": false,
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin as a block",
+            "noteType": "tools",
+            "note": "---\npublic_ghost_blog_news_url: >-\n  https://www.dsebastien.net/a-post/\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin with its key in quotes",
+            "noteType": "tools",
+            "note": "---\n\"public_ghost_blog_news_url\": https://www.dsebastien.net/a-post/\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin with its key in quotes wins over url",
+            "noteType": "own-articles",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/\n'public_ghost_blog_news_url': https://www.dsebastien.net/a-post/\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin set to null",
+            "noteType": null,
+            "note": "---\npublic_ghost_blog_news_url: null\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin set to ~",
+            "noteType": "own-news",
+            "note": "---\nurl: https://www.dsebastien.net/a-post/\npublic_ghost_blog_news_url: ~\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin with only spaces",
+            "noteType": "tools",
+            "note": "---\npublic_ghost_blog_news_url:   \n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin below another key",
+            "noteType": "tools",
+            "note": "---\nmeta:\n  public_ghost_blog_news_url: https://www.dsebastien.net/a-post/\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "the property of the Ghost Publish plugin in properties that are never closed",
+            "noteType": "tools",
+            "note": "---\npublic_ghost_blog_news_url: https://www.dsebastien.net/a-post/\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "a url with its key in quotes",
+            "noteType": "own-articles",
+            "note": "---\n\"url\": https://www.dsebastien.net/a-post/\n---\nText\n",
+            "inScope": true,
+            "url": null
+        },
+        {
+            "name": "a url set to null",
+            "noteType": "own-articles",
+            "note": "---\nurl: null\n---\nText\n",
+            "inScope": true,
             "url": null
         }
     ],
@@ -371,6 +441,48 @@
             "page": "https://www.dsebastien.net/a-post/",
             "html": "<head><link rel=\"canonical\" href=\"a-post\"></head>",
             "links": ["a-post"]
+        },
+        {
+            "name": "a canonical link in a comment does not count",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><!-- <link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"> --><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a comment that is never closed hides the rest",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><!-- <link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": []
+        },
+        {
+            "name": "a canonical link in the text of a script does not count",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><script>document.write('<link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\">')</script><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "the end of the head in the text of a script does not end the head",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><script>var a = '</head>'</script><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a canonical link in the text of a style, a template and a noscript does not count",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><style>/* <link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"> */</style><template><link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"></template><NOSCRIPT><link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\"></NOSCRIPT><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a canonical link in the content of a meta element does not count",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><meta name=\"x\" content='<link rel=\"canonical\" href=\"https://notes.dsebastien.net/A\">'><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": ["https://www.dsebastien.net/a-post/"]
+        },
+        {
+            "name": "a script that is never closed hides the rest",
+            "page": "https://www.dsebastien.net/a-post/",
+            "html": "<head><script><link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"></head>",
+            "links": []
         }
     ],
     "entries": [
@@ -511,6 +623,16 @@
             "url": "https://www.dsebastien.net/a-post/",
             "answer": {
                 "failure": "the main site did not answer in 10 seconds"
+            },
+            "verified": false
+        },
+        {
+            "name": "a post whose only canonical link is in a comment has none",
+            "url": "https://www.dsebastien.net/a-post/",
+            "answer": {
+                "status": 200,
+                "url": "https://www.dsebastien.net/a-post/",
+                "body": "<head><!-- <link rel=\"canonical\" href=\"https://www.dsebastien.net/a-post/\"> --></head>"
             },
             "verified": false
         }

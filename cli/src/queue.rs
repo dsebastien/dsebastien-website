@@ -22,6 +22,7 @@ use crate::names::{
     obsidian_path, obsidian_twins,
 };
 use crate::note_types::{NoteType, StarterKit, note_types_of};
+use crate::originals::{PostProperties, post_from, post_properties_of};
 use crate::renames::{Fold, JournalState, RenameWarning, fold_moves, former_paths_after};
 use crate::small_letters::guard_name;
 
@@ -158,6 +159,9 @@ pub struct ScannedNote {
     pub state_is_set: bool,
     /// True when the note itself names the state property, in any form.
     pub names_state: bool,
+    /// What the post on the main site of a published note reads of its
+    /// properties (issue 55). `None` for a candidate.
+    pub post: Option<PostProperties>,
 }
 
 /// The result of one scan of the vault against the manifest.
@@ -616,6 +620,29 @@ fn unpublished_of(entries: &BTreeMap<String, ManifestEntry>) -> Vec<String> {
         .collect()
 }
 
+/// True when a published note also exists on the main site, and its entry
+/// has no verified post or another one than the post URL of the note now:
+/// each publication checks it again, with no edit (decision of the author
+/// R90).
+fn checks_post_again(
+    note: Option<&ScannedNote>,
+    note_type: Option<&NoteType>,
+    entry: &ManifestEntry,
+) -> bool {
+    let Some(properties) = note.and_then(|note| note.post.as_ref()) else {
+        return false;
+    };
+    let post = post_from(
+        properties,
+        note_type.map(|note_type| note_type.name.as_str()),
+    );
+    post.in_scope
+        && entry
+            .original
+            .as_ref()
+            .is_none_or(|original| post.url.as_deref() != Some(original.url.as_str()))
+}
+
 /// Computes the queue from one read of the vault.
 fn queue_of(
     vault: &Vault,
@@ -668,8 +695,9 @@ fn queue_of(
         Ok(!same_links(&targets.links, &entry.links)
             || attachments_of(&targets.files, vault, &files)? != entry.attachments
             // The Starter Kit gives the note another type, or the type
-            // changed.
-            || note_types.get(path) != entry.note_type.as_ref())
+            // changed, or a post on the main site to check again (R90).
+            || note_types.get(path) != entry.note_type.as_ref()
+            || checks_post_again(notes.get(path), note_types.get(path), entry))
     };
     let mut queue = PublicationQueue::empty();
     // Both maps give their paths in the order of the code points, so each list
@@ -797,7 +825,8 @@ fn read_notes(
             ignored.insert(path.clone());
         }
         let source = source_of(&text);
-        if published_paths.contains(&path) {
+        let published = published_paths.contains(&path);
+        if published {
             link_paths.insert(path.clone(), link_paths_of(&source));
         }
         notes.insert(
@@ -807,6 +836,7 @@ fn read_notes(
                 source_hash: content_hash(&source),
                 state_is_set: set_property(&text, STATE_PROPERTY, "true") == text,
                 names_state: remove_property(&text, STATE_PROPERTY) != text,
+                post: published.then(|| post_properties_of(&source)),
             },
         );
     }

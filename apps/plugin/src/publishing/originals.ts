@@ -1,5 +1,5 @@
 import { SITE_ORIGIN } from '@dsebastien-website/resolver'
-import { textProperty } from './frontmatter.ts'
+import { namesProperty, textProperty } from './frontmatter.ts'
 import type { NoteType } from './note-types.ts'
 import type { MainSite, PageAnswer } from './ports.ts'
 
@@ -148,17 +148,49 @@ export interface PostOfNote {
 }
 
 /**
- * The post of a note (rule 3). A note also exists on the main site when it
- * has a text in `public_ghost_blog_news_url` (any note type), or when its
- * type has an original. Its post URL is the comparison form of that
+ * The post of a note (rule 3). A note also exists on the main site when a
+ * line of its properties names `public_ghost_blog_news_url` (any note type),
+ * or when its type has an original. Its post URL is the comparison form of that
  * property, else of `url` for a note of a type with an original, when the
  * form names a page of the main site: its host with no other port, a path
  * that is not the root, and no query.
  */
 export function postOf(source: string, noteType: NoteType | string | undefined): PostOfNote {
+    return postFrom(postPropertiesOf(source), noteType)
+}
+
+/** What the post of a note reads of its properties, before its note type is known. */
+export interface PostProperties {
+    /** True when a line of the properties names `public_ghost_blog_news_url`. */
+    readonly ghostNamed: boolean
+    /** The post URL of `public_ghost_blog_news_url`, when it has one. */
+    readonly ghostUrl?: string
+    /** The post URL of `url`, when it has one. */
+    readonly url?: string
+}
+
+/** The properties of a note that give its post (rule 3). */
+export function postPropertiesOf(source: string): PostProperties {
     const ghost = textProperty(source, GHOST_POST_PROPERTY)
-    if (ghost !== undefined) {
-        const url = postUrlOfText(ghost)
+    const value = textProperty(source, POST_URL_PROPERTY)
+    const ghostUrl = ghost === undefined ? undefined : postUrlOfText(ghost)
+    const url = value === undefined ? undefined : postUrlOfText(value)
+    return {
+        ghostNamed: namesProperty(source, GHOST_POST_PROPERTY),
+        ...(ghostUrl === undefined ? {} : { ghostUrl }),
+        ...(url === undefined ? {} : { url })
+    }
+}
+
+/** The post of a note from its properties and its note type (rule 3). */
+export function postFrom(
+    properties: PostProperties,
+    noteType: NoteType | string | undefined
+): PostOfNote {
+    // Any line that names the property puts the note in scope, and the
+    // property wins; a value that cannot be read gives no post URL.
+    if (properties.ghostNamed) {
+        const url = properties.ghostUrl
         return {
             inScope: true,
             property: GHOST_POST_PROPERTY,
@@ -168,8 +200,7 @@ export function postOf(source: string, noteType: NoteType | string | undefined):
     if (!hasOriginal(noteType)) {
         return { inScope: false, property: POST_URL_PROPERTY }
     }
-    const value = textProperty(source, POST_URL_PROPERTY)
-    const url = value === undefined ? undefined : postUrlOfText(value)
+    const url = properties.url
     return { inScope: true, property: POST_URL_PROPERTY, ...(url === undefined ? {} : { url }) }
 }
 
@@ -225,8 +256,14 @@ function decoded(value: string): string {
     return result
 }
 
-/** The attributes of a tag from a place after its name, up to its `>`: each name one time, the first one counts. */
-function attributesOf(html: string, start: number): Map<string, string> {
+/**
+ * The attributes of a tag from a place after its name, up to its `>`: each
+ * name one time, the first one counts. `end` is the place after the `>`.
+ */
+function attributesOf(
+    html: string,
+    start: number
+): { attributes: Map<string, string>; end: number } {
     const attributes = new Map<string, string>()
     let at = start
     while (at < html.length) {
@@ -234,7 +271,7 @@ function attributesOf(html: string, start: number): Map<string, string> {
             at += 1
         }
         if (at >= html.length || html[at] === '>') {
-            break
+            return { attributes, end: at + 1 }
         }
         const nameStart = at
         while (
@@ -279,7 +316,14 @@ function attributesOf(html: string, start: number): Map<string, string> {
             attributes.set(name, decoded(value))
         }
     }
-    return attributes
+    return { attributes, end: html.length }
+}
+
+/** The elements whose text is raw: a tag in it is text, never a tag. */
+const RAW_TEXT: readonly string[] = ['script', 'style', 'template', 'noscript']
+
+function isTagLetter(character: string | undefined): boolean {
+    return character !== undefined && /^[a-zA-Z0-9-]$/u.test(character)
 }
 
 /**
@@ -291,16 +335,42 @@ function attributesOf(html: string, start: number): Map<string, string> {
  */
 export function canonicalLinksOf(html: string, page: string): string[] {
     const lower = asciiLower(html)
-    const close = lower.indexOf('</head')
-    const head = close < 0 ? lower.length : close
     const origin = `https://${hostOf(comparisonForm(page) ?? 'https://')}`
     const links: string[] = []
-    let at = lower.indexOf('<link')
-    while (at >= 0 && at < head) {
-        const after = at + '<link'.length
-        const next = html[after]
-        if (isSpace(next) || next === '/' || next === '>') {
-            const attributes = attributesOf(html, after)
+    let at = 0
+    while (at < html.length) {
+        if (lower.startsWith('<!--', at)) {
+            // A comment ends at its first `-->`; one that never ends hides the rest.
+            const close = lower.indexOf('-->', at + 4)
+            if (close < 0) {
+                break
+            }
+            at = close + 3
+            continue
+        }
+        if (lower.startsWith('</head', at)) {
+            break
+        }
+        if (html[at] !== '<' || !/^[a-z]$/u.test(lower[at + 1] ?? '')) {
+            at += 1
+            continue
+        }
+        let nameEnd = at + 1
+        while (isTagLetter(html[nameEnd])) {
+            nameEnd += 1
+        }
+        const name = lower.slice(at + 1, nameEnd)
+        const { attributes, end } = attributesOf(html, nameEnd)
+        if (RAW_TEXT.includes(name)) {
+            // The text of the element is raw up to its end tag.
+            const close = lower.indexOf(`</${name}`, end)
+            if (close < 0) {
+                break
+            }
+            at = close
+            continue
+        }
+        if (name === 'link') {
             const rel = attributes.get('rel') ?? ''
             const href = (attributes.get('href') ?? '').replace(/^[ \t\n\r\f]+|[ \t\n\r\f]+$/gu, '')
             const words = asciiLower(rel).split(/[ \t\n\r\f]+/u)
@@ -314,7 +384,7 @@ export function canonicalLinksOf(html: string, page: string): string[] {
                 )
             }
         }
-        at = lower.indexOf('<link', after)
+        at = end
     }
     return links
 }

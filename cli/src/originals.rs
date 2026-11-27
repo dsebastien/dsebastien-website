@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::frontmatter::text_property;
+use crate::frontmatter::{names_property, text_property};
 use crate::note_types::NoteType;
 
 /// The origin of the main site. A post URL names a page of it.
@@ -159,18 +159,47 @@ pub struct PostOfNote {
     pub url: Option<String>,
 }
 
-/// The post of a note (rule 3). A note also exists on the main site when it
-/// has a text in `public_ghost_blog_news_url` (any note type), or when its
-/// type has an original. Its post URL is the comparison form of that
+/// The post of a note (rule 3). A note also exists on the main site when a
+/// line of its properties names `public_ghost_blog_news_url` (any note type),
+/// or when its type has an original. Its post URL is the comparison form of that
 /// property, else of `url` for a note of a type with an original, when the
 /// form names a page of the main site: its host with no other port, a path
 /// that is not the root, and no query. The TypeScript twin is `postOf`.
 pub fn post_of(source: &str, note_type: Option<&str>) -> PostOfNote {
-    if let Some(ghost) = text_property(source, GHOST_POST_PROPERTY) {
+    post_from(&post_properties_of(source), note_type)
+}
+
+/// What the post of a note reads of its properties, before its note type is
+/// known.
+#[derive(Clone, Debug)]
+pub struct PostProperties {
+    /// True when a line of the properties names `public_ghost_blog_news_url`.
+    ghost_named: bool,
+    /// The post URL of `public_ghost_blog_news_url`, when it has one.
+    ghost_url: Option<String>,
+    /// The post URL of `url`, when it has one.
+    url: Option<String>,
+}
+
+/// The properties of a note that give its post (rule 3).
+pub fn post_properties_of(source: &str) -> PostProperties {
+    PostProperties {
+        ghost_named: names_property(source, GHOST_POST_PROPERTY),
+        ghost_url: text_property(source, GHOST_POST_PROPERTY)
+            .and_then(|ghost| post_url_of_text(&ghost)),
+        url: text_property(source, POST_URL_PROPERTY).and_then(|value| post_url_of_text(&value)),
+    }
+}
+
+/// The post of a note from its properties and its note type (rule 3).
+pub fn post_from(properties: &PostProperties, note_type: Option<&str>) -> PostOfNote {
+    // Any line that names the property puts the note in scope, and the
+    // property wins; a value that cannot be read gives no post URL.
+    if properties.ghost_named {
         return PostOfNote {
             in_scope: true,
             property: GHOST_POST_PROPERTY,
-            url: post_url_of_text(&ghost),
+            url: properties.ghost_url.clone(),
         };
     }
     if !is_original_type(note_type) {
@@ -183,7 +212,7 @@ pub fn post_of(source: &str, note_type: Option<&str>) -> PostOfNote {
     PostOfNote {
         in_scope: true,
         property: POST_URL_PROPERTY,
-        url: text_property(source, POST_URL_PROPERTY).and_then(|value| post_url_of_text(&value)),
+        url: properties.url.clone(),
     }
 }
 
@@ -239,8 +268,8 @@ fn decoded(value: &str) -> String {
 }
 
 /// The attributes of a tag from a place after its name, up to its `>`: each
-/// name one time, the first one counts.
-fn attributes_of(html: &str, start: usize) -> BTreeMap<String, String> {
+/// name one time, the first one counts, with the place after the `>`.
+fn attributes_of(html: &str, start: usize) -> (BTreeMap<String, String>, usize) {
     let bytes = html.as_bytes();
     let mut attributes = BTreeMap::new();
     let mut at = start;
@@ -249,7 +278,7 @@ fn attributes_of(html: &str, start: usize) -> BTreeMap<String, String> {
             at += 1;
         }
         if at >= bytes.len() || bytes[at] == b'>' {
-            break;
+            return (attributes, (at + 1).min(bytes.len()));
         }
         let name_start = at;
         while at < bytes.len()
@@ -292,8 +321,11 @@ fn attributes_of(html: &str, start: usize) -> BTreeMap<String, String> {
         }
         attributes.entry(name).or_insert_with(|| decoded(value));
     }
-    attributes
+    (attributes, bytes.len())
 }
+
+/// The elements whose text is raw: a tag in it is text, never a tag.
+const RAW_TEXT: [&str; 4] = ["script", "style", "template", "noscript"];
 
 /// The canonical links of a page (rule 4): the address of each `link`
 /// element whose `rel` has the word `canonical`, in the head of the page (up
@@ -302,17 +334,47 @@ fn attributes_of(html: &str, start: usize) -> BTreeMap<String, String> {
 /// from the URL of the page; any other address stays as it is written.
 pub fn canonical_links_of(html: &str, page: &str) -> Vec<String> {
     let lower = html.to_ascii_lowercase();
-    let head = lower.find("</head").unwrap_or(lower.len());
     let page_form = comparison_form(page).unwrap_or_else(|| "https://".to_owned());
     let origin = format!("https://{}", host_of(&page_form));
-    let bytes = html.as_bytes();
+    let bytes = lower.as_bytes();
     let mut links = Vec::new();
-    let mut found = lower.find("<link");
-    while let Some(at) = found.filter(|at| *at < head) {
-        let after = at + "<link".len();
-        let next = bytes.get(after);
-        if is_space(next) || matches!(next, Some(b'/' | b'>')) {
-            let attributes = attributes_of(html, after);
+    let mut at = 0;
+    while at < bytes.len() {
+        let rest = &bytes[at..];
+        if rest.starts_with(b"<!--") {
+            // A comment ends at its first `-->`; one that never ends hides
+            // the rest.
+            let Some(close) = lower[at + 4..].find("-->") else {
+                break;
+            };
+            at += 4 + close + 3;
+            continue;
+        }
+        if rest.starts_with(b"</head") {
+            break;
+        }
+        if rest[0] != b'<' || !rest.get(1).is_some_and(u8::is_ascii_lowercase) {
+            at += 1;
+            continue;
+        }
+        let mut name_end = at + 1;
+        while bytes
+            .get(name_end)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+        {
+            name_end += 1;
+        }
+        let name = &lower[at + 1..name_end];
+        let (attributes, end) = attributes_of(html, name_end);
+        if RAW_TEXT.contains(&name) {
+            // The text of the element is raw up to its end tag.
+            let Some(close) = lower[end..].find(&format!("</{name}")) else {
+                break;
+            };
+            at = end + close;
+            continue;
+        }
+        if name == "link" {
             let rel = attributes.get("rel").map_or("", String::as_str);
             let href = attributes
                 .get("href")
@@ -332,7 +394,7 @@ pub fn canonical_links_of(html: &str, page: &str) -> Vec<String> {
                 });
             }
         }
-        found = lower[after..].find("<link").map(|next| after + next);
+        at = end;
     }
     links
 }
@@ -507,6 +569,8 @@ impl MainSite {
 fn page_of_curl(url: &str) -> Result<PageAnswer, String> {
     let mut child = Command::new("curl")
         .args([
+            // First: no configuration file of the user changes the request.
+            "--disable",
             "--silent",
             "--show-error",
             "--location",

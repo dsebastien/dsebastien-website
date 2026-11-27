@@ -1,4 +1,4 @@
-import { GHOST_POST_PROPERTY, hasOriginal } from '../../plugin/src/publishing/originals.ts'
+import { postOf } from '../../plugin/src/publishing/originals.ts'
 import type { NoteType } from '../../plugin/src/publishing/note-types.ts'
 
 // The noindex property of a note (IDX-20, story 100, decision R85). A note
@@ -45,15 +45,26 @@ export interface NoteSignals {
     readonly inSitemaps: boolean
 }
 
-/** The signals of a note: its noindex, its original, and whether the sitemaps list it. */
+/**
+ * True when a cleaned note also exists on the main site: the rule of the
+ * publishing tool (`postOf()`, rule 1 of "The original of a note"), on the
+ * text of the cleaned note and the note type of its entry.
+ */
+export function existsOnMainSite(cleaned: string, noteType: NoteType | undefined): boolean {
+    return postOf(cleaned, noteType).inScope
+}
+
+/**
+ * The signals of a note: its noindex, its original, and whether the sitemaps
+ * list it. `onMainSite` is `existsOnMainSite()` of its cleaned note.
+ */
 export function signalsOf(
     note: IndexedNote,
-    properties: Readonly<Record<string, unknown>>
+    properties: Readonly<Record<string, unknown>>,
+    onMainSite: boolean
 ): NoteSignals {
     const noindexProperty = isNoindexNote(properties)
-    const ghost = properties[GHOST_POST_PROPERTY]
-    const posted = typeof ghost === 'string' && ghost.trim() !== ''
-    if (!hasOriginal(note.noteType) && !posted) {
+    if (!onMainSite) {
         return { noindex: noindexProperty, inSitemaps: !noindexProperty }
     }
     return note.original === undefined
