@@ -37,6 +37,7 @@
 
     /* Below the rail of the outline, the bar of the current section is under
        the header too (issue 91): a link to a heading leaves room for both. */
+    /* 7.5rem: the header (h-16, 4rem), the bar (min-h-11, 2.75rem) and 0.75rem of slack. */
     @variant max-lg {
         html:has(.section-bar) {
             scroll-padding-top: 7.5rem;
@@ -86,7 +87,7 @@
        screen, for a finger (issue 91, R95). A link in a sentence keeps the
        height of its line (the inline exception of WCAG 2.5.8). */
     .link-control {
-        @apply link wrap-anywhere pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center;
+        @apply link wrap-anywhere any-pointer-coarse:inline-flex any-pointer-coarse:min-h-11 any-pointer-coarse:items-center;
     }
 
     .card-link {
@@ -99,7 +100,7 @@
 
     /* A badge that is a link: the type badge of a note page, which leads to its hub. */
     .badge-link {
-        @apply badge transition-colors pointer-coarse:min-h-11;
+        @apply badge transition-colors any-pointer-coarse:min-h-11;
     }
 
     .badge-link:hover {
@@ -112,7 +113,7 @@
 
     /* On a touch screen a chip, a button and a badge that is a link are 44 px at least (issue 91, R95). */
     .chip {
-        @apply inline-flex items-center justify-center gap-1 rounded-pill bg-well px-3 py-1 text-sm text-primary pointer-coarse:min-h-11 pointer-coarse:min-w-11;
+        @apply inline-flex items-center justify-center gap-1 rounded-pill bg-well px-3 py-1 max-w-full text-sm text-primary wrap-anywhere any-pointer-coarse:min-h-11 any-pointer-coarse:min-w-11;
     }
 
     .chip:hover {
@@ -122,11 +123,11 @@
     /* The chip of the current page or the current filter: the accent, so it
        stands out from the other chips and from their hover in both modes. */
     .chip-current {
-        @apply inline-flex items-center justify-center gap-1 rounded-pill bg-secondary px-3 py-1 text-sm font-semibold text-on-secondary pointer-coarse:min-h-11 pointer-coarse:min-w-11;
+        @apply inline-flex items-center justify-center gap-1 rounded-pill bg-secondary px-3 py-1 max-w-full text-sm font-semibold text-on-secondary wrap-anywhere any-pointer-coarse:min-h-11 any-pointer-coarse:min-w-11;
     }
 
     .button {
-        @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-colors pointer-coarse:min-h-11;
+        @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-colors any-pointer-coarse:min-h-11;
     }
 
     .button:hover {
@@ -134,7 +135,7 @@
     }
 
     .button-quiet {
-        @apply inline-flex items-center justify-center gap-2 rounded-control border border-border-strong px-3 py-1.5 text-sm text-primary pointer-coarse:min-h-11;
+        @apply inline-flex items-center justify-center gap-2 rounded-control border border-border-strong px-3 py-1.5 text-sm text-primary any-pointer-coarse:min-h-11;
     }
 
     .button-quiet:hover {
@@ -246,7 +247,7 @@
     }
 
     .properties-item {
-        @apply rounded-pill bg-well px-2.5 py-0.5;
+        @apply max-w-full rounded-pill bg-well px-2.5 py-0.5 wrap-anywhere;
     }
 
     .properties-json {

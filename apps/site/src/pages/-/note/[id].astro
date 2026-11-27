@@ -94,6 +94,14 @@ const ad = site.adOf(note.vaultPath)
             </p>
         </div>
     </div>
+    {/* The bar of the current section comes before the parts of the note, as it */}
+    {/* shows above them: the keyboard reaches it first. It is fixed, so it moves nothing. */}
+    {body.outline !== undefined && (
+        <button type='button' class='section-bar' data-section-bar hidden>
+            <span class='shrink-0 text-muted'>On this page</span>
+            <span class='truncate' data-section-bar-text></span>
+        </button>
+    )}
     <div class='note-layout'>
         {body.outline !== undefined && (
             <nav class='note-outline' aria-label='On this page' data-outline='rail'>
@@ -155,15 +163,7 @@ const ad = site.adOf(note.vaultPath)
             )}
         </div>
     </div>
-    {body.outline !== undefined && (
-        <>
-            <button type='button' class='section-bar' data-section-bar hidden>
-                <span class='shrink-0 text-muted'>On this page</span>
-                <span class='truncate' data-section-bar-text></span>
-            </button>
-            <script is:inline set:html={sectionBarScript} />
-        </>
-    )}
+    {body.outline !== undefined && <script is:inline set:html={sectionBarScript} />}
     <script is:inline set:html={oldAnchorScript} />
     {ad.length > 0 && <script is:inline set:html={ctaScript} />}
 </Page>

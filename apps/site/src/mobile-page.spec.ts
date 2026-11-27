@@ -20,7 +20,8 @@ import {
     canonicalPath,
     folderPath,
     otherNotesPath,
-    recentPath
+    recentPath,
+    tagPagePath
 } from '@dsebastien-website/resolver'
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
@@ -178,6 +179,14 @@ async function pagesToCheck(page: Page): Promise<{ name: string; path: string }[
             name: 'tag page',
             path: await hrefOf(canonicalPath(PROPERTIES), '[data-properties] a[href^="/-/tags/"]')
         },
+        {
+            name: 'tag page of a long tag',
+            path: await hrefOf(
+                canonicalPath(WIDE),
+                '[data-properties] a[href^="/-/tags/"]:has-text("Rhododendron")'
+            )
+        },
+        { name: 'tag page with a long nested tag', path: tagPagePath('garden', 1) },
         { name: 'notes with no type', path: otherNotesPath(1) },
         { name: 'library', path: LIBRARY_PATH },
         { name: 'recent list', path: recentPath('updated', 1) },
@@ -311,6 +320,20 @@ describe('the mobile rules (issue 91)', () => {
                 await page.goto(canonicalPath(BUDGET_SAMPLE.long))
                 const bar = page.locator('[data-section-bar]')
                 expect(await bar.isVisible()).toBe(false)
+                // The bar comes before the parts of the note in the order of the keyboard.
+                expect(
+                    await page.evaluate(() => {
+                        const button = document.querySelector('[data-section-bar]')
+                        const layout = document.querySelector('.note-layout')
+                        return (
+                            button !== null &&
+                            layout !== null &&
+                            (button.compareDocumentPosition(layout) &
+                                Node.DOCUMENT_POSITION_FOLLOWING) !==
+                                0
+                        )
+                    })
+                ).toBe(true)
                 // A link of the outline leads to a heading that neither the
                 // header nor the bar hides.
                 const fold = page.locator('[data-outline="fold"]')
@@ -360,20 +383,18 @@ describe('the mobile rules (issue 91)', () => {
         }
     }, 300_000)
 
-    test('a wide screen shows the outline in its rail and no section bar', async () => {
-        if (browser === undefined || server === undefined) throw new Error('no browser')
-        const context = await browser.newContext({
-            viewport: { width: 1280, height: 800 },
-            baseURL: server.url
-        })
+    test('the bar goes away when the screen becomes wide', async () => {
+        const context = await phone(390, 'dark')
         try {
             const page = await context.newPage()
             await page.goto(canonicalPath(BUDGET_SAMPLE.long))
+            const bar = page.locator('[data-section-bar]')
             await page.evaluate(() => {
                 scrollTo({ top: 3000, behavior: 'instant' })
             })
-            await page.waitForTimeout(200)
-            expect(await page.locator('[data-section-bar]').isVisible()).toBe(false)
+            await bar.waitFor({ state: 'visible' })
+            await page.setViewportSize({ width: 1280, height: 800 })
+            await bar.waitFor({ state: 'hidden' })
             expect(await page.locator('[data-outline="rail"]').isVisible()).toBe(true)
         } finally {
             await context.close()

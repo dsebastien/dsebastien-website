@@ -537,6 +537,9 @@ describe('first set of notes (spec 18.4)', () => {
             if (note === undefined || image === undefined) return
             const words = note.body.split(/\P{L}+/u)
             expect(words.some((word) => /^\p{L}{60,}$/u.test(word))).toBe(true)
+            // A long nested tag and a long alias: a chip and an item of a list property.
+            expect(note.properties).toMatch(/^ {2}- garden\/\p{L}{60,}$/mu)
+            expect(note.properties).toMatch(/^aliases:\n {2}- \p{L}{60,}$/mu)
             const header = note.body.split('\n').find((line) => line.startsWith('| '))
             expect(header?.split('|').length).toBeGreaterThanOrEqual(10)
             const code = /^```\w*\n([\s\S]*?)^```$/mu.exec(note.body)?.[1] ?? ''
