@@ -548,10 +548,17 @@ pub enum GuardChange<'a> {
 impl VaultRead {
     /// The same read with the guards changed: a folder on the deny list,
     /// whose notes and files leave the scan and become files under the guard,
-    /// or a note read as excluded by the ignore property. No note is read again: the listings of the vault are the
-    /// ones of the run, and only the names below a hidden folder of the new
-    /// folder are listed for the first time.
-    fn changed(&self, vault: &Vault, change: GuardChange) -> Result<Self, String> {
+    /// or a note read as excluded by the ignore property. No note is read
+    /// again. The names of the new folder (`listed`, hidden ones included)
+    /// were listed before the first read, and every file that the first read
+    /// found in the folder is under the guard too, so a write during the run
+    /// cannot leave a file of the folder out of the second set (issue 108,
+    /// point 3).
+    fn changed(
+        &self,
+        change: GuardChange,
+        listed: Option<(Vec<String>, BTreeSet<String>)>,
+    ) -> Self {
         let mut read = self.clone();
         match change {
             GuardChange::Ignore(path) => {
@@ -561,24 +568,30 @@ impl VaultRead {
             }
             GuardChange::Deny(folder) => {
                 let below = format!("{folder}/");
+                let (files, names) = listed.unwrap_or_default();
+                let mut denied: BTreeSet<String> = read.denied.into_iter().collect();
+                denied.extend(files);
+                let first: Vec<String> = read
+                    .notes
+                    .keys()
+                    .chain(&read.others)
+                    .filter(|path| path.starts_with(&below))
+                    .cloned()
+                    .collect();
+                for path in &first {
+                    read.denied_file_names
+                        .insert(guard_name(path.rsplit('/').next().unwrap_or(path)));
+                }
+                denied.extend(first);
+                read.denied = denied.into_iter().collect();
+                read.denied_file_names.extend(names);
                 read.notes.retain(|path, _| !path.starts_with(&below));
                 read.ignored.retain(|path| !path.starts_with(&below));
                 read.link_paths.retain(|path, _| !path.starts_with(&below));
                 read.others.retain(|path| !path.starts_with(&below));
-                let (files, names) = scan_denied(
-                    vault,
-                    &Configuration {
-                        deny_list: vec![folder.to_owned()],
-                        ..Configuration::default()
-                    },
-                )?;
-                let mut denied: BTreeSet<String> = read.denied.into_iter().collect();
-                denied.extend(files);
-                read.denied = denied.into_iter().collect();
-                read.denied_file_names.extend(names);
             }
         }
-        Ok(read)
+        read
     }
 }
 
@@ -600,8 +613,20 @@ pub fn compute_guard_queues(
     change: GuardChange,
 ) -> Result<(Scan, Scan), String> {
     let kit = StarterKit::none();
+    // The names of the new folder of a deny, hidden ones included, are
+    // listed before the first read (issue 108, point 3).
+    let listed = match change {
+        GuardChange::Deny(folder) => Some(scan_denied(
+            vault,
+            &Configuration {
+                deny_list: vec![folder.to_owned()],
+                ..Configuration::default()
+            },
+        )?),
+        GuardChange::Ignore(_) => None,
+    };
     let read = read_vault(vault, entries, &journals, configuration)?;
-    let edited = read.changed(vault, change)?;
+    let edited = read.changed(change, listed);
     let mut changed = configuration.clone();
     if let GuardChange::Deny(folder) = change {
         changed.deny_list.push(folder.to_owned());
