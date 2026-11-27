@@ -25,6 +25,7 @@ import {
     type AnalyticsSettings
 } from '../src/analytics/analytics.ts'
 import { readPublishedNotes } from '../src/content-store.ts'
+import { HOST_NAME } from '../src/host-name.ts'
 
 /** Where a release goes. */
 export interface DeployTarget {
@@ -50,8 +51,6 @@ export interface DeployTarget {
      */
     readonly analytics?: AnalyticsSettings
 }
-
-const HOST_NAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u
 
 const CHECKS: Record<Exclude<keyof DeployTarget, 'analytics'>, (value: unknown) => boolean> = {
     accountId: (value) => typeof value === 'string' && /^[0-9a-f]{32}$/u.test(value),
@@ -246,6 +245,54 @@ export const ASSETS_IGNORE = `/${RESOLVER_MAP_FILE}
 
 /** The files of the output that the host never gets, by their names in the output. */
 const NOT_UPLOADED = new Set([RESOLVER_MAP_FILE, '.assetsignore'])
+
+/** The attributes of the analytics tag of a page, or `undefined` when it has none. */
+function analyticsTagOf(html: string): AnalyticsSettings | undefined {
+    const tag = /<script\b[^>]*\sdata-domain="[^"]*"[^>]*>/u.exec(html)?.[0]
+    if (tag === undefined) {
+        return undefined
+    }
+    const attribute = (name: string): string =>
+        new RegExp(`\\s${name}="([^"]*)"`, 'u').exec(tag)?.[1] ?? ''
+    return {
+        siteId: attribute('data-domain'),
+        script: attribute('src'),
+        event: attribute('data-api')
+    }
+}
+
+/**
+ * Why the analytics of a built output are not the ones of the target, or
+ * `undefined` when they are (AN-01). A deployment of `--dist` does not build:
+ * the home page of the output says which site id and which proxy its pages
+ * name, and an output for another target, or with analytics that the target
+ * does not have, never goes to the host.
+ */
+export async function checkOutputAnalytics(
+    folder: string,
+    target: DeployTarget
+): Promise<string | undefined> {
+    const html = await readFile(join(folder, 'index.html'), 'utf8').catch(() => '')
+    const built = analyticsTagOf(html)
+    const wanted = target.analytics
+    if (built === undefined && wanted === undefined) {
+        return undefined
+    }
+    if (built === undefined) {
+        return `the output has no analytics, and the target has the site id ${wanted?.siteId ?? ''}: build it for this target`
+    }
+    if (wanted === undefined) {
+        return `the output has the analytics of the site id ${built.siteId}, and the target has none: build it for this target`
+    }
+    if (
+        built.siteId !== wanted.siteId ||
+        built.script !== wanted.script ||
+        built.event !== wanted.event
+    ) {
+        return `the output has the analytics of the site id ${built.siteId}, not the ones of the target (${wanted.siteId}): build it for this target`
+    }
+    return undefined
+}
 
 /** The limits of the host for one release: a Worker version and its static files (BUILD-08). */
 export interface HostLimits {

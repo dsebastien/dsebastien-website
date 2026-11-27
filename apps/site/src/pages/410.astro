@@ -9,11 +9,12 @@ import { publishedSite } from '../published-site.ts'
 // of a note that the author unpublished. It shows no title and no content of
 // the note: its search field starts empty, also of the words of the address.
 // It leads to the search, the home page, the recent lists and the type hubs,
-// as the "not found" page does.
+// as the "not found" page does. Its page view is `/410`, with the path of the
+// request as a property, as the "not found" page sends `/404`.
 const site = await publishedSite()
 ---
 
-<Page title={fullTitle('Removed')} noindex>
+<Page title={fullTitle('Removed')} noindex pageView='gone'>
     <div class='max-w-3xl py-12'>
         <h1 class='text-3xl font-bold'>This note was removed</h1>
         <p class='mt-4 text-muted'>

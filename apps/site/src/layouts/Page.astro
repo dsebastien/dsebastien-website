@@ -1,6 +1,11 @@
 ---
 import '../styles/global.css'
-import { analyticsOfEnvironment, analyticsTag, pageViewScript } from '../analytics/analytics.ts'
+import {
+    analyticsOfEnvironment,
+    analyticsTag,
+    pageViewScript,
+    type PageViewKind
+} from '../analytics/analytics.ts'
 import Footer from '../components/Footer.astro'
 import Header from '../components/Header.astro'
 import touchIcon from '../icons/apple-touch-icon.png?url&no-inline'
@@ -23,7 +28,8 @@ import { BAR_COLORS } from '../styles/themes/knowii-bar.ts'
 // browser asks for `/favicon.ico`.
 // The analytics (AN-01, AN-03): with the settings of the deploy target, every
 // page with scripts sends its page view to the proxy, the "not found" page as
-// `/404`. A build without settings has no analytics tag.
+// `/404` and the gone page as `/410`. A build without settings has no
+// analytics tag.
 interface Props {
     title: string
     /** The description of the page (IDX-05). Every indexable page has one. */
@@ -42,7 +48,7 @@ interface Props {
      */
     scriptless?: boolean
     /** The page view that the page sends: `not-found` for the "not found" page (AN-03). */
-    pageView?: 'page' | 'not-found'
+    pageView?: PageViewKind
 }
 
 const {

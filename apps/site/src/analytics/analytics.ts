@@ -1,3 +1,5 @@
+import { HOST_NAME } from '../host-name.ts'
+
 // The analytics of the site (AN-01, AN-03, business rule 9): Plausible through
 // the proxy of the author (his own Worker), as the current site does, with no
 // cookie. The site id and the addresses of the proxy are settings of the
@@ -31,7 +33,11 @@ export const ANALYTICS_VARIABLE = 'SITE_ANALYTICS'
 /** The path that the "not found" page sends as its page view (decision R9). */
 export const NOT_FOUND_PATH = '/404'
 
-const HOST_NAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u
+/** The path that the gone page of an unpublished note sends as its page view. */
+export const GONE_PATH = '/410'
+
+/** The page view of a page: its own address, or the path of an error page with the path of the request. */
+export type PageViewKind = 'page' | 'not-found' | 'gone'
 
 /** The script that sends no page view by itself. */
 const MANUAL_SCRIPT = /\/script\.manual\.js$/u
@@ -114,20 +120,31 @@ export function analyticsTag(settings: AnalyticsSettings): Record<string, string
 /**
  * The inline script of the page view. Before the script of the proxy loads,
  * `window.plausible` is the queue of the current site (`publish.js`), which
- * the script sends when it loads. A call that fails never breaks the page.
+ * the script sends when it loads. The "not found" page and the gone page send
+ * their path (`/404`, `/410`) with the path of the request as the property
+ * `path`. The manual script does not count a page that the browser shows
+ * again from its back-forward cache, so this script sends the view again
+ * then, as the plain script does. A call that fails never breaks the page.
  * It is one block, so it declares no global name.
  */
-export function pageViewScript(kind: 'page' | 'not-found'): string {
+export function pageViewScript(kind: PageViewKind): string {
+    const path = kind === 'not-found' ? NOT_FOUND_PATH : GONE_PATH
     const view =
         kind === 'page'
             ? `window.plausible('pageview')`
-            : `window.plausible('pageview', { u: location.origin + ${JSON.stringify(NOT_FOUND_PATH)}, props: { path: location.pathname } })`
+            : `window.plausible('pageview', { u: location.origin + ${JSON.stringify(path)}, props: { path: location.pathname } })`
     return `{
     window.plausible = window.plausible || function () {
         (window.plausible.q = window.plausible.q || []).push(arguments)
     }
-    try {
-        ${view}
-    } catch {}
+    const view = () => {
+        try {
+            ${view}
+        } catch {}
+    }
+    view()
+    addEventListener('pageshow', (event) => {
+        if (event.persisted) view()
+    })
 }`
 }

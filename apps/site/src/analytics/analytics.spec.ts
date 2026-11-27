@@ -5,8 +5,10 @@ import {
     analyticsFrom,
     analyticsOfEnvironment,
     analyticsTag,
+    GONE_PATH,
     NOT_FOUND_PATH,
-    pageViewScript
+    pageViewScript,
+    type PageViewKind
 } from './analytics.ts'
 
 // The analytics of the site (AN-01, AN-03, business rule 9): Plausible through
@@ -90,30 +92,42 @@ describe('the analytics tag', () => {
 
 /** Runs the page view script in a page at an address, and gives the calls of `plausible`. */
 function pageView(
-    kind: 'page' | 'not-found',
+    kind: PageViewKind,
     address: string,
     plausible?: (...args: unknown[]) => void
-): { calls: unknown[][]; window: Record<string, unknown> } {
+): { calls: () => unknown[][]; show: (persisted: boolean) => void } {
     const url = new URL(address)
+    const listeners: ((event: { persisted: boolean }) => void)[] = []
     const window: Record<string, unknown> = {
         location: { origin: url.origin, pathname: url.pathname, href: url.href },
+        addEventListener: (name: string, listener: (event: { persisted: boolean }) => void) => {
+            expect(name).toBe('pageshow')
+            listeners.push(listener)
+        },
         ...(plausible === undefined ? {} : { plausible })
     }
     window['window'] = window
     runInNewContext(pageViewScript(kind), window)
-    const queue = (window['plausible'] as { q?: unknown[] }).q ?? []
-    return { calls: queue.map((args) => Array.from(args as ArrayLike<unknown>)), window }
+    return {
+        calls: () =>
+            ((window['plausible'] as { q?: unknown[] }).q ?? []).map((args) =>
+                Array.from(args as ArrayLike<unknown>)
+            ),
+        show: (persisted) => {
+            for (const listener of listeners) listener({ persisted })
+        }
+    }
 }
 
 describe('the page view', () => {
     test('queues a page view of the page until the script loads', () => {
-        expect(pageView('page', 'https://notes.example/Garden/Drip+irrigation').calls).toEqual([
+        expect(pageView('page', 'https://notes.example/Garden/Drip+irrigation').calls()).toEqual([
             ['pageview']
         ])
     })
 
     test('sends the view of the "not found" page as /404, with the missing path as a property', () => {
-        expect(pageView('not-found', 'https://notes.example/No/such+note?q=1').calls).toEqual([
+        expect(pageView('not-found', 'https://notes.example/No/such+note?q=1').calls()).toEqual([
             [
                 'pageview',
                 {
@@ -124,6 +138,23 @@ describe('the page view', () => {
         ])
     })
 
+    test('sends the view of the gone page as /410, with the path as a property', () => {
+        expect(pageView('gone', 'https://notes.example/Old+note').calls()).toEqual([
+            ['pageview', { u: `https://notes.example${GONE_PATH}`, props: { path: '/Old+note' } }]
+        ])
+    })
+
+    // The manual script of the proxy does not count a page that the browser
+    // shows again from its back-forward cache; the plain script does.
+    test('sends the view again when the browser shows the page from its back-forward cache', () => {
+        const page = pageView('not-found', 'https://notes.example/Gone')
+        page.show(false)
+        expect(page.calls()).toHaveLength(1)
+        page.show(true)
+        expect(page.calls()).toHaveLength(2)
+        expect(page.calls()[1]).toEqual(page.calls()[0])
+    })
+
     test('calls the script when it is there already', () => {
         const sent: unknown[][] = []
         pageView('page', 'https://notes.example/', (...args) => sent.push(args))
@@ -131,10 +162,11 @@ describe('the page view', () => {
     })
 
     test('never breaks the page when the call fails', () => {
-        expect(() =>
-            pageView('page', 'https://notes.example/', () => {
-                throw new Error('blocked')
-            })
-        ).not.toThrow()
+        const page = pageView('page', 'https://notes.example/', () => {
+            throw new Error('blocked')
+        })
+        expect(() => {
+            page.show(true)
+        }).not.toThrow()
     })
 })

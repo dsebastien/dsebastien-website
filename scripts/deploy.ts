@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util'
 import { MAP_HEAD_FILE, mapHeadFrom, SITE_ORIGIN } from '@dsebastien-website/resolver'
 import {
     analyticsVariable,
+    checkOutputAnalytics,
     deployToken,
     headersFile,
     releaseImages,
@@ -363,7 +364,14 @@ async function deploy(
             headers: headersFile(target),
             build: async () => {
                 if (store === undefined) {
-                    return resolve(values.dist ?? '')
+                    // A built output keeps the analytics of its build: they
+                    // must be the ones of the target (AN-01).
+                    const dist = resolve(values.dist ?? '')
+                    const refusal = await checkOutputAnalytics(dist, target)
+                    if (refusal !== undefined) {
+                        throw new Error(refusal)
+                    }
+                    return dist
                 }
                 // The ads read the live store catalog, unless STORE_CATALOG names
                 // another source (BUILD-06, CAT-01).

@@ -28,4 +28,3 @@ export {
 } from './budget-sample.ts'
 export { launchChrome } from './browser.ts'
 export { TEST_ANALYTICS } from './analytics.ts'
-export { launchChrome } from './browser.ts'

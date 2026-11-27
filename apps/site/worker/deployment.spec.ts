@@ -6,6 +6,7 @@ import {
     ASSETS_IGNORE,
     analyticsVariable,
     checkOutput,
+    checkOutputAnalytics,
     checkOutputLimits,
     deploymentRecordFrom,
     deployToken,
@@ -189,6 +190,43 @@ async function withFolder(run: (folder: string) => Promise<void>): Promise<void>
         await rm(folder, { recursive: true, force: true })
     }
 }
+
+/** The home page of a build, with or without the analytics tag of settings. */
+function homePage(analytics?: typeof ANALYTICS): string {
+    const tag =
+        analytics === undefined
+            ? ''
+            : `<script defer src="${analytics.script}" data-domain="${analytics.siteId}" data-api="${analytics.event}"></script>`
+    return `<!doctype html><html><head><title>Home</title>${tag}</head><body></body></html>`
+}
+
+// A deployment of a built output (`--dist`) cannot set the analytics of its
+// build: it refuses an output whose analytics are not the ones of the target.
+describe('the analytics of a built output', () => {
+    test.each([
+        ['the target has none and the output none', undefined, undefined],
+        ['both have the same', ANALYTICS, ANALYTICS]
+    ])('accepts an output when %s', async (_case, built, target) => {
+        await withFolder(async (folder) => {
+            await writeFile(join(folder, 'index.html'), homePage(built))
+            const of = target === undefined ? PREVIEW : { ...PREVIEW, analytics: target }
+            expect(await checkOutputAnalytics(folder, of)).toBeUndefined()
+        })
+    })
+
+    test.each([
+        ['another site id', { ...ANALYTICS, siteId: 'notes.example' }, ANALYTICS],
+        ['another proxy', { ...ANALYTICS, event: 'https://proxy.example/e' }, ANALYTICS],
+        ['analytics that the target does not have', ANALYTICS, undefined],
+        ['no analytics, and the target has them', undefined, ANALYTICS]
+    ])('refuses an output with %s', async (_case, built, target) => {
+        await withFolder(async (folder) => {
+            await writeFile(join(folder, 'index.html'), homePage(built))
+            const of = target === undefined ? PREVIEW : { ...PREVIEW, analytics: target }
+            expect(await checkOutputAnalytics(folder, of)).toContain('analytics')
+        })
+    })
+})
 
 describe('the output that a deployment puts on the host', () => {
     /** Writes a head of a map in two parts, and the parts given. */
