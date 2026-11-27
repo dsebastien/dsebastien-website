@@ -28,7 +28,7 @@ import type { EditAction, EditEvent } from './edits.ts'
 import { fileMainSite, fileNoteTypes, nodeDevice } from './node/device.ts'
 import type { PublicationPlan, Selection } from './plan.ts'
 import type { Device, Vault } from './ports.ts'
-import type { TooLarge } from './attachments.ts'
+import type { RemovedAttachment, TooLarge } from './attachments.ts'
 import type { PublicationQueue } from './queue.ts'
 import { edit, guards, plan, publish, status, takedown, unlock, unpublish } from './tool.ts'
 import type { Face, GuardsReport, Run } from './tool.ts'
@@ -45,6 +45,8 @@ const SCENARIOS = fileURLToPath(
 /** The lists of paths of a publication report. */
 interface ReportLists {
     attachmentsDeleted: readonly string[]
+    /** A scenario before issue 135 has no list `attachmentsRemoved`: it is empty then. */
+    attachmentsRemoved?: readonly RemovedAttachment[]
     attachmentsUploaded: readonly string[]
     failed: readonly string[]
     forcedRemoved: readonly string[]
@@ -99,6 +101,7 @@ type Step = { why: string } & (
           listsNotRefreshed?: string[]
           liveQueries?: string[]
           tooLarge?: TooLarge[]
+          attachmentsRemoved?: RemovedAttachment[]
       }
     | {
           do: 'publish'
@@ -391,6 +394,9 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         )
                         expect(planned.liveQueries, label).toEqual(step.liveQueries ?? [])
                         expect(planned.tooLarge, label).toEqual(step.tooLarge ?? [])
+                        expect(planned.attachmentsRemoved, label).toEqual(
+                            step.attachmentsRemoved ?? []
+                        )
                     }
                 } else if (step.do === 'crash' && step.takedown !== undefined) {
                     const stopped = crashingStore(device.store, copy, step.at)
@@ -512,7 +518,11 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         ),
                         warnings: report.warnings.map((entry) => entry.path)
                     }
-                    expect(lists, label).toEqual({ originalsNotVerified: [], ...step.report })
+                    expect(lists, label).toEqual({
+                        attachmentsRemoved: [],
+                        originalsNotVerified: [],
+                        ...step.report
+                    })
                 } else if (step.do === 'publish') {
                     const planned = await plan(device, step.selection)
                     // A publication from the face of the step: the plugin by default.
@@ -529,7 +539,11 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         ),
                         warnings: report.warnings.map((entry) => entry.path)
                     }
-                    expect(lists, label).toEqual({ originalsNotVerified: [], ...step.report })
+                    expect(lists, label).toEqual({
+                        attachmentsRemoved: [],
+                        originalsNotVerified: [],
+                        ...step.report
+                    })
                 } else {
                     for (const [path, text] of Object.entries(step.vault)) {
                         expect(await textOf(join(vault, path)), `${label}: ${path}`).toBe(text)

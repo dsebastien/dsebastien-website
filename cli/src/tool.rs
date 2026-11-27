@@ -8,7 +8,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::attachments::attachments_of;
-use crate::attachments::{Attachment, MAX_ATTACHMENT_SIZE, TooLarge, key_of};
+use crate::attachments::{
+    Attachment, MAX_ATTACHMENT_SIZE, RemovedAttachment, TooLarge, key_of, removed_attachments,
+};
 use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
@@ -34,7 +36,9 @@ use crate::names::folded_form;
 use crate::note_types::{NoteType, StarterKit, note_type_of_entry, note_types_of};
 use crate::order::sort_by_code_point;
 use crate::originals::{CheckResult, CheckedNote, MainSite, Original};
-use crate::plan::{PublicationPlan, Selection, forced_removals, plan_with_sizes};
+use crate::plan::{
+    PublicationPlan, Selection, attachments_after_plan, forced_removals, plan_with_sizes,
+};
 use crate::queue::{GuardChange, Move, Scan, compute_guard_queues, compute_queue, moved_entry};
 use crate::renames::{
     JournalState, RENAMES_FILE, RenameJournals, fold_moves, moved_folder, parse_markers,
@@ -458,6 +462,9 @@ struct NoteTexts {
 /// A plan with everything that its publication needs.
 struct Computed {
     plan: PublicationPlan,
+    /// The attachments that the publication of the plan takes off the site
+    /// (issue 135).
+    attachments_removed: Vec<RemovedAttachment>,
     /// False when the content store could not be reached and the plan uses
     /// the last fetch.
     reached: bool,
@@ -561,8 +568,17 @@ fn record_for(
             "renames": renames_hash,
         },
     }))?;
+    let planned: BTreeMap<String, &[Attachment]> = texts
+        .iter()
+        .map(|(path, texts)| (path.clone(), texts.attachments.as_slice()))
+        .collect();
+    let attachments_removed = removed_attachments(
+        published_attachments(&scan.manifest),
+        attachments_after_plan(&scan.manifest, &plan, &planned).into_iter(),
+    );
     Ok(Computed {
         plan,
+        attachments_removed,
         reached,
         record,
         scan,
@@ -570,6 +586,17 @@ fn record_for(
         texts,
         too_large,
     })
+}
+
+/// The attachments of the published entries of a manifest, one list per
+/// entry.
+fn published_attachments(
+    manifest: &BTreeMap<String, ManifestEntry>,
+) -> impl Iterator<Item = &[Attachment]> {
+    manifest
+        .values()
+        .filter(|entry| entry.state == State::Published)
+        .map(|entry| entry.attachments.as_slice())
 }
 
 /// The published entries after the plan whose attachments list a file that
@@ -682,6 +709,7 @@ pub fn plan(device: &Device, selection: &Selection) -> Result<String, String> {
     let (id, computed) = store_plan(device, &|_| selection.clone())?;
     let paths = || computed.plan.publish().iter().chain(computed.plan.update());
     canonical(&json!({
+        "attachmentsRemoved": to_value(&computed.attachments_removed)?,
         "id": id,
         "listsNotRefreshed": lists_not_refreshed(&computed.texts, paths()),
         "liveQueries": live_queries(&computed.texts, paths()),
@@ -2480,8 +2508,15 @@ fn report_of(
     warnings.extend(cleanup.warnings);
     // A stable sort, by the path of each warning.
     warnings.sort_by(|one, two| one["path"].as_str().cmp(&two["path"].as_str()));
+    // The same rule as the plan, on the manifest as the run left it (issue
+    // 135).
+    let removed = removed_attachments(
+        published_attachments(&scan.manifest),
+        published_attachments(&written.manifest),
+    );
     let output = canonical(&json!({
         "attachmentsDeleted": cleanup.deleted,
+        "attachmentsRemoved": to_value(&removed)?,
         "attachmentsUploaded": uploaded,
         "failed": written.failed,
         "forcedRemoved": plan.forced_remove(),

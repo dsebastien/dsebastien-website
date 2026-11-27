@@ -7,12 +7,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::attachments::{TooLarge, sort_too_large};
+use crate::attachments::{Attachment, TooLarge, sort_too_large};
 use crate::configuration::is_vault_path;
 use crate::device::Vault;
 use crate::edits::Event;
 use crate::guards::{IGNORE_PROPERTY, in_deny_list};
-use crate::manifest::State;
+use crate::manifest::{ManifestEntry, State};
 use crate::names::{
     first_part, folded_form, is_changed_by_obsidian, is_refused_by_windows, is_reserved_root_name,
     obsidian_path, obsidian_twins,
@@ -349,6 +349,45 @@ fn planned_notes(scan: &Scan, selection: &Selection) -> (Vec<String>, Vec<String
         .cloned()
         .collect();
     (publish, update)
+}
+
+/// The attachments of the published entries after a plan (rule 1 of
+/// `attachmentsRemoved` of "The publication plan", issue 135): the published
+/// entries of the manifest at the new path of each move, less the notes of
+/// `forcedRemove` and of `remove`, with the attachments of the record for
+/// each note of `publish` and of `update` (`planned`, by path).
+pub fn attachments_after_plan<'a>(
+    manifest: &'a BTreeMap<String, ManifestEntry>,
+    plan: &PublicationPlan,
+    planned: &'a BTreeMap<String, &'a [Attachment]>,
+) -> Vec<&'a [Attachment]> {
+    let moved_to: BTreeMap<&String, &String> = plan
+        .moves()
+        .iter()
+        .map(|item| (&item.from, &item.to))
+        .collect();
+    let leaving: BTreeSet<&String> = plan.forced_remove().iter().chain(plan.remove()).collect();
+    let mut after = Vec::new();
+    let mut covered = BTreeSet::new();
+    for (path, entry) in manifest {
+        let now = moved_to.get(path).copied().unwrap_or(path);
+        if leaving.contains(now) {
+            continue;
+        }
+        if let Some(attachments) = planned.get(now) {
+            after.push(*attachments);
+            covered.insert(now.clone());
+        } else if entry.state == State::Published {
+            after.push(entry.attachments.as_slice());
+        }
+    }
+    // The new notes of the plan, which have no entry yet.
+    for (path, attachments) in planned {
+        if !covered.contains(path) {
+            after.push(*attachments);
+        }
+    }
+    after
 }
 
 /// The plan of a selection with the size limit of an attachment (issue 72):

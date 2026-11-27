@@ -56,6 +56,53 @@ export function keyOf(hash: string): string {
     return hash.slice('sha256:'.length)
 }
 
+/**
+ * An attachment that a publication takes off the site (issue 135): its last
+ * vault path, and the key of its file in the attachment storage.
+ */
+// A type alias, not an interface: the canonical form takes any object of data.
+export type RemovedAttachment = {
+    readonly key: string
+    readonly path: string
+}
+
+/**
+ * The attachments of `before` that leave the site (rule 2 of
+ * `attachmentsRemoved` of "The publication plan"): no attachment of `after`
+ * has their key, and none has their path. A file whose path stays with new
+ * bytes is an update, not a removal. Each pair one time, sorted by path, then
+ * by key.
+ */
+export function removedAttachments(
+    before: Iterable<readonly Attachment[]>,
+    after: Iterable<readonly Attachment[]>
+): RemovedAttachment[] {
+    const keys = new Set<string>()
+    const paths = new Set<string>()
+    for (const attachments of after) {
+        for (const attachment of attachments) {
+            keys.add(keyOf(attachment.hash))
+            paths.add(attachment.path)
+        }
+    }
+    const removed = new Map<string, RemovedAttachment>()
+    for (const attachments of before) {
+        for (const { hash, path } of attachments) {
+            const key = keyOf(hash)
+            if (!keys.has(key) && !paths.has(path)) {
+                removed.set(
+                    `${path}
+${key}`,
+                    { key, path }
+                )
+            }
+        }
+    }
+    return [...removed.values()].sort(
+        (one, two) => compareCodePoints(one.path, two.path) || compareCodePoints(one.key, two.key)
+    )
+}
+
 /** The facts of the bytes of a file: its hash, its size and the size of an image. */
 export function factsOf(path: string, bytes: Uint8Array): FileFacts {
     const size = imageSize(bytes)

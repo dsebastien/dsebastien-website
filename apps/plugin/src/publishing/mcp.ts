@@ -429,6 +429,7 @@ export async function answer(
 export function outcomeOfPlan(stored: StoredPlan): ToolOutcome {
     return {
         output: toCanonicalJson({
+            attachmentsRemoved: stored.attachmentsRemoved,
             id: stored.id,
             listsNotRefreshed: stored.listsNotRefreshed,
             liveQueries: stored.liveQueries,

@@ -2848,6 +2848,12 @@
                     },
                     "time": "2031-06-04T08:00:00Z",
                     "report": {
+                        "attachmentsRemoved": [
+                            {
+                                "key": "90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19",
+                                "path": "Other/plan.png"
+                            }
+                        ],
                         "attachmentsDeleted": [
                             "90d1fc49acaf4a9b892cf54002919d0a11ee3d354a9f6da023986a89cb354f19"
                         ],
@@ -2886,6 +2892,12 @@
                     },
                     "time": "2031-06-05T08:00:00Z",
                     "report": {
+                        "attachmentsRemoved": [
+                            {
+                                "key": "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168",
+                                "path": "Images/map.pdf"
+                            }
+                        ],
                         "attachmentsDeleted": [
                             "454e18e6432ac837926e432cfe9b5de74ac5419f98043be32081647902335168"
                         ],
@@ -3392,6 +3404,242 @@
                     "attachmentStorage": {
                         "61eedc1aa70bd38adc2eedfebb6b1601bffd23007ca16a5ba1d629b683514388": "A public photo\n"
                     }
+                }
+            ]
+        },
+        {
+            "name": "the plan lists the attachments that its publication takes off the site, and the report says the same (issue 135)",
+            "denyList": ["Locked"],
+            "vault": {
+                "Notes/A.md": "# A\n\n![[one.txt]] and ![[two.txt]]\n",
+                "Notes/B.md": "# B\n\n![[two.txt]] and ![[three.txt]]\n",
+                "Files/one.txt": "one\n",
+                "Files/two.txt": "two\n",
+                "Files/three.txt": "three\n",
+                "Locked/Secret.md": "A note in a folder of the deny list\n"
+            },
+            "steps": [
+                {
+                    "do": "plan",
+                    "why": "a first publication takes nothing off the site",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/A.md", "Notes/B.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": ["Notes/A.md", "Notes/B.md"],
+                        "remove": [],
+                        "update": []
+                    },
+                    "attachmentsRemoved": []
+                },
+                {
+                    "do": "publish",
+                    "why": "the first publication uploads the three files",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/A.md", "Notes/B.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsRemoved": [],
+                        "attachmentsUploaded": [
+                            "27dd8ed44a83ff94d557f9fd0412ed5a8cbca69ea04922d88c01184a07300a5a",
+                            "2c8b08da5ce60398e1f19af0e5dccc744df274b826abe585eaba68c525434806",
+                            "f6936912184481f5edd4c304ce27c5a1a827804fc7f329f43d273b8621870776"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/A.md", "Notes/B.md"],
+                        "published": ["Notes/A.md", "Notes/B.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "the author writes the first file again, and B no longer links the third file",
+                    "files": {
+                        "Files/one.txt": "one, drawn again\n",
+                        "Notes/B.md": "# B\n\n![[two.txt]]\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the third file leaves the site with its last vault path; the first file keeps its path with new bytes: an update, not a removal",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Notes/A.md", "Notes/B.md"]
+                    },
+                    "attachmentsRemoved": [
+                        {
+                            "key": "f6936912184481f5edd4c304ce27c5a1a827804fc7f329f43d273b8621870776",
+                            "path": "Files/three.txt"
+                        }
+                    ]
+                },
+                {
+                    "do": "publish",
+                    "why": "the report lists the same removal; the cleanup also deletes the old bytes of the first file",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "time": "2031-06-02T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "2c8b08da5ce60398e1f19af0e5dccc744df274b826abe585eaba68c525434806",
+                            "f6936912184481f5edd4c304ce27c5a1a827804fc7f329f43d273b8621870776"
+                        ],
+                        "attachmentsRemoved": [
+                            {
+                                "key": "f6936912184481f5edd4c304ce27c5a1a827804fc7f329f43d273b8621870776",
+                                "path": "Files/three.txt"
+                            }
+                        ],
+                        "attachmentsUploaded": [
+                            "e160df8612835121a8eeeecfd200976c0c652293e6de546b01b197849c4c8731"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/B.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Notes/A.md", "Notes/B.md"],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "an unpublish of A takes off the file that only A uses, not the file that B uses too",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Notes/A.md"]
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": ["Notes/A.md"],
+                        "update": []
+                    },
+                    "attachmentsRemoved": [
+                        {
+                            "key": "e160df8612835121a8eeeecfd200976c0c652293e6de546b01b197849c4c8731",
+                            "path": "Files/one.txt"
+                        }
+                    ]
+                },
+                {
+                    "do": "publish",
+                    "why": "the report of the unpublish lists the same file",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": ["Notes/A.md"]
+                    },
+                    "time": "2031-06-03T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [
+                            "e160df8612835121a8eeeecfd200976c0c652293e6de546b01b197849c4c8731"
+                        ],
+                        "attachmentsRemoved": [
+                            {
+                                "key": "e160df8612835121a8eeeecfd200976c0c652293e6de546b01b197849c4c8731",
+                                "path": "Files/one.txt"
+                            }
+                        ],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "moved": [],
+                        "propertyRemoved": ["Notes/A.md"],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": ["Notes/A.md"],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": []
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "B links the first file again, and a new candidate C links the second file",
+                    "files": {
+                        "Notes/B.md": "# B\n\n![[one.txt]]\n",
+                        "Notes/C.md": "# C\n\n![[two.txt]]\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "a file that a new note of the plan uses stays on the site",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Notes/C.md"],
+                        "remove": []
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": ["Notes/C.md"],
+                        "remove": [],
+                        "update": ["Notes/B.md"]
+                    },
+                    "attachmentsRemoved": []
+                },
+                {
+                    "do": "plan",
+                    "why": "without the new note, the second file leaves the site",
+                    "selection": {
+                        "hold": [],
+                        "include": [],
+                        "remove": []
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Notes/B.md"]
+                    },
+                    "attachmentsRemoved": [
+                        {
+                            "key": "27dd8ed44a83ff94d557f9fd0412ed5a8cbca69ea04922d88c01184a07300a5a",
+                            "path": "Files/two.txt"
+                        }
+                    ]
                 }
             ]
         },
@@ -11868,6 +12116,12 @@
                 {
                     "do": "plan",
                     "why": "the plan updates the note, whose image is under the guard now: the note is in guardedAttachments",
+                    "attachmentsRemoved": [
+                        {
+                            "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                            "path": "Images/plan.png"
+                        }
+                    ],
                     "selection": {},
                     "plan": {
                         "edits": [],
@@ -11915,6 +12169,12 @@
                     "time": "2031-10-01T11:00:00Z",
                     "face": "mcp-server",
                     "report": {
+                        "attachmentsRemoved": [
+                            {
+                                "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                                "path": "Images/plan.png"
+                            }
+                        ],
                         "attachmentsDeleted": [
                             "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e"
                         ],

@@ -478,11 +478,16 @@ fn report_lists(report: &Value) -> Value {
 }
 
 /// The report that a step states. A publication report of a scenario before
-/// issue 55 has no list `originalsNotVerified`: it is empty then.
+/// issue 55 has no list `originalsNotVerified`, and one before issue 135 no
+/// list `attachmentsRemoved`: they are empty then.
 fn expected_report(report: &Value) -> Value {
     let mut expected = report.clone();
-    if report.get("attachmentsUploaded").is_some() && report.get("originalsNotVerified").is_none() {
-        expected["originalsNotVerified"] = json!([]);
+    if report.get("attachmentsUploaded").is_some() {
+        for key in ["attachmentsRemoved", "originalsNotVerified"] {
+            if report.get(key).is_none() {
+                expected[key] = json!([]);
+            }
+        }
     }
     expected
 }
@@ -618,6 +623,15 @@ fn run_edit_step(setup: &Setup, step: &Value, label: &str) {
         other => panic!("{label}: the face \"{other}\" is not known"),
     }
 }
+
+/// The lists of the output of `plan` beside the plan, empty when a step
+/// does not state them.
+const PLAN_LISTS: [&str; 4] = [
+    "attachmentsRemoved",
+    "listsNotRefreshed",
+    "liveQueries",
+    "tooLarge",
+];
 
 /// The step `publish`: the plan of the selection, or the stored one, applied
 /// from the face of the step (`command-line` by default, `mcp-server` through
@@ -761,7 +775,7 @@ fn run_step(setup: &Setup, step: &Value, label: &str, plans: &mut Plans) {
                 assert_eq!(json_of(&output)["plan"], step["plan"], "{label}");
                 let offline = step.get("offline").cloned().unwrap_or(json!(false));
                 assert_eq!(json_of(&output)["offline"], offline, "{label}");
-                for key in ["listsNotRefreshed", "liveQueries", "tooLarge"] {
+                for key in PLAN_LISTS {
                     let expected = step.get(key).cloned().unwrap_or(json!([]));
                     assert_eq!(json_of(&output)[key], expected, "{label}: {key}");
                 }

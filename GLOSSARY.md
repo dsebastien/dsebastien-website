@@ -96,6 +96,9 @@ _Avoid_: export, public repository
 The storage that holds the attachments of the published notes, addressed by content hash. It is not part of the content store. On a host it is an object storage (a store of files by name, with no folder); on a device and in the tests, a folder.
 _Avoid_: bucket, media store
 
+**Removed attachment**:
+An attachment that a publication takes off the site because no published note uses it any more after it: no published entry lists its key or its path. The plan lists each one with its last vault path, and the report says the same (`attachmentsRemoved`, issue 135). A file whose path stays with new bytes is an update, not a removed attachment. The cleanup stays automatic: the list asks nothing.
+
 **Manifest**:
 The record of each published note: identity, path, former paths, dates and state.
 

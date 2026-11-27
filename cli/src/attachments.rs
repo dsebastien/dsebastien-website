@@ -4,7 +4,7 @@
 //! commit.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
@@ -73,6 +73,43 @@ pub fn sort_too_large(items: &mut Vec<TooLarge>) {
 /// The key of a file in the attachment storage: its hash without `sha256:`.
 pub fn key_of(hash: &str) -> &str {
     hash.strip_prefix("sha256:").unwrap_or(hash)
+}
+
+/// An attachment that a publication takes off the site (issue 135): its last
+/// vault path, and the key of its file in the attachment storage.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct RemovedAttachment {
+    // The order of the fields is the order of the list: by path, then by key.
+    pub path: String,
+    pub key: String,
+}
+
+/// The attachments of `before` that leave the site (rule 2 of
+/// `attachmentsRemoved` of "The publication plan"): no attachment of `after`
+/// has their key, and none has their path. A file whose path stays with new
+/// bytes is an update, not a removal. Each pair one time, sorted by path,
+/// then by key.
+pub fn removed_attachments<'a>(
+    before: impl Iterator<Item = &'a [Attachment]>,
+    after: impl Iterator<Item = &'a [Attachment]>,
+) -> Vec<RemovedAttachment> {
+    let mut keys = BTreeSet::new();
+    let mut paths = BTreeSet::new();
+    for attachment in after.flatten() {
+        keys.insert(key_of(&attachment.hash));
+        paths.insert(attachment.path.as_str());
+    }
+    let removed: BTreeSet<RemovedAttachment> = before
+        .flatten()
+        .filter(|attachment| {
+            !keys.contains(key_of(&attachment.hash)) && !paths.contains(attachment.path.as_str())
+        })
+        .map(|attachment| RemovedAttachment {
+            path: attachment.path.clone(),
+            key: key_of(&attachment.hash).to_owned(),
+        })
+        .collect();
+    removed.into_iter().collect()
 }
 
 /// True when the text is a hash of an attachment: `sha256:` and 64 small

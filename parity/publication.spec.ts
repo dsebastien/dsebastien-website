@@ -428,6 +428,8 @@ function typescriptTool(vault: string, copy: string): Tool {
                 // The frozen lists of the plan (R71) and its notes held for the
                 // size limit of an attachment (issue 72), compared too.
                 lists: toCanonicalJson({
+                    // The attachments that leave the site (issue 135).
+                    attachmentsRemoved: planned.attachmentsRemoved,
                     listsNotRefreshed: planned.listsNotRefreshed,
                     liveQueries: planned.liveQueries,
                     tooLarge: planned.tooLarge
@@ -491,6 +493,7 @@ function rustTool(vault: string, copy: string): Tool {
             ) as {
                 id: string
                 plan: Record<string, CanonicalValue>
+                attachmentsRemoved: CanonicalValue
                 listsNotRefreshed: string[]
                 liveQueries: string[]
                 tooLarge: CanonicalValue
@@ -513,6 +516,8 @@ function rustTool(vault: string, copy: string): Tool {
                 // The frozen lists of the plan (R71) and its notes held for the
                 // size limit of an attachment (issue 72), compared too.
                 lists: toCanonicalJson({
+                    // The attachments that leave the site (issue 135).
+                    attachmentsRemoved: planned.attachmentsRemoved,
                     listsNotRefreshed: planned.listsNotRefreshed,
                     liveQueries: planned.liveQueries,
                     tooLarge: planned.tooLarge

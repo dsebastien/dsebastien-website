@@ -1,9 +1,10 @@
 import { sortTooLarge } from './attachments.ts'
-import type { TooLarge } from './attachments.ts'
+import type { Attachment, TooLarge } from './attachments.ts'
 import { isVaultPath } from './configuration.ts'
 import { eventsSince } from './edits.ts'
 import type { EditEvent } from './edits.ts'
 import { guardOfPath, IGNORE_PROPERTY } from './guards.ts'
+import type { ManifestEntry } from './manifest.ts'
 import {
     firstPart,
     foldedForm,
@@ -457,6 +458,44 @@ export async function planWithSizes(
         plan: computePlan(scan, selection, found),
         tooLarge: heldForSize(scan.queue, selection, found)
     }
+}
+
+/**
+ * The attachments of the published entries after a plan (rule 1 of
+ * `attachmentsRemoved` of "The publication plan", issue 135): the published
+ * entries of the manifest at the new path of each move, less the notes of
+ * `forcedRemove` and of `remove`, with the attachments of the record for each
+ * note of `publish` and of `update` (`planned`, by path).
+ */
+export function attachmentsAfterPlan(
+    manifest: ReadonlyMap<string, ManifestEntry>,
+    plan: PublicationPlan,
+    planned: ReadonlyMap<string, readonly Attachment[]>
+): (readonly Attachment[])[] {
+    const movedTo = new Map(plan.move.map((move) => [move.from, move.to]))
+    const leaving = new Set([...plan.forcedRemove, ...plan.remove])
+    const after: (readonly Attachment[])[] = []
+    const covered = new Set<string>()
+    for (const [path, entry] of manifest) {
+        const now = movedTo.get(path) ?? path
+        if (leaving.has(now)) {
+            continue
+        }
+        const attachments = planned.get(now)
+        if (attachments !== undefined) {
+            after.push(attachments)
+            covered.add(now)
+        } else if (entry.state === 'published') {
+            after.push(entry.attachments)
+        }
+    }
+    // The new notes of the plan, which have no entry yet.
+    for (const [path, attachments] of planned) {
+        if (!covered.has(path)) {
+            after.push(attachments)
+        }
+    }
+    return after
 }
 
 function listsOf(

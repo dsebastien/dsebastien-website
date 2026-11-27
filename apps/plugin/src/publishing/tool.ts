@@ -1,5 +1,5 @@
-import { attachmentsOf, keyOf, MAX_ATTACHMENT_SIZE } from './attachments.ts'
-import type { Attachment, TooLarge } from './attachments.ts'
+import { attachmentsOf, keyOf, MAX_ATTACHMENT_SIZE, removedAttachments } from './attachments.ts'
+import type { Attachment, RemovedAttachment, TooLarge } from './attachments.ts'
 import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
 import { linksOf } from './links.ts'
@@ -43,7 +43,7 @@ import { foldedForm, obsidianTwins } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { checkOriginals } from './originals.ts'
 import type { CheckResult, Original } from './originals.ts'
-import { normalSelection, planWithSizes } from './plan.ts'
+import { attachmentsAfterPlan, normalSelection, planWithSizes } from './plan.ts'
 import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
 import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult, Sealer } from './ports.ts'
@@ -65,6 +65,12 @@ import type { Face } from './run.ts'
 export interface StoredPlan {
     readonly id: string
     readonly plan: PublicationPlan
+    /**
+     * The attachments that the publication of the plan takes off the site:
+     * no published note uses them any more after it (issue 135). Information
+     * only: the cleanup stays automatic.
+     */
+    readonly attachmentsRemoved: readonly RemovedAttachment[]
     /** True when the content store could not be reached and the plan uses the last fetch (PERF-16). */
     readonly offline: boolean
     /** The notes of the plan with a list to refresh that this run did not refresh (PUB-101, R71). */
@@ -97,6 +103,12 @@ export interface Run {
 export type PublicationReport = {
     /** The keys of the files that the cleanup deleted from the attachment storage. */
     readonly attachmentsDeleted: readonly string[]
+    /**
+     * The attachments that the publication took off the site, by the rule of
+     * `attachmentsRemoved` of the plan (issue 135): the list of the plan when
+     * no note was left out.
+     */
+    readonly attachmentsRemoved: readonly RemovedAttachment[]
     /** The keys of the files that the publication uploaded to the attachment storage. */
     readonly attachmentsUploaded: readonly string[]
     /** The notes of the plan that were left out, with the reason. */
@@ -482,6 +494,8 @@ interface NoteTexts {
 /** A plan with everything that its publication needs. */
 interface Computed {
     readonly plan: PublicationPlan
+    /** The attachments that the publication of the plan takes off the site (issue 135). */
+    readonly attachmentsRemoved: readonly RemovedAttachment[]
     /** The selection that gave the plan, as the record holds it. */
     readonly selection: NormalSelection
     /** False when the content store could not be reached and the plan uses the last fetch. */
@@ -562,7 +576,24 @@ async function recordFor(
             renames: renamesHash
         }
     })
-    return { plan, reached, record, scan, selection, texts, tooLarge }
+    const attachmentsRemoved = removedAttachments(
+        publishedAttachments(scan.manifest),
+        attachmentsAfterPlan(
+            scan.manifest,
+            plan,
+            new Map([...texts].map(([path, noteTexts]) => [path, noteTexts.attachments]))
+        )
+    )
+    return { plan, attachmentsRemoved, reached, record, scan, selection, texts, tooLarge }
+}
+
+/** The attachments of the published entries of a manifest, one list per entry. */
+function publishedAttachments(
+    manifest: ReadonlyMap<string, ManifestEntry>
+): (readonly Attachment[])[] {
+    return [...manifest.values()]
+        .filter((entry) => entry.state === 'published')
+        .map((entry) => entry.attachments)
 }
 
 /**
@@ -611,6 +642,7 @@ export async function plan(given: Device, selection: Selection): Promise<StoredP
     return {
         id: await store(device, computed),
         plan: computed.plan,
+        attachmentsRemoved: computed.attachmentsRemoved,
         offline: !reached,
         ...listsOfPlan(computed, refresh.refreshed),
         tooLarge: computed.tooLarge,
@@ -1355,6 +1387,7 @@ interface Written {
     readonly report: Omit<
         PublicationReport,
         | 'attachmentsDeleted'
+        | 'attachmentsRemoved'
         | 'attachmentsUploaded'
         | 'propertyRemoved'
         | 'propertySet'
@@ -2306,6 +2339,11 @@ async function applyCurrent(
     return {
         ...report,
         attachmentsDeleted: cleanup.deleted,
+        // The same rule as the plan, on the manifest as the run left it (issue 135).
+        attachmentsRemoved: removedAttachments(
+            publishedAttachments(scan.manifest),
+            publishedAttachments(manifest)
+        ),
         attachmentsUploaded: sortByCodePoint([...uploads.uploaded, ...cleanup.uploaded]),
         ...correction,
         warnings: [

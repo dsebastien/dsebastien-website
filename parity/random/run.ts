@@ -318,11 +318,16 @@ async function outcomeOf(
 
 /** The parts of a plan that the parity rule compares: not its id, not the texts for the author. */
 function planParts(planned: unknown): unknown {
-    const { plan, offline, listsNotRefreshed, liveQueries, tooLarge } = planned as Record<
-        string,
-        unknown
-    >
-    return canonical({ plan, offline, listsNotRefreshed, liveQueries, tooLarge })
+    const { plan, attachmentsRemoved, offline, listsNotRefreshed, liveQueries, tooLarge } =
+        planned as Record<string, unknown>
+    return canonical({
+        plan,
+        attachmentsRemoved,
+        offline,
+        listsNotRefreshed,
+        liveQueries,
+        tooLarge
+    })
 }
 
 function typescriptTool(places: Places): Tool {

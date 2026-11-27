@@ -30,9 +30,9 @@ fn writes_an_empty_plan_with_its_id_when_no_note_is_included() {
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let text = String::from_utf8(output.stdout).expect("the plan is UTF-8");
     let (id, plan) = text
-        .strip_prefix("{\n  \"id\": \"")
+        .strip_prefix("{\n  \"attachmentsRemoved\": [],\n  \"id\": \"")
         .and_then(|rest| rest.split_once("\",\n"))
-        .expect("the output starts with the id");
+        .expect("the output starts with the attachments that leave the site, then the id");
     assert_eq!(id.len(), 16);
     assert_eq!(
         plan,

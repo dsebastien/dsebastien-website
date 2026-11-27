@@ -169,6 +169,7 @@ describe('the skill of the publishing tool (TOOL-04)', () => {
 describe('the failure texts of the tools', () => {
     const report = {
         attachmentsDeleted: [],
+        attachmentsRemoved: [],
         attachmentsUploaded: [],
         failed: [
             { path: 'a.md', reason: 'the upload failed' },
