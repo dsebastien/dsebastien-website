@@ -136,7 +136,7 @@ describe('build of a content store with one published note', () => {
         const html = await readOutput(NOTE_FILE)
         // The label of the note type that the Starter Kit gives the note, a link to its hub (R61).
         expect(html).toContain(
-            '<a class="badge-link" href="/-/types/permanent-notes" aria-label="Permanent note, all notes of this type" data-type-badge data-pagefind-meta="type">Permanent note</a>'
+            '<a class="badge-link" href="/-/types/permanent-notes" aria-label="Permanent note, all notes of this type" data-type-badge data-pagefind-meta="type"><span class="badge">Permanent note</span></a>'
         )
         expect(html).toContain('Created <time datetime="2031-03-07">2031-03-07</time>')
         expect(html).toContain('Updated <time datetime="2031-03-07">2031-03-07</time>')

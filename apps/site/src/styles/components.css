@@ -98,12 +98,19 @@
         @apply border-border-strong bg-surface-elevated;
     }
 
-    /* A badge that is a link: the type badge of a note page, which leads to its hub. */
+    /* A badge that is a link: the type badge of a note page, which leads to its hub.
+       The link is the target (44 px on a touch screen) and its inner `badge` is
+       what shows, as small as the tag chips; the negative margin keeps the
+       taller target from pushing the title and the dates apart. */
     .badge-link {
-        @apply badge transition-colors any-pointer-coarse:min-h-11;
+        @apply inline-flex items-center rounded-pill any-pointer-coarse:-my-2.5 any-pointer-coarse:min-h-11;
     }
 
-    .badge-link:hover {
+    .badge-link .badge {
+        @apply transition-colors;
+    }
+
+    .badge-link:hover .badge {
         @apply border-primary bg-surface-elevated;
     }
 
@@ -406,7 +413,7 @@
 
     /* A tag in the text: it leads to its tag page. */
     .note-text a.tag {
-        @apply rounded-pill bg-well px-2 py-0.5 text-base text-primary no-underline;
+        @apply rounded-pill bg-well px-2 py-0.5 text-base text-primary no-underline box-decoration-clone wrap-anywhere;
     }
 
     .note-text a.tag:hover {

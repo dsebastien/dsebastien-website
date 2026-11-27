@@ -78,6 +78,6 @@
     --theme-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
     --theme-radius-control: 0.5rem;
     --theme-radius-card: 0.75rem;
-    --theme-radius-pill: 9999px;
+    --theme-radius-pill: 0.375rem;
     --theme-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
