@@ -391,25 +391,12 @@ describe('the search form of the home page (R101)', () => {
         expect(hint()).toBe('Opens the search and commands panel')
     })
 
-    test('Enter while the palette loads after a click leads to the search page when the load fails', async () => {
-        const loader = home({ fail: true })
+    test('Enter while the palette loads after a click lets the plain form go to the search page', () => {
+        home()
         field().focus()
         field().click()
         field().value = 'rain'
-        expect(submit()).toBe(true)
-        await loader.finish()
-        expect(loader.followed).toEqual(['https://notes.dsebastien.net/-/search?q=rain'])
-    })
-
-    test('Enter while the palette loads after a click opens it with the text when the load works', async () => {
-        const loader = home()
-        field().focus()
-        field().click()
-        field().value = 'rain'
-        expect(submit()).toBe(true)
-        await loader.finish()
-        expect(loader.openings).toEqual([{ opener: 'home', typed: 'rain', focused: 'home' }])
-        expect(loader.followed).toEqual([])
+        expect(submit()).toBe(false)
     })
 
     test('a composition (an input method) opens the palette at its end only', async () => {

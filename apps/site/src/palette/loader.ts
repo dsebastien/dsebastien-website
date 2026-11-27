@@ -205,13 +205,9 @@ export function startPaletteLoader(
 
     if (form !== null && formField !== null) {
         form.addEventListener('submit', (event) => {
-            if (!formOpens) return
+            // Enter while the palette loads: the plain form goes to the search page.
+            if (!formOpens || wait === formField) return
             event.preventDefault()
-            if (wait === formField) {
-                // Enter while the palette loads: the search page if it cannot load.
-                waitFallback = form.action
-                return
-            }
             open(formField, formField, form.action)
         })
         // A click or a tap into the field; a tap also shows the keyboard of a phone.
