@@ -174,7 +174,10 @@ fn a_publication_commit_carries_a_valid_seal_and_nothing_else_changes() {
     let changed = setup.git(&["show", "--name-only", "--format=", "HEAD"]);
     assert!(changed.lines().all(|path| path.starts_with("manifest/")
         || path.starts_with("notes/")
-        || path == "withdrawn.json"));
+        || path == "withdrawn.json"
+        // The first commit gives edits.json the hash of the configuration
+        // (issue 108).
+        || path == "edits.json"));
     // The next plan trusts it.
     setup.plan_id(NOTE);
 }
