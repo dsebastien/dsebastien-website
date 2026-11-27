@@ -31,7 +31,8 @@ import { MESSAGES } from './newsletter/newsletter-bar.ts'
 // events never reach the network, the signup service is a stub, and any other
 // host is refused and recorded. The script of the analytics is the pinned copy
 // of `packages/testing` (`bun run analytics:script` compares it with the live
-// one): no test reaches the proxy.
+// one): no test reaches the proxy. The search form of the home page opens the
+// palette (R101), with the keyboard and with a tap on a phone.
 const SITE = fileURLToPath(new URL('..', import.meta.url))
 const ORIGIN = 'https://notes.example'
 const MEMBERS = 'https://www.dsebastien.net/members/api/'
@@ -379,6 +380,60 @@ describe('the built site in a browser', () => {
         expect(traffic.refused.every((url) => url.startsWith('https://store.example/'))).toBe(true)
         await context.close()
     })
+})
+
+describe('the search form of the home page in a browser (R101)', () => {
+    /** The value of the field of the open palette, once it is open with the focus in it. */
+    async function paletteField(page: Page): Promise<string> {
+        const field = page.locator('dialog[open] input').first()
+        await field.waitFor()
+        await page.waitForFunction(() => document.activeElement?.closest('dialog[open]') != null)
+        return field.inputValue()
+    }
+
+    test('with the keyboard, the keys typed in the field open the palette with them', async () => {
+        const traffic = noTraffic()
+        const context = await contextOf(traffic)
+        const page = await context.newPage()
+        await page.goto(`${ORIGIN}/`)
+        await page.locator('#home-search').focus()
+        await page.keyboard.type('drip')
+        await page.waitForFunction(
+            () => document.querySelector<HTMLInputElement>('dialog[open] input')?.value === 'drip'
+        )
+        expect(await paletteField(page)).toBe('drip')
+        expect(await page.inputValue('#home-search')).toBe('')
+        // Escape clears the query, then closes: the focus comes back to the field.
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('Escape')
+        await page.locator('dialog[open]').waitFor({ state: 'detached' })
+        expect(await page.evaluate(() => document.activeElement?.id)).toBe('home-search')
+        // Enter submits the form: the palette opens on the same page.
+        await page.keyboard.press('Enter')
+        expect(await paletteField(page)).toBe('')
+        expect(new URL(page.url()).pathname).toBe('/')
+        expect(traffic.violations).toEqual([])
+        expect(traffic.refused).toEqual([])
+        await context.close()
+    }, 30_000)
+
+    test('on a phone of 360 px, a tap into the field opens the palette, and so does the button', async () => {
+        const traffic = noTraffic()
+        const context = await contextOf(traffic, { mobile: true })
+        const page = await context.newPage()
+        await page.goto(`${ORIGIN}/`)
+        await page.locator('#home-search').tap()
+        expect(await paletteField(page)).toBe('')
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360)
+        await page.locator('[data-palette-close]').tap()
+        await page.locator('dialog[open]').waitFor({ state: 'detached' })
+        expect(await page.evaluate(() => document.activeElement?.id)).toBe('home-search')
+        await page.locator('main form[role="search"] button[type="submit"]').tap()
+        expect(await paletteField(page)).toBe('')
+        expect(new URL(page.url()).pathname).toBe('/')
+        expect(traffic.refused).toEqual([])
+        await context.close()
+    }, 30_000)
 })
 
 describe('the newsletter bar in a browser', () => {

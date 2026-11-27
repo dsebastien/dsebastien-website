@@ -320,3 +320,134 @@ describe('the loader of the palette (SRCH-08)', () => {
         expect(followed).toEqual(['https://notes.dsebastien.net/-/search?q=rain+%26+water'])
     })
 })
+
+describe('the search form of the home page (R101)', () => {
+    /** The page: the control of the header and the form of the home page. */
+    const HOME = `
+        <header><a href="/-/search" data-palette>Search</a></header>
+        <main><form role="search" action="/-/search" method="get" data-palette-form>
+            <input id="home" type="search" name="q"><button id="go" type="submit">Search</button>
+        </form></main>`
+
+    /** A loader whose palette loads when the test says so. */
+    function home(options: { fail?: boolean } = {}): {
+        openings: { opener: string; typed: string; focused: string }[]
+        followed: string[]
+        finish: () => Promise<void>
+    } {
+        document.body.innerHTML = HOME
+        const openings: { opener: string; typed: string; focused: string }[] = []
+        const followed: string[] = []
+        let finish: () => void = () => undefined
+        const loaded = new Promise<void>((resolve) => {
+            finish = resolve
+        })
+        startPaletteLoader(
+            document,
+            async () => {
+                await loaded
+                if (options.fail === true) throw new Error('offline')
+                return () => ({
+                    open(opener, typed) {
+                        openings.push({
+                            opener: opener?.id ?? 'none',
+                            typed,
+                            focused: document.activeElement?.id ?? 'none'
+                        })
+                    }
+                })
+            },
+            (href) => followed.push(href)
+        )
+        return {
+            openings,
+            followed,
+            finish: async () => {
+                finish()
+                await new Promise((resolve) => setTimeout(resolve, 0))
+            }
+        }
+    }
+
+    const field = (): HTMLInputElement => document.getElementById('home') as HTMLInputElement
+    const form = (): HTMLFormElement => document.querySelector('form') as HTMLFormElement
+
+    function submit(): boolean {
+        const event = new window.SubmitEvent('submit', { bubbles: true, cancelable: true })
+        form().dispatchEvent(event as unknown as Event)
+        return event.defaultPrevented
+    }
+
+    test('marks the field and its button as openers of a dialog', () => {
+        home()
+        expect(field().getAttribute('aria-haspopup')).toBe('dialog')
+        expect(document.getElementById('go')?.getAttribute('aria-haspopup')).toBe('dialog')
+    })
+
+    test('a submit opens the palette with the typed text instead of the search page', async () => {
+        const loader = home()
+        field().focus()
+        field().value = 'rain'
+        expect(submit()).toBe(true)
+        // While the palette loads, the field of the form keeps the focus and the text.
+        expect(document.activeElement).toBe(field())
+        expect(document.querySelector('[data-palette-wait]')).toBeNull()
+        field().value = 'rain barrel'
+        await loader.finish()
+        expect(loader.openings).toEqual([{ opener: 'home', typed: 'rain barrel', focused: 'home' }])
+        // The text is in the palette now; the field is empty when the focus comes back.
+        expect(field().value).toBe('')
+        expect(loader.followed).toEqual([])
+    })
+
+    test('a click or a tap into the field opens the palette', async () => {
+        const loader = home()
+        field().focus()
+        field().click()
+        await loader.finish()
+        field().click()
+        expect(loader.openings.map((opening) => opening.typed)).toEqual(['', ''])
+    })
+
+    test('a key typed in the field opens the palette with it (the field reached with Tab)', async () => {
+        const loader = home()
+        await loader.finish()
+        field().focus()
+        field().value = 'r'
+        field().dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event)
+        await loader.finish()
+        expect(loader.openings).toEqual([{ opener: 'home', typed: 'r', focused: 'home' }])
+        expect(field().value).toBe('')
+    })
+
+    test('when the palette cannot load, a submit leads to the search page, and the form is plain again', async () => {
+        const loader = home({ fail: true })
+        field().focus()
+        field().value = 'rain & water'
+        expect(submit()).toBe(true)
+        await loader.finish()
+        expect(loader.followed).toEqual(['https://notes.dsebastien.net/-/search?q=rain+%26+water'])
+        expect(document.activeElement).toBe(field())
+        expect(submit()).toBe(false)
+    })
+
+    test('when the palette cannot load after a click, the field stays a plain field', async () => {
+        const loader = home({ fail: true })
+        field().focus()
+        field().click()
+        field().value = 'ra'
+        await loader.finish()
+        expect(loader.followed).toEqual([])
+        expect(field().value).toBe('ra')
+        expect(document.activeElement).toBe(field())
+        expect(submit()).toBe(false)
+    })
+
+    test('a form with no mark stays a plain form', () => {
+        document.body.innerHTML = HOME.replace(' data-palette-form', '')
+        startPaletteLoader(document, () => Promise.reject(new Error('unused')))
+        field().value = 'rain'
+        expect(submit()).toBe(false)
+        expect(field().hasAttribute('aria-haspopup')).toBe(false)
+    })
+})

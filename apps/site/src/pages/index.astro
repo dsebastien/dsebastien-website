@@ -14,10 +14,10 @@ import { SITE_NAME } from '../site.ts'
 // from the home page to every note, NAV-07), the notes most recently added
 // and updated, and the stats line. The "start here" block stays out while no
 // note is featured; the newsletter comes with issue 57. The hero has a search
-// form that opens the search page (R63). Behind the hero, across the whole
-// width of the page, a network of nodes drifts slowly (issue 81); the text of
-// the hero carries `data-network-quiet`, so that the network stays faint
-// behind it.
+// form that opens the search page (R63), and the command palette when scripts
+// run (R101). Behind the hero, across the whole width of the page, a network
+// of nodes drifts slowly (issue 81); the text of the hero carries
+// `data-network-quiet`, so that the network stays faint behind it.
 const site = await publishedSite()
 const recent = site.recentLists.filter((list) => list.key === 'added' || list.key === 'updated')
 
@@ -47,7 +47,7 @@ function counted(value: number, one: string, many: string): string {
                 software and the books, movies and games that I read, watch and play.
             </p>
             <div class='mt-8'>
-                <SearchForm id='home-search' />
+                <SearchForm id='home-search' palette />
             </div>
         </div>
     </section>

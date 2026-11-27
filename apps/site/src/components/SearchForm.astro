@@ -2,16 +2,26 @@
 import { SEARCH_PATH } from '@dsebastien-website/resolver'
 
 // A search form that opens the search page with the query (SRCH-01, R63):
-// plain HTML, with no script, on the home page and the "not found" page.
+// plain HTML, with no script, on the home page and the "not found" page. With
+// `palette`, the loader of the palette makes it open the palette when scripts
+// run (R101, `palette/loader.ts`); with no script it stays this form.
 interface Props {
     /** The id of the field, unique on its page. */
     id: string
+    /** True when the form opens the command palette, on one form of a page at most. */
+    palette?: boolean
 }
 
-const { id } = Astro.props
+const { id, palette = false } = Astro.props
 ---
 
-<form role='search' action={SEARCH_PATH} method='get' class='flex w-full max-w-xl gap-2'>
+<form
+    role='search'
+    action={SEARCH_PATH}
+    method='get'
+    class='flex w-full max-w-xl gap-2'
+    data-palette-form={palette ? '' : undefined}
+>
     <label for={id} class='sr-only'>
         Search the notes
     </label>

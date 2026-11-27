@@ -10,9 +10,18 @@
 // A phone shows its keyboard only for a focus in the tap itself, and the
 // import comes after the tap: while the palette loads, a field of the page
 // holds the focus and what the reader types, and the palette takes both.
+//
+// The search form of the home page (R101) carries `data-palette-form`: a
+// submit, a click or a tap into its field and a key typed in it open the
+// palette with the text of the field, and its own field holds the focus while
+// the palette loads. With no script it stays a plain form to the search page;
+// when the palette cannot load, it becomes one again.
 
 /** The attribute of the control of the header. */
 export const PALETTE_CONTROL = 'data-palette'
+
+/** The attribute of a search form that opens the palette (R101). */
+export const PALETTE_FORM = 'data-palette-form'
 
 /** What the loader needs of the palette. */
 export interface PaletteHandle {
@@ -76,11 +85,20 @@ export function startPaletteLoader(
     const control = document.querySelector<HTMLAnchorElement>(`a[${PALETTE_CONTROL}]`)
     control?.setAttribute('aria-haspopup', 'dialog')
     control?.setAttribute('aria-keyshortcuts', '/ Control+K Meta+K')
+    const form = document.querySelector<HTMLFormElement>(`form[${PALETTE_FORM}]`)
+    const formField = form?.querySelector<HTMLInputElement>('input[name="q"]') ?? null
+    for (const element of [formField, form?.querySelector('button[type="submit"]')]) {
+        element?.setAttribute('aria-haspopup', 'dialog')
+    }
+    /** False once the palette failed to load from the form: the form is plain again. */
+    let formOpens = formField !== null
     let palette: PaletteHandle | undefined
     let loading: Promise<PaletteHandle> | undefined
     /** The field that holds the focus while an opening waits for the palette. */
     let wait: HTMLInputElement | undefined
     let waitOpener: HTMLElement | null = null
+    /** The address to follow when the palette cannot load, or none. */
+    let waitFallback: string | null = null
 
     /** Ends the wait: the field goes, and the focus goes back when the opening is cancelled. */
     const stopWaiting = (): HTMLInputElement | undefined => {
@@ -89,14 +107,32 @@ export function startPaletteLoader(
         return field
     }
 
-    const open = (opener: HTMLElement | null): void => {
+    /**
+     * Opens the palette.
+     *
+     * @param own the field of the form, which holds the focus and the text itself
+     * @param fallback the address to follow when the palette cannot load
+     */
+    const open = (
+        opener: HTMLElement | null,
+        own?: HTMLInputElement,
+        fallback: string | null = control?.href ?? null
+    ): void => {
         if (palette !== undefined) {
-            palette.open(opener, '')
+            palette.open(opener, own?.value ?? '')
+            if (own !== undefined) own.value = ''
             return
         }
         if (wait !== undefined) {
             // A second click or key while the palette loads.
             wait.focus({ preventScroll: true })
+            return
+        }
+        waitOpener = opener
+        waitFallback = fallback
+        if (own !== undefined) {
+            wait = own
+            loadAndOpen()
             return
         }
         const field = document.createElement('input')
@@ -117,9 +153,12 @@ export function startPaletteLoader(
             waitOpener?.focus()
         })
         wait = field
-        waitOpener = opener
         document.body.append(field)
         field.focus({ preventScroll: true })
+        loadAndOpen()
+    }
+
+    const loadAndOpen = (): void => {
         loading ??= load().then((create) => create(document))
         loading.then(
             (made) => {
@@ -128,21 +167,43 @@ export function startPaletteLoader(
                 if (waited === undefined) return
                 // The palette takes the focus from the field: a phone keeps its keyboard.
                 made.open(waitOpener, waited.value)
-                waited.remove()
+                if (waited === formField) waited.value = ''
+                else waited.remove()
             },
             () => {
                 loading = undefined
                 const waited = stopWaiting()
                 if (waited === undefined) return
-                waited.remove()
-                waitOpener?.focus()
-                if (control === null) return
+                if (waited === formField) {
+                    // The field keeps the focus and the text, and the form is plain again.
+                    formOpens = false
+                } else {
+                    waited.remove()
+                    waitOpener?.focus()
+                }
+                if (waitFallback === null) return
                 // The search page, with what the reader typed while the palette loaded.
-                const address = new URL(control.href)
+                const address = new URL(waitFallback)
                 if (waited.value.trim() !== '') address.searchParams.set('q', waited.value)
                 follow(address.href)
             }
         )
+    }
+
+    if (form !== null && formField !== null) {
+        form.addEventListener('submit', (event) => {
+            if (!formOpens) return
+            event.preventDefault()
+            open(formField, formField, form.action)
+        })
+        // A click or a tap into the field; a tap also shows the keyboard of a phone.
+        formField.addEventListener('click', () => {
+            if (formOpens) open(formField, formField, null)
+        })
+        // A key typed in the field that the reader reached with Tab.
+        formField.addEventListener('input', () => {
+            if (formOpens && wait === undefined) open(formField, formField, null)
+        })
     }
 
     control?.addEventListener('click', (event) => {

@@ -266,6 +266,21 @@ describe('the ways to the search page', () => {
         }
     })
 
+    test('only the form of the home page opens the palette, and it stays a plain form (R101)', async () => {
+        const home = select('main form[role="search"]', await served('/'))
+        expect(home?.properties['dataPaletteForm']).toBe('')
+        // With no script: a GET of the search page with `q`, a label, a submit button.
+        expect(home?.properties['action']).toBe('/-/search')
+        expect(home?.properties['method']).toBe('get')
+        const field = select('input[type="search"][name="q"]', home ?? fromHtml(''))
+        expect(
+            select(`label[for="${String(field?.properties['id'])}"]`, home ?? fromHtml(''))
+        ).toBeDefined()
+        expect(select('button[type="submit"]', home ?? fromHtml(''))).toBeDefined()
+        const notFound = select('main form[role="search"]', await served('/no/such/page'))
+        expect(notFound?.properties['dataPaletteForm']).toBeUndefined()
+    })
+
     test('the "not found" page fills its field with the words of the missing address', async () => {
         const page = await served('/no/such/page')
         expect(select('#not-found-search', page)?.properties['value']).toBeUndefined()
