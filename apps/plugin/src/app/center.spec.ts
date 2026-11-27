@@ -1155,6 +1155,42 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
         expect(center.state.error).toContain(FROZEN)
     }, 60_000)
 
+    test('a takedown during the refresh keeps the texts of the check that the author saw', async () => {
+        await using stores = await makeTestStores()
+        const gate: { held: Promise<void> | undefined } = { held: undefined }
+        const { center, vault, asked } = await setUpWithLists(stores, { gate })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, NOTE))
+        await center.publish()
+        while (center.state.activity !== 'idle') {
+            await Bun.sleep(20)
+        }
+        await center.check()
+        center.choose((queue, choices) =>
+            toggleRow(queue, toggleRow(queue, choices, FROZEN), SECOND)
+        )
+        // Another program edits a ticked new note after the check: the
+        // check inside the takedown reads that text.
+        await writeFile(join(vault, SECOND), 'Another version\n')
+        center.noteChanged(SECOND, await statOf(vault, SECOND))
+        let release = (): void => undefined
+        gate.held = new Promise<void>((resolve) => {
+            release = resolve
+        })
+        asked.length = 0
+        const publishing = center.publish()
+        while (asked.length === 0) {
+            await Bun.sleep(20)
+        }
+
+        await center.takedown([NOTE])
+        release()
+        await publishing
+
+        expect(center.state.error).toContain('A new note changed after the check')
+        expect(center.state.error).toContain(SECOND)
+    }, 90_000)
+
     // A takedown never waits (issue 111): it starts while the lists of a plan
     // are refreshed, and the plan is computed after it.
     test('a takedown starts while the lists of a plan are refreshed', async () => {

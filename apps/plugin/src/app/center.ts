@@ -1278,6 +1278,12 @@ export class PublicationCenter {
             const { error: _old, failure: _kept, ...rest } = this.#state
             this.#state = rest
             this.#log('Takedown started while the lists are refreshed')
+            // The activity that waits for the refresh decides on the texts of
+            // the check that the author saw, not on a check of this takedown:
+            // its work can check again, and that check replaces them.
+            const sources = this.#checkedSources
+            const texts = new Map(this.#refreshedTexts)
+            const unhashed = new Set(this.#writtenWithoutHash)
             try {
                 await this.#takedownWork(paths, shown, done)
             } catch (error) {
@@ -1285,11 +1291,6 @@ export class PublicationCenter {
                 this.#log(`Takedown failed: ${failure}`)
                 this.#set({ error: failure, failure })
             }
-            // The activity that waits for the refresh decides on the texts of
-            // the check that the author saw, not on this one.
-            const sources = this.#checkedSources
-            const texts = new Map(this.#refreshedTexts)
-            const unhashed = new Set(this.#writtenWithoutHash)
             const marks = new Set(this.#changed)
             try {
                 await this.#check()
