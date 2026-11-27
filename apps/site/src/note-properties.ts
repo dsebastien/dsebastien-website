@@ -57,7 +57,10 @@ export function readProperties(source: string): Readonly<Record<string, unknown>
         : {}
 }
 
-/** A published note of a site, with the digest of its cleaned note, when the content collection gives one. */
+/**
+ * A published note of a site, with the digest of its cleaned note, when the
+ * content collection gives one.
+ */
 export interface NoteOfSite {
     readonly vaultPath: string
     readonly digest?: string | number

@@ -477,8 +477,7 @@ export class SitePages {
         }
         // The text of the H1 comes from the markup, as for the lists: an embed
         // gives its text, not the image or the note that the page shows.
-        const heading =
-            first === undefined ? undefined : (this.heading(vaultPath) ?? headingOf(first))
+        const heading = first === undefined ? undefined : this.heading(vaultPath)
         const image = firstImage(tree.children)
         if (image !== undefined) {
             delete image.properties['loading']
