@@ -22,7 +22,7 @@ use crate::deploy::{
     ChildRun, DeployCommand, DeployProcess, DeployRecord, Stop, TakedownEntry, TakedownMarker,
     takedown_entry_of, takedown_entry_text,
 };
-use crate::names::is_refused_by_windows;
+use crate::names::{is_changed_by_windows, is_refused_by_windows};
 
 /// How a check of the copy reaches the content store: `None` reads no
 /// network (`status`), `Try` fetches and uses the last fetch when the content
@@ -151,6 +151,12 @@ impl Vault {
         };
         for entry in fs::read_dir(self.folder.join(folder)).map_err(failed)? {
             let entry = entry.map_err(failed)?;
+            let name = entry.file_name();
+            // A name that Windows changes would open another entry, also a
+            // folder of the deny list (issue 79): it is no entry.
+            if name.to_str().is_some_and(is_changed_by_windows) {
+                continue;
+            }
             let kind = entry.file_type().map_err(failed)?;
             // A symbolic link is neither a file nor a folder of the vault.
             let kind = if kind.is_file() {
@@ -160,7 +166,6 @@ impl Vault {
             } else {
                 continue;
             };
-            let name = entry.file_name();
             if let Some(exact) = name.to_str() {
                 listing.exact.insert(exact.to_owned(), kind);
             }
@@ -453,8 +458,46 @@ impl ContentStore {
             0
         };
         self.check_history(has_main, no_commit)?;
+        if has_head {
+            self.check_links()?;
+        }
         self.check_files()?;
         Ok(Verified { behind, reached })
+    }
+
+    /// `Err` when the last commit holds a link (mode `120000`) at a file or
+    /// below a folder of the store that the tool reads or writes. A link is no
+    /// file of the store: git writes it as a link where it can, and a removal
+    /// or a write through it would leave the copy (issue 79).
+    fn check_links(&self) -> Result<(), String> {
+        let tree = self.git_output(&[
+            "ls-tree",
+            "-r",
+            "-z",
+            "--full-tree",
+            "HEAD",
+            "--",
+            "configuration.json",
+            "edits.json",
+            "manifest",
+            "notes",
+            "renames.json",
+            "withdrawn.json",
+        ])?;
+        let linked: Vec<&str> = tree
+            .split('\0')
+            .filter(|entry| entry.starts_with("120000 "))
+            .filter_map(|entry| entry.split_once('\t').map(|(_, path)| path))
+            .take(5)
+            .collect();
+        if linked.is_empty() {
+            return Ok(());
+        }
+        Err(format!(
+            "{} of the last commit of the content store is a symbolic link: the tool follows no link in the copy. Nothing can be published until the link is removed from the content store by hand: {}",
+            linked.join(", "),
+            self.folder.display()
+        ))
     }
 
     /// `Err` when the folder is not the root of its own git repository: git
@@ -1075,6 +1118,8 @@ impl ContentStore {
     ///
     /// The file cannot be written.
     pub fn write(&self, path: &str, text: &str) -> Result<(), String> {
+        // A link in a parent folder would take the write out of the copy.
+        self.refuse_links(path)?;
         write_text(&self.folder.join(path), text)
     }
 
@@ -1084,6 +1129,11 @@ impl ContentStore {
     ///
     /// The file exists and cannot be removed.
     pub fn remove(&self, path: &str) -> Result<bool, String> {
+        // A link as the file itself leaves the store, but a link in a parent
+        // folder would take the removal out of the copy.
+        if let Some((parent, _)) = path.rsplit_once('/') {
+            self.refuse_links(parent)?;
+        }
         match fs::remove_file(self.folder.join(path)) {
             Ok(()) => Ok(true),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
@@ -2449,5 +2499,125 @@ mod tests {
         child.run(&command, &|_| {}).expect("the program runs");
 
         assert!(!interrupt.interrupted());
+    }
+
+    /// A new empty folder for one test, removed by the test.
+    fn test_folder(name: &str) -> PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let folder = env::temp_dir().join(format!(
+            "vault-publish-{name}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).expect("the folder can be made");
+        folder
+    }
+
+    /// Makes `link` lead to the folder `target`: a junction on Windows, which
+    /// needs no rights, and a symbolic link elsewhere.
+    fn link_folder(target: &Path, link: &Path) {
+        #[cfg(windows)]
+        {
+            let made = Command::new("cmd")
+                .arg("/c")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .stdout(Stdio::null())
+                .status()
+                .expect("cmd runs");
+            assert!(made.success(), "the junction can be made");
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).expect("the link can be made");
+    }
+
+    /// A copy whose `notes/Linked` leads to a folder outside the copy.
+    fn linked_copy() -> (PathBuf, PathBuf, PathBuf) {
+        let root = test_folder("links");
+        let copy = root.join("copy");
+        let outside = root.join("outside");
+        fs::create_dir_all(copy.join("notes")).expect("the folder can be made");
+        fs::create_dir_all(&outside).expect("the folder can be made");
+        fs::write(outside.join("Kept.md"), "Kept\n").expect("the file is written");
+        link_folder(&outside, &copy.join("notes").join("Linked"));
+        (root, copy, outside)
+    }
+
+    #[test]
+    fn a_removal_through_a_link_in_a_parent_folder_stops_and_the_file_outside_stays() {
+        let (root, copy, outside) = linked_copy();
+
+        let removed = ContentStore::new(&copy).remove("notes/Linked/Kept.md");
+
+        let kept = fs::read_to_string(outside.join("Kept.md"));
+        let _ = fs::remove_dir_all(&root);
+        assert!(
+            removed
+                .expect_err("the removal stops")
+                .contains("notes/Linked of the content store is a symbolic link")
+        );
+        assert_eq!(kept.expect("the file stays"), "Kept\n");
+    }
+
+    #[test]
+    fn a_write_through_a_link_in_a_parent_folder_stops_and_writes_nothing_outside() {
+        let (root, copy, outside) = linked_copy();
+
+        let written = ContentStore::new(&copy).write("notes/Linked/New.md", "New\n");
+
+        let made = outside.join("New.md").exists();
+        let _ = fs::remove_dir_all(&root);
+        assert!(
+            written
+                .expect_err("the write stops")
+                .contains("notes/Linked of the content store is a symbolic link")
+        );
+        assert!(!made);
+    }
+
+    /// Makes a folder or a file with exactly this name, also one that Windows
+    /// would change: on Windows, through the verbatim form of the path.
+    fn make_exactly(folder: &Path, path: &str, text: Option<&str>) {
+        #[cfg(windows)]
+        let file = PathBuf::from(format!(
+            r"\\?\{}",
+            folder.join(path).to_string_lossy().replace('/', "\\")
+        ));
+        #[cfg(not(windows))]
+        let file = folder.join(path);
+        match text {
+            Some(text) => fs::write(file, text).expect("the file is written"),
+            None => fs::create_dir(file).expect("the folder can be made"),
+        }
+    }
+
+    #[test]
+    fn a_name_that_windows_changes_is_no_entry_of_the_vault() {
+        let root = test_folder("names");
+        make_exactly(&root, "Private", None);
+        make_exactly(&root, "Private/Diary.md", Some("Diary\n"));
+        make_exactly(&root, "Private.", None);
+        make_exactly(&root, "Private ", None);
+        make_exactly(&root, "CON", None);
+        make_exactly(&root, "nul.md", Some("Nul\n"));
+        let vault = Vault::new(&root);
+
+        let mut names: Vec<String> = vault
+            .list("")
+            .expect("the vault can be listed")
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        names.sort();
+        let through_dot = vault.read("Private./Diary.md");
+        let through_space = vault.read("Private /Diary.md");
+
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(names, vec!["Private".to_owned()]);
+        assert_eq!(through_dot, Ok(None));
+        assert_eq!(through_space, Ok(None));
     }
 }

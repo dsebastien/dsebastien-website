@@ -97,19 +97,24 @@ fn to_value<T: Serialize>(value: &T) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|error| error.to_string())
 }
 
+/// The text of the configuration. `Err` when the copy has none.
+fn configuration_text(device: &Device) -> Result<String, String> {
+    device.store.read(CONFIGURATION_FILE)?.ok_or_else(|| {
+        // A wrong folder must never read as a content store with an empty
+        // deny list: every private folder would be a candidate (R67).
+        format!(
+            "the copy of the content store has no {CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add {CONFIGURATION_FILE} with the deny list (\"denyList\"), commit it and push it"
+        )
+    })
+}
+
 /// Reads the configuration and checks it against the vault. It gives the
 /// configuration and the hash of its text, or `none`.
 fn read_configuration(
     device: &Device,
     journals: &JournalState,
 ) -> Result<(Configuration, String), String> {
-    let Some(text) = device.store.read(CONFIGURATION_FILE)? else {
-        // A wrong folder must never read as a content store with an empty
-        // deny list: every private folder would be a candidate (R67).
-        return Err(format!(
-            "the copy of the content store has no {CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add {CONFIGURATION_FILE} with the deny list (\"denyList\"), commit it and push it"
-        ));
-    };
+    let text = configuration_text(device)?;
     let configuration = parse_configuration(Some(&text))?;
     // A deny list entry that names no folder would exclude nothing: a renamed
     // folder, or another letter case, would make its notes candidates
@@ -2912,10 +2917,8 @@ fn cleanup_lines(early: &Cleanup) -> String {
 fn remove_state(device: &Device, paths: &[String]) -> (Vec<String>, Vec<Value>) {
     let mut removed = Vec::new();
     let mut warnings = Vec::new();
-    let configuration = device
-        .store
-        .read(CONFIGURATION_FILE)
-        .and_then(|text| parse_configuration(text.as_deref()));
+    let configuration =
+        configuration_text(device).and_then(|text| parse_configuration(Some(&text)));
     let configuration = match configuration {
         Ok(configuration) => configuration,
         Err(error) => {
@@ -2956,11 +2959,7 @@ fn remove_state(device: &Device, paths: &[String]) -> (Vec<String>, Vec<Value>) 
 /// an edit is how an agent corrects it (PUB-91, R69). It gives the
 /// configuration and its text as data, to keep its other keys.
 fn read_raw_configuration(device: &Device) -> Result<(Configuration, Value, String), String> {
-    let Some(text) = device.store.read(CONFIGURATION_FILE)? else {
-        return Err(format!(
-            "the copy of the content store has no {CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add {CONFIGURATION_FILE} with the deny list (\"denyList\"), commit it and push it"
-        ));
-    };
+    let text = configuration_text(device)?;
     let configuration = parse_configuration(Some(&text))?;
     let value = parse_json(&text).map_err(|_| format!("{CONFIGURATION_FILE} is not JSON"))?;
     Ok((configuration, value, text))
@@ -3499,4 +3498,48 @@ fn check_note(
         before: text,
         after,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    /// A missing configuration is never an empty deny list (R67): after the
+    /// push of a takedown, the tool writes no note when it cannot read one.
+    #[test]
+    fn the_state_of_a_note_that_was_taken_down_stays_without_a_configuration() {
+        let root = std::env::temp_dir().join(format!(
+            "vault-publish-no-configuration-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let vault = root.join("vault");
+        let store = root.join("store");
+        fs::create_dir_all(&vault).expect("the folder can be made");
+        fs::create_dir_all(&store).expect("the folder can be made");
+        let text = "---\npublic_note: true\n---\nA note\n";
+        fs::write(vault.join("Note.md"), text).expect("the note is written");
+        let device = Device {
+            vault: Vault::new(&vault),
+            store: ContentStore::new(&store),
+            renames: crate::renames::RenameJournals::new(root.join("renames")),
+            note_types: StarterKit::new(Path::new("no-such-program"), &vault),
+            main_site: MainSite::network(),
+        };
+
+        let (removed, warnings) = remove_state(&device, &["Note.md".to_owned()]);
+
+        let after = fs::read_to_string(vault.join("Note.md"));
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(removed, Vec::<String>::new());
+        assert_eq!(after.expect("the note stays"), text);
+        assert!(
+            warnings.iter().any(|warning| warning["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("has no configuration.json"))),
+            "{warnings:?}"
+        );
+    }
 }

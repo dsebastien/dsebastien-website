@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import {
     foldedForm,
     isChangedByObsidian,
+    isChangedByWindows,
     isRefusedByWindows,
     isReservedRootName,
     obsidianPath,
@@ -19,6 +20,7 @@ interface Cases {
     obsidian: { name: string; text: string; path: string }[]
     twins: { name: string; paths: string[]; twins: Record<string, string> }[]
     windows: { name: string; text: string; refused: boolean }[]
+    windowsNames: { name: string; text: string; changed: boolean }[]
 }
 
 // The file is test data of this repository. The cast is the boundary: a wrong
@@ -29,6 +31,15 @@ describe('the paths that Windows cannot hold', () => {
     test.each(cases.windows.map((entry) => [entry.name, entry] as const))('%s', (_name, entry) => {
         expect(isRefusedByWindows(entry.text)).toBe(entry.refused)
     })
+})
+
+describe('the names that Windows opens as another entry', () => {
+    test.each(cases.windowsNames.map((entry) => [entry.name, entry] as const))(
+        '%s',
+        (_name, entry) => {
+            expect(isChangedByWindows(entry.text)).toBe(entry.changed)
+        }
+    )
 })
 
 describe('reserved root names', () => {

@@ -14161,6 +14161,80 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "a name that Windows opens as another entry is no entry of the vault",
+            "denyList": ["Private"],
+            "vault": {
+                "Public.md": "A public note. ![[Private./photo.png]] [[Private./Diary]] [[Private /Diary]] [[CON/Note]]\n",
+                "Private/Diary.md": "A note in a folder of the deny list\n",
+                "Private/photo.png": "An invented photo in a folder of the deny list\n",
+                "Private./Other.md": "A note in a folder whose name ends with a dot\n",
+                "Private /Other.md": "A note in a folder whose name ends with a space\n",
+                "CON/Note.md": "A note in a folder with the name of a device\n",
+                "Notes/nul.md": "A note with the name of a device\n"
+            },
+            "steps": [
+                {
+                    "do": "status",
+                    "why": "a folder or a file whose name Windows changes is no entry: no note in it is a candidate, also when Windows would open the folder of the deny list for it",
+                    "queue": {
+                        "changed": [],
+                        "counts": {
+                            "changed": 0,
+                            "new": 1,
+                            "toRemove": 0,
+                            "unchanged": 0
+                        },
+                        "missing": [],
+                        "new": ["Public.md"],
+                        "technicalUpdates": [],
+                        "toRemove": [],
+                        "unchanged": [],
+                        "behind": 0,
+                        "unpublishedUnderGuard": [],
+                        "pairings": [],
+                        "renamed": [],
+                        "movedEdited": [],
+                        "proposals": []
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "a link or an embed through such a name leads to nothing, so no file of the folder of the deny list is uploaded",
+                    "selection": {
+                        "hold": [],
+                        "include": ["Public.md"],
+                        "remove": []
+                    },
+                    "time": "2031-06-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Public.md"],
+                        "published": ["Public.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the attachment storage stays empty",
+                    "vault": {},
+                    "store": {
+                        "notes/Public.md": "A public note. ![[Private./photo.png]] [[Private./Diary]] [[Private /Diary]] [[CON/Note]]\n",
+                        "notes/Private./Other.md": null,
+                        "notes/Private/Diary.md": null
+                    },
+                    "attachmentStorage": {}
+                }
+            ]
         }
     ]
 }

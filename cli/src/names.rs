@@ -73,27 +73,36 @@ pub fn obsidian_path(path: &str) -> String {
 /// note to it.
 pub fn is_refused_by_windows(path: &str) -> bool {
     let refused = |part: &str| {
-        // Spaces after the name still name the device.
-        let base = part
-            .split('.')
-            .next()
-            .unwrap_or(part)
-            .trim_end_matches(' ')
-            .to_ascii_lowercase();
-        let reserved = ["con", "prn", "aux", "nul", "conin$", "conout$"].contains(&base.as_str())
-            || ((base.starts_with("com") || base.starts_with("lpt"))
-                && base.chars().count() == 4
-                && base.chars().last().is_some_and(|last| {
-                    last.is_ascii_digit() || "\u{b9}\u{b2}\u{b3}".contains(last)
-                }));
-        reserved
+        is_changed_by_windows(part)
             || part
                 .chars()
                 .any(|letter| "<>:\"|?*\\".contains(letter) || u32::from(letter) < 0x20)
-            || part.ends_with('.')
-            || part.ends_with(' ')
     };
     path.split('/').any(refused)
+}
+
+/// True when Windows opens another entry for this name of a file or a folder
+/// (issue 79): the name ends with a dot or a space, which Windows drops, or it
+/// is a reserved name of a device (`CON`, `NUL`, `CONIN$`, `COM1`, also with
+/// spaces after it, and any end), which Windows opens as the device. A folder
+/// `Private.` would else open the folder `Private`. The vault holds no entry
+/// with such a name, on every system, so that both implementations agree.
+pub fn is_changed_by_windows(name: &str) -> bool {
+    // Spaces after the name still name the device.
+    let base = name
+        .split('.')
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches(' ')
+        .to_ascii_lowercase();
+    let reserved = ["con", "prn", "aux", "nul", "conin$", "conout$"].contains(&base.as_str())
+        || ((base.starts_with("com") || base.starts_with("lpt"))
+            && base.chars().count() == 4
+            && base
+                .chars()
+                .last()
+                .is_some_and(|last| last.is_ascii_digit() || "\u{b9}\u{b2}\u{b3}".contains(last)));
+    reserved || name.ends_with('.') || name.ends_with(' ')
 }
 
 /// True when Obsidian gives this vault path another path: any change of the
@@ -127,8 +136,8 @@ pub fn obsidian_twins<'a>(paths: impl IntoIterator<Item = &'a String>) -> BTreeM
 #[cfg(test)]
 mod tests {
     use super::{
-        folded_form, is_changed_by_obsidian, is_refused_by_windows, is_reserved_root_name,
-        obsidian_path, obsidian_twins,
+        folded_form, is_changed_by_obsidian, is_changed_by_windows, is_refused_by_windows,
+        is_reserved_root_name, obsidian_path, obsidian_twins,
     };
     use serde_json::Value;
 
@@ -191,6 +200,22 @@ mod tests {
             assert_eq!(
                 is_changed_by_obsidian(text(case, "text")),
                 path != text(case, "text"),
+                "{}",
+                text(case, "name")
+            );
+        }
+    }
+
+    #[test]
+    fn finds_the_names_that_windows_opens_as_another_entry_as_the_file_states() {
+        let cases = cases("windowsNames");
+        assert!(cases.len() > 10);
+        for case in &cases {
+            assert_eq!(
+                is_changed_by_windows(text(case, "text")),
+                case["changed"]
+                    .as_bool()
+                    .expect("a case says if it is changed"),
                 "{}",
                 text(case, "name")
             );

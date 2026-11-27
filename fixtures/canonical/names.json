@@ -1,5 +1,5 @@
 {
-    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form, `obsidian` gives a vault path and the path that Obsidian gives it (its `normalizePath`, section \"Paths\"), `twins` gives paths and, for each path whose Obsidian path is the Obsidian path of another one, the first such other path in the order of the code points. `windows` gives a vault path and whether Windows cannot hold it (section \"Paths\", rule 5, decision R82).",
+    "about": "The root names of the site (documentation/Canonical Form.md, section \"The root names of the site\"). Both implementations read every case: `reserved` gives a name and whether it is a reserved root name, `folded` gives two texts and whether they have one folded form, `obsidian` gives a vault path and the path that Obsidian gives it (its `normalizePath`, section \"Paths\"), `twins` gives paths and, for each path whose Obsidian path is the Obsidian path of another one, the first such other path in the order of the code points. `windows` gives a vault path and whether Windows cannot hold it (section \"Paths\", rule 5, decision R82). `windowsNames` gives one name of a file or a folder and whether Windows opens another entry for it (a dot or a space at the end, or a reserved name of a device): the vault holds no entry with such a name (section \"Paths\", rule 6, issue 79).",
     "reserved": [
         {
             "name": "a plain name",
@@ -337,5 +337,36 @@
             "text": "Notes/Caf\u00e9 \u6587.md",
             "refused": false
         }
+    ],
+    "windowsNames": [
+        { "name": "a folder name with a dot at the end", "text": "Private.", "changed": true },
+        { "name": "a folder name with a space at the end", "text": "Private ", "changed": true },
+        { "name": "a name with two dots at the end", "text": "Private..", "changed": true },
+        { "name": "a reserved name of a device", "text": "CON", "changed": true },
+        { "name": "a reserved name with an end", "text": "nul.md", "changed": true },
+        {
+            "name": "a reserved name in small letters with an end",
+            "text": "com1.png",
+            "changed": true
+        },
+        {
+            "name": "a reserved name with spaces before the dot",
+            "text": "AUX .txt",
+            "changed": true
+        },
+        { "name": "a plain folder name", "text": "Private", "changed": false },
+        { "name": "a note name", "text": "Plan.md", "changed": false },
+        { "name": "a name that starts with a dot", "text": ".obsidian", "changed": false },
+        {
+            "name": "a name that Windows refuses but does not change",
+            "text": "Why?.md",
+            "changed": false
+        },
+        {
+            "name": "a longer name that starts with a reserved name",
+            "text": "CONSOLE.md",
+            "changed": false
+        },
+        { "name": "a dot inside a name", "text": "A plan. v2.md", "changed": false }
     ]
 }

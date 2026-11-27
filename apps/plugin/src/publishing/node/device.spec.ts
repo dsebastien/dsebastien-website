@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -242,3 +242,88 @@ describe('the lock of a check or a pull whose process ended (R81)', () => {
         }
     }, 60_000)
 })
+
+// Issue 79: the tool follows no link in the copy of the content store. A link
+// or a junction in a parent folder of a file that the tool writes or removes
+// stops the run, and a link in the last commit stops the check of the copy.
+describe('links in the copy of the content store', () => {
+    /** A copy whose `notes/Linked` is a link (a junction on Windows) to a folder outside the copy. */
+    async function linkedCopy(stores: TestStores): Promise<{ copy: string; outside: string }> {
+        const copy = await makeContentStoreCopy(stores)
+        const outside = join(stores.root, 'outside')
+        await mkdir(outside)
+        await writeFile(join(outside, 'Kept.md'), 'Kept\n')
+        await mkdir(join(copy, 'notes'))
+        await symlink(outside, join(copy, 'notes', 'Linked'), 'junction')
+        return { copy, outside }
+    }
+
+    test('a removal through a link in a parent folder stops, and the file outside the copy stays', async () => {
+        await using stores = await makeTestStores()
+        const { copy, outside } = await linkedCopy(stores)
+        const device = nodeDevice({
+            vault: await copyFixtureVault(stores),
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+
+        expect(await rejectionOf(device.store.remove('notes/Linked/Kept.md'))).toContain(
+            'notes/Linked of the content store is a symbolic link'
+        )
+        expect(await Bun.file(join(outside, 'Kept.md')).text()).toBe('Kept\n')
+    })
+
+    test('a write through a link in a parent folder stops, and writes nothing outside the copy', async () => {
+        await using stores = await makeTestStores()
+        const { copy, outside } = await linkedCopy(stores)
+        const device = nodeDevice({
+            vault: await copyFixtureVault(stores),
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+
+        expect(await rejectionOf(device.store.write('notes/Linked/New.md', 'New\n'))).toContain(
+            'notes/Linked of the content store is a symbolic link'
+        )
+        expect(await Bun.file(join(outside, 'New.md')).exists()).toBe(false)
+    })
+
+    // Git writes a link of a commit as a link on macOS and Linux, and as a
+    // small text file where it cannot make links: the check refuses both.
+    test.each(['notes/Linked', 'manifest/linked.json'])(
+        'a link that the last commit holds at %s stops the check of the copy',
+        async (path) => {
+            await using stores = await makeTestStores()
+            const copy = await makeContentStoreCopy(stores)
+            const blob = await gitIn(copy, ['hash-object', '-w', '--stdin'], '../elsewhere')
+            await git('-C', copy, 'update-index', '--add', '--cacheinfo', `120000,${blob},${path}`)
+            await git('-C', copy, 'commit', '--quiet', '--message', 'A change of another device')
+            await git('-C', copy, 'checkout', 'HEAD', '--', path)
+            await git('-C', copy, 'push', '--quiet', 'origin', 'HEAD:main')
+            const device = nodeDevice({
+                vault: await copyFixtureVault(stores),
+                contentStore: copy,
+                attachmentStorage: stores.attachmentStorage
+            })
+
+            expect(await rejectionOf(device.store.verify('must'))).toContain(
+                `${path} of the last commit of the content store is a symbolic link`
+            )
+        },
+        60_000
+    )
+})
+
+/** Runs git in a folder with this standard input, and gives its output. */
+async function gitIn(folder: string, args: string[], input: string): Promise<string> {
+    const child = Bun.spawn(['git', '-C', folder, ...args], {
+        env: gitEnvironment(),
+        stdin: new TextEncoder().encode(input),
+        stdout: 'pipe'
+    })
+    const out = await new Response(child.stdout).text()
+    if ((await child.exited) !== 0) {
+        throw new Error(`git ${args.join(' ')} failed`)
+    }
+    return out.trim()
+}

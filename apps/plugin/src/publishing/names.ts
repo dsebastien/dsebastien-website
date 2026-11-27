@@ -84,13 +84,22 @@ export function isRefusedByWindows(path: string): boolean {
         .split('/')
         .some(
             (part) =>
-                WINDOWS_NAMES.test(part) ||
+                isChangedByWindows(part) ||
                 /[<>:"|?*\\]/u.test(part) ||
-                Array.from(part, (letter) => letter.codePointAt(0) ?? 0).some(
-                    (code) => code < 0x20
-                ) ||
-                /[. ]$/u.test(part)
+                Array.from(part, (letter) => letter.codePointAt(0) ?? 0).some((code) => code < 0x20)
         )
+}
+
+/**
+ * True when Windows opens another entry for this name of a file or a folder
+ * (issue 79): the name ends with a dot or a space, which Windows drops, or it
+ * is a reserved name of a device (`CON`, `NUL`, `CONIN$`, `COM1`, also with
+ * spaces after it, and any end), which Windows opens as the device. A folder
+ * `Private.` would else open the folder `Private`. The vault holds no entry
+ * with such a name, on every system, so that both implementations agree.
+ */
+export function isChangedByWindows(name: string): boolean {
+    return WINDOWS_NAMES.test(name) || /[. ]$/u.test(name)
 }
 
 /**

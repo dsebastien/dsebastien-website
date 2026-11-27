@@ -1,5 +1,5 @@
 import { STATE_PROPERTY } from './clean.ts'
-import { CONFIGURATION_FILE, parseConfiguration } from './configuration.ts'
+import { configurationText, parseConfiguration } from './configuration.ts'
 import { hasListToRefresh, queryNamesProperty } from './frozen.ts'
 import { guardOf } from './guards.ts'
 import { obsidianTwins } from './names.ts'
@@ -85,7 +85,7 @@ export async function notesToRefreshAfter(
     readonly problems: { readonly path: string; readonly message: string }[]
 }> {
     const vault = device.vault.forRun()
-    const configuration = parseConfiguration(await device.store.read(CONFIGURATION_FILE))
+    const configuration = parseConfiguration(await configurationText(device))
     const problems: { path: string; message: string }[] = []
     // The listing reads no file: the twins are computed over every note of
     // now, whatever the check read (R72).

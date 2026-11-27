@@ -4,7 +4,12 @@ import { toCanonicalJson } from './canonical.ts'
 import { CLEANING_VERSION, cleanNote, sourceOf, STATE_PROPERTY } from './clean.ts'
 import { linksOf } from './links.ts'
 import type { CanonicalValue } from './canonical.ts'
-import { CONFIGURATION_FILE, isVaultPath, parseConfiguration } from './configuration.ts'
+import {
+    CONFIGURATION_FILE,
+    configurationText,
+    isVaultPath,
+    parseConfiguration
+} from './configuration.ts'
 import type { Configuration } from './configuration.ts'
 import {
     EDIT_ACTIONS,
@@ -150,19 +155,6 @@ function isTextList(value: unknown): value is string[] {
 
 function messageOf(error: unknown): string {
     return error instanceof Error ? error.message : 'it failed'
-}
-
-/** The text of the configuration. It throws when the copy has none. */
-async function configurationText(device: Device): Promise<string> {
-    const text = await device.store.read(CONFIGURATION_FILE)
-    if (text === undefined) {
-        // A wrong folder must never read as a content store with an empty
-        // deny list: every private folder would be a candidate (R67).
-        throw new Error(
-            `the copy of the content store has no ${CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add ${CONFIGURATION_FILE} with the deny list ("denyList"), commit it and push it`
-        )
-    }
-    return text
 }
 
 /** Reads the configuration and checks it against the vault. */
@@ -2011,7 +2003,7 @@ async function removeState(
     const warnings: { path: string; message: string }[] = []
     let configuration: Configuration
     try {
-        configuration = parseConfiguration(await device.store.read(CONFIGURATION_FILE))
+        configuration = parseConfiguration(await configurationText(device))
     } catch (error) {
         warnings.push({
             path: '',

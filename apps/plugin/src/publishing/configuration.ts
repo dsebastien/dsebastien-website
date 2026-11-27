@@ -53,3 +53,18 @@ export function parseConfiguration(text: string | undefined): Configuration {
     }
     return { denyList }
 }
+
+/** The text of the configuration. It throws when the copy has none. */
+export async function configurationText(device: {
+    readonly store: { read(path: string): Promise<string | undefined> }
+}): Promise<string> {
+    const text = await device.store.read(CONFIGURATION_FILE)
+    if (text === undefined) {
+        // A wrong folder must never read as a content store with an empty
+        // deny list: every private folder would be a candidate (R67).
+        throw new Error(
+            `the copy of the content store has no ${CONFIGURATION_FILE} in its last commit: the folder is not the copy of the content store, or the content store has no configuration yet. Add ${CONFIGURATION_FILE} with the deny list ("denyList"), commit it and push it`
+        )
+    }
+    return text
+}

@@ -1354,12 +1354,12 @@ fn a_publication_whose_lock_another_run_took_after_the_recovery_found_the_push_l
 
 /// Decision R82: a path that Windows cannot hold is never published, so
 /// every device can hold the copy.
-// Windows refuses to make the file `CON.md` that the test writes.
+// Windows refuses to make the file `Why?.md` that the test writes.
 #[cfg(not(windows))]
 #[test]
 fn a_note_whose_path_windows_cannot_hold_is_not_published() {
     let setup = set_up();
-    let reserved = "10 Garden/CON.md";
+    let reserved = "10 Garden/Why?.md";
     fs::write(setup.vault.join(reserved), "# Odd\n\nA note.\n").expect("the note can be written");
 
     let output = setup.run("plan", &["--include", reserved]);
@@ -1372,6 +1372,22 @@ fn a_note_whose_path_windows_cannot_hold_is_not_published() {
         )),
         "{message}"
     );
+}
+
+/// Issue 79: a name that Windows opens as another entry (here a device) is no
+/// entry of the vault, so it is no candidate.
+// Windows makes no file `CON.md`: the name opens the device.
+#[cfg(not(windows))]
+#[test]
+fn a_note_with_the_name_of_a_device_of_windows_is_no_note_of_the_vault() {
+    let setup = set_up();
+    let reserved = "10 Garden/CON.md";
+    fs::write(setup.vault.join(reserved), "# Odd").expect("the note can be written");
+
+    let output = setup.run("status", &[]);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(reserved));
 }
 
 /// Issue 76: git cannot write some paths on some systems, so they look

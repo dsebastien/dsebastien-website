@@ -154,6 +154,28 @@ describe('the refresh of the frozen lists after a run (R84)', () => {
         expect(after.refreshProblems).toEqual([])
     }, 60_000)
 
+    // A missing configuration is never an empty deny list (R67).
+    test('a configuration that is missing asks no note, and says so', async () => {
+        await using stores = await makeTestStores()
+        const { device, calls } = await setUp(stores)
+        const missing: Device = {
+            ...device,
+            store: {
+                ...device.store,
+                read: async (path) =>
+                    path === 'configuration.json' ? undefined : await device.store.read(path)
+            }
+        }
+
+        const after = await refreshAfterRun(missing)
+
+        expect(calls).toEqual([])
+        expect(after.listsRefreshed).toEqual([])
+        expect(after.refreshProblems.map((problem) => problem.message).join(' | ')).toContain(
+            'has no configuration.json'
+        )
+    })
+
     test('after an unpublish, the same notes are asked', async () => {
         await using stores = await makeTestStores()
         const { device, calls } = await setUp(stores)

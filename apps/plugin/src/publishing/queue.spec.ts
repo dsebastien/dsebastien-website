@@ -10,7 +10,7 @@ import {
     utimes,
     writeFile
 } from 'node:fs/promises'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     copyFixtureVault,
@@ -218,16 +218,28 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
     return output.trimEnd()
 }
 
+/**
+ * The path of a file for the file system. On Windows it is the verbatim form
+ * (a path that starts with two backslashes, a question mark and a
+ * backslash), which Windows does not change: a scenario can then hold a name
+ * with a dot or a space at the end, or the name of a device, as a copy from
+ * another system can.
+ */
+function diskPath(path: string): string {
+    return process.platform === 'win32' ? `\\\\?\\${resolve(path)}` : path
+}
+
 async function writeFiles(folder: string, files: Record<string, FileContent>): Promise<void> {
     for (const [path, content] of Object.entries(files)) {
-        await mkdir(dirname(join(folder, path)), { recursive: true })
+        const file = diskPath(join(folder, path))
+        await mkdir(dirname(file), { recursive: true })
         if (typeof content !== 'string' && 'sparse' in content) {
-            await writeFile(join(folder, path), '')
-            await truncate(join(folder, path), content.sparse)
+            await writeFile(file, '')
+            await truncate(file, content.sparse)
             continue
         }
         await writeFile(
-            join(folder, path),
+            file,
             typeof content === 'string' ? content : Buffer.from(content.bytes, 'hex')
         )
     }
@@ -934,7 +946,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
     })
 
     test.skipIf(process.platform === 'win32')(
-        'a symbolic link in the manifest is not a file of the store',
+        'a symbolic link in the manifest stops the status',
         async () => {
             await using stores = await makeTestStores()
             const setup = await setUp(stores)
@@ -942,13 +954,13 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             await symlink(join(setup.vault, 'Welcome.md'), join(setup.copy, 'manifest/link.json'))
             await commitAll(setup.copy)
 
-            expect((await status(setup.device)).counts.unchanged).toBe(0)
+            expect(await rejectionOf(status(setup.device))).toContain('symbolic link')
         }
     )
 
-    // The manifest has one level: a folder below it is not read.
+    // A link in the last commit stops the check of the copy (issue 79).
     test.skipIf(process.platform === 'win32')(
-        'a symbolic link to a folder in the manifest is not read',
+        'a symbolic link to a folder in the manifest stops the status',
         async () => {
             await using stores = await makeTestStores()
             const setup = await setUp(stores)
@@ -959,7 +971,7 @@ describe('manifest in a form that only one reader of JSON would take', () => {
             await symlink(elsewhere, join(setup.copy, 'manifest/sub'))
             await commitAll(setup.copy)
 
-            expect((await status(setup.device)).counts.unchanged).toBe(0)
+            expect(await rejectionOf(status(setup.device))).toContain('symbolic link')
         }
     )
 

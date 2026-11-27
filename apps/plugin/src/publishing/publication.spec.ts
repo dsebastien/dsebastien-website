@@ -754,6 +754,37 @@ describe('takedown', () => {
         expect(await exists(join(setup.copy, '.git', 'vault-publish', 'lock'))).toBe(false)
     })
 
+    // A missing configuration is never an empty deny list (R67): after the
+    // push of a takedown, the tool writes no note when it cannot read one.
+    test('a configuration that is missing after the push writes no note, and says so', async () => {
+        await using stores = await makeTestStores()
+        const setup = await setUp(stores)
+        await publish(setup.device, (await plan(setup.device, { include: [NOTE] })).id, RUN)
+        let pushed = false
+        const device: Device = {
+            ...setup.device,
+            store: {
+                ...setup.device.store,
+                commitAndPush: async (message, paths) => {
+                    await setup.device.store.commitAndPush(message, paths)
+                    pushed = true
+                },
+                read: async (path) =>
+                    pushed && path === 'configuration.json'
+                        ? undefined
+                        : await setup.device.store.read(path)
+            }
+        }
+
+        const report = await takedown(device, [NOTE], LATER)
+
+        expect(report.takenDown).toEqual([NOTE])
+        expect(report.propertyRemoved).toEqual([])
+        expect(report.warnings.map((warning) => warning.message).join(' | ')).toContain(
+            'has no configuration.json'
+        )
+    })
+
     test('a refused push takes nothing down and leaves everything as it was', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
@@ -1468,16 +1499,32 @@ describe('failure cases after the first review', () => {
 
     // Decision R82: a path that Windows cannot hold is never published, so
     // every device can hold the copy. Windows cannot make such a file, so
-    // this test fails there.
-    test('a note whose path Windows cannot hold is not published', async () => {
+    // this test does not run there.
+    test.skipIf(process.platform === 'win32')(
+        'a note whose path Windows cannot hold is not published',
+        async () => {
+            await using stores = await makeTestStores()
+            const setup = await setUp(stores)
+            const refused = '10 Garden/Why?.md'
+            await writeFile(join(setup.vault, refused), '# Odd\n\nA note.\n')
+
+            expect(await rejectionOf(plan(setup.device, { include: [refused] }))).toContain(
+                `"${refused}" cannot be published: Windows cannot hold its path`
+            )
+        }
+    )
+
+    // Issue 79: a name that Windows opens as another entry (here a device) is
+    // no entry of the vault, so it is no candidate.
+    test('a note with the name of a device of Windows is no note of the vault', async () => {
         await using stores = await makeTestStores()
         const setup = await setUp(stores)
         const reserved = '10 Garden/CON.md'
-        await writeFile(join(setup.vault, reserved), '# Odd\n\nA note.\n')
+        if (process.platform !== 'win32') {
+            await writeFile(join(setup.vault, reserved), '# Odd\n\nA note.\n')
+        }
 
-        expect(await rejectionOf(plan(setup.device, { include: [reserved] }))).toContain(
-            `"${reserved}" cannot be published: Windows cannot hold its path`
-        )
+        expect((await status(setup.device)).new).not.toContain(reserved)
     })
 
     // Issue 76: git cannot write some paths on some systems, so they look

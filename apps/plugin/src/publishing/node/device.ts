@@ -30,7 +30,7 @@ import type {
     VaultEntry
 } from '../ports.ts'
 import { JOURNAL_FOLDER } from '../renames.ts'
-import { isRefusedByWindows } from '../names.ts'
+import { isChangedByWindows, isRefusedByWindows } from '../names.ts'
 
 // A device whose vault and whose copy of the content store are folders, with
 // the `git` program of the system (TOOL-12 of the spec). The tests and the
@@ -112,6 +112,11 @@ function folderVault(folder: string, listings?: Map<string, Promise<Listing>>): 
         const read = readdir(join(folder, path), { withFileTypes: true }).then((entries) => {
             const listed = new Map<string, 'file' | 'folder'>()
             for (const entry of entries) {
+                // A name that Windows changes would open another entry, also
+                // a folder of the deny list (issue 79): it is no entry.
+                if (isChangedByWindows(entry.name)) {
+                    continue
+                }
                 // `isFile` and `isDirectory` are false for a symbolic link.
                 if (entry.isFile()) {
                     listed.set(entry.name, 'file')
@@ -237,6 +242,16 @@ function gitEnvironment(): NodeJS.ProcessEnv {
         Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
     )
 }
+
+/** The files and the folders of the content store that the tool reads or writes. */
+const STATE_PATHS = [
+    'configuration.json',
+    'edits.json',
+    'manifest',
+    'notes',
+    'renames.json',
+    'withdrawn.json'
+]
 
 /**
  * The options of the comparison of the copy with its last commit: the line
@@ -675,6 +690,22 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                     `the copy of the content store has ${ahead} commit(s) that the content store does not have. Nothing can be published until the copy is corrected: ${way}: ${folder}`
                 )
             }
+            // A link in the last commit is no file of the store: git writes it
+            // as a link where it can, and a removal or a write through it would
+            // leave the copy (issue 79). The check stops on it, on every system.
+            if (hasHead) {
+                const linked = (
+                    await gitRaw('ls-tree', '-r', '-z', '--full-tree', 'HEAD', '--', ...STATE_PATHS)
+                )
+                    .split('\0')
+                    .filter((entry) => entry.startsWith('120000 '))
+                    .map((entry) => entry.slice(entry.indexOf('\t') + 1))
+                if (linked.length > 0) {
+                    throw new Error(
+                        `${linked.slice(0, 5).join(', ')} of the last commit of the content store is a symbolic link: the tool follows no link in the copy. Nothing can be published until the link is removed from the content store by hand: ${folder}`
+                    )
+                }
+            }
             // The tool reads the state from the files of the copy, so they must
             // be the files of its last commit: a file removed, edited, added or
             // replaced could hide a published note under a guard, or empty the
@@ -971,8 +1002,18 @@ function gitContentStore(folder: string, program = 'git'): ContentStore {
                 throw new Error(`${path} of the content store is not valid UTF-8`)
             }
         },
-        write: (path, text) => writeText(join(folder, path), text),
+        async write(path, text) {
+            // A link in a parent folder would take the write out of the copy.
+            await refuseLinks(path)
+            await writeText(join(folder, path), text)
+        },
         async remove(path) {
+            // A link as the file itself leaves the store, but a link in a
+            // parent folder would take the removal out of the copy.
+            const parent = path.split('/').slice(0, -1).join('/')
+            if (parent !== '') {
+                await refuseLinks(parent)
+            }
             try {
                 await rm(join(folder, path))
                 return true

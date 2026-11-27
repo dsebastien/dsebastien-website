@@ -72,9 +72,23 @@ fn bytes_of(content: &Value) -> Vec<u8> {
         .collect()
 }
 
+/// The path of a file for the file system. On Windows it is the verbatim
+/// form (a path that starts with two backslashes, a question mark and a
+/// backslash), which Windows does not change: a scenario can then hold a name
+/// with a dot or a space at the end, or the name of a device, as a copy from
+/// another system can.
+fn disk_path(folder: &Path, path: &str) -> PathBuf {
+    if cfg!(windows) {
+        let full = folder.join(path).to_string_lossy().replace('/', "\\");
+        PathBuf::from(format!(r"\\?\{full}"))
+    } else {
+        folder.join(path)
+    }
+}
+
 fn write_files(folder: &Path, files: &Value) {
     for (path, content) in files.as_object().expect("the files are an object") {
-        let file = folder.join(path);
+        let file = disk_path(folder, path);
         fs::create_dir_all(file.parent().expect("a file has a folder"))
             .expect("the folder can be made");
         // A sparse file of zero bytes of that size, made without writing them.
@@ -1095,7 +1109,7 @@ fn a_manifest_or_a_configuration_that_only_one_reader_would_take_stops_the_statu
 
 #[cfg(unix)]
 #[test]
-fn a_symbolic_link_in_the_manifest_is_not_a_file_of_the_store() {
+fn a_symbolic_link_in_the_manifest_stops_the_status() {
     let setup = Setup::fixture();
     fs::create_dir(setup.copy.join("manifest")).expect("the folder can be made");
     std::os::unix::fs::symlink(
@@ -1106,13 +1120,20 @@ fn a_symbolic_link_in_the_manifest_is_not_a_file_of_the_store() {
 
     commit_all(&setup.copy);
 
-    assert_eq!(setup.status()["counts"]["unchanged"], 0);
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("symbolic link"),
+        "{}",
+        errors_of(&output)
+    );
 }
 
-/// The manifest has one level: a folder below it is not read.
+/// A link in the last commit stops the check of the copy (issue 79), also a
+/// link to a folder.
 #[cfg(unix)]
 #[test]
-fn a_symbolic_link_to_a_folder_in_the_manifest_is_not_read() {
+fn a_symbolic_link_to_a_folder_in_the_manifest_stops_the_status() {
     let setup = Setup::fixture();
     let elsewhere = setup.stores.root().join("elsewhere");
     fs::create_dir(&elsewhere).expect("the folder can be made");
@@ -1123,7 +1144,48 @@ fn a_symbolic_link_to_a_folder_in_the_manifest_is_not_read() {
 
     commit_all(&setup.copy);
 
-    assert_eq!(setup.status()["counts"]["unchanged"], 0);
+    let output = setup.run("status", &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        errors_of(&output).contains("symbolic link"),
+        "{}",
+        errors_of(&output)
+    );
+}
+
+/// Git writes a link of a commit as a link on macOS and Linux, and as a small
+/// text file where it cannot make links: the check refuses both (issue 79).
+#[test]
+fn a_link_that_the_last_commit_holds_stops_the_status() {
+    for path in ["notes/Linked", "manifest/linked.json"] {
+        let setup = Setup::fixture();
+        let target = setup.stores.root().join("target.txt");
+        fs::write(&target, "../elsewhere").expect("the file is written");
+        let copy = text(&setup.copy);
+        let blob = git(&["-C", copy, "hash-object", "-w", text(&target)]);
+        let entry = format!("120000,{},{path}", blob.trim());
+        git(&["-C", copy, "update-index", "--add", "--cacheinfo", &entry]);
+        git(&[
+            "-C",
+            copy,
+            "commit",
+            "--quiet",
+            "--message",
+            "A change of another device",
+        ]);
+        git(&["-C", copy, "checkout", "HEAD", "--", path]);
+        git(&["-C", copy, "push", "--quiet", "origin", "HEAD:main"]);
+
+        let output = setup.run("status", &[]);
+        assert_eq!(output.status.code(), Some(1), "{path}");
+        assert!(
+            errors_of(&output).contains(&format!(
+                "{path} of the last commit of the content store is a symbolic link"
+            )),
+            "{}",
+            errors_of(&output)
+        );
+    }
 }
 
 /// A configuration that is a link could lead to nothing, and be read as no
