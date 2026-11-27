@@ -138,8 +138,9 @@ export function drawingColors(
 }
 
 /**
- * Draws the tabs and the scores of a page again in the colors of its mode when
- * the reader switches it: a canvas does not follow the variables of the theme.
+ * Draws the tabs and the scores of a page again in the colors of its mode or
+ * theme when the reader switches one: a canvas does not follow the variables
+ * of the theme.
  */
 export function followMode(
     module: AlphaTabModule,
@@ -160,7 +161,7 @@ export function followMode(
             api.updateSettings()
             api.render()
         }
-    }).observe(doc.documentElement, { attributeFilter: ['data-theme'] })
+    }).observe(doc.documentElement, { attributeFilter: ['data-theme', 'data-design'] })
     return (api, block) => {
         drawings.push({ api, block })
     }
