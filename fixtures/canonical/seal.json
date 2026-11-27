@@ -1291,6 +1291,66 @@
                 ]
             },
             "text": "the content store has no sealed state that the tool can trust: no commit of the last 100 (and none before a merge) has a valid seal and descends from 5555555555555555555555555555555555555555, the last sealed commit that this copy trusted. More than 100 commits that no tool wrote, a merge, or an older history that a forced push put back can cause it. Nothing is planned or published until you confirm it. What differs from that commit: manifest entries added (45): \"Garden/Note 00.md\" (none to published), \"Garden/Note 01.md\" (none to published), \"Garden/Note 02.md\" (none to published), \"Garden/Note 03.md\" (none to published), \"Garden/Note 04.md\" (none to published), \"Garden/Note 05.md\" (none to published), \"Garden/Note 06.md\" (none to published), \"Garden/Note 07.md\" (none to published), \"Garden/Note 08.md\" (none to published), \"Garden/Note 09.md\" (none to published), \"Garden/Note 10.md\" (none to published), \"Garden/Note 11.md\" (none to published), \"Garden/Note 12.md\" (none to published), \"Garden/Note 13.md\" (none to published), \"Garden/Note 14.md\" (none to published), \"Garden/Note 15.md\" (none to published), \"Garden/Note 16.md\" (none to published), \"Garden/Note 17.md\" (none to published), \"Garden/Note 18.md\" (none to published), \"Garden/Note 19.md\" (none to published), \"Garden/Note 20.md\" (none to published), \"Garden/Note 21.md\" (none to unpublished), \"Garden/Note 22.md\" (none to unpublished), \"Garden/Note 23.md\" (none to unpublished), \"Garden/Note 24.md\" (none to unpublished), \"Garden/Note 25.md\" (none to unpublished), \"Garden/Note 26.md\" (none to unpublished), \"Garden/Note 27.md\" (none to unpublished), \"Garden/Note 28.md\" (none to unpublished), \"Garden/Note 29.md\" (none to unpublished), \"Garden/Note 30.md\" (none to unpublished), \"Garden/Note 31.md\" (none to unpublished), \"Garden/Note 32.md\" (none to unpublished), \"Garden/Note 33.md\" (none to unpublished), \"Garden/Note 34.md\" (none to unpublished), \"Garden/Note 35.md\" (none to unpublished), \"Garden/Note 36.md\" (none to unpublished), \"Garden/Note 37.md\" (none to unpublished), \"Garden/Note 38.md\" (none to unpublished), \"Garden/Note 39.md\" (none to unpublished), \"Garden/Note 40.md\" (none to unpublished) and 4 more; files of the store: configuration.json (changed, cannot be read); cleaned notes (22): notes/Garden/Note 00.md (added), notes/Garden/Note 01.md (added), notes/Garden/Note 02.md (added), notes/Garden/Note 03.md (added), notes/Garden/Note 04.md (added), notes/Garden/Note 05.md (added), notes/Garden/Note 06.md (added), notes/Garden/Note 07.md (added), notes/Garden/Note 08.md (added), notes/Garden/Note 09.md (added), notes/Garden/Note 10.md (added), notes/Garden/Note 11.md (added), notes/Garden/Note 12.md (added), notes/Garden/Note 13.md (added), notes/Garden/Note 14.md (added), notes/Garden/Note 15.md (added), notes/Garden/Note 16.md (added), notes/Garden/Note 17.md (added), notes/Garden/Note 18.md (added), notes/Garden/Note 19.md (added) and 2 more. When you made or accept every change, confirm the state of commit 4444444444444444444444444444444444444444 (the command confirm-state --head 4444444444444444444444444444444444444444, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
+        },
+        {
+            "name": "a takedown and a removal by someone else: a deploy of the takedown takes both away",
+            "head": "5555555555555555555555555555555555555555",
+            "base": "seal",
+            "sealed": "6666666666666666666666666666666666666666",
+            "sealedFiles": [
+                {
+                    "mode": "100644",
+                    "object": "1111111111111111111111111111111111111111",
+                    "path": "manifest/aaaaaaaaaaaaaaaa.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "2222222222222222222222222222222222222222",
+                    "path": "manifest/bbbbbbbbbbbbbbbb.json"
+                },
+                {
+                    "mode": "100644",
+                    "object": "4444444444444444444444444444444444444444",
+                    "path": "notes/A note.md"
+                }
+            ],
+            "headFiles": [],
+            "texts": {
+                "1111111111111111111111111111111111111111": "{\n  \"path\": \"10 Garden/A note.md\",\n  \"state\": \"published\"\n}\n",
+                "2222222222222222222222222222222222222222": "{\n  \"path\": \"10 Garden/Another note.md\",\n  \"state\": \"published\"\n}\n"
+            },
+            "difference": {
+                "head": "5555555555555555555555555555555555555555",
+                "base": "seal",
+                "sealed": "6666666666666666666666666666666666666666",
+                "entries": [
+                    {
+                        "change": "removed",
+                        "file": "manifest/aaaaaaaaaaaaaaaa.json",
+                        "path": "10 Garden/A note.md",
+                        "before": "published",
+                        "after": "none"
+                    },
+                    {
+                        "change": "removed",
+                        "file": "manifest/bbbbbbbbbbbbbbbb.json",
+                        "path": "10 Garden/Another note.md",
+                        "before": "published",
+                        "after": "none"
+                    }
+                ],
+                "denyListRemoved": [],
+                "denyListAdded": [],
+                "noindexRemoved": [],
+                "noindexAdded": [],
+                "files": [
+                    {
+                        "path": "notes/A note.md",
+                        "change": "removed"
+                    }
+                ]
+            },
+            "text": "the state of the content store at 5555555555555555555555555555555555555555 is not the state that a commit of the tool sealed (6666666666666666666666666666666666666666): a commit that no tool wrote changed it (a push of someone else, or an edit by hand). Nothing is planned or published until you confirm it. What differs from the sealed state: manifest entries removed (2): \"10 Garden/A note.md\" (published to none), \"10 Garden/Another note.md\" (published to none) (a deploy of a takedown on this state took or takes their pages and files away, also of an entry that someone else removed); cleaned notes (1): notes/A note.md (removed). When you made or accept every change, confirm the state of commit 5555555555555555555555555555555555555555 (the command confirm-state --head 5555555555555555555555555555555555555555, the action of the publication center, or the MCP tool confirm_store_state); else take the commits back in the content store"
         }
     ],
     "checks": [

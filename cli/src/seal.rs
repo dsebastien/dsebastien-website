@@ -784,8 +784,16 @@ pub fn difference_text(difference: &StoreDifference) -> String {
             .chain(others.iter().take(NAMED_IN_TEXT))
             .map(|entry| named(entry))
             .collect();
+        // R104, rule 11: the deploy of a takedown on this state takes the
+        // pages and files of every removed entry away, also of one that
+        // someone else removed.
+        let away = if change == "removed" && difference.base != BASE_NONE {
+            " (a deploy of a takedown on this state took or takes their pages and files away, also of an entry that someone else removed)"
+        } else {
+            ""
+        };
         parts.push(format!(
-            "manifest entries {change} ({}): {}",
+            "manifest entries {change} ({}): {}{away}",
             entries.len(),
             with_more(&shown, others.len().saturating_sub(NAMED_IN_TEXT))
         ));

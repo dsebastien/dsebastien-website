@@ -537,8 +537,15 @@ export function differenceText(difference: StoreDifference): string {
         const others = entries.filter((entry) => entry.after !== 'published')
         const shown = [...published, ...others.slice(0, NAMED_IN_TEXT)].map(named).join(', ')
         const more = others.length - NAMED_IN_TEXT
+        // R104, rule 11: the deploy of a takedown on this state takes the
+        // pages and files of every removed entry away, also of one that
+        // someone else removed.
+        const away =
+            change === 'removed' && difference.base !== 'none'
+                ? ` (a deploy of a takedown on this state took or takes their pages and files away, also of an entry that someone else removed)`
+                : ''
         parts.push(
-            `manifest entries ${change} (${String(entries.length)}): ${shown}${more > 0 ? ` and ${String(more)} more` : ''}`
+            `manifest entries ${change} (${String(entries.length)}): ${shown}${more > 0 ? ` and ${String(more)} more` : ''}${away}`
         )
     }
     if (difference.denyListRemoved.length > 0) {
