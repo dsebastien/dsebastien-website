@@ -12,6 +12,13 @@ export const MARK = {
     card: 'link-card'
 } as const
 
+/**
+ * The property that marks the footnotes and the links that the build writes
+ * before the raw HTML of a note is read (issue 124): the allow list keeps it,
+ * and the HTML step drops it.
+ */
+export const BUILT_MARK = 'dataBuiltMark'
+
 /** A text as the value of an attribute of a mark: plain ASCII, no quote. */
 export function encode(text: string): string {
     return encodeURIComponent(text).replaceAll("'", '%27')

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, BrowserContext, Page, Route } from 'playwright-core'
@@ -111,6 +112,8 @@ interface Traffic {
     members: { url: string; method: string; body: unknown }[]
     /** Every request to another host, refused. */
     refused: string[]
+    /** What the Content Security Policy of a page blocked (SEC-01). */
+    violations: string[]
 }
 
 /** The answer of the stub of the signup service. */
@@ -137,6 +140,18 @@ async function contextOf(
     // The script of the analytics ignores a browser that a program drives,
     // unless the page says that it is a test of its own.
     await context.addInitScript('window.__plausible = true')
+    // Every block of the Content Security Policy of a page (SEC-01, issue 79).
+    await context.exposeFunction('__blocked', (violation: string) => {
+        traffic.violations.push(violation)
+    })
+    await context.addInitScript(() => {
+        document.addEventListener('securitypolicyviolation', (event) => {
+            const report = (window as unknown as { __blocked: (text: string) => void }).__blocked
+            report(
+                `${location.pathname}: ${event.effectiveDirective} ${event.blockedURI} ${event.sample}`
+            )
+        })
+    })
     await context.route('**/*', async (route: Route) => {
         const request = route.request()
         const url = request.url()
@@ -184,7 +199,7 @@ async function contextOf(
 }
 
 function noTraffic(): Traffic {
-    return { events: [], members: [], refused: [] }
+    return { events: [], members: [], refused: [], violations: [] }
 }
 
 function pathOf(note: string): string {
@@ -243,6 +258,11 @@ async function barBecomes(page: Page, shown: boolean): Promise<void> {
         .waitFor({ state: shown ? 'visible' : 'hidden', timeout: 5_000 })
 }
 
+/** The source of the hash of an inline text in a policy, computed here. */
+function hashOf(text: string): string {
+    return `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`
+}
+
 describe('the built site in a browser', () => {
     test('builds', () => {
         expect(exitCode).toBe(0)
@@ -266,6 +286,50 @@ describe('the built site in a browser', () => {
         expect(await page.content()).not.toContain('/members/api')
         await context.close()
     })
+
+    // SEC-01 (issue 79): the pages work under their Content Security Policy.
+    test('no page needs a script, a style or a connection that its policy blocks', async () => {
+        const traffic = noTraffic()
+        const context = await contextOf(traffic, { members: SIGNUP_SENT })
+        const page = await context.newPage()
+        const pages = ['/', ...NOTES.map(pathOf), '/No-such-note', '/-/search']
+        for (const path of pages) {
+            const answer = await page.goto(`${ORIGIN}${path}`)
+            const policy = (await answer?.allHeaders())?.['content-security-policy'] ?? ''
+            expect(policy).toContain("default-src 'self'")
+            expect(policy).toContain("frame-ancestors 'none'")
+            // Each inline script and style of the page has its hash in the policy.
+            const inline = await page.evaluate(() => [
+                ...[...document.querySelectorAll('script:not([src])')].map((s) => s.textContent),
+                ...[...document.querySelectorAll('style')].map((s) => s.textContent)
+            ])
+            expect(inline.length).toBeGreaterThan(0)
+            for (const text of inline) {
+                expect(policy).toContain(hashOf(text))
+            }
+        }
+        // The scripts of the pages run: the bar, the palette and both searches.
+        traffic.events.length = 0
+        await page.goto(`${ORIGIN}${pathOf(BUDGET_SAMPLE.long)}`)
+        await onePageView(traffic)
+        await scrollToShare(page, 0.4)
+        await barBecomes(page, true)
+        await page.keyboard.press('Control+k')
+        await page.locator('dialog[open] input').first().waitFor()
+        await page.keyboard.type('drip')
+        await Bun.sleep(1_000)
+        await page.goto(`${ORIGIN}/-/search`)
+        await page.locator('[data-search-input]').fill('drip')
+        await page.locator('[data-search-titles]').waitFor({ state: 'visible' })
+        // The full text comes from Pagefind, which runs WebAssembly in a worker.
+        await page
+            .locator('[data-search-status]')
+            .filter({ hasText: 'with these words in the text' })
+            .waitFor()
+        expect(traffic.violations).toEqual([])
+        expect(traffic.refused).toEqual([])
+        await context.close()
+    }, 60_000)
 
     test('the "not found" page sends its view as /404, with the missing path', async () => {
         const traffic = noTraffic()

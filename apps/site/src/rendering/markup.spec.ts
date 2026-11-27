@@ -19,6 +19,22 @@ describe('allow list of the raw HTML of a note (REN-15)', () => {
         expect(out).toBe('<p>kept</p>')
     })
 
+    // Issue 79: the hooks of the scripts of a page (the properties panel, the
+    // mode switch, the headings, the ads) come from the site only.
+    test.each([
+        '<a href="https://garden.example/" data-cta-position="sidebar" data-cta-product="osk">a</a>',
+        '<div data-properties data-mode-switch data-heading="x" data-note-body>a</div>',
+        '<span data-newsletter data-palette data-search-link data-pagefind-body>a</span>'
+    ])('drops every data attribute of raw HTML that the site does not write: %s', async (raw) => {
+        expect(await html(raw)).not.toContain('data-')
+    })
+
+    test('keeps the data attributes of the marks that a note may write', async () => {
+        expect(
+            await html('<note-link data-link="Rain barrel.md" data-cta-slot="x">b</note-link>')
+        ).toBe('<p><note-link data-link="Rain barrel.md">b</note-link></p>')
+    })
+
     test('drops a form; a field of it stays only as a checkbox that cannot change, as on GitHub', async () => {
         expect(
             await html('<form action="https://a.example/x"><input name="q" type="text"></form>')

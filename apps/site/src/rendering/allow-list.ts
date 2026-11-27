@@ -1,5 +1,5 @@
 import { defaultSchema, type Options } from 'rehype-sanitize'
-import { MARK } from './mark.ts'
+import { BUILT_MARK, MARK } from './mark.ts'
 
 // The allow list of the HTML of a note (REN-15 of the spec): a rule of
 // security, not a privacy check. Raw HTML in a note is read with the rest of
@@ -19,6 +19,13 @@ import { MARK } from './mark.ts'
 // an id of the frame of the page or that the build writes, and to any
 // repeated id (issue 124). A `name` gets the prefix.
 
+// Only the data attributes that the steps of the site write before the list
+// runs are kept, each on its element: the callouts, the footnotes, the tasks, the marks
+// and the mark of the build (issue 124). Every other one goes (issue 79): the
+// scripts of a page find their elements by data attributes (the properties
+// panel, the mode switch, the headings, the links of the ads), which only the
+// site writes.
+//
 // The list of GitHub limits the classes of some elements (`a`, `li`, `ul`,
 // `code`) to the ones that GitHub writes. Here every element may have a class,
 // so these limits go: the steps of the site write their own classes there (a
@@ -47,7 +54,14 @@ export const allowList: Options = {
     ],
     attributes: {
         ...base,
-        '*': [...(base['*'] ?? []), 'className', 'id', 'data*'],
-        'details': [...(base['details'] ?? []), 'open']
+        '*': [...(base['*'] ?? []), 'className', 'id', BUILT_MARK],
+        'div': [...(base['div'] ?? []), 'dataCallout'],
+        'details': [...(base['details'] ?? []), 'open', 'dataCallout', 'dataCalloutFold'],
+        'section': [...(base['section'] ?? []), 'dataFootnotes'],
+        // The parser of Obsidian marks the character of a task.
+        'li': [...(base['li'] ?? []), 'dataTaskChar'],
+        'a': [...(base['a'] ?? []), 'dataFootnoteRef', 'dataFootnoteBackref'],
+        [MARK.link]: ['dataLink', 'dataFragment', 'dataEmbed', 'dataAddress'],
+        [MARK.card]: ['dataUrl', 'dataVideo']
     }
 }

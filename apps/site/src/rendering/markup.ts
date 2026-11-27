@@ -14,7 +14,7 @@ import { allowList } from './allow-list.ts'
 import { isDroppedBlock, isDroppedInline } from './dropped.ts'
 import { FRAME_IDS, freeId, noteIds, type IdOfNote } from './anchors.ts'
 import { tagOfText } from '../tags.ts'
-import { encode, MARK } from './mark.ts'
+import { BUILT_MARK, encode, MARK } from './mark.ts'
 
 // The markup of a note (BUILD-04, REN-01 to REN-15 of the spec, R50): what
 // the Markdown processor of Astro makes of the text of one note. Astro keeps
@@ -601,9 +601,6 @@ function allElements(nodes: readonly ElementContent[]): Element[] {
 function isSiteAddress(href: string): boolean {
     return href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/\\')
 }
-
-/** The property that marks the footnotes and the links that the build writes (issue 124). */
-const BUILT_MARK = 'dataBuiltMark'
 
 /**
  * The step of the HTML tree before the raw HTML is read: every element is

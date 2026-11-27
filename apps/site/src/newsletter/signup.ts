@@ -6,7 +6,7 @@
 // and the page has no address of the service outside its bundled script.
 
 /** The main site, whose members API takes the signups. */
-const MEMBERS_SITE = 'https://www.dsebastien.net'
+export const MEMBERS_SITE = 'https://www.dsebastien.net'
 
 /** The longest wait for a whole signup: the token and the request. */
 const TIME_LIMIT = 10_000

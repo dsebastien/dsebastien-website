@@ -297,9 +297,14 @@
     }
 
     /* The text of a note. A word longer than the line breaks, so it never
-       makes the page scroll sideways (issue 91). */
+       makes the page scroll sideways (issue 91). Its paint is contained
+       (issue 79): an element of the raw HTML of a note with a class of the
+       site (`fixed inset-0 z-40`) stays inside the text, never over the
+       page; the clip margin keeps the focus ring of a link at its edge. */
     .note-text {
         @apply text-lg leading-8 break-words;
+        contain: paint;
+        overflow-clip-margin: 0.25rem;
     }
 
     .note-text p,
