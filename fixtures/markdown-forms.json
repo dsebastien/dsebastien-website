@@ -651,7 +651,7 @@
                 },
                 {
                     "has": "a.link-card-link[href*=\"rain\" i] > .link-card-title",
-                    "text": "Rain barrel"
+                    "text": "The barrel"
                 },
                 {
                     "has": ".link-card > .not-published",

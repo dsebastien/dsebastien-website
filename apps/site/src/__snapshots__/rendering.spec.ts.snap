@@ -367,3 +367,46 @@ exports[`rendering of the Markdown forms on the site raw-html: Raw HTML passes t
 <p>Raw links: <a href="/10+Garden/Drip+irrigation">the drip guide</a>, <a href="/10+Garden/Drip+irrigation#x">the same in small letters</a> and <span class="not-published">a lost page</span>.</p>
 "
 `;
+
+exports[`rendering of the Markdown forms on the site link-block: LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). A card is a link with its title and the name of its site, a note card has the label of its link, else the title of the note, and a build without previews has no image in a card (issue 86). 1`] = `
+"
+<p>Every form of a <code>LINK</code> block.</p>
+<p>One line, with a colon and a URL:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/soil"><span class="link-card-title">https://garden.example/soil</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, without a colon:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/seeds"><span class="link-card-title">https://garden.example/seeds</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with the other keyword:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/bees"><span class="link-card-title">https://garden.example/bees</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with the other keyword and without a colon:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/ponds"><span class="link-card-title">https://garden.example/ponds</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with a Markdown link:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/mulch"><span class="link-card-title">A guide to mulch</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>One line, with a link to a note:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Compost+basics"><span class="link-card-title">Compost basics</span></a></div></div>
+<p>One line, with a link to a note and a label:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Rain+barrel"><span class="link-card-title">The barrel</span></a></div></div>
+<p>A list, with a URL:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/tools"><span class="link-card-title">https://garden.example/tools</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>A list, without a colon, with a link to a note:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Herb+bed/Thyme"><span class="link-card-title">Thyme</span></a></div></div>
+<p>A list, with the other keyword and without a colon:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/hedges"><span class="link-card-title">https://garden.example/hedges</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>A list of more than five lines, with every kind of target:</p>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/spring"><span class="link-card-title">https://garden.example/spring</span><span class="link-card-source">garden.example</span></a></div><div class="link-card"><a class="link-card-link" href="https://garden.example/summer"><span class="link-card-title">https://garden.example/summer</span><span class="link-card-source">garden.example</span></a></div><div class="link-card"><a class="link-card-link" href="https://garden.example/autumn"><span class="link-card-title">Autumn jobs</span><span class="link-card-source">garden.example</span></a></div><div class="link-card"><a class="link-card-link" href="/10+Garden/Frost+dates+explained"><span class="link-card-title">Frost dates explained</span></a></div><div class="link-card"><span class="not-published">Winter plan (draft)</span></div><div class="link-card"><a class="link-card-link" href="https://garden.example/winter"><span class="link-card-title">https://garden.example/winter</span><span class="link-card-source">garden.example</span></a></div></div>
+<p>A block where nothing can show, because its only target is on the deny list:</p>
+
+<p>A block where nothing can show, because its only target does not exist:</p>
+
+<p>Not a <code>LINK</code> line, because it is inside a code block:</p>
+<pre class="language-text" data-language="text"><code class="language-text">LINK: https://garden.example/not-a-card
+</code></pre>
+<p>Not a <code>LINK</code> line, because it is inline code: <code>LINK: https://garden.example/inline</code>.</p>
+<p>Not a <code>LINK</code> line, because it is in a comment:</p>
+<p>Not a <code>LINK</code> line, because it is in an HTML comment:</p>
+
+<p>Not a <code>LINK</code> line, because it is a saved row of a frozen query:</p>
+
+
+<p>LINK: <a href="https://garden.example/frozen">https://garden.example/frozen</a></p>
+"
+`;

@@ -583,15 +583,26 @@ describe('the forms file', () => {
 
     // Issue 84, point 3, and its second review: a card per target that can
     // show, and none for the note on the deny list.
-    const card = (url: string, text = url): string =>
-        `<div class="card"><a href="${url}">${text}</a></div>`
+    // The markup of a card of the site (issue 86): a link with its title, and
+    // the name of its site for a card of a URL.
+    const card = (url: string, text = url): string => {
+        const source = url.startsWith('https://')
+            ? `<span class="link-card-source">${new URL(url).hostname}</span>`
+            : ''
+        return [
+            '<div class="link-cards"><div class="link-card">',
+            `<a class="link-card-link" href="${url}">`,
+            `<span class="link-card-title">${text}</span>${source}</a></div></div>`
+        ].join('')
+    }
     const url = (name: string): string => `https://garden.example/${name}`
     const notStore = '<pre><code>LINK: https://garden.example/not-a-card</code></pre>'
 
     test('passes link-block for a card per target that can show', async () => {
         const form = (await readMarkdownForms()).find((each) => each.id === 'link-block')
         const html = [
-            ...['soil', 'seeds', 'bees', 'ponds', 'mulch'].map((name) => card(url(name))),
+            ...['soil', 'seeds', 'bees', 'ponds'].map((name) => card(url(name))),
+            card(url('mulch'), 'A guide to mulch'),
             card('/10+Garden/Compost+basics', 'Compost basics'),
             card('/10+Garden/Rain+barrel', 'The barrel'),
             card(url('tools')),
@@ -599,7 +610,7 @@ describe('the forms file', () => {
             card(url('hedges')),
             ...['spring', 'summer', 'autumn'].map((name) => card(url(name))),
             card('/10+Garden/Frost+dates+explained', 'Frost dates explained'),
-            '<span class="unpublished">Winter plan (draft)</span>',
+            '<div class="link-card"><span class="not-published">Winter plan (draft)</span></div>',
             card(url('winter')),
             notStore,
             '<p>LINK: https://garden.example/frozen</p>'
@@ -628,7 +639,11 @@ describe('the forms file', () => {
             'the text holds "LINK: A guide to mulch"',
             'the text holds "LINK: Compost basics"',
             'the text holds "LINK: https://garden.example/tools"',
-            'the text holds "LINKS https://garden.example/hedges"'
+            'the text holds "LINKS https://garden.example/hedges"',
+            'no element matches "a.link-card-link[href="https://garden.example/mulch"] > .link-card-title" with the text "A guide to mulch"',
+            'no element matches "a.link-card-link[href="https://garden.example/mulch"] > .link-card-source" with the text "garden.example"',
+            'no element matches "a.link-card-link[href*="rain" i] > .link-card-title" with the text "The barrel"',
+            'no element matches ".link-card > .not-published" with the text "Winter plan (draft)"'
         ])
     })
 
