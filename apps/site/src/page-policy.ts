@@ -7,6 +7,7 @@ import type { Root, RootContent } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { PAGE_POLICY_FILE, SERVER_ERROR_FILE, pagePolicyFrom } from '@dsebastien-website/resolver'
 import { analyticsOfEnvironment, type AnalyticsSettings } from './analytics/analytics.ts'
+import { VIDEO_FRAME_ORIGIN } from './link-previews/video.ts'
 import { MEMBERS_SITE } from './newsletter/signup.ts'
 
 // The Content Security Policy of the pages (SEC-01, issue 79): as strict as
@@ -18,8 +19,7 @@ import { MEMBERS_SITE } from './newsletter/signup.ts'
 // The server error page is left out: it has no script, and it gets a policy
 // of its own (`SCRIPTLESS_PAGE_POLICY` of the resolver).
 
-/** The only host of a frame (SEC-04): the video host without cookies. */
-export const VIDEO_FRAME_ORIGIN = 'https://www.youtube-nocookie.com'
+export { VIDEO_FRAME_ORIGIN }
 
 /**
  * The most distinct inline scripts or styles of a build: an inline script

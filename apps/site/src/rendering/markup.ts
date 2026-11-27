@@ -15,6 +15,7 @@ import { isDroppedBlock, isDroppedInline } from './dropped.ts'
 import { FRAME_IDS, freeId, noteIds, type IdOfNote } from './anchors.ts'
 import { tagOfText } from '../tags.ts'
 import { BUILT_MARK, encode, MARK } from './mark.ts'
+import { VIDEO_HOSTS } from '../link-previews/video.ts'
 
 // The markup of a note (BUILD-04, REN-01 to REN-15 of the spec, R50): what
 // the Markdown processor of Astro makes of the text of one note. Astro keeps
@@ -142,7 +143,6 @@ function destinationOf(url: string): { linkPath: string; fragment: string } | un
 const FROZEN_START = /^<!--\s*SerializedQuery:/u
 const FROZEN_END = /^<!--\s*SerializedQuery END\s*-->/u
 const KEYWORD = /^LINKS?:?(?=\s|$)/u
-const VIDEO_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'])
 
 /** The text of a node and its children. */
 function plainText(node: MdNode): string {
