@@ -23,8 +23,9 @@ export default defineConfig({
         syntaxHighlight: false
     },
     // A note page above the HTML budget gives a warning, not a stop (R57).
-    // A shared title or description, or a note too far from the home page,
-    // stops the build (IDX-04, IDX-05, NAV-07, R61). Then the full-text index
+    // A missing title or description, or a shared title, stops the build
+    // (IDX-04, IDX-05, R61); a shared description (R102), a note too far from
+    // the home page (NAV-07) and a link to no page (R65) are warnings. Then the full-text index
     // of the note pages is written (SRCH-01, R63), and the server error page
     // gets its style inside it (NAV-20, R64). The resolver map is cut into
     // parts, which the hosts read (issue 121, R94). The Content Security

@@ -15,9 +15,10 @@ import { SITE_NAME } from './site.ts'
 // author), then the first sentences of its text, cut at a word end. A note of
 // a media type gets the sentence alone: its text often starts with a copied
 // synopsis (IDX-06). It is never empty, and never the type alone: a note with
-// nothing more gets its title, its type and the name of the site. No two
-// indexable pages share one: when they would, each note of them gets its
-// title in front, and is cut again.
+// nothing more gets its title, its type and the name of the site. Indexable
+// pages should not share one: when they would, each note of them gets its
+// title in front, and is cut again; a description that is still shared is a
+// warning of the build (R102).
 
 /** The longest description that the build writes, in characters, the end mark included. */
 export const DESCRIPTION_LENGTH = 155
@@ -280,8 +281,9 @@ export function noteDescription(input: DescriptionInput): string {
  * The descriptions of the notes, so that no two indexable pages share one:
  * a description that more than one page has gets the title of each note in
  * front, and is cut to the limit, unless the cut would make it the same as
- * another one. `taken` holds the descriptions of the other indexable pages. It
- * throws when two pages still share one: the build stops and names them.
+ * another one. `taken` holds the descriptions of the other indexable pages.
+ * Two pages can still share one (two notes with the same title, R102): the
+ * checks of the built site give a warning for them, not a stop.
  */
 export function uniqueDescriptions(
     items: readonly { key: string; title: string; description: string }[],
@@ -310,16 +312,6 @@ export function uniqueDescriptions(
     for (const [key, text] of prefixed) {
         const short = cutDescription(text)
         result.set(key, (others.get(short) ?? 0) === 1 && !taken.has(short) ? short : text)
-    }
-    const seen = new Map<string, string>()
-    for (const [key, description] of result) {
-        const other = seen.get(description)
-        if (other !== undefined || taken.has(description)) {
-            throw new Error(
-                `two pages share the description "${description}" (IDX-04): "${other ?? 'a generated page'}" and "${key}". Give one of them a description property`
-            )
-        }
-        seen.set(description, key)
     }
     return result
 }

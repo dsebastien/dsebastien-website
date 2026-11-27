@@ -55,20 +55,36 @@ describe('the checks of a built site', () => {
         })
     })
 
-    test('find a shared title, a shared description and a missing description', () => {
+    test('find a shared title and a missing description', () => {
         const pages = new Map([
             ['home', page('Home', ['/a', '/b', '/c'])],
             ['a', page('Same')],
-            ['b', { ...page('Same'), description: 'About Home.' }],
+            ['b', { ...page('Same'), description: 'About B.' }],
             ['c', { ...page('C'), description: undefined }]
         ])
         expect(siteFindings(pages, 'home', new Set(), fileOf)).toEqual({
-            stops: [
-                'b and a share the title "Same"',
-                'b and home share the description "About Home."',
-                'c has no description'
-            ],
+            stops: ['b and a share the title "Same"', 'c has no description'],
             warnings: []
+        })
+    })
+
+    // R102: a shared description is a warning, one for each group of pages that share it.
+    test('warn once for each description that several indexable pages share', () => {
+        const pages = new Map([
+            ['home', page('Home', ['/a', '/b', '/c', '/d', '/e', '/f'])],
+            ['a', { ...page('A'), description: 'A herb.' }],
+            ['b', { ...page('B'), description: 'A tea.' }],
+            ['c', { ...page('C'), description: 'A herb.' }],
+            ['d', { ...page('D'), description: 'A tea.' }],
+            ['e', { ...page('E'), description: 'A herb.' }],
+            ['f', { ...page('F'), description: 'A herb.', indexable: false }]
+        ])
+        expect(siteFindings(pages, 'home', new Set(), fileOf)).toEqual({
+            stops: [],
+            warnings: [
+                '3 pages share the description "A herb." (IDX-04): a, c, e',
+                '2 pages share the description "A tea." (IDX-04): b, d'
+            ]
         })
     })
 

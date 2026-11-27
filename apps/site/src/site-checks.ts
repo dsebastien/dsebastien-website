@@ -11,10 +11,12 @@ import { locsOf, SITEMAP_INDEX_PATH } from './sitemaps.ts'
 // indexable page has a title and a description, no two indexable pages share
 // a title or a description, every indexable note is reachable from the home
 // page in at most four plain links, and no internal link of a page leads to
-// the "not found" page or to the gone page. A missing or shared title or
-// description stops the build. A note too far from the home page and a link
-// to no page are warnings (decision of the author R65): a takedown or an
-// unpublish can cause them alone, and a removal must never block a build. The
+// the "not found" page or to the gone page. A missing title or description
+// and a shared title stop the build. A shared description is a warning
+// (decision of the author R102): two notes of the same name in two media
+// types share one. A note too far from the home page and a link to no page
+// are warnings (decision of the author R65): a takedown or an unpublish can
+// cause them alone, and a removal must never block a build. The
 // tests build in the strict mode (`SITE_CHECKS=strict`), where every finding
 // stops the build, so a change of the code that breaks a rule is caught.
 
@@ -100,7 +102,7 @@ export function siteFindings(
         return known
     }
     const titles = new Map<string, string>()
-    const descriptions = new Map<string, string>()
+    const descriptions = new Map<string, string[]>()
     for (const [file, page] of pages) {
         if (!page.indexable) continue
         if (page.title === undefined || page.title.trim() === '') {
@@ -114,12 +116,20 @@ export function siteFindings(
         }
         if (page.description === undefined || page.description.trim() === '') {
             stops.push(`${file} has no description`)
-        } else if (descriptions.has(page.description)) {
-            stops.push(
-                `${file} and ${descriptions.get(page.description) ?? ''} share the description "${page.description}"`
-            )
         } else {
-            descriptions.set(page.description, file)
+            descriptions.set(page.description, [
+                ...(descriptions.get(page.description) ?? []),
+                file
+            ])
+        }
+    }
+    // A shared description is a warning, one for each group (R102): two notes
+    // of the same name (a film and a board game) can only share one.
+    for (const [description, files] of descriptions) {
+        if (files.length > 1) {
+            warnings.push(
+                `${String(files.length)} pages share the description "${description}" (IDX-04): ${files.join(', ')}`
+            )
         }
     }
     // A link to the "not found" page, from any page: a reader would follow it.
@@ -278,7 +288,7 @@ export function siteChecks(): AstroIntegration {
                 logger.info(
                     findings.warnings.length === 0
                         ? `${String(pages.size)} pages: titles and descriptions unique, every indexable note within ${String(MOST_LINKS_TO_A_NOTE)} links of the home page, no link to a missing page`
-                        : `${String(pages.size)} pages: titles and descriptions unique, ${String(findings.warnings.length)} warning(s) of NAV-07 and the links`
+                        : `${String(pages.size)} pages: titles unique, ${String(findings.warnings.length)} warning(s) of the shared descriptions (IDX-04), NAV-07 and the links`
                 )
             }
         }

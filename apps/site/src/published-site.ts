@@ -46,7 +46,7 @@ import { titleIndexOf, type TitleIndex } from './search/titles.ts'
 // title band, its backlinks), and the lists of the generated pages: the type
 // hubs, the tag pages and the library (issue 49, R61). The titles and the
 // descriptions of all pages are computed together, so that no two indexable
-// pages share one (IDX-04). The note pages, the generated pages and the
+// pages share one (IDX-04; a description that is still shared is a warning, R102). The note pages, the generated pages and the
 // resolver map all read this one object.
 
 /** The published notes of a build. */

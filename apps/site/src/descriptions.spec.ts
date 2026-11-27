@@ -320,12 +320,24 @@ describe('the descriptions of the notes', () => {
         expect(descriptions.get('3.md')).toBe('Short: A garden letter.')
     })
 
-    test('stop the build when two pages still share one', () => {
-        expect(() =>
-            uniqueDescriptions([
-                { key: 'a.md', title: 'Mint', description: 'A herb.' },
-                { key: 'b.md', title: 'Mint', description: 'A herb.' }
-            ])
-        ).toThrow('two pages share the description')
+    // R102: a description that two pages still share is a warning of the checks
+    // of the built site, not a stop.
+    test('stay shared, with the title in front, when the title does not tell them apart', () => {
+        const descriptions = uniqueDescriptions([
+            { key: 'a.md', title: 'Mint', description: 'A herb.' },
+            { key: 'b.md', title: 'Mint', description: 'A herb.' },
+            { key: 'c.md', title: 'Sage', description: 'A tea.' }
+        ])
+        expect(descriptions.get('a.md')).toBe('Mint: A herb.')
+        expect(descriptions.get('b.md')).toBe('Mint: A herb.')
+        expect(descriptions.get('c.md')).toBe('A tea.')
+    })
+
+    test('stay shared with a generated page when the title in front makes no new one', () => {
+        const descriptions = uniqueDescriptions(
+            [{ key: 'a.md', title: 'Mint', description: 'Mint: A herb.' }],
+            new Set(['Mint: A herb.', 'Mint: Mint: A herb.'])
+        )
+        expect(descriptions.get('a.md')).toBe('Mint: Mint: A herb.')
     })
 })
