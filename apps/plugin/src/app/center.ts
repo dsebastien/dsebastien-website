@@ -1240,12 +1240,17 @@ export class PublicationCenter {
                 await this.#takedownDuringRefresh(runs, paths, shown)
                 return
             }
-            await Promise.race([
-                this.#current,
-                new Promise<void>((resolve) => {
-                    this.#waitingTakedowns.push(resolve)
-                })
-            ])
+            let wake = (): void => undefined
+            const woken = new Promise<void>((resolve) => {
+                wake = resolve
+                this.#waitingTakedowns.push(resolve)
+            })
+            await Promise.race([this.#current, woken])
+            // An activity that ends with no refresh leaves no waiting wake.
+            const index = this.#waitingTakedowns.indexOf(wake)
+            if (index >= 0) {
+                this.#waitingTakedowns.splice(index, 1)
+            }
         }
         // Set by the work of the run: the push succeeded.
         const done = { pushed: false }
