@@ -12380,6 +12380,98 @@
             ]
         },
         {
+            "name": "a note whose file under a guard keeps no open user in a moved note that the plan updates without the file (issue 108, point 2)",
+            "denyList": [],
+            "vault": {
+                "Notes/Plan.md": "# Plan\n\n![[plan.png]]\n",
+                "Notes/Open.md": "# Open\n\n![[open.png]]\n",
+                "Images/plan.png": {
+                    "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                },
+                "Shared/open.png": {
+                    "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                }
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "two notes go live with two images of the same bytes: one key",
+                    "selection": {
+                        "include": ["Notes/Open.md", "Notes/Plan.md"]
+                    },
+                    "time": "2031-10-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Open.md", "Notes/Plan.md"],
+                        "published": ["Notes/Open.md", "Notes/Plan.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "the author denies the folder of one image by hand, on another device",
+                    "files": {
+                        "configuration.json": "{\n  \"denyList\": [\n    \"Images\"\n  ]\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian renames the note with the open image, and the author takes the image out of it",
+                    "files": {
+                        "Notes/Moved.md": "# Open\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"Notes/Open.md\",\"kind\":\"note\",\"time\":\"2031-10-01T08:10:00Z\",\"to\":\"Notes/Moved.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["Notes/Open.md"]
+                },
+                {
+                    "do": "plan",
+                    "why": "the plan updates the moved note at its new path without the open image: the old attachments of its entry do not count, so the note is in guardedAttachments",
+                    "configurationChanged": true,
+                    "attachmentsRemoved": [
+                        {
+                            "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                            "path": "Images/plan.png"
+                        },
+                        {
+                            "key": "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e",
+                            "path": "Shared/open.png"
+                        }
+                    ],
+                    "selection": {
+                        "include": ["Notes/Moved.md"]
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": ["Notes/Plan.md"],
+                        "move": [
+                            {
+                                "from": "Notes/Open.md",
+                                "to": "Notes/Moved.md"
+                            }
+                        ],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Notes/Moved.md", "Notes/Plan.md"]
+                    }
+                }
+            ]
+        },
+        {
             "name": "the plan shows a change of configuration.json by hand since the last publication (issue 108, point 5)",
             "denyList": ["Old"],
             "vault": {
