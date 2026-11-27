@@ -1,6 +1,6 @@
 import type { EditEvent } from './edits.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
-import { planLists } from './plan.ts'
+import { planLists, withGuardedAfterPlan } from './plan.ts'
 import type { NormalSelection, PublicationPlan } from './plan.ts'
 import type { GuardedEntry, Move, QueueLists } from './queue.ts'
 
@@ -112,18 +112,30 @@ export function selectionOf(queue: QueueLists, choices: Choices): NormalSelectio
 
 /**
  * The plan of the choices, from the queue, the events of the edits of the
- * guards since the last publication (R69) and the published entries that
- * list a file under a guard (`guardedEntries` of the scan), with the function that makes every
- * plan (`planLists`): the publish button states it (TOOL-21). A publication
- * makes the plan again from the vault, and stops when it differs.
+ * guards since the last publication (R69), the published entries that list a
+ * file under a guard (`guardedEntries` of the scan) and the hashes that each
+ * candidate and each changed note lists from a file under no guard
+ * (`openHashes` of the check), with the function that makes every plan
+ * (`planLists`): the publish button states it (TOOL-21). `guardedAttachments`
+ * reads the open users after the plan, as the stored plan does (issue 108). A
+ * publication makes the plan again from the vault, and stops when it differs.
  */
 export function planOfChoices(
     queue: QueueLists,
     choices: Choices,
     edits: readonly EditEvent[],
-    guardedEntries: readonly GuardedEntry[]
+    guardedEntries: readonly GuardedEntry[],
+    openHashes: ReadonlyMap<string, ReadonlySet<string>> = new Map()
 ): PublicationPlan {
-    return planLists(queue, selectionOf(queue, choices), edits, guardedEntries)
+    const selection = selectionOf(queue, choices)
+    const plan = planLists(queue, selection, edits, guardedEntries)
+    const open = new Map(
+        [...plan.publish, ...plan.update].map((path) => [
+            path,
+            openHashes.get(path) ?? new Set<string>()
+        ])
+    )
+    return withGuardedAfterPlan(plan, selection, guardedEntries, open)
 }
 
 function counted(count: number, one: string, many: string): string {

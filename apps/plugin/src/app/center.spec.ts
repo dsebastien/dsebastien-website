@@ -1,5 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdir, rename, rm, stat, truncate, utimes, writeFile } from 'node:fs/promises'
+import {
+    appendFile,
+    mkdir,
+    readFile,
+    rename,
+    rm,
+    stat,
+    truncate,
+    utimes,
+    writeFile
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     copyFixtureVault,
@@ -212,6 +222,61 @@ describe('the publication center', () => {
         )
         expect(await git('-C', copy, 'rev-parse', 'HEAD')).toBe(head)
         expect(state.queue?.new).not.toContain(NOTE)
+    }, 60_000)
+
+    /** Two files with the same bytes, one for each note, and the published notes that link to them. */
+    async function sameBytes(
+        vault: string,
+        center: PublicationCenter,
+        both: boolean
+    ): Promise<void> {
+        await mkdir(join(vault, '30 Shared'), { recursive: true })
+        await writeFile(join(vault, '30 Shared/one.txt'), 'Same bytes\n')
+        await writeFile(join(vault, '30 Shared/two.txt'), 'Same bytes\n')
+        await appendFile(join(vault, NOTE), '\n[[one.txt]]\n')
+        await appendFile(join(vault, SECOND), '\n[[two.txt]]\n')
+        await center.check()
+        center.choose((queue, choices) => {
+            const one = toggleRow(queue, choices, NOTE)
+            return both ? toggleRow(queue, one, SECOND) : one
+        })
+        await center.publish()
+        // The file of the first note moves into a folder of the deny list.
+        await rm(join(vault, '30 Shared/one.txt'))
+        await writeFile(join(vault, '90 Locked Shed/one.txt'), 'Same bytes\n')
+    }
+
+    test('the plan of the view reads the open users of guardedAttachments after the plan: an update that drops the open file', async () => {
+        await using stores = await makeTestStores()
+        const { vault, center } = await setUp(stores)
+        await sameBytes(vault, center, true)
+        // The update of the other note no longer lists the same bytes.
+        const text = await readFile(join(vault, SECOND), 'utf8')
+        await writeFile(join(vault, SECOND), text.replace('\n[[two.txt]]\n', ''))
+        await center.check()
+
+        expect(center.plan()?.guardedAttachments).toEqual([NOTE])
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
+        expect(center.state.report?.kind).toBe('publication')
+    }, 60_000)
+
+    test('the plan of the view reads the open users of guardedAttachments after the plan: a new note that publishes the same bytes', async () => {
+        await using stores = await makeTestStores()
+        const { vault, center } = await setUp(stores)
+        await sameBytes(vault, center, false)
+        await center.check()
+        expect(center.plan()?.guardedAttachments).toEqual([NOTE])
+        center.choose((queue, choices) => toggleRow(queue, choices, SECOND))
+
+        expect(center.plan()?.guardedAttachments).toEqual([])
+        await center.publish()
+
+        expect(center.state.error).toBeUndefined()
+        expect(
+            center.state.report?.kind === 'publication' ? center.state.report.report.published : []
+        ).toEqual([SECOND])
     }, 60_000)
 
     test('a dry run shows the plan and writes nothing', async () => {

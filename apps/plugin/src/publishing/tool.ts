@@ -492,6 +492,13 @@ export async function statusWithEdits(given: Device): Promise<{
     readonly sources: ReadonlyMap<string, string>
     /** True when `configuration.json` is not the file of the last publication (issue 108). */
     readonly configurationChanged: boolean
+    /**
+     * For each candidate and each changed note, the hashes of `guardedEntries`
+     * that it lists from a file under no guard: the plan of the choices reads
+     * the open users after the plan with them, as the stored plan does (issue
+     * 108). Empty when no entry lists a file under a guard.
+     */
+    readonly openHashes: ReadonlyMap<string, ReadonlySet<string>>
 }> {
     const device = forRun(given)
     await refuseWhenLocked(device)
@@ -513,8 +520,27 @@ export async function statusWithEdits(given: Device): Promise<{
                 }
             )
         ),
-        configurationChanged: configurationChanged(state.scan.edits, state.configurationHash)
+        configurationChanged: configurationChanged(state.scan.edits, state.configurationHash),
+        openHashes: await openHashesOf(device, state.scan)
     }
+}
+
+/** `openHashes` of `statusWithEdits`: read only when an entry lists a file under a guard. */
+async function openHashesOf(
+    device: Device,
+    scan: Scan
+): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
+    const guarded = new Set(
+        scan.guardedEntries.flatMap((entry) => entry.hashes.map(({ hash }) => hash))
+    )
+    if (guarded.size === 0) {
+        return new Map()
+    }
+    const paths = sortByCodePoint([...scan.queue.new, ...scan.queue.changed])
+    const read = await readNotes(device, scan, paths, 'skip')
+    return new Map(
+        read.map((note) => [note.path, new Set([...note.open].filter((hash) => guarded.has(hash)))])
+    )
 }
 
 /** The source, the cleaned note, the aliases, the links, the attachments and the note type of one note of a plan. */
@@ -549,6 +575,50 @@ interface Computed {
     readonly configurationHash: string
 }
 
+/** A note of the vault as a plan reads it, with the hashes that it lists from a file under no guard. */
+interface ReadNote {
+    readonly path: string
+    readonly text: string
+    readonly source: string
+    readonly links: readonly NoteLink[]
+    readonly attachments: readonly Attachment[]
+    readonly open: ReadonlySet<string>
+}
+
+/**
+ * Reads these notes, with the attachments that they list and, for each one,
+ * the hashes that it lists from a file under no guard: the open users of
+ * `guardedAttachments` after the plan (issue 108).
+ */
+async function readNotes(
+    device: Device,
+    scan: Scan,
+    paths: readonly string[],
+    missing: 'refuse' | 'skip' = 'refuse'
+): Promise<ReadNote[]> {
+    const read: ReadNote[] = []
+    for (const path of paths) {
+        const text = await device.vault.read(path)
+        if (text === undefined && missing === 'skip') {
+            continue
+        }
+        if (text === undefined) {
+            throw new Error(`"${path}" does not exist in the vault any more`)
+        }
+        const source = sourceOf(text)
+        const { links, files } = linksOf(source, path, scan.index, scan.guarded)
+        const attachments = await attachmentsOf(files, scan.files)
+        const open = new Set<string>()
+        for (const attachment of attachments) {
+            if (!(await scan.isGuardedFile(attachment.path, attachment.hash))) {
+                open.add(attachment.hash)
+            }
+        }
+        read.push({ path, text, source, links, attachments, open })
+    }
+    return read
+}
+
 /**
  * Computes the plan of a selection and its record: the plan, the selection,
  * and the state that the plan was computed from, in the canonical form.
@@ -566,31 +636,9 @@ async function recordFor(
     const tooLarge = sized.tooLarge
     // The sources and the attachments of the notes to publish and to update
     // come first: guardedAttachments reads the entries after the plan.
-    const read: {
-        path: string
-        source: string
-        links: readonly NoteLink[]
-        attachments: readonly Attachment[]
-    }[] = []
-    const open = new Map<string, Set<string>>()
     // The two lists have no path in common, and each one is sorted.
-    for (const path of [...sized.plan.publish, ...sized.plan.update]) {
-        const text = await device.vault.read(path)
-        if (text === undefined) {
-            throw new Error(`"${path}" does not exist in the vault any more`)
-        }
-        const source = sourceOf(text)
-        const { links, files } = linksOf(source, path, scan.index, scan.guarded)
-        const attachments = await attachmentsOf(files, scan.files)
-        read.push({ path, source, links, attachments })
-        const hashes = new Set<string>()
-        for (const attachment of attachments) {
-            if (!(await scan.isGuardedFile(attachment.path, attachment.hash))) {
-                hashes.add(attachment.hash)
-            }
-        }
-        open.set(path, hashes)
-    }
+    const read = await readNotes(device, scan, [...sized.plan.publish, ...sized.plan.update])
+    const open = new Map(read.map((note) => [note.path, note.open]))
     const plan = withGuardedAfterPlan(sized.plan, selection, scan.guardedEntries, open)
     refuseAccept(plan, selection)
     // The published notes got their type in the scan. The new ones of the plan
@@ -610,7 +658,7 @@ async function recordFor(
         path: string
         sourceHash: string
     }[] = []
-    for (const { path, source, links, attachments } of read) {
+    for (const { path, text, source, links, attachments } of read) {
         const cleaned = cleanNote(source)
         const aliases = aliasesOf(source)
         const noteType = newTypes.get(path) ?? scan.noteTypes.get(path)

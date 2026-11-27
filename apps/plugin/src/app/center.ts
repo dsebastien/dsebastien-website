@@ -240,6 +240,8 @@ export interface CenterState {
     readonly guardedEntries?: readonly GuardedEntry[]
     /** True when `configuration.json` changed since the last publication, at the last check (issue 108). */
     readonly configurationChanged?: boolean
+    /** The hashes that each candidate and each changed note lists from a file under no guard, at the last check (issue 108). */
+    readonly openHashes?: ReadonlyMap<string, ReadonlySet<string>>
     /** When the last check ended. */
     readonly checkedAt?: Date
     readonly activity: Activity
@@ -424,7 +426,7 @@ export class PublicationCenter {
 
     /** The plan of the choices, from the last queue: what the publish button states. */
     plan(): PublicationPlan | undefined {
-        const { queue, choices, edits, guardedEntries } = this.#state
+        const { queue, choices, edits, guardedEntries, openHashes } = this.#state
         if (queue === undefined) {
             return undefined
         }
@@ -438,7 +440,7 @@ export class PublicationCenter {
                 queue,
                 choices,
                 edits,
-                plan: planOfChoices(queue, choices, edits ?? [], guardedEntries ?? [])
+                plan: planOfChoices(queue, choices, edits ?? [], guardedEntries ?? [], openHashes)
             }
         }
         return this.#counted.plan
@@ -1115,7 +1117,8 @@ export class PublicationCenter {
                 await device.local.release(lock.text)
             }
         }
-        const { queue, edits, guardedEntries, sources, configurationChanged } = await statusWithEdits(device)
+        const { queue, edits, guardedEntries, sources, configurationChanged, openHashes } =
+            await statusWithEdits(device)
         this.#checkedSources = sources
         this.#refreshedTexts.clear()
         this.#writtenWithoutHash.clear()
@@ -1125,6 +1128,7 @@ export class PublicationCenter {
             edits,
             guardedEntries,
             configurationChanged,
+            openHashes,
             checkedAt: this.host.now(),
             choices: reconcile(queue, this.#state.choices)
         })
@@ -1172,11 +1176,17 @@ export class PublicationCenter {
             'publishing',
             'Publication',
             async () => {
-                const { queue, choices, edits, guardedEntries } = this.#state
+                const { queue, choices, edits, guardedEntries, openHashes } = this.#state
                 if (queue === undefined) {
                     throw new Error('check the vault first')
                 }
-                const expected = planOfChoices(queue, choices, edits ?? [], guardedEntries ?? [])
+                const expected = planOfChoices(
+                    queue,
+                    choices,
+                    edits ?? [],
+                    guardedEntries ?? [],
+                    openHashes
+                )
                 const selection = selectionOf(queue, choices)
                 const device = this.#device()
                 let stored: StoredPlan
