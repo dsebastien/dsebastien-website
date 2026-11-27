@@ -1138,6 +1138,23 @@ describe('the refresh of the frozen lists in the publication center (PUB-35, R71
         expect(await Bun.file(join(copy, 'notes', FROZEN)).text()).toContain(ROW)
     }, 60_000)
 
+    test('with the hash of the serializer, an edit before the refresh still stops the publication', async () => {
+        await using stores = await makeTestStores()
+        const { center, vault } = await setUpWithLists(stores, { hashes: true })
+        await center.check()
+        center.choose((queue, choices) => toggleRow(queue, choices, FROZEN))
+        // Another program edits the note after the check: the serializer
+        // then refreshes that text, and gives the hash of its own write.
+        const file = join(vault, FROZEN)
+        await writeFile(file, `${await Bun.file(file).text()}Another line\n`)
+        center.noteChanged(FROZEN, await statOf(vault, FROZEN))
+
+        await center.publish()
+
+        expect(center.state.error).toContain('A new note changed after the check')
+        expect(center.state.error).toContain(FROZEN)
+    }, 60_000)
+
     // A takedown never waits (issue 111): it starts while the lists of a plan
     // are refreshed, and the plan is computed after it.
     test('a takedown starts while the lists of a plan are refreshed', async () => {

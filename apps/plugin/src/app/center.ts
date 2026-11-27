@@ -1718,16 +1718,22 @@ export class PublicationCenter {
      * True when the plan holds another text of the note than the check:
      * its source is not the source of the check, and its text is not one
      * that the serializer wrote since (issue 111). A note that the plan does
-     * not write is no change. When the serializer gave no hash of its write,
-     * the events decide for that note, as before: an event that is not one
-     * of its writes is an edit.
+     * not write is no change. A text of the serializer counts only when no
+     * event of an edit came for the note: the serializer also refreshes a
+     * text that another program changed after the check, and the events of
+     * its own writes are already filtered out. When the serializer gave no
+     * hash of its write, the events decide for that note, as before: an
+     * event that is not one of its writes is an edit.
      */
     #changedSinceCheck(path: string, stored: StoredPlan): boolean {
         const planned = stored.hashes.get(path)
         if (planned === undefined || planned.source === this.#checkedSources.get(path)) {
             return false
         }
-        if (this.#refreshedTexts.get(path)?.has(planned.text) === true) {
+        if (
+            !this.#changed.has(path) &&
+            this.#refreshedTexts.get(path)?.has(planned.text) === true
+        ) {
             return false
         }
         return !this.#writtenWithoutHash.has(path) || this.#changed.has(path)
