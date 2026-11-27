@@ -109,6 +109,8 @@ type Step = { why: string } & (
           time: string
           face?: Face
           report: ReportLists
+          /** The texts of the warnings, in their order (issue 111). */
+          warningTexts?: { path: string; message: string }[]
           refused?: never
       }
     | {
@@ -544,6 +546,9 @@ describe.each(scenarios.map((scenario) => [scenario.name, scenario] as const))(
                         originalsNotVerified: [],
                         ...step.report
                     })
+                    if (step.warningTexts !== undefined) {
+                        expect(report.warnings, label).toEqual(step.warningTexts)
+                    }
                 } else {
                     for (const [path, text] of Object.entries(step.vault)) {
                         expect(await textOf(join(vault, path)), `${label}: ${path}`).toBe(text)

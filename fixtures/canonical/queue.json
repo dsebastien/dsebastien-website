@@ -14869,6 +14869,47 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "a note with a reserved alias and a live query gets both warnings, in this order and with these texts (issue 111)",
+            "denyList": [],
+            "vault": {
+                "N.md": "---\naliases:\n  - llms.txt\n---\nN\n\n```dataview\nLIST\n```\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the warning of the alias comes before the warning of the live query of the same note",
+                    "selection": {
+                        "include": ["N.md"]
+                    },
+                    "time": "2031-05-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["N.md"],
+                        "published": ["N.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": ["N.md", "N.md"],
+                        "moved": []
+                    },
+                    "warningTexts": [
+                        {
+                            "path": "N.md",
+                            "message": "the alias \"llms.txt\" is a reserved root name of the site: it gets no URL"
+                        },
+                        {
+                            "path": "N.md",
+                            "message": "the note has a live Dataview or Bases block with no frozen form: the page does not show it (REN-14)"
+                        }
+                    ]
+                }
+            ]
         }
     ]
 }

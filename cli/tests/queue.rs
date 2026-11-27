@@ -657,6 +657,11 @@ fn run_publish_step(setup: &Setup, step: &Value, label: &str, plans: &Plans) {
                     expected_report(&step["report"]),
                     "{label}"
                 );
+                // The texts of the warnings, in their order, when the step
+                // states them (issue 111).
+                if let Some(texts) = step.get("warningTexts") {
+                    assert_eq!(&json_of(&output)["warnings"], texts, "{label}");
+                }
             }
         }
         "mcp-server" => {
