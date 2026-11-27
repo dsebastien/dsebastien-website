@@ -13,6 +13,7 @@ import {
 import { applyRedirectList } from './redirects.ts'
 import { resolve, type ResolverMap } from './resolver.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
+import { VARIANT_WIDTHS, variantPath } from './variants.ts'
 
 // The resolver map in parts (issue 121, R94): the build cuts the map by a
 // hash of each key, and a host reads only the parts that a request needs.
@@ -318,6 +319,39 @@ describe('a key that is a name of the prototype of an object', () => {
         const parts = stored(whole, 50)
         expect((await partedResolver(parts.head, parts.load)('/__proto__', '')).kind).toBe(
             'redirect'
+        )
+    })
+})
+
+// Issue 87: a variant of an image is found by the address of its image in
+// the attachments of the map, also when the map is in parts.
+describe('a variant of an image over the parts', () => {
+    const image = `/-/attachments/${KEY}/photo.png`
+
+    test.each(VARIANT_WIDTHS.map((width) => [width]))(
+        'gives the answer of the whole map for the variant of %d pixels',
+        async (width) => {
+            const whole = fullMap()
+            const parts = stored(whole, 200)
+            const lookup = partedResolver(parts.head, parts.load)
+            const path = variantPath(image, width)
+            const answer = await lookup(path, '')
+            expect(answer).toEqual(resolve(path, whole, ''))
+            expect(answer.kind).toBe('attachment')
+        }
+    )
+
+    test.each([
+        ['a width that is not a step', image.replace('/photo.png', '/w123-1/photo.png.webp')],
+        [
+            'an image that the map does not have',
+            variantPath(`/-/attachments/${'cd'.repeat(32)}/x.png`, VARIANT_WIDTHS[0])
+        ]
+    ])('gives the answer of the whole map for %s', async (_name, path) => {
+        const whole = fullMap()
+        const parts = stored(whole, 200)
+        expect(await partedResolver(parts.head, parts.load)(path, '')).toEqual(
+            resolve(path, whole, '')
         )
     })
 })
