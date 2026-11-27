@@ -185,6 +185,8 @@ describe('the refresh of the frozen lists before a plan', () => {
             { path: FROZEN, reason: 'a query failed' }
         ])
         expect(Object.keys(output)).toEqual([
+            'attachmentsRemoved',
+            'configurationChanged',
             'id',
             'listsNotRefreshed',
             'listsNotRefreshedReasons',
@@ -259,15 +261,25 @@ describe('the refresh before a plan and the files of the deny list (R72)', () =>
     test('a note whose path Obsidian gives to a file of the deny list is never asked', async () => {
         await using stores = await makeTestStores()
         const { device, vault, copy, calls } = await setUp(stores)
-        await denyAlso(copy, DENIED_FOLDER)
+        const twin = 'My Private/Frozen copy.md'
         const text = await readFile(join(vault, FROZEN), 'utf8')
-        await mkdir(join(vault, DENIED_FOLDER), { recursive: true })
         await mkdir(join(vault, 'My Private'), { recursive: true })
+        await writeFile(join(vault, twin), text)
+        const first = await plan(device, { include: [twin, FROZEN] })
+        await publish(device, first.id, RUN)
+        // The file of the deny list comes later: a plan with the twin in
+        // `publish` stops (issue 115), but the published note stays and its
+        // updates go on, with its lists published as saved.
+        await denyAlso(copy, DENIED_FOLDER)
+        await mkdir(join(vault, DENIED_FOLDER), { recursive: true })
         await writeFile(join(vault, DENIED_FOLDER, 'Frozen copy.md'), text)
-        await writeFile(join(vault, 'My Private', 'Frozen copy.md'), text)
+        await writeFile(join(vault, twin), `${text}\nOne more line.\n`)
+        calls.length = 0
 
-        await plan(device, { include: ['My Private/Frozen copy.md', FROZEN] })
+        const planned = await plan(device, { include: [] })
 
-        expect(calls).toEqual([[FROZEN]])
+        expect(planned.plan.update).toContain(twin)
+        expect(calls).toEqual([])
+        expect(planned.listsNotRefreshed).toEqual([twin])
     })
 })
