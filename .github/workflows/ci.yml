@@ -18,16 +18,16 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             - name: Setup Bun
-              uses: oven-sh/setup-bun@v2
+              uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
               with:
                   bun-version-file: package.json
 
             # ESLint, Astro and commitlint have a `node` shebang.
             - name: Setup Node
-              uses: actions/setup-node@v7
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
               with:
                   node-version-file: .nvmrc
 
@@ -35,7 +35,7 @@ jobs:
             # with the TypeScript implementation (ADR 0009). The version is the
             # one of `rust-toolchain.toml`: a guard test checks it.
             - name: Setup Rust
-              uses: dtolnay/rust-toolchain@master
+              uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
               with:
                   toolchain: 1.100.0
 
@@ -44,13 +44,8 @@ jobs:
 
             # Gate at `high`: advisories come from other projects, and a gate at
             # every level breaks unrelated work for each new low advisory.
-            # GHSA-fc5q-39xc-vjpf (picomatch <= 4.0.7, slow regular expression): no
-            # corrected version exists. The package arrives through Astro, Vite and
-            # typescript-eslint, and it reads only glob patterns of this repository
-            # at build time, never input from a visitor. Remove the ignore when
-            # picomatch ships a correction.
             - name: Audit dependencies
-              run: bun audit --audit-level=high --ignore GHSA-fc5q-39xc-vjpf
+              run: bun audit --audit-level=high
 
             - name: Type check
               run: bun run tsc
@@ -91,16 +86,16 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             - name: Setup Bun
-              uses: oven-sh/setup-bun@v2
+              uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
               with:
                   bun-version-file: package.json
 
             # Astro and Lighthouse have a `node` shebang.
             - name: Setup Node
-              uses: actions/setup-node@v7
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
               with:
                   node-version-file: .nvmrc
 
@@ -124,7 +119,7 @@ jobs:
             - name: Reports of Lighthouse
               # Also after the time limit, which cancels the job.
               if: ${{ !success() }}
-              uses: actions/upload-artifact@v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
               with:
                   name: lighthouse-reports
                   path: .cache/page-budgets
@@ -141,19 +136,30 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
             - name: Setup Bun
-              uses: oven-sh/setup-bun@v2
+              uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
               with:
                   bun-version-file: package.json
 
             # The version of `rust-toolchain.toml`.
             - name: Setup Rust
-              uses: dtolnay/rust-toolchain@master
+              uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
               with:
                   toolchain: 1.100.0
                   components: rustfmt, clippy
+
+            # Advisories of the Rust crates held by `Cargo.lock`. The tool is
+            # pinned and built from its locked dependencies. It reads the live
+            # advisory database, so a new advisory can fail an unrelated run.
+            - name: Install cargo-audit
+              if: matrix.os == 'ubuntu-latest'
+              run: cargo install cargo-audit --version 0.23.0 --locked
+
+            - name: Audit Rust dependencies
+              if: matrix.os == 'ubuntu-latest'
+              run: cargo audit
 
             - name: Format check
               run: bun run rust:format:check
