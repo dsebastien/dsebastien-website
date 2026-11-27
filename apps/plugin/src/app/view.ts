@@ -982,6 +982,11 @@ export class PublicationCenterView extends ItemView {
             // The frozen lists of the plan (R71, REN-14).
             const reasons = new Map(dryRun.refreshProblems.map((one) => [one.path, one.message]))
             const lists: [string, readonly string[]][] = [
+                // Information only: the cleanup stays automatic (issue 135, R88).
+                [
+                    'Attachments that leave the site (no published note uses them any more)',
+                    dryRun.attachmentsRemoved.map((one) => one.path)
+                ],
                 [
                     'Lists not refreshed (published as they are in the note now)',
                     dryRun.listsNotRefreshed.map(
@@ -1030,6 +1035,10 @@ export class PublicationCenterView extends ItemView {
                 ? [
                       ['Removed', report.report.removed],
                       ['Forced removals', report.report.forcedRemoved],
+                      [
+                          'Attachments that left the site',
+                          report.report.attachmentsRemoved.map((one) => one.path)
+                      ],
                       ['Moved', report.report.moved.map((move) => `${move.from} → ${move.to}`)],
                       ['Skipped (their live version stays)', report.report.skipped],
                       ['Failed', report.report.failed.map((one) => `${one.path}: ${one.reason}`)],
