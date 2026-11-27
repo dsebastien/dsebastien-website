@@ -142,6 +142,32 @@ describe('CI workflow', () => {
         expect(steps[search]?.['if']).toBe('${{ !cancelled() }}')
     })
 
+    // The budgets of the publishing tool (issue 59, R97, PERF-15): on the
+    // same corpus, with the Rust toolchain for the release build, in the job
+    // of the budgets and not in the job of the tests.
+    test('runs the tool budgets on the corpus, in the job of the budgets', async () => {
+        const jobs = readJobs(await readWorkflow())
+        const tool = jobs.filter((job) =>
+            readSteps(job).some((step) => step['run'] === 'bun run budgets:tool')
+        )
+        expect(tool).toHaveLength(1)
+        const steps = readSteps(tool[0] ?? {})
+        const runs = steps.map((step) => step['run'])
+        expect(runs).toContain('bun run budgets')
+        expect(runs).not.toContain('bun run test')
+        const budget = runs.indexOf('bun run budgets:tool')
+        expect(budget).toBeGreaterThan(runs.indexOf('bun run corpus'))
+        // On main and on manual runs only.
+        const onMain =
+            "${{ !cancelled() && (github.ref == 'refs/heads/main' || " +
+            "github.event_name == 'workflow_dispatch') }}"
+        expect(steps[budget]?.['if']).toBe(onMain)
+        const rust = steps.findIndex((step) => step['name'] === 'Setup Rust')
+        expect(rust).toBeGreaterThanOrEqual(0)
+        expect(rust).toBeLessThan(budget)
+        expect(steps[rust]?.['if']).toBe(onMain)
+    })
+
     test('lets no job and no step fail without failing the run', async () => {
         const jobs = readJobs(await readWorkflow())
         const tolerant = [...jobs, ...jobs.flatMap(readSteps)].filter(

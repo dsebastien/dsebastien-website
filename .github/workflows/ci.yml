@@ -82,7 +82,8 @@ jobs:
     budgets:
         runs-on: ubuntu-latest
         # Each run waits for a quiet machine: a busy runner must not run for hours.
-        timeout-minutes: 60
+        # The setup of the budgets of the publishing tool publishes the corpus once.
+        timeout-minutes: 90
 
         steps:
             - name: Checkout
@@ -99,6 +100,15 @@ jobs:
               with:
                   node-version-file: .nvmrc
 
+            # The budgets of the publishing tool build the release of the Rust
+            # program. The version of `rust-toolchain.toml`. They run on main and
+            # on manual runs only: their setup publishes the corpus once.
+            - name: Setup Rust
+              if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+              uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+              with:
+                  toolchain: 1.100.0
+
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
@@ -114,6 +124,13 @@ jobs:
             - name: First search budget
               if: ${{ !cancelled() }}
               run: bun run budgets:search
+
+            # The budgets of the publishing tool (issue 59, R97, PERF-15): status
+            # and plan, in Rust (release) and in TypeScript (Bun), on the same
+            # corpus, against ceilings scaled for the corpus and the runner.
+            - name: Publishing tool budgets
+              if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+              run: bun run budgets:tool
 
             # The reports of Lighthouse, to read why a time failed.
             - name: Reports of Lighthouse

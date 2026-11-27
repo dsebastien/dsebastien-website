@@ -47,6 +47,7 @@
         "plugin:vault": "bun scripts/plugin-vault.ts",
         "budgets": "bun scripts/page-budgets.ts",
         "budgets:search": "bun scripts/search-budget.ts",
+        "budgets:tool": "bun scripts/tool-budgets.ts",
         "analytics:script": "bun scripts/analytics-script.ts",
         "commit:lint": "commitlint --edit",
         "corpus": "bun scripts/generate-corpus.ts",
