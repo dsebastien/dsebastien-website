@@ -121,8 +121,12 @@ function titleOf(
     return bareName
 }
 
-/** The date at the start of a property: `2024-03-02`, then nothing, a time after `T`, or a time after a space. */
-const DATE = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/u
+/**
+ * The date at the start of a property: `2024-03-02`, then nothing or a time
+ * after `T`, `t`, a space or a tab. A month or a day can have one digit, as
+ * in a YAML timestamp, which stays a text (issue 93).
+ */
+const DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[Tt 	])/u
 
 /** The date of a property, as the vault writes it, or `undefined` when it holds no valid date. */
 export function propertyDate(value: unknown): NoteDate | undefined {
@@ -145,7 +149,8 @@ export function propertyDate(value: unknown): NoteDate | undefined {
     if (check.getUTCMonth() !== month - 1 || check.getUTCDate() !== date) {
         return undefined
     }
-    return day(value.trim().slice(0, 10))
+    const two = (number: number): string => String(number).padStart(2, '0')
+    return day(`${String(year)}-${two(month)}-${two(date)}`)
 }
 
 function dateOfTime(time: string): NoteDate {

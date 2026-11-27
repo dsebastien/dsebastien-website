@@ -145,6 +145,22 @@ describe('the dates of a note', () => {
         expect(header.updated.datetime).toBe('2026-11-18')
     })
 
+    // A date with the tag `!!timestamp` stays the text of the note (issue 93),
+    // in any form that YAML reads as a timestamp: a month or a day of one
+    // digit, a small `t`, a tab before the time.
+    test('read a date in the loose forms of a YAML timestamp', () => {
+        const header = noteHeader({
+            ...NOTE,
+            properties: { created: '2031-3-9t08:00:00+02:00', updated: '2031-03-20\t10:00' }
+        })
+
+        expect(header.created).toEqual({ datetime: '2031-03-09', shown: '2031-03-09' })
+        expect(header.updated).toEqual({ datetime: '2031-03-20', shown: '2031-03-20' })
+        expect(
+            noteHeader({ ...NOTE, properties: { created: '2031-2-30 10:00' } }).created.datetime
+        ).toBe('2031-03-01')
+    })
+
     // A YAML reader turns a timestamp with seconds into a date of UTC.
     test('read a date that the YAML reader made a date object', () => {
         const header = noteHeader({
