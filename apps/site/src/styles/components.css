@@ -55,7 +55,7 @@
 }
 
 @utility badge {
-    @apply inline-flex items-center rounded-pill border border-border-strong px-2.5 py-0.5 text-xs font-semibold tracking-wide text-primary uppercase;
+    @apply inline-flex items-center rounded-pill border border-border-strong px-2.5 py-0.5 max-w-full text-xs font-semibold tracking-wide wrap-anywhere text-primary uppercase;
 }
 
 /* A link in a text: the text color, with an underline in the accent. A utility, so that the text of a note applies it. */
