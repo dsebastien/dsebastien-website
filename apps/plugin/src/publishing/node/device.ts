@@ -1442,6 +1442,28 @@ function isStaleLock(text: string): boolean {
 }
 
 /**
+ * The age after which an empty lock is the lock of a run that stopped between
+ * the create of the file and the write of its text: both take a few
+ * milliseconds.
+ */
+export const EMPTY_LOCK_STALE_AFTER_MS = 60_000
+
+/**
+ * True when the lock is empty and older than `EMPTY_LOCK_STALE_AFTER_MS`:
+ * no run holds it, and every face removes it (the Rust twin is
+ * `is_stale_empty_lock` of `cli/src/device.rs`).
+ */
+export function isStaleEmptyLock(text: string, ageMilliseconds: number): boolean {
+    return text === '' && ageMilliseconds > EMPTY_LOCK_STALE_AFTER_MS
+}
+
+/** How long ago the file was last written, in milliseconds; 0 when it cannot be read. */
+async function ageOf(path: string): Promise<number> {
+    const stats = await lstat(path).catch(() => undefined)
+    return stats === undefined ? 0 : Date.now() - stats.mtimeMs
+}
+
+/**
  * True when git left a lock file in the copy (`.git/index.lock`, or a
  * `*.lock` file below `.git/refs`): a git that was stopped in the middle of
  * a check or a pull leaves one, so the lock of the device waits for the
@@ -1518,7 +1540,8 @@ function folderLocalStore(contentStore: string): LocalStore {
                 system: SYSTEM,
                 token: randomUUID()
             })
-            // A stale lock of a check or a pull goes away by itself, one time.
+            // A stale lock of a check or a pull, and a lock that a run left
+            // empty, go away by themselves, one time.
             for (let tries = 0; ; tries += 1) {
                 try {
                     // One create, never a test and then a write: two runs that
@@ -1531,13 +1554,11 @@ function folderLocalStore(contentStore: string): LocalStore {
                     }
                 }
                 const held = await textOrNothing(lockFile)
-                if (
-                    held === undefined ||
-                    tries > 0 ||
-                    !isStaleLock(held) ||
-                    (await gitLeftLock(contentStore)) ||
-                    !(await removeStale(held))
-                ) {
+                const stale =
+                    held !== undefined &&
+                    (isStaleEmptyLock(held, await ageOf(lockFile)) ||
+                        (isStaleLock(held) && !(await gitLeftLock(contentStore))))
+                if (held === undefined || tries > 0 || !stale || !(await removeStale(held))) {
                     return { taken: false, text: held ?? 'a lock that went away' }
                 }
             }
@@ -1547,7 +1568,13 @@ function folderLocalStore(contentStore: string): LocalStore {
                 await rm(lockFile, { force: true })
             }
         },
-        readLock: () => textOrNothing(lockFile),
+        async readLock() {
+            // A lock that a run left empty holds no run: it is no lock.
+            const text = await textOrNothing(lockFile)
+            return text !== undefined && isStaleEmptyLock(text, await ageOf(lockFile))
+                ? undefined
+                : text
+        },
         async unlock() {
             try {
                 await unlink(lockFile)

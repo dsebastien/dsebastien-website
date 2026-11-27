@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -11,7 +11,13 @@ import {
 } from '@dsebastien-website/testing'
 import type { TestStores } from '@dsebastien-website/testing'
 import type { Device } from '../ports.ts'
-import { lockHolderOf, nodeDevice, processRuns, pullContentStore } from './device.ts'
+import {
+    isStaleEmptyLock,
+    lockHolderOf,
+    nodeDevice,
+    processRuns,
+    pullContentStore
+} from './device.ts'
 
 // The pull of the copy of the content store (decision R67): the view of the
 // plugin offers it when another device published first. It runs exactly
@@ -25,6 +31,48 @@ async function git(...args: string[]): Promise<string> {
     }
     return out.trim()
 }
+
+// A lock that a run left empty: the run stopped between the create of the file
+// and the write of its text, so no run holds it. Every face removes it once it
+// is older than the limit. The shared cases are the list `emptyLocks` of
+// `fixtures/canonical/cases.json`, which the Rust tests read too.
+describe('a lock that a run left empty', () => {
+    const CASES = new URL('../../../../../fixtures/canonical/cases.json', import.meta.url)
+
+    test('is stale only when it is empty and older than the limit', async () => {
+        const { emptyLocks } = (await Bun.file(CASES).json()) as {
+            emptyLocks: { name: string; text: string; ageSeconds: number; stale: boolean }[]
+        }
+        expect(emptyLocks.length).toBeGreaterThan(5)
+        for (const { name, text, ageSeconds, stale } of emptyLocks) {
+            expect([name, isStaleEmptyLock(text, ageSeconds * 1000)]).toEqual([name, stale])
+        }
+    })
+
+    test('an old empty lock is taken, a new one is not', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        const device = nodeDevice({
+            vault: await copyFixtureVault(stores),
+            contentStore: copy,
+            attachmentStorage: stores.attachmentStorage
+        })
+        const lock = join(copy, '.git', 'vault-publish', 'lock')
+        await mkdir(join(copy, '.git', 'vault-publish'), { recursive: true })
+        await writeFile(lock, '')
+
+        expect((await device.local.lock({ command: 'plan' })).taken).toBe(false)
+        expect(await device.local.readLock()).toBe('')
+
+        const old = new Date(Date.now() - 120_000)
+        await utimes(lock, old, old)
+        expect(await device.local.readLock()).toBeUndefined()
+        const taken = await device.local.lock({ command: 'plan' })
+        expect(taken.taken).toBe(true)
+        expect(await Bun.file(lock).text()).toBe(taken.text)
+        await device.local.release(taken.text)
+    })
+})
 
 /** Another device pushes a commit to the content store. */
 async function pushFromAnotherDevice(

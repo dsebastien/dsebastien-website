@@ -1539,23 +1539,53 @@ impl ContentStore {
         // second, never hold the same text.
         content["token"] = json!(lock_token());
         let text = to_canonical_json(&content).map_err(|error| error.to_string())?;
-        // One create, never a test and then a write: two runs that start at
-        // the same moment cannot both take the lock.
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-        {
-            Ok(mut file) => {
-                file.write_all(text.as_bytes()).map_err(failed)?;
-                Ok(Lock::Taken(text))
+        // A lock that a run left empty goes away by itself, one time.
+        for tries in 0..2 {
+            // One create, never a test and then a write: two runs that start
+            // at the same moment cannot both take the lock.
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut file) => {
+                    file.write_all(text.as_bytes()).map_err(failed)?;
+                    return Ok(Lock::Taken(text));
+                }
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                    let held = read_if_there(&path)?;
+                    let stale = held
+                        .as_deref()
+                        .is_some_and(|held| is_stale_empty_lock(held, age_of(&path)));
+                    if tries > 0 || !stale || !self.remove_empty_lock(&path) {
+                        return Ok(Lock::Held(
+                            held.unwrap_or_else(|| "a lock that went away".to_owned()),
+                        ));
+                    }
+                }
+                Err(error) => return Err(failed(error)),
             }
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(Lock::Held(
-                self.read_lock()?
-                    .unwrap_or_else(|| "a lock that went away".to_owned()),
-            )),
-            Err(error) => Err(failed(error)),
         }
+        Ok(Lock::Held("a lock that went away".to_owned()))
+    }
+
+    /// Removes the empty lock at this path when it is still empty. It is
+    /// renamed first, so that a lock that another run took meanwhile is never
+    /// removed: that one is put back. True when the empty lock is gone.
+    fn remove_empty_lock(&self, path: &Path) -> bool {
+        let aside = self.local_file(&format!("lock.{}.stale", lock_token()));
+        if fs::rename(path, &aside).is_err() {
+            return false;
+        }
+        if read_if_there(&aside).is_ok_and(|text| text.as_deref() == Some("")) {
+            let _ = fs::remove_file(&aside);
+            return true;
+        }
+        // The lock of another run goes back, unless a third run took the lock
+        // meanwhile: the other run then stops at its next check of its lock.
+        let _ = fs::hard_link(&aside, path);
+        let _ = fs::remove_file(&aside);
+        false
     }
 
     /// The text of the lock, or `None` when no lock exists.
@@ -1564,7 +1594,9 @@ impl ContentStore {
     ///
     /// The lock exists and cannot be read.
     pub fn read_lock(&self) -> Result<Option<String>, String> {
-        read_if_there(&self.local_file("lock"))
+        let path = self.local_file("lock");
+        // A lock that a run left empty holds no run: it is no lock.
+        Ok(read_if_there(&path)?.filter(|text| !is_stale_empty_lock(text, age_of(&path))))
     }
 
     /// Removes the lock only when it still holds this text: a run never
@@ -1878,6 +1910,31 @@ fn lock_token() -> String {
 }
 
 /// The text of a file, or `None` when it does not exist.
+/// The age after which an empty lock is the lock of a run that stopped
+/// between the create of the file and the write of its text: both take a few
+/// milliseconds.
+pub const EMPTY_LOCK_STALE_AFTER_MS: i128 = 60_000;
+
+/// True when the lock is empty and older than `EMPTY_LOCK_STALE_AFTER_MS`: no
+/// run holds it, and every face removes it (the TypeScript twin is
+/// `isStaleEmptyLock` of `apps/plugin/src/publishing/node/device.ts`).
+#[must_use]
+pub fn is_stale_empty_lock(text: &str, age_milliseconds: i128) -> bool {
+    text.is_empty() && age_milliseconds > EMPTY_LOCK_STALE_AFTER_MS
+}
+
+/// How long ago the file was last written, in milliseconds; 0 when it cannot
+/// be read, and below 0 for a time in the future.
+fn age_of(path: &Path) -> i128 {
+    let Ok(modified) = fs::symlink_metadata(path).and_then(|metadata| metadata.modified()) else {
+        return 0;
+    };
+    match std::time::SystemTime::now().duration_since(modified) {
+        Ok(age) => i128::try_from(age.as_millis()).unwrap_or(i128::MAX),
+        Err(error) => -i128::try_from(error.duration().as_millis()).unwrap_or(i128::MAX),
+    }
+}
+
 fn read_if_there(path: &Path) -> Result<Option<String>, String> {
     match fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
@@ -2544,6 +2601,26 @@ impl DeployRecord for ContentStore {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_empty_lock_is_stale_only_after_the_limit() {
+        // The shared cases, which the TypeScript tests read too.
+        let cases: serde_json::Value =
+            serde_json::from_str(include_str!("../../fixtures/canonical/cases.json"))
+                .expect("the cases file is JSON");
+        let cases = cases["emptyLocks"].as_array().expect("the list emptyLocks");
+        assert!(cases.len() > 5);
+        for case in cases {
+            let name = case["name"].as_str().expect("a name");
+            let text = case["text"].as_str().expect("a text");
+            let age = i128::from(case["ageSeconds"].as_i64().expect("an age")) * 1000;
+            assert_eq!(
+                is_stale_empty_lock(text, age),
+                case["stale"].as_bool().expect("stale"),
+                "{name}"
+            );
+        }
+    }
+
     use super::*;
     use std::ffi::OsString;
 

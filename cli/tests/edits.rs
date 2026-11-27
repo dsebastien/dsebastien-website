@@ -334,6 +334,33 @@ fn a_lock_of_another_run_stops_an_edit_which_changes_nothing() {
 }
 
 #[test]
+fn a_lock_that_a_run_left_empty_stops_an_edit_only_while_it_is_new() {
+    let setup = set_up();
+    fs::create_dir_all(setup.local_file("")).expect("the folder can be made");
+    let lock = setup.local_file("lock");
+    fs::write(&lock, "").expect("the lock is made");
+
+    assert_refused(&setup.edit("deny", FOLDER), "unlock");
+
+    // A run that stopped between the create of the lock and the write of its
+    // text, more than a minute ago: no run holds it.
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(120);
+    fs::File::options()
+        .write(true)
+        .open(&lock)
+        .and_then(|file| file.set_modified(old))
+        .expect("the time of the lock is set");
+    let output = setup.edit("deny", FOLDER);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!lock.exists());
+}
+
+#[test]
 fn an_edit_on_a_copy_that_is_behind_stops_and_says_to_pull() {
     let setup = set_up();
     setup.push_from_another_device();

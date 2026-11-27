@@ -1,5 +1,5 @@
 {
-    "about": "Cases of the canonical form (documentation/Canonical Form.md). The TypeScript and the Rust implementation both read this file. Each canonical text is written by hand. The list \"markers\" holds texts of renames.json of the content store, and \"journalLines\" one line of a rename journal (issue 37): each valid or not. The list \"withdrawn\" holds texts of withdrawn.json of the content store (issue 120): each valid or not.",
+    "about": "Cases of the canonical form (documentation/Canonical Form.md). The TypeScript and the Rust implementation both read this file. Each canonical text is written by hand. The list \"markers\" holds texts of renames.json of the content store, and \"journalLines\" one line of a rename journal (issue 37): each valid or not. The list \"withdrawn\" holds texts of withdrawn.json of the content store (issue 120): each valid or not. The list \"emptyLocks\" holds the text of a lock of the device and its age in seconds, and whether every face removes it as a lock that a run left empty when it stopped between the create and the write of its text.",
     "cases": [
         {
             "name": "an empty object",
@@ -737,5 +737,35 @@
             "text": "keys",
             "valid": false
         }
+    ],
+    "emptyLocks": [
+        {
+            "name": "an empty lock older than the limit",
+            "text": "",
+            "ageSeconds": 61,
+            "stale": true
+        },
+        { "name": "an empty lock of an hour", "text": "", "ageSeconds": 3600, "stale": true },
+        { "name": "an empty lock at the limit", "text": "", "ageSeconds": 60, "stale": false },
+        {
+            "name": "an empty lock that a run is writing",
+            "text": "",
+            "ageSeconds": 1,
+            "stale": false
+        },
+        {
+            "name": "an empty lock with a time in the future",
+            "text": "",
+            "ageSeconds": -600,
+            "stale": false
+        },
+        { "name": "white space is a text", "text": "\n", "ageSeconds": 3600, "stale": false },
+        {
+            "name": "a lock with a holder",
+            "text": "{\"command\":\"publish\"}\n",
+            "ageSeconds": 3600,
+            "stale": false
+        },
+        { "name": "half a text", "text": "{\"comm", "ageSeconds": 3600, "stale": false }
     ]
 }
