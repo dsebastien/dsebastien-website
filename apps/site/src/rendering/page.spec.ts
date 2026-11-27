@@ -919,6 +919,52 @@ describe('first heading of a note', () => {
         expect(pages.heading('Self.md')).toEqual({ text: 'Compost', id: 'compost1' })
         expect(pages.page('Self.md').heading).toEqual({ text: 'Compost', id: 'compost1' })
     })
+
+    // The title band, the lists and `data-heading` read one text (issue 93):
+    // an embed in the H1 gives its text as the note writes it, not what the
+    // page step shows (an image, or the whole embedded note).
+    test('gives the text of an embed as the note writes it, the same for the page and the lists', () => {
+        const pages = new SitePages([
+            note(
+                'Image.md',
+                '<h1 id="iconpng-title"><note-link data-link="icon.png" data-embed="">icon.png</note-link> Title</h1><p>Text.</p>',
+                {},
+                { 'icon.png': { url: '/-/attachments/k/icon.png', name: 'icon.png' } }
+            ),
+            note(
+                'Whole.md',
+                '<h1 id="rain-barrel"><note-link data-link="Rain%20barrel" data-embed="">Rain barrel</note-link></h1><p>Text.</p>',
+                LINKS
+            ),
+            BARREL
+        ])
+
+        for (const [vaultPath, text, id] of [
+            ['Image.md', 'icon.png Title', 'iconpng-title'],
+            ['Whole.md', 'Rain barrel', 'rain-barrel']
+        ] as const) {
+            expect(pages.heading(vaultPath)).toEqual({ text, id })
+            expect(pages.page(vaultPath).heading).toEqual({ text, id })
+        }
+    })
+
+    // An old hash of the site of today names the H1 by its text in the vault,
+    // `![[icon.png]] Title` (URL-14): the text of `data-heading` reaches it.
+    test('is the text that an old hash of the H1 reaches', () => {
+        const pages = new SitePages([
+            note(
+                'Image.md',
+                '<h1 id="iconpng-title"><note-link data-link="icon.png" data-embed="">icon.png</note-link> Title</h1>',
+                {},
+                { 'icon.png': { url: '/-/attachments/k/icon.png', name: 'icon.png' } }
+            )
+        ])
+        const heading = pages.page('Image.md').heading
+        const headings = [{ depth: 1, text: heading?.text ?? '', id: heading?.id ?? '' }]
+
+        expect(headingFor(headings, '![[icon.png]] Title')).toBe('iconpng-title')
+        expect(headingFor(headings, 'icon.png+Title')).toBe('iconpng-title')
+    })
 })
 
 // The backlinks of a note (issue 48, PAGE-03, MOD-06): the published notes

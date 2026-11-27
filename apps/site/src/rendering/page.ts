@@ -475,6 +475,10 @@ export class SitePages {
         if (first !== undefined) {
             tree.children.splice(tree.children.indexOf(first), 1)
         }
+        // The text of the H1 comes from the markup, as for the lists: an embed
+        // gives its text, not the image or the note that the page shows.
+        const heading =
+            first === undefined ? undefined : (this.heading(vaultPath) ?? headingOf(first))
         const image = firstImage(tree.children)
         if (image !== undefined) {
             delete image.properties['loading']
@@ -482,7 +486,7 @@ export class SitePages {
         }
         const outline = outlineOf(tree.children)
         return {
-            ...(first === undefined ? {} : { heading: headingOf(first) }),
+            ...(heading === undefined ? {} : { heading }),
             html: toHtml(tree),
             ...(outline === undefined ? {} : { outline })
         }
@@ -490,7 +494,10 @@ export class SitePages {
 
     /**
      * The H1 at the top of a published note, which the title band of its page
-     * shows: the display title of the note in a list reads it (IDX-03).
+     * shows: the display title of the note in a list reads it (IDX-03). Its
+     * text is read from the marks of the markup, before the page step: an
+     * embed gives its text as the note writes it (issue 93), which is also the
+     * text of the id of the H1 and of an old hash (URL-14).
      */
     heading(vaultPath: string): NoteHeading | undefined {
         const note = this.#published(vaultPath)
