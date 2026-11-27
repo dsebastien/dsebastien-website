@@ -514,6 +514,60 @@
         @apply text-sm text-muted;
     }
 
+    /* The description of a note card (CARD-03): two lines at most. */
+    .note-text .link-card-description {
+        @apply line-clamp-2 text-sm text-primary;
+    }
+
+    /* A card with the image of its target (CARD-06): the text, and the image on its right, small. */
+    .note-text .link-card-with-image:not(.link-card-video) a.link-card-link {
+        @apply grid grid-cols-[minmax(0,1fr)_auto] content-center gap-x-4;
+    }
+
+    .note-text .link-card-with-image a.link-card-link > :not(img) {
+        @apply col-start-1;
+    }
+
+    .note-text .link-card-image {
+        @apply col-start-2 row-span-3 row-start-1 h-auto w-20 self-center rounded-control object-cover sm:w-32;
+        aspect-ratio: 320 / 168;
+    }
+
+    /* A video card (CARD-09): its still image across the card, with the play mark on it. */
+    .note-text .link-card-video {
+        @apply overflow-hidden;
+    }
+
+    .note-text .link-card-video a.link-card-link {
+        @apply relative;
+    }
+
+    .note-text .link-card-poster {
+        @apply -mx-4 -mt-3 mb-2 block aspect-video h-auto w-[calc(100%+2rem)] max-w-none object-cover;
+    }
+
+    .note-text .link-card-play {
+        @apply pointer-events-none inline-flex w-fit items-center rounded-pill bg-secondary px-3 py-1.5 text-on-secondary;
+    }
+
+    .note-text .link-card-with-image .link-card-play {
+        @apply absolute top-0 left-0 m-0 aspect-video w-full justify-center rounded-none bg-transparent p-0;
+    }
+
+    /* The mark of the play: a triangle of the text color, in a small box of the accent. */
+    .note-text .link-card-play::before {
+        @apply block h-0 w-0 border-y-[0.5rem] border-l-[0.85rem] border-y-transparent border-l-on-secondary content-[''];
+    }
+
+    .note-text .link-card-with-image .link-card-play::before {
+        @apply rounded-pill bg-secondary outline-[0.8rem] outline-secondary outline-solid;
+    }
+
+    /* The player, in the place of the link after a click. */
+    .note-text .link-card-player {
+        @apply block aspect-video h-auto w-full border-0;
+    }
+
     /* Math as MathML, with no style of its own (REN-06). */
     .note-text .math-block {
         @apply overflow-x-auto text-xl;

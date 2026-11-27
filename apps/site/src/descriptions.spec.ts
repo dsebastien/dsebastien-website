@@ -3,7 +3,8 @@ import {
     DESCRIPTION_LENGTH,
     noteDescription,
     plainTextOf,
-    uniqueDescriptions
+    uniqueDescriptions,
+    writtenDescription
 } from './descriptions.ts'
 
 /** The characters of a text as a reader counts them. */
@@ -22,6 +23,17 @@ const MOVIE = {
     },
     html: '<p>A thief who steals secrets through dreams.</p>'
 }
+
+describe('the description that a note writes (CARD-03)', () => {
+    test('is its description property with the text of its links, or nothing', () => {
+        expect(writtenDescription({ description: 'Grown by [[Ada Quillfeather|Ada]].' })).toBe(
+            'Grown by Ada.'
+        )
+        expect(writtenDescription({ description: '   ' })).toBeUndefined()
+        expect(writtenDescription({ description: 3 })).toBeUndefined()
+        expect(writtenDescription({})).toBeUndefined()
+    })
+})
 
 describe('the description of a note', () => {
     test('is its description property', () => {

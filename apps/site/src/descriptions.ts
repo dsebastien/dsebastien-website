@@ -257,12 +257,22 @@ export function cutDescription(text: string): string {
     return `${shown ?? whole}…`
 }
 
+/**
+ * The description that a note writes in its `description` property, with
+ * the text of its links, cut as a page description is; `undefined` when it
+ * writes none. A note card shows it (CARD-03).
+ */
+export function writtenDescription(properties: DescriptionInput['properties']): string | undefined {
+    const property = properties['description']
+    const written = typeof property === 'string' ? linkTexts(property) : ''
+    return written === '' ? undefined : cutDescription(written)
+}
+
 /** The description of a note page (IDX-05). */
 export function noteDescription(input: DescriptionInput): string {
-    const property = input.properties['description']
-    const written = typeof property === 'string' ? linkTexts(property) : ''
-    if (written !== '') {
-        return cutDescription(written)
+    const written = writtenDescription(input.properties)
+    if (written !== undefined) {
+        return written
     }
     const text = [factsOf(input), input.media === true ? undefined : plainTextOf(input.html)]
         .filter((part) => part !== undefined && part !== '')

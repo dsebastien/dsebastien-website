@@ -603,6 +603,93 @@ describe('link cards (CARD-01 to CARD-09)', () => {
         expect(html).toContain('href="/-/attachments/k/map.pdf"')
     })
 
+    const IMAGE = { path: `/-/link-previews/${'a'.repeat(64)}.webp`, width: 320, height: 168 }
+    const STILL = { path: `/-/link-previews/${'b'.repeat(64)}.webp`, width: 480, height: 270 }
+
+    test('a card with a stored preview shows its image from the host of the notes (CARD-06)', () => {
+        const self = note(
+            'Self.md',
+            '<link-cards><link-card data-url="https://garden.example/soil#top">Soil</link-card><link-card data-url="https://garden.example/tools">Tools</link-card></link-cards>'
+        )
+        const pages = new SitePages([self], {
+            previewOf: (target) =>
+                target.url === 'https://garden.example/soil#top' && !target.video
+                    ? { image: IMAGE }
+                    : {}
+        })
+        expect(pages.render('Self.md')).toBe(
+            `<div class="link-cards"><div class="link-card link-card-with-image"><a class="link-card-link" href="https://garden.example/soil#top"><span class="link-card-title">Soil</span><span class="link-card-source">garden.example</span><img class="link-card-image" src="${IMAGE.path}" alt="" width="320" height="168" loading="lazy" decoding="async"></a></div><div class="link-card"><a class="link-card-link" href="https://garden.example/tools"><span class="link-card-title">Tools</span><span class="link-card-source">garden.example</span></a></div></div>`
+        )
+    })
+
+    test('the build asks for the preview of each card to another site, and of no other card', () => {
+        const self = note(
+            'Self.md',
+            `<link-cards><link-card data-url="https://garden.example/soil">Soil</link-card><link-card data-url="javascript:alert(1)">x</link-card><link-card data-url="https://www.youtube.com/watch?v=GardenTour1" data-video="">Tour</link-card>${card('<note-link data-link="Rain%20barrel">The barrel</note-link>')}</link-cards>`,
+            NOTES
+        )
+        expect(new SitePages([self, BARREL]).cardTargets()).toEqual([
+            { url: 'https://garden.example/soil', video: false },
+            { url: 'https://www.youtube.com/watch?v=GardenTour1', video: true }
+        ])
+    })
+
+    test('a video card shows a local image and a title, and names the video for the player (CARD-09)', () => {
+        const url = 'https://www.youtube.com/watch?v=GardenTour1&t=30'
+        const self = note(
+            'Self.md',
+            `<link-cards><link-card data-url="${url.replace('&', '&#x26;')}" data-video="">${url.replace('&', '&#x26;')}</link-card></link-cards>`
+        )
+        const pages = new SitePages([self], {
+            previewOf: () => ({ image: STILL, title: 'A tour of the garden' })
+        })
+        const body = pages.page('Self.md')
+        expect(body.html).toBe(
+            `<div class="link-cards"><div class="link-card link-card-video link-card-with-image" data-video-id="GardenTour1" data-video-start="30"><a class="link-card-link" href="https://www.youtube.com/watch?v=GardenTour1&#x26;t=30"><img class="link-card-poster" src="${STILL.path}" alt="" width="480" height="270" decoding="async" fetchpriority="high"><span class="link-card-play" aria-hidden="true"></span><span class="link-card-title">A tour of the garden</span><span class="link-card-source">YouTube</span></a></div></div>`
+        )
+        expect(body.videos).toBe(true)
+        // The title that the note writes wins over the fetched one.
+        const titled = note(
+            'Self.md',
+            '<link-cards><link-card data-url="https://youtu.be/GardenTour1" data-video="">Our tour</link-card></link-cards>'
+        )
+        expect(
+            new SitePages([titled], { previewOf: () => ({ title: 'Fetched' }) }).render('Self.md')
+        ).toContain('<span class="link-card-title">Our tour</span>')
+    })
+
+    test('a video card with no id of YouTube is a link, with nothing for the player', () => {
+        const body = new SitePages([
+            note(
+                'Self.md',
+                '<link-cards><link-card data-url="https://www.youtube.com/watch?v=a" data-video="">v</link-card></link-cards>'
+            )
+        ]).page('Self.md')
+        expect(body.html).not.toContain('data-video-id')
+        expect(body.videos).toBeUndefined()
+        expect(
+            new SitePages([note('Self.md', '<p>Text.</p>')]).page('Self.md').videos
+        ).toBeUndefined()
+    })
+
+    test('a note card shows the title of the note, and its description when it has one (CARD-03)', () => {
+        const thyme = note('Thyme.md', '<h1 id="thyme">Thyme</h1>')
+        const self = note(
+            'Self.md',
+            `<link-cards>${card('<note-link data-link="Rain%20barrel">The barrel</note-link>')}${card('<note-link data-link="Thyme">Thyme</note-link>')}</link-cards>`,
+            { ...NOTES, Thyme: 'Thyme.md' }
+        )
+        const pages = new SitePages([self, BARREL, thyme], {
+            noteCardOf: (vaultPath) =>
+                vaultPath === 'Rain barrel.md'
+                    ? { title: 'Rain barrel', description: 'How to keep rain water.' }
+                    : { title: 'Thyme' }
+        })
+        expect(pages.render('Self.md')).toBe(
+            '<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/Rain+barrel"><span class="link-card-title">Rain barrel</span><span class="link-card-description">How to keep rain water.</span></a></div><div class="link-card"><a class="link-card-link" href="/Thyme"><span class="link-card-title">Thyme</span></a></div></div>'
+        )
+    })
+
     test('a block where no card can show is removed whole (CARD-05)', () => {
         expect(
             page(

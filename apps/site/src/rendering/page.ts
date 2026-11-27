@@ -3,6 +3,8 @@ import type { Element, ElementContent, Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { toHtml } from 'hast-util-to-html'
 import { toText } from 'hast-util-to-text'
+import type { LinkPreview, PreviewTarget } from '../link-previews/previews.ts'
+import { videoOf } from '../link-previews/video.ts'
 import type { PropertyLink } from '../properties.ts'
 import { headingFor, type Heading } from './anchors.ts'
 import { linkContextsOf, type LinkContext } from './backlinks.ts'
@@ -25,7 +27,11 @@ import { decode, MARK } from './mark.ts'
 // - A raw link of a note to an address of the site (`<a href="/wiki/Compost">`)
 //   leads where the build says that address leads, else it is plain text in
 //   the same style (issue 98).
-// - A block of link cards keeps the cards that can show (CARD-01 to CARD-09).
+// - A block of link cards keeps the cards that can show (CARD-01 to CARD-09):
+//   a card to another site with its stored preview image when the build has
+//   one (CARD-06, CARD-07), a video card with its local image, which names
+//   its video for the player that loads after a click (CARD-09), and a note
+//   card with the title and the description of the note (CARD-03).
 //
 // The pages of a build are also its link index (MOD-06, BUILD-05): they say
 // which published notes link to a note, with the sentence around each link
@@ -193,6 +199,14 @@ export interface NotePage {
     html: string
     /** The outline of the body, when the note has enough headings (PAGE-04). */
     outline?: OutlineItem[]
+    /** True when the body has a video card with a player: the page then has the script of the player. */
+    videos?: true
+}
+
+/** What a note card shows of its note (CARD-03). */
+export interface NoteCard {
+    readonly title: string
+    readonly description?: string
 }
 
 /** The H1 at the top of a note. */
@@ -474,12 +488,53 @@ export interface SitePagesOptions {
      * it, only the canonical path of a published note of the build leads.
      */
     readonly addressOf?: (address: string) => string | undefined
+    /**
+     * The stored preview of the target of a card to another site or of a
+     * video card (CARD-06, CARD-09). Without it, every card is compact.
+     */
+    readonly previewOf?: (target: PreviewTarget) => LinkPreview | undefined
+    /**
+     * What the card of a published note shows (CARD-03). Without it, the
+     * card shows the text of its link.
+     */
+    readonly noteCardOf?: (vaultPath: string) => NoteCard | undefined
+}
+
+function textOf(value: string): ElementContent {
+    return { type: 'text', value }
+}
+
+/** True for a video card that names its video for the player. */
+function hasPlayer(card: Element): boolean {
+    return card.properties['dataVideoId'] !== undefined
+}
+
+function holdsVideo(nodes: readonly (Root['children'][number] | ElementContent)[]): boolean {
+    return nodes.some(
+        (node) =>
+            node.type === 'element' &&
+            ((node.tagName === 'div' && hasPlayer(node)) || holdsVideo(node.children))
+    )
+}
+
+/** The attributes of the stored image of a card: it never moves the text, and loads late. */
+function imageAttributes(image: NonNullable<LinkPreview['image']>): Element['properties'] {
+    return {
+        src: image.path,
+        alt: '',
+        width: image.width,
+        height: image.height,
+        loading: 'lazy',
+        decoding: 'async'
+    }
 }
 
 /** The pages of the notes of one build. */
 export class SitePages {
     readonly #notes = new Map<string, SiteNote>()
     readonly #addressOf: (address: string) => string | undefined
+    readonly #previewOf: (target: PreviewTarget) => LinkPreview | undefined
+    readonly #noteCardOf: (vaultPath: string) => NoteCard | undefined
     readonly #read = new Map<string, ReadNote>()
     /** The backlinks of each note of the build by its vault path, made at the first question. */
     #backlinks: Map<string, Backlink[]> | undefined
@@ -494,6 +549,33 @@ export class SitePages {
         this.#addressOf =
             options.addressOf ??
             ((address) => (paths.has(address.split(/[?#]/u)[0] ?? '') ? address : undefined))
+        this.#previewOf = options.previewOf ?? (() => undefined)
+        this.#noteCardOf = options.noteCardOf ?? (() => undefined)
+    }
+
+    /**
+     * The targets of the cards of the notes of the build that may have a
+     * preview: each card to another site and each video card whose address
+     * may become a link, one time each, in the order of the notes.
+     */
+    cardTargets(): PreviewTarget[] {
+        const found = new Map<string, PreviewTarget>()
+        const visit = (nodes: readonly (Root['children'][number] | ElementContent)[]): void => {
+            for (const node of nodes) {
+                if (node.type !== 'element') continue
+                const url = node.properties['dataUrl']
+                if (node.tagName === MARK.card && typeof url === 'string') {
+                    const video = node.properties['dataVideo'] !== undefined
+                    if (isWebAddress(url, video))
+                        found.set(`${String(video)} ${url}`, { url, video })
+                }
+                visit(node.children)
+            }
+        }
+        for (const vaultPath of this.#notes.keys()) {
+            visit(this.#published(vaultPath).tree.children)
+        }
+        return [...found.values()]
     }
 
     /** The HTML of the body of a published note, as the page step gives it. */
@@ -525,7 +607,8 @@ export class SitePages {
         return {
             ...(heading === undefined ? {} : { heading }),
             html: toHtml(tree),
-            ...(outline === undefined ? {} : { outline })
+            ...(outline === undefined ? {} : { outline }),
+            ...(holdsVideo(tree.children) ? { videos: true as const } : {})
         }
     }
 
@@ -793,7 +876,15 @@ export class SitePages {
                 // the allow list: only a web address may become a link.
                 const video = card.properties['dataVideo'] !== undefined
                 if (!isWebAddress(url, video)) continue
-                cards.push(this.#card(url, toText(card), video ? 'YouTube' : hostOf(url), video))
+                const preview = this.#previewOf({ url, video })
+                // A video line with no text gives its address as its text: the fetched title is better.
+                const written = toText(card)
+                const title = video && written === url ? (preview?.title ?? written) : written
+                cards.push(
+                    video
+                        ? this.#videoCard(url, title, preview)
+                        : this.#card(url, title, hostOf(url), { preview })
+                )
                 continue
             }
             const mark = card.children.find(
@@ -807,14 +898,15 @@ export class SitePages {
             const vaultPath = note.links.get(linkPath)
             const target = vaultPath === undefined ? undefined : this.#readNote(vaultPath)
             if (file !== undefined) {
-                cards.push(this.#card(file.url, title, '', false))
+                cards.push(this.#card(file.url, title, ''))
             } else if (target !== undefined) {
+                const shown = this.#noteCardOf(target.vaultPath)
                 cards.push(
                     this.#card(
                         `${target.path}${this.#fragmentOf(target, fragment)}`,
-                        title,
+                        shown?.title ?? title,
                         '',
-                        false
+                        shown?.description === undefined ? {} : { description: shown.description }
                     )
                 )
             } else if (vaultPath !== undefined) {
@@ -830,20 +922,71 @@ export class SitePages {
         return cards.length === 0 ? [] : [make('div', { className: ['link-cards'] }, cards)]
     }
 
-    /** A compact link card: its title and the name of its source, with no image and no request to the other site. */
-    #card(href: string, title: string, source: string, video: boolean): Element {
+    /**
+     * A link card: its title, the description of a note, the name of its
+     * source, and the stored image of its target, on the host of the notes.
+     * With no image, it is the compact card.
+     */
+    #card(
+        href: string,
+        title: string,
+        source: string,
+        extra: { description?: string; preview?: LinkPreview | undefined } = {}
+    ): Element {
         const parts: ElementContent[] = [
-            make('span', { className: ['link-card-title'] }, [{ type: 'text', value: title }])
+            make('span', { className: ['link-card-title'] }, [textOf(title)])
         ]
-        if (source !== '') {
+        if (extra.description !== undefined && extra.description !== '') {
             parts.push(
-                make('span', { className: ['link-card-source'] }, [{ type: 'text', value: source }])
+                make('span', { className: ['link-card-description'] }, [textOf(extra.description)])
             )
+        }
+        if (source !== '') {
+            parts.push(make('span', { className: ['link-card-source'] }, [textOf(source)]))
+        }
+        const image = extra.preview?.image
+        if (image !== undefined) {
+            parts.push(make('img', { className: ['link-card-image'], ...imageAttributes(image) }))
         }
         return make(
             'div',
-            { className: video ? ['link-card', 'link-card-video'] : ['link-card'] },
+            {
+                className:
+                    image === undefined ? ['link-card'] : ['link-card', 'link-card-with-image']
+            },
             [make('a', { className: ['link-card-link'], href }, parts)]
         )
+    }
+
+    /**
+     * A video card (CARD-09): a link to the video with its local image and
+     * its title. When the address names a video of YouTube, the card names it
+     * for the script of the player, which loads the player after a click;
+     * without JavaScript the card stays a link.
+     */
+    #videoCard(href: string, title: string, preview: LinkPreview | undefined): Element {
+        const video = videoOf(href)
+        const parts: ElementContent[] = []
+        const image = preview?.image
+        if (image !== undefined) {
+            parts.push(make('img', { className: ['link-card-poster'], ...imageAttributes(image) }))
+        }
+        if (video !== undefined) {
+            parts.push(make('span', { className: ['link-card-play'], ariaHidden: 'true' }))
+        }
+        parts.push(make('span', { className: ['link-card-title'] }, [textOf(title)]))
+        parts.push(make('span', { className: ['link-card-source'] }, [textOf('YouTube')]))
+        const classes = ['link-card', 'link-card-video']
+        if (image !== undefined) classes.push('link-card-with-image')
+        const named =
+            video === undefined
+                ? {}
+                : {
+                      dataVideoId: video.id,
+                      ...(video.start === undefined ? {} : { dataVideoStart: String(video.start) })
+                  }
+        return make('div', { className: classes, ...named }, [
+            make('a', { className: ['link-card-link'], href }, parts)
+        ])
     }
 }
