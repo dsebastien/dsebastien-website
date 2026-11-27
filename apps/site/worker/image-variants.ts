@@ -6,7 +6,8 @@ import {
     TooManyPixelsError,
     variantKey
 } from '@dsebastien-website/resolver'
-import sharp, { type Sharp } from 'sharp'
+import type * as SharpTypes from 'sharp'
+import type { Sharp } from 'sharp'
 import { releaseImages, type ReleaseImage } from './deployment.ts'
 import type { AttachmentFolder } from './release.ts'
 
@@ -36,6 +37,19 @@ const INPUT = {
     limitInputPixels: MAX_VARIANT_PIXELS
 } as const
 
+/** The kinds of image files that get variants, as sharp reads them from the bytes. */
+const FORMATS = new Set(['jpeg', 'png', 'webp'])
+
+/** The module of sharp, loaded at the first encode (review round 3). */
+type SharpModule = typeof SharpTypes
+
+/**
+ * Loads sharp. A machine where it cannot load (no binary for it) fails each
+ * encode, which the deploy gives as a warning: the import of this module
+ * never fails.
+ */
+const loadSharp = (): Promise<SharpModule> => import('sharp')
+
 /** The output of a variant. */
 const webp = (image: Sharp): Sharp => image.webp({ quality: QUALITY, effort: EFFORT })
 
@@ -47,20 +61,35 @@ const webp = (image: Sharp): Sharp => image.webp({ quality: QUALITY, effort: EFF
  * and an image that moves (a WebP with frames) keeps its frames. The image is
  * read and resized one time, to the largest variant, and the others are made
  * from that one, so the pixels of the image are in memory one time. It throws
- * on a file that is not an image, a cut file, and an image of more than
+ * on a file that is not an image, a cut file, a file of another kind than
+ * JPEG, PNG or WebP (read from its bytes, whatever its name says), a PNG or
+ * a WebP with an Exif turn (the page shows the size as stored, so its
+ * variants would have another shape), an image of more than
  * `MAX_VARIANT_PIXELS`, all its frames together (`TooManyPixelsError`,
- * before its pixels are read).
+ * before its pixels are read), and when sharp cannot load.
+ *
+ * @param load loads sharp; a test gives one that fails
  */
 export async function encodeVariants(
     bytes: Uint8Array,
-    image: Pick<ReleaseImage, 'variants'>
+    image: Pick<ReleaseImage, 'variants'>,
+    load: () => Promise<SharpModule> = loadSharp
 ): Promise<Uint8Array[]> {
     const largest = image.variants.at(-1)
     if (largest === undefined) {
         return []
     }
+    const { default: sharp } = await load()
     // The header only: the pixels of every frame count (review round 2).
     const facts = await sharp(bytes, { ...INPUT, limitInputPixels: false }).metadata()
+    if (!FORMATS.has(facts.format)) {
+        throw new Error(`the file is a ${facts.format}, not a JPEG, a PNG or a WebP`)
+    }
+    if (facts.format !== 'jpeg' && facts.orientation !== undefined && facts.orientation !== 1) {
+        throw new Error(
+            `the ${facts.format} has an Exif turn (${String(facts.orientation)}), which its page does not follow`
+        )
+    }
     const frames = facts.pages ?? 1
     if (facts.width * (facts.pageHeight ?? facts.height) * frames > MAX_VARIANT_PIXELS) {
         throw new TooManyPixelsError()

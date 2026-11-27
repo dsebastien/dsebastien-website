@@ -14,6 +14,7 @@ import type { AttachmentStorage } from '../../plugin/src/publishing/ports.ts'
 import {
     deployRelease,
     makeVariants,
+    VARIANT_TIME_LIMIT,
     readHostRecord,
     resultLine,
     pendingUrls,
@@ -2428,6 +2429,56 @@ describe('the variants of the images of a release', () => {
         const using = before({ ...LIVE_RELEASE, variants: VARIANT_GENERATION + 1 })
         expect(await deployRelease(using.run)).toMatchObject({ live: true, deleted: 0 })
         expect(using.storage.names.has(other)).toBe(true)
+    })
+
+    // Review round 3: a move takes no file of the content store before it.
+    test('of another generation leave on a move to another content store, whatever the live record names', async () => {
+        const other = `${PHOTO.key}-w800-${String(VARIANT_GENERATION + 1)}.webp`
+        const site = overLive(
+            {
+                stored: [PHOTO.key, PLAN.key, other, variantKey(PHOTO.key, 480)],
+                overrides: {
+                    images: [],
+                    newContentStore: true,
+                    descendsFrom: () => Promise.resolve(undefined),
+                    contentStoreHas: () => Promise.resolve(false),
+                    releaseKeys: () => Promise.resolve(undefined)
+                }
+            },
+            { ...LIVE_RELEASE, variants: VARIANT_GENERATION + 1 }
+        )
+        expect(await deployRelease(site.run)).toMatchObject({ live: true, deleted: 1 })
+        expect([...site.storage.names].sort()).toEqual(
+            [PHOTO.key, PLAN.key, variantKey(PHOTO.key, 480)].sort()
+        )
+    })
+
+    // Review round 3: a deployment encodes for 10 minutes at most.
+    test('stop to be made after the time limit of a run, with a warning, and the rest wait', async () => {
+        const many = [file('one'), file('two'), file('three')]
+        let minutes = 0
+        const site = fixture({
+            stored: many.map((item) => item.key),
+            folder: many,
+            used: many.map((item) => item.key),
+            overrides: {
+                images: many.map((item) => imageOf(item.key)),
+                encode,
+                // Each read of the clock is six minutes later.
+                now: () => new Date(Date.UTC(2031, 3, 1, 8, (minutes += 6)))
+            }
+        })
+        const result = await makeVariants(
+            { ...site.run, encodeTimeLimit: 10 * 60_000 },
+            many.map((item) => imageOf(item.key)),
+            site.storage,
+            new Set(site.storage.names)
+        )
+        expect(result.uploaded).toBe(2)
+        expect(result.warnings).toEqual([
+            'the variants of 2 images were not made in the time limit of 10 minutes of this run, so their pages give their files: the next deployment or bun run variants makes them'
+        ])
+        expect(VARIANT_TIME_LIMIT).toBe(10 * 60_000)
     })
 
     test('are names of the storage that belong to their image: no warning, and no failure after a takedown', async () => {

@@ -1264,6 +1264,12 @@ const PARALLEL_ENCODES = 4
 /** The images of more pixels than this are encoded one at a time, alone. */
 export const LARGE_IMAGE_PIXELS = 16_000_000
 
+/**
+ * How long a run encodes images at most, in milliseconds: 10 minutes. The
+ * images that wait get their variants at the next deployment (review round 3).
+ */
+export const VARIANT_TIME_LIMIT = 10 * 60_000
+
 /** What the making of the variants of images needs (issue 87, R92). */
 export interface VariantRun {
     /** The attachment folder of the machine, where the file of each image is. */
@@ -1271,6 +1277,10 @@ export interface VariantRun {
     /** Makes the variants of an image, as `DeployRun.encode`. */
     readonly encode?: DeployRun['encode']
     readonly log: (line: string) => void
+    /** The clock of the time limit. */
+    readonly now: () => Date
+    /** The time limit of the encodes of the run. By default `VARIANT_TIME_LIMIT`. */
+    readonly encodeTimeLimit?: number
 }
 
 /** What the making of the variants did. */
@@ -1291,7 +1301,8 @@ export interface VariantResult {
  * the file of the image instead (the resolver). An image of more than
  * `MAX_VARIANT_PIXELS` has none, with a warning. The images of more than
  * `LARGE_IMAGE_PIXELS` are encoded one at a time, then the others four at a
- * time. It never throws.
+ * time. No image starts after the time limit of the run: the ones that wait
+ * give one warning, and the next run makes them. It never throws.
  *
  * @param stored the names that the storage has
  */
@@ -1341,8 +1352,15 @@ export async function makeVariants(
         }
     }
     const encode = run.encode
+    const limit = run.encodeTimeLimit ?? VARIANT_TIME_LIMIT
+    const start = run.now().getTime()
+    let waiting = 0
     const make = async (image: ReleaseImage): Promise<void> => {
         if (encode === undefined) {
+            return
+        }
+        if (run.now().getTime() - start >= limit) {
+            waiting += 1
             return
         }
         let files: readonly Uint8Array[]
@@ -1385,6 +1403,11 @@ export async function makeVariants(
         make,
         PARALLEL_ENCODES
     )
+    if (waiting > 0) {
+        warnings.push(
+            `the variants of ${String(waiting)} images were not made in the time limit of ${String(limit / 60_000)} minutes of this run, so their pages give their files: the next deployment or bun run variants makes them`
+        )
+    }
     run.log(`uploaded ${String(uploaded)} variants of images to the attachment storage`)
     return { uploaded, warnings: warnings.sort() }
 }

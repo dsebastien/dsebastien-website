@@ -100,9 +100,21 @@ describe('the variants of an image', () => {
 
     // Issue 87, R92: the plugin reads the turn of a JPEG only, so the size of
     // the manifest of any other kind is the size of its pixels as stored.
-    test('turn only a JPEG: a PNG and an animated WebP with an Exif turn keep their shape', async () => {
+    // Review round 3: the plugin reads the turn of a JPEG only, so a PNG or a
+    // WebP that has one would get variants of another shape than its page.
+    test('refuse a PNG and a WebP with an Exif turn; keep one with no turn, and the frames of one that moves', async () => {
         const variants = imageVariants('plan.png', 1000, 600)
-        const fromPng = await encodeVariants(await png(1000, 600, 6), { variants })
+        expect(await rejectionOf(encodeVariants(await png(1000, 600, 6), { variants }))).toContain(
+            'Exif turn'
+        )
+        expect(
+            await rejectionOf(
+                encodeVariants(await animated(1000, 600, 6), {
+                    variants: imageVariants('moving.webp', 1000, 600)
+                })
+            )
+        ).toContain('Exif turn')
+        const fromPng = await encodeVariants(await png(1000, 600, 1), { variants })
         const facts = await Promise.all(fromPng.map((bytes) => sharp(bytes).metadata()))
         expect(facts.map((fact) => [fact.width, fact.height])).toEqual([
             [480, 288],
@@ -110,7 +122,7 @@ describe('the variants of an image', () => {
             [1000, 600]
         ])
 
-        const moving = await encodeVariants(await animated(1000, 600, 6), {
+        const moving = await encodeVariants(await animated(1000, 600), {
             variants: imageVariants('moving.webp', 1000, 600)
         })
         const frames = await Promise.all(
@@ -121,6 +133,33 @@ describe('the variants of an image', () => {
             [800, 480, 2],
             [1000, 600, 2]
         ])
+    })
+
+    // Review round 3: the kind comes from the bytes, not from the end of the name.
+    test('refuse a file of another kind than JPEG, PNG and WebP, whatever its name says', async () => {
+        const gif = new Uint8Array(
+            await sharp({
+                create: { width: 1000, height: 600, channels: 3, background: '#468' }
+            })
+                .gif()
+                .toBuffer()
+        )
+
+        expect(
+            await rejectionOf(
+                encodeVariants(gif, { variants: imageVariants('photo.jpg', 1000, 600) })
+            )
+        ).toContain('gif')
+    })
+
+    // Review round 3: a sharp that cannot load is a failure of one image.
+    test('fail, and throw nothing at their import, when sharp cannot load', async () => {
+        const variants = imageVariants('cover.jpg', 1000, 600)
+        const load = (): Promise<never> => Promise.reject(new Error('sharp has no binary here'))
+
+        expect(await rejectionOf(encodeVariants(await jpeg(1000, 600), { variants }, load))).toBe(
+            'sharp has no binary here'
+        )
     })
 
     test('fail on a cut JPEG and a cut PNG', async () => {

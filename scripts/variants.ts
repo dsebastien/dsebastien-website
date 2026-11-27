@@ -77,6 +77,9 @@ async function main(): Promise<number> {
             {
                 attachments: attachmentFolder(attachments),
                 encode: encodeVariants,
+                // The warm-up makes them all, with no time limit.
+                now: () => new Date(),
+                encodeTimeLimit: Number.POSITIVE_INFINITY,
                 log: (line) => {
                     console.error(line)
                 }
