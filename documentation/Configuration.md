@@ -41,6 +41,7 @@ Rust: `cargo clippy` with every warning denied. The Cargo workspace denies the `
 2. A vault file exists only in `fixtures/vault/`: a Markdown file (`.md`, `.markdown`, `.mdx`) that starts with a block of properties, a file of a folder named `.obsidian` or `.trash`, and a file that ends in `.canvas`, `.base` or `.excalidraw`.
 3. Every file of `fixtures/vault/` is declared in `fixtures/catalog.json`.
 4. No symbolic link.
+5. No `.env`, `.env.*` (but `.env.example`), `.dev.vars`, `.dev.vars.*`, `*.pem` or `*.key` file, in any letter case.
 
 What it cannot find outside the fixture vault: a note without properties, an attachment, and real text that someone pastes into a file. Care stays necessary.
 
@@ -97,11 +98,11 @@ Both corpus commands share the rules of their output folder (`scripts/output-fol
 
 `.github/workflows/ci.yml` runs on each push to any branch.
 
-- Job `checks`: dependency audit (level high, with one advisory ignored: the workflow file says which and why), type check, Astro check, lint, the version of Chrome, tests, format check, build of the site and of the plugin. The job has the Rust toolchain, because the parity tests build the Rust program, and the Chrome of the Ubuntu image, because the browser tests drive it.
+- Job `checks`: dependency audit (level high), type check, Astro check, lint, the version of Chrome, tests, format check, build of the site and of the plugin. The job has the Rust toolchain, because the parity tests build the Rust program, and the Chrome of the Ubuntu image, because the browser tests drive it.
 
 The browser tests (issue 57) use `playwright-core` with the installed Chrome (`launchChrome()` of `packages/testing`, `channel: 'chrome'`): no browser is downloaded. Without Chrome they fail with a message that says so. `apps/site/src/browser-page.spec.ts` builds the fixture site with invented analytics settings (`TEST_ANALYTICS`: the proxy of today and the site id `analytics-test.invalid`), serves it at the invented host `https://notes.example` through the plain local server (the analytics script ignores a local host, and a page that a program drives unless the page sets `window.__plausible`), and intercepts every request: the events and the signups are recorded and never reach the network, any other host is refused. The script of the analytics is a pinned copy, `packages/testing/fixtures/plausible-script.manual.js` (its first line names its source and the day it was read): no test reaches the proxy. `bun run analytics:script` compares the copy with the live script and measures the live one with Brotli against `ANALYTICS_SCRIPT_BROTLI`; it reaches the network, so it is not part of the tests. The browser test runs in `bun run test`.
 
-- Job `rust`, on Linux and on Windows: format check, clippy, tests.
+- Job `rust`, on Linux and on Windows: format check, clippy, tests; on Linux also `cargo audit` (it reads the live advisory database).
 - Job `budgets`: the time budgets of the note page (`bun run budgets`), then the invented corpus (`bun run corpus`) and the budget of the first search on it (`bun run budgets:search`, R57, R63).
 
 The public CI never sees the content store (BUILD-11 of the spec). It builds the empty site and, later, the site of the fixture vault.

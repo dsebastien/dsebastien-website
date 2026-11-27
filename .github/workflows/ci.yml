@@ -151,11 +151,13 @@ jobs:
                   components: rustfmt, clippy
 
             # Advisories of the Rust crates held by `Cargo.lock`. The tool is
-            # pinned and built from its locked dependencies. It reads the live
-            # advisory database, so a new advisory can fail an unrelated run.
+            # pinned, and its prebuilt binary saves a build on each run. It reads
+            # the live advisory database, so a new advisory can fail an unrelated run.
             - name: Install cargo-audit
               if: matrix.os == 'ubuntu-latest'
-              run: cargo install cargo-audit --version 0.23.0 --locked
+              uses: taiki-e/install-action@073e1fd0bc889c9aee68dbaaa927cde1b5653a83 # v2.90.11
+              with:
+                  tool: cargo-audit@0.23.0
 
             - name: Audit Rust dependencies
               if: matrix.os == 'ubuntu-latest'
