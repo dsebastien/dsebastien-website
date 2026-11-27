@@ -825,7 +825,8 @@ describe('the edits of the guards in the publication center (issue 42)', () => {
             affects: [],
             opens: [],
             candidates: 0,
-            inside: []
+            inside: [],
+            linkingCandidates: []
         })
         if (review === undefined) return
 

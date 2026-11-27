@@ -1304,6 +1304,14 @@ export class ConfirmProposalModal extends Modal {
                 })
                 this.#paths(inside)
             }
+            // An include of such a candidate also uploads the file (issue 108).
+            const { linkingCandidates } = this.review
+            if (linkingCandidates.length > 0) {
+                contentEl.createEl('p', {
+                    text: `${linkingCandidates.length === 1 ? 'This candidate note links' : `These ${linkingCandidates.length.toLocaleString()} candidate notes link`} to a file of the folder: a plan that includes ${linkingCandidates.length === 1 ? 'it' : 'one of them'} also uploads that file and makes it public:`
+                })
+                this.#paths(linkingCandidates)
+            }
         } else if (proposal.action === 'unignore') {
             contentEl.createEl('p', {
                 text: 'The note becomes a candidate: it shows in the list New. Nothing is published until a plan includes it.'

@@ -2681,26 +2681,44 @@ async function allowOpens(
     device: Device,
     context: EditContext,
     folder: string
-): Promise<{ opens: string[]; candidates: number; inside: string[] }> {
+): Promise<{
+    opens: string[]
+    candidates: number
+    inside: string[]
+    linkingCandidates: string[]
+}> {
     const { vault, scan } = await scansOfOneRead(device, context.log)
     const before = await scan(context.configuration.denyList)
     const after = await scan(context.configuration.denyList.filter((one) => one !== folder))
     const forced = forcedRemovals(after)
+    const candidates = new Set(before.queue.new)
+    /** True when the note links to a file of the folder after the allow. */
+    const linksIntoFolder = async (path: string): Promise<boolean> => {
+        const text = await vault.read(path)
+        if (text === undefined) {
+            return false
+        }
+        const { files } = linksOf(sourceOf(text), path, after.index, after.guarded)
+        return files.some((file) => file.path.startsWith(`${folder}/`))
+    }
     const opens: string[] = []
     for (const [path, entry] of after.manifest) {
         if (entry.state !== 'published' || forced.has(path) || !after.notes.has(path)) {
             continue
         }
-        const text = await vault.read(path)
-        if (text === undefined) {
-            continue
-        }
-        const { files } = linksOf(sourceOf(text), path, after.index, after.guarded)
-        if (files.some((file) => file.path.startsWith(`${folder}/`))) {
+        if (await linksIntoFolder(path)) {
             opens.push(path)
         }
     }
-    const candidates = new Set(before.queue.new)
+    // The candidates outside the folder that link to a file of it: an
+    // include of one, which the author names, also uploads that file
+    // (issue 108, point 4).
+    const linkingCandidates: string[] = []
+    for (const path of after.queue.new) {
+        if (candidates.has(path) && (await linksIntoFolder(path))) {
+            linkingCandidates.push(path)
+        }
+    }
     // The published entries inside the folder (a deny that the author
     // confirmed and that no publication applied yet): they stay published.
     const inside = [...before.manifest]
@@ -2709,6 +2727,7 @@ async function allowOpens(
     return {
         opens: sortByCodePoint(opens),
         inside: sortByCodePoint(inside),
+        linkingCandidates: sortByCodePoint(linkingCandidates),
         candidates: after.queue.new.filter(
             (path) => path.startsWith(`${folder}/`) && !candidates.has(path)
         ).length
@@ -3128,6 +3147,12 @@ export interface ProposalReview {
      * changes publish as for every published note.
      */
     readonly inside: readonly string[]
+    /**
+     * For an `allow`: the candidate notes outside the folder that link to a
+     * file of the folder, sorted: an include of one also uploads that file
+     * (issue 108, point 4). Not part of the confirmation.
+     */
+    readonly linkingCandidates: readonly string[]
 }
 
 /**
@@ -3152,7 +3177,7 @@ export async function reviewProposal(given: Device, id: string): Promise<Proposa
     const opened =
         proposal.action === 'allow'
             ? await allowOpens(device, context, proposal.path)
-            : { opens: [], candidates: 0, inside: [] }
+            : { opens: [], candidates: 0, inside: [], linkingCandidates: [] }
     return { proposal, removes: checked.removes, affects: checked.affects, ...opened }
 }
 

@@ -537,7 +537,8 @@ describe('a deny that takes an attachment away from a published note (R69, revie
             affects: ['Notes/Plan.md'],
             opens: [],
             candidates: 0,
-            inside: []
+            inside: [],
+            linkingCandidates: []
         })
         // A dialog that showed no note that loses an attachment is stale.
         expect(
@@ -742,7 +743,8 @@ describe('what a confirmed allow opens (rule 11)', () => {
             affects: [],
             opens: ['Notes/Plan.md'],
             candidates: 1,
-            inside: []
+            inside: [],
+            linkingCandidates: []
         })
         // A dialog that named no such note is stale.
         expect(
@@ -762,6 +764,24 @@ describe('what a confirmed allow opens (rule 11)', () => {
         expect((await guards(device)).denyList).toEqual([])
         // The next plan without paths updates the note, which uploads the file.
         expect((await status(device)).technicalUpdates).toEqual(['Notes/Plan.md'])
+    }, 120_000)
+})
+
+describe('what a confirmed allow lets a candidate upload (issue 108, point 4)', () => {
+    test('the review names the candidate notes outside the folder that link to a file of the folder', async () => {
+        await using stores = await makeTestStores()
+        const { vault, device } = await setUp(stores)
+        await writeFiles(vault, {
+            'Notes/Sketch.md': '# Sketch\n\n![[secret.txt]]\n',
+            'Locked/secret.txt': 'A secret\n'
+        })
+        const proposal = await edit(device, { action: 'allow', path: 'Locked' }, AGENT)
+
+        const review = await reviewProposal(device, proposal.id)
+
+        // An include of the note, which the author names, also uploads the file.
+        expect(review.linkingCandidates).toEqual(['Notes/Sketch.md'])
+        expect(review.opens).toEqual([])
     }, 120_000)
 })
 
@@ -958,7 +978,8 @@ describe('the decisions of the author', () => {
             affects: [],
             opens: [],
             candidates: 0,
-            inside: []
+            inside: [],
+            linkingCandidates: []
         })
         const confirmed = await confirmProposal(
             device,
