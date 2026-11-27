@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { noteHeader } from './note-header.ts'
-import { readProperties } from './note-properties.ts'
+import { NoteProperties, readProperties } from './note-properties.ts'
 import { propertiesOf } from './properties.ts'
 
 // The properties of a cleaned note, as the build reads them (issue 48, first
@@ -146,5 +146,91 @@ describe('dates of a note, from its text to its page', () => {
         // Early in the morning at +02:00 is the day before in UTC: the band keeps the day of the vault.
         expect(header.created.shown).toBe('2031-03-09')
         expect(header.updated.shown).toBe('2031-04-02')
+    })
+})
+
+// The dev server makes the site at each request (issue 93): the properties of
+// a note are kept while its text does not change, so a request reads only the
+// notes that changed. The digest is the one of the content collection.
+describe('properties of the notes of a site, kept between two reads', () => {
+    /** A reader of cleaned notes that counts its reads. */
+    function source(texts: Record<string, string>): {
+        read: (vaultPath: string) => Promise<string>
+        reads: string[]
+    } {
+        const reads: string[] = []
+        return {
+            reads,
+            read: (vaultPath) => {
+                reads.push(vaultPath)
+                return Promise.resolve(texts[vaultPath] ?? '')
+            }
+        }
+    }
+
+    test('reads each note one time while its digest stays, and again when it changes', async () => {
+        const texts = { 'A.md': note('status: one'), 'B.md': note('status: two') }
+        const notes = new NoteProperties()
+        const first = source(texts)
+
+        const read = await notes.read(
+            [
+                { vaultPath: 'A.md', digest: 'a1' },
+                { vaultPath: 'B.md', digest: 'b1' }
+            ],
+            first.read
+        )
+        expect(first.reads).toEqual(['A.md', 'B.md'])
+        expect(read.get('A.md')).toEqual({ status: 'one' })
+
+        const again = source(texts)
+        await notes.read(
+            [
+                { vaultPath: 'A.md', digest: 'a1' },
+                { vaultPath: 'B.md', digest: 'b1' }
+            ],
+            again.read
+        )
+        expect(again.reads).toEqual([])
+
+        const changed = source({ ...texts, 'B.md': note('status: three') })
+        const after = await notes.read(
+            [
+                { vaultPath: 'A.md', digest: 'a1' },
+                { vaultPath: 'B.md', digest: 'b2' }
+            ],
+            changed.read
+        )
+        expect(changed.reads).toEqual(['B.md'])
+        expect(after.get('A.md')).toEqual({ status: 'one' })
+        expect(after.get('B.md')).toEqual({ status: 'three' })
+    })
+
+    test('reads a note with no digest each time, and forgets a note that left the site', async () => {
+        const texts = { 'A.md': note('status: one'), 'B.md': note('status: two') }
+        const notes = new NoteProperties()
+        await notes.read(
+            [{ vaultPath: 'A.md' }, { vaultPath: 'B.md', digest: 'b1' }],
+            source(texts).read
+        )
+
+        const second = source(texts)
+        const read = await notes.read([{ vaultPath: 'A.md' }], second.read)
+        expect(second.reads).toEqual(['A.md'])
+        expect([...read.keys()]).toEqual(['A.md'])
+
+        const third = source(texts)
+        await notes.read([{ vaultPath: 'B.md', digest: 'b1' }], third.read)
+        expect(third.reads).toEqual(['B.md'])
+    })
+
+    test('names the note whose properties cannot be read', async () => {
+        const notes = new NoteProperties()
+        expect(
+            notes.read(
+                [{ vaultPath: 'Broken.md', digest: 'x' }],
+                source({ 'Broken.md': note('a: [one') }).read
+            )
+        ).rejects.toThrow('the properties of "Broken.md" cannot be read')
     })
 })

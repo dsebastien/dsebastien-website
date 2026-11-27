@@ -56,3 +56,65 @@ export function readProperties(source: string): Readonly<Record<string, unknown>
         ? (properties as Readonly<Record<string, unknown>>)
         : {}
 }
+
+/** A published note of a site, with the digest of its cleaned note, when the content collection gives one. */
+export interface NoteOfSite {
+    readonly vaultPath: string
+    readonly digest?: string | number
+}
+
+/** The properties of a note, with the digest that they were read for. */
+interface Kept {
+    readonly digest: string | number
+    readonly properties: Readonly<Record<string, unknown>>
+}
+
+/**
+ * The properties of the notes of a site, kept between two reads (issue 93).
+ * The dev server makes the site at each request: a note whose digest did not
+ * change keeps its properties, so a request reads only the notes that
+ * changed. A note with no digest is read each time. A build reads one time.
+ */
+export class NoteProperties {
+    #kept = new Map<string, Kept>()
+
+    /**
+     * The properties of these notes, by vault path. A note that is not in the
+     * list is forgotten.
+     *
+     * @param notes the published notes of the site
+     * @param source the text of the cleaned note of a vault path
+     * @throws when the properties of a note cannot be read, with its vault path
+     */
+    async read(
+        notes: readonly NoteOfSite[],
+        source: (vaultPath: string) => Promise<string>
+    ): Promise<Map<string, Readonly<Record<string, unknown>>>> {
+        const read = new Map<string, Readonly<Record<string, unknown>>>()
+        const kept = new Map<string, Kept>()
+        for (const { vaultPath, digest } of notes) {
+            const known = this.#kept.get(vaultPath)
+            let properties: Readonly<Record<string, unknown>>
+            if (known !== undefined && digest !== undefined && known.digest === digest) {
+                properties = known.properties
+            } else {
+                const text = await source(vaultPath)
+                try {
+                    properties = readProperties(text)
+                } catch (error) {
+                    // The build stops, and says which note the author must correct.
+                    throw new Error(
+                        `the properties of "${vaultPath}" cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+                        { cause: error }
+                    )
+                }
+            }
+            read.set(vaultPath, properties)
+            if (digest !== undefined) {
+                kept.set(vaultPath, { digest, properties })
+            }
+        }
+        this.#kept = kept
+        return read
+    }
+}

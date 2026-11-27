@@ -23,7 +23,7 @@ import {
 import { newestDay, topicsOf, type Linked, type SiteStats } from './home.ts'
 import { isSystemTag, refuseTagsThatTakePagePaths, tagsOfNote } from './lists.ts'
 import { noteHeader, type NoteHeader } from './note-header.ts'
-import { readProperties } from './note-properties.ts'
+import { NoteProperties } from './note-properties.ts'
 import { uniqueTitles } from './page-titles.ts'
 import { propertyLinksOf } from './properties.ts'
 import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
@@ -104,19 +104,14 @@ async function read(): Promise<PublishedSite> {
     const byPath = new Map(notes.map((note) => [note.vaultPath, note]))
     // The properties of each note, read from its cleaned note with every date
     // as the text of the vault (`note-properties.ts`), not from the collection.
-    const properties = new Map<string, Readonly<Record<string, unknown>>>()
-    for (const note of notes) {
-        const source = await readCleanedNote(note.vaultPath)
-        try {
-            properties.set(note.vaultPath, readProperties(source))
-        } catch (error) {
-            // The build stops, and says which note the author must correct.
-            throw new Error(
-                `the properties of "${note.vaultPath}" cannot be read: ${error instanceof Error ? error.message : String(error)}`,
-                { cause: error }
-            )
-        }
-    }
+    // A note keeps its properties while its digest does not change (issue 93).
+    const properties = await keptProperties.read(
+        notes.map((note) => {
+            const digest = entries.get(note.vaultPath)?.digest
+            return { vaultPath: note.vaultPath, ...(digest === undefined ? {} : { digest }) }
+        }),
+        readCleanedNote
+    )
     // The resolver map of this build, for the raw links of the notes to an
     // address of the site (issue 98). It is made from the first lists, before
     // the page step runs: the titles of the notes do not change its paths.
@@ -366,9 +361,13 @@ async function read(): Promise<PublishedSite> {
 
 let site: Promise<PublishedSite> | undefined
 
+/** The properties of the notes, kept while their cleaned notes do not change. */
+const keptProperties = new NoteProperties()
+
 /**
  * The published notes of this build. A build reads them one time; the dev
- * server reads them at each question, because a note can change under it.
+ * server makes them at each question, because a note can change under it,
+ * but it reads again only the properties of a note whose file changed.
  */
 export function publishedSite(): Promise<PublishedSite> {
     if (import.meta.env.DEV) {
