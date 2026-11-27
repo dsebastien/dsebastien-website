@@ -1201,6 +1201,72 @@ describe('the release that is live', () => {
         expect(asked).toEqual([LIVE.contentRevision])
     })
 
+    // R104: a takedown on a state that is not sealed builds the trusted
+    // sealed state without the notes that it removes. Its record names both
+    // revisions, and the sealed one must not be older than the live one.
+    describe('with a release built from a sealed state', () => {
+        const SEALED = 'b'.repeat(40)
+        const SOURCE = 'e'.repeat(40)
+
+        test('names the sealed revision in the record of a takedown', async () => {
+            const asked: string[] = []
+            const site = liveAnswers([LIVE, LIVE], {
+                takedown: true,
+                builtFrom: SEALED,
+                builtFromDescendsFrom: (revision) => {
+                    asked.push(revision)
+                    return Promise.resolve(true)
+                }
+            })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ deploy: 'ok', live: true, error: null })
+            expect(asked).toEqual([LIVE.contentRevision])
+            const record: unknown = JSON.parse(
+                await readFile(join(site.dist(), '-', 'deployment.json'), 'utf8')
+            )
+            expect(record).toMatchObject({ contentRevision: CONTENT, builtFrom: SEALED })
+        })
+
+        test('is refused when the sealed state is older than the source of the live release', async () => {
+            const asked: string[] = []
+            const site = liveAnswers([{ ...LIVE, builtFrom: SOURCE }], {
+                takedown: true,
+                builtFrom: SEALED,
+                builtFromDescendsFrom: (revision) => {
+                    asked.push(revision)
+                    return Promise.resolve(false)
+                }
+            })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+            expect(result.error).toContain(`the live release was built from ${SOURCE}`)
+            expect(asked).toEqual([SOURCE])
+        })
+
+        test('is refused when the copy cannot say whether the sealed state holds the live one', async () => {
+            const site = liveAnswers([LIVE], { takedown: true, builtFrom: SEALED })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ build: 'skipped', deploy: 'skipped' })
+            expect(result.error).toContain('older content would go live')
+        })
+
+        // After the confirmation of the author, the next deploy builds the
+        // confirmed commit, which descends from the takedown.
+        test('is replaced by a release of a copy that holds its content revision', async () => {
+            const asked: string[] = []
+            const live = { ...LIVE, builtFrom: SOURCE }
+            const site = liveAnswers([live, live], {
+                descendsFrom: (revision) => {
+                    asked.push(revision)
+                    return Promise.resolve(true)
+                }
+            })
+            const result = await deployRelease(site.run)
+            expect(result).toMatchObject({ deploy: 'ok', live: true, error: null })
+            expect(asked).toEqual([LIVE.contentRevision])
+        })
+    })
+
     // A revert goes back to it.
     test('is named in the record of the release that replaces it', async () => {
         const site = liveAnswers([{ ...LIVE, previous: null }, LIVE])

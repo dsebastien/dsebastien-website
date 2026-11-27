@@ -459,6 +459,14 @@ describe('the deployment record', () => {
         expect(deploymentRecordFrom({ ...RECORD, newContentStore: 'yes' })).toBeUndefined()
     })
 
+    // R104: the takedown on a state that is not sealed builds the trusted sealed state.
+    test('reads the sealed revision that the release was built from, and nothing else in its place', () => {
+        const builtFrom = 'c'.repeat(40)
+        expect(deploymentRecordFrom({ ...RECORD, builtFrom })).toEqual({ ...RECORD, builtFrom })
+        expect(deploymentRecordFrom({ ...RECORD, builtFrom: 'main' })).toBeUndefined()
+        expect(deploymentRecordFrom({ ...RECORD, builtFrom: null })).toBeUndefined()
+    })
+
     // Issue 87, R92: the cleanup keeps the variants of the generation of the release before.
     test('reads the generation of the variants of the release', () => {
         expect(deploymentRecordFrom({ ...RECORD, variants: 2 })).toEqual({ ...RECORD, variants: 2 })

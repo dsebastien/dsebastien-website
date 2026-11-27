@@ -421,6 +421,14 @@ export interface DeploymentRecord extends ReleaseBuild {
      */
     readonly newContentStore?: true
     /**
+     * The sealed commit whose files the build read, when it is not the
+     * content revision (R104): a takedown on a state that is not sealed
+     * builds the last trusted sealed state without the notes that it
+     * removes, and names the commit of the takedown as its content revision.
+     * Missing otherwise.
+     */
+    readonly builtFrom?: string
+    /**
      * The generation of the image variants that the pages of the release
      * name (issue 87, R92): the cleanup keeps the variants of that generation
      * while it keeps the release. Missing in a record of a release with no
@@ -458,7 +466,7 @@ export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefin
     if (build === undefined || typeof value !== 'object' || value === null) {
         return undefined
     }
-    let move: { newContentStore?: true; variants?: number } = {}
+    let move: { newContentStore?: true; variants?: number; builtFrom?: string } = {}
     if ('newContentStore' in value && value.newContentStore !== undefined) {
         if (value.newContentStore !== true) {
             return undefined
@@ -474,6 +482,12 @@ export function deploymentRecordFrom(value: unknown): DeploymentRecord | undefin
             return undefined
         }
         move = { ...move, variants: value.variants }
+    }
+    if ('builtFrom' in value && value.builtFrom !== undefined) {
+        if (typeof value.builtFrom !== 'string' || !REVISION.test(value.builtFrom)) {
+            return undefined
+        }
+        move = { ...move, builtFrom: value.builtFrom }
     }
     if (!('previous' in value) || value.previous === undefined) {
         return { ...build, ...move }

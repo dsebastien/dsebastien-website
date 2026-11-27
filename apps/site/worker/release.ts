@@ -189,6 +189,19 @@ export interface DeployRun {
     /** True when a takedown started the run. */
     readonly takedown: boolean
     /**
+     * The sealed commit whose files the build reads, when it is not the
+     * content revision (R104, rule 11 of "The seal of the content store"): a
+     * takedown on a state that is not sealed builds the last trusted sealed
+     * state without the notes that it removes. The record names it.
+     */
+    readonly builtFrom?: string
+    /**
+     * True when the revision is `builtFrom` or one of its ancestors, false
+     * when it is not, `undefined` when the copy does not know it. Without
+     * it, a run with `builtFrom` over a live release is refused.
+     */
+    readonly builtFromDescendsFrom?: (revision: string) => Promise<boolean | undefined>
+    /**
      * True when the revision is the revision of the copy or one of its
      * ancestors, false when it is not, `undefined` when the copy does not
      * know it. Without it, a live release of the content store is refused.
@@ -461,6 +474,17 @@ async function checkOver(run: DeployRun, live: DeploymentRecord | null): Promise
         throw new Refusal(
             `the live content revision ${live.contentRevision} is not in the history of this copy (${run.contentRevision}): older or other content would go live`
         )
+    }
+    // A build of a sealed state (R104): its files must not be older than
+    // the files of the live release, which can be a build of a sealed
+    // state itself.
+    if (run.builtFrom !== undefined) {
+        const source = live.builtFrom ?? live.contentRevision
+        if ((await run.builtFromDescendsFrom?.(source)) !== true) {
+            throw new Refusal(
+                `the live release was built from ${source}, and the sealed state ${run.builtFrom} of this takedown does not hold it: older content would go live`
+            )
+        }
     }
 }
 
@@ -1070,6 +1094,7 @@ export async function deployRelease(run: DeployRun): Promise<DeployResult> {
                 siteRevision: run.siteRevision,
                 builtAt: timeOf(run.now()),
                 variants: VARIANT_GENERATION,
+                ...(run.builtFrom === undefined ? {} : { builtFrom: run.builtFrom }),
                 ...(replaced === undefined
                     ? {}
                     : { previous: replaced === null ? null : buildOf(replaced) }),
