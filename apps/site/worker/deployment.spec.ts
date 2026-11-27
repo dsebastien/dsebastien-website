@@ -32,6 +32,9 @@ const PREVIEW = {
     noindex: true
 }
 
+/** The head of a resolver map in two parts. */
+const HEAD = JSON.stringify({ version: 1, parts: 2, records: ['pages'], map: {} })
+
 const PATHS = { main: '/clone/apps/site/worker/worker.ts', dist: '/clone/apps/site/dist' }
 
 describe('the target of a deployment', () => {
@@ -145,11 +148,34 @@ async function withFolder(run: (folder: string) => Promise<void>): Promise<void>
 }
 
 describe('the output that a deployment puts on the host', () => {
-    test('accepts the output of a build: a folder with the head of its resolver map in parts', async () => {
+    /** Writes a head of a map in two parts, and the parts given. */
+    async function mapParts(folder: string, parts: readonly number[]): Promise<void> {
+        await mkdir(join(folder, '-', 'resolver-map'), { recursive: true })
+        await writeFile(join(folder, '-', 'resolver-map', 'head.json'), HEAD)
+        for (const part of parts) {
+            await writeFile(join(folder, '-', 'resolver-map', `${String(part)}.json`), '{}')
+        }
+    }
+
+    test('accepts the output of a build: a folder with the head of its resolver map and every part', async () => {
+        await withFolder(async (folder) => {
+            await mapParts(folder, [0, 1])
+            expect(await checkOutput(folder)).toBeUndefined()
+        })
+    })
+
+    test('refuses an output that lacks a part of its resolver map', async () => {
+        await withFolder(async (folder) => {
+            await mapParts(folder, [0])
+            expect(await checkOutput(folder)).toContain('-/resolver-map/1.json')
+        })
+    })
+
+    test('refuses an output whose head is not a head', async () => {
         await withFolder(async (folder) => {
             await mkdir(join(folder, '-', 'resolver-map'), { recursive: true })
             await writeFile(join(folder, '-', 'resolver-map', 'head.json'), '{}')
-            expect(await checkOutput(folder)).toBeUndefined()
+            expect(await checkOutput(folder)).toContain('is not the head')
         })
     })
 

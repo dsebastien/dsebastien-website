@@ -102,6 +102,9 @@ export interface Summary {
 const firsts = (samples: readonly Sample[]): Sample[] =>
     samples.filter((sample) => sample.newInstance)
 
+const answered = (samples: readonly Sample[]): Sample[] =>
+    samples.filter((sample) => sample.status === 200)
+
 function sideOf(samples: readonly Sample[]): SideSummary {
     const first = firsts(samples)
     return {
@@ -123,9 +126,10 @@ export function summaryOf(host: readonly Sample[], floor: readonly Sample[]): Su
     return {
         host: sideOf(host),
         floor: sideOf(floor),
+        // Only the answers 200 are judged: an error page is not the first request of a reader.
         first: judgeFirstRequests(
-            firsts(host).map((sample) => sample.firstByte),
-            firsts(floor).map((sample) => sample.firstByte)
+            answered(firsts(host)).map((sample) => sample.firstByte),
+            answered(firsts(floor)).map((sample) => sample.firstByte)
         ),
         budget: FIRST_REQUEST_BUDGET
     }

@@ -25,7 +25,12 @@ export function createFloorWorker(): {
             const page = await env.ASSETS.fetch(new Request(`https://static.invalid/${FLOOR_PAGE}`))
             const response = new Response(page.body, {
                 status: page.status,
-                headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }
+                headers: {
+                    'content-type': 'text/html; charset=utf-8',
+                    'cache-control': 'no-store',
+                    // A search engine never keeps a page of the floor.
+                    'x-robots-tag': 'noindex'
+                }
             })
             if (answered) {
                 return response

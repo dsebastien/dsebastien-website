@@ -32,6 +32,8 @@ describe('the floor Worker', () => {
             })
             expect(response.status).toBe(200)
             expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+            // A search engine never keeps a page of the floor.
+            expect(response.headers.get('x-robots-tag')).toBe('noindex')
             expect(await response.text()).toBe('<h1>A page</h1>')
         }
         expect(files.asked).toEqual([`/${FLOOR_PAGE}`, `/${FLOOR_PAGE}`, `/${FLOOR_PAGE}`])

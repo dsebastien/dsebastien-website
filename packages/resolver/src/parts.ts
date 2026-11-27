@@ -128,6 +128,14 @@ function withRecord(
 }
 
 /**
+ * A record with no prototype: a key such as `__proto__` is a key like any
+ * other, never the prototype of the record (a note `__proto__.md`).
+ */
+function emptyRecord(): Record<string, unknown> {
+    return Object.create(null) as Record<string, unknown>
+}
+
+/**
  * The map in parts: its head and its parts. The count of the parts is the
  * smallest power of two that keeps a part at `bytes` or less on average.
  */
@@ -155,7 +163,7 @@ export function mapPartsOf(
         for (const [key, value] of Object.entries(record)) {
             const part = parts[partOfKey(key, count)]
             if (part !== undefined) {
-                const entries = (part[name] ??= {})
+                const entries = (part[name] ??= emptyRecord())
                 entries[key] = value
             }
         }
@@ -167,9 +175,11 @@ export function mapPartsOf(
 export function mapOfParts(head: MapHead, parts: readonly MapPart[]): ResolverMap {
     const map = JSON.parse(JSON.stringify(head.map)) as Record<string, unknown>
     for (const name of head.records) {
-        const record: Record<string, unknown> = {}
+        const record = emptyRecord()
         for (const part of parts) {
-            Object.assign(record, part[name] ?? {})
+            for (const [key, value] of Object.entries(part[name] ?? {})) {
+                record[key] = value
+            }
         }
         withRecord(map, name, record)
     }

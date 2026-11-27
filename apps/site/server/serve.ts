@@ -32,8 +32,8 @@ import {
 // (issue 87, `writeVariants()` of `apps/site/worker/image-variants.ts`):
 // the attachment folder of the publishing tool holds no variant.
 //
-// It reads the resolver map in parts, as the Worker does (issue 121): the
-// head at the start, and a part when a request needs it.
+// It reads the resolver map in parts, with the same resolver as the Worker
+// (issue 121): the head and every part at the start.
 
 /**
  * A file of a folder of this machine. Its tag is its size and its time.
@@ -101,9 +101,24 @@ export async function startServer(options: {
     const dist = resolvePath(options.dist)
     const storage = options.attachments === undefined ? undefined : resolvePath(options.attachments)
     const variants = options.variants === undefined ? undefined : resolvePath(options.variants)
+    // The head and every part are read together at the start: a build that
+    // writes the folder again while the server runs cannot give it the head of
+    // one build and the parts of another. A new build needs a new start.
     const head = mapHeadFrom(await Bun.file(join(dist, MAP_HEAD_FILE)).json())
-    const map = partedResolver(head, async (index) =>
-        mapPartFrom(await Bun.file(join(dist, mapPartFile(index))).json(), head, index)
+    const parts = await Promise.all(
+        Array.from({ length: head.parts }, async (_, index) =>
+            mapPartFrom(await Bun.file(join(dist, mapPartFile(index))).json(), head, index)
+        )
+    )
+    const map = partedResolver(
+        head,
+        (index) => {
+            const part = parts[index]
+            return part === undefined
+                ? Promise.reject(new Error(`the map has no part ${String(index)}`))
+                : Promise.resolve(part)
+        },
+        { keep: head.parts }
     )
     const assets = await readAssets(dist)
     // Read one time at the start: a failure never depends on a file of the

@@ -280,3 +280,44 @@ describe('the resolver of a map in parts', () => {
         expect(await lookup('/Welcome', '')).toEqual(resolve('/Welcome', map, ''))
     })
 })
+
+describe('a key that is a name of the prototype of an object', () => {
+    const map = (): ResolverMap =>
+        resolverMapOf(
+            [
+                { path: 'Docs/__proto__.md', aliases: ['__proto__'] },
+                { path: 'Welcome.md', aliases: ['constructor'] }
+            ],
+            FILES
+        )
+
+    test('is kept in the parts, and the parts give the whole map again', () => {
+        const whole = map()
+        const { head, parts } = mapPartsOf(whole, 50)
+        expect(mapOfParts(head, parts)).toEqual(JSON.parse(JSON.stringify(whole)) as ResolverMap)
+        const text = parts.map((part) => JSON.stringify(part)).join('')
+        expect(text).toContain('"__proto__"')
+    })
+
+    test.each([
+        '/Docs/__proto__',
+        '/docs/__proto__',
+        '/__proto__',
+        '/constructor',
+        '/-/md/Docs/__proto__.md'
+    ])('gives the answer of the whole map for %s', async (path) => {
+        const whole = map()
+        const parts = stored(whole, 50)
+        const lookup = partedResolver(parts.head, parts.load)
+        expect(await lookup(path, '')).toEqual(resolve(path, whole, ''))
+    })
+
+    test('the answers are not "not found"', async () => {
+        const whole = map()
+        expect(resolve('/Docs/__proto__', whole, '').kind).toBe('page')
+        const parts = stored(whole, 50)
+        expect((await partedResolver(parts.head, parts.load)('/__proto__', '')).kind).toBe(
+            'redirect'
+        )
+    })
+})

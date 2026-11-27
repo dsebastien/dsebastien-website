@@ -4,16 +4,19 @@
 // kept in a private place: no name of an account or of a host is in this
 // repository. `scripts/deploy.ts` writes both files and runs wrangler.
 
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
     hasVariants,
     imageVariants,
     MAP_HEAD_FILE,
+    mapHeadFrom,
+    mapPartFile,
     MAX_VARIANT_PIXELS,
     RESOLVER_MAP_FILE,
     VARIANT_WIDTHS,
-    type ImageVariant
+    type ImageVariant,
+    type MapHead
 } from '@dsebastien-website/resolver'
 import { readPublishedNotes } from '../src/content-store.ts'
 
@@ -176,6 +179,22 @@ export async function checkOutput(folder: string): Promise<string | undefined> {
     const map = await stat(join(folder, MAP_HEAD_FILE)).catch(() => undefined)
     if (map?.isFile() !== true) {
         return `${folder} is not the output of a build: it has no resolver map (${MAP_HEAD_FILE})`
+    }
+    // Every part of the map must be there: a host that lacks one answers 500
+    // for each path of that part (issue 121).
+    let head: MapHead
+    try {
+        head = mapHeadFrom(
+            JSON.parse(await readFile(join(folder, MAP_HEAD_FILE), 'utf8')) as unknown
+        )
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+    }
+    for (let index = 0; index < head.parts; index += 1) {
+        const part = await stat(join(folder, mapPartFile(index))).catch(() => undefined)
+        if (part?.isFile() !== true) {
+            return `the output lacks a part of its resolver map: ${mapPartFile(index)}`
+        }
     }
     return undefined
 }

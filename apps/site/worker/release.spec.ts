@@ -149,7 +149,11 @@ function fixture(
             folders.push(dist)
             await mkdir(join(dist, '-', 'resolver-map'), { recursive: true })
             await writeFile(join(dist, '-', 'resolver-map.json'), '{}')
-            await writeFile(join(dist, '-', 'resolver-map', 'head.json'), '{}')
+            await writeFile(
+                join(dist, '-', 'resolver-map', 'head.json'),
+                JSON.stringify({ version: 1, parts: 1, records: ['pages'], map: {} })
+            )
+            await writeFile(join(dist, '-', 'resolver-map', '0.json'), '{}')
             await writeFile(join(dist, 'index.html'), 'home')
             return dist
         },

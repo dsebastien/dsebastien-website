@@ -100,6 +100,18 @@ describe('the summary of a run', () => {
         expect(summary.first.verdict).toBe('pass')
     })
 
+    test('judges only the first requests that answered 200, on both sides', () => {
+        const failed = Array.from({ length: 5 }, () => sample(10, true, 500))
+        const summary = summaryOf(
+            [...run(180, 20, 60), ...failed],
+            [...run(130, 20, 55), ...failed]
+        )
+        expect(summary.first.host.count).toBe(20)
+        expect(summary.first.floor.count).toBe(20)
+        expect(summary.first.host.p50).toBe(189)
+        expect(summary.host.notOk).toBe(5)
+    })
+
     test('no request gives no share and no verdict', () => {
         const summary = summaryOf([], [])
         expect(summary.host.share).toBe(0)

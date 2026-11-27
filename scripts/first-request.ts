@@ -34,7 +34,8 @@ import { NEW_INSTANCE_TIMING } from '../apps/site/worker/instance.ts'
 // The floor: `--floor-target` names the private target file of the host; the
 // check deploys a temporary floor Worker (`apps/site/worker/floor.ts`) on the
 // `workers.dev` name of that account, with one page of the host as its only
-// static file, and deletes it at the end, also after a failure or Ctrl-C. The
+// static file, and deletes it at the end, also after a failure or a signal
+// (Ctrl-C, SIGTERM, SIGHUP). The
 // token is the one of the deployment (`NOTES_DEPLOY_CLOUDFLARE_API_TOKEN`,
 // else `CLOUDFLARE_API_TOKEN`). `--floor` takes the address of a floor that
 // exists already; it is not deleted. A new floor has only new instances: so
@@ -55,8 +56,9 @@ import { NEW_INSTANCE_TIMING } from '../apps/site/worker/instance.ts'
 // The paths are those of `--paths` (one per line), else a sample of the
 // sitemaps of the host. No address of a host is written into this
 // repository. With `--out`, each sample is a JSON line of that file, with its
-// side. The last line of the standard output is the summary, as JSON. The
-// exit code is 1 when the map adds more than the budget.
+// side. Only the answers 200 are judged. The last line of the standard output
+// is the summary, as JSON. The exit code is 1 when the map adds more than the
+// budget, and when a side has too few first requests for a verdict.
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const WRANGLER = join(ROOT, 'apps', 'site', 'node_modules', '.bin', 'wrangler')
@@ -126,6 +128,18 @@ if (paths.length === 0) {
 }
 const pick = (): string => paths[Math.floor(Math.random() * paths.length)] ?? '/'
 
+/**
+ * Deletes the temporary floor Worker, once its name is known. A signal
+ * (Ctrl-C, the end of a session, a stop) runs it before the end: the signals
+ * are set before the floor is deployed.
+ */
+let cleanup: (() => Promise<void>) | undefined
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+    process.on(signal, () => {
+        void (cleanup?.() ?? Promise.resolve()).finally(() => process.exit(130))
+    })
+}
+
 /** A temporary floor Worker: its address, and how to delete it. */
 interface Floor {
     readonly address: URL
@@ -139,13 +153,19 @@ async function deployFloor(targetFile: string): Promise<Floor> {
     if (token === undefined) {
         throw new Error('NOTES_DEPLOY_CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN are not set')
     }
+    // The page of the floor is a page of the host, of the same size: a page, not an error page.
+    const page = await fetch(new URL(paths[0] ?? '/', base))
+    if (page.status !== 200) {
+        throw new Error(
+            `the host answers ${String(page.status)} for ${paths[0] ?? '/'}: the floor needs a page of the host`
+        )
+    }
+    const bytes = new Uint8Array(await page.arrayBuffer())
     const name = floorWorkerName(target.worker, crypto.randomUUID().replaceAll('-', '').slice(0, 6))
     const folder = await mkdtemp(join(tmpdir(), 'first-request-floor-'))
     const dist = join(folder, 'dist')
     await mkdir(dist)
-    // The page of the floor is a page of the host, of the same size.
-    const page = await fetch(new URL(paths[0] ?? '/', base))
-    await writeFile(join(dist, FLOOR_PAGE), new Uint8Array(await page.arrayBuffer()))
+    await writeFile(join(dist, FLOOR_PAGE), bytes)
     const configuration = join(folder, 'wrangler.json')
     await writeFile(
         configuration,
@@ -176,6 +196,8 @@ async function deployFloor(targetFile: string): Promise<Floor> {
         }
         process.stderr.write(`The floor Worker ${name} is deleted.\n`)
     }
+    // From now on a signal deletes the floor Worker, also while wrangler deploys it.
+    cleanup = remove
     try {
         const child = Bun.spawn([WRANGLER, 'deploy', '--config', configuration], {
             cwd: folder,
@@ -270,10 +292,6 @@ const floor =
     values['floor-target'] === undefined
         ? { address: new URL(values.floor ?? ''), remove: () => Promise.resolve() }
         : await deployFloor(values['floor-target'])
-// Ctrl-C deletes the floor Worker too.
-process.on('SIGINT', () => {
-    void floor.remove().finally(() => process.exit(130))
-})
 try {
     await measure(floor.address)
 } finally {
@@ -282,4 +300,5 @@ try {
 
 const summary = summaryOf(samples.host, samples.floor)
 process.stdout.write(`${JSON.stringify({ ...summary, failedRequests: failed })}\n`)
-process.exitCode = summary.first.verdict === 'fail' ? 1 : 0
+// A run with too few first requests proves nothing: it does not pass either.
+process.exitCode = summary.first.verdict === 'pass' ? 0 : 1

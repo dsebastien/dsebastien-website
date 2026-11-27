@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, unlink } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -131,6 +131,28 @@ describe('the plain server and the variants of an image', () => {
 })
 
 describe('the plain server and the map in parts (issue 121)', () => {
+    // A build that writes the folder again while the server runs must not
+    // give it a head of one build and parts of another.
+    test('reads the head and every part at its start: a later build changes no answer', async () => {
+        const folder = join(dist, '-', 'resolver-map')
+        const saved = new Map<string, string>()
+        for (const name of await readdir(folder)) {
+            saved.set(name, await readFile(join(folder, name), 'utf8'))
+            if (name !== 'head.json') {
+                await writeFile(join(folder, name), '{}')
+            }
+        }
+        try {
+            const page = await fetch(`${server.url}/Welcome`)
+            expect(page.status).toBe(200)
+            expect(await page.text()).toBe('<h1>Welcome</h1>')
+        } finally {
+            for (const [name, text] of saved) {
+                await writeFile(join(folder, name), text)
+            }
+        }
+    })
+
     test('answers a page and a variant from the parts of the map', async () => {
         const page = await fetch(`${server.url}/Welcome`)
         expect(page.status).toBe(200)
