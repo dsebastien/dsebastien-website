@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { backlinkList } from './backlink-list.ts'
-import type { Backlink } from './rendering/page.ts'
+import { noteHeader } from './note-header.ts'
+import { SitePages, type Backlink } from './rendering/page.ts'
 
 // The list of the backlinks of a note as a page shows it (issue 48, PAGE-03,
 // R59): the newest update first, and a limited number on the note page.
@@ -56,5 +57,50 @@ describe('list of the backlinks of a note', () => {
             // 2031-03-02
             '/Aster'
         ])
+    })
+})
+
+// A note whose H1 holds an embed (issue 93): its backlink entry gives the
+// text that its own page gives in the title band and in `data-heading`.
+describe('backlink of a note whose H1 holds an embed', () => {
+    test('has the title of the page of that note', () => {
+        const pages = new SitePages([
+            {
+                vaultPath: 'Icon.md',
+                path: '/Icon',
+                markup: '<h1 id="iconpng-title"><note-link data-link="icon.png" data-embed="">icon.png</note-link> Title</h1><p>See <note-link data-link="Target">Target</note-link>.</p>',
+                links: new Map([['Target', 'Target.md']]),
+                files: new Map([
+                    ['icon.png', { url: '/-/attachments/k/icon.png', name: 'icon.png' }]
+                ])
+            },
+            {
+                vaultPath: 'Target.md',
+                path: '/Target',
+                markup: '<p>Text.</p>',
+                links: new Map(),
+                files: new Map()
+            }
+        ])
+        const titleOf = (vaultPath: string): string => {
+            const heading = pages.heading(vaultPath)
+            return noteHeader({
+                fileName: vaultPath.replace(/\.md$/u, ''),
+                properties: {},
+                ...(heading === undefined ? {} : { firstHeading: heading.text }),
+                firstPublished: '2031-03-01T07:30:00Z',
+                lastPublished: '2031-03-20T18:05:00Z'
+            }).title
+        }
+
+        const [entry] = backlinkList(pages.backlinks('Target.md'), (vaultPath) => ({
+            title: titleOf(vaultPath),
+            updated: '2031-03-20'
+        }))
+        const page = pages.page('Icon.md')
+
+        expect(entry?.title).toBe('icon.png Title')
+        expect(entry?.title).toBe(page.heading?.text)
+        expect(titleOf('Icon.md')).toBe(page.heading?.text)
     })
 })
