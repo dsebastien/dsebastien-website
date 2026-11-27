@@ -8,6 +8,7 @@ import { fromHtml } from 'hast-util-from-html'
 import { PAGE_POLICY_FILE, SERVER_ERROR_FILE, pagePolicyFrom } from '@dsebastien-website/resolver'
 import { analyticsOfEnvironment, type AnalyticsSettings } from './analytics/analytics.ts'
 import { VIDEO_FRAME_ORIGIN } from './link-previews/video.ts'
+import { tabStylesOf } from './music/tab-style.ts'
 import { MEMBERS_SITE } from './newsletter/signup.ts'
 
 // The Content Security Policy of the pages (SEC-01, issue 79): as strict as
@@ -149,6 +150,8 @@ export async function writePagePolicy(
             code.styles.forEach((text) => styles.add(text))
         }
     }
+    // The style that alphaTab adds in the browser, on a page with a tab or a score.
+    for (const text of await tabStylesOf(output)) styles.add(text)
     const policy = pagePolicy({ scripts, styles }, analytics)
     await writeFile(join(output, ...PAGE_POLICY_FILE.split('/')), `${policy}\n`)
     return policy

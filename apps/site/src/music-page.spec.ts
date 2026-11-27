@@ -106,6 +106,8 @@ interface Traffic {
     violations: string[]
     /** The errors of the scripts of the page. */
     errors: string[]
+    /** The errors that the console of the page shows. */
+    consoleErrors: string[]
 }
 
 /** A browser context whose requests go to the local server only. */
@@ -152,13 +154,16 @@ async function contextOf(
 }
 
 function noTraffic(): Traffic {
-    return { files: [], refused: [], violations: [], errors: [] }
+    return { files: [], refused: [], violations: [], errors: [], consoleErrors: [] }
 }
 
 /** Opens the page of a note and waits until its music blocks are drawn or failed. */
 async function open(context: BrowserContext, note: string, traffic: Traffic): Promise<Page> {
     const page = await context.newPage()
     page.on('pageerror', (error) => traffic.errors.push(error.message))
+    page.on('console', (message) => {
+        if (message.type() === 'error') traffic.consoleErrors.push(message.text())
+    })
     await page.goto(`${server?.url ?? ''}${pageOf(note).path}`, { waitUntil: 'load' })
     return page
 }
@@ -282,12 +287,10 @@ describe('the music notation of a note page', () => {
         ])
         expect(traffic.refused).toEqual([])
         expect(traffic.errors).toEqual([])
-        // alphaTab adds two `<style>` elements, which the policy refuses: the
-        // music font comes from `FontFace` and the drawing needs no style.
-        expect(traffic.violations.every((text) => text.startsWith('style-src-elem inline'))).toBe(
-            true
-        )
-        expect(traffic.violations.length).toBeLessThanOrEqual(2)
+        // alphaTab skips its shared `<style>` element, and the policy allows the
+        // one of its music font by its hash: no violation, no console error.
+        expect(traffic.violations).toEqual([])
+        expect(traffic.consoleErrors).toEqual([])
         // No sound before the first Play (PERF-21).
         expect(traffic.files.filter((path) => /\.sf[23]$|worker|index\.json/u.test(path))).toEqual(
             []
