@@ -685,6 +685,8 @@ describe('commit of a publication', () => {
         await writeFile(join(other, 'notes', 'Elsewhere.md'), 'A note of another device\n')
         await git('-C', other, 'add', '--', 'notes/Elsewhere.md')
         await git('-C', other, 'commit', '--quiet', '--message', 'A publication of another device')
+        // Sealed, as the tool of another device seals its commits (R104).
+        await sealHead(other)
         const theirs = await git('-C', other, 'rev-parse', 'HEAD')
         // The other device pushes when this one is about to push.
         const hook = join(setup.copy, '.git', 'hooks', 'pre-push')
