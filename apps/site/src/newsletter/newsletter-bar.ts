@@ -63,12 +63,28 @@ export function startNewsletterBar(page: Document, window: Window): void {
         return
     }
     let reached = false
-    // A message of a signup holds the bar until it closes.
+    // A signup that runs, and then its message, hold the bar until it closes.
     let holding = false
     let frame = 0
     // A hidden bar has no height: the last one that it had, else a guess.
     let barHeight = 120
 
+    // While the bar shows, the browser keeps a focused element and the target
+    // of a link above it (WCAG 2.4.11).
+    const setShown = (shown: boolean): void => {
+        bar.hidden = !shown
+        const root = page.documentElement.style
+        if (shown) {
+            root.setProperty('scroll-padding-bottom', `${String(bar.offsetHeight)}px`)
+        } else {
+            root.removeProperty('scroll-padding-bottom')
+        }
+    }
+    // After a dismissal or a signup, the focus goes back to the text of the note.
+    const focusNote = (): void => {
+        if (!note.hasAttribute('tabindex')) note.setAttribute('tabindex', '-1')
+        note.focus({ preventScroll: true })
+    }
     const viewOf = (): BarView => {
         const top = window.scrollY
         const noteBox = note.getBoundingClientRect()
@@ -88,7 +104,7 @@ export function startNewsletterBar(page: Document, window: Window): void {
             focused: holding || bar.contains(page.activeElement)
         })
         reached = step.reached
-        bar.hidden = !step.shown
+        setShown(step.shown)
     }
     const schedule = (): void => {
         if (frame === 0) frame = window.requestAnimationFrame(update)
@@ -97,7 +113,7 @@ export function startNewsletterBar(page: Document, window: Window): void {
         closed = true
         holding = false
         if (storage !== undefined) remember(storage, why)
-        bar.hidden = true
+        setShown(false)
         window.removeEventListener('scroll', schedule)
         window.removeEventListener('resize', schedule)
     }
@@ -112,16 +128,21 @@ export function startNewsletterBar(page: Document, window: Window): void {
         message.textContent = ''
         submit.disabled = true
         form.setAttribute('aria-busy', 'true')
+        holding = true
         void signUp(email.value).then((result) => {
             submit.disabled = false
             form.removeAttribute('aria-busy')
             show(messageOf(result), kindOf(result))
-            if (kindOf(result) === 'success') {
+            if (kindOf(result) !== 'success') {
+                holding = false
+                schedule()
+            } else {
                 // Closed for good at once; the message stays a moment, as today.
                 if (storage !== undefined) remember(storage, 'signed-up')
                 holding = true
                 form.hidden = true
                 dismiss.hidden = true
+                focusNote()
                 window.setTimeout(() => {
                     close('signed-up')
                 }, MESSAGE_TIME)
@@ -130,6 +151,7 @@ export function startNewsletterBar(page: Document, window: Window): void {
     })
     dismiss.addEventListener('click', () => {
         close('dismissed')
+        focusNote()
     })
     bar.addEventListener('focusout', schedule)
     window.addEventListener('scroll', schedule, { passive: true })

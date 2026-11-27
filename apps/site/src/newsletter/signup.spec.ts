@@ -17,9 +17,12 @@ interface Call {
 function network(...answers: (Response | Error)[]): {
     fetch: typeof fetch
     calls: Call[]
+    signals: (AbortSignal | null | undefined)[]
 } {
     const calls: Call[] = []
+    const signals: (AbortSignal | null | undefined)[] = []
     const fake = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        signals.push(init?.signal)
         const headers = Object.fromEntries(new Headers(init?.headers).entries())
         const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined
         calls.push({
@@ -32,7 +35,7 @@ function network(...answers: (Response | Error)[]): {
         if (answer === undefined) return Promise.reject(new Error('no more answers'))
         return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer)
     }
-    return { fetch: fake as typeof fetch, calls }
+    return { fetch: fake as typeof fetch, calls, signals }
 }
 
 /** A fresh answer with an integrity token: a body is read one time. */
@@ -60,6 +63,15 @@ describe('the signup of the newsletter', () => {
                 }
             }
         ])
+    })
+
+    // A signup never waits more than 10 s in all: one time limit for both calls.
+    test('gives both calls one time limit', async () => {
+        const fake = network(token(), new Response('{}', { status: 201 }))
+        await signUp('reader@example.com', fake.fetch)
+        const [first, second] = fake.signals
+        expect(first).toBeInstanceOf(AbortSignal)
+        expect(second).toBe(first)
     })
 
     test('sends nothing for an address with no @', async () => {

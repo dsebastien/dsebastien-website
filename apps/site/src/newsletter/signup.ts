@@ -8,7 +8,7 @@
 /** The main site, whose members API takes the signups. */
 const MEMBERS_SITE = 'https://www.dsebastien.net'
 
-/** The longest wait for one answer of the service. */
+/** The longest wait for a whole signup: the token and the request. */
 const TIME_LIMIT = 10_000
 
 /** The message of today when the service refuses with no message of its own. */
@@ -47,11 +47,13 @@ export async function signUp(email: string, fetcher: typeof fetch = fetch): Prom
     if (!address.includes('@')) {
         return { kind: 'invalid' }
     }
+    // One time limit for both calls, so a signup never waits more than this.
+    const signal = AbortSignal.timeout(TIME_LIMIT)
     try {
         const token = await fetcher(`${MEMBERS_SITE}/members/api/integrity-token/`, {
             method: 'GET',
             headers: { 'app-pragma': 'no-cache', 'x-ghost-version': '6.0' },
-            signal: AbortSignal.timeout(TIME_LIMIT)
+            signal
         })
         if (!token.ok) {
             return { kind: 'failed' }
@@ -61,7 +63,7 @@ export async function signUp(email: string, fetcher: typeof fetch = fetch): Prom
             method: 'POST',
             headers: { 'Content-Type': 'application/json; charset=utf-8' },
             body: JSON.stringify({ email: address, emailType: 'subscribe', integrityToken }),
-            signal: AbortSignal.timeout(TIME_LIMIT)
+            signal
         })
         // The service answers 201 when it sent the mail.
         if (answer.status === 201) {
