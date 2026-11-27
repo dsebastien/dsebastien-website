@@ -86,12 +86,19 @@ export interface Release {
 }
 
 /**
- * The folders of the files that the pages load, in the output of the build:
- * the style sheets and the scripts, which Astro names with a hash, and the
- * indexes of the search (decision R63). Each host gives a file of these
- * folders by the path of its URL, and every other file by the resolver map.
+ * The folder of the images of the link cards in the output of the build
+ * (CARD-06, issue 86): small WebP files named by the hash of their bytes.
  */
-export const ASSET_FOLDERS: readonly string[] = ['_astro', '-/search']
+export const LINK_PREVIEW_FOLDER = '-/link-previews'
+
+/**
+ * The folders of the files that the pages load, in the output of the build:
+ * the style sheets and the scripts, which Astro names with a hash, the
+ * indexes of the search (decision R63), and the images of the link cards.
+ * Each host gives a file of these folders by the path of its URL, and every
+ * other file by the resolver map.
+ */
+export const ASSET_FOLDERS: readonly string[] = ['_astro', '-/search', LINK_PREVIEW_FOLDER]
 
 /**
  * The deployment record of a release (STORE-08), in the output of the build:
@@ -165,13 +172,13 @@ function markdownHeaders(pathname: string): Record<string, string> {
 
 /**
  * How long a client keeps a file that the pages load: a year for a file of
- * `/_astro/`, which Astro names with a hash of its bytes, and a check at
- * each use for the files of the search, whose names stay. The host gives the
+ * `/_astro/` and of the link cards, which are named with a hash of their
+ * bytes, and a check at each use for the files of the search, whose names stay. The host gives the
  * same headers to the files that it serves without the Worker (the
  * `_headers` file of `apps/site/worker/deployment.ts`).
  */
 function assetCacheControl(path: string): string {
-    return path.startsWith('/_astro/')
+    return path.startsWith('/_astro/') || path.startsWith(`/${LINK_PREVIEW_FOLDER}/`)
         ? 'public, max-age=31536000, immutable'
         : 'public, max-age=0, must-revalidate'
 }

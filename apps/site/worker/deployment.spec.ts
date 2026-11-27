@@ -160,13 +160,15 @@ describe('the configuration of the Worker', () => {
             binding: 'ASSETS',
             html_handling: 'none',
             not_found_handling: 'none',
-            run_worker_first: ['/*', '!/_astro/*', '!/-/search/*']
+            run_worker_first: ['/*', '!/_astro/*', '!/-/search/*', '!/-/link-previews/*']
         })
     })
 })
 
 describe('the headers file of the static files', () => {
-    const IMMUTABLE = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n'
+    const IMMUTABLE =
+        '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n' +
+        '/-/link-previews/*\n  Cache-Control: public, max-age=31536000, immutable\n'
     const SECURED = [
         '/*',
         ...Object.entries(SECURITY_HEADERS).map(([name, value]) => `  ${name}: ${value}`)

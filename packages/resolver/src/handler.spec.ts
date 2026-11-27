@@ -491,6 +491,12 @@ describe('a file that the pages load', () => {
     test.each([
         ['/_astro/icon.abc.svg', 'image/svg+xml', 'public, max-age=31536000, immutable'],
         ['/_astro/touch.abc.png', 'image/png', 'public, max-age=31536000, immutable'],
+        // The image of a link card is named by the hash of its bytes (CARD-06).
+        [
+            `/-/link-previews/${'a'.repeat(64)}.webp`,
+            'image/webp',
+            'public, max-age=31536000, immutable'
+        ],
         [
             '/-/search/titles.json',
             'application/json; charset=utf-8',

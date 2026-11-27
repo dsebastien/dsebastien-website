@@ -168,7 +168,7 @@ export function workerConfiguration(
             binding: 'ASSETS',
             html_handling: 'none',
             not_found_handling: 'none',
-            run_worker_first: ['/*', '!/_astro/*', '!/-/search/*']
+            run_worker_first: ['/*', '!/_astro/*', '!/-/search/*', '!/-/link-previews/*']
         },
         r2_buckets: [{ binding: 'ATTACHMENTS', bucket_name: target.bucket }],
         vars: {
@@ -182,15 +182,18 @@ export function workerConfiguration(
 /**
  * The whole `_headers` file of the static files: the deployment writes it
  * into the output, over any file of that name. On every host, the files of
- * `/_astro/` are kept for a year: Astro names them with a hash of their
- * bytes, and the host gives them `max-age=0, must-revalidate` by default. On
- * a preview host, it marks every static file noindex; that is what covers
- * the files that the host gives without the Worker (`/_astro/`,
- * `/-/search/`), because the Worker marks its own answers. Every static file
- * gets the security headers that the Worker gives to its answers (SEC-01).
+ * `/_astro/` and of `/-/link-previews/` are kept for a year: they are named
+ * with a hash of their bytes, and the host gives them `max-age=0,
+ * must-revalidate` by default. On a preview host, it marks every static file
+ * noindex; that is what covers the files that the host gives without the
+ * Worker (`/_astro/`, `/-/search/`, `/-/link-previews/`), because the Worker
+ * marks its own answers. Every static file gets the security headers that
+ * the Worker gives to its answers (SEC-01).
  */
 export function headersFile(target: DeployTarget): string {
-    const immutable = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n'
+    const immutable = ['/_astro/*', '/-/link-previews/*']
+        .map((path) => `${path}\n  Cache-Control: public, max-age=31536000, immutable\n`)
+        .join('')
     const every = [
         '/*',
         ...Object.entries(SECURITY_HEADERS).map(([name, value]) => `  ${name}: ${value}`),
