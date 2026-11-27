@@ -15,7 +15,7 @@ import {
 } from './names.ts'
 import { sortByCodePoint } from './order.ts'
 import { compareCodePoints } from './order.ts'
-import type { Move, QueueLists, Scan } from './queue.ts'
+import type { GuardedEntry, Move, QueueLists, Scan } from './queue.ts'
 
 // The publication plan as data: the exact list of what one publication will
 // do. The rules are in `documentation/Canonical Form.md`, sections "The
@@ -416,7 +416,7 @@ export function planLists(
     queue: QueueLists,
     selection: NormalSelection,
     edits: readonly EditEvent[],
-    guardedEntries: readonly string[],
+    guardedEntries: readonly GuardedEntry[],
     tooLarge: readonly TooLarge[] = []
 ): PublicationPlan {
     const tooLargeNotes = new Set([...queue.tooLarge, ...tooLarge].map((item) => item.path))
@@ -500,7 +500,7 @@ function listsOf(
     queue: QueueLists,
     selection: NormalSelection,
     edits: readonly EditEvent[],
-    guardedEntries: readonly string[],
+    guardedEntries: readonly GuardedEntry[],
     tooLargeNotes: ReadonlySet<string>
 ): PublicationPlan {
     const onlyMissing = new Set(queue.missing)
@@ -519,9 +519,15 @@ function listsOf(
     // whose attachments list a file under a guard now.
     const leaving = new Set([...forcedRemove, ...remove])
     const pairedTo = new Map(selection.pair.map((pairing) => [pairing.from, pairing.to]))
+    // A guarded file whose key an entry that stays lists from a file under
+    // no guard is kept by the cleanup: the note loses nothing (issue 108).
     const guardedAttachments = guardedEntries
-        .filter((path) => !leaving.has(path))
-        .map((path) => pairedTo.get(path) ?? path)
+        .filter(
+            ({ path, hashes }) =>
+                !leaving.has(path) &&
+                hashes.some(({ openlyUsedBy }) => openlyUsedBy.every((user) => leaving.has(user)))
+        )
+        .map(({ path }) => pairedTo.get(path) ?? path)
     return makePlan({
         edits,
         // An unpublished note under a guard leaves the manifest too (decision R64).

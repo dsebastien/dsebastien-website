@@ -39,7 +39,7 @@ import {
     outcomeOfTakedown
 } from '../publishing/mcp.ts'
 import type { ToolCall, ToolOutcome } from '../publishing/mcp.ts'
-import type { Move, PublicationQueue } from '../publishing/queue.ts'
+import type { GuardedEntry, Move, PublicationQueue } from '../publishing/queue.ts'
 import {
     confirmProposal,
     confirmState,
@@ -237,7 +237,7 @@ export interface CenterState {
      */
     readonly edits?: readonly EditEvent[]
     /** The published entries whose attachments list a file under a guard, at the last check: the plan names the ones that stay (`guardedAttachments`). */
-    readonly guardedEntries?: readonly string[]
+    readonly guardedEntries?: readonly GuardedEntry[]
     /** When the last check ended. */
     readonly checkedAt?: Date
     readonly activity: Activity

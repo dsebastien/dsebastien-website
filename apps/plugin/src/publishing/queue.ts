@@ -129,6 +129,20 @@ export interface ScannedNote {
     readonly namesState: boolean
 }
 
+/**
+ * A published entry whose `attachments` list a file under a guard: for each
+ * hash of such a file, the published entries that list the same hash from a
+ * file under no guard. The cleanup keeps that key while one of them stays
+ * (issue 108, point 2).
+ */
+export type GuardedEntry = {
+    readonly path: string
+    readonly hashes: readonly {
+        readonly hash: string
+        readonly openlyUsedBy: readonly string[]
+    }[]
+}
+
 /** The result of one scan of the vault against the manifest. */
 export interface Scan {
     readonly queue: QueueLists
@@ -173,10 +187,11 @@ export interface Scan {
     readonly isGuardedFile: (path: string, hash: string) => Promise<boolean>
     /**
      * The published entries, after the moves, whose `attachments` list a
-     * file that is under a guard now (`isGuardedFile`), sorted: the plan
-     * names the ones that stay published (`guardedAttachments`).
+     * file that is under a guard now (`isGuardedFile`), sorted by path: the
+     * plan names the ones that stay published and would lose a file
+     * (`guardedAttachments`).
      */
-    readonly guardedEntries: readonly string[]
+    readonly guardedEntries: readonly GuardedEntry[]
     /** Every entry of the manifest after the moves of the rename journals, by the vault path of its note. */
     readonly manifest: ReadonlyMap<string, ManifestEntry>
     /** The unpublished entries that leave the manifest because another entry moved into their paths (rule 6 of the moves). */
@@ -559,18 +574,34 @@ export async function computeQueue(input: {
     // The published entries whose attachments list a file that is under a
     // guard now: a publication would delete that file (rule 8 of "A
     // publication"), and the note would show it as missing.
-    const guardedEntries: string[] = []
+    // A hash that a published entry lists from a file under no guard keeps
+    // its key in the cleanup while that entry stays (issue 108, point 2).
+    const guardedHashes = new Map<string, Set<string>>()
+    const openUsers = new Map<string, Set<string>>()
     for (const [path, entry] of manifest) {
         if (entry.state !== 'published') {
             continue
         }
         for (const attachment of entry.attachments) {
             if (await isGuardedFile(attachment.path, attachment.hash)) {
-                guardedEntries.push(path)
-                break
+                guardedHashes.set(path, (guardedHashes.get(path) ?? new Set()).add(attachment.hash))
+            } else {
+                openUsers.set(
+                    attachment.hash,
+                    (openUsers.get(attachment.hash) ?? new Set()).add(path)
+                )
             }
         }
     }
+    const guardedEntries: GuardedEntry[] = sortByCodePoint([...guardedHashes.keys()]).map(
+        (path) => ({
+            path,
+            hashes: sortByCodePoint([...(guardedHashes.get(path) ?? [])]).map((hash) => ({
+                hash,
+                openlyUsedBy: sortByCodePoint([...(openUsers.get(hash) ?? [])])
+            }))
+        })
+    )
     const queue: QueueLists = {
         changed: sortByCodePoint(lists.changed),
         counts: {
@@ -627,7 +658,7 @@ export async function computeQueue(input: {
             return sortTooLarge(found)
         },
         isGuardedFile,
-        guardedEntries: sortByCodePoint(guardedEntries),
+        guardedEntries,
         manifest,
         displaced: moves.displaced,
         released,

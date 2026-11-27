@@ -48,7 +48,7 @@ import type { NormalSelection, PublicationPlan, Selection } from './plan.ts'
 import { hasListToRefresh, listsNotRefreshed, liveQueries } from './frozen.ts'
 import type { Device, Fetch, LockHolder, NoteTypes, RefreshResult, Sealer } from './ports.ts'
 import { computeQueue, movedEntry, noteTypesOf } from './queue.ts'
-import type { Move, PublicationQueue, Scan } from './queue.ts'
+import type { GuardedEntry, Move, PublicationQueue, Scan } from './queue.ts'
 import { foldMoves, movedFolder, parseMarkers, readJournals, RENAMES_FILE } from './renames.ts'
 import { checkSeal, SealDiffers, sealKeyOf, sealOf } from './seal.ts'
 import type { StoreDifference } from './seal.ts'
@@ -476,7 +476,7 @@ export async function statusWithEdits(given: Device): Promise<{
     readonly queue: PublicationQueue
     readonly edits: readonly EditEvent[]
     /** The published entries whose attachments list a file under a guard now (`guardedAttachments` of a plan). */
-    readonly guardedEntries: readonly string[]
+    readonly guardedEntries: readonly GuardedEntry[]
     /** The source hash of each candidate and of each note of `movedEdited`, as the scan read it (issue 111). */
     readonly sources: ReadonlyMap<string, string>
 }> {

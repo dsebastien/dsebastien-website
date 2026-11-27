@@ -605,7 +605,9 @@ fn published_attachments(
 /// delete the file, and the note would show it as missing, also after its
 /// update. They are the published entries after the moves whose attachments
 /// list such a file, without the forced removals and the notes to unpublish,
-/// at the new path of a pairing. Sorted by path.
+/// at the new path of a pairing, and without the entries whose every such
+/// file has the hash of a file under no guard of an entry that stays. Sorted
+/// by path.
 fn guarded_attachments(
     device: &Device,
     scan: &Scan,
@@ -613,13 +615,27 @@ fn guarded_attachments(
     selection: &Selection,
 ) -> Vec<String> {
     let leaving: BTreeSet<&String> = plan.forced_remove().iter().chain(plan.remove()).collect();
+    // The hashes that an entry that stays lists from a file under no guard:
+    // the cleanup keeps their keys, so a guarded file with such a hash takes
+    // nothing from its note (issue 108, point 2).
+    let kept: BTreeSet<&String> = scan
+        .manifest
+        .iter()
+        .filter(|(path, entry)| entry.state == State::Published && !leaving.contains(path))
+        .flat_map(|(_, entry)| &entry.attachments)
+        .filter(|attachment| {
+            !scan.is_guarded_file(&device.vault, &attachment.path, &attachment.hash)
+        })
+        .map(|attachment| &attachment.hash)
+        .collect();
     scan.manifest
         .iter()
         .filter(|(path, entry)| {
             entry.state == State::Published
                 && !leaving.contains(path)
                 && entry.attachments.iter().any(|attachment| {
-                    scan.is_guarded_file(&device.vault, &attachment.path, &attachment.hash)
+                    !kept.contains(&attachment.hash)
+                        && scan.is_guarded_file(&device.vault, &attachment.path, &attachment.hash)
                 })
         })
         .map(|(path, _)| {

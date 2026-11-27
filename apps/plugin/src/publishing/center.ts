@@ -2,7 +2,7 @@ import type { EditEvent } from './edits.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { planLists } from './plan.ts'
 import type { NormalSelection, PublicationPlan } from './plan.ts'
-import type { Move, QueueLists } from './queue.ts'
+import type { GuardedEntry, Move, QueueLists } from './queue.ts'
 
 // The model of the publication center of the plugin (issue 39, decision
 // R67): the ticks of the author, the selection that they give, the plan that
@@ -121,7 +121,7 @@ export function planOfChoices(
     queue: QueueLists,
     choices: Choices,
     edits: readonly EditEvent[],
-    guardedEntries: readonly string[]
+    guardedEntries: readonly GuardedEntry[]
 ): PublicationPlan {
     return planLists(queue, selectionOf(queue, choices), edits, guardedEntries)
 }

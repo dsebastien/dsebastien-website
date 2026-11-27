@@ -12203,6 +12203,117 @@
             ]
         },
         {
+            "name": "a note whose file under a guard has the bytes of a file that a published note uses openly loses nothing (issue 108, point 2)",
+            "denyList": [],
+            "vault": {
+                "Notes/Plan.md": "# Plan\n\n![[plan.png]]\n",
+                "Notes/Open.md": "# Open\n\n![[open.png]]\n",
+                "Images/plan.png": {
+                    "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                },
+                "Shared/open.png": {
+                    "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                }
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "two notes go live with two images of the same bytes: one key",
+                    "selection": {
+                        "include": ["Notes/Open.md", "Notes/Plan.md"]
+                    },
+                    "time": "2031-10-01T08:00:00Z",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [
+                            "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e"
+                        ],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["Notes/Open.md", "Notes/Plan.md"],
+                        "published": ["Notes/Open.md", "Notes/Plan.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "the author denies the folder of one image by hand, on another device",
+                    "files": {
+                        "configuration.json": "{\n  \"denyList\": [\n    \"Images\"\n  ]\n}\n"
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "the key of the guarded image is also the key of the open image of a note that stays: the cleanup keeps it, so no note is in guardedAttachments",
+                    "selection": {},
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": [],
+                        "move": [],
+                        "publish": [],
+                        "remove": [],
+                        "update": ["Notes/Plan.md"]
+                    }
+                },
+                {
+                    "do": "plan",
+                    "why": "when the note with the open image leaves in the same plan, the key goes, and the note is in guardedAttachments again",
+                    "selection": {
+                        "remove": ["Notes/Open.md"]
+                    },
+                    "plan": {
+                        "edits": [],
+                        "forcedRemove": [],
+                        "guardedAttachments": ["Notes/Plan.md"],
+                        "move": [],
+                        "publish": [],
+                        "remove": ["Notes/Open.md"],
+                        "update": ["Notes/Plan.md"]
+                    }
+                },
+                {
+                    "do": "publish",
+                    "why": "an agent publication without accept goes on: no note would lose a file",
+                    "selection": {},
+                    "time": "2031-10-01T09:00:00Z",
+                    "face": "mcp-server",
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": [],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": ["Notes/Plan.md"],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the shared key stays in the attachment storage, and no key is withdrawn",
+                    "vault": {},
+                    "store": {
+                        "withdrawn.json": null
+                    },
+                    "attachmentStorage": {
+                        "6fce31d6f96890357d0be3f44057a21ddbbe722910405abe92f1f6c90f6bc18e": {
+                            "bytes": "89504e470d0a1a0a0000000d49484452000000100000000c080200000000000000"
+                        }
+                    }
+                }
+            ]
+        },
+        {
             "name": "frozen lists with Obsidian closed (issue 40)",
             "denyList": ["Private"],
             "vault": {
