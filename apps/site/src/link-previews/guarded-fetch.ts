@@ -109,7 +109,8 @@ export function isPublicAddress(address: string): boolean {
     if (inPrefix(v6, [0, 0x64, 0xff, 0x9b], 32)) return isPublicV4(embedded)
     if (!inPrefix(v6, [0x20], 3)) return false
     if (inPrefix(v6, [0x20, 0x01, 0x0d, 0xb8], 32)) return false
-    if (inPrefix(v6, [0x20, 0x01, 0, 0], 32)) return false
+    // 2001::/23: special IPv6 blocks (Teredo, benchmarking, ORCHID), not routed as hosts.
+    if (inPrefix(v6, [0x20, 0x01, 0], 23)) return false
     if (inPrefix(v6, [0x20, 0x02], 16)) return isPublicV4(v6.slice(2, 6))
     return true
 }

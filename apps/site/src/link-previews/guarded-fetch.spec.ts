@@ -151,6 +151,9 @@ describe('the addresses that a preview may reach (CARD-06)', () => {
             '2002:7f00:1::1',
             '2002:c0a8:101::1',
             '2001:db8::1',
+            '2001:2::1',
+            '2001:10::1',
+            '2001:20::1',
             'garden.test',
             ''
         ]) {
@@ -158,6 +161,7 @@ describe('the addresses that a preview may reach (CARD-06)', () => {
         }
         expect(isPublicAddress('::ffff:8.8.8.8')).toBe(true)
         expect(isPublicAddress('172.15.0.1')).toBe(true)
+        expect(isPublicAddress('2001:4860:4860::8888')).toBe(true)
         expect(isPublicAddress('172.32.0.1')).toBe(true)
         expect(isPublicAddress('100.128.0.1')).toBe(true)
     })
