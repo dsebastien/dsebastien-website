@@ -298,9 +298,15 @@ fn the_publication_adds_one_commit_with_the_note_and_its_manifest_entry() {
         "main",
     ]);
     let files: Vec<&str> = files.split('\0').filter(|file| !file.is_empty()).collect();
+    // The first commit of a publication gives edits.json the hash of the
+    // configuration (issue 108).
     assert_eq!(
         files,
-        [format!("manifest/{NOTE_ID}.json"), format!("notes/{NOTE}")]
+        [
+            "edits.json".to_owned(),
+            format!("manifest/{NOTE_ID}.json"),
+            format!("notes/{NOTE}")
+        ]
     );
     assert_eq!(git(&["-C", text(&setup.copy), "status", "--porcelain"]), "");
     assert_eq!(
@@ -712,6 +718,7 @@ fn the_commit_holds_only_the_files_of_the_publication_also_when_a_rule_ignores_t
         files,
         [
             "configuration.json".to_owned(),
+            "edits.json".to_owned(),
             format!("manifest/{NOTE_ID}.json"),
             format!("notes/{NOTE}")
         ]
@@ -1482,7 +1489,7 @@ fn a_takedown_removes_the_note_and_its_entry_in_one_commit_which_names_the_taked
     );
     assert_eq!(
         git(&["--git-dir", remote, "ls-tree", "-r", "--name-only", "main"]),
-        "configuration.json"
+        "configuration.json\nedits.json"
     );
     let local = setup.copy.join(".git").join("vault-publish");
     assert!(!local.join("journal.json").exists());

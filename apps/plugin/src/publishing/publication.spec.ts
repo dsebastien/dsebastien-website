@@ -271,7 +271,10 @@ describe('first publication of a note', () => {
         const remote = ['--git-dir', stores.contentStore]
         expect(await git(...remote, 'rev-list', '--count', 'main')).toBe('2')
         const files = await git(...remote, 'diff', '--name-only', '-z', 'main~1', 'main')
+        // The first commit of a publication gives edits.json the hash of the
+        // configuration (issue 108).
         expect(files.split('\0').filter((file) => file !== '')).toEqual([
+            'edits.json',
             `manifest/${NOTE_ID}.json`,
             `notes/${NOTE}`
         ])
@@ -628,7 +631,7 @@ describe('commit of a publication', () => {
                 .split('\0')
                 .filter((file) => file !== '')
                 .sort()
-        ).toEqual(['configuration.json', `manifest/${NOTE_ID}.json`, `notes/${NOTE}`])
+        ).toEqual(['configuration.json', 'edits.json', `manifest/${NOTE_ID}.json`, `notes/${NOTE}`])
         expect(await Bun.file(join(setup.copy, 'scratch.txt')).text()).toBe(
             'not for the content store\n'
         )
@@ -757,7 +760,7 @@ describe('takedown', () => {
             `Takedown: 1 note\n\nDevice: garden-shed\nFace: plugin\nPlan: <id>\nSeal: <seal>\n\n\nD\tmanifest/${NOTE_ID}.json\nD\tnotes/${NOTE}`
         )
         expect(await git(...remote, 'ls-tree', '-r', '--name-only', 'main')).toBe(
-            'configuration.json'
+            'configuration.json\nedits.json'
         )
         expect(await exists(join(setup.copy, '.git', 'vault-publish', 'journal.json'))).toBe(false)
         expect(await exists(join(setup.copy, '.git', 'vault-publish', 'lock'))).toBe(false)

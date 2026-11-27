@@ -430,6 +430,8 @@ function typescriptTool(vault: string, copy: string): Tool {
                 lists: toCanonicalJson({
                     // The attachments that leave the site (issue 135).
                     attachmentsRemoved: planned.attachmentsRemoved,
+                    // A change of configuration.json by hand (issue 108).
+                    configurationChanged: planned.configurationChanged,
                     listsNotRefreshed: planned.listsNotRefreshed,
                     liveQueries: planned.liveQueries,
                     tooLarge: planned.tooLarge
@@ -450,8 +452,9 @@ function typescriptTool(vault: string, copy: string): Tool {
 
 /**
  * The error output of the Rust program without the warnings of a plan about
- * its frozen lists (R71): the TypeScript face has no such output, and the
- * lists themselves are compared.
+ * its frozen lists (R71) and a change of the configuration by hand (issue
+ * 108): the TypeScript face has no such output, and the values themselves
+ * are compared.
  */
 function withoutListWarnings(stderr: string): string {
     return stderr
@@ -460,6 +463,11 @@ function withoutListWarnings(stderr: string): string {
             (line) =>
                 !/^warning: \d+ notes of the plan have (Dataview lists|a live Dataview or Bases block)/u.test(
                     line
+                ) &&
+                // The warning of configurationChanged (issue 108): the value
+                // itself is compared.
+                !line.startsWith(
+                    'warning: configuration.json changed since the last publication'
                 ) &&
                 // A takedown with --no-deploy waits for its deploy (issue 32):
                 // status says so, outside its report.
@@ -494,6 +502,7 @@ function rustTool(vault: string, copy: string): Tool {
                 id: string
                 plan: Record<string, CanonicalValue>
                 attachmentsRemoved: CanonicalValue
+                configurationChanged: boolean
                 listsNotRefreshed: string[]
                 liveQueries: string[]
                 tooLarge: CanonicalValue
@@ -518,6 +527,8 @@ function rustTool(vault: string, copy: string): Tool {
                 lists: toCanonicalJson({
                     // The attachments that leave the site (issue 135).
                     attachmentsRemoved: planned.attachmentsRemoved,
+                    // A change of configuration.json by hand (issue 108).
+                    configurationChanged: planned.configurationChanged,
                     listsNotRefreshed: planned.listsNotRefreshed,
                     liveQueries: planned.liveQueries,
                     tooLarge: planned.tooLarge
