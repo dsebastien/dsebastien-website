@@ -425,7 +425,8 @@
 
     /* A block of code. The highlighter writes classes (REN-06); the colors
        come from tokens that pass WCAG AA on the well in both modes. */
-    .note-text pre {
+    /* Not the lines of a chart of a music block: the library draws them as `pre`. */
+    .note-text pre:not(.mn-block *) {
         @apply overflow-x-auto rounded-card border border-border bg-well p-4 font-mono text-base leading-7 text-primary;
     }
 
@@ -732,6 +733,7 @@
         --interactive-accent: var(--color-secondary);
         --text-on-accent: var(--color-on-secondary);
         --font-interface: var(--font-sans);
+        --font-monospace: var(--font-mono);
     }
 
     /* The place of a music block before it draws: the height of a usual drawing
@@ -792,18 +794,70 @@
     }
 }
 
-/* On a touch screen, each control of a playback bar of a music block is 44 px
-   at least, and its fields have a text of 16 px (section 15.1.1 of the spec). Outside the layers: the style sheet
-   of the library has no layer, and its own sizes would win over a layer. */
+/* The playback bars of the music blocks (REN-07): the look of the library (a
+   small bar of plain controls), with the tokens of the site. Outside the
+   layers: the style sheet of the library has no layer, and a layer would lose
+   to it. The class twice: its rules for these controls are as strong as one. */
+.note-text.note-text .mn-play {
+    border-radius: var(--radius-pill);
+    font-family: var(--font-sans);
+}
+
+.note-text.note-text .mn-play :is(button, select, .mn-tempo-value) {
+    border-radius: var(--radius-pill);
+}
+
+/* The library takes the outline of its controls away (`all: unset`): a key
+   of the keyboard shows the ring of the site again (WCAG 2.4.7). */
+.note-text.note-text .mn-play :is(button, select, input):focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+}
+
+/* On a touch screen, each control of a playback bar is 44 px at least, its
+   icons and the thumb of its slider grow with it, and its fields have a text
+   of 16 px, so a phone does not zoom into them (section 15.1.1 of the spec). */
 @media (any-pointer: coarse) {
-    /* The class twice: the rules of the library for these controls are as strong as one. */
+    .note-text.note-text .mn-play {
+        gap: --spacing(1);
+        padding: --spacing(1);
+        font-size: var(--text-sm);
+    }
+
     .note-text.note-text .mn-play :is(button, select, input[type]) {
         min-width: --spacing(11);
         min-height: --spacing(11);
+        font-size: var(--text-sm);
     }
 
-    /* A phone zooms into a field with a smaller text when it takes the focus. */
     .note-text.note-text .mn-play :is(select, input[type]) {
         font-size: var(--text-base);
+    }
+
+    .note-text.note-text .mn-play .mn-play-icon {
+        width: --spacing(4);
+        height: --spacing(4);
+    }
+
+    .note-text.note-text .mn-play input[type='range'] {
+        width: --spacing(24);
+    }
+
+    .note-text.note-text .mn-play input[type='range']::-webkit-slider-runnable-track {
+        height: --spacing(5);
+    }
+
+    .note-text.note-text .mn-play input[type='range']::-webkit-slider-thumb {
+        width: --spacing(5);
+        height: --spacing(5);
+    }
+
+    .note-text.note-text .mn-play input[type='range']::-moz-range-track {
+        height: --spacing(5);
+    }
+
+    .note-text.note-text .mn-play input[type='range']::-moz-range-thumb {
+        width: --spacing(5);
+        height: --spacing(5);
     }
 }

@@ -333,6 +333,15 @@ describe('the music notation of a note page', () => {
     test('a diagram and a tab play, with the instrument files of the site', async () => {
         const traffic = noTraffic()
         const context = await contextOf(traffic)
+        await context.addInitScript(() => {
+            const loaded: string[] = []
+            ;(window as unknown as { __worklets: string[] }).__worklets = loaded
+            const add = AudioWorklet.prototype.addModule
+            AudioWorklet.prototype.addModule = async function (url, options) {
+                await add.call(this, url, options)
+                loaded.push(String(url))
+            }
+        })
         const page = await open(context, MUSIC_NOTE, traffic)
         await waitForBlocks(page)
         // The first Play of the chord diagram reads the instruments that it plays.
@@ -345,7 +354,8 @@ describe('the music notation of a note page', () => {
             SOUNDS_PATH,
             { timeout: 20_000 }
         )
-        // The first Play of the tab starts the synthesizer of alphaTab in its worker.
+        // The first Play of the tab starts the synthesizer of alphaTab in its worker, and
+        // the sound goes out through its audio worklet, a file of the site: off the main thread.
         await page.locator('.mn-tab-holder .mn-play button').first().click()
         await page.waitForFunction(
             () =>
@@ -355,11 +365,93 @@ describe('the music notation of a note page', () => {
             undefined,
             { timeout: 20_000 }
         )
+        // A worklet is no resource of the timeline: the page records what it loads.
+        await page.waitForFunction(
+            () => (window as unknown as { __worklets: string[] }).__worklets.length > 0,
+            undefined,
+            { timeout: 20_000 }
+        )
+        const worklets = await page.evaluate(
+            () => (window as unknown as { __worklets: string[] }).__worklets
+        )
         await page.waitForTimeout(2_000)
         await context.close()
         expect(traffic.files).toContain(`${SOUNDS_PATH}/index.json`)
+        // One worklet for each player: the diagrams' and the tab's.
+        expect(worklets.length).toBeGreaterThan(0)
+        for (const url of worklets) expect(url).toMatch(/^\/_astro\/alphaTab\.worklet[^/]*\.js$/u)
         expect(traffic.refused).toEqual([])
         expect(traffic.errors).toEqual([])
+        expect(traffic.violations).toEqual([])
+        expect(traffic.consoleErrors).toEqual([])
+    }, 90_000)
+
+    test('the bars have the style of the site, and the music follows the mode', async () => {
+        const traffic = noTraffic()
+        const context = await contextOf(traffic)
+        const page = await open(context, MUSIC_NOTE, traffic)
+        await waitForBlocks(page)
+        const look = await page.evaluate(() => {
+            const bar = document.querySelector('.mn-block-chord .mn-play') as HTMLElement
+            const button = bar.querySelector('button') as HTMLElement
+            const radius = getComputedStyle(document.documentElement).getPropertyValue(
+                '--theme-radius-pill'
+            )
+            const line = document.querySelector('.mn-block pre.mn-pre')
+            return {
+                barFont: getComputedStyle(bar).fontFamily,
+                buttonRadius: getComputedStyle(button).borderTopLeftRadius,
+                buttonHeight: button.getBoundingClientRect().height,
+                radius: Number.parseFloat(radius) * 16,
+                // A line of a chart is not a block of code of the note: no border.
+                lineBorder: line === null ? 'none' : getComputedStyle(line).borderTopStyle
+            }
+        })
+        expect(look.barFont).toContain('Noto Sans')
+        expect(look.buttonRadius).toBe(`${String(look.radius)}px`)
+        expect(look.buttonHeight).toBeGreaterThan(0)
+        expect(look.lineBorder).toBe('none')
+        /** The mean brightness of the opaque pixels of the tab: its ink. */
+        const ink = (): Promise<number> =>
+            page.evaluate(() => {
+                let sum = 0
+                let count = 0
+                for (const canvas of document.querySelectorAll('.mn-tab-holder canvas')) {
+                    const context = (canvas as HTMLCanvasElement).getContext('2d')
+                    if (context === null) continue
+                    const { width, height } = canvas as HTMLCanvasElement
+                    const { data } = context.getImageData(0, 0, width, height)
+                    for (let at = 0; at < data.length; at += 4) {
+                        if ((data[at + 3] ?? 0) < 250) continue
+                        sum += ((data[at] ?? 0) + (data[at + 1] ?? 0) + (data[at + 2] ?? 0)) / 3
+                        count += 1
+                    }
+                }
+                return count === 0 ? -1 : sum / count
+            })
+        const mode = (): Promise<string | undefined> =>
+            page.evaluate(() => document.documentElement.dataset['theme'])
+        const before = await ink()
+        const first = await mode()
+        await page.locator('[data-mode-switch]').first().click()
+        await page.waitForFunction(
+            (was) => document.documentElement.dataset['theme'] !== was,
+            first
+        )
+        await page.waitForTimeout(1_000)
+        const after = await ink()
+        await context.close()
+        expect(before).toBeGreaterThan(-1)
+        // Dark ink on a light page, light ink on a dark page: every text of the drawing too.
+        if (first === 'light') {
+            expect(before).toBeLessThan(80)
+            expect(after).toBeGreaterThan(170)
+        } else {
+            expect(before).toBeGreaterThan(170)
+            expect(after).toBeLessThan(80)
+        }
+        expect(traffic.errors).toEqual([])
+        expect(traffic.consoleErrors).toEqual([])
     }, 90_000)
 
     for (const width of [320, 390]) {
