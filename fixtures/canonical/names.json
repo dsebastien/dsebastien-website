@@ -260,6 +260,14 @@
             "twins": { "A B/n.md": "A\u00a0B/n.md", "A\u00a0B/n.md": "A B/n.md" }
         },
         {
+            "name": "a file that is not a note can have the Obsidian path of a note: a name that ends with a backslash",
+            "paths": ["n.md", "n.md\\"],
+            "twins": {
+                "n.md": "n.md\\",
+                "n.md\\": "n.md"
+            }
+        },
+        {
             "name": "another letter case is not the same path for Obsidian",
             "paths": ["a.md", "A.md"],
             "twins": {}
