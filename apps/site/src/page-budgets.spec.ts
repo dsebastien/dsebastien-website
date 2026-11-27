@@ -18,6 +18,7 @@ import {
 import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 import { checkNotePage, PAGE_BUDGET, type PageCheck } from './budgets.ts'
+import { writePreviewSample } from './link-previews/preview-sample.ts'
 import { FRAME_IDS } from './rendering/anchors.ts'
 import { listPageFile } from './site-files.ts'
 
@@ -40,6 +41,7 @@ const SITE = fileURLToPath(new URL('..', import.meta.url))
 
 let stores: TestStores | undefined
 let outDir: string | undefined
+let previews: string | undefined
 let exitCode = -1
 const checks = new Map<string, PageCheck>()
 let sampleFiles: Record<string, string> = {}
@@ -142,13 +144,18 @@ beforeAll(async () => {
     const cache = join(SITE, '.cache')
     await mkdir(cache, { recursive: true })
     outDir = await mkdtemp(join(cache, 'page-budgets-spec-'))
+    // The previews of the link cards (issue 86): the images of the cards count.
+    previews = `${outDir}-previews`
+    await writePreviewSample(previews)
     const child = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
         // The analytics of a target (AN-01): the budgets measure the page as it ships.
         env: {
             ...process.env,
             CONTENT_STORE: contentStore,
-            SITE_ANALYTICS: JSON.stringify(TEST_ANALYTICS)
+            SITE_ANALYTICS: JSON.stringify(TEST_ANALYTICS),
+            LINK_PREVIEWS: 'cache',
+            LINK_PREVIEWS_CACHE: previews
         },
         stdout: 'ignore',
         stderr: 'inherit'
@@ -182,6 +189,9 @@ afterAll(async () => {
     if (outDir !== undefined) {
         await rm(outDir, { recursive: true, force: true })
     }
+    if (previews !== undefined) {
+        await rm(previews, { recursive: true, force: true })
+    }
     await stores?.remove()
 })
 
@@ -214,6 +224,16 @@ describe('budgets of the note page', () => {
         expect(media?.measure.images.count).toBe(4)
         expect(media?.measure.images.first).toEndWith('/cover.jpg')
         expect(hub?.measure.html).toBeGreaterThan(0)
+    })
+
+    // Issue 86, CARD-06: a note page with link cards and their stored images
+    // is in the budgets too; its first image is the image of a card.
+    test('the pages with the images of their cards are measured', () => {
+        const withCards = [...checks.values()].filter((check) =>
+            check.measure.images.first?.startsWith('/-/link-previews/')
+        )
+        expect(withCards.length).toBeGreaterThanOrEqual(2)
+        expect(withCards.flatMap((check) => check.failures)).toEqual([])
     })
 
     // Issue 87, PERF-25: the cover is the largest paint of a media note on a phone.

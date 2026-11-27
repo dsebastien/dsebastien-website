@@ -18,6 +18,7 @@ import { fileNoteTypes, nodeDevice } from '../apps/plugin/src/publishing/node/de
 import { plan, publish, status } from '../apps/plugin/src/publishing/tool.ts'
 import { judgeTimes, TIME_BUDGET, type TimeBudget, type TimeRun } from '../apps/site/src/budgets.ts'
 import { startServer } from '../apps/site/server/serve.ts'
+import { writePreviewSample } from '../apps/site/src/link-previews/preview-sample.ts'
 import { writeReleaseVariants } from '../apps/site/worker/image-variants.ts'
 
 // The invented stores are sealed with the key of the tests (R104): every
@@ -41,7 +42,8 @@ process.env['VAULT_PUBLISH_SEAL_KEY'] = testSealKey()
 // blocking time of one page go from 18 ms to 1,700 ms (issue 25). Everything
 // lives in `.cache/` and is removed at the end, but the reports. The
 // variants of the images (issue 87) are made as a deploy makes them, into a
-// folder that the plain server reads.
+// folder that the plain server reads. A fourth page is a note of the fixture
+// vault with link cards, whose previews come from the preview sample (issue 86).
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'apps', 'site')
@@ -64,7 +66,8 @@ const MAX_WAIT_MS = 10 * 60_000
 const PAGES: { name: string; vaultPath: string; mobile: TimeBudget }[] = [
     { name: 'long note', vaultPath: BUDGET_SAMPLE.long, mobile: TIME_BUDGET.mobile },
     { name: 'media note', vaultPath: BUDGET_SAMPLE.media, mobile: TIME_BUDGET.mobileMedia },
-    { name: 'hub note', vaultPath: BUDGET_SAMPLE.hub, mobile: TIME_BUDGET.mobile }
+    { name: 'hub note', vaultPath: BUDGET_SAMPLE.hub, mobile: TIME_BUDGET.mobile },
+    { name: 'note with cards', vaultPath: '40 Writing/Reading list.md', mobile: TIME_BUDGET.mobile }
 ]
 
 const COMPRESSED = /^(text\/|application\/(javascript|json|xml)|image\/svg)/u
@@ -190,6 +193,8 @@ await mkdir(REPORTS, { recursive: true })
 const outDir = await mkdtemp(join(cache, 'page-budgets-'))
 /** The variants of the images, made as a deploy makes them (issue 87). */
 const variants = `${outDir}-variants`
+/** The previews of the link cards (issue 86). */
+const previews = `${outDir}-previews`
 let failed = false
 try {
     const vault = await copyFixtureVault(stores)
@@ -210,9 +215,15 @@ try {
     })
     // A fresh build: the markup that Astro keeps can be older than the code.
     await rm(join(SITE, 'node_modules', '.astro', 'data-store.json'), { force: true })
+    await writePreviewSample(previews)
     const build = Bun.spawn(['bun', 'run', 'build', '--outDir', outDir], {
         cwd: SITE,
-        env: { ...process.env, CONTENT_STORE: contentStore },
+        env: {
+            ...process.env,
+            CONTENT_STORE: contentStore,
+            LINK_PREVIEWS: 'cache',
+            LINK_PREVIEWS_CACHE: previews
+        },
         stdout: 'ignore',
         stderr: 'inherit'
     })
@@ -260,6 +271,7 @@ try {
 } finally {
     await rm(outDir, { recursive: true, force: true })
     await rm(variants, { recursive: true, force: true })
+    await rm(previews, { recursive: true, force: true })
     await stores.remove()
 }
 console.error(`The reports of Lighthouse are in ${REPORTS}.`)
