@@ -357,7 +357,8 @@ function rustTool(program: string, places: Places): Tool {
             [command, '--vault', places.vault, '--content-store', places.copy, ...writes, ...args],
             { DSEBASTIEN_VAULT_PUBLISH_TEST_NOTE_TYPES: places.answers }
         )
-        if (result.stderr.includes('panicked at')) {
+        // A panic, or an exit code that the program never gives (0, 1 and 2 are its codes).
+        if (result.stderr.includes('panicked at') || result.exitCode > 2) {
             return { crashed: result.stderr }
         }
         const output = new TextDecoder().decode(result.stdout)
@@ -495,11 +496,13 @@ function quoted(message: string): string[] {
 
 /**
  * True when two refusals have the same reason: the Rust message holds the
- * TypeScript message. The refusal of rule 10 of the edits of the guards has
- * other words in each implementation, so its quoted paths are compared.
+ * TypeScript message, when that message is long enough to name a reason (an
+ * empty or very short one is in every message). The refusal of rule 10 of the
+ * edits of the guards has other words in each implementation, so its quoted
+ * paths are compared.
  */
 function sameRefusal(ours: string, theirs: string): boolean {
-    if (theirs.includes(ours)) {
+    if (ours.replaceAll(/\s/gu, '').length >= 12 && theirs.includes(ours)) {
         return true
     }
     const ruleTen = 'accept does not name'
