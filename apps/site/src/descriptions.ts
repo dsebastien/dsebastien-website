@@ -9,16 +9,15 @@ import { isDroppedInline } from './rendering/dropped.ts'
 import { SITE_NAME } from './site.ts'
 
 // The description of a page (IDX-05, IDX-04, IDX-06, decision R61): the
-// `description` property of a note, with the text of its links, cut as
-// below (issue 95); else a
-// sentence from its note type and its properties, with the data that only
-// this site has first (the rating and the status of the author), then the
-// first sentences of its text, cut at a word end. A note of a media type
-// gets the sentence alone: its text often starts with a copied synopsis
-// (IDX-06). It is never empty, and never the type alone: a note with nothing
-// more gets its title, its type and the name of the site. No two indexable
-// pages share one: when they would, each note of them gets its title in
-// front, and is cut again.
+// `description` property of a note, with the text of its links, cut as below
+// (issue 95); else a sentence from its note type and its properties, with the
+// data that only this site has first (the rating and the status of the
+// author), then the first sentences of its text, cut at a word end. A note of
+// a media type gets the sentence alone: its text often starts with a copied
+// synopsis (IDX-06). It is never empty, and never the type alone: a note with
+// nothing more gets its title, its type and the name of the site. No two
+// indexable pages share one: when they would, each note of them gets its
+// title in front, and is cut again.
 
 /** The longest description that the build writes, in characters, the end mark included. */
 export const DESCRIPTION_LENGTH = 155
@@ -202,18 +201,29 @@ const WORDS = new Intl.Segmenter('en', { granularity: 'word' })
 /** The characters read past the room, so that the last word end in it is a true one. */
 const LOOKAHEAD = 16
 
-/** What a cut text does not end with: white space, a comma, a stop, a dash. */
-const TRAILING = /[\s\p{Pd},;:.、。，；：]+$/u
+/**
+ * What a cut text does not end with: white space, a dash, a comma, a stop, a
+ * question or an exclamation mark, an ellipsis, a closing quote, an opening
+ * bracket or quote (it would open nothing) and a mark of direction.
+ */
+const TRAILING = /[\s\p{Pd},;:.!?…»”"'(（「『“‘、。，；：‎‏‪-‮⁦-⁩]+$/u
+
+/** A letter of a script written without spaces: its words end where a dictionary says. */
+const NO_SPACES =
+    /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}\p{sc=Lao}\p{sc=Khmer}\p{sc=Myanmar}]/u
 
 /**
- * The rule of every description of a note (IDX-05, issue 95): a text of
+ * The rule of every description of a note (IDX-05, issue 95, R96): a text of
  * {@link DESCRIPTION_LENGTH} characters or fewer stays whole; a longer one is
- * cut to the last word end that leaves room for the end mark `…`. A word end
- * before a space wins; else, in a text with no spaces (Chinese, Japanese),
- * the last word end of the dictionary of the system. A word longer than half
- * the limit is cut on whole characters. It counts the characters that a
- * reader sees, so no emoji, flag or accent loses a part. It cuts the text
- * that a reader sees, before the page escapes it, so never inside an entity.
+ * cut to the last word end that leaves room for the end mark `…`. The last
+ * word end before a space wins, unless a later word end of the dictionary of
+ * the system follows it in a script written without spaces (Chinese,
+ * Japanese): a text in English and Chinese keeps its Chinese part. When the
+ * cut at a word end would keep half the limit or less (a long word), the text
+ * is cut on whole characters. The marks of {@link TRAILING} are removed
+ * before the end mark. It counts the characters that a reader sees, so no
+ * emoji, flag or accent loses a part. It cuts the text that a reader sees,
+ * before the page escapes it, so never inside an entity.
  */
 export function cutDescription(text: string): string {
     const characters = graphemesOf(text)
@@ -237,7 +247,10 @@ export function cutDescription(text: string): string {
         atWordEnd = kept
     }
     const whole = characters.slice(0, room).join('').replace(TRAILING, '')
-    const shown = [beforeSpace, atWordEnd]
+    // A word end inside a word with a hyphen or a slash (`e-mail`) is no
+    // place for a cut: only a script written without spaces moves it on.
+    const later = NO_SPACES.test(atWordEnd.slice(beforeSpace.length)) ? [atWordEnd] : []
+    const shown = [...later, beforeSpace, atWordEnd]
         .map((part) => part.replace(TRAILING, ''))
         .find((part) => graphemesOf(part).length > DESCRIPTION_LENGTH / 2)
     return `${shown ?? whole}…`

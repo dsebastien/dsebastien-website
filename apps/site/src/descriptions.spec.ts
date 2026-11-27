@@ -192,6 +192,41 @@ describe('the description of a note', () => {
         ).toBe(`X ${sentence.repeat(13)}中文文本没有空格…`)
     })
 
+    test('keeps the Chinese part of a text in English and Chinese', () => {
+        const sentence = '中文文本没有空格分词。'
+        const text = `${'Grow mint '.repeat(10)}${sentence.repeat(10)}`
+        expect(noteDescription({ ...MOVIE, properties: { description: text } })).toBe(
+            `${'Grow mint '.repeat(10)}${sentence.repeat(4)}中文文本没有空格分词…`
+        )
+    })
+
+    test('cuts an English text before a space, not inside a word with a hyphen', () => {
+        const text = `${'abcd '.repeat(30)}e-mail-address and more`
+        expect(noteDescription({ ...MOVIE, properties: { description: text } })).toBe(
+            `${'abcd '.repeat(30).trim()}…`
+        )
+    })
+
+    test.each(['!', '?', '…', '»', '”', '"', "'", '‎', '‏', '‪', '‮', '⁦', '⁩'])(
+        'does not end with %j before the end mark',
+        (mark) => {
+            const text = `${'abcd '.repeat(29)}abcd${mark} ${'z'.repeat(20)}`
+            expect(noteDescription({ ...MOVIE, properties: { description: text } })).toBe(
+                `${'abcd '.repeat(30).trim()}…`
+            )
+        }
+    )
+
+    test.each(['(', '（', '「', '『', '“', '‘'])(
+        'does not end with the opening mark %j before the end mark',
+        (mark) => {
+            const text = `X ${'東京'.repeat(75)}${mark}${'東京'.repeat(5)}`
+            expect(noteDescription({ ...MOVIE, properties: { description: text } })).toBe(
+                `X ${'東京'.repeat(75)}…`
+            )
+        }
+    )
+
     test('cuts emoji between words on whole characters', () => {
         const text = 'mint 🌱 '.repeat(40)
         const cut = noteDescription({ ...MOVIE, properties: { description: text } })
