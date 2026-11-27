@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
     MAP_HEAD_FILE,
+    PAGE_POLICY_FILE,
     mapPartFile,
     mapPartsOf,
     partOfKey,
@@ -220,9 +221,15 @@ function partFiles(bytes?: number): Record<string, string> {
 /** The one part of the map of the site: the map is small. */
 const PART = `/${mapPartFile(0)}`
 
+/** The policy of the pages of the release (SEC-01, issue 79). */
+const POLICY = "default-src 'self'; script-src 'self' 'sha256-abc'; frame-ancestors 'none'"
+const POLICY_PATH = `/${PAGE_POLICY_FILE}`
+
 const SITE: Record<string, string> = {
     ...partFiles(),
     '/500.html': '<h1>Server error</h1>',
+    [POLICY_PATH]: `${POLICY}
+`,
     '/404.html': '<h1>Not found</h1>',
     '/-/note/10.html': '<h1>Welcome</h1>',
     '/-/md/20%20Library/100%25%20rain%20%2B%20sun%3F%20%231%20%26%20more.md': '# Rain',
@@ -374,10 +381,36 @@ describe('the Worker', () => {
         expect(site.files.asked.toSorted()).toEqual([
             '/-/note/10.html',
             '/-/note/10.html',
+            POLICY_PATH,
             PART,
             MAP,
             '/500.html'
         ])
+    })
+
+    test('gives a page the policy of its release, read one time (SEC-01)', async () => {
+        const site = host()
+        const page = await site.get('/Welcome')
+        expect(page.headers.get('content-security-policy')).toBe(POLICY)
+        expect(page.headers.get('x-content-type-options')).toBe('nosniff')
+        await site.get('/Welcome')
+        expect(site.files.asked.filter((path) => path === POLICY_PATH)).toHaveLength(1)
+    })
+
+    test('gives the pages of a release without a policy a policy that only refuses frames', async () => {
+        const { [POLICY_PATH]: _policy, ...older } = SITE
+        const page = await host(older).get('/Welcome')
+        expect(page.status).toBe(200)
+        expect(page.headers.get('content-security-policy')).toBe(
+            "frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+        )
+    })
+
+    test('answers 500 for a release whose policy does not refuse frames', async () => {
+        const site = host({ ...SITE, [POLICY_PATH]: "default-src 'self'" })
+        const page = await site.get('/Welcome')
+        expect(page.status).toBe(500)
+        expect(page.headers.get('x-frame-options')).toBe('DENY')
     })
 
     test('asks for a file with an odd name by its percent-encoded path', async () => {
@@ -471,7 +504,7 @@ describe('the Worker', () => {
         expect(await response.text()).toBe('<h1>Not found</h1>')
         expect(
             site.files.asked.filter(
-                (asked) => ![MAP, PART, '/500.html', '/404.html'].includes(asked)
+                (asked) => ![MAP, PART, POLICY_PATH, '/500.html', '/404.html'].includes(asked)
             )
         ).toEqual([])
     })

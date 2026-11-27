@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { SECURITY_HEADERS } from '@dsebastien-website/resolver'
 import {
     ASSETS_IGNORE,
     analyticsVariable,
@@ -165,16 +166,28 @@ describe('the configuration of the Worker', () => {
 
 describe('the headers file of the static files', () => {
     const IMMUTABLE = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n'
+    const SECURED = [
+        '/*',
+        ...Object.entries(SECURITY_HEADERS).map(([name, value]) => `  ${name}: ${value}`)
+    ].join('\n')
 
     // Point 4 of the comment of issue 21 on issue 32: the host gives them
     // `max-age=0, must-revalidate` by default, and their names hold a hash.
     test('keeps the hashed files of the pages for a year on every host', () => {
-        expect(headersFile({ ...PREVIEW, noindex: false })).toBe(IMMUTABLE)
+        expect(headersFile({ ...PREVIEW, noindex: false })).toBe(`${IMMUTABLE}${SECURED}\n`)
+    })
+
+    // SEC-01 (issue 79): the files that the host gives without the Worker
+    // (`/_astro/`, `/-/search/`) have the security headers of its answers.
+    test('gives every static file the security headers', () => {
+        expect(headersFile({ ...PREVIEW, noindex: false })).toContain(
+            '/*\n  x-content-type-options: nosniff\n'
+        )
     })
 
     // The files of `/_astro/` and `/-/search/` do not run the Worker.
     test('also marks every file noindex on a preview host', () => {
-        expect(headersFile(PREVIEW)).toBe(`${IMMUTABLE}/*\n  X-Robots-Tag: noindex\n`)
+        expect(headersFile(PREVIEW)).toBe(`${IMMUTABLE}${SECURED}\n  X-Robots-Tag: noindex\n`)
     })
 })
 

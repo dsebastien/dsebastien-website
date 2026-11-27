@@ -407,13 +407,25 @@ describe('an attachment', () => {
         expect(await response.text()).toBe(body)
     })
 
-    test.each(['bytes=10-', 'bytes=5-2', 'bytes=-0'])(
+    test.each(['bytes=10-', 'bytes=-0'])(
         'answers 416 for the range %s, which is outside the file',
         async (range) => {
             const response = await get(PHOTO, { range })
             expect(response.status).toBe(416)
             expect(response.headers.get('content-range')).toBe('bytes */10')
             expect(await response.text()).toBe('')
+        }
+    )
+
+    // RFC 9110, section 14.1.1: a range whose last byte comes before its
+    // first is invalid, and a server ignores an invalid range (issue 79).
+    test.each(['bytes=5-2', 'bytes=1-0'])(
+        'is the whole file for the invalid range %s',
+        async (range) => {
+            const response = await get(PHOTO, { range })
+            expect(response.status).toBe(200)
+            expect(response.headers.get('content-range')).toBeNull()
+            expect(await response.text()).toBe('0123456789')
         }
     )
 
@@ -674,6 +686,94 @@ describe('the origin of the error texts', () => {
             expect(response.headers.get('cache-control')).toBe('no-store')
             expect(await response.text()).toBe('Bad request\n')
         }
+    })
+})
+
+// SEC-01 (issue 79): every answer has the usual security headers, and a page
+// has the Content Security Policy of its release.
+describe('the security headers', () => {
+    const POLICY = "default-src 'self'; script-src 'self' 'sha256-abc'; frame-ancestors 'none'"
+    const withPolicy = { pagePolicy: POLICY }
+    const missing = { file: () => Promise.resolve(undefined) }
+    const failing = {
+        file: () => Promise.reject(new Error('the disk is gone'))
+    }
+    const answers: [string, () => Promise<Response>][] = [
+        ['a page', () => get('/Welcome', {}, withPolicy)],
+        ['a page that did not change', () => get('/Welcome', { 'if-none-match': '"19"' })],
+        ['the Markdown of a note', () => get('/-/md/Welcome.md')],
+        ['robots.txt', () => get('/robots.txt')],
+        ['a file that the pages load', () => get('/_astro/site.css')],
+        ['an attachment', () => get(PHOTO)],
+        ['a part of an attachment', () => get(PHOTO, { range: 'bytes=2-5' })],
+        ['a range outside an attachment', () => get(PHOTO, { range: 'bytes=10-' })],
+        ['a redirect', () => get('/welcome')],
+        ['a 404 page', () => get('/No-such-note')],
+        ['a 404 for an agent', () => get('/-/md/No-such-note.md')],
+        ['a 410 page', () => get('/10+Garden/Rain+barrel')],
+        ['a 500 page', () => get('/Welcome', {}, missing)],
+        ['a 500 of a failure', () => get('/Welcome', {}, failing)],
+        [
+            'a 500 outside of the handler',
+            () => Promise.resolve(failureResponse(new Request(`${ORIGIN}/Welcome`), '<h1>x</h1>'))
+        ],
+        [
+            'a 400',
+            () =>
+                Promise.resolve(
+                    failureResponse({ url: 'http://[bad/', headers: new Headers() } as Request)
+                )
+        ]
+    ]
+
+    test.each(answers)('are on %s', async (_name, answer) => {
+        const response = await answer()
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+        expect(response.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin')
+        // Other hosts of the zone exist: no `includeSubDomains`, no `preload`.
+        expect(response.headers.get('strict-transport-security')).toBe('max-age=31536000')
+        expect(response.headers.get('x-frame-options')).toBe('DENY')
+        expect(response.headers.get('permissions-policy')).toContain('camera=()')
+    })
+
+    test('give a page, a 404 page and a 410 page the policy of the release', async () => {
+        for (const path of ['/Welcome', '/No-such-note', '/10+Garden/Rain+barrel']) {
+            const response = await get(path, {}, withPolicy)
+            expect(response.headers.get('content-security-policy')).toBe(POLICY)
+        }
+    })
+
+    test('give a page of a release without a policy a policy that only refuses frames', async () => {
+        const response = await get('/Welcome')
+        const policy = response.headers.get('content-security-policy') ?? ''
+        expect(policy).toContain("frame-ancestors 'none'")
+        expect(policy).not.toContain('script-src')
+    })
+
+    test('give the server error page a policy with no script', async () => {
+        for (const response of [
+            await get('/Welcome', {}, { ...withPolicy, ...missing }),
+            failureResponse(new Request(`${ORIGIN}/Welcome`), '<h1>x</h1>')
+        ]) {
+            const policy = response.headers.get('content-security-policy') ?? ''
+            expect(policy).toContain("default-src 'none'")
+            expect(policy).toContain("frame-ancestors 'none'")
+            expect(policy).not.toContain('script-src')
+        }
+    })
+
+    test('give a text of the site a policy that runs nothing', async () => {
+        for (const path of ['/-/md/Welcome.md', '/robots.txt', '/-/md/No-such-note.md']) {
+            const policy = (await get(path, {}, withPolicy)).headers.get('content-security-policy')
+            expect(policy).toBe("default-src 'none'; frame-ancestors 'none'; sandbox")
+        }
+    })
+
+    test('keep the sandbox of an attachment', async () => {
+        const response = await get(PHOTO, {}, withPolicy)
+        expect(response.headers.get('content-security-policy')).toBe(
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        )
     })
 })
 

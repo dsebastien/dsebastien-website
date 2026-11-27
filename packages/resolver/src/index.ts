@@ -89,3 +89,11 @@ export {
     tagPath,
     typeHubPath
 } from './url.ts'
+export {
+    FILE_POLICY,
+    FRAME_ONLY_POLICY,
+    PAGE_POLICY_FILE,
+    pagePolicyFrom,
+    SCRIPTLESS_PAGE_POLICY,
+    SECURITY_HEADERS
+} from './security.ts'

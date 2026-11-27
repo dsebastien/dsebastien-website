@@ -1,5 +1,6 @@
 import { errorFormat, errorText, type ErrorStatus } from './errors.ts'
 import { resolve, type Resolution, type ResolverMap, type SiteFile } from './resolver.ts'
+import { FILE_POLICY, FRAME_ONLY_POLICY, SCRIPTLESS_PAGE_POLICY, secured } from './security.ts'
 import { SITE_ORIGIN } from './url.ts'
 
 // The answer of a request (MOD-09 and HOST-02 of the spec): the URL contract
@@ -74,6 +75,12 @@ export interface Release {
      * it (see `errorText()`).
      */
     readonly origin?: string
+    /**
+     * The Content Security Policy of the pages of the release (SEC-01, the
+     * file `PAGE_POLICY_FILE` of the build), read before any request. A
+     * release without it gives its pages `FRAME_ONLY_POLICY`.
+     */
+    readonly pagePolicy?: string
     /** Takes the detail of a failure, which never goes into an answer. */
     readonly report?: (error: unknown) => void
 }
@@ -199,9 +206,11 @@ async function fileResponse(
 
 /**
  * The part of a file that a range request asks for. `undefined` when the
- * request asks for the whole file: no range, or a range in a form that the
+ * request asks for the whole file: no range, a range in a form that the
  * handler does not take (several ranges), which HTTP lets a server answer
- * with the whole file. `null` when the range is outside the file.
+ * with the whole file, or an invalid range (its last byte before its first),
+ * which a server ignores (RFC 9110, section 14.1.1). `null` when the range
+ * is outside the file.
  */
 function rangeOf(header: string | null, size: number): ByteRange | undefined | null {
     const match = header === null ? null : /^bytes=(\d*)-(\d*)$/.exec(header.trim())
@@ -220,8 +229,11 @@ function rangeOf(header: string | null, size: number): ByteRange | undefined | n
             : { start: Math.max(size - length, 0), end: size - 1 }
     }
     const start = Number(first)
+    if (last !== '' && Number(last) < start) {
+        return undefined
+    }
     const end = last === '' ? size - 1 : Math.min(Number(last), size - 1)
-    return start >= size || end < start ? null : { start, end }
+    return start >= size ? null : { start, end }
 }
 
 /**
@@ -288,13 +300,20 @@ function errorMarkdown(
 ): Response {
     return new Response(errorText(status, origin, suggestions), {
         status,
-        headers: { 'content-type': 'text/markdown; charset=utf-8', ...ERROR_HEADERS }
+        headers: {
+            'content-type': 'text/markdown; charset=utf-8',
+            'content-security-policy': FILE_POLICY,
+            ...ERROR_HEADERS
+        }
     })
 }
 
 /** A short text with the status of an error, for a release without the page of that error. */
 function errorPlain(status: ErrorStatus, text: string): Response {
-    return new Response(text, { status, headers: { 'content-type': TEXT, ...ERROR_HEADERS } })
+    return new Response(text, {
+        status,
+        headers: { 'content-type': TEXT, 'content-security-policy': FILE_POLICY, ...ERROR_HEADERS }
+    })
 }
 
 /**
@@ -312,7 +331,14 @@ function serverError(
     }
     return page === undefined
         ? errorPlain(500, errorText(500, origin))
-        : new Response(page, { status: 500, headers: { 'content-type': HTML, ...ERROR_HEADERS } })
+        : new Response(page, {
+              status: 500,
+              headers: {
+                  'content-type': HTML,
+                  'content-security-policy': SCRIPTLESS_PAGE_POLICY,
+                  ...ERROR_HEADERS
+              }
+          })
 }
 
 /**
@@ -330,10 +356,12 @@ export function failureResponse(request: Request, page?: string, origin?: string
     if (url === undefined) {
         return badRequest()
     }
-    return serverError(
-        errorFormat(url.pathname, request.headers.get('accept')),
-        page,
-        origin ?? url.origin
+    return secured(
+        serverError(
+            errorFormat(url.pathname, request.headers.get('accept')),
+            page,
+            origin ?? url.origin
+        )
     )
 }
 
@@ -351,10 +379,16 @@ function urlOf(request: Request): URL | undefined {
 
 /** The answer to a request whose URL does not parse: the fault of the client, never kept. */
 function badRequest(): Response {
-    return new Response('Bad request\n', {
-        status: 400,
-        headers: { 'content-type': TEXT, 'cache-control': 'no-store' }
-    })
+    return secured(
+        new Response('Bad request\n', {
+            status: 400,
+            headers: {
+                'content-type': TEXT,
+                'cache-control': 'no-store',
+                'content-security-policy': FILE_POLICY
+            }
+        })
+    )
 }
 
 /** A tag without the mark of its weak form: a 304 compares two tags weakly (RFC 9110, section 13.1.2). */
@@ -408,7 +442,7 @@ async function siteFileResponse(
     if (status !== 200) {
         return await fileResponse(request, file, {
             status,
-            headers: { 'content-type': type, ...ERROR_HEADERS }
+            headers: { 'content-type': type, ...extra, ...ERROR_HEADERS }
         })
     }
     const headers: Record<string, string> = {
@@ -478,9 +512,15 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
             extra: Readonly<Record<string, string>> = {}
         ): Promise<Response | undefined> => {
             const file = await release.file(name)
+            // A page runs the scripts that its release allows; any other file
+            // of the site runs nothing (SEC-01).
+            const policy = type === HTML ? (release.pagePolicy ?? FRAME_ONLY_POLICY) : FILE_POLICY
             return file === undefined
                 ? undefined
-                : await siteFileResponse(request, file, type, status, extra)
+                : await siteFileResponse(request, file, type, status, {
+                      ...extra,
+                      'content-security-policy': policy
+                  })
         }
         switch (resolution.kind) {
             case 'not-found':
@@ -554,14 +594,14 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
         const origin = release.origin ?? url.origin
         const format = errorFormat(pathname, request.headers.get('accept'))
         try {
-            return (
+            return secured(
                 (await answer(request, pathname, search, origin, format)) ??
-                serverError(format, release.serverErrorPage, origin)
+                    serverError(format, release.serverErrorPage, origin)
             )
         } catch (error) {
             // The detail goes to the log of the host, never to the answer.
             release.report?.(error)
-            return serverError(format, release.serverErrorPage, origin)
+            return secured(serverError(format, release.serverErrorPage, origin))
         }
     }
 }

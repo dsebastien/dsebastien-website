@@ -10,6 +10,8 @@ import {
     mapHeadFrom,
     mapPartFile,
     mapPartFrom,
+    PAGE_POLICY_FILE,
+    pagePolicyFrom,
     partedResolver,
     SERVER_ERROR_FILE,
     siteHandler,
@@ -125,6 +127,12 @@ export async function startServer(options: {
     // release, which can be the missing file (NAV-20).
     const errorPage = Bun.file(join(dist, SERVER_ERROR_FILE))
     const serverErrorPage = (await errorPage.exists()) ? await errorPage.text() : undefined
+    // The Content Security Policy of the pages (SEC-01): a release of an
+    // older build has none.
+    const policyFile = Bun.file(join(dist, ...PAGE_POLICY_FILE.split('/')))
+    const pagePolicy = (await policyFile.exists())
+        ? pagePolicyFrom(await policyFile.text())
+        : undefined
 
     const server = Bun.serve({
         hostname: '127.0.0.1',
@@ -166,6 +174,7 @@ export async function startServer(options: {
                             : storedFile(join(variants, key))
               }),
         ...(serverErrorPage === undefined ? {} : { serverErrorPage }),
+        ...(pagePolicy === undefined ? {} : { pagePolicy }),
         // The detail goes to the log of the machine, never to the answer.
         report: (error) => {
             console.error(error)

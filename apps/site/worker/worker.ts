@@ -5,6 +5,8 @@ import {
     mapHeadFrom,
     mapPartFile,
     mapPartFrom,
+    PAGE_POLICY_FILE,
+    pagePolicyFrom,
     partedResolver,
     partOfKey,
     SERVER_ERROR_FILE,
@@ -178,11 +180,13 @@ async function storedObject(
 /**
  * What the Worker reads of a release one time: the head of its resolver map
  * in parts, with the lookup that reads the parts that a request needs (issue
- * 121), and its server error page.
+ * 121), its server error page and the policy of its pages.
  */
 interface OpenedRelease {
     readonly map: MapLookup
     readonly serverErrorPage: string | undefined
+    /** The Content Security Policy of the pages (SEC-01); a release of an older build has none. */
+    readonly pagePolicy: string | undefined
 }
 
 /**
@@ -298,32 +302,59 @@ function earlyPart(
     return { count: parts, index, value }
 }
 
+/**
+ * The policy of the pages of a release, from the answer of the host for its
+ * file. `undefined` when the release has no such file: a release of an older
+ * build, whose pages get a policy that only refuses frames.
+ */
+async function policyOf(response: Response): Promise<string | undefined> {
+    if (response.status === 404) {
+        await discard(response)
+        return undefined
+    }
+    if (response.status !== 200) {
+        await discard(response)
+        throw statusFailure(response.status, PAGE_POLICY_FILE)
+    }
+    return pagePolicyFrom(await bodyText(response, PAGE_POLICY_FILE))
+}
+
 async function openRelease(
     files: StaticFiles,
     report: (error: unknown) => void,
     pause: (milliseconds: number) => Promise<void>,
     early?: EarlyPart
 ): Promise<OpenedRelease> {
-    const [mapRead, pageRead] = await Promise.allSettled([
+    const [mapRead, pageRead, policyRead] = await Promise.allSettled([
         files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(MAP_HEAD_FILE)}`)),
-        files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(SERVER_ERROR_FILE)}`))
+        files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(SERVER_ERROR_FILE)}`)),
+        files.fetch(new Request(`${STATIC_ORIGIN}${pathOfFile(PAGE_POLICY_FILE)}`))
     ])
-    if (mapRead.status === 'rejected' || pageRead.status === 'rejected') {
-        for (const read of [mapRead, pageRead]) {
+    if (
+        mapRead.status === 'rejected' ||
+        pageRead.status === 'rejected' ||
+        policyRead.status === 'rejected'
+    ) {
+        for (const read of [mapRead, pageRead, policyRead]) {
             if (read.status === 'fulfilled') {
                 await discard(read.value)
             }
         }
-        const reason: unknown =
-            mapRead.status === 'rejected'
-                ? mapRead.reason
-                : pageRead.status === 'rejected'
-                  ? pageRead.reason
-                  : undefined
-        throw new ShortFailure('the host fails to give a file of the release', { cause: reason })
+        const failed = [mapRead, pageRead, policyRead].find((read) => read.status === 'rejected')
+        throw new ShortFailure('the host fails to give a file of the release', {
+            cause: failed?.reason
+        })
     }
     const map = mapRead.value
     const page = pageRead.value
+    let pagePolicy: string | undefined
+    try {
+        pagePolicy = await policyOf(policyRead.value)
+    } catch (error) {
+        await discard(map)
+        await discard(page)
+        throw error
+    }
     // A release can have no server error page. A page that the host fails to
     // give is another case: the Worker must not keep "no page" for its life.
     if (page.status !== 200 && page.status !== 404) {
@@ -360,7 +391,8 @@ async function openRelease(
             }
             return readPart(files, head, index, report, pause, value)
         }),
-        serverErrorPage
+        serverErrorPage,
+        pagePolicy
     }
 }
 
@@ -613,6 +645,7 @@ export function createWorker(options: WorkerOptions = {}): {
             ...(release.serverErrorPage === undefined
                 ? {}
                 : { serverErrorPage: release.serverErrorPage }),
+            ...(release.pagePolicy === undefined ? {} : { pagePolicy: release.pagePolicy }),
             report
         })
         return await handle(request)

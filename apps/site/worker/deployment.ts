@@ -15,6 +15,7 @@ import {
     mapPartFrom,
     MAX_VARIANT_PIXELS,
     RESOLVER_MAP_FILE,
+    SECURITY_HEADERS,
     VARIANT_WIDTHS,
     type ImageVariant,
     type MapHead
@@ -183,11 +184,17 @@ export function workerConfiguration(
  * bytes, and the host gives them `max-age=0, must-revalidate` by default. On
  * a preview host, it marks every static file noindex; that is what covers
  * the files that the host gives without the Worker (`/_astro/`,
- * `/-/search/`), because the Worker marks its own answers.
+ * `/-/search/`), because the Worker marks its own answers. Every static file
+ * gets the security headers that the Worker gives to its answers (SEC-01).
  */
 export function headersFile(target: DeployTarget): string {
     const immutable = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n'
-    return target.noindex ? `${immutable}/*\n  X-Robots-Tag: noindex\n` : immutable
+    const every = [
+        '/*',
+        ...Object.entries(SECURITY_HEADERS).map(([name, value]) => `  ${name}: ${value}`),
+        ...(target.noindex ? ['  X-Robots-Tag: noindex'] : [])
+    ]
+    return `${immutable}${every.join('\n')}\n`
 }
 
 /**
