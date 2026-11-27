@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { SITE_ORIGIN } from '@dsebastien-website/resolver'
 import { defineConfig } from 'astro/config'
 import { notePageBudget } from './src/budgets.ts'
+import { linkPreviewFiles } from './src/link-previews/build-previews.ts'
 import { resolverMapParts } from './src/map-parts.ts'
 import { pagePolicyFile } from './src/page-policy.ts'
 import { markdownProcessor } from './src/rendering/markup.ts'
@@ -22,7 +23,8 @@ export default defineConfig({
         processor: markdownProcessor(),
         syntaxHighlight: false
     },
-    // A note page above the HTML budget gives a warning, not a stop (R57).
+    // The images of the link cards go from their cache into the output
+    // (CARD-06, issue 86). A note page above the HTML budget gives a warning, not a stop (R57).
     // A missing title or description, or a shared title, stops the build
     // (IDX-04, IDX-05, R61); a shared description (R102), a note too far from
     // the home page (NAV-07) and a link to no page (R65) are warnings. Then the full-text index
@@ -32,6 +34,7 @@ export default defineConfig({
     // Policy of the pages gets the hashes of their inline scripts and styles
     // (SEC-01, issue 79).
     integrations: [
+        linkPreviewFiles(),
         notePageBudget(),
         siteChecks(),
         searchIndex(),

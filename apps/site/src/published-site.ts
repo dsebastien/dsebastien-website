@@ -11,7 +11,7 @@ import {
     type PublishedNote,
     type RemovedNote
 } from './content-store.ts'
-import { noteDescription, uniqueDescriptions } from './descriptions.ts'
+import { noteDescription, uniqueDescriptions, writtenDescription } from './descriptions.ts'
 import {
     generatedTexts,
     libraryOf,
@@ -36,7 +36,9 @@ import {
 } from '../../plugin/src/publishing/originals.ts'
 import { lastUpdateOf, recentListsOf } from './recent.ts'
 import { sitemapEntriesOf, type SitemapEntry } from './sitemaps.ts'
-import { SitePages } from './rendering/page.ts'
+import { buildPreviews } from './link-previews/build-previews.ts'
+import type { LinkPreview, PreviewTarget } from './link-previews/previews.ts'
+import { SitePages, type NoteCard } from './rendering/page.ts'
 import { hrefOfAddress } from './site-checks.ts'
 import { resolverMapFor } from './site-files.ts'
 import { titleIndexOf, type TitleIndex } from './search/titles.ts'
@@ -164,6 +166,19 @@ async function read(): Promise<PublishedSite> {
         }
         return hrefOfAddress(address, made.map)
     }
+    // The previews of the cards (CARD-06, CARD-09), read after the page step
+    // has the markup and before it makes a page; the note cards read the
+    // title bands of their notes, made before any page too (CARD-03).
+    const shown: {
+        previewOf?: (target: PreviewTarget) => LinkPreview | undefined
+        headers?: ReadonlyMap<string, NoteHeader>
+    } = {}
+    const noteCardOf = (vaultPath: string): NoteCard | undefined => {
+        const header = shown.headers?.get(vaultPath)
+        if (header === undefined) return undefined
+        const description = writtenDescription(properties.get(vaultPath) ?? {})
+        return { title: header.heading, ...(description === undefined ? {} : { description }) }
+    }
     const pages = new SitePages(
         notes.map((note) => {
             const entry = entries.get(note.vaultPath)
@@ -185,8 +200,9 @@ async function read(): Promise<PublishedSite> {
                 propertyLinks: propertyLinksOf(properties.get(note.vaultPath) ?? {})
             }
         }),
-        { addressOf }
+        { addressOf, previewOf: (target) => shown.previewOf?.(target), noteCardOf }
     )
+    shown.previewOf = await buildPreviews(pages.cardTargets())
     // The signals of each note for search engines (IDX-11 to IDX-14, R85, R103).
     const signalsOfNote = (note: PublishedNote): NoteSignals =>
         signalsOf(
@@ -281,6 +297,7 @@ async function read(): Promise<PublishedSite> {
     for (const [vaultPath, header] of raw) {
         headers.set(vaultPath, { ...header, title: titles.get(vaultPath)?.title ?? header.title })
     }
+    shown.headers = headers
     const descriptions = uniqueDescriptions(
         notes.map((note) => {
             const header = headers.get(note.vaultPath)

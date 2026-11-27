@@ -16,3 +16,8 @@ process.env['SITE_ANALYTICS'] = ''
 // test of a missing key gives its device another source. The name is
 // SEAL_KEY_VARIABLE of apps/plugin/src/publishing/seal.ts.
 process.env['VAULT_PUBLISH_SEAL_KEY'] = '5e'.repeat(32)
+
+// A build that a test starts reads no preview of a link card and fetches
+// none (CARD-06): a test that needs them gives its own cache. The name is
+// LINK_PREVIEWS of apps/site/src/link-previews/build-previews.ts.
+process.env['LINK_PREVIEWS'] = ''

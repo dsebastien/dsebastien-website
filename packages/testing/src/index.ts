@@ -30,6 +30,7 @@ export {
     BUDGET_SAMPLE,
     BUDGET_SAMPLE_BACKLINKS,
     BUDGET_SAMPLE_FOLDER,
+    samplePhoto,
     samplePng,
     writeBudgetSample
 } from './budget-sample.ts'

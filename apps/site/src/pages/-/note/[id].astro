@@ -11,6 +11,7 @@ import Outline from '../../../components/Outline.astro'
 import Properties from '../../../components/Properties.astro'
 import Page from '../../../layouts/Page.astro'
 import { propertiesOf } from '../../../properties.ts'
+import { videoPlayerScript } from '../../../link-previews/player.ts'
 import { publishedSite } from '../../../published-site.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
 import { languageOf } from '../../../rendering/language.ts'
@@ -172,4 +173,6 @@ const signals = site.signalsOf(note.vaultPath)
     <NewsletterBar />
     <script is:inline set:html={oldAnchorScript} />
     {ad.length > 0 && <script is:inline set:html={ctaScript} />}
+    {/* The player of the video cards, after a click (CARD-09). */}
+    {body.videos === true && <script is:inline set:html={videoPlayerScript} />}
 </Page>

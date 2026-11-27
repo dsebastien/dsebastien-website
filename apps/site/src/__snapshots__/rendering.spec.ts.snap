@@ -196,7 +196,7 @@ exports[`rendering of the Markdown forms on the site frozen-dataview-list: A fro
 </ul>"
 `;
 
-exports[`rendering of the Markdown forms on the site link-block: LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). The markup of a card is not settled yet: the cards slice adds its check. 1`] = `
+exports[`rendering of the Markdown forms on the site link-block: LINK and LINKS blocks become link cards; their raw text never shows, also when a link splits it; a code block, a comment and a frozen row are never cards (CARD-01 to CARD-08). A card is a link with its title and the name of its site, a note card has the title of the note, and a build without previews has no image in a card (issue 86). 1`] = `
 "
 <p>Every form of a <code>LINK</code> block.</p>
 <p>One line, with a colon and a URL:</p>
@@ -212,7 +212,7 @@ exports[`rendering of the Markdown forms on the site link-block: LINK and LINKS 
 <p>One line, with a link to a note:</p>
 <div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Compost+basics"><span class="link-card-title">Compost basics</span></a></div></div>
 <p>One line, with a link to a note and a label:</p>
-<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Rain+barrel"><span class="link-card-title">The barrel</span></a></div></div>
+<div class="link-cards"><div class="link-card"><a class="link-card-link" href="/10+Garden/Rain+barrel"><span class="link-card-title">Rain barrel</span></a></div></div>
 <p>A list, with a URL:</p>
 <div class="link-cards"><div class="link-card"><a class="link-card-link" href="https://garden.example/tools"><span class="link-card-title">https://garden.example/tools</span><span class="link-card-source">garden.example</span></a></div></div>
 <p>A list, without a colon, with a link to a note:</p>
@@ -239,9 +239,9 @@ exports[`rendering of the Markdown forms on the site link-block: LINK and LINKS 
 "
 `;
 
-exports[`rendering of the Markdown forms on the site video-url-line: A line with only a YouTube URL in image syntax becomes a video card: a link, no player and no request to the video site before a click (CARD-07, CARD-09). 1`] = `
+exports[`rendering of the Markdown forms on the site video-url-line: A line with only a YouTube URL in image syntax becomes a video card: a link that names its video for the player, no player and no request to the video site before a click (CARD-07, CARD-09). 1`] = `
 "
-<div class="link-cards"><div class="link-card link-card-video"><a class="link-card-link" href="https://www.youtube.com/watch?v=GardenTour1"><span class="link-card-title">https://www.youtube.com/watch?v=GardenTour1</span><span class="link-card-source">YouTube</span></a></div></div>"
+<div class="link-cards"><div class="link-card link-card-video" data-video-id="GardenTour1"><a class="link-card-link" href="https://www.youtube.com/watch?v=GardenTour1"><span class="link-card-play" aria-hidden="true"></span><span class="link-card-title">https://www.youtube.com/watch?v=GardenTour1</span><span class="link-card-source">YouTube</span></a></div></div>"
 `;
 
 exports[`rendering of the Markdown forms on the site meta-bind-inline: Inline Meta Bind code is removed for rendering (REN-03). 1`] = `

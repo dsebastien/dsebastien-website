@@ -467,6 +467,9 @@ async function deploy(
                         STORE_CATALOG:
                             catalog === undefined || catalog === '' ? STORE_CATALOG_URL : catalog,
                         STORE_CATALOG_REPORT: catalogReport,
+                        // The previews of the link cards: the cache, and a fetch of
+                        // what it lacks (CARD-06, issue 86).
+                        LINK_PREVIEWS: 'fetch',
                         // The analytics of the target, or none (AN-01).
                         ...analyticsVariable(target)
                     }
