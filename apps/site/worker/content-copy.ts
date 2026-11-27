@@ -4,7 +4,8 @@ import {
     checkSeal,
     differenceText,
     SEAL_KEY_VARIABLE,
-    sealKeyOf
+    sealKeyOf,
+    UNSEALED_FILE
 } from '../../plugin/src/publishing/seal.ts'
 import { parseWithdrawn, WITHDRAWN_FILE } from '../../plugin/src/publishing/withdrawn.ts'
 import { publishedNotesOf } from '../src/content-store.ts'
@@ -220,10 +221,12 @@ export async function takedownStore(
     await mkdir(folder, { recursive: true })
     const index = `${folder}.index`
     const environment = { ...gitEnvironment(), GIT_INDEX_FILE: index }
-    const indexed = async (...args: string[]): Promise<void> => {
+    // A list of paths goes through the standard input: a command line of
+    // Windows holds 32,767 characters at most (review of R104).
+    const indexed = async (args: string[], input?: string): Promise<void> => {
         const child = Bun.spawn(['git', '-C', store, '-c', 'core.autocrlf=false', ...args], {
             env: environment,
-            stdio: ['ignore', 'ignore', 'pipe']
+            stdio: [input === undefined ? 'ignore' : new Blob([input]), 'ignore', 'pipe']
         })
         const [errors, code] = await Promise.all([new Response(child.stderr).text(), child.exited])
         if (code !== 0) {
@@ -232,12 +235,32 @@ export async function takedownStore(
             )
         }
     }
+    // The seal never covers the redirect list as a regular file (rule 2), so
+    // the one of the last commit goes live: a list written after the trusted
+    // commit is not lost until the next deploy.
+    const [redirects] = (
+        await gitText(store, 'ls-tree', '-z', '--full-tree', 'HEAD', '--', UNSEALED_FILE)
+    )
+        .split('\0')
+        .filter((line) => line !== '')
+    const redirectList = /^100644 blob ([0-9a-f]+)\t/u.exec(redirects ?? '')?.[1]
     try {
-        await indexed('read-tree', trusted)
+        await indexed(['read-tree', trusted])
         if (removed.length > 0) {
-            await indexed('update-index', '--force-remove', '--', ...removed)
+            await indexed(
+                ['update-index', '--force-remove', '-z', '--stdin'],
+                removed.map((path) => `${path}\0`).join('')
+            )
         }
-        await indexed('checkout-index', '--all', `--prefix=${folder}/`)
+        if (redirectList !== undefined) {
+            await indexed([
+                'update-index',
+                '--add',
+                '--cacheinfo',
+                `100644,${redirectList},${UNSEALED_FILE}`
+            ])
+        }
+        await indexed(['checkout-index', '--all', `--prefix=${folder}/`])
     } finally {
         await rm(index, { force: true })
     }

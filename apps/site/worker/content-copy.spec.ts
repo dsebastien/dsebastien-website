@@ -752,8 +752,9 @@ describe('the content store of a takedown on a state that is not sealed', () => 
         await sealHead(copy)
         const sealed = await git(copy, 'rev-parse', 'HEAD')
         const configuration = await readFile(join(copy, 'configuration.json'), 'utf8')
-        // A foreign commit: a new entry and another configuration.
+        // A foreign commit: a new entry, another configuration and a redirect list.
         await writeFile(join(copy, 'manifest', 'C.json'), '{"entry": "C"}\n')
+        await writeFile(join(copy, 'redirects.json'), '[]\n')
         await writeFile(join(copy, 'notes', 'C.md'), 'Note C\n')
         await writeFile(join(copy, 'configuration.json'), '{}\n')
         await git(copy, 'add', '--all')
@@ -765,15 +766,55 @@ describe('the content store of a takedown on a state that is not sealed', () => 
         expect(await takedownStore(copy, sealed, folder)).toEqual({
             removed: ['manifest/B.json', 'notes/B.md']
         })
+        // The seal never covers the redirect list: the one of the last commit.
         expect(await filesOf(folder)).toEqual({
             'configuration.json': configuration,
             'manifest/A.json': '{"entry": "A"}\n',
-            'notes/A.md': 'Note A\n'
+            'notes/A.md': 'Note A\n',
+            'redirects.json': '[]\n'
         })
-        // A second run starts from an empty folder.
+        // A second run starts from an empty folder. A redirect list that is
+        // no regular file is sealed: the one of the trusted commit (none).
+        await git(copy, 'update-index', '--chmod=+x', 'redirects.json')
+        await git(copy, 'commit', '--quiet', '--message', 'An executable redirect list')
         expect(await takedownStore(copy, sealed, folder)).toEqual({
             removed: ['manifest/B.json', 'notes/B.md']
         })
-        expect(Object.keys(await filesOf(folder))).toHaveLength(3)
+        expect(Object.keys(await filesOf(folder)).sort()).toEqual([
+            'configuration.json',
+            'manifest/A.json',
+            'notes/A.md'
+        ])
     })
+
+    // Review of R104: a command line of Windows holds 32,767 characters at
+    // most, so the paths go to git through its standard input.
+    test('leaves out about 1,000 removed paths, more than one command line holds', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await mkdir(join(copy, 'notes'))
+        const names = Array.from(
+            { length: 1000 },
+            (_, index) => `notes/a cleaned note with a long name, number ${String(index)}.md`
+        )
+        for (const name of names) {
+            await writeFile(join(copy, name), `${name}\n`)
+        }
+        await writeFile(join(copy, 'notes', 'Kept.md'), 'Kept\n')
+        await git(copy, 'add', '--all')
+        await git(copy, 'commit', '--quiet', '--message', 'Publish: 1001 notes')
+        await sealHead(copy)
+        const sealed = await git(copy, 'rev-parse', 'HEAD')
+        await git(copy, 'rm', '--quiet', '-r', 'notes')
+        await mkdir(join(copy, 'notes'), { recursive: true })
+        await writeFile(join(copy, 'notes', 'Kept.md'), 'Kept\n')
+        await git(copy, 'add', 'notes/Kept.md')
+        await git(copy, 'commit', '--quiet', '--message', 'Takedown: 1000 notes')
+        expect(names.join(' ').length).toBeGreaterThan(32_767)
+        const folder = join(stores.root, 'takedown-store')
+        const { removed } = await takedownStore(copy, sealed, folder)
+        expect(removed).toEqual([...names].sort())
+        const left = Object.keys(await filesOf(folder)).filter((path) => path.startsWith('notes/'))
+        expect(left).toEqual(['notes/Kept.md'])
+    }, 120_000)
 })

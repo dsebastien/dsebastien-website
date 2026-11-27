@@ -351,11 +351,21 @@ async function deploy(
                 : { ...inspected, refusal: seal.refusal }
         const buildStore =
             store === undefined || fromSealed === undefined ? store : join(folder, 'takedown-store')
+        // When the content store of the takedown cannot be written, the run
+        // still deletes the withdrawn files and the files of every takedown,
+        // then stops: its keys cannot be read (review of R104).
+        let unbuilt: Error | undefined
         if (store !== undefined && fromSealed !== undefined && buildStore !== undefined) {
-            const { removed } = await takedownStore(store, fromSealed, buildStore)
-            process.stdout.write(
-                `the state of the content store is not sealed: the takedown builds the sealed state ${fromSealed} without ${String(removed.length)} file(s) that the last commit lacks\n`
-            )
+            try {
+                const { removed } = await takedownStore(store, fromSealed, buildStore)
+                process.stdout.write(
+                    `the state of the content store is not sealed: the takedown builds the sealed state ${fromSealed} without ${String(removed.length)} file(s) that the last commit lacks\n`
+                )
+            } catch (failure) {
+                unbuilt = new Error(
+                    `the content store of the takedown cannot be written from the sealed state ${fromSealed}: ${failure instanceof Error ? failure.message : String(failure)}`
+                )
+            }
         }
         const contentRevision = copy?.head ?? null
         // The files that the guards withdrew are read first: when a later
@@ -378,7 +388,11 @@ async function deploy(
             siteRevision: await git(ROOT, 'rev-parse', 'HEAD'),
             now: () => new Date(),
             usedKeys: () =>
-                buildStore === undefined ? Promise.resolve([]) : usedAttachmentKeys(buildStore),
+                unbuilt !== undefined
+                    ? Promise.reject(unbuilt)
+                    : buildStore === undefined
+                      ? Promise.resolve([])
+                      : usedAttachmentKeys(buildStore),
             // The variants of the images (issue 87): made here, from the attachment folder.
             images: () =>
                 buildStore === undefined ? Promise.resolve([]) : releaseImages(buildStore),
