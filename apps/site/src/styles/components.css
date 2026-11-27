@@ -35,6 +35,14 @@
         scrollbar-gutter: stable;
     }
 
+    /* Below the rail of the outline, the bar of the current section is under
+       the header too (issue 91): a link to a heading leaves room for both. */
+    @variant max-lg {
+        html:has(.section-bar) {
+            scroll-padding-top: 7.5rem;
+        }
+    }
+
     :focus-visible {
         @apply outline-2 outline-offset-2 outline-focus;
     }
@@ -74,6 +82,13 @@
         @apply top-4;
     }
 
+    /* A link alone on its line, not in a sentence: 44 px high on a touch
+       screen, for a finger (issue 91, R95). A link in a sentence keeps the
+       height of its line (the inline exception of WCAG 2.5.8). */
+    .link-control {
+        @apply link wrap-anywhere pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center;
+    }
+
     .card-link {
         @apply card block p-4 transition-colors;
     }
@@ -84,7 +99,7 @@
 
     /* A badge that is a link: the type badge of a note page, which leads to its hub. */
     .badge-link {
-        @apply badge transition-colors;
+        @apply badge transition-colors pointer-coarse:min-h-11;
     }
 
     .badge-link:hover {
@@ -95,8 +110,9 @@
         @apply badge border-secondary bg-secondary text-on-secondary;
     }
 
+    /* On a touch screen a chip, a button and a badge that is a link are 44 px at least (issue 91, R95). */
     .chip {
-        @apply inline-flex items-center gap-1 rounded-pill bg-well px-3 py-1 text-sm text-primary;
+        @apply inline-flex items-center justify-center gap-1 rounded-pill bg-well px-3 py-1 text-sm text-primary pointer-coarse:min-h-11 pointer-coarse:min-w-11;
     }
 
     .chip:hover {
@@ -106,11 +122,11 @@
     /* The chip of the current page or the current filter: the accent, so it
        stands out from the other chips and from their hover in both modes. */
     .chip-current {
-        @apply inline-flex items-center gap-1 rounded-pill bg-secondary px-3 py-1 text-sm font-semibold text-on-secondary;
+        @apply inline-flex items-center justify-center gap-1 rounded-pill bg-secondary px-3 py-1 text-sm font-semibold text-on-secondary pointer-coarse:min-h-11 pointer-coarse:min-w-11;
     }
 
     .button {
-        @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-colors;
+        @apply inline-flex items-center justify-center gap-2 rounded-control bg-secondary px-4 py-2 font-semibold text-on-secondary transition-colors pointer-coarse:min-h-11;
     }
 
     .button:hover {
@@ -118,7 +134,7 @@
     }
 
     .button-quiet {
-        @apply inline-flex items-center justify-center gap-2 rounded-control border border-border-strong px-3 py-1.5 text-sm text-primary;
+        @apply inline-flex items-center justify-center gap-2 rounded-control border border-border-strong px-3 py-1.5 text-sm text-primary pointer-coarse:min-h-11;
     }
 
     .button-quiet:hover {
@@ -191,6 +207,12 @@
        text in the page, so on one column it is above the text (PAGE-02). */
     .note-layout {
         @apply mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-8 px-4 py-10 sm:px-6 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[13rem_minmax(0,1fr)_18rem];
+    }
+
+    /* The bar of the current section on a small screen (story 8, issue 91):
+       fixed under the header, 44 px high, its text cut with an ellipsis. */
+    .section-bar {
+        @apply fixed inset-x-0 top-16 z-30 flex min-h-11 w-full items-center gap-3 border-b border-border bg-surface px-4 text-left text-sm font-semibold text-primary sm:px-6 lg:hidden;
     }
 
     .note-outline {
@@ -273,9 +295,10 @@
         @apply mt-3 block text-sm font-semibold text-link;
     }
 
-    /* The text of a note. */
+    /* The text of a note. A word longer than the line breaks, so it never
+       makes the page scroll sideways (issue 91). */
     .note-text {
-        @apply text-lg leading-8;
+        @apply text-lg leading-8 break-words;
     }
 
     .note-text p,
@@ -302,11 +325,11 @@
     }
 
     .note-text h2 {
-        @apply mt-10 scroll-mt-24 text-2xl font-bold;
+        @apply mt-10 text-2xl font-bold lg:scroll-mt-24;
     }
 
     .note-text h3 {
-        @apply mt-8 scroll-mt-24 text-xl font-semibold;
+        @apply mt-8 text-xl font-semibold lg:scroll-mt-24;
     }
 
     .note-text ul {
@@ -455,7 +478,7 @@
     }
 
     .note-text .link-card {
-        @apply card;
+        @apply card min-w-0;
     }
 
     .note-text .link-card > .not-published {

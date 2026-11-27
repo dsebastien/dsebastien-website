@@ -56,7 +56,10 @@ const modes: readonly Mode[] = ['dark', 'light']
 <html lang={lang} data-theme={scriptless ? 'system' : 'dark'}>
     <head>
         <meta charset='utf-8' />
-        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <meta
+            name='viewport'
+            content='width=device-width, initial-scale=1, interactive-widget=resizes-content'
+        />
         {modes.map((mode) => (
             <meta
                 name='theme-color'

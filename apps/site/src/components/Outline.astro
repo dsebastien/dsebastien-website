@@ -16,7 +16,7 @@ const { items } = Astro.props
             <a
                 href={`#${encodeURIComponent(item.id)}`}
                 class:list={[
-                    'block rounded-control py-1.5 pr-3 break-words text-muted hover:bg-surface hover:text-primary',
+                    'flex items-center rounded-control py-1.5 pr-3 break-words text-muted hover:bg-surface hover:text-primary pointer-coarse:min-h-11',
                     item.depth === 0 ? 'pl-3' : item.depth === 1 ? 'pl-6' : 'pl-9'
                 ]}
             >

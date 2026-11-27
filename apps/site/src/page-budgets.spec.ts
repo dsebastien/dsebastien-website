@@ -254,7 +254,7 @@ describe('budgets of the note page', () => {
         )
         expect(page).toMatch(
             new RegExp(
-                `<a class="link" href="/-/backlinks/${id}"[^>]*>\\s*All ${String(BUDGET_SAMPLE_BACKLINKS)} notes that link here\\s*</a>`,
+                `<a class="link-control" href="/-/backlinks/${id}"[^>]*>\\s*All ${String(BUDGET_SAMPLE_BACKLINKS)} notes that link here\\s*</a>`,
                 'u'
             )
         )

@@ -15,11 +15,11 @@ const { value } = Astro.props
 {value.kind === 'text' &&
     value.pieces.map((piece) =>
         piece.kind === 'link' || piece.kind === 'tag' ? (
-            <a class='link' href={piece.href}>
+            <a class='link-control' href={piece.href}>
                 {piece.text}
             </a>
         ) : piece.kind === 'external' ? (
-            <a class='link' href={piece.href} target='_blank' rel='noopener noreferrer'>
+            <a class='link-control' href={piece.href} target='_blank' rel='noopener noreferrer'>
                 {piece.text}
             </a>
         ) : piece.kind === 'not-published' ? (

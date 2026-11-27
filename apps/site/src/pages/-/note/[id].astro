@@ -14,12 +14,14 @@ import { publishedSite } from '../../../published-site.ts'
 import { oldAnchorScript } from '../../../rendering/anchors.ts'
 import { isNoindexNote } from '../../../noindex.ts'
 import { languageOf } from '../../../rendering/language.ts'
+import { sectionBarScript } from '../../../section-bar.ts'
 
 // The page of a published note, in variant B of the mockups (R49): a title
 // band with the title, the type badge and the dates (issue 47), then three
 // columns on a wide screen: the outline in the left rail, the text and the
 // backlinks, and the properties panel in the right rail (issue 48, R59). On a
-// small screen the panel and the outline are folding blocks above the text.
+// small screen the panel and the outline are folding blocks above the text,
+// and a bar under the header names the current section (story 8, issue 91).
 // Its file has the identity of the note as its name, which is plain ASCII on
 // every system and on every host. The resolver leads the canonical URL of the
 // note to this file. The full text of the search indexes the title, the
@@ -144,7 +146,7 @@ const ad = site.adOf(note.vaultPath)
                     <Backlinks backlinks={shown} />
                     {backlinks.length > shown.length && (
                         <p class='mt-4'>
-                            <a class='link' href={backlinksPath(note.id)}>
+                            <a class='link-control' href={backlinksPath(note.id)}>
                                 All {backlinks.length} notes that link here
                             </a>
                         </p>
@@ -153,6 +155,15 @@ const ad = site.adOf(note.vaultPath)
             )}
         </div>
     </div>
+    {body.outline !== undefined && (
+        <>
+            <button type='button' class='section-bar' data-section-bar hidden>
+                <span class='shrink-0 text-muted'>On this page</span>
+                <span class='truncate' data-section-bar-text></span>
+            </button>
+            <script is:inline set:html={sectionBarScript} />
+        </>
+    )}
     <script is:inline set:html={oldAnchorScript} />
     {ad.length > 0 && <script is:inline set:html={ctaScript} />}
 </Page>

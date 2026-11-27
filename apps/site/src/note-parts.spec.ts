@@ -197,7 +197,7 @@ describe('properties panel of a note page (PAGE-02)', () => {
         expect(textOf(link ?? undefined)).toBe('Ada Quillfeather')
         // The link holds its text alone: a space inside it would be underlined.
         expect(sources.get(FILM)).toContain(
-            '<a class="link" href="/30+People/Ada+Quillfeather">Ada Quillfeather</a>'
+            '<a class="link-control" href="/30+People/Ada+Quillfeather">Ada Quillfeather</a>'
         )
     })
 

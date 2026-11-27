@@ -10,8 +10,8 @@ import { SITE_NAME } from '../site.ts'
 // MODE-01). The search control is a link to the search page (SRCH-08): with
 // its script, it opens the command palette on the same page, which loads at
 // its first opening (issue 122, R57). On a small screen the link shows its
-// icon, and its name stays. On a phone the controls are 44 px high, for a
-// finger; from the small breakpoint 36 px (issue 100, point 3).
+// icon, and its name stays. The controls are 44 px high, for a finger; with a
+// mouse, 36 px from the small breakpoint (issue 100, point 3; issue 91, R95).
 // The switch comes first: it is hidden until its script runs, and it shows in
 // the free space at the left, so nothing moves (CLS, R57). On a very small
 // screen the site name gives way with an ellipsis, so nothing goes past the edge.
@@ -34,14 +34,14 @@ const searching = Astro.url.pathname === SEARCH_PATH || Astro.url.pathname === '
 
 <header class='sticky top-0 z-40 border-b border-border bg-surface'>
     <div class='mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6'>
-        <a href='/' class='flex min-w-0 items-center gap-2.5 text-lg font-bold'>
+        <a href='/' class='flex min-h-11 min-w-0 items-center gap-2.5 text-lg font-bold'>
             <span class='h-8 w-8 shrink-0 overflow-hidden rounded-control' set:html={mark} />
             <span class='truncate'>{SITE_NAME}</span>
         </a>
         <div class='ml-auto flex shrink-0 items-center gap-2'>
             {modeSwitch && <ModeSwitch />}
             <a
-                class='button-quiet h-11 min-w-11 px-2 sm:h-9 sm:min-w-9 sm:px-3'
+                class='button-quiet h-11 min-w-11 px-2 sm:px-3 sm:pointer-fine:h-9 sm:pointer-fine:min-w-9'
                 href={SEARCH_PATH}
                 aria-current={searching ? 'page' : undefined}
                 data-search-link

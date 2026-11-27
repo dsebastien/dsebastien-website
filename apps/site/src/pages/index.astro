@@ -106,7 +106,7 @@ function counted(value: number, one: string, many: string): string {
                 </ul>
                 {site.library.hubs.length > 0 && (
                     <p class='mt-6'>
-                        <a class='link' href={LIBRARY_PATH}>
+                        <a class='link-control' href={LIBRARY_PATH}>
                             The library: movies, shows and games
                         </a>
                     </p>
@@ -123,7 +123,7 @@ function counted(value: number, one: string, many: string): string {
                         <ol class='grid gap-2'>
                             {(list.pages[0]?.notes ?? []).slice(0, RECENT_ON_HOME).map((note) => (
                                 <li class='flex items-baseline justify-between gap-4'>
-                                    <a class='link min-w-0 break-words' href={note.path}>
+                                    <a class='link-control min-w-0 break-words' href={note.path}>
                                         {note.title}
                                     </a>
                                     {note.date !== undefined && (
@@ -141,7 +141,7 @@ function counted(value: number, one: string, many: string): string {
                             ))}
                         </ol>
                         <p class='mt-4'>
-                            <a class='link' href={list.pages[0]?.path}>
+                            <a class='link-control' href={list.pages[0]?.path}>
                                 All {list.label.toLowerCase()}
                             </a>
                         </p>
