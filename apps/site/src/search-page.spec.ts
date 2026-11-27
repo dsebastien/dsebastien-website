@@ -3,7 +3,7 @@ import type { Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
 import { toText } from 'hast-util-to-text'
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
@@ -17,7 +17,7 @@ import {
     type TestStores
 } from '@dsebastien-website/testing'
 import { canonicalPath, resolve, type ResolverMap } from '@dsebastien-website/resolver'
-import { fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
+import { fileMainSite, fileNoteTypes, nodeDevice } from '../../plugin/src/publishing/node/device.ts'
 import { plan, publish, status } from '../../plugin/src/publishing/tool.ts'
 import { brotliSize, FIRST_PALETTE_BROTLI, PAGE_BUDGET } from './budgets.ts'
 import { createSearch } from './search/engine.ts'
@@ -42,6 +42,17 @@ const GUARDED = [
 ]
 const BARREL = '10 Garden/Rain barrel.md'
 const FILM = '20 Library/20.01 Films/The Lantern Keeper (2019).md'
+/** The note with `publish_noindex: true` (IDX-20). */
+const NOINDEX = '10 Garden/Seed swap draft.md'
+/** The notes that also exist on the main site: it answers for none, so none has a verified original (IDX-13). */
+const NOT_VERIFIED = [
+    '40 Writing/Garden news, week 12.md',
+    '40 Writing/Le potager en hiver.md',
+    '40 Writing/Letters/Garden letter 1 (Newsletter).md',
+    '40 Writing/Letters/Garden letter 2 (Newsletter).md',
+    '40 Writing/The vegetable garden in winter.md',
+    '40 Writing/Why I keep a garden journal.md'
+]
 
 let stores: TestStores | undefined
 let outDir: string | undefined
@@ -49,6 +60,8 @@ let exitCode = -1
 let map: ResolverMap | undefined
 /** The vault paths of the published notes. */
 const published = new Set<string>()
+/** The notes of the publication whose original is not verified. */
+let notVerified: string[] = []
 
 function built(): { dir: string; map: ResolverMap } {
     if (outDir === undefined || map === undefined) {
@@ -128,21 +141,27 @@ beforeAll(async () => {
     stores = await makeTestStores()
     const vault = await copyFixtureVault(stores)
     const contentStore = await makeContentStoreCopy(stores)
+    // The main site of the test answers for no post: the check of the
+    // originals opens no connection, and its result is the same on each machine.
+    const posts = join(stores.root, 'main-site.json')
+    await writeFile(posts, JSON.stringify({ answers: {} }))
     const device = nodeDevice({
         noteTypes: fileNoteTypes(FIXTURE_NOTE_TYPES),
         vault,
         contentStore,
-        attachmentStorage: stores.attachmentStorage
+        attachmentStorage: stores.attachmentStorage,
+        mainSite: fileMainSite(posts)
     })
     const queue = await status(device)
     const include = queue.new.filter((path) => path !== NOT_SELECTED)
     for (const path of include) published.add(path)
     const planned = await plan(device, { include })
-    await publish(device, planned.id, {
+    const run = await publish(device, planned.id, {
         time: '2031-05-01T00:00:00Z',
         device: 'garden-shed',
         face: 'command-line'
     })
+    notVerified = run.originalsNotVerified.map((entry) => entry.path)
     const cache = join(SITE, '.cache')
     await mkdir(cache, { recursive: true })
     outDir = await mkdtemp(join(cache, 'search-spec-'))
@@ -363,10 +382,13 @@ describe('the command palette', () => {
 })
 
 describe('the title index (SRCH-02)', () => {
-    // The random note of the palette never opens such a note (issue 122, R85).
+    // The random note of the palette never opens such a note (issue 122, R85):
+    // a note with publish_noindex, and a note on the main site without a
+    // verified original (IDX-13, R90).
     test('names the notes that search engines must not index, and no other', async () => {
+        expect([...notVerified].sort()).toEqual(NOT_VERIFIED)
         const index = (await json('-/search/titles.json')) as { noindex: string[] }
-        expect(index.noindex).toEqual([canonicalPath('10 Garden/Seed swap draft.md')])
+        expect(index.noindex).toEqual([NOINDEX, ...NOT_VERIFIED].map(canonicalPath))
     })
 
     test('answers with the display title, the type and an alias', async () => {
