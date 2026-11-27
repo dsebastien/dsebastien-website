@@ -52,6 +52,20 @@ describe('check of private files', () => {
         expect(await refusedPaths(files)).toEqual(Object.keys(files))
     })
 
+    test('refuses files that hold secrets, and allows .env.example', async () => {
+        const refused = {
+            '.env': 'a',
+            '.env.local': 'a',
+            'apps/site/.dev.vars': 'a',
+            '.dev.vars.production': 'a',
+            'certs/site.pem': 'a',
+            'deploy/id.KEY': 'a'
+        }
+        expect(await refusedPaths({ ...refused, '.env.example': 'A=' })).toEqual(
+            Object.keys(refused)
+        )
+    })
+
     test('refuses a note outside the fixture vault', async () => {
         expect(await refusedPaths({ 'documentation/A real note.md': NOTE })).toEqual([
             'documentation/A real note.md'

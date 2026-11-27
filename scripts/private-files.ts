@@ -34,6 +34,22 @@ const VAULT_ENDINGS = ['.canvas', '.base', '.excalidraw']
 /** File endings of Markdown. */
 const MARKDOWN_ENDINGS = ['.md', '.markdown', '.mdx']
 
+/** True for a file that holds secrets: `.env`, `.env.*` (not `.env.example`), `.dev.vars`, keys. */
+function isSecretFile(lowerPath: string): boolean {
+    const name = lowerPath.slice(lowerPath.lastIndexOf('/') + 1)
+    if (name === '.env.example') {
+        return false
+    }
+    return (
+        name === '.env' ||
+        name.startsWith('.env.') ||
+        name === '.dev.vars' ||
+        name.startsWith('.dev.vars.') ||
+        name.endsWith('.pem') ||
+        name.endsWith('.key')
+    )
+}
+
 const FIXTURE_VAULT = 'fixtures/vault/'
 const FIXTURE_CATALOG = 'fixtures/catalog.json'
 
@@ -121,6 +137,9 @@ async function reasonToRefuse(
     }
     if (file.symlink) {
         return 'it is a symbolic link, and a link can point to a file outside the repository'
+    }
+    if (isSecretFile(lowerPath)) {
+        return 'it can hold secrets (.env, .dev.vars, a key file). Keep it out of git. Only ".env.example" is allowed'
     }
     if (lowerPath.startsWith(FIXTURE_VAULT)) {
         if (!file.path.startsWith(FIXTURE_VAULT)) {

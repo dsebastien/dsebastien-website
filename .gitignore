@@ -36,6 +36,10 @@ target/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
 
 # Code coverage
 coverage/
