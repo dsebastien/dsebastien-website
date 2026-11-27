@@ -126,7 +126,7 @@ function titleOf(
  * after `T`, `t`, a space or a tab. A month or a day can have one digit, as
  * in a YAML timestamp, which stays a text (issue 93).
  */
-const DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[Tt 	])/u
+const DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[Tt \t])/u
 
 /** The date of a property, as the vault writes it, or `undefined` when it holds no valid date. */
 export function propertyDate(value: unknown): NoteDate | undefined {

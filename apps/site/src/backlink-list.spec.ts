@@ -99,8 +99,8 @@ describe('backlink of a note whose H1 holds an embed', () => {
         }))
         const page = pages.page('Icon.md')
 
+        expect(page.heading?.text).toBe('icon.png Title')
         expect(entry?.title).toBe('icon.png Title')
-        expect(entry?.title).toBe(page.heading?.text)
-        expect(titleOf('Icon.md')).toBe(page.heading?.text)
+        expect(titleOf('Icon.md')).toBe('icon.png Title')
     })
 })
