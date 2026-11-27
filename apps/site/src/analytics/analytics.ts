@@ -124,7 +124,9 @@ export function analyticsTag(settings: AnalyticsSettings): Record<string, string
  * their path (`/404`, `/410`) with the path of the request as the property
  * `path`. The manual script does not count a page that the browser shows
  * again from its back-forward cache, so this script sends the view again
- * then, as the plain script does. A call that fails never breaks the page.
+ * then, as the plain script does; and a page that opens hidden (a tab in the
+ * background, a prerender) sends its first view when it first becomes
+ * visible, as the plain script does too. A call that fails never breaks the page.
  * It is one block, so it declares no global name.
  */
 export function pageViewScript(kind: PageViewKind): string {
@@ -142,7 +144,16 @@ export function pageViewScript(kind: PageViewKind): string {
             ${view}
         } catch {}
     }
-    view()
+    if (document.visibilityState === 'visible') {
+        view()
+    } else {
+        const first = () => {
+            if (document.visibilityState !== 'visible') return
+            document.removeEventListener('visibilitychange', first)
+            view()
+        }
+        document.addEventListener('visibilitychange', first)
+    }
     addEventListener('pageshow', (event) => {
         if (event.persisted) view()
     })

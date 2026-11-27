@@ -94,12 +94,30 @@ describe('the analytics tag', () => {
 function pageView(
     kind: PageViewKind,
     address: string,
-    plausible?: (...args: unknown[]) => void
-): { calls: () => unknown[][]; show: (persisted: boolean) => void } {
+    plausible?: (...args: unknown[]) => void,
+    visibility = 'visible'
+): {
+    calls: () => unknown[][]
+    show: (persisted: boolean) => void
+    becomes: (state: string) => void
+} {
     const url = new URL(address)
     const listeners: ((event: { persisted: boolean }) => void)[] = []
+    const changes: (() => void)[] = []
+    const document = {
+        visibilityState: visibility,
+        addEventListener: (name: string, listener: () => void) => {
+            expect(name).toBe('visibilitychange')
+            changes.push(listener)
+        },
+        removeEventListener: (name: string, listener: () => void) => {
+            expect(name).toBe('visibilitychange')
+            changes.splice(changes.indexOf(listener), 1)
+        }
+    }
     const window: Record<string, unknown> = {
         location: { origin: url.origin, pathname: url.pathname, href: url.href },
+        document,
         addEventListener: (name: string, listener: (event: { persisted: boolean }) => void) => {
             expect(name).toBe('pageshow')
             listeners.push(listener)
@@ -115,6 +133,10 @@ function pageView(
             ),
         show: (persisted) => {
             for (const listener of listeners) listener({ persisted })
+        },
+        becomes: (state) => {
+            document.visibilityState = state
+            for (const listener of [...changes]) listener()
         }
     }
 }
@@ -153,6 +175,20 @@ describe('the page view', () => {
         page.show(true)
         expect(page.calls()).toHaveLength(2)
         expect(page.calls()[1]).toEqual(page.calls()[0])
+    })
+
+    // As the plain script of Plausible: a page that opens hidden (a tab in the
+    // background, a prerender) counts when the reader first sees it, one time.
+    test('sends the first view of a hidden page when it becomes visible, one time', () => {
+        const page = pageView('page', 'https://notes.example/', undefined, 'hidden')
+        expect(page.calls()).toEqual([])
+        page.becomes('prerender')
+        expect(page.calls()).toEqual([])
+        page.becomes('visible')
+        expect(page.calls()).toEqual([['pageview']])
+        page.becomes('hidden')
+        page.becomes('visible')
+        expect(page.calls()).toEqual([['pageview']])
     })
 
     test('calls the script when it is there already', () => {

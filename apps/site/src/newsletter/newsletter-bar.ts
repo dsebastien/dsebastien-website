@@ -134,7 +134,9 @@ export function startNewsletterBar(page: Document, window: Window): void {
             form.removeAttribute('aria-busy')
             show(messageOf(result), kindOf(result))
             if (kindOf(result) !== 'success') {
+                // The focus stays in the field, so the bar stays with its error.
                 holding = false
+                email.focus({ preventScroll: true })
                 schedule()
             } else {
                 // Closed for good at once; the message stays a moment, as today.
