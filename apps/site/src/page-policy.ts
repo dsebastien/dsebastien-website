@@ -3,6 +3,8 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AstroIntegration } from 'astro'
+import type { Root, RootContent } from 'hast'
+import { fromHtml } from 'hast-util-from-html'
 import { PAGE_POLICY_FILE, SERVER_ERROR_FILE, pagePolicyFrom } from '@dsebastien-website/resolver'
 import { analyticsOfEnvironment, type AnalyticsSettings } from './analytics/analytics.ts'
 import { MEMBERS_SITE } from './newsletter/signup.ts'
@@ -28,8 +30,27 @@ export const MAX_INLINE_HASHES = 32
 
 const SCRIPT = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu
 const STYLE = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/giu
-/** A `style` attribute, which no hash allows. */
-const STYLE_ATTRIBUTE = /<[a-z][\w:-]*\b[^>]*\sstyle\s*=/iu
+/** The `type` attribute of a script element, in its three forms. */
+const TYPE = /\stype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu
+/** The types of a script that runs; any other type is a data block, which runs nothing. */
+const RUNNING_TYPES = new Set(['', 'module', 'text/javascript', 'application/javascript'])
+/** A text that may be a `style` attribute: only then is the page parsed. */
+const MAYBE_STYLE_ATTRIBUTE = /\sstyle\s*=/iu
+
+/** True when a script element with these attributes runs: no type, a module or JavaScript. */
+function runs(attributes: string): boolean {
+    const [, double, single, bare] = TYPE.exec(attributes) ?? []
+    return RUNNING_TYPES.has((double ?? single ?? bare ?? '').trim().toLowerCase())
+}
+
+/** True when an element of the page has a `style` attribute, read by the rules of HTML. */
+function hasStyleAttribute(html: string): boolean {
+    const visit = (node: Root | RootContent): boolean =>
+        (node.type === 'element' && node.properties['style'] !== undefined) ||
+        ('children' in node && node.children.some(visit)) ||
+        (node.type === 'element' && node.content !== undefined && visit(node.content))
+    return visit(fromHtml(html))
+}
 
 /** The inline scripts and styles of the pages of a build. */
 export interface InlineCode {
@@ -43,7 +64,8 @@ export function hashSource(text: string): string {
 }
 
 /**
- * The inline scripts and styles of a page. A script with a `src` is a file.
+ * The inline scripts and styles of a page. A script with a `src` is a file,
+ * and a script of another type (`application/ld+json`) is data.
  *
  * @throws when an element of the page has a `style` attribute
  */
@@ -51,14 +73,16 @@ export function inlineCodeOf(html: string, page = 'the page'): InlineCode {
     const scripts = new Set<string>()
     const styles = new Set<string>()
     for (const [, attributes = '', text = ''] of html.matchAll(SCRIPT)) {
-        if (!/\ssrc\s*=/iu.test(attributes)) {
+        if (!/\ssrc\s*=/iu.test(attributes) && runs(attributes)) {
             scripts.add(text)
         }
     }
     for (const [, text = ''] of html.matchAll(STYLE)) {
         styles.add(text)
     }
-    if (STYLE_ATTRIBUTE.test(html.replace(SCRIPT, '').replace(STYLE, ''))) {
+    // The text of a note can name the attribute (a description, an alt
+    // text): only the parsed page tells an attribute from a text.
+    if (MAYBE_STYLE_ATTRIBUTE.test(html) && hasStyleAttribute(html)) {
         throw new Error(`${page} has a style attribute, which the Content Security Policy blocks`)
     }
     return { scripts, styles }

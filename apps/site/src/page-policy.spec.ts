@@ -26,6 +26,24 @@ describe('the inline code of a page', () => {
         )
         expect([...inlineCodeOf('<p>style="x"</p>').scripts]).toEqual([])
     })
+
+    // A text of a note that names the attribute is no attribute.
+    test.each([
+        '<meta name="description" content="Why the style= attribute is bad">',
+        '<title>style="x"</title>',
+        '<img alt="a style=&quot;x&quot; b" src="/a.png">',
+        '<a aria-label="style=bold" href="/x">x</a>',
+        '<pre><code>&lt;p style="x"&gt;</code></pre>'
+    ])('accepts a page whose text names the style attribute: %s', (html) => {
+        expect(() => inlineCodeOf(html)).not.toThrow()
+    })
+
+    test('hashes only the scripts that run, not a data block', () => {
+        const code = inlineCodeOf(
+            '<script type="application/ld+json">{"a":1}</script><script type="module">m()</script><script type="text/javascript">j()</script><script type="importmap">{}</script>'
+        )
+        expect([...code.scripts]).toEqual(['m()', 'j()'])
+    })
 })
 
 describe('the policy of the pages', () => {
