@@ -532,6 +532,22 @@ describe('first set of notes (spec 18.4)', () => {
         'ai-generated': (notes) => {
             expect(notes.map((note) => property(note, 'ai_generated'))).toEqual(['true'])
         },
+        'wide-content': async (notes) => {
+            const [note, image] = take(notes, 2)
+            if (note === undefined || image === undefined) return
+            const words = note.body.split(/\P{L}+/u)
+            expect(words.some((word) => /^\p{L}{60,}$/u.test(word))).toBe(true)
+            const header = note.body.split('\n').find((line) => line.startsWith('| '))
+            expect(header?.split('|').length).toBeGreaterThanOrEqual(10)
+            const code = /^```\w*\n([\s\S]*?)^```$/mu.exec(note.body)?.[1] ?? ''
+            expect(code.split('\n').some((line) => line.length > 120)).toBe(true)
+            expect(links(note.body).some((link) => link.embed && link.target === image.name)).toBe(
+                true
+            )
+            // The width of a PNG is the first number of its header.
+            const bytes = await Bun.file(join(FIXTURE_VAULT, image.path)).bytes()
+            expect(new DataView(bytes.buffer).getUint32(16)).toBeGreaterThanOrEqual(2400)
+        },
         'root-note': (notes) => {
             expect(notes.map((note) => note.folder)).toEqual([''])
         },

@@ -286,6 +286,11 @@
             "id": "noindex-note",
             "covers": "A published note with `publish_noindex: true` (decision R85, issue 54): its page says noindex, and it is in no sitemap.",
             "files": ["10 Garden/Seed swap draft.md"]
+        },
+        {
+            "id": "wide-content",
+            "covers": "The wide content of the mobile rules (issue 91, PAGE-07): a word of more than 60 letters, a table of 9 columns, a code block with a line of more than 120 characters and an image of 2,400 px wide. No page may scroll sideways from 320 px.",
+            "files": ["50 Field guide/Text/Wide content.md", "Attachments/wide-meadow.png"]
         }
     ]
 }

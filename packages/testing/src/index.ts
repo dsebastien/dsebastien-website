@@ -26,3 +26,4 @@ export {
     samplePng,
     writeBudgetSample
 } from './budget-sample.ts'
+export { launchChrome } from './browser.ts'
