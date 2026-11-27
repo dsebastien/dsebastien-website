@@ -268,7 +268,9 @@ describe('the ways to the search page', () => {
             element.children.some((child) => child === link)
         )
         const items = (row?.children ?? []).filter((child) => child.type === 'element')
-        expect(items.map((item) => item.tagName)).toEqual(['button', 'a'])
+        // The switch of the theme (DES-10) is hidden in the same way, before it.
+        expect(items.map((item) => item.tagName)).toEqual(['select', 'button', 'a'])
+        expect(select('header [data-design-switch]', page)?.properties['hidden']).toBe(true)
         expect(select('header [data-mode-switch]', page)?.properties['hidden']).toBe(true)
     })
 
