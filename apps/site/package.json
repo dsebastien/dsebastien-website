@@ -14,7 +14,10 @@
     },
     "dependencies": {
         "@astrojs/markdown-remark": "7.3.9",
+        "@coderline/alphatab": "1.9.0",
         "@dsebastien-website/resolver": "workspace:*",
+        "@dsebastien/music-notation": "0.26.0",
+        "@dsebastien/music-notation-sounds": "0.1.1",
         "@fontsource-variable/noto-sans": "5.3.0",
         "@quartz-community/remark-obsidian": "2.2.1",
         "@tailwindcss/vite": "4.3.5",
