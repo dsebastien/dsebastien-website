@@ -8,8 +8,9 @@
 // - target: every control is 44 by 44 px at least, but a link in a sentence
 //   and a link in the text of a note, whose size the line of the text sets
 //   (the inline exception of WCAG 2.5.8).
-// - hover: a rule of the style sheets for `:hover` changes only colors, lines
-//   and shadows: it shows, hides and moves nothing that a finger needs.
+// - hover: a rule of the style sheets for `:hover` changes only colors (the
+//   fill and the stroke of a drawing too), lines and shadows: it shows, hides
+//   and moves nothing that a finger needs.
 // - viewport: the width of the device, a zoom that the reader may change, the
 //   page above the keyboard (`interactive-widget=resizes-content`), and no
 //   `viewport-fit=cover`, so the browser keeps the page inside the safe areas.
@@ -123,7 +124,7 @@ export function MOBILE_RULES(screen: number): MobileFinding[] {
 
     // hover
     const allowed =
-        /^(color|background-color|background|border(-(top|right|bottom|left|block|inline)(-(start|end))?)?-color|border-color|text-decoration(-.+)?|box-shadow|outline(-.+)?|--tw-.+|transition(-.+)?)$/u
+        /^(color|background-color|background|fill|stroke|border(-(top|right|bottom|left|block|inline)(-(start|end))?)?-color|border-color|text-decoration(-.+)?|box-shadow|outline(-.+)?|--tw-.+|transition(-.+)?)$/u
     const rules = (list: CSSRuleList): CSSStyleRule[] =>
         [...list].flatMap((rule) => {
             const inner = 'cssRules' in rule ? rules((rule as CSSGroupingRule).cssRules) : []
@@ -138,7 +139,19 @@ export function MOBILE_RULES(screen: number): MobileFinding[] {
         }
         for (const rule of rules(list)) {
             if (!rule.selectorText.includes(':hover')) continue
-            const changed = [...rule.style].filter((property) => !allowed.test(property))
+            // A `background` that names no image changes a color: its other parts
+            // take their first values (or wait for the variables of the shorthand).
+            const background = rule.style.getPropertyValue('background')
+            const colorOnly = background !== '' && !/url\(|gradient\(|image\(/iu.test(background)
+            const changed = [...rule.style].filter(
+                (property) =>
+                    !allowed.test(property) &&
+                    !(
+                        property.startsWith('background-') &&
+                        (rule.style.getPropertyValue(property) === 'initial' ||
+                            (colorOnly && rule.style.getPropertyValue(property) === ''))
+                    )
+            )
             if (changed.length > 0) {
                 findings.push({
                     rule: 'hover',
@@ -172,7 +185,11 @@ export function MOBILE_RULES(screen: number): MobileFinding[] {
 
     // field
     for (const field of document.querySelectorAll('input:not([type="hidden"]), textarea, select')) {
-        if (field instanceof HTMLInputElement && ['checkbox', 'radio'].includes(field.type))
+        // A check box, a radio button and a slider take no text: a phone does not zoom into them.
+        if (
+            field instanceof HTMLInputElement &&
+            ['checkbox', 'radio', 'range'].includes(field.type)
+        )
             continue
         if (!shown(field)) continue
         const size = Number.parseFloat(getComputedStyle(field).fontSize)
