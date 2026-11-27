@@ -529,22 +529,32 @@ function median(values: readonly number[]): number {
 
 /**
  * The budget of the first request of a new instance of the Worker of the host
- * (issue 121, PERF-29, decision of the author R94): the time to the first
- * byte, measured from a client near the edge with a new connection, at the
- * 95th percentile, on a host with the resolver map of the published notes.
- * Fewer first requests than `requests` give no verdict.
+ * (issue 121, PERF-29, decision of the author R94): the resolver map adds at
+ * most `added` milliseconds at the 95th percentile to the time to the first
+ * byte of the first request of a new instance, against a Worker with no map
+ * (the floor) measured in the same run, from the same client, with a new
+ * connection per request. The host and the network are in both times, so the
+ * difference is what the map costs. Fewer first requests than `requests` on
+ * either side give no verdict.
  */
-export const FIRST_REQUEST_BUDGET = { percentile: 95, milliseconds: 150, requests: 20 } as const
+export const FIRST_REQUEST_BUDGET = { percentile: 95, added: 60, requests: 20 } as const
 
-/** The verdict on the first requests of new instances. */
-export interface FirstRequestVerdict {
-    /** `too few`: fewer first requests than the budget needs. */
-    verdict: 'pass' | 'fail' | 'too few'
-    /** The times in milliseconds, at the 50th and the 95th percentiles (nearest rank), and the longest. */
+/** The times of the first requests of one side, in milliseconds (nearest rank). */
+export interface FirstRequestTimes {
+    count: number
     p50: number
     p95: number
     max: number
-    count: number
+}
+
+/** The verdict on the first requests of new instances of a host, against the floor. */
+export interface FirstRequestVerdict {
+    /** `too few`: fewer first requests than the budget needs on one side. */
+    verdict: 'pass' | 'fail' | 'too few'
+    host: FirstRequestTimes
+    floor: FirstRequestTimes
+    /** What the map adds at the 95th percentile, in milliseconds: the host less the floor. */
+    added: number
     failures: string[]
 }
 
@@ -554,31 +564,53 @@ export function percentileOf(sorted: readonly number[], percentile: number): num
     return sorted[rank - 1] ?? Number.NaN
 }
 
-/**
- * Judges the times to the first byte of first requests of new instances
- * against `FIRST_REQUEST_BUDGET`, in milliseconds.
- */
-export function judgeFirstRequests(times: readonly number[]): FirstRequestVerdict {
+/** The times of some first requests, in milliseconds. */
+export function firstRequestTimes(times: readonly number[]): FirstRequestTimes {
     const sorted = [...times].sort((one, two) => one - two)
-    const p50 = percentileOf(sorted, 50)
-    const p95 = percentileOf(sorted, FIRST_REQUEST_BUDGET.percentile)
-    const facts = { p50, p95, max: sorted.at(-1) ?? Number.NaN, count: sorted.length }
-    if (sorted.length < FIRST_REQUEST_BUDGET.requests) {
+    return {
+        count: sorted.length,
+        p50: percentileOf(sorted, 50),
+        p95: percentileOf(sorted, FIRST_REQUEST_BUDGET.percentile),
+        max: sorted.at(-1) ?? Number.NaN
+    }
+}
+
+/**
+ * Judges the times to the first byte of first requests of new instances of a
+ * host against those of the floor, in milliseconds (`FIRST_REQUEST_BUDGET`).
+ */
+export function judgeFirstRequests(
+    host: readonly number[],
+    floor: readonly number[]
+): FirstRequestVerdict {
+    const facts = { host: firstRequestTimes(host), floor: firstRequestTimes(floor) }
+    const added = Math.round((facts.host.p95 - facts.floor.p95) * 1000) / 1000
+    const few = (
+        [
+            ['the host', facts.host.count],
+            ['the floor', facts.floor.count]
+        ] as const
+    ).filter(([, count]) => count < FIRST_REQUEST_BUDGET.requests)
+    if (few.length > 0) {
         return {
             verdict: 'too few',
             ...facts,
-            failures: [
-                `${String(sorted.length)} first requests of an instance, the budget needs ${String(FIRST_REQUEST_BUDGET.requests)}`
-            ]
+            added,
+            failures: few.map(
+                ([side, count]) =>
+                    `${String(count)} first requests of an instance on ${side}, the budget needs ${String(FIRST_REQUEST_BUDGET.requests)}`
+            )
         }
     }
-    return p95 > FIRST_REQUEST_BUDGET.milliseconds
+    const round = (value: number): string => String(Math.round(value))
+    return added > FIRST_REQUEST_BUDGET.added
         ? {
               verdict: 'fail',
               ...facts,
+              added,
               failures: [
-                  `first request of an instance: p95 ${String(Math.round(p95))} ms, the budget is ${String(FIRST_REQUEST_BUDGET.milliseconds)} ms`
+                  `first request of an instance: the map adds ${round(added)} ms at p95 (${round(facts.host.p95)} ms against ${round(facts.floor.p95)} ms with no map), the budget is ${String(FIRST_REQUEST_BUDGET.added)} ms`
               ]
           }
-        : { verdict: 'pass', ...facts, failures: [] }
+        : { verdict: 'pass', ...facts, added, failures: [] }
 }

@@ -633,46 +633,53 @@ describe('the first request of a new instance of the Worker (issue 121, PERF-29)
     const times = (count: number, value: number): number[] =>
         Array.from({ length: count }, () => value)
 
-    test('the budget is 150 ms at the 95th percentile, with 20 requests at least', () => {
-        expect(FIRST_REQUEST_BUDGET).toEqual({ percentile: 95, milliseconds: 150, requests: 20 })
+    test('the map adds at most 60 ms at the 95th percentile to the floor, with 20 requests of each at least', () => {
+        expect(FIRST_REQUEST_BUDGET).toEqual({ percentile: 95, added: 60, requests: 20 })
     })
 
-    test('passes when 95 percent of the first requests are within the budget', () => {
-        // 19 of 20 within the budget: the 95th percentile (nearest rank) is the 19th.
-        const verdict = judgeFirstRequests([...times(19, 90), 400])
+    test('passes when the 95th percentile of the host is at most 60 ms above the one of the floor', () => {
+        // The 95th percentile (nearest rank) of 20 times is the 19th.
+        const verdict = judgeFirstRequests([...times(19, 200), 900], [...times(19, 140), 700])
         expect(verdict).toEqual({
             verdict: 'pass',
-            p50: 90,
-            p95: 90,
-            max: 400,
-            count: 20,
+            host: { count: 20, p50: 200, p95: 200, max: 900 },
+            floor: { count: 20, p50: 140, p95: 140, max: 700 },
+            added: 60,
             failures: []
         })
     })
 
-    test('fails when more than 5 percent are above the budget', () => {
-        const verdict = judgeFirstRequests([...times(18, 90), 151, 400])
+    test('fails when the map adds more than 60 ms at the 95th percentile', () => {
+        const verdict = judgeFirstRequests(times(20, 201), times(20, 140))
         expect(verdict.verdict).toBe('fail')
-        expect(verdict.p95).toBe(151)
+        expect(verdict.added).toBe(61)
         expect(verdict.failures).toEqual([
-            'first request of an instance: p95 151 ms, the budget is 150 ms'
+            'first request of an instance: the map adds 61 ms at p95 (201 ms against 140 ms with no map), the budget is 60 ms'
         ])
     })
 
-    test('a time on the budget passes', () => {
-        expect(judgeFirstRequests(times(20, 150)).verdict).toBe('pass')
+    test('a host faster than the floor passes', () => {
+        expect(judgeFirstRequests(times(20, 120), times(20, 140)).verdict).toBe('pass')
     })
 
-    test('gives no verdict with fewer requests than the budget needs', () => {
-        const verdict = judgeFirstRequests(times(19, 90))
-        expect(verdict.verdict).toBe('too few')
-        expect(verdict.failures).toEqual(['19 first requests of an instance, the budget needs 20'])
-    })
+    test.each([
+        [19, 20, 'the host'],
+        [20, 19, 'the floor']
+    ])(
+        'gives no verdict with %d first requests of the host and %d of the floor',
+        (host, floor, which) => {
+            const verdict = judgeFirstRequests(times(host, 90), times(floor, 90))
+            expect(verdict.verdict).toBe('too few')
+            expect(verdict.failures).toEqual([
+                `19 first requests of an instance on ${which}, the budget needs 20`
+            ])
+        }
+    )
 
     test('the order of the times does not count', () => {
         const sorted = [...times(18, 80), 120, 300]
-        expect(judgeFirstRequests([300, ...sorted.slice(0, 19).reverse()])).toEqual(
-            judgeFirstRequests(sorted)
+        expect(judgeFirstRequests([300, ...sorted.slice(0, 19).reverse()], sorted)).toEqual(
+            judgeFirstRequests(sorted, sorted)
         )
     })
 })

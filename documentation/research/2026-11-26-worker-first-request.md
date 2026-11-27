@@ -2,9 +2,9 @@
 
 Run on 2026-11-26. The question: where must the resolver map be, and how large, so that the first request of a new instance of the Worker is fast? The hosting prototype (`2026-11-24-hosting-prototype.md`, finding 3) measured 79 to 285 ms, and 730 ms one time, with the map as a static file of 10.7 MB.
 
-**The budget** (decision of the author R94): 150 ms to the first byte at the 95th percentile, measured from a client near the edge, on a host with the resolver map of the published notes. It is `FIRST_REQUEST_BUDGET` in `apps/site/src/budgets.ts`, next to the budgets of the note page (PERF-29).
+**The budget** (decision of the author R94, 2026-11-27): the resolver map may add at most 60 ms at the 95th percentile to the time to the first byte of the first request of a new instance, compared in the same run with a Worker that has no map (the floor), measured from a client near the edge, on a host with the resolver map of the published notes. It is `FIRST_REQUEST_BUDGET` in `apps/site/src/budgets.ts`, next to the budgets of the note page (PERF-29). The first rule of the author (150 ms at the 95th percentile, 2026-11-26) was not met by the floor itself (finding 1), so it changed after these numbers.
 
-**Answer: option 3, the map in parts as static files of the release.** It is the only option that keeps the first request near the time of a Worker with no map at all, and its memory does not grow with the site. No option meets the budget at its 95th percentile in these measures, and neither does a Worker with no map: the rest of that time is the host and the network, not the map (section 3). The author decides what to do with the budget (section 5).
+**Answer: option 3, the map in parts as static files of the release.** It is the only option that keeps the first request near the time of a Worker with no map at all, and its memory does not grow with the site. In these measures it adds nothing measurable at the 95th percentile over the floor (within the noise of the floor), and about 30 to 40 ms at the median; every other option adds 300 ms or more at the 95th percentile (section 3).
 
 Everything ran on invented notes, on test Workers of the hosting account on its `workers.dev` name, never on the preview host. The account and the host names are not written here.
 
@@ -66,7 +66,7 @@ Option 4 (a database of the host) was not measured, as the issue says: each look
 
 ## 3. Findings
 
-1. **The floor of the host.** A Worker with no map answers the first request of a new instance in 131 ms at the median and 278 ms at the 95th percentile from this machine, right after a deployment. So the budget of 150 ms at the 95th percentile is not met by any option, and not by a Worker with no map: about 65 ms are the connection and the handshake, and the rest of the tail is the host that starts an instance and gives a page. What the map adds is the difference to that floor.
+1. **The floor of the host.** A Worker with no map answers the first request of a new instance in 131 ms at the median and 278 ms at the 95th percentile from this machine, right after a deployment. So the first rule of the budget (150 ms at the 95th percentile) was met by no option, and not by a Worker with no map: that is why the budget is now what the map adds to this floor (R94). About 65 ms are the connection and the handshake, and the rest of the tail is the host that starts an instance and gives a page.
 2. **The whole map is slow wherever it is.** As a static file, in the code as text, or as a JSON module: 590 to 750 ms at the median. The read of 23 MB is part of it, the parse (100 ms in V8 on this machine, 140 to 320 ms at the start of an instance on the host) the other part. A map smaller by 30 percent (option 2: no Markdown path of a note, no folded form that the canonical path gives) is about 7 percent faster: not enough, and it still grows.
 3. **The size of the code counts.** A Worker whose code is 28 MB (the parts as text) answers its first request 200 ms later than one with no map; with 6 MB, 40 ms later. About 7 ms per MB, and the code of option 1 grows with the map. The upload limit (64 MiB of code) is not the problem; the time is.
 4. **A part that the place of the host has not cached costs about 120 to 150 ms.** 299 requests on one connection for the 300 paths took 156 to 172 ms on average the first time, and 37 to 64 ms the second time. A part, like a page, is in the cache of the place once a request asked for it; the parts of one release are the same files in the next release when their keys did not change, so a deployment does not empty that cache.
@@ -80,11 +80,21 @@ Option 3: the build cuts the resolver map into a head and parts by a hash of eac
 
 Why not option 1: it is as slow as today with the map of this size, it costs 57 MB of the 128 MB of each instance, and both grow with the site. Why not option 2 alone: it gains 7 percent and still grows. A smaller map remains a lever inside option 3 (fewer bytes per part), with no need now.
 
-The check for the author: `bun run first-request --base <preview address>` (`scripts/first-request.ts`), on the preview host with the map of the published notes. Right after a deployment it sends a burst; with `--every 600 --requests 144` it runs a day at a low rate and gives the share of new instances. Its summary judges the first requests against the budget, and gives apart the time after the handshake, which is the part of the host and of the Worker.
+The check for the author: `bun run first-request --base <preview address> --floor-target <target file>` (`scripts/first-request.ts`), on the preview host with the map of the published notes; it deploys a temporary floor Worker next to the host and deletes it at the end. Right after a deployment it sends a burst; with `--every 600 --requests 144` it runs a day at a low rate and gives the share of new instances. Its summary judges what the map adds at the 95th percentile over the floor against the budget, and gives apart the time after the handshake, which is the part of the host and of the Worker.
 
-## 5. What the author decides
+## 5. The budget against these numbers
 
-The budget is not met at its 95th percentile even by a Worker with no map, from this machine and on the `workers.dev` name. Three ways: keep the budget and measure it on the preview host (a custom host of a zone can differ) with `bun run first-request`; or set it on the time after the handshake (155 ms at the 95th percentile with option 3, 200 ms with no map, right after a deployment); or set it at the median (160 ms with option 3 right after a deployment, 192 ms at a low rate; 131 and 152 ms with no map). A lever for the low rate, not built: fewer and larger parts are more often in the cache of the place (a part of 32 KB is the default, `PART_BYTES`).
+What the map adds at the 95th percentile over the floor (no map), in ms:
+
+| Option                                                 | Right after a deployment | At a low rate (same run as the floor) |
+| ------------------------------------------------------ | ------------------------ | ------------------------------------- |
+| Today: the whole map as a static file                  | 858                      | 813                                   |
+| 1. The map in the code, parsed at the start            | 615                      | 477                                   |
+| 2. A smaller map in the code, parsed at the start      | 647                      | 309                                   |
+| 3. Parts as static files, the first part with the head | -26                      | -248                                  |
+| 3 in the code: the parts as text of the code (28 MB)   | 182                      | 286                                   |
+
+Right after a deployment, the options and the floor ran one after the other in one hour, not in the same run; at the low rate they ran at the same time. A negative number is the noise of the tail of the floor (its 95th percentile came from two or three slow requests): option 3 passes the budget of 60 ms, the others fail it. The check of the budget now runs the floor in the same run: `bun run first-request --floor-target <target file>` deploys a temporary floor Worker next to the host, asks both in turn, judges the difference at the 95th percentile, and deletes the floor Worker. A lever for the low rate, not built: fewer and larger parts are more often in the cache of the place (a part of 32 KB is the default, `PART_BYTES`).
 
 ## 6. What is not verified
 

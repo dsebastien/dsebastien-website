@@ -14,6 +14,9 @@ import {
     type MapPart,
     type StoredFile
 } from '@dsebastien-website/resolver'
+import { markedNewInstance, NEW_INSTANCE_TIMING } from './instance.ts'
+
+export { NEW_INSTANCE_TIMING }
 
 // The Worker of the host (HOST-01 and HOST-03 of the spec, issue 21): it
 // serves a release through the resolver at the edge. It is an adapter of the
@@ -71,21 +74,6 @@ export interface Environment {
      * of the head is not used.
      */
     readonly MAP_PARTS?: string
-}
-
-/**
- * The `Server-Timing` entry of the first answer of an instance of the Worker
- * (issue 121): the check of the first request (`scripts/first-request.ts`)
- * tells by it which requests met a new instance. It says nothing of the
- * release.
- */
-export const NEW_INSTANCE_TIMING = 'instance;desc=new'
-
-/** The first answer of an instance, with the entry that says so. */
-function markedNewInstance(response: Response): Response {
-    const marked = new Response(response.body, response)
-    marked.headers.append('server-timing', NEW_INSTANCE_TIMING)
-    return marked
 }
 
 /** An answer with the header that keeps it out of the search engines. */

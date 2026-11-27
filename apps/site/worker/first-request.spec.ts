@@ -1,13 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
     CURL_WRITE_OUT,
+    floorConfiguration,
+    floorWorkerName,
     hasTiming,
     locationsOf,
     sampleOf,
     summaryOf,
+    workersDevAddress,
     type Sample
 } from './first-request.ts'
-import { NEW_INSTANCE_TIMING } from './worker.ts'
+import { NEW_INSTANCE_TIMING } from './instance.ts'
 
 // The check of the first request of a new instance (issue 121, PERF-29).
 
@@ -75,27 +78,74 @@ describe('the summary of a run', () => {
         newInstance,
         at: 0
     })
+    const run = (first: number, count: number, later: number): Sample[] => [
+        ...Array.from({ length: count }, (_, index) => sample(first + index, true)),
+        ...Array.from({ length: 30 }, () => sample(later, false))
+    ]
 
-    test('judges the first requests and keeps the others apart', () => {
-        const samples = [
-            ...Array.from({ length: 20 }, (_, index) => sample(80 + index, true)),
-            ...Array.from({ length: 30 }, () => sample(60, false)),
-            sample(500, false, 500)
-        ]
-        const summary = summaryOf(samples)
-        expect(summary.requests).toBe(51)
-        expect(summary.newInstances).toBe(20)
-        expect(summary.share).toBe(0.392)
+    test('judges what the map adds to the first requests of the floor, and keeps the others apart', () => {
+        const host = [...run(180, 20, 60), sample(500, false, 500)]
+        const floor = run(130, 20, 55)
+        const summary = summaryOf(host, floor)
+        expect(summary.host.requests).toBe(51)
+        expect(summary.host.newInstances).toBe(20)
+        expect(summary.host.share).toBe(0.392)
+        expect(summary.host.afterHandshake.p95).toBe(158)
+        expect(summary.host.later).toEqual({ count: 31, p50: 60, p95: 60, max: 500 })
+        expect(summary.host.notOk).toBe(1)
+        expect(summary.floor.newInstances).toBe(20)
+        expect(summary.first.host.p95).toBe(198)
+        expect(summary.first.floor.p95).toBe(148)
+        expect(summary.first.added).toBe(50)
         expect(summary.first.verdict).toBe('pass')
-        expect(summary.first.p95).toBe(98)
-        expect(summary.firstAfterHandshake.p95).toBe(58)
-        expect(summary.later).toEqual({ count: 31, p50: 60, p95: 60, max: 500 })
-        expect(summary.notOk).toBe(1)
     })
 
     test('no request gives no share and no verdict', () => {
-        const summary = summaryOf([])
-        expect(summary.share).toBe(0)
+        const summary = summaryOf([], [])
+        expect(summary.host.share).toBe(0)
         expect(summary.first.verdict).toBe('too few')
+    })
+})
+
+describe('the floor Worker of a run', () => {
+    test('has a name of its own, next to the Worker of the host', () => {
+        expect(floorWorkerName('notes-preview', 'a1b2c3')).toBe('notes-preview-floor-a1b2c3')
+        // A name of the host is at most 63 characters.
+        expect(floorWorkerName('n'.repeat(63), 'a1b2c3')).toBe(`${'n'.repeat(50)}-floor-a1b2c3`)
+    })
+
+    test('is a Worker on the workers.dev name of the account, with no route, that runs first', () => {
+        const account = 'ab'.repeat(16)
+        expect(
+            floorConfiguration({
+                accountId: account,
+                name: 'w-floor-a1b2c3',
+                main: '/m.ts',
+                dist: '/d'
+            })
+        ).toEqual({
+            name: 'w-floor-a1b2c3',
+            account_id: account,
+            main: '/m.ts',
+            compatibility_date: '2026-11-01',
+            workers_dev: true,
+            preview_urls: false,
+            assets: {
+                directory: '/d',
+                binding: 'ASSETS',
+                html_handling: 'none',
+                not_found_handling: 'none',
+                run_worker_first: true
+            }
+        })
+    })
+
+    test('its address is the one that wrangler prints', () => {
+        expect(
+            workersDevAddress(
+                'Uploaded w-floor-a1b2c3\n  https://w-floor-a1b2c3.someone.workers.dev\n'
+            )
+        ).toBe('https://w-floor-a1b2c3.someone.workers.dev')
+        expect(workersDevAddress('no address')).toBeUndefined()
     })
 })
