@@ -49,6 +49,8 @@ const NOINDEX_FOLDER = '20 Library/20.01 Films'
 const IN_NOINDEX_FOLDER = [FILM, '20 Library/20.01 Films/The Quiet Orchard (2021).md']
 /** A noindex folder that covers no note: a part of a folder name is no folder (R103). */
 const UNUSED_FOLDER = '20 Library/20.0'
+/** A noindex folder in another letter case: the warning names the folder that it means. */
+const OTHER_CASE_FOLDER = '20 library/20.04 BOOKS'
 /** The notes that also exist on the main site: it answers for none, so none has a verified original (IDX-13). */
 const NOT_VERIFIED = [
     '40 Writing/Garden news, week 12.md',
@@ -175,7 +177,10 @@ beforeAll(async () => {
     ) as Record<string, unknown>
     await writeFile(
         join(contentStore, 'configuration.json'),
-        JSON.stringify({ ...configuration, noindexFolders: [NOINDEX_FOLDER, UNUSED_FOLDER] })
+        JSON.stringify({
+            ...configuration,
+            noindexFolders: [NOINDEX_FOLDER, UNUSED_FOLDER, OTHER_CASE_FOLDER]
+        })
     )
     const cache = join(SITE, '.cache')
     await mkdir(cache, { recursive: true })
@@ -596,7 +601,10 @@ describe('the noindex folders of the configuration', () => {
     })
 
     test('the build warns about a folder that covers no published note', () => {
-        expect(buildErrors).toContain(`"${UNUSED_FOLDER}"`)
+        expect(buildErrors).toContain(`"${UNUSED_FOLDER}" of configuration.json`)
+        expect(buildErrors).toContain(
+            `"${OTHER_CASE_FOLDER}" of configuration.json covers no published note: did you mean "20 Library/20.04 Books"?`
+        )
         expect(buildErrors).not.toContain(`"${NOINDEX_FOLDER}" of configuration.json`)
     })
 })

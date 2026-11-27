@@ -118,14 +118,15 @@ async function read(): Promise<PublishedSite> {
     // The noindex folders of the configuration (R103). A folder that covers no
     // published note does nothing: a typo would else go unseen.
     const noindexFolders = await readNoindexFolders()
-    for (const folder of unusedNoindexFolders(
+    for (const { folder, near } of unusedNoindexFolders(
         noindexFolders,
         notes.map((note) => note.vaultPath)
     )) {
         if (!warnedFolders.has(folder)) {
             warnedFolders.add(folder)
+            const hint = near === undefined ? '' : `: did you mean "${near}"?`
             console.warn(
-                `[noindex-folders] the noindex folder "${folder}" of configuration.json covers no published note`
+                `[noindex-folders] the noindex folder "${folder}" of configuration.json covers no published note${hint}`
             )
         }
     }

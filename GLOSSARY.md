@@ -128,6 +128,10 @@ A published note whose file this device does not have, and that no guard exclude
 The vault folders whose notes can never be published. It lives in the configuration of the publishing tool.
 _Avoid_: block list, ignore list, excluded folders
 
+**Noindex folder**:
+A vault folder of the list `noindexFolders` of the configuration of the content store (R103). Its notes are published, but their pages say `noindex` and they leave the sitemaps, as a note with `publish_noindex: true`. It is not a guard: it excludes no note from publication.
+_Avoid_: hidden folder, excluded folder
+
 **Guard**:
 A rule that says that a note can never be published, whatever the author selects. The first version has two: the deny list and the ignore property.
 

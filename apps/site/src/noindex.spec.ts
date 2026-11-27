@@ -158,7 +158,28 @@ describe('the noindex folders', () => {
                 ['Seed Bank', 'Pond/Frogs', 'Seed', 'Shed'],
                 ['Seed Bank/Bean.md', 'Pond/Frogspawn/Eggs.md', 'Shed.md']
             )
-        ).toEqual(['Pond/Frogs', 'Seed', 'Shed'])
+        ).toEqual([{ folder: 'Pond/Frogs' }, { folder: 'Seed' }, { folder: 'Shed' }])
         expect(unusedNoindexFolders([], ['Seed Bank/Bean.md'])).toEqual([])
+    })
+
+    test('name the folder that an unused one meant, in another letter case or Unicode form', () => {
+        const composed = 'Café Seeds'
+        const decomposed = 'Café Seeds'
+        expect(
+            unusedNoindexFolders(
+                ['seed bank', 'Pond/FROGS', decomposed, 'Seed Ban'],
+                [
+                    'Seed Bank/Bean.md',
+                    'Pond/Frogs/Green frog.md',
+                    `${composed}/Pea.md`,
+                    'seed bank.md'
+                ]
+            )
+        ).toEqual([
+            { folder: 'seed bank', near: 'Seed Bank' },
+            { folder: 'Pond/FROGS', near: 'Pond/Frogs' },
+            { folder: decomposed, near: composed },
+            { folder: 'Seed Ban' }
+        ])
     })
 })

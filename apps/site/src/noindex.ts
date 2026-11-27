@@ -1,3 +1,4 @@
+import { compareCodePoints } from '../../plugin/src/publishing/order.ts'
 import { postOf } from '../../plugin/src/publishing/originals.ts'
 import type { NoteType } from '../../plugin/src/publishing/note-types.ts'
 
@@ -39,15 +40,41 @@ export function isInNoindexFolder(vaultPath: string, folders: readonly string[])
     return folders.some((folder) => vaultPath.startsWith(`${folder}/`))
 }
 
+/** A noindex folder that covers no note, and the folder that it may mean. */
+export interface UnusedNoindexFolder {
+    readonly folder: string
+    /** A folder of a note that is the same name in another letter case or Unicode form. */
+    readonly near?: string
+}
+
+/** A name as the near match compares it: composed (NFC), in small letters. */
+function looseForm(name: string): string {
+    return name.normalize('NFC').toLowerCase().normalize('NFC')
+}
+
 /**
  * The noindex folders that cover none of these notes, in the order of the
- * list: the build warns about each, since a typo would else do nothing.
+ * list: the build warns about each, since a typo would else do nothing. Each
+ * names the folder of a note that it may mean, by letter case and Unicode
+ * form, the first in code point order.
  */
 export function unusedNoindexFolders(
     folders: readonly string[],
     vaultPaths: readonly string[]
-): string[] {
-    return folders.filter((folder) => !vaultPaths.some((path) => path.startsWith(`${folder}/`)))
+): UnusedNoindexFolder[] {
+    return folders
+        .filter((folder) => !vaultPaths.some((path) => path.startsWith(`${folder}/`)))
+        .map((folder) => {
+            const depth = folder.split('/').length
+            const wanted = looseForm(folder)
+            const near = vaultPaths
+                .map((path) => path.split('/'))
+                .filter((parts) => parts.length > depth)
+                .map((parts) => parts.slice(0, depth).join('/'))
+                .filter((candidate) => looseForm(candidate) === wanted)
+                .sort(compareCodePoints)[0]
+            return near === undefined ? { folder } : { folder, near }
+        })
 }
 
 /** What the signals of a note read of its manifest entry. */
