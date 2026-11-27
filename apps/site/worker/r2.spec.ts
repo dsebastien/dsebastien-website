@@ -66,9 +66,37 @@ function page(keys: string[], cursor = '', truncated = false): Response {
     })
 }
 
-function storage(fetch: Fetch): ReturnType<typeof r2Storage> {
-    return r2Storage({ accountId: ACCOUNT, bucket: BUCKET, token: TOKEN, fetch })
+/** The pauses of a storage, in milliseconds: the tests never sleep. */
+function pauses(): { waited: number[]; wait: (ms: number) => Promise<void> } {
+    const waited: number[] = []
+    return {
+        waited,
+        wait: (ms) => {
+            waited.push(ms)
+            return Promise.resolve()
+        }
+    }
 }
+
+function storage(
+    fetch: Fetch,
+    wait: (ms: number) => Promise<void> = pauses().wait
+): ReturnType<typeof r2Storage> {
+    return r2Storage({ accountId: ACCOUNT, bucket: BUCKET, token: TOKEN, fetch, wait })
+}
+
+/** An answer 429 of the host, with or without `Retry-After`. */
+function tooMany(retryAfter?: string): Response {
+    return new Response(
+        JSON.stringify({ success: false, errors: [{ code: 971, message: 'Please wait' }] }),
+        {
+            status: 429,
+            headers: retryAfter === undefined ? {} : { 'retry-after': retryAfter }
+        }
+    )
+}
+
+const STORED = (): Response => json({ success: true, errors: [], messages: [], result: {} })
 
 describe('the object storage through the API', () => {
     test('lists every name of the bucket, page after page, with the token', async () => {
@@ -182,5 +210,69 @@ describe('the object storage through the API', () => {
         expect(await rejectionOf(storage(fake.fetch).put(KEY, new Uint8Array([1])))).toContain(
             '500'
         )
+    })
+
+    // Issue 60, R102: a first deployment of thousands of attachments meets the
+    // rate limit of the host. A request that gets 429 is sent again after a pause.
+    describe('on an answer 429', () => {
+        test('waits for the seconds of Retry-After, then sends the same upload again', async () => {
+            const fake = api([tooMany('7'), STORED()])
+            const clock = pauses()
+            await storage(fake.fetch, clock.wait).put(KEY, new Uint8Array([4, 5]))
+            expect(clock.waited).toEqual([7000])
+            expect(fake.asked.map((request) => [request.method, request.body])).toEqual([
+                ['PUT', new Uint8Array([4, 5])],
+                ['PUT', new Uint8Array([4, 5])]
+            ])
+        })
+
+        test('waits a pause that doubles, up to two minutes, when there is no Retry-After', async () => {
+            const fake = api([
+                ...Array.from({ length: 9 }, (_, index) =>
+                    tooMany(index === 4 ? 'soon' : undefined)
+                ),
+                page(['a'])
+            ])
+            const clock = pauses()
+            expect(await storage(fake.fetch, clock.wait).list()).toEqual(['a'])
+            expect(clock.waited).toEqual([
+                1000, 2000, 4000, 8000, 16000, 32000, 64000, 120000, 120000
+            ])
+        })
+
+        test('waits five minutes at most for a long Retry-After', async () => {
+            const fake = api([tooMany('3600'), STORED()])
+            const clock = pauses()
+            await storage(fake.fetch, clock.wait).put(KEY, new Uint8Array([1]))
+            expect(clock.waited).toEqual([300000])
+        })
+
+        test('also sends a delete again', async () => {
+            const fake = api([tooMany('2'), json({ success: true, errors: [], result: {} })])
+            const clock = pauses()
+            expect(await storage(fake.fetch, clock.wait).remove('a/b c')).toBe(true)
+            expect(clock.waited).toEqual([2000])
+            expect(fake.asked).toHaveLength(2)
+        })
+
+        test('fails with a clear message after ten tries', async () => {
+            const fake = api(Array.from({ length: 10 }, () => tooMany('1')))
+            const clock = pauses()
+            const message = await rejectionOf(
+                storage(fake.fetch, clock.wait).put(KEY, new Uint8Array([1]))
+            )
+            expect(message).toBe(
+                `the object storage refused to store ${KEY} (429): too many requests, still after 10 tries: Please wait`
+            )
+            expect(fake.asked).toHaveLength(10)
+            expect(clock.waited).toHaveLength(9)
+        })
+
+        test('waits for nothing when the host answers at once', async () => {
+            const fake = api([STORED()])
+            const clock = pauses()
+            await storage(fake.fetch, clock.wait).put(KEY, new Uint8Array([1]))
+            expect(clock.waited).toEqual([])
+        })
     })
 })
