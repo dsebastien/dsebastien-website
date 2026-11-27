@@ -445,6 +445,57 @@ fn a_refused_push_of_an_ignore_keeps_the_property_in_the_note_and_says_so() {
 }
 
 #[test]
+fn an_ignore_whose_property_another_program_writes_away_warns() {
+    let setup = set_up();
+    let note = setup.vault.join(DRAFT);
+    let text_before = read(&note);
+
+    // The switch of the debug build saves the text of before over the note
+    // right after the write, as Obsidian does with edits that it did not save.
+    let output = support::program()
+        .arg("ignore")
+        .arg("--vault")
+        .arg(&setup.vault)
+        .arg("--content-store")
+        .arg(&setup.copy)
+        .args([
+            &format!("--path={DRAFT}"),
+            "--time",
+            LATER,
+            "--device",
+            "garden-shed",
+        ])
+        .env("DSEBASTIEN_VAULT_PUBLISH_TEST_OVERWRITE", "ignore")
+        .output()
+        .expect("the program starts");
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(json_of(&output)["edit"]["state"], "applied");
+    let message = errors_of(&output);
+    assert!(
+        message.contains(&format!(
+            "warning: the publish_ignore property is not in the note \"{DRAFT}\" any more"
+        )),
+        "{message}"
+    );
+    assert!(
+        message.contains("The note is a candidate again"),
+        "{message}"
+    );
+    assert_eq!(read(&note), text_before);
+}
+
+#[test]
+fn an_applied_ignore_gives_no_warning() {
+    let setup = set_up();
+
+    let output = setup.edit("ignore", DRAFT);
+
+    assert!(output.status.success(), "{}", errors_of(&output));
+    assert_eq!(errors_of(&output), "");
+}
+
+#[test]
 fn an_ignore_whose_note_cannot_be_written_applies_nothing() {
     let setup = set_up();
     let note = setup.vault.join(DRAFT);

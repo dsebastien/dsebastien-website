@@ -15,7 +15,8 @@ use crate::canonical::to_canonical_json;
 use crate::clean::{CLEANING_VERSION, STATE_PROPERTY, clean_note, source_of};
 use crate::configuration::{CONFIGURATION_FILE, Configuration, is_vault_path, parse_configuration};
 use crate::device::{
-    AttachmentStorage, ContentStore, Fetch, Lock, Recovery, Vault, crash_point, steal_point,
+    AttachmentStorage, ContentStore, Fetch, Lock, Recovery, Vault, crash_point, overwrite_point,
+    steal_point,
 };
 use crate::edits::{
     ACTIONS, EDITS_FILE, EditLog, Event, EventFacts, edit_output, event_value, is_looser,
@@ -3222,7 +3223,20 @@ fn edit_locked(
     } else {
         "Nothing is applied".to_owned()
     };
+    if let Some(note) = &note {
+        overwrite_point(&device.vault, path, &note.before);
+    }
     commit_edit(device, &event, &files, run, owed, own_lock, &failed)?;
+    // Obsidian, open with edits of the note that it did not save, can write
+    // its copy over the file: the guard of the note is then gone, and the
+    // note is a candidate again (issue 108, point 1).
+    if let Some(note) = &note
+        && device.vault.read(path).ok().flatten().as_deref() != Some(note.after.as_str())
+    {
+        eprintln!(
+            "warning: the {IGNORE_PROPERTY} property is not in the note \"{path}\" any more: another program (Obsidian, with edits that it did not save) wrote the note after the edit. The note is a candidate again: set the property again in Obsidian, or run the edit again"
+        );
+    }
     edit_output(&event)
 }
 

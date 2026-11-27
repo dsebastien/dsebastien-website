@@ -105,6 +105,21 @@ pub fn steal_point(point: &str, store: &ContentStore) {
     let _ = (point, store);
 }
 
+/// A switch of the debug build for the tests of an `ignore` (issue 108,
+/// point 1): right after the write of the property, the note gets its text of
+/// before again, as when Obsidian saves an older copy over the file. The
+/// release build has no switch.
+pub fn overwrite_point(vault: &Vault, path: &str, before: &str) {
+    #[cfg(debug_assertions)]
+    if env::var_os("DSEBASTIEN_VAULT_PUBLISH_TEST_OVERWRITE").is_some_and(|value| value == "ignore")
+    {
+        eprintln!("test switch: an older text of \"{path}\" is saved over the note");
+        let _ = vault.write(path, before);
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = (vault, path, before);
+}
+
 /// What a folder holds at exactly one path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Entry {
