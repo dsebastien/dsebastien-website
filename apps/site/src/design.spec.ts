@@ -67,7 +67,7 @@ const RAW = [
     ['a font family', /font-family\s*:|\bfont\s*:/u],
     [
         'a radius',
-        /border-radius\s*:|\brounded(?:-(?:t|r|b|l|s|e|tl|tr|br|bl|ss|se|ee|es))?(?:-(?:xs|sm|md|lg|xl|2xl|3xl|4xl|none|full))?(?=[\s'"`]|$)/u
+        /border-radius\s*:|\brounded(?:-(?:t|r|b|l|s|e|tl|tr|br|bl|ss|se|ee|es))?(?:-(?:xs|sm|md|lg|xl|2xl|3xl|4xl|full))?(?=[\s'"`]|$)/u
     ],
     ['a motion value', /\b(?:duration-\d+|ease-(?:linear|in|out|in-out))\b/u]
 ] as const
@@ -120,6 +120,8 @@ describe('tokens only', () => {
         ["class='rounded-card bg-surface text-primary'"],
         ["class='rounded-control rounded-pill decoration-[3px] max-w-[72ch]'"],
         ['#{id}'],
+        // No radius at all is no value of a theme (the poster of a link card).
+        ["class='rounded-none bg-transparent'"],
         ["class='font-semibold text-muted'"]
     ])('lets %s pass', (line) => {
         expect(RAW.filter(([, pattern]) => pattern.test(line))).toEqual([])
