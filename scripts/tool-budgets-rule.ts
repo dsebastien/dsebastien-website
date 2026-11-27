@@ -45,13 +45,11 @@ export const TOOL_BUDGETS: readonly ToolBudget[] = [
  * machine as fast as the machine of the author would take. It is the
  * reference time of the machine of the calibration over the largest factor
  * that its measures imply (`impliedFactor`), as `bun run budgets:tool`
- * prints it. Set on 2026-11-27 on a Windows machine of the author, with the
- * Rust `status` as the largest factor. A machine that runs the workload in
- * more time gets a ceiling that is larger by the same ratio. A value from
- * Windows keeps the factor of a Linux runner at its floor: set it again from
- * the line "calibration that this machine gives" of the first run on main.
+ * prints it. Set on 2026-11-27 from the line "calibration that this machine
+ * gives" of the first run on main (the runner of CI). A machine that runs the
+ * workload in more time gets a ceiling that is larger by the same ratio.
  */
-export const REFERENCE_SECONDS = 0.29
+export const REFERENCE_SECONDS = 0.336
 
 /**
  * The factor of the machine: the time of the reference workload here, over
