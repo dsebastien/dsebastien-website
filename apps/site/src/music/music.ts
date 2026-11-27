@@ -53,6 +53,7 @@ function nextTask(): Promise<void> {
 /** Starts the music of the page. */
 export function startMusic(doc: Document, win: Window): void {
     const selector = blocksSelector(MUSIC_LANGUAGES)
+    const tabSelector = blocksSelector(TAB_LANGUAGES)
     const codes = [...doc.querySelectorAll(selector)]
     const { diagrams, tabs } = musicOfBlocks(codes.map(blockOf))
     if (!diagrams && !tabs) return
@@ -85,6 +86,10 @@ export function startMusic(doc: Document, win: Window): void {
             try {
                 const draw = await drawerOf(code)
                 await draw(code)
+                // A fretboard with an exercise writes its tab as a block in its drawing.
+                if (pre !== null && code.classList.contains('language-fretboard')) {
+                    pre.nextElementSibling?.querySelectorAll(tabSelector).forEach(watch)
+                }
             } catch {
                 // A part that cannot load (no network): the source stays, and the next block tries.
                 if (pre !== null) pre.dataset['mpRendered'] = 'error'
@@ -115,8 +120,4 @@ export function startMusic(doc: Document, win: Window): void {
         near.observe(pre)
     }
     codes.forEach(watch)
-    // A fretboard with an exercise writes its tab as a block once it is drawn.
-    new MutationObserver(() => {
-        doc.querySelectorAll(blocksSelector(TAB_LANGUAGES)).forEach(watch)
-    }).observe(doc.body, { childList: true, subtree: true })
 }
