@@ -42,10 +42,7 @@ pub fn is_sealed_file(file: &TreeFile) -> bool {
 
 /// The files of a commit that the seal covers.
 pub fn sealed_files(files: Vec<TreeFile>) -> Vec<TreeFile> {
-    files
-        .into_iter()
-        .filter(is_sealed_file)
-        .collect()
+    files.into_iter().filter(is_sealed_file).collect()
 }
 
 /// How many commits of the first-parent chain the check reads, from the last
