@@ -29,7 +29,8 @@ The limits of a tab and a score at build time: a fixed width (alphaTab lays out 
 
 - The markup keeps each block as `<pre><code class="language-…">` with its source, the form that the library reads (it already did: nothing changes in the markup step).
 - A note page whose body (its embeds included) holds a block of one of the ten languages gets one more module script (`components/Music.astro`, 0.6 KB with Brotli). A page without one gets nothing: no script, no style sheet, no file of the music.
-- That script links the style sheet of the library and loads, after the page shows, the part that the blocks need: the diagram part (the main entry of the library and its voicings) or the tab part (alphaTab and the tab entry of the library), or both. A fretboard with `exercise:` draws a tab, so it loads both.
+- That script links the style sheet of the library and draws each block when it comes within one screen of the view, one block per task; it loads, at the first such block, the part that the blocks need: the diagram part (the main entry of the library and its voicings) or the tab part (alphaTab and the tab entry of the library), or both. A fretboard with `exercise:` draws a tab, so it loads both.
+- Before it draws, the source of a block keeps the height of a usual drawing of its language (measured on the fixture note, on a wide screen and on a touch screen), so the page hardly moves when the block draws.
 - Everything comes from the site: the packages are pinned in `apps/site/package.json` and the build gives their files with the other files of `_astro/`. The instrument files (GeneralUser GS, 133 files, 15 MB) are copied into `_astro/music-notation-sounds-0.1.1/generaluser/`; a player reads only the files of what it plays, at the first Play.
 - The defaults of the current site: playback on, GeneralUser GS first, the light synthesizer when a file cannot be read; the texts of the bars in the language of the page; the empty blocks of a chord, scale or pattern note draw from its properties (a data block of the page, with only the properties that the library reads).
 - The colors take the tokens of the theme in both modes (the theme variables of Obsidian, set on the text of the note); on a touch screen each control of a bar is 44 px and each field has a text of 16 px (section 15.1.1 of the spec).
@@ -64,6 +65,16 @@ The proposed budget of a music page:
 5. Nothing of the sounds before the first Play.
 
 The bytes are a test (`music-page.spec.ts`); the times of Lighthouse are the CI job `budgets`, which measures the music page with the others.
+
+The times of Lighthouse on the music page (`bun run budgets --page 'music note'`, median of 5, behind Brotli), against PERF-20:
+
+| Run                                    | Mobile                                | Desktop                         |
+| -------------------------------------- | ------------------------------------- | ------------------------------- |
+| Every block drawn at once              | TBT 403 ms (fails), CLS 0.000         | TBT 37 ms, CLS 0.000            |
+| Near the screen, one block per task    | TBT 137 ms (fails), CLS 0.072 (fails) | TBT 0 ms, CLS 0.021 (fails)     |
+| The same, with the place of each block | LCP 870 ms, TBT 92 ms, CLS 0.001      | LCP 323 ms, TBT 0 ms, CLS 0.003 |
+
+The last row is the code of issue 53. The blocking time on a phone is close to its budget (100 ms): most of it is the first evaluation of the diagram part.
 
 ## 4. Open points
 
