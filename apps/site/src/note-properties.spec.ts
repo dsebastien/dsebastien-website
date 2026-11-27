@@ -47,6 +47,22 @@ describe('properties of a cleaned note', () => {
         })
     })
 
+    // The core schema has no tag for dates, but the reader knows the tag
+    // `!!timestamp` when a note writes it (issue 93).
+    test('keeps a date with an explicit `!!timestamp` tag as the text of the vault', () => {
+        expect(
+            readProperties(
+                note(
+                    'seen: !!timestamp 2031-03-09T08:00:00+02:00\nborn: !!timestamp 1961-04-12\nlong: !!timestamp "2031-03-09"'
+                )
+            )
+        ).toEqual({
+            seen: '2031-03-09T08:00:00+02:00',
+            born: '1961-04-12',
+            long: '2031-03-09'
+        })
+    })
+
     test('keeps the order of the note, and the links as texts', () => {
         const properties = readProperties(
             note('zebra: 1\ndirectors:\n  - "[[Ada Quillfeather]]"\napple: 2')

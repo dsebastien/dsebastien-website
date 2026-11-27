@@ -1,5 +1,5 @@
 import { extractFrontmatter } from '@astrojs/markdown-remark'
-import { parseDocument } from 'yaml'
+import { parseDocument, type ScalarTag } from 'yaml'
 
 // The properties of a cleaned note, as the build reads them (issue 48, R59).
 //
@@ -10,6 +10,12 @@ import { parseDocument } from 'yaml'
 // the build reads the properties itself, with the same reader and the same
 // rules as Astro but for one: a date stays a text. The panel and the title
 // band then show a date as the vault writes it (R58, R59).
+
+/** The tag `!!timestamp` of a property, read as the text that the note writes. */
+const TIMESTAMP_AS_TEXT: ScalarTag = {
+    tag: 'tag:yaml.org,2002:timestamp',
+    resolve: (text) => text
+}
 
 /** A note that starts with a block between `+++` lines, as the reader of Astro finds it. */
 const TOML_BLOCK = /^\uFEFF?\s*\+\+\+/u
@@ -33,8 +39,14 @@ export function readProperties(source: string): Readonly<Record<string, unknown>
     if (yaml === undefined) {
         return {}
     }
-    // The options of the reader of Astro (`parseYaml`), without its tag for dates.
-    const document = parseDocument(yaml, { merge: true, schema: 'core' })
+    // The options of the reader of Astro (`parseYaml`), without its tag for
+    // dates. The reader still knows the tag `!!timestamp` when a note writes
+    // it: that date stays a text too (issue 93).
+    const document = parseDocument(yaml, {
+        merge: true,
+        schema: 'core',
+        customTags: [TIMESTAMP_AS_TEXT]
+    })
     const [error] = document.errors
     if (error !== undefined) {
         throw error
