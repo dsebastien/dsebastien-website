@@ -259,7 +259,7 @@ describe('design base', () => {
     test('gives the heading and the links of a note their look', async () => {
         const css = await readStylesheets()
         expect(css).toMatch(/\.note-text h1\{[^}]*font-weight/u)
-        expect(css).toMatch(/\.note-text a\[href\]\{[^}]*text-decoration-line:underline/u)
+        expect(css).toMatch(/\.note-text a\[href\]\{[^}]*text-decoration-line:var\(--link-line\)/u)
     })
 
     // A class with no rule is a token or a utility that compiles to nothing.

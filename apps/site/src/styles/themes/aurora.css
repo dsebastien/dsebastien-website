@@ -1,0 +1,158 @@
+/*
+ * The design variant `aurora` (issue 116, a prototype): layers of light on a
+ * deep indigo night (dark) or a lilac white (light). Glows of magenta and
+ * violet behind the page, raised cards with soft long shadows and a violet
+ * glow under the pointer, large rounded cards, a magenta to violet strip
+ * that drifts slowly under the header, and links with a gradient line that
+ * grows under the pointer. Values only: the token contract is `../tokens.css`.
+ */
+
+:root[data-design='aurora'] {
+    color-scheme: dark;
+    --theme-background: #151a2c;
+    --theme-surface: #1d2338;
+    --theme-surface-elevated: #262d46;
+    --theme-well: #10131f;
+    --theme-overlay: rgb(8 10 20 / 0.7);
+
+    --theme-primary: #f3f4fb;
+    --theme-muted: #aeb3cc;
+    --theme-secondary: #e5007d;
+    --theme-secondary-hover: #c7006c;
+    --theme-secondary-text: #ff4fa8;
+    --theme-on-secondary: #ffffff;
+
+    --theme-link: #f9a8d4;
+    --theme-link-decoration: #ff4fa8;
+    --theme-focus: #c4b5fd;
+    --theme-link-decoration-end: #a78bfa;
+    --theme-link-hover: #ffffff;
+    --theme-link-highlight: #151a2c;
+    --theme-nav-hover: #f9a8d4;
+
+    --theme-eyebrow: #c4b5fd;
+    --theme-glow: #2a1d40;
+    --theme-badge: #7c3aed;
+    --theme-on-badge: #ffffff;
+    --theme-badge-edge: #a78bfa;
+    --theme-badge-hover: #6d28d9;
+    --theme-card-edge-hover: #a78bfa;
+    --theme-network: #a78bfa;
+
+    --theme-border: rgb(196 181 253 / 0.14);
+    --theme-border-strong: rgb(196 181 253 / 0.3);
+
+    --theme-success: #4ade80;
+    --theme-warning: #fbbf24;
+    --theme-danger: #fca5a5;
+
+    --theme-shadow-raised: 0 24px 60px -20px rgb(0 0 0 / 0.85);
+    --theme-shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 16px 40px -20px rgb(0 0 0 / 0.8);
+    --theme-shadow-card-hover:
+        inset 0 1px 0 rgb(255 255 255 / 0.08), 0 20px 44px -16px rgb(167 139 250 / 0.45),
+        0 0 0 1px rgb(255 79 168 / 0.35);
+    --theme-shadow-header: 0 10px 30px -16px rgb(0 0 0 / 0.8);
+
+    --theme-font-sans:
+        'Noto Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+        sans-serif;
+    --theme-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    --theme-font-display: var(--theme-font-sans);
+    --theme-font-eyebrow: var(--theme-font-sans);
+    --theme-display-weight: 800;
+    --theme-display-tracking: -0.04em;
+
+    --theme-radius-control: 0.625rem;
+    --theme-radius-card: 1.125rem;
+    --theme-radius-pill: 0.375rem;
+    --theme-ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+    --theme-duration-quick: 200ms;
+    --theme-duration-sweep: 320ms;
+    --theme-duration-ambient: 14s;
+
+    /* A link: soft pink, a magenta to violet line under it that grows under the pointer. */
+    --theme-link-line: none;
+    --theme-link-thickness: auto;
+    --theme-link-thickness-hover: auto;
+    --theme-link-offset: auto;
+    --theme-link-weight: 500;
+    --theme-link-fill: linear-gradient(
+        90deg,
+        var(--theme-link-decoration),
+        var(--theme-link-decoration-end)
+    );
+    --theme-link-fill-size: 2px;
+    --theme-link-shadow-hover: inset 0 -4px 0 var(--theme-link-decoration-end);
+
+    --theme-page-fill:
+        radial-gradient(70rem 40rem at 0% -10rem, var(--theme-glow), transparent 70%),
+        radial-gradient(60rem 36rem at 100% -6rem, var(--theme-glow), transparent 70%),
+        var(--theme-background);
+    --theme-hero-fill: transparent;
+    --theme-band-fill:
+        radial-gradient(60rem 24rem at 0% 0%, var(--theme-glow), transparent 70%),
+        linear-gradient(180deg, var(--theme-surface), var(--theme-background));
+    --theme-card-fill: linear-gradient(
+        160deg,
+        var(--theme-surface-elevated),
+        var(--theme-surface) 55%
+    );
+    --theme-card-pad: 1.25rem;
+    --theme-flow-space: 1.375rem;
+    --theme-strip-height: 2px;
+    --theme-strip-fill: linear-gradient(
+        90deg,
+        var(--theme-secondary),
+        var(--theme-network),
+        var(--theme-link-decoration),
+        var(--theme-secondary)
+    );
+    --theme-eyebrow-marker: 1rem;
+}
+
+:root[data-design='aurora'][data-theme='light'] {
+    color-scheme: light;
+    --theme-background: #f6f5fc;
+    --theme-surface: #ffffff;
+    --theme-surface-elevated: #efedfb;
+    --theme-well: #e9e6f7;
+    --theme-overlay: rgb(23 22 43 / 0.45);
+
+    --theme-primary: #17162b;
+    --theme-muted: #55567a;
+    --theme-secondary: #d10070;
+    --theme-secondary-hover: #ad005a;
+    --theme-secondary-text: #b0005f;
+    --theme-on-secondary: #ffffff;
+
+    --theme-link: #b0005f;
+    --theme-link-decoration: #e5007d;
+    --theme-focus: #7c3aed;
+    --theme-link-decoration-end: #7c3aed;
+    --theme-link-hover: #6d28d9;
+    --theme-link-highlight: #f6f5fc;
+    --theme-nav-hover: #6d28d9;
+
+    --theme-eyebrow: #6d28d9;
+    --theme-glow: #f7e4f3;
+    --theme-badge: #7c3aed;
+    --theme-on-badge: #ffffff;
+    --theme-badge-edge: #7c3aed;
+    --theme-badge-hover: #6d28d9;
+    --theme-card-edge-hover: #c4b5fd;
+    --theme-network: #c026d3;
+
+    --theme-border: rgb(23 22 43 / 0.08);
+    --theme-border-strong: rgb(23 22 43 / 0.2);
+
+    --theme-success: #15803d;
+    --theme-warning: #b45309;
+    --theme-danger: #b91c1c;
+
+    --theme-shadow-raised: 0 24px 60px -20px rgb(76 29 149 / 0.35);
+    --theme-shadow-card: 0 1px 2px rgb(23 22 43 / 0.06), 0 12px 32px -16px rgb(76 29 149 / 0.25);
+    --theme-shadow-card-hover:
+        0 1px 2px rgb(23 22 43 / 0.06), 0 20px 40px -16px rgb(124 58 237 / 0.35),
+        0 0 0 1px rgb(229 0 125 / 0.25);
+    --theme-shadow-header: 0 8px 24px -16px rgb(76 29 149 / 0.35);
+}

@@ -328,7 +328,9 @@ export function browserEnvironment(
             void document.fonts.ready.then(listener)
         },
         onModeChange: (listener) => {
-            new MutationObserver(listener).observe(root, { attributeFilter: ['data-theme'] })
+            new MutationObserver(listener).observe(root, {
+                attributeFilter: ['data-theme', 'data-design']
+            })
         },
         requestFrame: (callback) => requestAnimationFrame(callback),
         cancelFrame: (handle) => {

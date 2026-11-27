@@ -31,6 +31,19 @@
     --theme-link: #ffffff;
     --theme-link-decoration: #ff85c2;
     --theme-focus: #ffffff;
+    --theme-link-decoration-end: #ff85c2;
+    --theme-link-hover: #ffffff;
+    --theme-link-highlight: #37404c;
+    --theme-nav-hover: #ffffff;
+
+    --theme-eyebrow: #c3c6c9;
+    --theme-glow: #2b323c;
+    --theme-badge: transparent;
+    --theme-on-badge: #ffffff;
+    --theme-badge-edge: rgb(255 255 255 / 0.28);
+    --theme-badge-hover: #475363;
+    --theme-card-edge-hover: rgb(255 255 255 / 0.28);
+    --theme-network: #ff1493;
 
     --theme-border: rgb(255 255 255 / 0.12);
     --theme-border-strong: rgb(255 255 255 / 0.28);
@@ -40,6 +53,9 @@
     --theme-danger: #fca5a5;
 
     --theme-shadow-raised: 0 1px 2px rgb(0 0 0 / 0.25), 0 8px 24px rgb(0 0 0 / 0.2);
+    --theme-shadow-card: 0 0 #0000;
+    --theme-shadow-card-hover: 0 0 #0000;
+    --theme-shadow-header: 0 0 #0000;
 }
 
 [data-theme='light'] {
@@ -60,6 +76,19 @@
     --theme-link: #c20066;
     --theme-link-decoration: #c20066;
     --theme-focus: #c20066;
+    --theme-link-decoration-end: #c20066;
+    --theme-link-hover: #c20066;
+    --theme-link-highlight: #f5f7fa;
+    --theme-nav-hover: #1a1a2e;
+
+    --theme-eyebrow: #5c5c6b;
+    --theme-glow: #e6eaf0;
+    --theme-badge: transparent;
+    --theme-on-badge: #1a1a2e;
+    --theme-badge-edge: rgb(26 26 46 / 0.24);
+    --theme-badge-hover: #eef1f5;
+    --theme-card-edge-hover: rgb(26 26 46 / 0.24);
+    --theme-network: #c20066;
 
     --theme-border: rgb(26 26 46 / 0.1);
     --theme-border-strong: rgb(26 26 46 / 0.24);
@@ -69,6 +98,9 @@
     --theme-danger: #b91c1c;
 
     --theme-shadow-raised: 0 1px 2px rgb(26 26 46 / 0.06), 0 8px 24px rgb(26 26 46 / 0.08);
+    --theme-shadow-card: 0 0 #0000;
+    --theme-shadow-card-hover: 0 0 #0000;
+    --theme-shadow-header: 0 0 #0000;
 }
 
 :root {
@@ -80,4 +112,34 @@
     --theme-radius-card: 0.75rem;
     --theme-radius-pill: 0.375rem;
     --theme-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+    --theme-font-display: var(--theme-font-sans);
+    --theme-font-eyebrow: var(--theme-font-sans);
+    --theme-display-weight: 700;
+    --theme-display-tracking: -0.025em;
+
+    --theme-duration-quick: 150ms;
+    --theme-duration-sweep: 150ms;
+    --theme-duration-ambient: 0ms;
+
+    /* A link: the text color (dark) or the accent (light), with an underline. */
+    --theme-link-line: underline;
+    --theme-link-thickness: 2px;
+    --theme-link-thickness-hover: 3px;
+    --theme-link-offset: 4px;
+    --theme-link-weight: inherit;
+    --theme-link-fill: none;
+    --theme-link-fill-size: 0;
+    --theme-link-shadow-hover: 0 0 #0000;
+
+    /* Flat: plain fills, no shadow at rest, no strip, no marker. */
+    --theme-page-fill: var(--theme-background);
+    --theme-hero-fill: transparent;
+    --theme-band-fill: var(--theme-well);
+    --theme-card-fill: var(--theme-surface);
+    --theme-card-pad: 1rem;
+    --theme-flow-space: 1.25rem;
+    --theme-strip-height: 0px;
+    --theme-strip-fill: none;
+    --theme-eyebrow-marker: 0px;
 }

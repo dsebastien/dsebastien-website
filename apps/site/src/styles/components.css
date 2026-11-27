@@ -1,8 +1,10 @@
 /* The component classes of the site. The tokens are apart, in `tokens.css`. */
 
 @layer base {
+    /* The page fill of the theme: its background, with the decoration of the theme. */
     html {
         @apply bg-background font-sans text-primary antialiased;
+        background: var(--page-fill);
         scroll-behavior: smooth;
     }
 
@@ -50,21 +52,50 @@
 }
 
 /* A utility, so that other component classes can apply it. */
+/* A card: the fill and the shadow of the theme give it its depth (issue 116). */
 @utility card {
-    @apply rounded-card border border-border bg-surface;
+    @apply rounded-card border border-border bg-surface shadow-card;
+    background: var(--card-fill);
 }
 
 @utility badge {
-    @apply inline-flex items-center rounded-pill border border-border-strong px-2.5 py-0.5 max-w-full text-xs font-semibold tracking-wide wrap-anywhere text-primary uppercase;
+    @apply inline-flex items-center rounded-pill border border-badge-edge bg-badge px-2.5 py-0.5 max-w-full text-xs font-semibold tracking-wide wrap-anywhere text-on-badge uppercase;
 }
 
-/* A link in a text: the text color, with an underline in the accent. A utility, so that the text of a note applies it. */
+/* A title: the display font, weight and letter spacing of the theme. */
+@utility display {
+    @apply font-display;
+    font-weight: var(--display-weight);
+    letter-spacing: var(--display-tracking);
+}
+
+/*
+ * A link in a text. A utility, so that the text of a note applies it. The
+ * theme gives its whole style (issue 116): the line (an underline or none),
+ * its thickness and offset, the weight, a fill under the text (a gradient
+ * line), and an inner shadow under the pointer (a thicker line, or a marker
+ * band that fills the word). A hover changes only colors, lines and shadows
+ * (section 15.1.1 of the spec).
+ */
 @utility link {
-    @apply text-link underline decoration-link-decoration decoration-2 underline-offset-4;
-    transition: text-decoration-thickness var(--duration-quick) var(--ease-standard);
+    @apply text-link decoration-link-decoration;
+    text-decoration-line: var(--link-line);
+    text-decoration-thickness: var(--link-thickness);
+    text-underline-offset: var(--link-offset);
+    font-weight: var(--link-weight);
+    background-image: var(--link-fill);
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    background-size: 100% var(--link-fill-size);
+    box-decoration-break: clone;
+    transition-property: color, text-decoration-color, text-decoration-thickness, box-shadow;
+    transition-duration: var(--duration-sweep);
+    transition-timing-function: var(--ease-standard);
 
     &:hover {
-        @apply decoration-[3px];
+        @apply text-link-hover;
+        text-decoration-thickness: var(--link-thickness-hover);
+        box-shadow: var(--link-shadow-hover);
     }
 }
 
@@ -91,11 +122,12 @@
     }
 
     .card-link {
-        @apply card block p-4 transition-colors;
+        @apply card block transition-[color,background-color,border-color,box-shadow];
+        padding: var(--card-pad);
     }
 
     .card-link:hover {
-        @apply border-border-strong bg-surface-elevated;
+        @apply border-card-edge-hover bg-surface-elevated shadow-card-hover;
     }
 
     /* A badge that is a link: the type badge of a note page, which leads to its hub.
@@ -111,7 +143,7 @@
     }
 
     .badge-link:hover .badge {
-        @apply border-primary bg-surface-elevated;
+        @apply border-primary bg-badge-hover;
     }
 
     .badge-accent {
@@ -186,7 +218,37 @@
     }
 
     .section-title {
-        @apply mb-4 text-sm font-semibold tracking-widest text-muted uppercase;
+        @apply mb-4 font-eyebrow text-sm font-semibold tracking-widest text-eyebrow uppercase;
+    }
+
+    /* The accent marker of the theme before a section title: none when its width is 0. */
+    .section-title::before {
+        @apply inline-block h-1 rounded-pill bg-secondary align-middle content-[''];
+        width: var(--eyebrow-marker);
+        margin-inline-end: calc(var(--eyebrow-marker) / 2);
+    }
+
+    /* The header of every page, with the strip of the theme at its bottom edge. */
+    .site-header {
+        @apply sticky top-0 z-40 border-b border-border bg-surface shadow-header;
+    }
+
+    .site-header::after {
+        @apply pointer-events-none absolute inset-x-0 -bottom-px content-[''];
+        height: var(--strip-height);
+        background: var(--strip-fill);
+        background-size: 200% 100%;
+        animation: strip-drift var(--duration-ambient) linear infinite alternate;
+    }
+
+    /* The hero of the home page and the title band of a note page: the fills of the theme. */
+    .hero {
+        background: var(--hero-fill);
+    }
+
+    .title-band {
+        @apply border-b border-border bg-well;
+        background: var(--band-fill);
     }
 
     /* A key of the keyboard, as a hint. */
@@ -321,7 +383,7 @@
     }
 
     .note-text > * + * {
-        @apply mt-5;
+        margin-top: var(--flow-space);
     }
 
     /* The text starts at the top of its column, level with the rails beside it. */
@@ -330,7 +392,7 @@
     }
 
     .note-text h1 {
-        @apply text-3xl font-bold tracking-tight sm:text-4xl;
+        @apply display text-3xl sm:text-4xl;
     }
 
     .note-text a[href] {
@@ -664,5 +726,16 @@
     .visually-hidden,
     .note-text .sr-only {
         @apply sr-only;
+    }
+}
+
+/* The drift of the strip of the header: still when the ambient duration is 0 (DES-09). */
+@keyframes strip-drift {
+    from {
+        background-position: 0% 0;
+    }
+
+    to {
+        background-position: 100% 0;
     }
 }

@@ -3,6 +3,8 @@
 // states none. The page runs `modeScript` in its head, before any style, so
 // it never shows the wrong mode first.
 
+import { designScript, designSwitchScript } from './designs.ts'
+
 /** The key of the stored choice of the reader. */
 export const MODE_KEY = 'mode'
 
@@ -57,6 +59,7 @@ export const modeScript = `{
         (${modeOf.toString()})(stored, matchMedia('(prefers-color-scheme: light)').matches),
         document
     )
+    ;${designScript}
 }`
 
 /**
@@ -96,4 +99,5 @@ export const modeSwitchScript = `{
             show(event.matches ? 'light' : 'dark')
         }
     })
+    ;${designSwitchScript}
 }`

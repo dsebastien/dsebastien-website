@@ -37,7 +37,26 @@
     /* Links and focus rings pass contrast on every surface (DES-05). */
     --color-link: var(--theme-link);
     --color-link-decoration: var(--theme-link-decoration);
+    --color-link-decoration-end: var(--theme-link-decoration-end);
+    --color-link-hover: var(--theme-link-hover);
+    --color-link-highlight: var(--theme-link-highlight);
     --color-focus: var(--theme-focus);
+    /* The hover text of a link of the navigation (the outline of a note). */
+    --color-nav-hover: var(--theme-nav-hover);
+
+    /* The small title over a section (`section-title`), and its accent marker. */
+    --color-eyebrow: var(--theme-eyebrow);
+    /* The fill of the decoration of a band (the title band, the page): a surface, it passes contrast. */
+    --color-glow: var(--theme-glow);
+    /* The type badge: its fill (or `transparent`), its text and its edge. */
+    --color-badge: var(--theme-badge);
+    --color-on-badge: var(--theme-on-badge);
+    --color-badge-edge: var(--theme-badge-edge);
+    --color-badge-hover: var(--theme-badge-hover);
+    /* The edge of a card under the pointer. */
+    --color-card-edge-hover: var(--theme-card-edge-hover);
+    /* The nodes of the network behind the hero (issue 81). */
+    --color-network: var(--theme-network);
 
     --color-border: var(--theme-border);
     --color-border-strong: var(--theme-border-strong);
@@ -48,12 +67,19 @@
 
     --font-sans: var(--theme-font-sans);
     --font-mono: var(--theme-font-mono);
+    /* The titles: the H1 of a page and the site name. */
+    --font-display: var(--theme-font-display);
+    /* The small title over a section. */
+    --font-eyebrow: var(--theme-font-eyebrow);
 
     --radius-control: var(--theme-radius-control);
     --radius-card: var(--theme-radius-card);
     --radius-pill: var(--theme-radius-pill);
 
     --shadow-raised: var(--theme-shadow-raised);
+    --shadow-card: var(--theme-shadow-card);
+    --shadow-card-hover: var(--theme-shadow-card-hover);
+    --shadow-header: var(--theme-shadow-header);
 
     --ease-standard: var(--theme-ease-standard);
 
@@ -66,14 +92,51 @@
     /* Paragraphs: left-aligned, no hyphenation (DES-06). */
     --paragraph-align: left;
     --paragraph-hyphens: manual;
-    /* Motion (DES-09). */
-    --duration-quick: 150ms;
+    /* Motion (DES-09): a state change, a sweep (the fill of a link), a slow ambient drift. */
+    --duration-quick: var(--theme-duration-quick);
+    --duration-sweep: var(--theme-duration-sweep);
+    --duration-ambient: var(--theme-duration-ambient);
+
+    /*
+     * The tokens that Tailwind has no utility for (issue 116). Components read
+     * these names in raw CSS, never a `--theme-*` variable.
+     */
+    /* The link: its line, the thickness of the line at rest and under the
+       pointer, its offset, its weight, a fill under the text (a gradient
+       line) with its height, and an inner shadow under the pointer. */
+    --link-line: var(--theme-link-line);
+    --link-thickness: var(--theme-link-thickness);
+    --link-thickness-hover: var(--theme-link-thickness-hover);
+    --link-offset: var(--theme-link-offset);
+    --link-weight: var(--theme-link-weight);
+    --link-fill: var(--theme-link-fill);
+    --link-fill-size: var(--theme-link-fill-size);
+    --link-shadow-hover: var(--theme-link-shadow-hover);
+    /* The titles: weight and letter spacing. */
+    --display-weight: var(--theme-display-weight);
+    --display-tracking: var(--theme-display-tracking);
+    /* The fills of the page, of the hero, of a band (the title band) and of a card:
+       a background shorthand of the colors of the theme. */
+    --page-fill: var(--theme-page-fill);
+    --hero-fill: var(--theme-hero-fill);
+    --band-fill: var(--theme-band-fill);
+    --card-fill: var(--theme-card-fill);
+    /* The space inside a card and between the blocks of a note. */
+    --card-pad: var(--theme-card-pad);
+    --flow-space: var(--theme-flow-space);
+    /* The strip at the bottom edge of the header: its height and its fill. */
+    --strip-height: var(--theme-strip-height);
+    --strip-fill: var(--theme-strip-fill);
+    /* The accent marker before a section title: its width (0 for none). */
+    --eyebrow-marker: var(--theme-eyebrow-marker);
 }
 
 /* One rule removes motion when the reader asked for less (DES-09). */
 @media (prefers-reduced-motion: reduce) {
     :root {
         --duration-quick: 0ms;
+        --duration-sweep: 0ms;
+        --duration-ambient: 0ms;
     }
     html {
         scroll-behavior: auto;

@@ -24,6 +24,19 @@
         --theme-link: #c20066;
         --theme-link-decoration: #c20066;
         --theme-focus: #c20066;
+        --theme-link-decoration-end: #c20066;
+        --theme-link-hover: #c20066;
+        --theme-link-highlight: #f5f7fa;
+        --theme-nav-hover: #1a1a2e;
+
+        --theme-eyebrow: #5c5c6b;
+        --theme-glow: #e6eaf0;
+        --theme-badge: transparent;
+        --theme-on-badge: #1a1a2e;
+        --theme-badge-edge: rgb(26 26 46 / 0.24);
+        --theme-badge-hover: #eef1f5;
+        --theme-card-edge-hover: rgb(26 26 46 / 0.24);
+        --theme-network: #c20066;
 
         --theme-border: rgb(26 26 46 / 0.1);
         --theme-border-strong: rgb(26 26 46 / 0.24);
@@ -33,5 +46,8 @@
         --theme-danger: #b91c1c;
 
         --theme-shadow-raised: 0 1px 2px rgb(26 26 46 / 0.06), 0 8px 24px rgb(26 26 46 / 0.08);
+        --theme-shadow-card: 0 0 #0000;
+        --theme-shadow-card-hover: 0 0 #0000;
+        --theme-shadow-header: 0 0 #0000;
     }
 }

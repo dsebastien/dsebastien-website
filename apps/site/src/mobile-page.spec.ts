@@ -290,10 +290,10 @@ describe('the mobile rules (issue 91)', () => {
                 const page = await context.newPage()
                 await page.goto(canonicalPath(WIDE))
                 await page.locator('[data-palette]').first().tap()
-                const field = page.getByRole('combobox')
+                const field = page.getByRole('dialog').getByRole('combobox')
                 await field.waitFor()
                 await field.fill('gar')
-                await page.getByRole('option').first().waitFor()
+                await page.getByRole('dialog').getByRole('option').first().waitFor()
                 expect(await check(page)).toEqual([])
                 await screenshot(page, `${String(width)}-palette`, false)
                 // The keyboard of a phone takes the bottom of the screen; with

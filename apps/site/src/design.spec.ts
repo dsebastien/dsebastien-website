@@ -7,8 +7,19 @@ import { BAR_COLORS } from './styles/themes/knowii-bar.ts'
 // The guards of the design base (issue 46): tokens only (DES-02, DES-12), and
 // the contrast of the theme in both modes (DES-05, DES-11, the gate of DES-04).
 const SOURCE = fileURLToPath(new URL('.', import.meta.url))
-const THEME = join(SOURCE, 'styles', 'themes', 'knowii.css')
-const SYSTEM_MODE = join(SOURCE, 'styles', 'themes', 'knowii-system.css')
+const THEMES_FOLDER = join(SOURCE, 'styles', 'themes')
+const THEME = join(THEMES_FOLDER, 'knowii.css')
+const SYSTEM_MODE = join(THEMES_FOLDER, 'knowii-system.css')
+
+/** Each theme, with the selectors of its dark and its light block (issue 116: the variants). */
+const THEMES = [
+    { name: 'knowii', dark: ":root,\n[data-theme='dark']", light: "[data-theme='light']" },
+    ...(['signal', 'marker', 'aurora'] as const).map((name) => ({
+        name,
+        dark: `:root[data-design='${name}']`,
+        light: `:root[data-design='${name}'][data-theme='light']`
+    }))
+]
 
 /** The files of the site that hold markup or styles, except the theme files, which hold the values, and the contract. */
 async function componentFiles(): Promise<string[]> {
@@ -115,17 +126,28 @@ describe('tokens only', () => {
     })
 })
 
-/** The values of the theme in one mode, from the block whose selector is given. */
-async function themeValues(selector: string, file = THEME): Promise<Map<string, string>> {
+/** The text of the block whose selector is given. */
+async function themeBlock(selector: string, file: string): Promise<string> {
     const css = await readFile(file, 'utf8')
     const start = css.indexOf(`${selector} {`)
     expect(start).toBeGreaterThanOrEqual(0)
-    const block = css.slice(start, css.indexOf('}', start))
+    return css.slice(start, css.indexOf('}', start))
+}
+
+/** The colors of one mode of a theme (a hex color or `transparent`), from the block of the selector. */
+async function themeValues(selector: string, file = THEME): Promise<Map<string, string>> {
+    const block = await themeBlock(selector, file)
     return new Map(
-        [...block.matchAll(/--theme-([a-z-]+):\s*(#[0-9a-fA-F]{6})\s*;/gu)].map(
+        [...block.matchAll(/--theme-([a-z-]+):\s*(#[0-9a-fA-F]{6}|transparent)\s*;/gu)].map(
             ([, name = '', value = '']) => [name, value]
         )
     )
+}
+
+/** The names of the variables of a theme in one block. */
+async function themeNames(selector: string, file: string): Promise<string[]> {
+    const block = await themeBlock(selector, file)
+    return [...block.matchAll(/--theme-([a-z-]+):/gu)].map(([, name = '']) => name)
 }
 
 /** The relative luminance of a color (WCAG 2.2). */
@@ -142,19 +164,44 @@ function contrast(one: string, two: string): number {
     return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05)
 }
 
-const SURFACES = ['background', 'surface', 'surface-elevated', 'well']
+// The glow is the color of the decoration of a band and of the page: text lies on it.
+const SURFACES = ['background', 'surface', 'surface-elevated', 'well', 'glow']
 
 /** Each pair that must pass, with its minimum: normal text 4.5, a focus ring 3 (WCAG 1.4.3, 1.4.11). */
 const PAIRS = [
-    ...['primary', 'muted', 'link'].flatMap((text) =>
+    ...['primary', 'muted', 'link', 'link-hover', 'nav-hover', 'eyebrow'].flatMap((text) =>
         SURFACES.map((surface) => [text, surface, 4.5] as const)
     ),
     ...SURFACES.map((surface) => ['focus', surface, 3] as const),
-    // The underline marks a link: a part of the interface, 3:1 (WCAG 1.4.11).
-    ...SURFACES.map((surface) => ['link-decoration', surface, 3] as const),
+    // The line under a link marks it: a part of the interface, 3:1 (WCAG 1.4.11).
+    ...['link-decoration', 'link-decoration-end'].flatMap((line) =>
+        SURFACES.map((surface) => [line, surface, 3] as const)
+    ),
+    // The band of color that a theme can put behind a link.
+    ['link', 'link-highlight', 4.5] as const,
+    ['link-hover', 'link-highlight', 4.5] as const,
     ['on-secondary', 'secondary', 4.5] as const,
-    ['on-secondary', 'secondary-hover', 4.5] as const
+    ['on-secondary', 'secondary-hover', 4.5] as const,
+    // A badge with no fill (`transparent`) shows the surface under it.
+    ['on-badge', 'badge', 4.5] as const,
+    ['on-badge', 'badge-hover', 4.5] as const
 ]
+
+/** The pairs that fail in one mode of a theme, with their ratio. */
+function failingPairs(values: ReadonlyMap<string, string>): string[] {
+    return PAIRS.flatMap(([text, fill, minimum]) => {
+        const one = values.get(text)
+        const two = values.get(fill)
+        if (one === undefined || two === undefined) {
+            return [`${text} on ${fill}: a value is missing`]
+        }
+        const under = two === 'transparent' ? SURFACES.map((name) => values.get(name)) : [two]
+        return under.flatMap((color) => {
+            const ratio = color === undefined ? 0 : contrast(one, color)
+            return ratio < minimum ? [`${text} on ${fill}: ${ratio.toFixed(2)}`] : []
+        })
+    })
+}
 
 describe('token contract', () => {
     // Tailwind writes only the variables that the markup uses, so the built
@@ -172,23 +219,31 @@ describe('token contract', () => {
     })
 })
 
-describe('contrast of the theme knowii', () => {
-    test.each([
-        ['dark', ":root,\n[data-theme='dark']"],
-        ['light', "[data-theme='light']"]
-    ])('every pair passes WCAG AA in the %s mode', async (_mode, selector) => {
-        const values = await themeValues(selector)
-        const failing = PAIRS.flatMap(([text, surface, minimum]) => {
-            const one = values.get(text)
-            const two = values.get(surface)
-            if (one === undefined || two === undefined) {
-                return [`${text} on ${surface}: a value is missing`]
-            }
-            const ratio = contrast(one, two)
-            return ratio < minimum ? [`${text} on ${surface}: ${ratio.toFixed(2)}`] : []
-        })
-        expect(failing).toEqual([])
+describe('contrast of the themes', () => {
+    test.each(
+        THEMES.flatMap((theme) =>
+            (['dark', 'light'] as const).map((mode) => [theme.name, mode, theme[mode]] as const)
+        )
+    )('every pair of %s passes WCAG AA in the %s mode', async (name, _mode, selector) => {
+        const values = await themeValues(selector, join(THEMES_FOLDER, `${name}.css`))
+        expect(failingPairs(values)).toEqual([])
     })
+
+    // A variant gives every value of the contract, in each mode (DES-02): its
+    // dark block the dark and the shared values of knowii, its light block
+    // the light values.
+    test.each(THEMES.slice(1).map((theme) => [theme.name, theme] as const))(
+        'the variant %s gives every variable of the theme knowii',
+        async (_name, theme) => {
+            const file = join(THEMES_FOLDER, `${theme.name}.css`)
+            const shared = await themeNames(':root', THEME)
+            const dark = await themeNames(":root,\n[data-theme='dark']", THEME)
+            expect((await themeNames(theme.dark, file)).sort()).toEqual([...dark, ...shared].sort())
+            expect((await themeNames(theme.light, file)).sort()).toEqual(
+                (await themeNames("[data-theme='light']", THEME)).sort()
+            )
+        }
+    )
 
     // The server error page has no script, so it follows the mode of the
     // system (decision R64): its light block is the light mode, value by value.

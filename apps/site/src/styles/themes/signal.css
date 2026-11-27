@@ -1,0 +1,150 @@
+/*
+ * The design variant `signal` (issue 116, a prototype): the Knowii magenta up
+ * front. A deeper slate, links in the brand pink, cards that lift with a
+ * magenta glow, a magenta strip under the header, a marker before each
+ * section title, heavy titles and small mono section labels. Values only:
+ * the token contract is `../tokens.css`. `apps/site/src/design.spec.ts`
+ * checks the contrast of every pair in both modes.
+ */
+
+:root[data-design='signal'] {
+    color-scheme: dark;
+    --theme-background: #1d2129;
+    --theme-surface: #262b35;
+    --theme-surface-elevated: #2f3542;
+    --theme-well: #171a21;
+    --theme-overlay: rgb(10 12 16 / 0.7);
+
+    --theme-primary: #f5f6f8;
+    --theme-muted: #b4b9c4;
+    --theme-secondary: #e5007d;
+    --theme-secondary-hover: #c7006c;
+    --theme-secondary-text: #ff3d9a;
+    --theme-on-secondary: #ffffff;
+
+    --theme-link: #ff6fb5;
+    --theme-link-decoration: #ff3d9a;
+    --theme-focus: #ff8cc6;
+    --theme-link-decoration-end: #ff3d9a;
+    --theme-link-hover: #ffa3d1;
+    --theme-link-highlight: #1d2129;
+    --theme-nav-hover: #ff6fb5;
+
+    --theme-eyebrow: #ff6fb5;
+    --theme-glow: #2e2236;
+    --theme-badge: #d10070;
+    --theme-on-badge: #ffffff;
+    --theme-badge-edge: #d10070;
+    --theme-badge-hover: #ad005a;
+    --theme-card-edge-hover: #e5007d;
+    --theme-network: #ff3d9a;
+
+    --theme-border: rgb(255 255 255 / 0.09);
+    --theme-border-strong: rgb(255 255 255 / 0.24);
+
+    --theme-success: #4ade80;
+    --theme-warning: #fbbf24;
+    --theme-danger: #fca5a5;
+
+    --theme-shadow-raised: 0 2px 4px rgb(0 0 0 / 0.4), 0 16px 40px rgb(0 0 0 / 0.45);
+    --theme-shadow-card:
+        inset 0 1px 0 rgb(255 255 255 / 0.05), 0 2px 4px rgb(0 0 0 / 0.3),
+        0 10px 24px -10px rgb(0 0 0 / 0.6);
+    --theme-shadow-card-hover:
+        inset 0 1px 0 rgb(255 255 255 / 0.06), 0 14px 34px -10px rgb(229 0 125 / 0.55);
+    --theme-shadow-header: 0 10px 28px -14px rgb(0 0 0 / 0.8);
+
+    --theme-font-sans:
+        'Noto Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+        sans-serif;
+    --theme-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    --theme-font-display: var(--theme-font-sans);
+    --theme-font-eyebrow: var(--theme-font-mono);
+    --theme-display-weight: 800;
+    --theme-display-tracking: -0.035em;
+
+    --theme-radius-control: 0.375rem;
+    --theme-radius-card: 0.625rem;
+    --theme-radius-pill: 0.25rem;
+    --theme-ease-standard: cubic-bezier(0.3, 0.7, 0.4, 1);
+    --theme-duration-quick: 120ms;
+    --theme-duration-sweep: 160ms;
+    --theme-duration-ambient: 0ms;
+
+    /* A link: the brand pink, a thin pink underline that thickens under the pointer. */
+    --theme-link-line: underline;
+    --theme-link-thickness: 1px;
+    --theme-link-thickness-hover: 2px;
+    --theme-link-offset: 0.2em;
+    --theme-link-weight: 500;
+    --theme-link-fill: none;
+    --theme-link-fill-size: 0;
+    --theme-link-shadow-hover: 0 0 #0000;
+
+    --theme-page-fill: var(--theme-background);
+    --theme-hero-fill: radial-gradient(60rem 26rem at 85% 0%, var(--theme-glow), transparent 70%);
+    --theme-band-fill:
+        radial-gradient(50rem 18rem at 100% 0%, var(--theme-glow), transparent 70%),
+        var(--theme-well);
+    --theme-card-fill: linear-gradient(
+        180deg,
+        var(--theme-surface-elevated),
+        var(--theme-surface) 3rem
+    );
+    --theme-card-pad: 1.125rem;
+    --theme-flow-space: 1.25rem;
+    --theme-strip-height: 3px;
+    --theme-strip-fill: linear-gradient(
+        90deg,
+        var(--theme-secondary),
+        var(--theme-link),
+        var(--theme-secondary)
+    );
+    --theme-eyebrow-marker: 1.25rem;
+}
+
+:root[data-design='signal'][data-theme='light'] {
+    color-scheme: light;
+    --theme-background: #fbf6f9;
+    --theme-surface: #ffffff;
+    --theme-surface-elevated: #f7edf3;
+    --theme-well: #f1e5ed;
+    --theme-overlay: rgb(27 18 32 / 0.45);
+
+    --theme-primary: #1b1220;
+    --theme-muted: #5d5163;
+    --theme-secondary: #d10070;
+    --theme-secondary-hover: #ad005a;
+    --theme-secondary-text: #b8005f;
+    --theme-on-secondary: #ffffff;
+
+    --theme-link: #b8005f;
+    --theme-link-decoration: #d10070;
+    --theme-focus: #b8005f;
+    --theme-link-decoration-end: #d10070;
+    --theme-link-hover: #8a0047;
+    --theme-link-highlight: #fbf6f9;
+    --theme-nav-hover: #b8005f;
+
+    --theme-eyebrow: #b8005f;
+    --theme-glow: #fbe0ee;
+    --theme-badge: #d10070;
+    --theme-on-badge: #ffffff;
+    --theme-badge-edge: #d10070;
+    --theme-badge-hover: #ad005a;
+    --theme-card-edge-hover: #d10070;
+    --theme-network: #d10070;
+
+    --theme-border: rgb(27 18 32 / 0.09);
+    --theme-border-strong: rgb(27 18 32 / 0.24);
+
+    --theme-success: #15803d;
+    --theme-warning: #b45309;
+    --theme-danger: #b91c1c;
+
+    --theme-shadow-raised: 0 2px 4px rgb(27 18 32 / 0.08), 0 16px 40px rgb(27 18 32 / 0.14);
+    --theme-shadow-card: 0 1px 2px rgb(27 18 32 / 0.06), 0 8px 20px -10px rgb(27 18 32 / 0.18);
+    --theme-shadow-card-hover:
+        0 1px 2px rgb(27 18 32 / 0.06), 0 14px 30px -10px rgb(209 0 112 / 0.35);
+    --theme-shadow-header: 0 8px 24px -14px rgb(27 18 32 / 0.3);
+}

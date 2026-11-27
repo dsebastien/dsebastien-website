@@ -66,7 +66,7 @@ const signals = site.signalsOf(note.vaultPath)
     {/* two pages share one (issue 94). */}
     {/* The text of the page uses this file: a late font moves the text (PERF-20, R57). */}
     <link slot='head' rel='preload' href={latinFont} as='font' type='font/woff2' crossorigin />
-    <div class='border-b border-border bg-well'>
+    <div class='title-band'>
         <div class='mx-auto max-w-7xl px-4 py-6 sm:px-6'>
             <h1
                 id={body.heading?.id}
@@ -74,7 +74,7 @@ const signals = site.signalsOf(note.vaultPath)
                 data-heading={body.heading?.text}
                 data-pagefind-body
                 data-pagefind-meta={`title:${header.title}`}
-                class='max-w-4xl text-3xl font-bold tracking-tight break-words sm:text-5xl'
+                class='display max-w-4xl text-3xl break-words sm:text-5xl'
             >
                 {header.heading}
             </h1>

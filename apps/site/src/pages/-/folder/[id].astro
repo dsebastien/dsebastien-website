@@ -42,7 +42,7 @@ const { name, notes, folders } = Astro.props
 ---
 
 <Page title={fullTitle(name)} noindex>
-    <h1 class='text-3xl font-bold tracking-tight'>{name}</h1>
+    <h1 class='display text-3xl'>{name}</h1>
     {folders.length > 0 && (
         <section aria-labelledby='folders' class='mt-8'>
             <h2 id='folders' class='section-title'>
