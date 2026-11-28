@@ -273,7 +273,8 @@ describe('page of a note whose link targets are not published', () => {
         expect(html).toContain(
             'Two definitions of one name: <span class="not-published">a note first</span> and <a href="https://garden.example/first">a site first</a>.'
         )
-        expect(html).not.toContain('.md"')
+        // The download link of the note (issue 137) names a Markdown file; no other link may.
+        expect(html.replace(/<a [^>]*data-markdown-download[^>]*>/gu, '')).not.toContain('.md"')
         expect(html).not.toContain('garden.example/second')
     })
 
