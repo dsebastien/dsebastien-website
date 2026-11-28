@@ -1,4 +1,5 @@
 import { compareCodePoints } from '../../../plugin/src/publishing/order.ts'
+import { isShownProperty, type PropertyFilter } from '../property-filter.ts'
 
 // The title index of the search (SRCH-02, decision R63): the display titles
 // and the aliases of the published notes, which answer before the full text
@@ -59,7 +60,10 @@ export interface TitleEntry {
     readonly path: string
     /** The display title of the note (IDX-03). */
     readonly title: string
-    /** The aliases of the note that get a URL. */
+    /**
+     * The aliases of the note that get a URL. The index takes them only when
+     * the filter of the properties shows the key `aliases` (business rule 14).
+     */
     readonly aliases: readonly string[]
     /** The singular label of the note type, empty when the note has none. */
     readonly type: string
@@ -77,6 +81,9 @@ export interface TitleIndex {
     readonly parts: ReadonlyMap<string, readonly TitleRow[]>
 }
 
+/** The key of the property of the aliases of a note. */
+const ALIASES = 'aliases'
+
 /** The fewest letters of a key: a query of one letter loads no part. */
 const SHORTEST_KEY = 2
 /** The most letters of a key: a part with a longer word stays as it is, cut to its best rows. */
@@ -87,19 +94,22 @@ const LONGEST_KEY = 8
  *
  * @param options.partBytes the most characters of the JSON text of a part
  * @param options.rowsOfSplitPart the rows that a split part keeps: the best for a query of its key alone
+ * @param options.isShown the filter of the properties, as the properties panel reads it (issue 100)
  */
 export function titleIndexOf(
     entries: readonly TitleEntry[],
-    options: { partBytes?: number; rowsOfSplitPart?: number } = {}
+    options: { partBytes?: number; rowsOfSplitPart?: number; isShown?: PropertyFilter } = {}
 ): TitleIndex {
     const partBytes = options.partBytes ?? 96_000
     const kept = options.rowsOfSplitPart ?? 200
+    // The aliases are a property: the same filter as the panel decides whether they reach the index.
+    const withAliases = (options.isShown ?? isShownProperty)(ALIASES)
     const rows: { row: TitleRow; words: string[] }[] = []
     for (const entry of entries) {
         const words = foldedWords(entry.title)
         rows.push({ row: [entry.title, entry.path, entry.type], words })
         const said = new Set([words.join(' ')])
-        for (const alias of entry.aliases) {
+        for (const alias of withAliases ? entry.aliases : []) {
             const aliasWords = foldedWords(alias)
             const key = aliasWords.join(' ')
             if (aliasWords.length === 0 || said.has(key)) continue

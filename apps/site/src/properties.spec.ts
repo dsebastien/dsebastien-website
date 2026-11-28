@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { propertiesOf, propertyLinksOf, type LinkOf } from './properties.ts'
+import { isShownProperty } from './property-filter.ts'
 
 // The properties panel of a note page (issue 48, PAGE-02): the properties of
 // a published note with the display rules of the site of today
@@ -57,6 +58,15 @@ describe('the properties that the panel hides', () => {
 
     test('the internal key `position`', () => {
         expect(propertiesOf({ position: { start: 0 }, status: 'Seen' }, linkOf)).toHaveLength(1)
+    })
+
+    test('a key that the filter of the properties hides (business rule 14, issue 100)', () => {
+        expect(isShownProperty('position')).toBe(false)
+        expect(isShownProperty('status')).toBe(true)
+        const withoutStatus = (key: string): boolean => key !== 'status'
+        expect(propertiesOf({ status: 'Seen', rating: 4 }, linkOf, withoutStatus)).toEqual([
+            { key: 'rating', name: 'Rating', value: { kind: 'number', text: '4' } }
+        ])
     })
 
     test('a date that the calendar does not have', () => {
@@ -324,6 +334,11 @@ describe('the links of the properties, for the backlinks', () => {
             { name: 'Directors', linkPath: 'Rain barrel', text: 'the barrel' },
             { name: 'Related To', linkPath: 'Wormery', text: 'Wormery > Bins' }
         ])
+    })
+
+    test('reads no link of a property that the filter of the properties hides (issue 100)', () => {
+        const withoutDirectors = (key: string): boolean => key !== 'directors'
+        expect(propertyLinksOf({ directors: '[[Rain barrel]]' }, withoutDirectors)).toEqual([])
     })
 
     test('reads no link of a hidden property, and no link into the note itself', () => {

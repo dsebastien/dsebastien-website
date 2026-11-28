@@ -8,6 +8,7 @@ import {
     type TitleEntry,
     type TitleRow
 } from './titles.ts'
+import { isShownProperty } from '../property-filter.ts'
 
 // Invented rows: [text, path, type label, title of the note when the row is an alias].
 const ROWS: TitleRow[] = [
@@ -98,6 +99,17 @@ describe('the parts of the title index (SRCH-02, R57)', () => {
         expect(index.keys['co']).toBe(true)
         expect(index.parts.get('co')).toEqual([['Compost tea', '/Compost-tea', 'Concept']])
         expect(index.parts.get('br')).toEqual([['Brew', '/Compost-tea', 'Concept', 'Compost tea']])
+    })
+
+    test('take the aliases through the filter of the properties panel (business rule 14, issue 100)', () => {
+        // Today the filter shows the key `aliases`: the aliases are in the index.
+        expect(isShownProperty('aliases')).toBe(true)
+        // A filter that hides the key (a later allow list) leaves every alias out, and keeps the title.
+        const index = titleIndexOf([entry('Compost tea', ['Brew'], 'Concept')], {
+            isShown: (key) => key !== 'aliases'
+        })
+        expect(Object.keys(index.keys).sort()).toEqual(['co', 'te'])
+        expect(index.parts.get('co')).toEqual([['Compost tea', '/Compost-tea', 'Concept']])
     })
 
     test('leave out an alias that says the title again', () => {

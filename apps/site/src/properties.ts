@@ -1,5 +1,6 @@
 import { tagPath } from '@dsebastien-website/resolver'
 import { wikilinksOf, type Wikilink } from '../../plugin/src/publishing/links.ts'
+import { isShownProperty, type PropertyFilter } from './property-filter.ts'
 import { tagOfText } from './tags.ts'
 
 // The properties panel of a note page (issue 48, PAGE-02): every property of
@@ -10,8 +11,9 @@ import { tagOfText } from './tags.ts'
 //
 // - The name of a key shows in title case.
 // - An empty value is hidden: nothing, a blank text, an empty list or object,
-//   a list with only empty items, a date that the calendar does not have. The
-//   key `position` is hidden.
+//   a list with only empty items, a date that the calendar does not have. A
+//   key that the filter of the properties hides (`property-filter.ts`, the
+//   key `position`) is hidden.
 // - A truth value shows with a mark, a number as a number, an object as JSON.
 // - A date stays as the vault writes it: `2024-03-02`, or `2024-03-02, 09:00`
 //   with a time. The site of today shows a time in the zone of the reader; a
@@ -68,9 +70,6 @@ export interface PropertyLink {
     /** What a reader sees. */
     text: string
 }
-
-/** The keys that the panel never shows. `position` is a key of the reader of Obsidian. */
-const HIDDEN = new Set(['position'])
 
 /** The name of a key in title case: `date_of_birth`, `release-date` and `aiGenerated` are words. */
 function nameOf(key: string): string {
@@ -260,14 +259,16 @@ function valueOf(key: string, value: unknown, linkOf: LinkOf): PropertyValue | u
  *
  * @param properties the properties of the published note
  * @param linkOf where a link path of the note leads to
+ * @param isShown the filter of the properties (business rule 14)
  */
 export function propertiesOf(
     properties: Readonly<Record<string, unknown>>,
-    linkOf: LinkOf
+    linkOf: LinkOf,
+    isShown: PropertyFilter = isShownProperty
 ): Property[] {
     const shown: Property[] = []
     for (const [key, raw] of Object.entries(properties)) {
-        if (HIDDEN.has(key)) {
+        if (!isShown(key)) {
             continue
         }
         const value = valueOf(key, raw, linkOf)
@@ -282,11 +283,16 @@ export function propertiesOf(
  * The links of the properties of a note to other notes, in the order of the
  * note: the note is a backlink of each published target, with the name of the
  * property as the context of the link.
+ *
+ * @param isShown the filter of the properties (business rule 14)
  */
-export function propertyLinksOf(properties: Readonly<Record<string, unknown>>): PropertyLink[] {
+export function propertyLinksOf(
+    properties: Readonly<Record<string, unknown>>,
+    isShown: PropertyFilter = isShownProperty
+): PropertyLink[] {
     const links: PropertyLink[] = []
     for (const [key, raw] of Object.entries(properties)) {
-        if (HIDDEN.has(key) || key === 'tags') {
+        if (!isShown(key) || key === 'tags') {
             continue
         }
         for (const item of Array.isArray(raw) ? raw : [raw]) {
