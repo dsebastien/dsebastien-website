@@ -131,7 +131,52 @@ describe('the search session of the search page', () => {
         await settle()
         // The full text leaves out the note that the titles show.
         expect(view.text).toEqual(['/Tea'])
-        expect(view.log.at(-1)).toBe('say 1 title, 2 notes with these words in the text')
+        expect(view.log.at(-1)).toBe('say 1 title, 1 note with these words in the text')
+    })
+
+    test('counts only the notes of the text that the second group can show (issue 100)', async () => {
+        const paths = Array.from({ length: 30 }, (_, index) => `/n${String(index)}`)
+        const view = recordingView()
+        const timer = manualTimer()
+        const session = createSession(
+            fakeSearch({
+                titles: () => Promise.resolve([...paths.slice(0, 4), '/elsewhere'].map(title)),
+                fullText: () => Promise.resolve(resultsOf(paths))
+            }),
+            view,
+            timer
+        )
+        session.submit('note')
+        timer.run()
+        await settle()
+        // Four notes of the titles are in the text, the fifth is not: 26 notes stay.
+        expect(view.log.at(-1)).toBe('say 5 titles, 26 notes with these words in the text')
+    })
+
+    test('says the new count when a later step finds a note of the titles (issue 100)', async () => {
+        const paths = Array.from({ length: 25 }, (_, index) => `/n${String(index)}`)
+        const view = recordingView()
+        const timer = manualTimer()
+        const session = createSession(
+            fakeSearch({
+                titles: () => Promise.resolve([title('/n15')]),
+                fullText: () => Promise.resolve(resultsOf(paths))
+            }),
+            view,
+            timer
+        )
+        session.submit('note')
+        timer.run()
+        await settle()
+        // The address of a result comes with its excerpt: the first step has not seen /n15 yet.
+        expect(view.log.at(-1)).toBe('say 1 title, 25 notes with these words in the text')
+        await session.more()
+        expect(view.text).toEqual(paths.filter((path) => path !== '/n15').slice(0, 20))
+        expect(view.log.at(-1)).toBe('say 1 title, 24 notes with these words in the text')
+        const said = view.log.filter((line) => line.startsWith('say ')).length
+        await session.more()
+        // A step that finds no note of the titles says nothing.
+        expect(view.log.filter((line) => line.startsWith('say ')).length).toBe(said)
     })
 
     test('waits for a pause before the full text, and runs it at once on Enter', async () => {

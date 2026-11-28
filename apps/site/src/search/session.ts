@@ -4,7 +4,11 @@ import type { TitleMatch } from './titles.ts'
 // What the search page does for each query, without the page (issue 51,
 // R63). The titles answer at each key; the full text answers when the reader
 // stops typing for a short time, or at once on Enter, and leaves out the
-// notes that the titles show. A late answer of an older query is dropped.
+// notes that the titles show. The status line counts the notes that the
+// full text can still show: the full text gives the address of a result with
+// its excerpt only, so a note of the titles leaves the count when a step
+// loads it, and a step that changes the count says it again (issue 100). A
+// late answer of an older query is dropped.
 // While a new query loads, the old full-text results are marked as old; a
 // failure clears them. "More results" adds one step at a time, also when the
 // reader taps it twice.
@@ -80,6 +84,8 @@ export function createSession(
               next: number
               /** The hits that a step asked for and did not show yet. */
               kept: FullTextHit[]
+              /** The notes of the titles that the loaded results hold: the text does not show them. */
+              left: Set<string>
               busy: boolean
           }
         | undefined
@@ -109,7 +115,11 @@ export function createSession(
                     current.next += STEP
                     const hits = await current.results.hits(from, STEP)
                     if (current.turn !== turn) return
-                    current.kept = hits.filter((hit) => !titlePaths.has(hit.path))
+                    current.kept = hits.filter((hit) => {
+                        if (!titlePaths.has(hit.path)) return true
+                        current.left.add(hit.path)
+                        return false
+                    })
                     continue
                 }
                 added.push(...current.kept.splice(0, STEP - added.length))
@@ -127,8 +137,12 @@ export function createSession(
         }
     }
 
+    /** The number of notes that the full text shows or can still show. */
+    const textCount = (): number =>
+        text === undefined ? 0 : Math.max(0, text.results.total - text.left.size)
+
     const summary = (): void => {
-        const total = text?.results.total ?? 0
+        const total = textCount()
         if (titleCount === 0 && total === 0) {
             view.say('No note matches.')
             return
@@ -144,7 +158,7 @@ export function createSession(
         // The titles answer first, so the full text leaves out the notes that they show.
         await titles
         if (mine !== turn) return
-        text = { turn: mine, results, next: 0, kept: [], busy: false }
+        text = { turn: mine, results, next: 0, kept: [], left: new Set(), busy: false }
         await step(false)
         if (mine !== turn) return
         view.textPending(false)
@@ -200,8 +214,11 @@ export function createSession(
         },
         more: async () => {
             const mine = turn
+            const before = textCount()
             try {
                 await step(true)
+                // A step that found a note of the titles changes the count.
+                if (mine === turn && textCount() !== before) summary()
             } catch {
                 // The shown results stay, and so does the button.
                 if (mine === turn) view.say(FAILED_MORE)

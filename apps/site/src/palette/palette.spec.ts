@@ -244,7 +244,7 @@ describe('the results as the reader types (SRCH-01)', () => {
             'Rain barrel',
             'All results for “com”'
         ])
-        expect(status()).toBe('2 titles, 2 notes with these words in the text')
+        expect(status()).toBe('2 titles, 1 note with these words in the text')
     })
 
     test('a row shows the type, the alias and the excerpt, with the words of the query marked', async () => {
