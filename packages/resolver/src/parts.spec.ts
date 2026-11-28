@@ -10,6 +10,7 @@ import {
     partOfKey,
     type MapPart
 } from './parts.ts'
+import { siteHandler, type StoredFile } from './handler.ts'
 import { applyRedirectList } from './redirects.ts'
 import { resolve, type ResolverMap } from './resolver.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
@@ -32,6 +33,12 @@ const FILES: SiteFiles = {
 }
 
 const KEY = 'ab'.repeat(32)
+
+/** A file of a release with a text. */
+function storedFile(text: string): StoredFile {
+    const bytes = new TextEncoder().encode(text)
+    return { size: bytes.length, read: () => bytes }
+}
 
 /** A map with every part that the resolver reads. */
 function fullMap(): ResolverMap {
@@ -237,31 +244,38 @@ describe('the resolver of a map in parts', () => {
         }
     )
 
-    // The page of a note names its Markdown (URL-11): its part, then the
-    // part of the Markdown path, when that is another part.
-    const notePartsOf = (count: number): number[] => [
-        ...new Set([partOfKey('/Welcome', count), partOfKey('/-/md/Welcome.md', count)])
-    ]
-
-    test('a canonical path reads its part, and the part of the Markdown of its note', async () => {
+    test('a canonical path reads one part', async () => {
         const parts = stored(fullMap(), 200)
         const lookup = partedResolver(parts.head, parts.load)
         expect(await lookup('/Welcome', '')).toEqual({
             kind: 'page',
             file: '-/note/10.html',
-            markdown: '-/md/10.md'
+            note: true
         })
-        expect(parts.reads).toEqual(notePartsOf(parts.head.parts))
+        expect(parts.reads).toEqual([partOfKey('/Welcome', parts.head.parts)])
     })
 
-    test('a generated page reads one part', async () => {
+    // URL-11: the handler looks for the Markdown of a note only for a request
+    // that asks for Markdown. A page, also with no header, reads one part.
+    test('a page of a note reads one part, and its Markdown form reads the part of its Markdown too', async () => {
         const parts = stored(fullMap(), 200)
-        const lookup = partedResolver(parts.head, parts.load)
-        expect(await lookup('/-/backlinks/abc', '')).toEqual({
-            kind: 'page',
-            file: '-/backlinks/abc.html'
+        const handler = siteHandler({
+            map: partedResolver(parts.head, parts.load),
+            file: (name) => Promise.resolve(storedFile(`file ${name}`)),
+            asset: () => Promise.resolve(undefined)
         })
-        expect(parts.reads).toEqual([partOfKey('/-/backlinks/abc', parts.head.parts)])
+        const ask = (headers: Record<string, string>) =>
+            handler(new Request('https://notes.example/Welcome', { headers }))
+        const page = partOfKey('/Welcome', parts.head.parts)
+        for (const headers of [{}, { accept: 'text/html' }]) {
+            expect(await (await ask(headers)).text()).toBe('file -/note/10.html')
+        }
+        expect(parts.reads).toEqual([page])
+        const markdown = await ask({ accept: 'text/markdown' })
+        expect(await markdown.text()).toBe('file -/md/10.md')
+        expect(parts.reads).toEqual([
+            ...new Set([page, partOfKey('/-/md/Welcome.md', parts.head.parts)])
+        ])
     })
 
     test('a part is read one time while it is kept', async () => {
@@ -269,7 +283,7 @@ describe('the resolver of a map in parts', () => {
         const lookup = partedResolver(parts.head, parts.load)
         await Promise.all([lookup('/Welcome', ''), lookup('/Welcome', '')])
         await lookup('/Welcome', '')
-        expect(parts.reads).toEqual(notePartsOf(parts.head.parts))
+        expect(parts.reads.length).toBe(1)
     })
 
     test('keeps a limited count of parts: the memory does not grow with the site', async () => {

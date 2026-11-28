@@ -154,11 +154,14 @@ function keyOf(text: string): string {
 /** What a requested path leads to. */
 export type Resolution =
     /**
-     * `markdown`: the file of the Markdown of the note of the page, for the
-     * page of a note only. Its canonical URL then has two forms, which the
-     * `Accept` header chooses (URL-11).
+     * `note`: a page at a path that a note can have (not the home page, not
+     * under `/-/`): the page of a note, or the list of a folder. Its URL can
+     * have a Markdown form, which the `Accept` header chooses (URL-11). The
+     * resolver reads no other key for it: the handler looks for the Markdown
+     * only for a request that asks for it, so a page reads one part of the
+     * map (R94).
      */
-    | { kind: 'page'; file: string; markdown?: string }
+    | { kind: 'page'; file: string; note?: true }
     | { kind: 'file'; file: string; type: SiteFileType }
     /** `image`: the file of the image of a variant (issue 87, R92), for a storage that lacks the variant. */
     | {
@@ -288,13 +291,10 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
     requestKeys = new Map()
     const page = own(map.pages, path)
     if (page !== undefined) {
-        // The page of a note: its Markdown is at `/-/md/<canonical path>.md`.
         // The home page and the pages under `/-/` are no note.
-        const markdown =
-            path === '/' || path.startsWith(PREFIX) ? undefined : own(map.files, `/-/md${path}.md`)
-        return markdown?.type === 'markdown'
-            ? { kind: 'page', file: page, markdown: markdown.file }
-            : { kind: 'page', file: page }
+        return path === '/' || path.startsWith(PREFIX)
+            ? { kind: 'page', file: page }
+            : { kind: 'page', file: page, note: true }
     }
     const file = own(map.files, path)
     if (file !== undefined) {

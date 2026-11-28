@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { failureResponse, siteHandler, type Release, type StoredFile } from './handler.ts'
+import { resolve } from './resolver.ts'
 import { resolverMapOf, type SiteFiles } from './site.ts'
 import { SITE_ORIGIN } from './url.ts'
 import { variantKey, variantPath } from './variants.ts'
@@ -419,13 +420,30 @@ describe('a note on request', () => {
         expect(again.status).toBe(304)
     })
 
-    test('has no Markdown form for a page that is not a note, and no Vary', async () => {
+    test('has no Markdown form for a page that is not a note', async () => {
         for (const path of ['/', '/10+Garden']) {
             const response = await get(path, MARKDOWN)
             expect(response.status).toBe(200)
             expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
-            expect(response.headers.get('vary')).toBeNull()
         }
+        // A generated page has one form. A folder list has a path that a note
+        // can have: without a second lookup, it varies as a note does.
+        expect((await get('/', MARKDOWN)).headers.get('vary')).toBeNull()
+        expect((await get('/10+Garden', MARKDOWN)).headers.get('vary')).toBe('Accept')
+    })
+
+    // R94: the Markdown of a note is looked for only when a request asks for it.
+    test('looks for the Markdown of the note only for a request that asks for Markdown', async () => {
+        const asked: string[] = []
+        const lookup = (path: string, query: string) => {
+            asked.push(path)
+            return Promise.resolve(resolve(path, map, query))
+        }
+        await get('/Welcome', BROWSER, { map: lookup })
+        await get('/Welcome', {}, { map: lookup })
+        expect(asked).toEqual(['/Welcome', '/Welcome'])
+        await get('/Welcome', MARKDOWN, { map: lookup })
+        expect(asked.slice(2)).toEqual(['/Welcome', '/-/md/Welcome.md'])
     })
 
     test('keeps a redirect of a variant: the client asks again at its target', async () => {

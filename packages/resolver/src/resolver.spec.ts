@@ -16,7 +16,8 @@ describe('resolver', () => {
     test('gives the page of a canonical path', () => {
         expect(resolve('/10+Garden/Frost+dates+explained', MAP)).toEqual({
             kind: 'page',
-            file: '-/note/203d446940c02032.html'
+            file: '-/note/203d446940c02032.html',
+            note: true
         })
     })
 
@@ -191,7 +192,7 @@ describe('resolver map with generated pages', () => {
         expect(resolve('/Garden/Rain+barrel', map)).toEqual({
             kind: 'page',
             file: 'page:Garden/Rain barrel.md',
-            markdown: 'markdown:Garden/Rain barrel.md'
+            note: true
         })
     })
 
@@ -298,7 +299,7 @@ describe('resolver of unpublished notes', () => {
             [{ path: 'Shed/Tools.md', aliases: [] }],
             [{ path: 'Shed.md', aliases: [] }]
         )
-        expect(resolve('/Shed', map)).toEqual({ kind: 'page', file: 'folder:Shed' })
+        expect(resolve('/Shed', map)).toEqual({ kind: 'page', file: 'folder:Shed', note: true })
         expect(resolve('/-/md/Shed.md', map)).toEqual(GONE)
     })
 
@@ -465,7 +466,7 @@ describe('resolver of former paths', () => {
 
     test('a folder that holds notes again wins over its old target', () => {
         const map = mapOf([NOTE, { path: 'Shed/Rake.md', aliases: [] }])
-        expect(resolve('/Shed', map)).toEqual({ kind: 'page', file: 'folder:Shed' })
+        expect(resolve('/Shed', map)).toEqual({ kind: 'page', file: 'folder:Shed', note: true })
     })
 
     test('a current path wins over a former path, and a former path over a name and an alias', () => {
@@ -480,7 +481,7 @@ describe('resolver of former paths', () => {
         expect(resolve('/Shed/Worm+bin', map)).toEqual({
             kind: 'page',
             file: 'page:Shed/Worm bin.md',
-            markdown: 'markdown:Shed/Worm bin.md'
+            note: true
         })
         // The old path of a note wins over the file name of another note.
         expect(resolve('/Hut', map)).toEqual(moved('/Kitchen/Wormery'))

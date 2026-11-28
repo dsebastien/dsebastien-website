@@ -281,13 +281,13 @@ describe('redirect list in the resolver map', () => {
         expect(resolve('/Garden/Thyme', map)).toEqual({
             kind: 'page',
             file: 'page:Garden/Thyme.md',
-            markdown: 'markdown:Garden/Thyme.md'
+            note: true
         })
         // The prefix of a folder that is live again is kept, and counted: it
         // comes after every exact address, so it only leads an old path that
         // nothing else has.
         expect(resolve('/Garden/Missing', map)).toEqual(REDIRECT('/-/recent/added'))
-        expect(resolve('/Garden', map)).toEqual({ kind: 'page', file: 'folder:Garden' })
+        expect(resolve('/Garden', map)).toEqual({ kind: 'page', file: 'folder:Garden', note: true })
     })
 
     test('a row that hides a file name or an alias of a live note wins, and is counted', () => {

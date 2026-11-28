@@ -320,11 +320,11 @@ export async function checkUrlCase(
         canonicalLinkOf(body),
         entry.canonical === undefined ? undefined : `${ORIGIN}${entry.canonical}`
     )
-    // The page of a note has a Markdown form too (URL-11); another page has
+    // The page of a note has a Markdown form too (URL-11). A folder list has
+    // a path that a note can have, so it varies as well; the home page has
     // one form, whatever the header asks.
     if (entry.page !== undefined) {
-        const note = entry.page.startsWith('note:')
-        same('vary', response.headers.get('vary'), note ? 'Accept' : null)
+        same('vary', response.headers.get('vary'), entry.page === 'home' ? null : 'Accept')
     }
     if (entry.notModified === true) {
         findings.push(

@@ -536,6 +536,13 @@ async function siteFileResponse(
  * pages load, never from the request.
  */
 export function siteHandler(release: Release): (request: Request) => Promise<Response> {
+    /** The resolution of a path in the map of the release, whole or in parts. */
+    async function lookup(path: string, query: string): Promise<Resolution> {
+        return typeof release.map === 'function'
+            ? await release.map(path, query)
+            : resolve(path, release.map, query)
+    }
+
     /** The answer of a request. `undefined` when the release lacks a file that it names. */
     async function answer(
         request: Request,
@@ -569,10 +576,7 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                 })
             }
         }
-        const resolution =
-            typeof release.map === 'function'
-                ? await release.map(pathname, search)
-                : resolve(pathname, release.map, search)
+        const resolution = await lookup(pathname, search)
         /** A file of the release as an answer. `undefined` when the release lacks it. */
         const fileOf = async (
             name: string,
@@ -658,17 +662,21 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                       })
             }
             case 'page': {
-                if (resolution.markdown === undefined) {
-                    // A page that is not a note has one form, whatever the
-                    // header asks: no `Vary`.
+                if (resolution.note !== true) {
+                    // A generated page has one form, whatever the header
+                    // asks: no `Vary`.
                     return await fileOf(resolution.file, HTML)
                 }
-                if (format === 'html') {
+                // Markdown on request (URL-11): only a request that asks for
+                // Markdown looks for the Markdown of the note, so a page reads
+                // one part of the map (R94). The entry of the map is the gate:
+                // a folder list has none, and stays HTML.
+                const markdown =
+                    format === 'markdown' ? await lookup(`/-/md${pathname}.md`, '') : undefined
+                if (markdown?.kind !== 'file' || markdown.type !== 'markdown') {
                     return await fileOf(resolution.file, HTML, 200, NOTE_VARY)
                 }
-                // Markdown on request (URL-11): the cleaned note, as at its
-                // Markdown path, with the form that follows `Accept`.
-                const file = await release.file(resolution.markdown)
+                const file = await release.file(markdown.file)
                 return file === undefined
                     ? undefined
                     : await markdownFormResponse(request, file, {
