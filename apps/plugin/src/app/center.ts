@@ -62,6 +62,8 @@ import type {
     StoredPlan,
     TakedownReport
 } from '../publishing/tool.ts'
+import { obsidianNamesOf } from './note-paths.ts'
+import type { ObsidianNames } from './note-paths.ts'
 import { canonicalTime } from './rename-journal.ts'
 
 // The controller of the publication center (issue 39, decision R67): what the
@@ -242,6 +244,8 @@ export interface CenterState {
     readonly configurationChanged?: boolean
     /** The hashes that each candidate and each changed note lists from a file under no guard, at the last check (issue 108). */
     readonly openHashes?: ReadonlyMap<string, ReadonlySet<string>>
+    /** The Obsidian paths of the notes at the last check: the twins and the paths that Obsidian changes (issue 114). */
+    readonly obsidianNames?: ObsidianNames
     /** When the last check ended. */
     readonly checkedAt?: Date
     readonly activity: Activity
@@ -1117,8 +1121,16 @@ export class PublicationCenter {
                 await device.local.release(lock.text)
             }
         }
-        const { queue, edits, guardedEntries, sources, configurationChanged, openHashes } =
-            await statusWithEdits(device)
+        const {
+            queue,
+            edits,
+            guardedEntries,
+            sources,
+            configurationChanged,
+            openHashes,
+            twins,
+            changedByObsidian
+        } = await statusWithEdits(device)
         this.#checkedSources = sources
         this.#refreshedTexts.clear()
         this.#writtenWithoutHash.clear()
@@ -1129,6 +1141,7 @@ export class PublicationCenter {
             guardedEntries,
             configurationChanged,
             openHashes,
+            obsidianNames: obsidianNamesOf(changedByObsidian, twins),
             checkedAt: this.host.now(),
             choices: reconcile(queue, this.#state.choices)
         })

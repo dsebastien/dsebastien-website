@@ -42,7 +42,7 @@ import { MANIFEST_FOLDER, manifestFile, NOTES_FOLDER, noteId, readManifest } fro
 import type { ManifestEntry } from './manifest.ts'
 import { isNoteType, sameNoteType } from './note-types.ts'
 import type { NoteType } from './note-types.ts'
-import { foldedForm } from './names.ts'
+import { foldedForm, isChangedByObsidian } from './names.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import { checkOriginals } from './originals.ts'
 import type { CheckResult, Original } from './originals.ts'
@@ -499,6 +499,10 @@ export async function statusWithEdits(given: Device): Promise<{
      * 108). Empty when no entry lists a file under a guard.
      */
     readonly openHashes: ReadonlyMap<string, ReadonlySet<string>>
+    /** The Obsidian twins of the scan (R72): the plugin never asks Obsidian for one of them (issue 114). */
+    readonly twins: ReadonlyMap<string, string>
+    /** The notes of the scan whose path Obsidian changes: Obsidian knows them by their Obsidian path (issue 114). */
+    readonly changedByObsidian: readonly string[]
 }> {
     const device = forRun(given)
     await refuseWhenLocked(device)
@@ -521,7 +525,9 @@ export async function statusWithEdits(given: Device): Promise<{
             )
         ),
         configurationChanged: configurationChanged(state.scan.edits, state.configurationHash),
-        openHashes: await openHashesOf(device, state.scan)
+        openHashes: await openHashesOf(device, state.scan),
+        twins: state.scan.twins,
+        changedByObsidian: [...state.scan.notes.keys()].filter((path) => isChangedByObsidian(path))
     }
 }
 

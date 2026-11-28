@@ -21,6 +21,7 @@ import { addressOf } from './center.ts'
 import type { PublicationCenter, Report } from './center.ts'
 import type { Measures } from './measures.ts'
 import { isolateName, isolateNames, waysOut } from './messages.ts'
+import { noteTarget } from './note-paths.ts'
 
 // The view of the publication center (TOOL-20 to TOOL-22, TOOL-25, decision
 // R67): a tab in the main area that shows the state of the controller and the
@@ -285,9 +286,18 @@ export class PublicationCenterView extends ItemView {
         return section
     }
 
-    /** Opens a note by its exact path: `#` and `^` in a file name are no part of a link. */
+    /**
+     * Opens a note of the scan by its Obsidian path, not as a link: `#` and
+     * `^` in a file name are no part of a link. A twin opens nothing (issue
+     * 114): Obsidian could open the other file.
+     */
     #openNote(path: string, newLeaf: boolean): void {
-        const file = this.app.vault.getFileByPath(path)
+        const target = noteTarget(path, this.host.center.state.obsidianNames)
+        if (target.kind === 'twin') {
+            new Notice(isolateNames(`Vault Publish: ${target.message}`))
+            return
+        }
+        const file = this.app.vault.getFileByPath(target.path)
         if (file !== null) {
             void this.app.workspace.getLeaf(newLeaf).openFile(file)
         }

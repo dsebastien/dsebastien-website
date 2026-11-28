@@ -10,7 +10,7 @@ import type { Vault } from '../publishing/ports.ts'
 
 /** What the writes need of the vault of Obsidian. */
 export interface EditorVault<File> {
-    /** The note with exactly this path, or `null` when Obsidian does not know it. */
+    /** The note of Obsidian for this vault path (by its Obsidian path, issue 114), or `null` when Obsidian does not know it or it has a twin (R72). */
     getFileByPath(path: string): File | null
     /** Saves each open editor of the note, so that text that the author typed is in the note. */
     saveOpenEditors(file: File): Promise<void>

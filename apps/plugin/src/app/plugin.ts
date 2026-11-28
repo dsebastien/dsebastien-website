@@ -28,6 +28,7 @@ import { addressOf, PublicationCenter } from './center.ts'
 import type { FileStat, PropertyWrite } from './center.ts'
 import { editorWrites, saveUnsavedEditors } from './editor-writes.ts'
 import { isolateNames, lockState } from './messages.ts'
+import { noteTarget, vaultPathOf } from './note-paths.ts'
 import { childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
 import { Measures } from './measures.ts'
 import { LocalMcpServer, MCP_HOST } from './mcp-server.ts'
@@ -140,7 +141,7 @@ export class VaultPublishPlugin extends Plugin {
                     // The writes into the notes, as edits of Obsidian (issue 106).
                     (vault) =>
                         editorWrites(vault, {
-                            getFileByPath: (path) => this.app.vault.getFileByPath(path),
+                            getFileByPath: (path) => this.#fileOf(path),
                             saveOpenEditors: (file) => this.#saveOpenEditors(file),
                             process: (file, change) => this.app.vault.process(file, change)
                         })
@@ -196,7 +197,7 @@ export class VaultPublishPlugin extends Plugin {
                     )
                 })
                 if (isNote(file)) {
-                    this.#noteChanged(file.path)
+                    this.#noteChanged(this.#eventPath(file.path))
                 }
             })
         )
@@ -207,8 +208,9 @@ export class VaultPublishPlugin extends Plugin {
                 if (isNote(file)) {
                     // With its size and time after the event: an event of a
                     // write of a run is no edit (issue 106).
-                    void this.#statOf(file.path).then((stat) => {
-                        this.#noteChanged(file.path, stat)
+                    const path = this.#eventPath(file.path)
+                    void this.#statOf(path).then((stat) => {
+                        this.#noteChanged(path, stat)
                     })
                 }
             }
@@ -350,10 +352,35 @@ export class VaultPublishPlugin extends Plugin {
         }
     }
 
-    /** The open note, when it is a note. */
-    #openNote(): string | undefined {
+    /** The path of the open file in Obsidian, when it is a note. */
+    #activePath(): string | undefined {
         const file = this.app.workspace.getActiveFile()
         return file !== null && file.path.endsWith('.md') ? file.path : undefined
+    }
+
+    /**
+     * The vault path of the open note at the last check (issue 114): a note
+     * whose path Obsidian changes has its path of the scan. None for the
+     * Obsidian path of twins: Obsidian can show either file.
+     */
+    #openNote(): string | undefined {
+        const path = this.#activePath()
+        return path === undefined ? undefined : vaultPathOf(path, this.center.state.obsidianNames)
+    }
+
+    /**
+     * The vault path of the note of an event of Obsidian, which names its
+     * Obsidian path (issue 114). The Obsidian path of twins stays as it is:
+     * an edit of either file marks it, and a plan refuses both (R72).
+     */
+    #eventPath(path: string): string {
+        return vaultPathOf(path, this.center.state.obsidianNames) ?? path
+    }
+
+    /** The file of Obsidian for a vault path of the scan, by its Obsidian path; none for a twin (issue 114). */
+    #fileOf(path: string): TFile | null {
+        const target = noteTarget(path, this.center.state.obsidianNames)
+        return target.kind === 'open' ? this.app.vault.getFileByPath(target.path) : null
     }
 
     #addCommands(): void {
@@ -471,9 +498,9 @@ export class VaultPublishPlugin extends Plugin {
      */
     async #indexed(written: readonly PropertyWrite[], limit: number): Promise<readonly string[]> {
         // Async: an error of Obsidian becomes a rejection, which the center reports.
-        const { metadataCache, vault } = this.app
+        const { metadataCache } = this.app
         const isRead = (one: PropertyWrite): boolean => {
-            const file = vault.getFileByPath(one.path)
+            const file = this.#fileOf(one.path)
             if (file === null) {
                 return true
             }
