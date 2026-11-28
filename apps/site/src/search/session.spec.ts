@@ -172,7 +172,8 @@ describe('the search session of the search page', () => {
         expect(view.log.at(-1)).toBe('say 1 title, 25 notes with these words in the text')
         await session.more()
         expect(view.text).toEqual(paths.filter((path) => path !== '/n15').slice(0, 20))
-        expect(view.log.at(-1)).toBe('say 1 title, 24 notes with these words in the text')
+        // Only the number that changed, so the reader knows why the line speaks again.
+        expect(view.log.at(-1)).toBe('say Now 24 notes with these words in the text')
         const said = view.log.filter((line) => line.startsWith('say ')).length
         await session.more()
         // A step that finds no note of the titles says nothing.

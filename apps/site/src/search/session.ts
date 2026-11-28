@@ -7,7 +7,7 @@ import type { TitleMatch } from './titles.ts'
 // notes that the titles show. The status line counts the notes that the
 // full text can still show: the full text gives the address of a result with
 // its excerpt only, so a note of the titles leaves the count when a step
-// loads it, and a step that changes the count says it again (issue 100). A
+// loads it, and a step that changes the count says "Now N notes…" (issue 100). A
 // late answer of an older query is dropped.
 // While a new query loads, the old full-text results are marked as old; a
 // failure clears them. "More results" adds one step at a time, also when the
@@ -217,8 +217,12 @@ export function createSession(
             const before = textCount()
             try {
                 await step(true)
-                // A step that found a note of the titles changes the count.
-                if (mine === turn && textCount() !== before) summary()
+                // A step that found a note of the titles changes the count: the
+                // line says only the new count, as the focus moves to the new results.
+                const after = textCount()
+                if (mine === turn && after !== before) {
+                    view.say(`Now ${counted(after, 'note', 'notes')} with these words in the text`)
+                }
             } catch {
                 // The shown results stay, and so does the button.
                 if (mine === turn) view.say(FAILED_MORE)
