@@ -231,8 +231,11 @@ describe('the search page (SRCH-01)', () => {
         // The field has a label.
         const id = field?.properties['id'] ?? ''
         expect(select(`label[for="${id}"]`, page)).toBeDefined()
-        // The results have a live region for the counts.
-        expect(select('[data-search-status][aria-live="polite"]', page)).toBeDefined()
+        // The counts show in a line that is no live region, and a hidden polite
+        // live region says them, so a reader hears each count one time.
+        expect(select('[data-search-status]', page)?.properties['ariaLive']).toBeUndefined()
+        const announcer = select('[data-search-announce][aria-live="polite"]', page)
+        expect(announcer?.properties['className']).toContain('sr-only')
     })
 
     test('loads its own script and the loader of the palette only, within the script budget of a page', async () => {

@@ -50,7 +50,8 @@ import { FULL_TEXT_BASE, TITLES_FOLDER } from '../../search/paths.ts'
         <noscript>
             <p class='mt-4 text-muted'>The search needs JavaScript.</p>
         </noscript>
-        <p class='mt-4 min-h-6 text-sm text-muted' aria-live='polite' data-search-status></p>
+        <p class='mt-4 min-h-6 text-sm text-muted' data-search-status></p>
+        <p class='sr-only' aria-live='polite' data-search-announce></p>
         <section class='mt-6' aria-labelledby='search-titles' data-search-titles hidden>
             <h2 id='search-titles' class='section-title'>
                 Titles

@@ -66,8 +66,8 @@ function recordingView(): SearchView & { log: string[]; text: string[]; titles: 
         textPending(pending: boolean) {
             view.log.push(pending ? 'text pending' : 'text current')
         },
-        say(message: string) {
-            view.log.push(`say ${message}`)
+        say(message: string, announcement?: string) {
+            view.log.push(`say ${message}${announcement === undefined ? '' : ` | ${announcement}`}`)
         },
         setQuery(query: string) {
             view.log.push(`query ${query}`)
@@ -172,8 +172,10 @@ describe('the search session of the search page', () => {
         expect(view.log.at(-1)).toBe('say 1 title, 25 notes with these words in the text')
         await session.more()
         expect(view.text).toEqual(paths.filter((path) => path !== '/n15').slice(0, 20))
-        // Only the number that changed, so the reader knows why the line speaks again.
-        expect(view.log.at(-1)).toBe('say Now 24 notes with these words in the text')
+        // The line stays whole; the live region says only the number that changed.
+        expect(view.log.at(-1)).toBe(
+            'say 1 title, 24 notes with these words in the text | Now 24 notes with these words in the text'
+        )
         const said = view.log.filter((line) => line.startsWith('say ')).length
         await session.more()
         // A step that finds no note of the titles says nothing.

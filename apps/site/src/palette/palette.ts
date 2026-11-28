@@ -381,6 +381,7 @@ export function createPalette(document: Document, options: PaletteOptions = {}):
         textPending(pending) {
             list.setAttribute('aria-busy', String(pending))
         },
+        // The palette has no "More results": the session gives it no shorter announcement.
         say(message) {
             said = message
             render()

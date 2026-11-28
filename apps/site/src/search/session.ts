@@ -7,7 +7,8 @@ import type { TitleMatch } from './titles.ts'
 // notes that the titles show. The status line counts the notes that the
 // full text can still show: the full text gives the address of a result with
 // its excerpt only, so a note of the titles leaves the count when a step
-// loads it, and a step that changes the count says "Now N notes…" (issue 100). A
+// loads it, and a step that changes the count shows the whole line again and
+// says only "Now N notes…" (issue 100). A
 // late answer of an older query is dropped.
 // While a new query loads, the old full-text results are marked as old; a
 // failure clears them. "More results" adds one step at a time, also when the
@@ -21,8 +22,11 @@ export interface SearchView {
     clearText(): void
     /** True while the shown full-text results belong to an older query. */
     textPending(pending: boolean): void
-    /** The message of the live region. */
-    say(message: string): void
+    /**
+     * The status line, and what the live region says: the line itself, or a
+     * shorter `announcement` when only a part of the line changed.
+     */
+    say(message: string, announcement?: string): void
     /** Writes the query into the address of the page. */
     setQuery(query: string): void
 }
@@ -141,7 +145,7 @@ export function createSession(
     const textCount = (): number =>
         text === undefined ? 0 : Math.max(0, text.results.total - text.left.size)
 
-    const summary = (): void => {
+    const summary = (announcement?: string): void => {
         const total = textCount()
         if (titleCount === 0 && total === 0) {
             view.say('No note matches.')
@@ -150,7 +154,7 @@ export function createSession(
         const parts = []
         if (titleCount > 0) parts.push(counted(titleCount, 'title', 'titles'))
         parts.push(`${counted(total, 'note', 'notes')} with these words in the text`)
-        view.say(parts.join(', '))
+        view.say(parts.join(', '), announcement)
     }
 
     const fullText = async (query: string, mine: number, titles: Promise<void>): Promise<void> => {
@@ -218,10 +222,11 @@ export function createSession(
             try {
                 await step(true)
                 // A step that found a note of the titles changes the count: the
-                // line says only the new count, as the focus moves to the new results.
+                // line stays whole, and the live region says only the new count,
+                // as the focus moves to the new results.
                 const after = textCount()
                 if (mine === turn && after !== before) {
-                    view.say(`Now ${counted(after, 'note', 'notes')} with these words in the text`)
+                    summary(`Now ${counted(after, 'note', 'notes')} with these words in the text`)
                 }
             } catch {
                 // The shown results stay, and so does the button.

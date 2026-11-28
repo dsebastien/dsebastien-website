@@ -90,6 +90,7 @@ export function startSearchPage(document: Document): void {
     const form = part(document, '[data-search-form]', window.HTMLFormElement)
     const input = part(document, '[data-search-input]', window.HTMLInputElement)
     const status = part(document, '[data-search-status]', window.HTMLElement)
+    const announcer = part(document, '[data-search-announce]', window.HTMLElement)
     const titlesBlock = part(document, '[data-search-titles]', window.HTMLElement)
     const titlesList = part(titlesBlock, '[data-search-list]', window.HTMLElement)
     const textBlock = part(document, '[data-search-text]', window.HTMLElement)
@@ -130,8 +131,10 @@ export function startSearchPage(document: Document): void {
             textBlock.setAttribute('aria-busy', String(pending))
             if (pending) more.hidden = true
         },
-        say(message) {
+        say(message, announcement = message) {
+            // The line shows; the hidden live region speaks, one time per change.
             status.textContent = message
+            announcer.textContent = announcement
         },
         setQuery(query) {
             const url = new URL(document.location.href)

@@ -10,7 +10,8 @@ const PAGE = `
     <form data-search-form>
         <input type="search" name="q" data-search-input data-titles="/nowhere/titles" data-full-text="/nowhere/">
     </form>
-    <p aria-live="polite" data-search-status></p>
+    <p data-search-status></p>
+    <p aria-live="polite" data-search-announce></p>
     <section data-search-titles hidden><ol data-search-list></ol></section>
     <section data-search-text hidden>
         <span data-search-updating hidden></span>
