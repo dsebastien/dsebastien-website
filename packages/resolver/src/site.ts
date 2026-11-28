@@ -12,14 +12,31 @@ import { canonicalPath, folderPath, markdownPath } from './url.ts'
 // aliases, and the resolver map. The build uses it, so the resolver map and
 // the pages of the build come from one place.
 
+/**
+ * A path that a note had before a move, as the manifest holds it: with the
+ * time of the move that left it (decision of the author R82), or a text alone,
+ * which a content store written before R82 holds, with no time.
+ */
+export type FormerPath = string | { readonly path: string; readonly time: string }
+
+/** The vault path of a former path. */
+export function formerPathOf(former: FormerPath): string {
+    return typeof former === 'string' ? former : former.path
+}
+
 /** A published note, as the manifest names it. */
 export interface SiteNote {
     /** The vault path of the note. */
     readonly path: string
     /** The aliases of the note that get a URL. */
     readonly aliases: readonly string[]
-    /** The vault paths that the note had before it moved (decision R66). */
-    readonly formerPaths?: readonly string[]
+    /** The vault paths that the note had before it moved (decision R66), with the time of each move (R82). */
+    readonly formerPaths?: readonly FormerPath[]
+}
+
+/** The vault paths of the former paths of a note. */
+function formerPathsOf(note: SiteNote): string[] {
+    return (note.formerPaths ?? []).map(formerPathOf)
 }
 
 /** A folder of the site: a folder of the vault path of a published note. */
@@ -162,25 +179,73 @@ function namesAndAliases(notes: readonly SiteNote[]): {
     }
 }
 
-/** The former texts (the old vault paths without `.md`) and the former file names of the notes, with the vault paths of their notes. */
+/**
+ * The note that held a former text last (decision of the author R82): the
+ * note whose former path with that text has the latest time. A former path
+ * with no time loses to one with a time. `undefined` when no former path has a
+ * time, or when two notes have the latest time.
+ */
+function lastOwnerOf(
+    holders: readonly { path: string; time: string | undefined }[]
+): string | undefined {
+    // The latest time of each note. A time is ASCII in one form, so its text
+    // order is its time order.
+    const latest = new Map<string, string>()
+    let top: string | undefined
+    for (const { path, time } of holders) {
+        if (time === undefined) {
+            continue
+        }
+        const before = latest.get(path)
+        if (before === undefined || time > before) {
+            latest.set(path, time)
+        }
+        if (top === undefined || time > top) {
+            top = time
+        }
+    }
+    const owners = [...latest].filter(([, time]) => time === top)
+    return owners.length === 1 ? owners[0]?.[0] : undefined
+}
+
+/**
+ * The former texts (the old vault paths without `.md`) and the former file
+ * names of the notes, with the vault paths of their notes. A former text of
+ * several notes names only the note that held it last, when there is one
+ * (R82); a former file name names every note.
+ */
 function formersOf(notes: readonly SiteNote[]): {
     texts: Map<string, string[]>
     names: Map<string, string[]>
 } {
     const pairs = notes.flatMap((note) =>
-        (note.formerPaths ?? []).map((former): [string, string] => [former, note.path])
+        formerPathsOf(note).map((former): [string, string] => [former, note.path])
     )
     const unique = (map: Map<string, string[]>): Map<string, string[]> =>
         new Map([...map].map(([key, paths]) => [key, sorted(paths)]))
+    const holders = new Map<string, { path: string; time: string | undefined }[]>()
+    for (const note of notes) {
+        for (const former of note.formerPaths ?? []) {
+            const key = foldedForm(formerPathOf(former).slice(0, -'.md'.length))
+            holders.set(key, [
+                ...(holders.get(key) ?? []),
+                { path: note.path, time: typeof former === 'string' ? undefined : former.time }
+            ])
+        }
+    }
+    const texts = unique(
+        byFolded(
+            pairs.map(([former, path]): [string, string] => [former.slice(0, -'.md'.length), path])
+        )
+    )
+    for (const [key, paths] of texts) {
+        const owner = paths.length > 1 ? lastOwnerOf(holders.get(key) ?? []) : undefined
+        if (owner !== undefined) {
+            texts.set(key, [owner])
+        }
+    }
     return {
-        texts: unique(
-            byFolded(
-                pairs.map(([former, path]): [string, string] => [
-                    former.slice(0, -'.md'.length),
-                    path
-                ])
-            )
-        ),
+        texts,
         names: unique(
             byFolded(
                 pairs.map(([former, path]): [string, string] => [
@@ -314,7 +379,7 @@ function formerFoldersOf(
     const targets = new Map<string, Set<string>>()
     for (const note of notes) {
         const now = parentOf(note.path)
-        for (const former of note.formerPaths ?? []) {
+        for (const former of formerPathsOf(note)) {
             const before = parentOf(former)
             if (before === undefined) {
                 continue
@@ -362,7 +427,7 @@ function formerMapOf(
     // A former Markdown path of one note only: of two notes, it names none.
     const markdown = new Map<string, string[]>()
     for (const note of notes) {
-        for (const former of note.formerPaths ?? []) {
+        for (const former of formerPathsOf(note)) {
             const path = markdownPath(former)
             if (takenMarkdown.has(path)) {
                 continue
@@ -396,7 +461,7 @@ function goneMapOf(removed: readonly SiteNote[], file: string): GoneMap {
     const { names, aliases } = namesAndAliases(ordered)
     // The former paths of an unpublished note are gone too (R64, R66).
     const formers = formersOf(ordered)
-    const every = ordered.flatMap((note) => [note.path, ...(note.formerPaths ?? [])])
+    const every = ordered.flatMap((note) => [note.path, ...formerPathsOf(note)])
     const paths = every.flatMap((path) => [canonicalPath(path), markdownPath(path)])
     const folded = [
         ...ordered.map((note) => foldedForm(note.path.slice(0, -'.md'.length))),

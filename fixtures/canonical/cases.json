@@ -454,6 +454,55 @@
             "valid": false
         }
     ],
+    "formerPaths": {
+        "about": "The list formerPaths of a manifest entry, as it is written in the file (decision R82): each item is a text, a former path that a content store written before R82 holds, with no time, or an object with exactly a text path and a text time.",
+        "cases": [
+            {
+                "text": "[]",
+                "valid": true
+            },
+            {
+                "text": "[\"Old.md\"]",
+                "valid": true
+            },
+            {
+                "text": "[{\"path\":\"Old.md\",\"time\":\"2031-04-02T08:00:00Z\"}]",
+                "valid": true
+            },
+            {
+                "text": "[\"Older.md\",{\"path\":\"Old.md\",\"time\":\"2031-04-02T08:00:00Z\"}]",
+                "valid": true
+            },
+            {
+                "text": "[{\"path\":\"Old.md\"}]",
+                "valid": false
+            },
+            {
+                "text": "[{\"time\":\"2031-04-02T08:00:00Z\"}]",
+                "valid": false
+            },
+            {
+                "text": "[{\"path\":\"Old.md\",\"time\":\"2031-04-02T08:00:00Z\",\"kind\":\"note\"}]",
+                "valid": false
+            },
+            {
+                "text": "[{\"path\":3,\"time\":\"2031-04-02T08:00:00Z\"}]",
+                "valid": false
+            },
+            {
+                "text": "[{\"path\":\"Old.md\",\"time\":3}]",
+                "valid": false
+            },
+            {
+                "text": "[3]",
+                "valid": false
+            },
+            {
+                "text": "\"Old.md\"",
+                "valid": false
+            }
+        ]
+    },
     "cleaningVersions": {
         "about": "The number of cleaningVersion in a manifest entry, as it is written in the file. A whole number from 0 that both languages hold exactly: in TypeScript every number is a floating point number, and Rust reads it in the same way.",
         "cases": [

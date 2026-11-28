@@ -943,14 +943,23 @@ export function applyMoves(
         if (to === from) {
             manifest.set(from, entry)
         } else {
-            manifest.set(to, movedEntry(entry, to))
+            // Every entry that moved has the time of its last line.
+            manifest.set(to, movedEntry(entry, to, folded.times.get(from) ?? ''))
             moves.push({ from, to })
         }
     }
     return { manifest, moves, underGuard, leftBehind, movedElsewhere, displaced, warnings }
 }
 
-/** The entry of a note that moves: its new path, and its former paths (rule 4 of the moves). */
-export function movedEntry(entry: ManifestEntry, to: string): ManifestEntry {
-    return { ...entry, path: to, formerPaths: formerPathsAfter(entry.formerPaths, entry.path, to) }
+/**
+ * The entry of a note that moves at `time`: its new path, and its former paths
+ * (rule 4 of the moves). The time is the time of the last line of the move, or
+ * the time of the run for a pairing (decision R82).
+ */
+export function movedEntry(entry: ManifestEntry, to: string, time: string): ManifestEntry {
+    return {
+        ...entry,
+        path: to,
+        formerPaths: formerPathsAfter(entry.formerPaths, entry.path, to, time)
+    }
 }

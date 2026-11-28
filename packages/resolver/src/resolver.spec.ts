@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { foldedForm, resolve, type Resolution, type ResolverMap } from './resolver.ts'
-import { resolverMapOf, type SiteFiles } from './site.ts'
+import { resolverMapOf, type FormerPath, type SiteFiles } from './site.ts'
 import { variantKey, variantPath } from './variants.ts'
 
 // The resolver (MOD-05 of the spec): a pure function that turns a requested
@@ -389,7 +389,7 @@ describe('resolver of former paths', () => {
         folder: (path) => `folder:${path}`,
         choice: (paths) => `choice:${paths.join('|')}`
     }
-    type Note = { path: string; aliases: string[]; formerPaths?: string[] }
+    type Note = { path: string; aliases: string[]; formerPaths?: FormerPath[] }
     // Through JSON, as the build writes the map and the server reads it.
     const mapOf = (notes: Note[], removed: Note[] = []): ResolverMap =>
         JSON.parse(JSON.stringify(resolverMapOf(notes, files, {}, {}, removed))) as ResolverMap
@@ -500,6 +500,75 @@ describe('resolver of former paths', () => {
             kind: 'not-found',
             suggestions: [],
             file: '404.html'
+        })
+    })
+
+    // Decision R82 (point 9 of issue 105): each former path has the time of
+    // the move that left it, and a former path of several notes leads to the
+    // note that held it last.
+    test('a former path of two notes leads to the note that left it last', () => {
+        const map = mapOf([
+            {
+                path: 'Garden/One.md',
+                aliases: [],
+                formerPaths: [{ path: 'Shed/Old.md', time: '2031-05-04T08:00:00Z' }]
+            },
+            {
+                path: 'Kitchen/Two.md',
+                aliases: [],
+                formerPaths: [{ path: 'Shed/Old.md', time: '2031-05-02T08:00:00Z' }]
+            }
+        ])
+        expect(resolve('/Shed/Old', map)).toEqual(moved('/Garden/One'))
+        expect(resolve('/shed/OLD', map)).toEqual(moved('/Garden/One'))
+        // The former file name and the former Markdown path keep their rules.
+        expect(resolve('/Old', map)).toEqual({
+            kind: 'not-found',
+            suggestions: ['/Garden/One', '/Kitchen/Two'],
+            file: 'choice:Garden/One.md|Kitchen/Two.md'
+        })
+        expect(resolve('/-/md/Shed/Old.md', map)).toEqual({
+            kind: 'not-found',
+            suggestions: [],
+            file: '404.html'
+        })
+    })
+
+    test('a former path with no time loses to a former path with a time', () => {
+        const map = mapOf([
+            {
+                path: 'Garden/One.md',
+                aliases: [],
+                formerPaths: [{ path: 'Shed/old.md', time: '2031-05-02T08:00:00Z' }]
+            },
+            { path: 'Kitchen/Two.md', aliases: [], formerPaths: ['Shed/Old.md'] },
+            { path: 'Pantry/Three.md', aliases: [], formerPaths: ['Shed/OLD.md'] }
+        ])
+        expect(resolve('/Shed/Old', map)).toEqual(moved('/Garden/One'))
+    })
+
+    test('a former path of two notes with the same latest time gives the "not found" page with every note', () => {
+        const map = mapOf([
+            {
+                path: 'Garden/One.md',
+                aliases: [],
+                formerPaths: [{ path: 'Shed/Old.md', time: '2031-05-04T08:00:00Z' }]
+            },
+            {
+                path: 'Kitchen/Two.md',
+                aliases: [],
+                formerPaths: [{ path: 'Shed/Old.md', time: '2031-05-04T08:00:00Z' }]
+            },
+            {
+                path: 'Pantry/Three.md',
+                aliases: [],
+                formerPaths: [{ path: 'Shed/Old.md', time: '2031-05-01T08:00:00Z' }]
+            }
+        ])
+        expect(resolve('/Shed/Old', map)).toEqual({
+            kind: 'not-found',
+            suggestions: ['/Garden/One', '/Kitchen/Two', '/Pantry/Three'],
+            file: 'choice:Garden/One.md|Kitchen/Two.md|Pantry/Three.md'
         })
     })
 

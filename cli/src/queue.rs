@@ -1305,7 +1305,9 @@ fn apply_moves(
         if to == from {
             manifest.insert(from, entry.clone());
         } else {
-            manifest.insert(to.clone(), moved_entry(entry, &to));
+            // Every entry that moved has the time of its last line.
+            let time = times.get(&from).map_or("", String::as_str);
+            manifest.insert(to.clone(), moved_entry(entry, &to, time));
             moves.push(Move { from, to });
         }
     }
@@ -1365,11 +1367,12 @@ fn revert_collisions(
     }
 }
 
-/// The entry of a note that moves: its new path, and its former paths (rule
-/// 4 of the moves).
-pub fn moved_entry(entry: &ManifestEntry, to: &str) -> ManifestEntry {
+/// The entry of a note that moves at `time`: its new path, and its former
+/// paths (rule 4 of the moves). The time is the time of the last line of the
+/// move, or the time of the run for a pairing (decision R82).
+pub fn moved_entry(entry: &ManifestEntry, to: &str, time: &str) -> ManifestEntry {
     let mut moved = entry.clone();
-    moved.former_paths = former_paths_after(&entry.former_paths, &entry.path, to);
+    moved.former_paths = former_paths_after(&entry.former_paths, &entry.path, to, time);
     to.clone_into(&mut moved.path);
     moved
 }

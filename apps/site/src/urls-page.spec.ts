@@ -154,7 +154,7 @@ describe('site of the URL table', () => {
                 async (file) =>
                     JSON.parse(await readFile(join(folder, file), 'utf8')) as {
                         path: string
-                        formerPaths: string[]
+                        formerPaths: { path: string; time: string }[]
                     }
             )
         )
@@ -166,8 +166,18 @@ describe('site of the URL table', () => {
             )
         ).toEqual(
             Object.fromEntries(
+                // Each with the time of the line of its move (R82).
                 [...table.notes, ...table.removed]
-                    .map((note) => [note.path, note.formerPaths ?? []] as const)
+                    .map(
+                        (note) =>
+                            [
+                                note.path,
+                                (note.formerPaths ?? []).map((path) => ({
+                                    path,
+                                    time: '2031-04-01T09:00:00Z'
+                                }))
+                            ] as const
+                    )
                     .filter(([, formerPaths]) => formerPaths.length > 0)
             )
         )

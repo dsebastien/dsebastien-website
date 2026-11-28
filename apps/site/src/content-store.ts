@@ -5,6 +5,7 @@ import {
     canonicalPath,
     REDIRECT_LIST_FILE,
     redirectListFrom,
+    type FormerPath,
     type RedirectList
 } from '@dsebastien-website/resolver'
 import {
@@ -54,8 +55,8 @@ export interface PublishedNote {
     markdownFile: string
     /** The aliases of the note that get a URL. */
     aliases: string[]
-    /** The vault paths that the note had before it moved: each answers 301 to the note (URL-21, R66). */
-    formerPaths: string[]
+    /** The vault paths that the note had before it moved: each answers 301 to the note (URL-21, R66), with the time of its move (R82). */
+    formerPaths: FormerPath[]
     /** The title of the page. A first version: the file name of the note. */
     title: string
     /** The time of the first publication of the note, in UTC (`2031-03-14T07:30:00Z`). */
@@ -160,11 +161,36 @@ function isTime(value: unknown): value is string {
 }
 
 /**
+ * True when the value is a former path of the manifest: a vault path of a note
+ * with the time of its move (R82), or a text alone, with no time (an entry
+ * written before R82).
+ */
+function isFormerPath(value: unknown): value is FormerPath {
+    if (typeof value === 'string') {
+        return isFormerPathText(value)
+    }
+    return (
+        isRecord(value) &&
+        Object.keys(value).length === 2 &&
+        typeof value['path'] === 'string' &&
+        isFormerPathText(value['path']) &&
+        isTime(value['time'])
+    )
+}
+
+/** A copy of a list of former paths. */
+function formerPathsCopy(formers: readonly FormerPath[]): FormerPath[] {
+    return formers.map((former) =>
+        typeof former === 'string' ? former : { path: former.path, time: former.time }
+    )
+}
+
+/**
  * True when the text is the vault path of a note: relative, with `/`, no empty
  * part, no `.` and no `..` part, and the end `.md`. A former path becomes an
  * address of the site.
  */
-function isFormerPath(value: string): boolean {
+function isFormerPathText(value: string): boolean {
     const parts = value.split('/')
     return (
         value.endsWith('.md') &&
@@ -199,7 +225,7 @@ export interface RemovedNote {
     /** The aliases of the note that had a URL. */
     readonly aliases: readonly string[]
     /** The vault paths that the note had before it moved: they are gone too (R64, R66). */
-    readonly formerPaths: readonly string[]
+    readonly formerPaths: readonly FormerPath[]
 }
 
 /**
@@ -292,7 +318,7 @@ function manifestOf(files: readonly { readonly file: string; readonly text: stri
             typeof entry['path'] !== 'string' ||
             !isLinkList(entry['links']) ||
             !isTextList(entry['aliases']) ||
-            !isTextList(entry['formerPaths']) ||
+            !Array.isArray(entry['formerPaths']) ||
             !entry['formerPaths'].every(isFormerPath) ||
             !isTime(entry['firstPublished']) ||
             !isTime(entry['lastPublished']) ||
@@ -312,7 +338,7 @@ function manifestOf(files: readonly { readonly file: string; readonly text: stri
             removed.set(vaultPath, {
                 vaultPath,
                 aliases: [...entry['aliases']],
-                formerPaths: [...entry['formerPaths']]
+                formerPaths: formerPathsCopy(entry['formerPaths'])
             })
             continue
         }
@@ -325,7 +351,7 @@ function manifestOf(files: readonly { readonly file: string; readonly text: stri
             file: `-/note/${entry['id']}.html`,
             markdownFile: `-/md/${entry['id']}.md`,
             aliases: [...entry['aliases']],
-            formerPaths: [...entry['formerPaths']],
+            formerPaths: formerPathsCopy(entry['formerPaths']),
             title: (vaultPath.split('/').at(-1) ?? vaultPath).replace(/\.md$/, ''),
             firstPublished: entry['firstPublished'],
             lastPublished: entry['lastPublished'],

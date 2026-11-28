@@ -50,7 +50,9 @@ export {
 export {
     choicesOf,
     foldersOf,
+    formerPathOf,
     resolverMapOf,
+    type FormerPath,
     type SiteFiles,
     type SiteFolder,
     type SiteNote

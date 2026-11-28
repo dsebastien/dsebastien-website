@@ -15,6 +15,7 @@ use serde_json::Value;
 use crate::configuration::is_vault_path;
 use crate::hash::{bytes_hash, content_hash};
 use crate::json::parse_json;
+use crate::manifest::FormerPath;
 
 /// The file of the content store that counts the lines of each journal that
 /// the publications read.
@@ -557,16 +558,25 @@ pub fn fold_moves(
     }
 }
 
-/// The former paths of an entry that moves from `from` to `to`: without
-/// `to`, with `from` at the end.
-pub fn former_paths_after(former_paths: &[String], from: &str, to: &str) -> Vec<String> {
-    let mut kept: Vec<String> = former_paths
+/// The former paths of an entry that moves from `from` to `to` at `time`:
+/// without `to`, with `from` and the time at the end (decision R82). A kept
+/// item stays as it is, also a text with no time.
+pub fn former_paths_after(
+    former_paths: &[FormerPath],
+    from: &str,
+    to: &str,
+    time: &str,
+) -> Vec<FormerPath> {
+    let mut kept: Vec<FormerPath> = former_paths
         .iter()
-        .filter(|path| *path != to)
+        .filter(|former| former.path() != to)
         .cloned()
         .collect();
-    if !kept.iter().any(|path| path == from) {
-        kept.push(from.to_owned());
+    if !kept.iter().any(|former| former.path() == from) {
+        kept.push(FormerPath::Timed {
+            path: from.to_owned(),
+            time: time.to_owned(),
+        });
     }
     kept
 }

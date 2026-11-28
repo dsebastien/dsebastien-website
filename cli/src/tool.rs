@@ -1878,6 +1878,7 @@ fn apply_store_moves(
     journal: &mut Backup,
     plan: &PublicationPlan,
     scan: &Scan,
+    time: &str,
     manifest: &mut BTreeMap<String, ManifestEntry>,
     paths: &mut Vec<String>,
 ) -> Result<BTreeSet<String>, String> {
@@ -1902,7 +1903,7 @@ fn apply_store_moves(
             } else {
                 manifest
                     .remove(&one.from)
-                    .map(|before| moved_entry(&before, &one.to))
+                    .map(|before| moved_entry(&before, &one.to, time))
             }
             .ok_or("the note has no manifest entry")?;
             manifest.insert(one.to.clone(), entry.clone());
@@ -2061,7 +2062,15 @@ fn write_all(
     // move. Then the forced removals.
     let mut paths = Vec::new();
     let mut manifest = scan.manifest.clone();
-    let targets = apply_store_moves(device, journal, plan, scan, &mut manifest, &mut paths)?;
+    let targets = apply_store_moves(
+        device,
+        journal,
+        plan,
+        scan,
+        run.time,
+        &mut manifest,
+        &mut paths,
+    )?;
     paths.extend(remove_displaced(journal, scan)?);
     paths.extend(write_released(journal, scan)?);
     paths.extend(remove_forced(journal, plan, &manifest)?);

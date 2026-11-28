@@ -1040,7 +1040,7 @@ describe('parity of renames', () => {
         expect(store[`notes/${POND}`]).toBeUndefined()
         const entries = Object.entries(store)
             .filter(([name]) => name.startsWith('manifest/'))
-            .map(([, text]) => JSON.parse(text) as { path: string; formerPaths: string[] })
+            .map(([, text]) => JSON.parse(text) as { path: string; formerPaths: unknown[] })
         expect(
             Object.fromEntries(
                 entries
@@ -1048,9 +1048,11 @@ describe('parity of renames', () => {
                     .map((entry) => [entry.path, entry.formerPaths])
             )
         ).toEqual({
-            '10 Garden/Herbs/Thyme.md': [THYME],
-            'Home/Welcome.md': [WELCOME],
-            'Water/Pond.md': [POND]
+            // The time of the line of a move, and the time of the run of a
+            // pairing (R82).
+            '10 Garden/Herbs/Thyme.md': [{ path: THYME, time: LATER }],
+            'Home/Welcome.md': [{ path: WELCOME, time: LATEST }],
+            'Water/Pond.md': [{ path: POND, time: LATER }]
         })
         expect(entries.map((entry) => entry.path)).not.toContain(TRELLIS)
         expect(store['renames.json']).toBeDefined()

@@ -230,7 +230,7 @@ describe('the attachments in the history of the copy', () => {
         path: string,
         keys: string[],
         state = 'published',
-        formerPaths: string[] = []
+        formerPaths: (string | { path: string; time: string })[] = []
     ): string {
         return `${JSON.stringify({
             aliases: [],
@@ -346,6 +346,24 @@ describe('the attachments in the history of the copy', () => {
             [`manifest/${C}.json`]: undefined
         })
         expect(await allKeys(copy)).toEqual([key('3'), key('4')])
+    })
+
+    // A former path has the time of its move (R82); an older one is a text.
+    test('reads a former path with the time of its move as the path of the move', async () => {
+        await using stores = await makeTestStores()
+        const copy = await makeContentStoreCopy(stores)
+        await change(copy, 'Publish: 1 new, 0 updated, 0 removed, 0 forced, 0 skipped, 0 moved', {
+            [`manifest/${A}.json`]: entry(A, 'A.md', [key('1')]),
+            [`manifest/${B}.json`]: entry(B, 'B.md', [key('2')], 'unpublished')
+        })
+        await change(copy, 'Publish: 0 new, 0 updated, 0 removed, 0 forced, 0 skipped, 1 moved', {
+            [`manifest/${A}.json`]: entry(A, 'B.md', [key('1')], 'published', [
+                'Older.md',
+                { path: 'A.md', time: '2031-01-02T08:00:00Z' }
+            ]),
+            [`manifest/${B}.json`]: undefined
+        })
+        expect(await allKeys(copy)).toEqual([])
     })
 
     test('gives no key for a copy with no history', async () => {

@@ -1,6 +1,8 @@
 import { isVaultPath } from './configuration.ts'
 import { bytesHash, contentHash } from './hash.ts'
 import { parseJson } from './json.ts'
+import { formerPathOf } from './manifest.ts'
+import type { FormerPath } from './manifest.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import type { RenameJournals } from './ports.ts'
 
@@ -403,14 +405,21 @@ export function foldMoves(
     return { positions, times, warnings }
 }
 
-/** The former paths of an entry that moves from `from` to `to`: without `to`, with `from` at the end. */
+/**
+ * The former paths of an entry that moves from `from` to `to` at `time`:
+ * without `to`, with `from` and the time at the end (decision R82). A kept
+ * item stays as it is, also a text with no time.
+ */
 export function formerPathsAfter(
-    formerPaths: readonly string[],
+    formerPaths: readonly FormerPath[],
     from: string,
-    to: string
-): string[] {
-    const kept = formerPaths.filter((path) => path !== to)
-    return kept.includes(from) ? kept : [...kept, from]
+    to: string,
+    time: string
+): FormerPath[] {
+    const kept = formerPaths.filter((former) => formerPathOf(former) !== to)
+    return kept.some((former) => formerPathOf(former) === from)
+        ? kept
+        : [...kept, { path: from, time }]
 }
 
 /**

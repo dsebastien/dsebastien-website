@@ -37,7 +37,7 @@ pub struct ManifestEntry {
     pub first_published: String,
     /// The paths that the note had before, in the order in which they were
     /// added.
-    pub former_paths: Vec<String>,
+    pub former_paths: Vec<FormerPath>,
     /// The identity of the note. Nothing writes it into the note.
     pub id: String,
     /// The time of the run of the last publication.
@@ -61,6 +61,50 @@ pub struct ManifestEntry {
     /// (decision R67). An entry with no held update has no such key.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub update_held: bool,
+}
+
+/// A path that a note had before a move. The time is the time of the move
+/// that left it (decision of the author R82), so the site sends a former path
+/// of several notes to the note that held it last.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum FormerPath {
+    /// A former path that a content store written before R82 holds: a text
+    /// alone, with no time.
+    Text(String),
+    /// A former path with the time of the move that left it.
+    Timed { path: String, time: String },
+}
+
+impl FormerPath {
+    /// The vault path of the former path.
+    pub fn path(&self) -> &str {
+        match self {
+            Self::Text(path) | Self::Timed { path, .. } => path,
+        }
+    }
+}
+
+/// Reads the list `formerPaths` of an entry: each item is a text, or exactly
+/// a text `path` and a text `time`.
+fn former_path_list(value: &Value) -> Option<Vec<FormerPath>> {
+    value
+        .as_array()?
+        .iter()
+        .map(|item| {
+            if let Some(path) = item.as_str() {
+                return Some(FormerPath::Text(path.to_owned()));
+            }
+            let fields = item.as_object()?;
+            if fields.len() != 2 {
+                return None;
+            }
+            Some(FormerPath::Timed {
+                path: fields.get("path")?.as_str()?.to_owned(),
+                time: fields.get("time")?.as_str()?.to_owned(),
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -236,7 +280,7 @@ fn parse_manifest_entry(text: &str) -> Option<ManifestEntry> {
         cleaned_hash: text_of("cleanedHash")?,
         cleaning_version,
         first_published: text_of("firstPublished")?,
-        former_paths: list_of("formerPaths")?,
+        former_paths: former_path_list(entry.get("formerPaths")?)?,
         id: text_of("id").filter(|id| is_note_id(id))?,
         last_published: text_of("lastPublished")?,
         links: link_list(entry.get("links")?)?,
@@ -289,11 +333,11 @@ mod tests {
     /// (`apps/plugin/src/publishing/json.spec.ts`).
     const CASES: &str = include_str!("../../fixtures/canonical/cases.json");
 
-    /// A manifest entry whose `cleaningVersion` is the number as it is
-    /// written.
-    fn entry_with(cleaning_version: &str) -> String {
+    /// A manifest entry whose `cleaningVersion` and `formerPaths` are as they
+    /// are written.
+    fn entry_with(cleaning_version: &str, former_paths: &str) -> String {
         format!(
-            r#"{{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{cleaning_version},"firstPublished":"2031-04-01T08:00:00Z","formerPaths":[],"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"A.md","sourceHash":"sha256:00","state":"published"}}"#
+            r#"{{"aliases":[],"attachments":[],"cleanedHash":"sha256:00","cleaningVersion":{cleaning_version},"firstPublished":"2031-04-01T08:00:00Z","formerPaths":{former_paths},"id":"00000000000000aa","lastPublished":"2031-04-01T08:00:00Z","links":[],"path":"A.md","sourceHash":"sha256:00","state":"published"}}"#
         )
     }
 
@@ -307,7 +351,26 @@ mod tests {
         for case in cases {
             let text = case["text"].as_str().expect("a text");
             assert_eq!(
-                Some(parse_manifest_entry(&entry_with(text)).is_some()),
+                Some(parse_manifest_entry(&entry_with(text, "[]")).is_some()),
+                case["valid"].as_bool(),
+                "{text}"
+            );
+        }
+    }
+
+    /// The former paths of an entry (decision R82): a text with no time, or a
+    /// path with the time of its move.
+    #[test]
+    fn reads_the_former_paths_of_an_entry_as_the_file_states() {
+        let cases: Value = serde_json::from_str(CASES).expect("the cases file is JSON");
+        let cases = cases["formerPaths"]["cases"]
+            .as_array()
+            .expect("the cases file has the list");
+        assert!(cases.len() > 5);
+        for case in cases {
+            let text = case["text"].as_str().expect("a text");
+            assert_eq!(
+                Some(parse_manifest_entry(&entry_with("2", text)).is_some()),
                 case["valid"].as_bool(),
                 "{text}"
             );

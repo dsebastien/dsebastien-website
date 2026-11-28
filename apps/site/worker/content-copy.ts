@@ -503,8 +503,13 @@ function oldEntryOf(text: string | undefined): OldEntry | undefined {
     const textOf = (value: unknown): string | undefined =>
         typeof value === 'string' ? value : undefined
     const former = fields['formerPaths']
+    // A former path is a text (written before R82) or has the time of its move.
     const formerPaths = Array.isArray(former)
-        ? former.filter((item): item is string => typeof item === 'string')
+        ? (former as unknown[]).flatMap((item) => {
+              const path =
+                  typeof item === 'object' && item !== null && 'path' in item ? item.path : item
+              return typeof path === 'string' ? [path] : []
+          })
         : []
     const attachments = fields['attachments'] ?? []
     if (!Array.isArray(attachments)) {

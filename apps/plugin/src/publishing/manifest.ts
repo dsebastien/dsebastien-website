@@ -30,7 +30,7 @@ export type ManifestEntry = {
     /** The time of the run of the first publication. */
     readonly firstPublished: string
     /** The paths that the note had before, in the order in which they were added. */
-    readonly formerPaths: readonly string[]
+    readonly formerPaths: readonly FormerPath[]
     /** The identity of the note. Nothing writes it into the note. */
     readonly id: string
     /** The time of the run of the last publication. */
@@ -59,6 +59,19 @@ export type ManifestEntry = {
 }
 
 /**
+ * A path that a note had before a move. The time is the time of the move that
+ * left it (decision of the author R82), so the site sends a former path of
+ * several notes to the note that held it last. A text alone is a former path
+ * that a content store written before R82 holds: it has no time.
+ */
+export type FormerPath = string | { readonly path: string; readonly time: string }
+
+/** The vault path of a former path. */
+export function formerPathOf(former: FormerPath): string {
+    return typeof former === 'string' ? former : former.path
+}
+
+/**
  * The identity of a note that is published for the first time: 16 digits of
  * the hash of its path and of the time of the run. Both are inputs, so both
  * implementations give the same identity.
@@ -73,6 +86,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isTextList(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+/** True when the value is the list `formerPaths` of an entry: each item is a text, or exactly a text `path` and a text `time`. */
+function isFormerPathList(value: unknown): value is FormerPath[] {
+    return (
+        Array.isArray(value) &&
+        value.every(
+            (item) =>
+                typeof item === 'string' ||
+                (isRecord(item) &&
+                    Object.keys(item).length === 2 &&
+                    typeof item['path'] === 'string' &&
+                    typeof item['time'] === 'string')
+        )
+    )
 }
 
 /** True when the value is the list `aliases` of an entry: texts, each one time, in the order of the code points. */
@@ -145,7 +173,7 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         !Number.isSafeInteger(cleaningVersion) ||
         cleaningVersion < 0 ||
         typeof firstPublished !== 'string' ||
-        !isTextList(formerPaths) ||
+        !isFormerPathList(formerPaths) ||
         typeof id !== 'string' ||
         !NOTE_ID.test(id) ||
         typeof lastPublished !== 'string' ||
@@ -173,7 +201,9 @@ export function parseManifestEntry(text: string, file: string): ManifestEntry {
         cleanedHash,
         cleaningVersion,
         firstPublished,
-        formerPaths,
+        formerPaths: formerPaths.map((item) =>
+            typeof item === 'string' ? item : { path: item.path, time: item.time }
+        ),
         id,
         lastPublished,
         links: links.map((item) => ({ link: item.link, path: item.path })),

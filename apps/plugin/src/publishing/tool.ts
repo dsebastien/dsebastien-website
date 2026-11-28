@@ -1612,7 +1612,7 @@ async function writeAll(
                 entry = manifest.get(move.to)
             } else {
                 const before = manifest.get(move.from)
-                entry = before === undefined ? undefined : movedEntry(before, move.to)
+                entry = before === undefined ? undefined : movedEntry(before, move.to, run.time)
                 manifest.delete(move.from)
             }
             if (entry === undefined) {

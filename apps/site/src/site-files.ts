@@ -11,7 +11,8 @@ import {
     type ResolverMap,
     type SiteFile,
     type SiteFiles,
-    type SiteFolder
+    type SiteFolder,
+    type SiteNote
 } from '@dsebastien-website/resolver'
 import type { PublishedNote, RemovedNote } from './content-store.ts'
 import type { NoteList } from './generated-pages.ts'
@@ -74,9 +75,7 @@ export function rootFilesOf(notes: readonly PublishedNote[]): Record<string, Sit
 }
 
 /** The site notes of the resolver: the vault path and the aliases of each published note. */
-function siteNotesOf(
-    notes: readonly PublishedNote[]
-): { path: string; aliases: string[]; formerPaths: string[] }[] {
+function siteNotesOf(notes: readonly PublishedNote[]): SiteNote[] {
     return notes.map((note) => ({
         path: note.vaultPath,
         aliases: note.aliases,

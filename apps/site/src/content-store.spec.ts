@@ -82,7 +82,10 @@ describe('published notes of a content store', () => {
                 id: 'aaaaaaaaaaaaaaaa',
                 path: '10 Garden/Compost basics.md',
                 aliases: ['Composting'],
-                formerPaths: ['Shed/Compost.md', 'Compost basics.md'],
+                formerPaths: [
+                    'Shed/Compost.md',
+                    { path: 'Compost basics.md', time: '2031-03-10T09:00:00Z' }
+                ],
                 firstPublished: '2031-03-01T07:30:00Z',
                 lastPublished: '2031-03-20T18:05:00Z'
             }
@@ -96,7 +99,11 @@ describe('published notes of a content store', () => {
                 file: '-/note/aaaaaaaaaaaaaaaa.html',
                 markdownFile: '-/md/aaaaaaaaaaaaaaaa.md',
                 aliases: ['Composting'],
-                formerPaths: ['Shed/Compost.md', 'Compost basics.md'],
+                // A former path written before R82 has no time.
+                formerPaths: [
+                    'Shed/Compost.md',
+                    { path: 'Compost basics.md', time: '2031-03-10T09:00:00Z' }
+                ],
                 title: 'Compost basics',
                 firstPublished: '2031-03-01T07:30:00Z',
                 lastPublished: '2031-03-20T18:05:00Z',
@@ -226,7 +233,17 @@ describe('published notes of a content store', () => {
     })
 
     // A former path becomes an address of the site (URL-21, R66).
-    for (const former of [['../Outside.md'], ['Old'], ['a//b.md'], [3], 'Old.md']) {
+    for (const former of [
+        ['../Outside.md'],
+        ['Old'],
+        ['a//b.md'],
+        [3],
+        'Old.md',
+        [{ path: 'Old.md' }],
+        [{ path: 'Old', time: '2031-03-10T09:00:00Z' }],
+        [{ path: 'Old.md', time: 'yesterday' }],
+        [{ path: 'Old.md', time: '2031-03-10T09:00:00Z', by: 'x' }]
+    ]) {
         test(`stop the build when the former paths are ${JSON.stringify(former)}`, async () => {
             await contentStore({
                 'a.json': {

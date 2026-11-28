@@ -109,7 +109,7 @@ The record of the renames and moves of notes that Obsidian reported on one devic
 The change of the path of a published note that a rename journal or a pairing gives. The note keeps its identity, and its old path becomes a former path.
 
 **Former path**:
-A path that a note had before a move. While the note is published, its address leads to the note; when the note is unpublished, its address is gone too.
+A path that a note had before a move, with the time of that move. While the note is published, its address leads to the note, or to the note that had it last when several notes had it; when the note is unpublished, its address is gone too.
 
 **Pairing**:
 A missing published note and a candidate that the author confirms as one note that moved without a line in a rename journal.
