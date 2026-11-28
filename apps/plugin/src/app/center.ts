@@ -62,7 +62,7 @@ import type {
     StoredPlan,
     TakedownReport
 } from '../publishing/tool.ts'
-import { obsidianNamesOf } from './note-paths.ts'
+import { forgetPath, obsidianNamesOf } from './note-paths.ts'
 import type { ObsidianNames } from './note-paths.ts'
 import { canonicalTime } from './rename-journal.ts'
 
@@ -497,6 +497,18 @@ export class PublicationCenter {
         }
         this.#ownWrites.delete(path)
         return false
+    }
+
+    /**
+     * Obsidian renamed or deleted the file at this Obsidian path: the names of
+     * the last check no longer hold it, in both directions (issue 114).
+     */
+    forgetObsidianPath(path: string): void {
+        const { obsidianNames } = this.#state
+        const names = forgetPath(obsidianNames, path)
+        if (names !== obsidianNames && names !== undefined) {
+            this.#set({ obsidianNames: names })
+        }
     }
 
     /** The path of a note in the content store: a note that a move of the queue moved is there at its old path. */

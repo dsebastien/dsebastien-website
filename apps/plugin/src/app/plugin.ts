@@ -28,7 +28,7 @@ import { addressOf, PublicationCenter } from './center.ts'
 import type { FileStat, PropertyWrite } from './center.ts'
 import { editorWrites, saveUnsavedEditors } from './editor-writes.ts'
 import { isolateNames, lockState } from './messages.ts'
-import { noteTarget, vaultPathOf } from './note-paths.ts'
+import { vaultPathOf, writePathOf } from './note-paths.ts'
 import { childProcess, deploySettingsOf, deployFiles } from './deploy.ts'
 import { Measures } from './measures.ts'
 import { LocalMcpServer, MCP_HOST } from './mcp-server.ts'
@@ -197,7 +197,15 @@ export class VaultPublishPlugin extends Plugin {
                     )
                 })
                 if (isNote(file)) {
+                    this.center.forgetObsidianPath(oldPath)
                     this.#noteChanged(this.#eventPath(file.path))
+                }
+            })
+        )
+        this.registerEvent(
+            this.app.vault.on('delete', (file) => {
+                if (isNote(file)) {
+                    this.center.forgetObsidianPath(file.path)
                 }
             })
         )
@@ -377,10 +385,14 @@ export class VaultPublishPlugin extends Plugin {
         return vaultPathOf(path, this.center.state.obsidianNames) ?? path
     }
 
-    /** The file of Obsidian for a vault path of the scan, by its Obsidian path; none for a twin (issue 114). */
+    /**
+     * The file of Obsidian for a write into a note of the scan: none for a
+     * path that Obsidian changes and for a twin, whose write goes through
+     * Node (issue 114).
+     */
     #fileOf(path: string): TFile | null {
-        const target = noteTarget(path, this.center.state.obsidianNames)
-        return target.kind === 'open' ? this.app.vault.getFileByPath(target.path) : null
+        const target = writePathOf(path, this.center.state.obsidianNames)
+        return target === undefined ? null : this.app.vault.getFileByPath(target)
     }
 
     #addCommands(): void {
@@ -426,7 +438,8 @@ export class VaultPublishPlugin extends Plugin {
             id: 'take-down-open-note',
             name: 'Take down the open note now',
             checkCallback: (checking) => {
-                const path = this.#openNote()
+                // On for the Obsidian path of twins too, as before issue 114.
+                const path = this.#openNote() ?? this.#activePath()
                 if (path === undefined) {
                     return false
                 }

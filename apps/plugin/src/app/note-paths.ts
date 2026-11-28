@@ -47,10 +47,14 @@ export function obsidianNamesOf(
 /**
  * The path by which to ask Obsidian for the note at this vault path: its
  * Obsidian path. A twin gets none, with the message for the author: Obsidian
- * could give the other file. Before the first check, no twin is known.
+ * could give the other file. Before the first check, the path is as it is,
+ * as on the way back.
  */
 export function noteTarget(path: string, names: ObsidianNames | undefined): NoteTarget {
-    const twin = names?.twins.get(path)
+    if (names === undefined) {
+        return { kind: 'open', path }
+    }
+    const twin = names.twins.get(path)
     if (twin !== undefined) {
         return {
             kind: 'twin',
@@ -72,4 +76,44 @@ export function vaultPathOf(path: string, names: ObsidianNames | undefined): str
         return undefined
     }
     return names.changed.get(path) ?? path
+}
+
+/**
+ * The path by which a write into a note asks Obsidian for it, or `undefined`
+ * when the write goes through Node: a path that Obsidian changes and a twin
+ * (issue 114 changes no write path). Before the first check, no twin is known.
+ */
+export function writePathOf(path: string, names: ObsidianNames | undefined): string | undefined {
+    return isChangedByObsidian(path) || names?.twins.has(path) === true ? undefined : path
+}
+
+/**
+ * The names without this path, after Obsidian renamed or deleted the file at
+ * it: the path is no longer known as the Obsidian path of a note of the
+ * check, or of twins, in both directions, until the next check. The same
+ * names when they do not hold it.
+ *
+ * @param path the old path of the file, as Obsidian names it
+ */
+export function forgetPath(
+    names: ObsidianNames | undefined,
+    path: string
+): ObsidianNames | undefined {
+    if (names === undefined) {
+        return undefined
+    }
+    const holds = (vault: string): boolean => vault === path || obsidianPath(vault) === path
+    const changed = [...names.changed].filter(
+        ([obsidian, vault]) => obsidian !== path && vault !== path
+    )
+    const twins = [...names.twins].filter(([vault, other]) => !holds(vault) && !holds(other))
+    if (changed.length === names.changed.size && twins.length === names.twins.size) {
+        return names
+    }
+    const kept = new Map(twins)
+    return {
+        twins: kept,
+        changed: new Map(changed),
+        twinPaths: new Set([...kept.keys()].map((vault) => obsidianPath(vault)))
+    }
 }

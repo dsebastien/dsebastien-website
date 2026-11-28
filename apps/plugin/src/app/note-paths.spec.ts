@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { obsidianNamesOf, noteTarget, vaultPathOf } from './note-paths.ts'
+import { forgetPath, noteTarget, obsidianNamesOf, vaultPathOf, writePathOf } from './note-paths.ts'
 import { obsidianTwins } from '../publishing/names.ts'
 
 // The path by which the plugin asks Obsidian for a note of the scan (issue
@@ -72,6 +72,54 @@ describe('the note of the scan for the path of the open file in Obsidian', () =>
 
     test('before the first check, a path is itself', () => {
         expect(vaultPathOf('Plain.md', undefined)).toBe('Plain.md')
+        expect(vaultPathOf('X Y.md', undefined)).toBe('X Y.md')
         expect(noteTarget('X Y.md', undefined)).toEqual({ kind: 'open', path: 'X Y.md' })
+        expect(noteTarget(`X${NBSP}Y.md`, undefined)).toEqual({
+            kind: 'open',
+            path: `X${NBSP}Y.md`
+        })
+    })
+})
+
+describe('the note that a write asks Obsidian for', () => {
+    test('a plain path is that path', () => {
+        expect(writePathOf('Plain.md', namesOf(['Plain.md']))).toBe('Plain.md')
+        expect(writePathOf('Plain.md', undefined)).toBe('Plain.md')
+    })
+
+    test('a path that Obsidian changes and a twin are none: the write goes through Node', () => {
+        const names = namesOf([
+            `X${NBSP}Y.md`,
+            'Folder\\Note.md',
+            DECOMPOSED,
+            'A B.md',
+            `A${NBSP}B.md`
+        ])
+        expect(writePathOf(`X${NBSP}Y.md`, names)).toBeUndefined()
+        expect(writePathOf('Folder\\Note.md', names)).toBeUndefined()
+        expect(writePathOf(DECOMPOSED, names)).toBeUndefined()
+        expect(writePathOf('A B.md', names)).toBeUndefined()
+        expect(writePathOf(`A${NBSP}B.md`, undefined)).toBeUndefined()
+    })
+})
+
+describe('the names after a rename or a deletion in Obsidian', () => {
+    test('the Obsidian path of a note that Obsidian changes is a plain path again', () => {
+        const names = forgetPath(namesOf([`X${NBSP}Y.md`, 'Other\\Note.md']), 'X Y.md')
+        expect(vaultPathOf('X Y.md', names)).toBe('X Y.md')
+        expect(vaultPathOf('Other/Note.md', names)).toBe('Other\\Note.md')
+    })
+
+    test('the Obsidian path of twins is a plain path again, in both directions', () => {
+        const names = forgetPath(namesOf(['X Y.md', `X${NBSP}Y.md`]), 'X Y.md')
+        expect(vaultPathOf('X Y.md', names)).toBe('X Y.md')
+        expect(noteTarget('X Y.md', names)).toEqual({ kind: 'open', path: 'X Y.md' })
+        expect(noteTarget(`X${NBSP}Y.md`, names)).toEqual({ kind: 'open', path: 'X Y.md' })
+    })
+
+    test('a path that the names do not hold gives the same names', () => {
+        const names = namesOf([`X${NBSP}Y.md`])
+        expect(forgetPath(names, 'Plain.md')).toBe(names)
+        expect(forgetPath(undefined, 'Plain.md')).toBeUndefined()
     })
 })

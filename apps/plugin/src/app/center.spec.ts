@@ -146,6 +146,25 @@ describe('the publication center', () => {
         ])
     }, 60_000)
 
+    test('a check keeps the Obsidian paths of the notes: the changed ones and the twins (issue 114)', async () => {
+        await using stores = await makeTestStores()
+        const { vault, center } = await setUp(stores)
+        const alone = '10 Garden/Rain\u00a0barrels.md'
+        const twin = '10 Garden/Seed\u00a0trays.md'
+        for (const path of [alone, twin, '10 Garden/Seed trays.md']) {
+            await writeFile(join(vault, path), '# A note\n')
+        }
+
+        await center.check()
+
+        const names = center.state.obsidianNames
+        expect(names?.changed.get('10 Garden/Rain barrels.md')).toBe(alone)
+        expect(names?.changed.has('10 Garden/Seed trays.md')).toBe(false)
+        expect(names?.twins.get(twin)).toBe('10 Garden/Seed trays.md')
+        expect(names?.twins.get('10 Garden/Seed trays.md')).toBe(twin)
+        expect(names?.twinPaths.has('10 Garden/Seed trays.md')).toBe(true)
+    }, 60_000)
+
     test('publishes the ticked notes, reports them with their addresses, and checks again', async () => {
         await using stores = await makeTestStores()
         const { center } = await setUp(stores)
