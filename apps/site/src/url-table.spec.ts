@@ -205,6 +205,119 @@ describe('the check of a file', () => {
     })
 })
 
+// URL-11: a note has two forms at its canonical URL, which the `Accept`
+// header chooses; both say `Vary: Accept`, and each has a tag of its own.
+describe('the check of the two forms of a note', () => {
+    const KEPT = 'public, max-age=0, must-revalidate'
+    const markdownForm: UrlCase = {
+        name: 'a note asked as Markdown',
+        request: '/Welcome',
+        accept: 'text/markdown',
+        status: 200,
+        file: 'markdown:Welcome.md'
+    }
+    const pageForm: UrlCase = {
+        name: 'a note asked by a browser',
+        request: '/Welcome',
+        status: 200,
+        page: 'note:Welcome.md',
+        canonical: '/Welcome'
+    }
+    const markdown = (headers: Record<string, string>, status = 200): Response =>
+        new Response(status === 304 ? null : '# Welcome\n', {
+            status,
+            headers: {
+                'content-type': 'text/markdown; charset=utf-8',
+                'cache-control': KEPT,
+                ...headers
+            }
+        })
+    const notePage = (headers: Record<string, string>, status = 200): Response =>
+        new Response(
+            status === 304
+                ? null
+                : '<link rel="canonical" href="https://notes.dsebastien.net/Welcome">',
+            { status, headers: { 'content-type': 'text/html; charset=utf-8', ...headers } }
+        )
+
+    /**
+     * A host that gives the form of the note that the `Accept` header asks
+     * for, with the tag of each form, and 304 for the tag of the asked form.
+     */
+    const twoForms =
+        (
+            tags: { markdown: string; html: string },
+            vary: Record<string, string> = { vary: 'Accept' }
+        ): Ask =>
+        (_path, headers = {}) => {
+            const wantsMarkdown = headers['accept'] === 'text/markdown'
+            const tag = wantsMarkdown ? tags.markdown : tags.html
+            const status = headers['if-none-match'] === tag ? 304 : 200
+            const answer = wantsMarkdown ? markdown : notePage
+            return Promise.resolve(answer({ ...vary, etag: tag }, status))
+        }
+
+    test('has no finding for each form, with Vary', async () => {
+        const ask = twoForms({ markdown: '"m"', html: '"h"' })
+        expect(await checkUrlCase(markdownForm, ask, site)).toEqual([])
+        expect(await checkUrlCase(pageForm, ask, site)).toEqual([])
+    })
+
+    test('names a form without Vary', async () => {
+        const ask = twoForms({ markdown: '"m"', html: '"h"' }, {})
+        expect(await checkUrlCase(markdownForm, ask, site)).toEqual([
+            'vary: expected "Accept", got null'
+        ])
+        expect(await checkUrlCase(pageForm, ask, site)).toEqual([
+            'vary: expected "Accept", got null'
+        ])
+    })
+
+    test('names Vary on the Markdown path and on a page of one form', async () => {
+        const path: UrlCase = { ...markdownForm, request: '/-/md/Welcome.md' }
+        const home: UrlCase = {
+            name: 'home',
+            request: '/',
+            status: 200,
+            page: 'home',
+            canonical: '/'
+        }
+        const ask: Ask = (asked) =>
+            Promise.resolve(
+                asked === '/'
+                    ? html('<link rel="canonical" href="https://notes.dsebastien.net/">', 200, {
+                          vary: 'Accept'
+                      })
+                    : markdown({ vary: 'Accept' })
+            )
+        expect(await checkUrlCase(path, ask, site)).toEqual(['vary: expected null, got "Accept"'])
+        expect(await checkUrlCase(home, ask, site)).toEqual(['vary: expected null, got "Accept"'])
+    })
+
+    // URL-18: each form answers 304 to its own tag.
+    test('has no finding for a 304 of each form, with its own tag', async () => {
+        const ask = twoForms({ markdown: 'W/"m"', html: '"h"' })
+        for (const entry of [markdownForm, pageForm]) {
+            expect(await checkUrlCase({ ...entry, notModified: true }, ask, site)).toEqual([])
+        }
+    })
+
+    test('names two forms with one tag, and a form that never answers 304', async () => {
+        const shared = twoForms({ markdown: '"t"', html: '"t"' })
+        expect(await checkUrlCase({ ...markdownForm, notModified: true }, shared, site)).toEqual([
+            'etag: the other form has the same tag "\\"t\\""',
+            'asked with the tag of the other form: expected 200, got 304'
+        ])
+        const always: Ask = (path, headers = {}) => {
+            const { 'if-none-match': _, ...rest } = headers
+            return twoForms({ markdown: '"m"', html: '"h"' })(path, rest)
+        }
+        expect(await checkUrlCase({ ...pageForm, notModified: true }, always, site)).toEqual([
+            'asked with its tag: expected 304 with no body, got 200 with a body'
+        ])
+    })
+})
+
 describe('the check of the whole table', () => {
     const cases: UrlCase[] = [
         { name: 'a page', request: '/Welcome', status: 200, canonical: '/Welcome' },

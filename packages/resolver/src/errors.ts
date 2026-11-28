@@ -111,7 +111,9 @@ function rangeOf(
 }
 
 /**
- * The form of an error answer: `markdown` for a path of the Markdown of a
+ * The form of an answer that has two: of an error answer (NAV-21), and of a
+ * note at its canonical URL (URL-11, its page or its cleaned note). It is
+ * `markdown` for a path of the Markdown of a
  * note, and for a request whose `Accept` header names `text/markdown` (or its
  * older name `text/x-markdown`, used only when `text/markdown` is not named)
  * with a weight above 0 and not below the weight of HTML (`text/html` or

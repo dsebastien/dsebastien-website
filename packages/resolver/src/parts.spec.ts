@@ -237,11 +237,31 @@ describe('the resolver of a map in parts', () => {
         }
     )
 
-    test('a canonical path reads one part', async () => {
+    // The page of a note names its Markdown (URL-11): its part, then the
+    // part of the Markdown path, when that is another part.
+    const notePartsOf = (count: number): number[] => [
+        ...new Set([partOfKey('/Welcome', count), partOfKey('/-/md/Welcome.md', count)])
+    ]
+
+    test('a canonical path reads its part, and the part of the Markdown of its note', async () => {
         const parts = stored(fullMap(), 200)
         const lookup = partedResolver(parts.head, parts.load)
-        expect(await lookup('/Welcome', '')).toEqual({ kind: 'page', file: '-/note/10.html' })
-        expect(parts.reads).toEqual([partOfKey('/Welcome', parts.head.parts)])
+        expect(await lookup('/Welcome', '')).toEqual({
+            kind: 'page',
+            file: '-/note/10.html',
+            markdown: '-/md/10.md'
+        })
+        expect(parts.reads).toEqual(notePartsOf(parts.head.parts))
+    })
+
+    test('a generated page reads one part', async () => {
+        const parts = stored(fullMap(), 200)
+        const lookup = partedResolver(parts.head, parts.load)
+        expect(await lookup('/-/backlinks/abc', '')).toEqual({
+            kind: 'page',
+            file: '-/backlinks/abc.html'
+        })
+        expect(parts.reads).toEqual([partOfKey('/-/backlinks/abc', parts.head.parts)])
     })
 
     test('a part is read one time while it is kept', async () => {
@@ -249,7 +269,7 @@ describe('the resolver of a map in parts', () => {
         const lookup = partedResolver(parts.head, parts.load)
         await Promise.all([lookup('/Welcome', ''), lookup('/Welcome', '')])
         await lookup('/Welcome', '')
-        expect(parts.reads.length).toBe(1)
+        expect(parts.reads).toEqual(notePartsOf(parts.head.parts))
     })
 
     test('keeps a limited count of parts: the memory does not grow with the site', async () => {

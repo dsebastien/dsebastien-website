@@ -1,5 +1,5 @@
 {
-    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them, and the notes that `removed` lists, which were published and then unpublished (issue 62). A note with `formerPaths` was published at its first former path, then moved by a line of a rename journal (issue 37). Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`, `icon`), the redirect (`location`, `cacheControl`), the suggestions of the not found page (the canonical paths of the notes, sorted by vault path), or the gone page (410). A case with `accept` sends that `Accept` header, and `format` says the form of an error answer: `html`, or `markdown` (the short text for an agent, NAV-21). A page case also states its canonical path; a folder list states none, because it is `noindex` and has no canonical link (R85). A case with `realHost` gives the answer of the edge of a real host, before the Worker runs (R87): `bun run urls check` expects it on a host that is not on this machine, and the tests on the local server and on the Worker expect the answer of the case. The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test. The block `redirects` is the redirect list of the site (issue 44), as the content store holds it in `redirects.json`: its rows lead an old path to a note (301), say that an old path is gone (410), or lead every path under an old folder to one page (301). The build drops a row whose old path a published note, folder or former path has, and a row whose target is not live. A note with `text` is not in the fixture vault: the site of the table writes it into its copy of the vault before the first publication.",
+    "about": "The URL table of the site (issue 43, spec section 10). An invented site: the notes of the fixture vault that `notes` lists, with their aliases as the fixture vault writes them, and the notes that `removed` lists, which were published and then unpublished (issue 62). A note with `formerPaths` was published at its first former path, then moved by a line of a rename journal (issue 37). Each case is a request and its answer: a status, and the page (`home`, `note:<vault path>`, `folder:<vault path of a folder>`), the file (`markdown:<vault path>`, `robots`, `icon`), the redirect (`location`, `cacheControl`), the suggestions of the not found page (the canonical paths of the notes, sorted by vault path), or the gone page (410). A case with `accept` sends that `Accept` header, and `format` says the form of an error answer: `html`, or `markdown` (the short text for an agent, NAV-21). A note case with `accept` gets the form that the header prefers (URL-11): its page, or its cleaned note (`file`: `markdown:<vault path>`) at its canonical URL. The page and the Markdown form of a note say `Vary: Accept`, the other pages and the Markdown path do not. A case with `notModified` also asks again with the tag of its answer and expects 304, and expects a tag of its own for the other form of the note (URL-18). A page case also states its canonical path; a folder list states none, because it is `noindex` and has no canonical link (R85). A case with `realHost` gives the answer of the edge of a real host, before the Worker runs (R87): `bun run urls check` expects it on a host that is not on this machine, and the tests on the local server and on the Worker expect the answer of the case. The same table runs on the resolver as a pure function and against the plain local server, and later against the preview host. Every expected value comes from the spec, with the paths encoded by another tool (Python, `urllib.parse.quote`), never by the code under test. The block `redirects` is the redirect list of the site (issue 44), as the content store holds it in `redirects.json`: its rows lead an old path to a note (301), say that an old path is gone (410), or lead every path under an old folder to one page (301). The build drops a row whose old path a published note, folder or former path has, and a row whose target is not live. A note with `text` is not in the fixture vault: the site of the table writes it into its copy of the vault before the first publication.",
     "notes": [
         {
             "path": "Welcome.md",
@@ -597,6 +597,90 @@
             "status": 200,
             "file": "markdown:Welcome.md",
             "disposition": "attachment; filename=\"Welcome.md\"; filename*=UTF-8''Welcome.md"
+        },
+        {
+            "name": "a note asked as Markdown gets its cleaned note (URL-11)",
+            "request": "/Welcome",
+            "accept": "text/markdown",
+            "status": 200,
+            "file": "markdown:Welcome.md",
+            "notModified": true
+        },
+        {
+            "name": "a note in a folder asked as Markdown gets its cleaned note",
+            "request": "/10+Garden/Compost+basics",
+            "accept": "text/markdown",
+            "status": 200,
+            "file": "markdown:10 Garden/Compost basics.md"
+        },
+        {
+            "name": "a note asked by a browser gets its page, which also varies with Accept",
+            "request": "/Welcome",
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "status": 200,
+            "page": "note:Welcome.md",
+            "canonical": "/Welcome",
+            "notModified": true
+        },
+        {
+            "name": "a note asked with Markdown weighed above HTML gets its cleaned note",
+            "request": "/Welcome",
+            "accept": "text/html;q=0.8, text/markdown;q=0.9",
+            "status": 200,
+            "file": "markdown:Welcome.md"
+        },
+        {
+            "name": "a note asked with Markdown and HTML of one weight gets its cleaned note",
+            "request": "/Welcome",
+            "accept": "text/html, text/markdown",
+            "status": 200,
+            "file": "markdown:Welcome.md"
+        },
+        {
+            "name": "a note asked with HTML weighed above Markdown gets its page",
+            "request": "/Welcome",
+            "accept": "text/markdown;q=0.5, text/html",
+            "status": 200,
+            "page": "note:Welcome.md",
+            "canonical": "/Welcome"
+        },
+        {
+            "name": "a note asked with Markdown refused gets its page",
+            "request": "/Welcome",
+            "accept": "text/markdown;q=0, */*",
+            "status": 200,
+            "page": "note:Welcome.md",
+            "canonical": "/Welcome"
+        },
+        {
+            "name": "a note with a query asked as Markdown gets its cleaned note",
+            "request": "/Welcome?ref=dsebastien.net",
+            "accept": "text/markdown",
+            "status": 200,
+            "file": "markdown:Welcome.md"
+        },
+        {
+            "name": "a variant of a note asked as Markdown stays a redirect",
+            "request": "/welcome",
+            "accept": "text/markdown",
+            "status": 301,
+            "location": "/Welcome",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "the home page asked as Markdown stays HTML, with no Vary",
+            "request": "/",
+            "accept": "text/markdown",
+            "status": 200,
+            "page": "home",
+            "canonical": "/"
+        },
+        {
+            "name": "a folder list asked as Markdown stays HTML, with no Vary",
+            "request": "/10+Garden",
+            "accept": "text/markdown",
+            "status": 200,
+            "page": "folder:10 Garden"
         },
         {
             "name": "no variant under the prefix of the site",

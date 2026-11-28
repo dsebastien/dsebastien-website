@@ -330,6 +330,129 @@ describe('a file of the site that is not a page', () => {
 
 // STORE-08: the record of the deployment says what is live. The deployment
 // writes it after the build, so the resolver map never names it.
+// URL-11: the canonical URL of a note gives the form that the `Accept`
+// header prefers, and says that its answer varies with that header.
+describe('a note on request', () => {
+    const MARKDOWN = { accept: 'text/markdown' }
+    const BROWSER = { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+
+    test('is its cleaned note, as at its Markdown path, for an agent that asks for Markdown', async () => {
+        const plain = await get('/-/md/10+Garden/Compost+basics.md')
+        const response = await get('/10+Garden/Compost+basics', MARKDOWN)
+        expect(response.status).toBe(200)
+        expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+        expect(response.headers.get('vary')).toBe('Accept')
+        expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate')
+        expect(response.headers.get('content-disposition')).toBeNull()
+        for (const header of ['x-robots-tag', 'link', 'content-security-policy']) {
+            expect(response.headers.get(header)).toBe(plain.headers.get(header))
+        }
+        expect(await response.text()).toBe(await plain.text())
+    })
+
+    test('follows the weights of the header, and the header only', async () => {
+        const formOf = async (headers: Record<string, string>): Promise<string | null> =>
+            (await get('/Welcome', headers)).headers.get('content-type')
+        const markdown = 'text/markdown; charset=utf-8'
+        const html = 'text/html; charset=utf-8'
+        expect(await formOf({ accept: 'text/html;q=0.8, text/markdown;q=0.9' })).toBe(markdown)
+        expect(await formOf({ accept: 'text/html, text/markdown' })).toBe(markdown)
+        expect(await formOf({ accept: 'text/markdown;q=0.5, text/html' })).toBe(html)
+        expect(await formOf({ accept: 'text/markdown;q=0, */*' })).toBe(html)
+        expect(await formOf({ 'user-agent': 'GPTBot/1.0', 'accept': '*/*' })).toBe(html)
+    })
+
+    test('is the page of the note for a browser and with no header, which varies too', async () => {
+        for (const headers of [BROWSER, {}]) {
+            const response = await get('/Welcome', headers)
+            expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+            expect(response.headers.get('vary')).toBe('Accept')
+            expect(await response.text()).toBe('file page/Welcome.md.html')
+        }
+    })
+
+    test('keeps the query of the request out of the canonical link of the Markdown form', async () => {
+        const response = await get('/Welcome?ref=letter', MARKDOWN)
+        expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+        expect(response.headers.get('link')).toBe(
+            `<${new URL('/Welcome', SITE_ORIGIN).href}>; rel="canonical"`
+        )
+    })
+
+    // URL-18: each form answers 304 to its own tag, never to the tag of the other form.
+    test('answers 304 in each form, each with a tag of its own', async () => {
+        const page = await get('/Welcome', BROWSER)
+        const markdown = await get('/Welcome', MARKDOWN)
+        const pageTag = page.headers.get('etag') ?? ''
+        const markdownTag = markdown.headers.get('etag') ?? ''
+        expect(pageTag).not.toBe('')
+        expect(markdownTag).not.toBe('')
+        expect(markdownTag).not.toBe(pageTag)
+        for (const [headers, tag] of [
+            [BROWSER, pageTag],
+            [MARKDOWN, markdownTag]
+        ] as const) {
+            const again = await get('/Welcome', { ...headers, 'if-none-match': tag })
+            expect(again.status).toBe(304)
+            expect(again.headers.get('vary')).toBe('Accept')
+            expect(again.headers.get('etag')).toBe(tag)
+            expect(await again.text()).toBe('')
+        }
+        expect((await get('/Welcome', { ...MARKDOWN, 'if-none-match': pageTag })).status).toBe(200)
+        expect((await get('/Welcome', { ...BROWSER, 'if-none-match': markdownTag })).status).toBe(
+            200
+        )
+    })
+
+    test('keeps a weak tag of the host weak in the Markdown form', async () => {
+        const response = await get('/Welcome', MARKDOWN, {
+            file: (name) => Promise.resolve(stored(`file ${name}`, 'W/"abc"'))
+        })
+        const tag = response.headers.get('etag') ?? ''
+        expect(tag.startsWith('W/"')).toBe(true)
+        expect(tag).not.toBe('W/"abc"')
+        const again = await get(
+            '/Welcome',
+            { ...MARKDOWN, 'if-none-match': tag.slice(2) },
+            { file: (name) => Promise.resolve(stored(`file ${name}`, 'W/"abc"')) }
+        )
+        expect(again.status).toBe(304)
+    })
+
+    test('has no Markdown form for a page that is not a note, and no Vary', async () => {
+        for (const path of ['/', '/10+Garden']) {
+            const response = await get(path, MARKDOWN)
+            expect(response.status).toBe(200)
+            expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+            expect(response.headers.get('vary')).toBeNull()
+        }
+    })
+
+    test('keeps a redirect of a variant: the client asks again at its target', async () => {
+        const response = await get('/welcome', MARKDOWN)
+        expect(response.status).toBe(301)
+        expect(response.headers.get('location')).toBe('/Welcome')
+    })
+
+    test('has its size and no byte for a request of the headers only', async () => {
+        const response = await siteHandler(release())(
+            new Request(`${ORIGIN}/Welcome`, { method: 'HEAD', headers: MARKDOWN })
+        )
+        expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+        expect(response.headers.get('content-length')).toBe(String('file -/md/Welcome.md'.length))
+        expect(await response.text()).toBe('')
+    })
+
+    test('answers 500 when the release lacks the Markdown of the note', async () => {
+        const response = await get('/Welcome', MARKDOWN, {
+            file: (name) =>
+                Promise.resolve(name.startsWith('-/md/') ? undefined : stored(`file ${name}`))
+        })
+        expect(response.status).toBe(500)
+        expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+    })
+})
+
 describe('the deployment record', () => {
     test('is the JSON file of the release, never kept', async () => {
         const response = await get('/-/deployment.json')

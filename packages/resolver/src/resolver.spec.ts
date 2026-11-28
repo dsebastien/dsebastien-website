@@ -190,7 +190,8 @@ describe('resolver map with generated pages', () => {
         expect(resolve('/-/backlinks/203d446940c02032/', map).kind).toBe('not-found')
         expect(resolve('/Garden/Rain+barrel', map)).toEqual({
             kind: 'page',
-            file: 'page:Garden/Rain barrel.md'
+            file: 'page:Garden/Rain barrel.md',
+            markdown: 'markdown:Garden/Rain barrel.md'
         })
     })
 
@@ -478,7 +479,8 @@ describe('resolver of former paths', () => {
         // A new note took the old path: it wins.
         expect(resolve('/Shed/Worm+bin', map)).toEqual({
             kind: 'page',
-            file: 'page:Shed/Worm bin.md'
+            file: 'page:Shed/Worm bin.md',
+            markdown: 'markdown:Shed/Worm bin.md'
         })
         // The old path of a note wins over the file name of another note.
         expect(resolve('/Hut', map)).toEqual(moved('/Kitchen/Wormery'))

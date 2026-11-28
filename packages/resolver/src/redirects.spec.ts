@@ -280,7 +280,8 @@ describe('redirect list in the resolver map', () => {
         expect(resolve('/Beds/Thyme+plant', map)).toEqual(REDIRECT('/Garden/Thyme'))
         expect(resolve('/Garden/Thyme', map)).toEqual({
             kind: 'page',
-            file: 'page:Garden/Thyme.md'
+            file: 'page:Garden/Thyme.md',
+            markdown: 'markdown:Garden/Thyme.md'
         })
         // The prefix of a folder that is live again is kept, and counted: it
         // comes after every exact address, so it only leads an old path that

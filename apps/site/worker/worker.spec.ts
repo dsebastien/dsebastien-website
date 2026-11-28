@@ -976,14 +976,19 @@ describe('the resolver map in parts (issue 121)', () => {
         expect(parts.length).toBeGreaterThan(4)
     })
 
-    test('a page reads the head and the one part of its path', async () => {
+    // The page of a note names its Markdown (URL-11): the part of its path,
+    // then the part of its Markdown path when that is another one.
+    test('a page of a note reads the head, the part of its path and the part of its Markdown', async () => {
         const site = host(MANY)
         const response = await site.get('/Welcome')
         expect(response.status).toBe(200)
         const count = parts.length
+        const noteParts = new Set(
+            ['/Welcome', '/-/md/Welcome.md'].map((key) => `/${mapPartFile(partOfKey(key, count))}`)
+        )
         expect(site.files.asked.filter((path) => path.startsWith('/-/resolver-map/'))).toEqual([
             MAP,
-            `/${mapPartFile(partOfKey('/Welcome', count))}`
+            ...noteParts
         ])
     })
 

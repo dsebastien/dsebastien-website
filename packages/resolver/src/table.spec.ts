@@ -78,6 +78,11 @@ function expected(entry: Case): Resolution {
     }
     if (entry.file !== undefined) {
         const [kind = '', path = ''] = entry.file.split(/:(.*)/su)
+        // The Markdown form of a note at its canonical URL (URL-11): the page
+        // of the note, which names its Markdown; the handler chooses the form.
+        if (kind === 'markdown' && !entry.request.startsWith('/-/md/')) {
+            return { kind: 'page', file: FILES.page(path), markdown: FILES.markdown(path) }
+        }
         if (kind === 'icon') {
             return { kind: 'file', file: FILES.icon, type: 'icon' }
         }
@@ -86,9 +91,11 @@ function expected(entry: Case): Resolution {
             : { kind: 'file', file: FILES.robots, type: 'text' }
     }
     const [kind = '', path = ''] = (entry.page ?? '').split(/:(.*)/su)
-    const file =
-        kind === 'note' ? FILES.page(path) : kind === 'folder' ? FILES.folder(path) : FILES.home
-    return { kind: 'page', file }
+    if (kind === 'note') {
+        // The page of a note names the Markdown of the note: it has two forms.
+        return { kind: 'page', file: FILES.page(path), markdown: FILES.markdown(path) }
+    }
+    return { kind: 'page', file: kind === 'folder' ? FILES.folder(path) : FILES.home }
 }
 
 describe('URL table of the site', () => {

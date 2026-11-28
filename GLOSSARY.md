@@ -162,6 +162,10 @@ The check of the parity rule on cases that a seed makes: a small vault, a deny l
 **Canonical URL**:
 The one URL under which a note is served. Every other form redirects to it.
 
+**Markdown form**:
+The cleaned note of a published note as the site gives it as Markdown: at its Markdown path, and at its canonical URL for a request whose `Accept` header prefers Markdown (Markdown on request). A generated page has no Markdown form.
+_Avoid_: raw view, source view
+
 **Original**:
 The URL that a page names to search engines as the one to rank. For a note that also exists on the main site, the original is the post there.
 _Avoid_: canonical URL (that is the address of a note on this site)

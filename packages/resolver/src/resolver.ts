@@ -153,7 +153,12 @@ function keyOf(text: string): string {
 
 /** What a requested path leads to. */
 export type Resolution =
-    | { kind: 'page'; file: string }
+    /**
+     * `markdown`: the file of the Markdown of the note of the page, for the
+     * page of a note only. Its canonical URL then has two forms, which the
+     * `Accept` header chooses (URL-11).
+     */
+    | { kind: 'page'; file: string; markdown?: string }
     | { kind: 'file'; file: string; type: SiteFileType }
     /** `image`: the file of the image of a variant (issue 87, R92), for a storage that lacks the variant. */
     | {
@@ -283,7 +288,13 @@ export function resolve(path: string, map: ResolverMap, query = ''): Resolution 
     requestKeys = new Map()
     const page = own(map.pages, path)
     if (page !== undefined) {
-        return { kind: 'page', file: page }
+        // The page of a note: its Markdown is at `/-/md/<canonical path>.md`.
+        // The home page and the pages under `/-/` are no note.
+        const markdown =
+            path === '/' || path.startsWith(PREFIX) ? undefined : own(map.files, `/-/md${path}.md`)
+        return markdown?.type === 'markdown'
+            ? { kind: 'page', file: page, markdown: markdown.file }
+            : { kind: 'page', file: page }
     }
     const file = own(map.files, path)
     if (file !== undefined) {

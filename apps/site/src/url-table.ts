@@ -33,6 +33,11 @@ export interface UrlCase {
      */
     disposition?: string
     /**
+     * Also asks again with the tag of the answer (304), and checks that the
+     * other form of the note has a tag of its own (URL-11, URL-18).
+     */
+    notModified?: boolean
+    /**
      * The answer of the edge of a real host, before the Worker runs (R87): a
      * check of a real host expects this status and no page of the site. The
      * local server and the Worker in a test give the answer of the case.
@@ -95,6 +100,64 @@ export interface UrlTableSite {
     readonly table: UrlTable
     /** The cleaned note of the content store, by its vault path: the Markdown that the site gives. */
     readonly markdownOf: (path: string) => Promise<string>
+}
+
+/** The prefix of the Markdown path of a note (URL-10). */
+const MARKDOWN_PREFIX = '/-/md/'
+
+/** A tag without the mark of its weak form: two tags are compared weakly (RFC 9110, section 13.1.2). */
+function strongForm(tag: string): string {
+    return tag.startsWith('W/') ? tag.slice(2) : tag
+}
+
+/**
+ * The checks of a conditional request of a note at its canonical URL, in the
+ * form of the case (URL-18): its tag answers 304 with no body and with
+ * `Vary`, and the other form of the note has another tag, which is no tag of
+ * this form.
+ */
+async function notModifiedFindings(
+    entry: UrlCase,
+    ask: Ask,
+    tag: string | null,
+    markdownForm: boolean
+): Promise<string[]> {
+    if (tag === null) {
+        return ['etag: expected a tag, got null']
+    }
+    const findings: string[] = []
+    const accept: Record<string, string> =
+        entry.accept === undefined ? {} : { accept: entry.accept }
+    const again = await ask(entry.request, { ...accept, 'if-none-match': tag })
+    const body = await again.text()
+    if (again.status !== 304 || body !== '') {
+        findings.push(
+            `asked with its tag: expected 304 with no body, got ${String(again.status)}${body === '' ? '' : ' with a body'}`
+        )
+    } else if (again.headers.get('vary') !== 'Accept') {
+        findings.push(
+            `vary of the 304: expected "Accept", got ${JSON.stringify(again.headers.get('vary'))}`
+        )
+    }
+    const other = await ask(entry.request, {
+        accept: markdownForm ? 'text/html' : 'text/markdown'
+    })
+    await other.arrayBuffer()
+    const otherTag = other.headers.get('etag')
+    if (otherTag === null) {
+        return [...findings, 'etag of the other form: expected a tag, got null']
+    }
+    if (strongForm(otherTag) === strongForm(tag)) {
+        findings.push(`etag: the other form has the same tag ${JSON.stringify(otherTag)}`)
+    }
+    const crossed = await ask(entry.request, { ...accept, 'if-none-match': otherTag })
+    await crossed.arrayBuffer()
+    if (crossed.status !== 200) {
+        findings.push(
+            `asked with the tag of the other form: expected 200, got ${String(crossed.status)}`
+        )
+    }
+    return findings
 }
 
 /** The canonical link of a page: `<link rel="canonical" href="...">`. */
@@ -224,6 +287,15 @@ export async function checkUrlCase(
                 entry.disposition === undefined ? 'public, max-age=0, must-revalidate' : 'no-store'
             )
             same('body', body, await site.markdownOf(path))
+            // The Markdown form of a note at its canonical URL follows the
+            // `Accept` header (URL-11); the Markdown path has one form.
+            const canonicalForm = !entry.request.startsWith(MARKDOWN_PREFIX)
+            same('vary', response.headers.get('vary'), canonicalForm ? 'Accept' : null)
+            if (entry.notModified === true) {
+                findings.push(
+                    ...(await notModifiedFindings(entry, ask, response.headers.get('etag'), true))
+                )
+            }
         } else if (kind === 'icon') {
             same('content-type', response.headers.get('content-type'), 'image/x-icon')
             same(
@@ -248,6 +320,17 @@ export async function checkUrlCase(
         canonicalLinkOf(body),
         entry.canonical === undefined ? undefined : `${ORIGIN}${entry.canonical}`
     )
+    // The page of a note has a Markdown form too (URL-11); another page has
+    // one form, whatever the header asks.
+    if (entry.page !== undefined) {
+        const note = entry.page.startsWith('note:')
+        same('vary', response.headers.get('vary'), note ? 'Accept' : null)
+    }
+    if (entry.notModified === true) {
+        findings.push(
+            ...(await notModifiedFindings(entry, ask, response.headers.get('etag'), false))
+        )
+    }
     return findings
 }
 

@@ -606,10 +606,11 @@ describe('plain local server with a broken release', () => {
 
     // The server error page, or its short text for an agent (NAV-20, NAV-21).
     // An agent that asks for the Markdown of an error answer gets the text of
-    // that answer: it needs no page of the release.
+    // that answer: it needs no page of the release. An agent that asks for a
+    // note gets its cleaned note (URL-11), which needs no page either.
     async function expectServerError(
         path: string,
-        agentStatus: 404 | 410 | 500 = 500
+        agentStatus: 404 | 410 | 500 | { note: string } = 500
     ): Promise<void> {
         const response = await get(path)
         expect(response.status, path).toBe(500)
@@ -620,8 +621,13 @@ describe('plain local server with a broken release', () => {
         expect(html, path).toBe(serverErrorPage)
         expect(html, path).toContain('>Server error</h1>')
         const agent = await get(path, { accept: 'text/markdown' })
-        expect(agent.status, path).toBe(agentStatus)
         expect(agent.headers.get('content-type'), path).toBe('text/markdown; charset=utf-8')
+        if (typeof agentStatus === 'object') {
+            expect(agent.status, path).toBe(200)
+            expect(await agent.text(), path).toBe(await built().markdownOf(agentStatus.note))
+            return
+        }
+        expect(agent.status, path).toBe(agentStatus)
         const first = { 404: '# Not found\n', 410: '# Removed\n', 500: '# Server error\n' }
         expect(await agent.text(), path).toStartWith(first[agentStatus])
     }
@@ -647,7 +653,7 @@ describe('plain local server with a broken release', () => {
         for (const file of [page, map.notFound, choice, map.gone.file]) {
             await rm(join(output(), file ?? ''))
         }
-        await expectServerError('/Welcome')
+        await expectServerError('/Welcome', { note: 'Welcome.md' })
         await expectServerError('/Nothing+here', 404)
         await expectServerError(choices?.request ?? '', 404)
         await expectServerError('/10+Garden/Rain+barrel', 410)
@@ -657,7 +663,7 @@ describe('plain local server with a broken release', () => {
     // gives it, and a page that it never had gives a short text.
     test('answers with the server error page that it read at its start', async () => {
         await rm(join(output(), '500.html'))
-        await expectServerError('/Welcome')
+        await expectServerError('/Welcome', { note: 'Welcome.md' })
         const without = await startServer({ dist: output(), port: 0 })
         try {
             const response = await fetch(`${without.url}/Welcome`)

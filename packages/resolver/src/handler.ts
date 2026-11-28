@@ -175,9 +175,22 @@ export interface MarkdownForm {
     /**
      * The `Vary` header, for an answer whose form follows a header of the
      * request (Markdown on request through `Accept`, URL-11). The Markdown
-     * path has one form, so it has none.
+     * path has one form, so it has none. With it, the answer has a tag of its
+     * own (`formTag()`), never the tag of the other form of its URL.
      */
     readonly vary?: string
+}
+
+/**
+ * The tag of the Markdown form of a note at its canonical URL (URL-11,
+ * URL-18): the tag of the file with `-md` at the end of its text, in the
+ * same strong or weak form. The page of the note has the tag of its own
+ * file, so the two forms of one URL never share a tag, also on a host whose
+ * tags are the size and the time of a file. A cache that holds both forms
+ * and asks with both tags gets 304 for the form that the server chose.
+ */
+function formTag(tag: string): string {
+    return `${tag.slice(0, -1)}-md"`
 }
 
 /**
@@ -205,10 +218,12 @@ async function markdownFormResponse(
         // Markdown path as a file to save: no cache keeps a download.
         headers['cache-control'] = 'no-store'
     }
-    if (form.vary !== undefined) {
-        headers['vary'] = form.vary
+    if (form.vary === undefined) {
+        return await siteFileResponse(request, file, FILE_TYPES.markdown, 200, headers)
     }
-    return await siteFileResponse(request, file, FILE_TYPES.markdown, 200, headers)
+    headers['vary'] = form.vary
+    const tagged: StoredFile = file.tag === undefined ? file : { ...file, tag: formTag(file.tag) }
+    return await siteFileResponse(request, tagged, FILE_TYPES.markdown, 200, headers)
 }
 
 /**
@@ -339,6 +354,12 @@ async function attachmentResponse(
  * the `Accept` header (NAV-21, decision R64).
  */
 const ERROR_HEADERS = { 'cache-control': 'no-store', 'vary': 'Accept' } as const
+
+/**
+ * The header of both forms of a note at its canonical URL: its page and its
+ * Markdown (URL-11). A cache keeps one copy per value of `Accept`.
+ */
+const NOTE_VARY = { vary: 'Accept' } as const
 
 /** The short Markdown text of an error answer, for an agent (NAV-21). */
 function errorMarkdown(
@@ -636,8 +657,26 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                               name === undefined ? { kind: 'inline' } : { kind: 'attachment', name }
                       })
             }
-            case 'page':
-                return await fileOf(resolution.file, HTML)
+            case 'page': {
+                if (resolution.markdown === undefined) {
+                    // A page that is not a note has one form, whatever the
+                    // header asks: no `Vary`.
+                    return await fileOf(resolution.file, HTML)
+                }
+                if (format === 'html') {
+                    return await fileOf(resolution.file, HTML, 200, NOTE_VARY)
+                }
+                // Markdown on request (URL-11): the cleaned note, as at its
+                // Markdown path, with the form that follows `Accept`.
+                const file = await release.file(resolution.markdown)
+                return file === undefined
+                    ? undefined
+                    : await markdownFormResponse(request, file, {
+                          page: pathname,
+                          disposition: { kind: 'inline' },
+                          vary: NOTE_VARY.vary
+                      })
+            }
         }
     }
 
