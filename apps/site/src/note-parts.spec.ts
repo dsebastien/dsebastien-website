@@ -28,6 +28,8 @@ const ADA = '30 People/Ada Quillfeather.md'
 const BARREL = '10 Garden/Rain barrel.md'
 const SWAP = '10 Garden/Seed swap day.md'
 const FROST = '10 Garden/Frost dates explained.md'
+/** A note whose type has a suffix: its display title has no suffix. */
+const BOOK = '20 Library/20.04 Books/The Patient Gardener (Book).md'
 const HEADINGS = '50 Field guide/Text/Headings with the same text.md'
 /** The one note that stays in the vault: a link to it is plain text. */
 const NOT_PUBLISHED = '10 Garden/Winter plan (draft).md'
@@ -425,5 +427,30 @@ describe('outline of a note page (PAGE-04)', () => {
 
     test('a note with few headings has no outline', () => {
         expect(selectAll('[data-outline]', pageOf(FROST))).toEqual([])
+    })
+})
+
+// Issue 137: a plain link in the title band saves the Markdown form of the
+// note, named after its title, with no script.
+describe('download of the Markdown of a note page', () => {
+    test('is a link of the title band to the download form, with the file name of the title', () => {
+        const link = select('.title-band a[data-markdown-download]', pageOf(BARREL))
+        expect(link?.properties['href']).toBe(
+            '/-/md/10+Garden/Rain+barrel.md?download=Rain%20barrel.md'
+        )
+        expect(link?.properties['download']).toBe('Rain barrel.md')
+        expect(link?.properties['ariaLabel']).toBe('Download this note as Markdown')
+        expect(textOf(select('[data-note-title]', pageOf(BARREL)) ?? undefined)).toBe('Rain barrel')
+    })
+
+    test('names the file after the display title, not the file name', () => {
+        const link = select('.title-band a[data-markdown-download]', pageOf(BOOK))
+        expect(link?.properties['download']).toBe('The Patient Gardener.md')
+    })
+
+    test('is on every note page', () => {
+        for (const [path, page] of pages) {
+            expect(selectAll('a[data-markdown-download]', page), path).toHaveLength(1)
+        }
     })
 })

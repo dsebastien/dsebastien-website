@@ -217,6 +217,72 @@ describe('a file of the site that is not a page', () => {
         expect(head.headers.get('x-robots-tag')).toBe('noindex')
     })
 
+    test('opens in the browser at its Markdown path, with no file name', async () => {
+        for (const path of ['/-/md/Welcome.md', '/-/md/Welcome.md?ref=letter']) {
+            const response = await get(path)
+            expect(response.headers.get('content-disposition')).toBeNull()
+            expect(response.headers.get('vary')).toBeNull()
+        }
+    })
+
+    // Issue 137: the download form of the Markdown of a note.
+    test('is a download with the asked file name, and the same bytes, in its download form', async () => {
+        const plain = await get('/-/md/10+Garden/Compost+basics.md')
+        const download = await get(
+            '/-/md/10+Garden/Compost+basics.md?download=Compost%20%C3%A0%20faire%3F.md'
+        )
+        expect(download.status).toBe(200)
+        expect(download.headers.get('content-disposition')).toBe(
+            "attachment; filename*=UTF-8''Compost%20%C3%A0%20faire-.md"
+        )
+        expect(await download.text()).toBe(await plain.text())
+        for (const name of [
+            'content-type',
+            'etag',
+            'x-robots-tag',
+            'link',
+            'content-security-policy'
+        ]) {
+            expect(download.headers.get(name)).toBe(plain.headers.get(name))
+        }
+        const bare = await get('/-/md/10+Garden/Compost+basics.md?download')
+        expect(bare.headers.get('content-disposition')).toBe(
+            "attachment; filename*=UTF-8''Compost%20basics.md"
+        )
+    })
+
+    // A cache that ignores the query (U12) never keeps the download form, so
+    // the plain path never gives a file to save.
+    test('is never kept in its download form', async () => {
+        const response = await get('/-/md/Welcome.md?download=Welcome.md')
+        expect(response.headers.get('cache-control')).toBe('no-store')
+    })
+
+    test('answers 304 in its download form, with its file name', async () => {
+        const response = await get('/-/md/Welcome.md?download=Welcome.md', {
+            'if-none-match': '"14"'
+        })
+        expect(response.status).toBe(304)
+        expect(response.headers.get('content-disposition')).toBe(
+            "attachment; filename*=UTF-8''Welcome.md"
+        )
+    })
+
+    test('is no download for another file of the site', async () => {
+        const response = await get('/robots.txt?download=x.md')
+        expect(response.headers.get('content-disposition')).toBeNull()
+    })
+
+    test('keeps the download through a redirect of the Markdown of a moved note', async () => {
+        const moved = resolverMapOf(
+            [{ path: 'Garden/One.md', aliases: [], formerPaths: ['Shed/Old.md'] }],
+            FILES
+        )
+        const response = await get('/-/md/Shed/Old.md?download=One.md', {}, { map: moved })
+        expect(response.status).toBe(301)
+        expect(response.headers.get('location')).toBe('/-/md/Garden/One.md?download=One.md')
+    })
+
     test('is XML for a sitemap, and plain text for the IndexNow key file', async () => {
         const root = resolverMapOf([], {
             ...FILES,

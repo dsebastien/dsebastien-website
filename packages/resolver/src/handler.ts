@@ -1,4 +1,5 @@
 import { errorFormat, errorText, type ErrorStatus } from './errors.ts'
+import { contentDisposition, downloadNameOf } from './download.ts'
 import { resolve, type Resolution, type ResolverMap, type SiteFile } from './resolver.ts'
 import { FILE_POLICY, FRAME_ONLY_POLICY, SCRIPTLESS_PAGE_POLICY, secured } from './security.ts'
 import { SITE_ORIGIN } from './url.ts'
@@ -160,14 +161,54 @@ const FILE_TYPES: Record<SiteFile['type'], string> = {
 }
 
 /**
- * The headers of the Markdown form of a note (IDX-16): it stays out of the
- * index, and names the page of its note as canonical, at the canonical host
- * on every host, as the canonical link of the page does. The resolver gives
- * the Markdown of a note only at its path `/-/md/<canonical path>.md`.
+ * How a client shows the Markdown form of a note: in the browser, or as a
+ * file to save with its name (issue 137).
  */
-function markdownHeaders(pathname: string): Record<string, string> {
-    const page = new URL(pathname.slice('/-/md'.length, -'.md'.length), SITE_ORIGIN).href
-    return { 'x-robots-tag': 'noindex', 'link': `<${page}>; rel="canonical"` }
+export type MarkdownDisposition =
+    { readonly kind: 'inline' } | { readonly kind: 'attachment'; readonly name: string }
+
+/** What the answer of the Markdown form of a note needs to know of the request. */
+export interface MarkdownForm {
+    /** The canonical path of the page of the note. */
+    readonly page: string
+    readonly disposition: MarkdownDisposition
+    /**
+     * The `Vary` header, for an answer whose form follows a header of the
+     * request (Markdown on request through `Accept`, URL-11). The Markdown
+     * path has one form, so it has none.
+     */
+    readonly vary?: string
+}
+
+/**
+ * The answer of the Markdown form of a note: the bytes of its cleaned note
+ * (URL-10), as Markdown, with the tag of the file for a 304 (URL-18). It
+ * stays out of the index and names the page of its note as canonical, at the
+ * canonical host on every host, as the canonical link of the page does
+ * (IDX-16). A download says `Content-Disposition: attachment` with its file
+ * name, and no cache keeps it. Every answer of the Markdown of a note goes through it: the Markdown
+ * path, its download form (issue 137), and Markdown on request (URL-11).
+ */
+async function markdownFormResponse(
+    request: Request,
+    file: StoredFile,
+    form: MarkdownForm
+): Promise<Response> {
+    const headers: Record<string, string> = {
+        'x-robots-tag': 'noindex',
+        'link': `<${new URL(form.page, SITE_ORIGIN).href}>; rel="canonical"`,
+        'content-security-policy': FILE_POLICY
+    }
+    if (form.disposition.kind === 'attachment') {
+        headers['content-disposition'] = contentDisposition(form.disposition.name)
+        // A cache that ignores the query (U12) must never give the plain
+        // Markdown path as a file to save: no cache keeps a download.
+        headers['cache-control'] = 'no-store'
+    }
+    if (form.vary !== undefined) {
+        headers['vary'] = form.vary
+    }
+    return await siteFileResponse(request, file, FILE_TYPES.markdown, 200, headers)
 }
 
 /**
@@ -579,13 +620,22 @@ export function siteHandler(release: Release): (request: Request) => Promise<Res
                         'cache-control': resolution.cacheControl
                     }
                 })
-            case 'file':
-                return await fileOf(
-                    resolution.file,
-                    FILE_TYPES[resolution.type],
-                    200,
-                    resolution.type === 'markdown' ? markdownHeaders(pathname) : {}
-                )
+            case 'file': {
+                if (resolution.type !== 'markdown') {
+                    return await fileOf(resolution.file, FILE_TYPES[resolution.type])
+                }
+                // The resolver gives the Markdown of a note only at its path
+                // `/-/md/<canonical path>.md`.
+                const file = await release.file(resolution.file)
+                const name = downloadNameOf(pathname, search)
+                return file === undefined
+                    ? undefined
+                    : await markdownFormResponse(request, file, {
+                          page: pathname.slice('/-/md'.length, -'.md'.length),
+                          disposition:
+                              name === undefined ? { kind: 'inline' } : { kind: 'attachment', name }
+                      })
+            }
             case 'page':
                 return await fileOf(resolution.file, HTML)
         }

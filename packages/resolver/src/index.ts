@@ -1,3 +1,10 @@
+export {
+    contentDisposition,
+    DOWNLOAD_PARAMETER,
+    downloadName,
+    downloadNameOf,
+    markdownDownloadPath
+} from './download.ts'
 export { errorFormat, errorText, type ErrorStatus, SERVER_ERROR_FILE } from './errors.ts'
 export {
     ASSET_FOLDERS,
@@ -7,6 +14,8 @@ export {
     siteHandler,
     type ByteRange,
     type MapLookup,
+    type MarkdownDisposition,
+    type MarkdownForm,
     type Release,
     type StoredFile
 } from './handler.ts'

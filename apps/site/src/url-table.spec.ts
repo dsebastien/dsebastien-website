@@ -156,8 +156,11 @@ describe('the check of a file', () => {
         status: 200,
         file: 'markdown:Welcome.md'
     }
+    const KEPT = 'public, max-age=0, must-revalidate'
     const markdown = (body: string) => (): Response =>
-        new Response(body, { headers: { 'content-type': 'text/markdown; charset=utf-8' } })
+        new Response(body, {
+            headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': KEPT }
+        })
 
     test('has no finding for the cleaned note of the content store', async () => {
         const right = host({ '/-/md/Welcome.md': markdown('# Welcome\n') })
@@ -168,6 +171,36 @@ describe('the check of a file', () => {
         const wrong = host({ '/-/md/Welcome.md': markdown('# Other\n') })
         expect(await checkUrlCase(entry, wrong, site)).toEqual([
             'body: expected "# Welcome\\n", got "# Other\\n"'
+        ])
+    })
+
+    // Issue 137: the plain Markdown path opens in the browser, its download form saves a file.
+    test('names a file name on the plain Markdown path', async () => {
+        const named = host({
+            '/-/md/Welcome.md': () =>
+                new Response('# Welcome\n', {
+                    headers: {
+                        'content-type': 'text/markdown; charset=utf-8',
+                        'cache-control': KEPT,
+                        'content-disposition': "attachment; filename*=UTF-8''Welcome.md"
+                    }
+                })
+        })
+        expect(await checkUrlCase(entry, named, site)).toEqual([
+            `content-disposition: expected null, got "attachment; filename*=UTF-8''Welcome.md"`
+        ])
+    })
+
+    test('names a download form without its file name, or kept by a cache', async () => {
+        const download: UrlCase = {
+            ...entry,
+            request: '/-/md/Welcome.md?download=Welcome.md',
+            disposition: "attachment; filename*=UTF-8''Welcome.md"
+        }
+        const unnamed = host({ '/-/md/Welcome.md?download=Welcome.md': markdown('# Welcome\n') })
+        expect(await checkUrlCase(download, unnamed, site)).toEqual([
+            `content-disposition: expected "attachment; filename*=UTF-8''Welcome.md", got null`,
+            `cache-control: expected "no-store", got "${KEPT}"`
         ])
     })
 })

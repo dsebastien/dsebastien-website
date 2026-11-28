@@ -27,6 +27,12 @@ export interface UrlCase {
     accept?: string
     format?: 'html' | 'markdown'
     /**
+     * The `Content-Disposition` header of the Markdown of a note: the file
+     * name of its download form (issue 137). Without it, the Markdown has
+     * no such header and opens in the browser.
+     */
+    disposition?: string
+    /**
      * The answer of the edge of a real host, before the Worker runs (R87): a
      * check of a real host expects this status and no page of the site. The
      * local server and the Worker in a test give the answer of the case.
@@ -205,6 +211,17 @@ export async function checkUrlCase(
                 'content-type',
                 response.headers.get('content-type'),
                 'text/markdown; charset=utf-8'
+            )
+            same(
+                'content-disposition',
+                response.headers.get('content-disposition'),
+                entry.disposition ?? null
+            )
+            // A cache that ignores the query (U12) never keeps the download form.
+            same(
+                'cache-control',
+                response.headers.get('cache-control'),
+                entry.disposition === undefined ? 'public, max-age=0, must-revalidate' : 'no-store'
             )
             same('body', body, await site.markdownOf(path))
         } else if (kind === 'icon') {

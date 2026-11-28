@@ -585,6 +585,20 @@
             "file": "markdown:10 Garden/Compost basics.md"
         },
         {
+            "name": "the download form of the Markdown of a note names its file (issue 137)",
+            "request": "/-/md/10+Garden/Compost+basics.md?download=Compost%20basics%3F.md",
+            "status": 200,
+            "file": "markdown:10 Garden/Compost basics.md",
+            "disposition": "attachment; filename*=UTF-8''Compost%20basics-.md"
+        },
+        {
+            "name": "the download form without a name takes the file name of the path",
+            "request": "/-/md/Welcome.md?download",
+            "status": 200,
+            "file": "markdown:Welcome.md",
+            "disposition": "attachment; filename*=UTF-8''Welcome.md"
+        },
+        {
             "name": "no variant under the prefix of the site",
             "request": "/-/md/welcome.md",
             "status": 404,
@@ -752,6 +766,13 @@
             "request": "/-/md/Old+Beds/Thyme+plant.md",
             "status": 301,
             "location": "/-/md/10+Garden/Herb+bed/Thyme.md",
+            "cacheControl": "public, max-age=3600"
+        },
+        {
+            "name": "the former Markdown path of a note that moved keeps its download form",
+            "request": "/-/md/Old+Beds/Thyme+plant.md?download=Thyme.md",
+            "status": 301,
+            "location": "/-/md/10+Garden/Herb+bed/Thyme.md?download=Thyme.md",
             "cacheControl": "public, max-age=3600"
         },
         {

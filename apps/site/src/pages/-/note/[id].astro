@@ -1,6 +1,11 @@
 ---
 import type { GetStaticPaths } from 'astro'
-import { backlinksPath, typeHubPath } from '@dsebastien-website/resolver'
+import {
+    backlinksPath,
+    downloadName,
+    markdownDownloadPath,
+    typeHubPath
+} from '@dsebastien-website/resolver'
 import latinFont from '@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2?url'
 import { ctaScript } from '../../../ads/cta.ts'
 import { BACKLINKS_ON_PAGE } from '../../../backlink-list.ts'
@@ -102,6 +107,32 @@ const music = musicOf(body.html)
                 <span>
                     Updated <time datetime={header.updated.datetime}>{header.updated.shown}</time>
                 </span>
+                {/* The actions of the page, at the end of the row on every screen. A plain */}
+                {/* link saves the Markdown form of the note, named after its title, with no */}
+                {/* script (issue 137); the answer names the same file. */}
+                <a
+                    class='button-quiet -my-2 ml-auto h-11 w-11 p-0 sm:not-any-pointer-coarse:h-9 sm:not-any-pointer-coarse:w-9'
+                    href={markdownDownloadPath(note.vaultPath, header.heading)}
+                    download={downloadName(header.heading)}
+                    type='text/markdown'
+                    aria-label='Download this note as Markdown'
+                    title='Download as Markdown'
+                    data-markdown-download
+                >
+                    <svg
+                        class='h-5 w-5'
+                        viewBox='0 0 24 24'
+                        fill='none'
+                        stroke='currentColor'
+                        stroke-width='2'
+                        stroke-linecap='round'
+                        stroke-linejoin='round'
+                        aria-hidden='true'
+                        focusable='false'
+                    >
+                        <path d='M12 3v12M7 10l5 5 5-5M5 21h14'></path>
+                    </svg>
+                </a>
             </p>
         </div>
     </div>
