@@ -15513,6 +15513,92 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "a note whose former paths are texts of a content store written before R82 moves: the texts stay as they are, and the path that it left gets the time of the line (issue 105, R82)",
+            "denyList": [],
+            "vault": {
+                "A.md": "A\n"
+            },
+            "steps": [
+                {
+                    "do": "publish",
+                    "why": "the first publication",
+                    "time": "2031-07-01T08:00:00Z",
+                    "selection": {
+                        "include": ["A.md"]
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["A.md"],
+                        "published": ["A.md"],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": []
+                    }
+                },
+                {
+                    "do": "store",
+                    "why": "an entry written before R82: its former path is a text, with no time",
+                    "files": {
+                        "manifest/380d33e7da18982e.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:06f961b802bc46ee168555f066d28f4f0e9afdf3f88174c1ee6f9de004fc30a0\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Old.md\"\n  ],\n  \"id\": \"380d33e7da18982e\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"A.md\",\n  \"sourceHash\": \"sha256:06f961b802bc46ee168555f066d28f4f0e9afdf3f88174c1ee6f9de004fc30a0\",\n  \"state\": \"published\"\n}\n"
+                    }
+                },
+                {
+                    "do": "write",
+                    "why": "Obsidian moves the note, and the plugin records it",
+                    "files": {
+                        "B.md": "A\n",
+                        ".obsidian/plugins/dsebastien-vault-publish/renames/00000000000000aa.jsonl": "{\"from\":\"A.md\",\"kind\":\"note\",\"time\":\"2031-07-02T08:00:00Z\",\"to\":\"B.md\"}\n"
+                    }
+                },
+                {
+                    "do": "delete",
+                    "why": "the old file is gone",
+                    "paths": ["A.md"]
+                },
+                {
+                    "do": "publish",
+                    "why": "the move",
+                    "time": "2031-07-03T08:00:00Z",
+                    "selection": {
+                        "include": []
+                    },
+                    "report": {
+                        "attachmentsDeleted": [],
+                        "attachmentsUploaded": [],
+                        "failed": [],
+                        "forcedRemoved": [],
+                        "propertyRemoved": [],
+                        "propertySet": ["B.md"],
+                        "published": [],
+                        "removed": [],
+                        "skipped": [],
+                        "updated": [],
+                        "warnings": [],
+                        "moved": [
+                            {
+                                "from": "A.md",
+                                "to": "B.md"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "do": "expect",
+                    "why": "the text stays as it is, and the new former path has the time of the line",
+                    "vault": {},
+                    "store": {
+                        "manifest/380d33e7da18982e.json": "{\n  \"aliases\": [],\n  \"attachments\": [],\n  \"cleanedHash\": \"sha256:06f961b802bc46ee168555f066d28f4f0e9afdf3f88174c1ee6f9de004fc30a0\",\n  \"cleaningVersion\": 5,\n  \"firstPublished\": \"2031-07-01T08:00:00Z\",\n  \"formerPaths\": [\n    \"Old.md\",\n    {\n      \"path\": \"A.md\",\n      \"time\": \"2031-07-02T08:00:00Z\"\n    }\n  ],\n  \"id\": \"380d33e7da18982e\",\n  \"lastPublished\": \"2031-07-01T08:00:00Z\",\n  \"links\": [],\n  \"path\": \"B.md\",\n  \"sourceHash\": \"sha256:06f961b802bc46ee168555f066d28f4f0e9afdf3f88174c1ee6f9de004fc30a0\",\n  \"state\": \"published\"\n}\n"
+                    }
+                }
+            ]
         }
     ]
 }

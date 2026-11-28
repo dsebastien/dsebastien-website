@@ -455,7 +455,7 @@
         }
     ],
     "formerPaths": {
-        "about": "The list formerPaths of a manifest entry, as it is written in the file (decision R82): each item is a text, a former path that a content store written before R82 holds, with no time, or an object with exactly a text path and a text time.",
+        "about": "The list formerPaths of a manifest entry, as it is written in the file (decision R82): each item is a text, a former path that a content store written before R82 holds, with no time, or an object with exactly a text path and a time in the canonical form (a real date and time in UTC, to the second).",
         "cases": [
             {
                 "text": "[]",
@@ -491,6 +491,18 @@
             },
             {
                 "text": "[{\"path\":\"Old.md\",\"time\":3}]",
+                "valid": false
+            },
+            {
+                "text": "[{\"path\":\"Old.md\",\"time\":\"yesterday\"}]",
+                "valid": false
+            },
+            {
+                "text": "[{\"path\":\"Old.md\",\"time\":\"2031-04-02 08:00:00Z\"}]",
+                "valid": false
+            },
+            {
+                "text": "[{\"path\":\"Old.md\",\"time\":\"2031-02-30T08:00:00Z\"}]",
                 "valid": false
             },
             {

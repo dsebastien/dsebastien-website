@@ -521,16 +521,13 @@ describe('resolver of former paths', () => {
         ])
         expect(resolve('/Shed/Old', map)).toEqual(moved('/Garden/One'))
         expect(resolve('/shed/OLD', map)).toEqual(moved('/Garden/One'))
-        // The former file name and the former Markdown path keep their rules.
+        // The former Markdown path goes to the last owner too; the former
+        // file name keeps its rule.
+        expect(resolve('/-/md/Shed/Old.md', map)).toEqual(moved('/-/md/Garden/One.md'))
         expect(resolve('/Old', map)).toEqual({
             kind: 'not-found',
             suggestions: ['/Garden/One', '/Kitchen/Two'],
             file: 'choice:Garden/One.md|Kitchen/Two.md'
-        })
-        expect(resolve('/-/md/Shed/Old.md', map)).toEqual({
-            kind: 'not-found',
-            suggestions: [],
-            file: '404.html'
         })
     })
 
@@ -545,6 +542,8 @@ describe('resolver of former paths', () => {
             { path: 'Pantry/Three.md', aliases: [], formerPaths: ['Shed/OLD.md'] }
         ])
         expect(resolve('/Shed/Old', map)).toEqual(moved('/Garden/One'))
+        // A Markdown path is read as it is written: one note held this one.
+        expect(resolve('/-/md/Shed/Old.md', map)).toEqual(moved('/-/md/Kitchen/Two.md'))
     })
 
     test('a former path of two notes with the same latest time gives the "not found" page with every note', () => {
@@ -569,6 +568,11 @@ describe('resolver of former paths', () => {
             kind: 'not-found',
             suggestions: ['/Garden/One', '/Kitchen/Two', '/Pantry/Three'],
             file: 'choice:Garden/One.md|Kitchen/Two.md|Pantry/Three.md'
+        })
+        expect(resolve('/-/md/Shed/Old.md', map)).toEqual({
+            kind: 'not-found',
+            suggestions: [],
+            file: '404.html'
         })
     })
 

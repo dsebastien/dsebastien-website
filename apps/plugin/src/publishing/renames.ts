@@ -1,8 +1,7 @@
+import { formerPathOf, type FormerPath } from '@dsebastien-website/resolver'
 import { isVaultPath } from './configuration.ts'
 import { bytesHash, contentHash } from './hash.ts'
 import { parseJson } from './json.ts'
-import { formerPathOf } from './manifest.ts'
-import type { FormerPath } from './manifest.ts'
 import { compareCodePoints, sortByCodePoint } from './order.ts'
 import type { RenameJournals } from './ports.ts'
 

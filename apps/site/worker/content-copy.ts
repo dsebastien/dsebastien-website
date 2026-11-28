@@ -1,4 +1,5 @@
 import { mkdir, rm } from 'node:fs/promises'
+import { formerPathOf, type FormerPath } from '@dsebastien-website/resolver'
 import { gitSealedHistory } from '../../plugin/src/publishing/node/sealed-history.ts'
 import {
     checkSeal,
@@ -486,6 +487,19 @@ interface OldEntry {
  * the hashes of its attachments without `sha256:`. `undefined` for a text
  * that is no entry.
  */
+/** True when the item is a former path: a text (written before R82), or a text `path` with a text `time`. */
+function isFormerPath(item: unknown): item is FormerPath {
+    return (
+        typeof item === 'string' ||
+        (typeof item === 'object' &&
+            item !== null &&
+            'path' in item &&
+            typeof item.path === 'string' &&
+            'time' in item &&
+            typeof item.time === 'string')
+    )
+}
+
 function oldEntryOf(text: string | undefined): OldEntry | undefined {
     if (text === undefined) {
         return undefined
@@ -505,11 +519,7 @@ function oldEntryOf(text: string | undefined): OldEntry | undefined {
     const former = fields['formerPaths']
     // A former path is a text (written before R82) or has the time of its move.
     const formerPaths = Array.isArray(former)
-        ? (former as unknown[]).flatMap((item) => {
-              const path =
-                  typeof item === 'object' && item !== null && 'path' in item ? item.path : item
-              return typeof path === 'string' ? [path] : []
-          })
+        ? (former as unknown[]).filter(isFormerPath).map(formerPathOf)
         : []
     const attachments = fields['attachments'] ?? []
     if (!Array.isArray(attachments)) {

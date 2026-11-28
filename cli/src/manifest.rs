@@ -15,6 +15,7 @@ use crate::json::parse_json;
 use crate::links::NoteLink;
 use crate::note_types::{NoteType, note_type_of_entry};
 use crate::originals::{Original, original_of_entry};
+use crate::tool::is_canonical_time;
 
 /// The folder of the manifest in the content store.
 pub const MANIFEST_FOLDER: &str = "manifest";
@@ -86,7 +87,7 @@ impl FormerPath {
 }
 
 /// Reads the list `formerPaths` of an entry: each item is a text, or exactly
-/// a text `path` and a text `time`.
+/// a text `path` and a canonical `time`.
 fn former_path_list(value: &Value) -> Option<Vec<FormerPath>> {
     value
         .as_array()?
@@ -101,7 +102,11 @@ fn former_path_list(value: &Value) -> Option<Vec<FormerPath>> {
             }
             Some(FormerPath::Timed {
                 path: fields.get("path")?.as_str()?.to_owned(),
-                time: fields.get("time")?.as_str()?.to_owned(),
+                time: fields
+                    .get("time")?
+                    .as_str()
+                    .filter(|time| is_canonical_time(time))?
+                    .to_owned(),
             })
         })
         .collect()

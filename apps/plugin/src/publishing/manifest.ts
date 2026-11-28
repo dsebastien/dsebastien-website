@@ -1,3 +1,4 @@
+import type { FormerPath } from '@dsebastien-website/resolver'
 import { isAttachmentList } from './attachments.ts'
 import type { Attachment } from './attachments.ts'
 import { isVaultPath } from './configuration.ts'
@@ -9,6 +10,7 @@ import type { NoteType } from './note-types.ts'
 import { compareCodePoints } from './order.ts'
 import type { Original } from './originals.ts'
 import type { ContentStore } from './ports.ts'
+import { isCanonicalTime } from './run.ts'
 
 // The manifest: the record of each published note, one file per note
 // (STORE-03 to STORE-05 of the spec). The Rust twin is `cli/src/manifest.rs`.
@@ -59,19 +61,6 @@ export type ManifestEntry = {
 }
 
 /**
- * A path that a note had before a move. The time is the time of the move that
- * left it (decision of the author R82), so the site sends a former path of
- * several notes to the note that held it last. A text alone is a former path
- * that a content store written before R82 holds: it has no time.
- */
-export type FormerPath = string | { readonly path: string; readonly time: string }
-
-/** The vault path of a former path. */
-export function formerPathOf(former: FormerPath): string {
-    return typeof former === 'string' ? former : former.path
-}
-
-/**
  * The identity of a note that is published for the first time: 16 digits of
  * the hash of its path and of the time of the run. Both are inputs, so both
  * implementations give the same identity.
@@ -88,7 +77,7 @@ function isTextList(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
-/** True when the value is the list `formerPaths` of an entry: each item is a text, or exactly a text `path` and a text `time`. */
+/** True when the value is the list `formerPaths` of an entry: each item is a text, or exactly a text `path` and a canonical `time`. */
 function isFormerPathList(value: unknown): value is FormerPath[] {
     return (
         Array.isArray(value) &&
@@ -98,7 +87,8 @@ function isFormerPathList(value: unknown): value is FormerPath[] {
                 (isRecord(item) &&
                     Object.keys(item).length === 2 &&
                     typeof item['path'] === 'string' &&
-                    typeof item['time'] === 'string')
+                    typeof item['time'] === 'string' &&
+                    isCanonicalTime(item['time']))
         )
     )
 }

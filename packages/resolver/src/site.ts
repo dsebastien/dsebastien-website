@@ -424,16 +424,21 @@ function formerMapOf(
     const texts = new Map([...formersOf(notes).texts].filter(([text]) => !taken.has(text)))
     const urls = (map: Map<string, string[]>): Record<string, string[]> =>
         Object.fromEntries([...map].map(([key, paths]) => [key, paths.map(canonicalPath)]))
-    // A former Markdown path of one note only: of two notes, it names none.
-    const markdown = new Map<string, string[]>()
+    // A former Markdown path, as it is written, leads to its one note, or
+    // to the note that held it last (R82); else it names none.
+    const markdown = new Map<string, { path: string; time: string | undefined }[]>()
     for (const note of notes) {
-        for (const former of formerPathsOf(note)) {
-            const path = markdownPath(former)
+        for (const former of note.formerPaths ?? []) {
+            const path = markdownPath(formerPathOf(former))
             if (takenMarkdown.has(path)) {
                 continue
             }
             markdown.set(path, [
-                ...new Set([...(markdown.get(path) ?? []), markdownPath(note.path)])
+                ...(markdown.get(path) ?? []),
+                {
+                    path: markdownPath(note.path),
+                    time: typeof former === 'string' ? undefined : former.time
+                }
             ])
         }
     }
@@ -443,9 +448,12 @@ function formerMapOf(
         names: urls(names),
         ...(Object.keys(folders).length === 0 ? {} : { folders }),
         markdown: Object.fromEntries(
-            [...markdown]
-                .filter(([, targets]) => targets.length === 1)
-                .map(([path, [target]]) => [path, target ?? ''])
+            [...markdown].flatMap(([path, holders]) => {
+                const targets = new Set(holders.map((holder) => holder.path))
+                const [only] = targets
+                const target = targets.size === 1 ? only : lastOwnerOf(holders)
+                return target === undefined ? [] : [[path, target]]
+            })
         )
     }
 }
