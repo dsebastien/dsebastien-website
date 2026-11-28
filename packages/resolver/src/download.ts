@@ -25,7 +25,7 @@ const MAX_BYTES = 255
  * the text (U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069), which can
  * show `gpj.md` as `md.jpg`. A joiner (U+200D) stays: emoji need it.
  */
-const REFUSED = /[<>:"/\\|?*\p{Cc}‎‏‪-‮⁦-⁩]/gu
+const REFUSED = /[<>:"/\\|?*\p{Cc}\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu
 
 /** A dot or a space at the end of a name, which Windows removes or refuses. */
 const LAST_DOTS = /[. ]+$/u
@@ -55,7 +55,9 @@ function cut(text: string, bytes: number): string {
         }
         kept += segment
     }
-    return kept
+    // A first grapheme longer than a whole name (a letter with hundreds of
+    // accents) leaves nothing: the name of a title with no text.
+    return kept === '' ? NO_TITLE : kept
 }
 
 /**
@@ -116,13 +118,17 @@ export function downloadNameOf(path: string, query: string): string | undefined 
     return downloadName(name)
 }
 
-/** A character that the ASCII name of a header cannot hold: not printable ASCII, a quote or a backslash. */
-const NOT_ASCII = /[^\u0020-\u007e]|["\\]/gu
+/**
+ * A character that the ASCII name of a header cannot hold: not printable
+ * ASCII, a quote or a backslash, or a percent sign, which a client could read
+ * as an encoding.
+ */
+const NOT_ASCII = /[^\u0020-\u007E]|["\\%]/gu
 
 /**
  * The `Content-Disposition` header of a download: `attachment`, with an
  * ASCII name for a client that does not read the name in UTF-8 (each other
- * character, a quote and a backslash become a low line), then the name in
+ * character, a quote, a backslash and a percent sign become a low line), then the name in
  * UTF-8, which a client that reads it takes (RFC 6266 section 4.3, RFC 8187).
  * In the name in UTF-8, each character that is not a plain letter, digit or
  * one of `!#$&+-.^_`|~` is percent-encoded.

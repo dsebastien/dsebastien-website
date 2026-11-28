@@ -21,8 +21,10 @@ describe('the file name of a download', () => {
     })
 
     test('has a hyphen for each mark that turns the direction of the text, and keeps a joiner', () => {
-        expect(downloadName('a‮b‎c⁦d‏e‪f⁩g')).toBe('a-b-c-d-e-f-g.md')
-        expect(downloadName('Farmer \u{1f469}‍\u{1f33e}')).toBe('Farmer \u{1f469}‍\u{1f33e}.md')
+        expect(downloadName('a\u202Eb\u200Ec\u2066d\u200Fe\u202Af\u2069g')).toBe('a-b-c-d-e-f-g.md')
+        expect(downloadName('Farmer \u{1f469}\u200D\u{1f33e}')).toBe(
+            'Farmer \u{1f469}\u200D\u{1f33e}.md'
+        )
     })
 
     test('has a hyphen for a dot or a space at the end of the title', () => {
@@ -48,6 +50,10 @@ describe('the file name of a download', () => {
         expect(downloadName('   ')).toBe('note.md')
     })
 
+    test('is "note.md" when the first grapheme alone is longer than a name', () => {
+        expect(downloadName('a' + '\u0301'.repeat(200))).toBe('note.md')
+    })
+
     test('stays inside 255 bytes of UTF-8, and never cuts a character', () => {
         const name = downloadName('é'.repeat(300))
         expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(255)
@@ -57,7 +63,7 @@ describe('the file name of a download', () => {
     })
 
     test('never cuts a group of characters that shows as one', () => {
-        const farmer = '\u{1f469}‍\u{1f33e}'
+        const farmer = '\u{1f469}\u200D\u{1f33e}'
         expect(downloadName(farmer.repeat(30))).toBe(`${farmer.repeat(22)}.md`)
     })
 
@@ -106,6 +112,13 @@ describe('the header of a download', () => {
     test('has a low line in the ASCII name for a quote, a backslash and each other character', () => {
         expect(contentDisposition('a"b\\c\u{1f327}.md')).toBe(
             `attachment; filename="a_b_c_.md"; filename*=UTF-8''a%22b%5Cc%F0%9F%8C%A7.md`
+        )
+    })
+
+    // A client could read a percent sign of the ASCII name as an encoding.
+    test('has a low line in the ASCII name for a percent sign', () => {
+        expect(contentDisposition('100% rain.md')).toBe(
+            `attachment; filename="100_ rain.md"; filename*=UTF-8''100%25%20rain.md`
         )
     })
 })
