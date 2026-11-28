@@ -93,6 +93,12 @@ export const TIME_BUDGET = {
      * variants of the cover in WebP (PERF-25, issue 87, R92; 2.2 s before, R58).
      */
     mobileMedia: { lcp: 2_000, tbt: 100, cls: 0.02 },
+    /**
+     * A note with music blocks: the drawing of a chord chart in the library
+     * blocks the main thread for 38 to 121 ms from one run to the next. 150 ms
+     * (R105, decision of the author, 2026-11-28) until the library draws faster.
+     */
+    mobileMusic: { lcp: 1_200, tbt: 150, cls: 0.02 },
     desktop: { lcp: 800, tbt: 50, cls: 0.02 }
 } as const satisfies Record<string, TimeBudget>
 

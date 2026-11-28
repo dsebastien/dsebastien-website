@@ -87,3 +87,7 @@ The last row is the code of issue 53. The blocking time on a phone is close to i
 - The README and the guide of the library (`docs/publish.md`, `docs/websites-and-apps.md`, `docs/blocks.md`), version 0.26.0.
 - alphaTab 1.9.0, `dist/alphaTab.core.mjs` and `dist/alphaTab.mjs` (the style elements, the SVG canvas, the worker and the worklet).
 - The measures of the current site: `2026-11-17-current-state.md` (section 1.7) and `2026-11-20-note-page-budgets.md`.
+
+## Blocked time of the music page (2026-11-28)
+
+On a phone, the blocked time of the music note varies between 38 and 121 ms from one run to the next on the same code. The drawing of a chord chart in the library is the main cost. The author set a budget of 150 ms for the music note only (`TIME_BUDGET.mobileMusic`); the other pages keep 100 ms. Issue 164 of the music-notation library tracks a faster drawing.

@@ -76,8 +76,8 @@ const PAGES: { name: string; vaultPath: string; mobile: TimeBudget }[] = [
         mobile: TIME_BUDGET.mobile
     },
     // The invented note with one block of each music language (PERF-21, issue 53): the
-    // music loads after the page shows, so the page keeps the budgets of PERF-20.
-    { name: 'music note', vaultPath: MUSIC_NOTE, mobile: TIME_BUDGET.mobile }
+    // music loads after the page shows; its blocked time has a budget of its own (R105).
+    { name: 'music note', vaultPath: MUSIC_NOTE, mobile: TIME_BUDGET.mobileMusic }
 ]
 /** The pages of this run: all, or the one that `--page` names. */
 const MEASURED = PAGES.filter((page) => values.page === undefined || page.name === values.page)
