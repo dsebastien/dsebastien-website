@@ -20,6 +20,11 @@ describe('the file name of a download', () => {
         expect(downloadName('tab\there\u0000\u001f\u007f')).toBe('tab-here---.md')
     })
 
+    test('has a hyphen for each mark that turns the direction of the text, and keeps a joiner', () => {
+        expect(downloadName('a‮b‎c⁦d‏e‪f⁩g')).toBe('a-b-c-d-e-f-g.md')
+        expect(downloadName('Farmer \u{1f469}‍\u{1f33e}')).toBe('Farmer \u{1f469}‍\u{1f33e}.md')
+    })
+
     test('has a hyphen for a dot or a space at the end of the title', () => {
         expect(downloadName('Why not.')).toBe('Why not-.md')
         expect(downloadName('Wait...')).toBe('Wait---.md')
@@ -31,6 +36,9 @@ describe('the file name of a download', () => {
         expect(downloadName('nul')).toBe('nul-note.md')
         expect(downloadName('Com1')).toBe('Com1-note.md')
         expect(downloadName('LPT9.old')).toBe('LPT9-note.old.md')
+        expect(downloadName('CON .txt')).toBe('CON-note .txt.md')
+        expect(downloadName('conin$')).toBe('conin$-note.md')
+        expect(downloadName('CONOUT$.log')).toBe('CONOUT$-note.log.md')
         expect(downloadName('CONTENT')).toBe('CONTENT.md')
         expect(downloadName('Console')).toBe('Console.md')
     })
@@ -46,6 +54,11 @@ describe('the file name of a download', () => {
         expect(name).toBe(`${'é'.repeat(126)}.md`)
         const emoji = downloadName('🌧'.repeat(100))
         expect(emoji).toBe(`${'🌧'.repeat(63)}.md`)
+    })
+
+    test('never cuts a group of characters that shows as one', () => {
+        const farmer = '\u{1f469}‍\u{1f33e}'
+        expect(downloadName(farmer.repeat(30))).toBe(`${farmer.repeat(22)}.md`)
     })
 
     test('does not change a name that it gave', () => {
@@ -82,9 +95,17 @@ describe('the file name that a request asks for', () => {
 })
 
 describe('the header of a download', () => {
-    test('says attachment, with the name in UTF-8 and every other mark encoded', () => {
+    test('says attachment, with an ASCII name first, then the name in UTF-8 with its marks encoded', () => {
         expect(contentDisposition("Été (l'an) *1*.md")).toBe(
-            "attachment; filename*=UTF-8''%C3%89t%C3%A9%20%28l%27an%29%20%2A1%2A.md"
+            `attachment; filename="_t_ (l'an) *1*.md"; ` +
+                "filename*=UTF-8''%C3%89t%C3%A9%20%28l%27an%29%20%2A1%2A.md"
+        )
+    })
+
+    // RFC 6266, section 4.3: a client that does not read `filename*` reads `filename`.
+    test('has a low line in the ASCII name for a quote, a backslash and each other character', () => {
+        expect(contentDisposition('a"b\\c\u{1f327}.md')).toBe(
+            `attachment; filename="a_b_c_.md"; filename*=UTF-8''a%22b%5Cc%F0%9F%8C%A7.md`
         )
     })
 })

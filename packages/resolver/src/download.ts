@@ -19,28 +19,41 @@ const EXTENSION = '.md'
 const MAX_BYTES = 255
 
 /**
- * A character that Windows, macOS or Linux refuses in a file name: the
- * reserved marks and the control characters (`Cc`, also those of C1).
+ * A character that Windows, macOS or Linux refuses in a file name (the
+ * reserved marks and the control characters, `Cc`, also those of C1), or
+ * that makes a name lie about its end: the marks that turn the direction of
+ * the text (U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069), which can
+ * show `gpj.md` as `md.jpg`. A joiner (U+200D) stays: emoji need it.
  */
-const REFUSED = /[<>:"/\\|?*\p{Cc}]/gu
+const REFUSED = /[<>:"/\\|?*\p{Cc}‎‏‪-‮⁦-⁩]/gu
 
 /** A dot or a space at the end of a name, which Windows removes or refuses. */
 const LAST_DOTS = /[. ]+$/u
 
-/** A name that Windows reserves for a device, in any case, alone or before a dot. */
-const RESERVED = /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/iu
+/**
+ * A name that Windows reserves for a device, in any case, alone or before a
+ * dot, also with spaces before that dot.
+ */
+const RESERVED = /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])$/iu
 
-/** The text of a name cut to a number of bytes of UTF-8, never inside a character. */
+/** The groups of characters that show as one (graphemes). */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+/**
+ * The text of a name cut to a number of bytes of UTF-8, between two groups
+ * of characters that show as one: never inside a character, an emoji with
+ * its joiners, or a letter with its accents.
+ */
 function cut(text: string, bytes: number): string {
     const encoder = new TextEncoder()
     let kept = ''
     let used = 0
-    for (const character of text) {
-        used += encoder.encode(character).length
+    for (const { segment } of GRAPHEMES.segment(text)) {
+        used += encoder.encode(segment).length
         if (used > bytes) {
             break
         }
-        kept += character
+        kept += segment
     }
     return kept
 }
@@ -48,10 +61,12 @@ function cut(text: string, bytes: number): string {
 /**
  * The file name of the download of a note, from its title: `<title>.md`.
  * Each character that a file system refuses (`<>:"/\|?*` and the control
- * characters) becomes a hyphen, and so does each dot or space at the end of
- * the title. A name that Windows reserves (`CON`, `NUL`, `COM1`, alone or
- * before a dot) gets the suffix `-note`. The name keeps 255 bytes of UTF-8 at
- * most. A name that it gave stays the same when it reads it again.
+ * characters) and each mark that turns the direction of the text becomes a
+ * hyphen, and so does each dot or space at the end of the title. A name that
+ * Windows reserves (`CON`, `NUL`, `COM1`, `CONIN$`, alone or before a dot)
+ * gets the suffix `-note`. The name keeps 255 bytes of UTF-8 at most, cut
+ * between two graphemes. A name that it gave stays the same when it reads it
+ * again.
  */
 export function downloadName(title: string): string {
     if (title.trim() === '') {
@@ -60,7 +75,8 @@ export function downloadName(title: string): string {
     let stem = cut(title.replace(REFUSED, '-'), MAX_BYTES - EXTENSION.length)
     stem = stem.replace(LAST_DOTS, (dots) => '-'.repeat(dots.length))
     const dot = stem.indexOf('.')
-    const base = dot === -1 ? stem : stem.slice(0, dot)
+    // Windows reads `CON .txt` as `CON`.
+    const base = (dot === -1 ? stem : stem.slice(0, dot)).trimEnd()
     if (RESERVED.test(base)) {
         // The suffix makes the name longer: cut the rest again.
         stem = cut(`${base}-${NO_TITLE}${stem.slice(base.length)}`, MAX_BYTES - EXTENSION.length)
@@ -100,15 +116,22 @@ export function downloadNameOf(path: string, query: string): string | undefined 
     return downloadName(name)
 }
 
+/** A character that the ASCII name of a header cannot hold: not printable ASCII, a quote or a backslash. */
+const NOT_ASCII = /[^\u0020-\u007e]|["\\]/gu
+
 /**
- * The `Content-Disposition` header of a download: `attachment`, with the
- * name in UTF-8 (RFC 6266, RFC 8187). Each character that is not a plain
- * letter, digit or one of `!#$&+-.^_`|~` is percent-encoded.
+ * The `Content-Disposition` header of a download: `attachment`, with an
+ * ASCII name for a client that does not read the name in UTF-8 (each other
+ * character, a quote and a backslash become a low line), then the name in
+ * UTF-8, which a client that reads it takes (RFC 6266 section 4.3, RFC 8187).
+ * In the name in UTF-8, each character that is not a plain letter, digit or
+ * one of `!#$&+-.^_`|~` is percent-encoded.
  */
 export function contentDisposition(name: string): string {
+    const ascii = name.replace(NOT_ASCII, '_')
     const encoded = encodeURIComponent(name).replace(
         /['()*]/gu,
         (mark) => `%${mark.charCodeAt(0).toString(16).toUpperCase()}`
     )
-    return `attachment; filename*=UTF-8''${encoded}`
+    return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
 }

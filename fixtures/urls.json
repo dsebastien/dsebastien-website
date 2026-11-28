@@ -589,14 +589,14 @@
             "request": "/-/md/10+Garden/Compost+basics.md?download=Compost%20basics%3F.md",
             "status": 200,
             "file": "markdown:10 Garden/Compost basics.md",
-            "disposition": "attachment; filename*=UTF-8''Compost%20basics-.md"
+            "disposition": "attachment; filename=\"Compost basics-.md\"; filename*=UTF-8''Compost%20basics-.md"
         },
         {
             "name": "the download form without a name takes the file name of the path",
             "request": "/-/md/Welcome.md?download",
             "status": 200,
             "file": "markdown:Welcome.md",
-            "disposition": "attachment; filename*=UTF-8''Welcome.md"
+            "disposition": "attachment; filename=\"Welcome.md\"; filename*=UTF-8''Welcome.md"
         },
         {
             "name": "no variant under the prefix of the site",

@@ -233,7 +233,8 @@ describe('a file of the site that is not a page', () => {
         )
         expect(download.status).toBe(200)
         expect(download.headers.get('content-disposition')).toBe(
-            "attachment; filename*=UTF-8''Compost%20%C3%A0%20faire-.md"
+            'attachment; filename="Compost _ faire-.md"; ' +
+                "filename*=UTF-8''Compost%20%C3%A0%20faire-.md"
         )
         expect(await download.text()).toBe(await plain.text())
         for (const name of [
@@ -247,7 +248,7 @@ describe('a file of the site that is not a page', () => {
         }
         const bare = await get('/-/md/10+Garden/Compost+basics.md?download')
         expect(bare.headers.get('content-disposition')).toBe(
-            "attachment; filename*=UTF-8''Compost%20basics.md"
+            'attachment; filename="Compost basics.md"; filename*=UTF-8\'\'Compost%20basics.md'
         )
     })
 
@@ -264,7 +265,7 @@ describe('a file of the site that is not a page', () => {
         })
         expect(response.status).toBe(304)
         expect(response.headers.get('content-disposition')).toBe(
-            "attachment; filename*=UTF-8''Welcome.md"
+            'attachment; filename="Welcome.md"; filename*=UTF-8\'\'Welcome.md'
         )
     })
 

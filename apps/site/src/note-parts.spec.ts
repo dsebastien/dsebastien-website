@@ -439,7 +439,9 @@ describe('download of the Markdown of a note page', () => {
             '/-/md/10+Garden/Rain+barrel.md?download=Rain%20barrel.md'
         )
         expect(link?.properties['download']).toBe('Rain barrel.md')
-        expect(link?.properties['ariaLabel']).toBe('Download this note as Markdown')
+        // One text for the name of the link and for its tooltip.
+        expect(link?.properties['ariaLabel']).toBe('Download as Markdown')
+        expect(link?.properties['title']).toBe('Download as Markdown')
         expect(textOf(select('[data-note-title]', pageOf(BARREL)) ?? undefined)).toBe('Rain barrel')
     })
 
